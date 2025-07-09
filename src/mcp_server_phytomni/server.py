@@ -1,0 +1,645 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+import asyncio
+from enum import Enum
+from json import dumps
+from typing import Annotated, Dict, List
+
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData, TextContent, Tool, INVALID_PARAMS
+from pydantic import BaseModel, Field
+
+from .analyst_agents import retrieve_plan_submit
+from .config.defaults import AnalystConfig, ChatConfig, DataConfig
+from .config.defaults import DeepGenomeConfig, InSilicoResearchConfig
+from .config.defaults import KnowledgeConfig, ReviewConfig
+from .config.settings import SensitiveConfig
+from .chat_agents import phyto_chat
+from .data_agents import rewrite_nl2sql
+from .deep_genome_agents import gene_function
+from .in_silico_research_agents import in_silico_research
+from .knowledge_agents import multi_retrieve_generate
+from .review_agents import deep_research
+
+
+class ChatAgent(BaseModel):
+    """Parameters for generating text using the Phyto model."""
+    user_query: Annotated[
+        str,
+        Field(
+            description="The user's query string for generating text.",
+        ),
+    ]
+
+
+class KnowledgeAgent(BaseModel):
+    """Parameters for retrieving documents and generating text."""
+    user_query: Annotated[
+        str,
+        Field(
+            description="The user's query string for retrieving documents "
+                        "and generating text."
+        ),
+    ]
+
+
+class DataAgent(BaseModel):
+    """Parameters for natural language searching SQL database."""
+    user_query: Annotated[
+        str,
+        Field(
+            description="The user's natural language query string for "
+                        "searching SQL database.",
+        ),
+    ]
+
+
+class AnalystAgent(BaseModel):
+    """Parameters for submitting and waiting for a bioinformatic analysis."""
+    goal_description: Annotated[
+        str,
+        Field(
+            description="Description of the biological research objective "
+                        "and analysis goal.",
+        ),
+    ]
+    data_list: Annotated[
+        List[Dict[str, str]],
+        Field(
+            description="List of input datasets where "
+                        "each item is a dictionary containing: "
+                        "'obs_url' (OBS path to sequence file) and "
+                        "'description' (data source characteristics)",
+            json_schema_extra={
+                "example": [{
+                    "obs_url": "obs://bucket/path/to/file.fastq",
+                    "description": "Whole genome sequencing data.",
+                }],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<Dictionary<string, string>>()",
+            }
+        ),
+    ]
+
+
+class DeepGenomeAgent(BaseModel):
+    """Parameters for submitting and waiting for a gene function analysis."""
+    species_code: Annotated[
+        str,
+        Field(
+            description="""species code is the key of dict: {
+                'osa': 'rice (Oryza sativa)',
+                'hvu': 'barley (Hordeum vulgare)',
+                'ttu': 'durum (Triticum turgidum)',
+                'cqu': 'quinoa (Chenopodium quinoa)',
+                'obr': 'wild (Oryza brachyantha)',
+                'dex': 'white (Digitaria exilis)',
+                'han': 'sunflower (Helianthus annuus)',
+                'dca': 'carrot (Daucus carota)',
+                'pvu': 'common (Phaseolus vulgaris)',
+                'ccan': 'coffee (Coffea canephora)',
+                'aof': 'garden (Asparagus officinalis)',
+                'bol': 'Brassica oleracea',
+                'rch': 'rose (Rosa chinensis)',
+                'lpe': 'Lolium perenne',
+                'atr': 'Amborella trichopoda',
+                'esa': 'saltwater (Eutrema salsugineum)',
+                'zma': 'maize (Zea mays)',
+                'bna': 'oilseed (Brassica napus)',
+                'bra': 'Brassica rapa',
+                'ghi': 'upland (Gossypium hirsutum)',
+                'gra': 'cotton (Gossypium raimondii)',
+                'mtr': 'barrel (Medicago truncatula)',
+                'stu': 'potato (Solanum tuberosum)',
+                'sbi': 'sorghum (Sorghum bicolor)',
+                'sit': 'foxtail (Setaria italica)',
+                'sce': 'rye (Secale cereale)',
+                'tdi': 'emmer (Triticum dicoccoides)',
+                'sly': 'tomato (Solanum lycopersicum)',
+                'cme': 'muskmelon (Cucumis melo)',
+                'psa': 'garden (Pisum sativum)',
+                'oeu': 'common (Olea europaea)',
+                'ach': 'kiwi (Actinidia chinensis)',
+                'cla': 'watermelon (Citrullus lanatus)',
+                'vvi': 'grape (Vitis vinifera)',
+                'tca': 'cacao (Theobroma cacao)',
+                'smo': 'Selaginella moellendorffii',
+                'qlo': 'Quercus lobata',
+                'bdi': 'Brachypodium distachyon',
+                'cav': 'Corylus avellana',
+                'egr': 'Eucalyptus grandis',
+                'mpo': 'liverwort (Marchantia polymorpha)',
+                'ssp': 'sugarcane (Saccharum spontaneum)',
+                'pso': 'opium (Papaver somniferum)',
+                'cre': 'Chlamydomonas reinhardtii',
+                'gma': 'soybean (Glycine max)',
+                'mes': 'cassava (Manihot esculenta)',
+                'can': 'pepper (Capsicum annuum)',
+                'csa': 'cucumber (Cucumis sativus)',
+                'lsa': 'lettuce (Lactuca sativa)',
+                'aco': 'pineapple (Ananas comosus)',
+                'mac': 'banana (Musa acuminata)',
+                'ppe': 'peach (Prunus persica)',
+                'ptr': 'black (Populus trichocarpa)',
+                'ath': 'thale (Arabidopsis thaliana)',
+                'ata': 'rough-spike (Aegilops tauschii)',
+                'bvu': 'suger (Beta vulgaris)',
+                'ccl': 'citrus (Citrus clementina)',
+                'svi': 'green (Setaria viridis)',
+                'ecu': 'weeping (Eragrostis curvula)',
+                'pha': "Hall's (Panicum hallii)",
+                'aly': 'Arabidopsis lyrata',
+                'tpr': 'red (Trifolium pratense)',
+                'ppa': 'Physcomitrium patens',
+                'cbr': 'Chara braunii',
+                'tae': 'wheat (Triticum aestivum)'}""",
+        ),
+    ]
+    gene_id: Annotated[
+        str,
+        Field(
+            description="gene id",
+        ),
+    ]
+
+
+class ReviewAgent(BaseModel):
+    """Parameters for conducting in-depth research and
+    generating a comprehensive review."""
+    user_query: Annotated[
+        str,
+        Field(
+            description="The user's research question or topic "
+                        "for which a detailed review is required."
+        ),
+    ]
+
+
+class InSilicoResearchAgent(BaseModel):
+    """Parameters for conducting in silico research."""
+    user_query: Annotated[
+        str,
+        Field(
+            description="The user's paper context."
+        ),
+    ]
+    data_list: Annotated[
+        List[Dict[str, str]],
+        Field(
+            description="List of input datasets where "
+                        "each item is a dictionary containing: "
+                        "'obs_url' (OBS path to sequence file) and "
+                        "'description' (data source characteristics)",
+            json_schema_extra={
+                "example": [{
+                    "obs_url": "obs://bucket/path/to/file.fastq",
+                    "description": "Whole genome sequencing data.",
+                }],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<Dictionary<string, string>>()",
+            }
+        ),
+    ]
+
+
+class PhytomniAgents(str, Enum):
+    """Enumeration of specialized AI agents for plant science research support.
+
+    Defines available agent types with domain-specific capabilities for
+    different aspects of botanical studies and computational biology workflows.
+
+    Members:
+        CHATAGENT: Core language model interface for fundamental Q&A.
+            Usage: Basic conceptual queries, single-domain problem solving.
+            Limitations: Avoid for multi-factor agricultural optimizations.
+        KNOWLEDGEAGENT: Evidence-based literature synthesis system.
+            Usage: Cross-referenced answers from curated scientific sources.
+        DATAAGENT: Structured data query interface.
+            Usage: Precise numerical/statistical retrieval from databases.
+        ANALYSTAGENT: Genomic workflow orchestration system.
+            Usage: Automated execution of bioinformatics pipelines.
+
+    Descriptions provide guidance on appropriate application scenarios and
+    technical constraints for each agent type. All agents implement
+    standardized JSON schema for parameter validation.
+    """
+    CHATAGENT = "ChatAgent"
+    CHATAGENT_DESCRIPTION = (
+        "Provides concise explanations for foundational or single-domain "
+        "questions in plant biology (e.g., definitions, basic mechanisms) "
+        "using the LLM's internal knowledge. Not recommended for "
+        "multi-dimensional agricultural optimization or climate adaptation "
+        "strategies."
+    )
+    KNOWLEDGEAGENT = "KnowledgeAgent"
+    KNOWLEDGEAGENT_DESCRIPTION = (
+        "Retrieves and synthesizes information from plant science literature, "
+        "patents, and books through RAG (Retrieval-Augmented Generation) "
+        "pipelines, providing evidence-supported answers."
+    )
+    DATAAGENT = "DataAgent"
+    DATAAGENT_DESCRIPTION = (
+        "Executes structured queries on botanical databases (e.g., species "
+        "traits, experimental data) using SQL interfaces, returning precise "
+        "numerical/statistical results."
+    )
+    ANALYSTAGENT = "AnalystAgent"
+    ANALYSTAGENT_DESCRIPTION = (
+        "Initiates computational workflows (e.g., sequence alignment, "
+        "phylogenetic analysis) through integrated bioinformatics platforms "
+        "for genomic/proteomic investigations."
+    )
+    REVIEWAGENT = "ReviewAgent"
+    REVIEWAGENT_DESCRIPTION = (
+        "Conducts a comprehensive and in-depth investigation into a user's "
+        "query, synthesizing information from a wide range of scientific "
+        "literature and other relevant sources to produce a structured review "
+        "or detailed report. Ideal for when a broad understanding, critical "
+        "assessment, or an extensive overview of a complex topic is required, "
+        "going beyond targeted Q&A or data retrieval."
+    )
+    DEEPGENOMEAGENT = "DeepGenomeAgent"
+    DEEPGENOMEAGENT_DESCRIPTION = (
+        "Integrates functional annotations from plant multi-omics databases "
+        "(GO, KEGG, etc.) with experimental evidence mined from literature, "
+        "generating comparative summaries with experimental evidence."
+    )
+    INSILICORESEARCHAGENT = "InSilicoResearchAgent"
+    INSILICORESEARCHAGENT_DESCRIPTION = (
+        "Decomposes a complete scientific paper by analyzing its methodology "
+        "and results, producing a structured, sequential list of high-level "
+        "tasks designed for computational replication."
+    )
+
+
+async def serve() -> None:
+    """Initialize and run the Phytomni service endpoint.
+
+    Orchestrates the service lifecycle including:
+    - Tool registration with JSON schema validation
+    - Request routing to appropriate agent handlers
+    - Error handling and protocol compliance
+
+    Exposes two primary endpoints:
+        1. /list_tools: Returns registered agent metadata
+        2. /call_tool: Executes agent-specific operations
+
+    The server implements standard I/O protocols via stdio_server for
+    cross-platform compatibility. Service configuration is managed through
+    Server initialization options.
+
+    Raises:
+        McpError: Wrapped exceptions for all operational failures including:
+            - Invalid parameter schemas (INVALID_PARAMS)
+            - Agent execution timeouts
+            - Infrastructure connectivity issues
+
+    Maintains strict isolation between agent execution contexts and implements
+    automatic resource cleanup through context managers.
+    """
+    server = Server("Phytomni-Server")
+
+    @server.list_tools()
+    async def list_tools() -> list[Tool]:
+        return [
+            Tool(
+                name=PhytomniAgents.CHATAGENT,
+                description=PhytomniAgents.CHATAGENT_DESCRIPTION,
+                inputSchema=ChatAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.KNOWLEDGEAGENT,
+                description=PhytomniAgents.KNOWLEDGEAGENT_DESCRIPTION,
+                inputSchema=KnowledgeAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.DATAAGENT,
+                description=PhytomniAgents.DATAAGENT_DESCRIPTION,
+                inputSchema=DataAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.ANALYSTAGENT,
+                description=PhytomniAgents.ANALYSTAGENT_DESCRIPTION,
+                inputSchema=AnalystAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.REVIEWAGENT,
+                description=PhytomniAgents.REVIEWAGENT_DESCRIPTION,
+                inputSchema=ReviewAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.DEEPGENOMEAGENT,
+                description=PhytomniAgents.DEEPGENOMEAGENT_DESCRIPTION,
+                inputSchema=DeepGenomeAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.INSILICORESEARCHAGENT,
+                description=PhytomniAgents.INSILICORESEARCHAGENT_DESCRIPTION,
+                inputSchema=InSilicoResearchAgent.model_json_schema()
+            ),
+        ]
+
+    @server.call_tool()
+    async def call_tool(name, arguments: dict) -> list[TextContent]:
+        match name:
+            case PhytomniAgents.CHATAGENT:
+                try:
+                    args = ChatAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                chatconfig = ChatConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await phyto_chat(
+                    user_query=args.user_query,
+                    prompt_file=chatconfig.PROMPT_FILE,
+                    prompt_path=chatconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=chatconfig.FREQUENCY_PENALTY,
+                    max_tokens=chatconfig.MAX_TOKENS,
+                    n=chatconfig.N,
+                    presence_penalty=chatconfig.PRESENCE_PENALTY,
+                    reasoning_effort=chatconfig.REASONING_EFFORT,
+                    response_format=chatconfig.RESPONSE_FORMAT,
+                    stream=chatconfig.STREAM,
+                    temperature=chatconfig.TEMPERATURE,
+                    top_p=chatconfig.TOP_P,
+                    user=chatconfig.USER,
+                    timeout=chatconfig.TIMEOUT,
+                    retriable_codes=chatconfig.RETRIABLE_CODES,
+                    max_retries=chatconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.KNOWLEDGEAGENT:
+                try:
+                    args = KnowledgeAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                knowledgeconfig = KnowledgeConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await multi_retrieve_generate(
+                    user_query=args.user_query,
+                    repo_id_dict=knowledgeconfig.REPO_ID_DICT,
+                    page_num=knowledgeconfig.PAGE_NUM,
+                    filter_string=knowledgeconfig.FILTER_STRING,
+                    scope=knowledgeconfig.SCOPE,
+                    extra_repo_ids=knowledgeconfig.EXTRA_REPO_IDS,
+                    score_threshold=knowledgeconfig.SCORE_THRESHOLD,
+                    top_n=knowledgeconfig.TOP_N,
+                    prompt_file=knowledgeconfig.PROMPT_FILE,
+                    prompt_path=knowledgeconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=knowledgeconfig.FREQUENCY_PENALTY,
+                    max_tokens=knowledgeconfig.MAX_TOKENS,
+                    n=knowledgeconfig.N,
+                    presence_penalty=knowledgeconfig.PRESENCE_PENALTY,
+                    reasoning_effort=knowledgeconfig.REASONING_EFFORT,
+                    response_format=knowledgeconfig.RESPONSE_FORMAT,
+                    stream=knowledgeconfig.STREAM,
+                    temperature=knowledgeconfig.TEMPERATURE,
+                    top_p=knowledgeconfig.TOP_P,
+                    user=knowledgeconfig.USER,
+                    timeout=knowledgeconfig.TIMEOUT,
+                    retriable_codes=knowledgeconfig.RETRIABLE_CODES,
+                    max_retries=knowledgeconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.DATAAGENT:
+                try:
+                    args = DataAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                dataconfig = DataConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await rewrite_nl2sql(
+                    user_query=args.user_query,
+                    prompt_file=dataconfig.PROMPT_FILE,
+                    prompt_path=dataconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=dataconfig.FREQUENCY_PENALTY,
+                    max_tokens=dataconfig.MAX_TOKENS,
+                    n=dataconfig.N,
+                    presence_penalty=dataconfig.PRESENCE_PENALTY,
+                    reasoning_effort=dataconfig.REASONING_EFFORT,
+                    response_format=dataconfig.RESPONSE_FORMAT,
+                    stream=dataconfig.STREAM,
+                    temperature=dataconfig.TEMPERATURE,
+                    top_p=dataconfig.TOP_P,
+                    user=dataconfig.USER,
+                    workspace_id=dataconfig.WORKSPACE_ID,
+                    subject_id=dataconfig.SUBJECT_ID,
+                    dialog_id=dataconfig.DIALOG_ID,
+                    need_insight=dataconfig.NEED_INSIGHT,
+                    simplify_response=dataconfig.SIMPLIFY_RESPONSE,
+                    timeout=dataconfig.TIMEOUT,
+                    retriable_codes=dataconfig.RETRIABLE_CODES,
+                    max_retries=dataconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.ANALYSTAGENT:
+                try:
+                    args = AnalystAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                analystconfig = AnalystConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await retrieve_plan_submit(
+                    goal_description=args.goal_description,
+                    data_list=args.data_list,
+                    output_dir=analystconfig.OUTPUT_DIR,
+                    repo_id_dict=analystconfig.REPO_ID_DICT,
+                    page_num=analystconfig.PAGE_NUM,
+                    filter_string=analystconfig.FILTER_STRING,
+                    scope=analystconfig.SCOPE,
+                    extra_repo_ids=analystconfig.EXTRA_REPO_IDS,
+                    score_threshold=analystconfig.SCORE_THRESHOLD,
+                    top_n=analystconfig.TOP_N,
+                    prompt_file=analystconfig.PROMPT_FILE,
+                    prompt_path=analystconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=analystconfig.FREQUENCY_PENALTY,
+                    max_tokens=analystconfig.MAX_TOKENS,
+                    n=analystconfig.N,
+                    presence_penalty=analystconfig.PRESENCE_PENALTY,
+                    reasoning_effort=analystconfig.REASONING_EFFORT,
+                    response_format=analystconfig.RESPONSE_FORMAT,
+                    stream=analystconfig.STREAM,
+                    temperature=analystconfig.TEMPERATURE,
+                    top_p=analystconfig.TOP_P,
+                    user=analystconfig.USER,
+                    execute_code=analystconfig.EXECUTE_CODE,
+                    timeout=analystconfig.TIMEOUT,
+                    retriable_codes=analystconfig.RETRIABLE_CODES,
+                    max_retries=analystconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.REVIEWAGENT:
+                try:
+                    args = ReviewAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                reviewconfig = ReviewConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await deep_research(
+                    user_query=args.user_query,
+                    prompt_file=reviewconfig.PROMPT_FILE,
+                    prompt_path=reviewconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=reviewconfig.FREQUENCY_PENALTY,
+                    max_tokens=reviewconfig.MAX_TOKENS,
+                    n=reviewconfig.N,
+                    presence_penalty=reviewconfig.PRESENCE_PENALTY,
+                    reasoning_effort=reviewconfig.REASONING_EFFORT,
+                    response_format=reviewconfig.RESPONSE_FORMAT,
+                    stream=reviewconfig.STREAM,
+                    temperature=reviewconfig.TEMPERATURE,
+                    top_p=reviewconfig.TOP_P,
+                    user=reviewconfig.USER,
+                    repo_id_dict=reviewconfig.REPO_ID_DICT,
+                    page_num=reviewconfig.PAGE_NUM,
+                    filter_string=reviewconfig.FILTER_STRING,
+                    scope=reviewconfig.SCOPE,
+                    extra_repo_ids=reviewconfig.EXTRA_REPO_IDS,
+                    score_threshold=reviewconfig.SCORE_THRESHOLD,
+                    top_n=reviewconfig.TOP_N,
+                    timeout=reviewconfig.TIMEOUT,
+                    retriable_codes=reviewconfig.RETRIABLE_CODES,
+                    max_retries=reviewconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.DEEPGENOMEAGENT:
+                try:
+                    args = DeepGenomeAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                deepgenomeconfig = DeepGenomeConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await gene_function(
+                    species_code=args.species_code,
+                    gene_id=args.gene_id,
+                    workspace_id=deepgenomeconfig.WORKSPACE_ID,
+                    subject_id=deepgenomeconfig.SUBJECT_ID,
+                    dialog_id=deepgenomeconfig.DIALOG_ID,
+                    need_insight=deepgenomeconfig.NEED_INSIGHT,
+                    repo_id_dict=deepgenomeconfig.REPO_ID_DICT,
+                    page_num=deepgenomeconfig.PAGE_NUM,
+                    filter_string=deepgenomeconfig.FILTER_STRING,
+                    extra_repo_ids=deepgenomeconfig.EXTRA_REPO_IDS,
+                    score_threshold=deepgenomeconfig.SCORE_THRESHOLD,
+                    top_n=deepgenomeconfig.TOP_N,
+                    prompt_file=deepgenomeconfig.PROMPT_FILE,
+                    prompt_path=deepgenomeconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=deepgenomeconfig.FREQUENCY_PENALTY,
+                    max_tokens=deepgenomeconfig.MAX_TOKENS,
+                    n=deepgenomeconfig.N,
+                    presence_penalty=deepgenomeconfig.PRESENCE_PENALTY,
+                    reasoning_effort=deepgenomeconfig.REASONING_EFFORT,
+                    response_format=deepgenomeconfig.RESPONSE_FORMAT,
+                    stream=deepgenomeconfig.STREAM,
+                    temperature=deepgenomeconfig.TEMPERATURE,
+                    top_p=deepgenomeconfig.TOP_P,
+                    user=deepgenomeconfig.USER,
+                    timeout=deepgenomeconfig.TIMEOUT,
+                    retriable_codes=deepgenomeconfig.RETRIABLE_CODES,
+                    max_retries=deepgenomeconfig.MAX_RETRIES,
+                    max_concurrency=deepgenomeconfig.MAX_CONCURRENCY,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.INSILICORESEARCHAGENT:
+                try:
+                    args = InSilicoResearchAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                insilicoresearchconfig = InSilicoResearchConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await in_silico_research(
+                    user_query=args.user_query,
+                    data_list=args.data_list,
+                    output_dir=insilicoresearchconfig.OUTPUT_DIR,
+                    repo_id_dict=insilicoresearchconfig.REPO_ID_DICT,
+                    page_num=insilicoresearchconfig.PAGE_NUM,
+                    filter_string=insilicoresearchconfig.FILTER_STRING,
+                    scope=insilicoresearchconfig.SCOPE,
+                    extra_repo_ids=insilicoresearchconfig.EXTRA_REPO_IDS,
+                    score_threshold=insilicoresearchconfig.SCORE_THRESHOLD,
+                    top_n=insilicoresearchconfig.TOP_N,
+                    prompt_file=insilicoresearchconfig.PROMPT_FILE,
+                    prompt_path=insilicoresearchconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=insilicoresearchconfig.FREQUENCY_PENALTY,
+                    max_tokens=insilicoresearchconfig.MAX_TOKENS,
+                    n=insilicoresearchconfig.N,
+                    presence_penalty=insilicoresearchconfig.PRESENCE_PENALTY,
+                    reasoning_effort=insilicoresearchconfig.REASONING_EFFORT,
+                    response_format=insilicoresearchconfig.RESPONSE_FORMAT,
+                    stream=insilicoresearchconfig.STREAM,
+                    temperature=insilicoresearchconfig.TEMPERATURE,
+                    top_p=insilicoresearchconfig.TOP_P,
+                    user=insilicoresearchconfig.USER,
+                    execute_code=insilicoresearchconfig.EXECUTE_CODE,
+                    timeout=insilicoresearchconfig.TIMEOUT,
+                    retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
+                    max_retries=insilicoresearchconfig.MAX_RETRIES
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+    options = server.create_initialization_options()
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream,
+                         options, raise_exceptions=True)
+
+
+if __name__ == '__main__':
+    asyncio.run(serve())
