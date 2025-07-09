@@ -9,7 +9,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 
 PROMPT_PATH = Path(__file__).parent.parent / '.prompts.yaml'
-MAX_TOKENS = 131072/2
+MAX_TOKENS = 131072
 
 
 class ServerConfig(BaseSettings):
@@ -46,12 +46,9 @@ class ServerConfig(BaseSettings):
     RETRIABLE_CODES: List[int] = [429, 500, 502, 503, 504]
     MAX_RETRIES: int = 5
 
-    # TOKEN_URL: str = Field(
-    #     'https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens')
     TOKEN_URL: str = Field(
-        'https://iam.cn-east-3.myhuaweicloud.com/v3/auth/tokens')
-    # REGION: str = Field('cn-southwest-2')
-    REGION: str = Field('cn-east-3')
+        'https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens')
+    REGION: str = Field('cn-southwest-2')
 
     RETRIEVE_URL: str = Field(
         'http://1.95.74.240:8000/v1/koosearch/experience/search')
@@ -67,10 +64,10 @@ class ServerConfig(BaseSettings):
 
     REPO_ID: str = Field('a34b2477-a4b1-4a30-8726-77bbf66ca048')
     REPO_ID_DICT: Dict[str, int] = Field({
-        'a34b2477-a4b1-4a30-8726-77bbf66ca048': int(MAX_TOKENS/1024),
-        'c6aa6922-15ec-44bb-bfaa-3bc85ed4d1a2': int(MAX_TOKENS/1024),
-        '708b0cf8-fa4d-4ad0-885f-ca3bf4565cda': int(MAX_TOKENS/1024),
-        'ec3be998-43a8-483e-a2d8-029c9161431b': int(MAX_TOKENS/1024),
+        'a34b2477-a4b1-4a30-8726-77bbf66ca048': int(MAX_TOKENS/2048),
+        'c6aa6922-15ec-44bb-bfaa-3bc85ed4d1a2': int(MAX_TOKENS/2048),
+        '708b0cf8-fa4d-4ad0-885f-ca3bf4565cda': int(MAX_TOKENS/2048),
+        'ec3be998-43a8-483e-a2d8-029c9161431b': int(MAX_TOKENS/2048),
     })
 
     WORKSPACE_ID: str = Field('6e939452a68f487f873c457f1953cf55')
@@ -119,7 +116,6 @@ class ChatConfig(ServerConfig):
     FREQUENCY_PENALTY: float = Field(0)
     N: int = Field(1)
     REASONING_EFFORT: Literal['low', 'medium', 'high'] = Field('high')
-    # RESPONSE_FORMAT: Dict[str, Any] = Field({'type': 'json_object'})
     RESPONSE_FORMAT: Dict[str, Union[str, Dict]] = Field(
         {'type': 'json_object'})
     STREAM: bool = Field(False)
@@ -150,8 +146,8 @@ class KnowledgeConfig(ChatConfig):
             reranking is applied to retrieved documents.
     """
     PAGE_NUM: int = Field(1)
-    PAGE_SIZE: int = Field(int(MAX_TOKENS/1024))
-    TOP_N: int = Field(int(MAX_TOKENS/1024))
+    PAGE_SIZE: int = Field(int(MAX_TOKENS/2048))
+    TOP_N: int = Field(int(MAX_TOKENS/2048))
     FILTER_STRING: Optional[str] = Field(None)
     SCOPE: Literal['both', 'doc', 'keyword'] = Field('both')
     EXTRA_REPO_IDS: Optional[List[str]] = Field(None)
@@ -206,7 +202,7 @@ class ReviewConfig(KnowledgeConfig):
         TOP_N (int): Number of top-scoring results to retrieve or consider
             specifically for review purposes.
     """
-    TOP_N: int = Field(int(MAX_TOKENS/1024/4))
+    TOP_N: int = Field(int(MAX_TOKENS/8192))
 
 
 class DeepGenomeConfig(DataConfig, AnalystConfig):
@@ -218,7 +214,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
         MAX_CONCURRENCY (int): Maximum number of concurrent operations allowed
             for tasks related to gene function analysis.
     """
-    MAX_CONCURRENCY: int = Field(32)
+    MAX_CONCURRENCY: int = Field(8)
 
 
 class InSilicoResearchConfig(AnalystConfig):
