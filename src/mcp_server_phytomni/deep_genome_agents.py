@@ -415,14 +415,43 @@ async def gene_annotation(species_code: str,
 def network_to_string(gene_network_list: list,
                       species_gene_symbol_dict: dict,
                       species_gene_anno_dict: dict,
-                      network_type: str):
+                      network_type: str,
+                      top_n: int = 10):
+    """Formats gene network information into a string.
+
+    This function takes a list of genes in a network and their associated
+    symbols and annotations, and formats this information into a model-readable
+    string. The string includes the description of each gene and a summary of
+    the top N enriched GO, InterPro, and MapMan terms for the entire network.
+
+    Args:
+        gene_network_list (list): A list of tuples, where each tuple
+                                  represents a gene in the network and
+                                  contains the species code and gene ID.
+        species_gene_symbol_dict (dict): A dictionary mapping a
+                                         (species_code, gene_id) tuple to a
+                                         list of gene symbols.
+        species_gene_anno_dict (dict): A dictionary mapping a
+                                       (species_code, gene_id) tuple to a
+                                       dictionary of gene annotations.
+        network_type (str): The type of the network (e.g., "Orthologous",
+                            "Paralogous"). This is used in the output string.
+        top_n (int, optional): The number of top enriched terms to include in
+                               the summary. Defaults to 10.
+
+    Returns:
+        str: A formatted string containing the gene network information, or a
+             string indicating that no genes of the specified network type
+             were found.
+    """
     if gene_network_list:
         network_string = ''
         go_id_dict, ip_id_dict, mm_id_dict = {}, {}, {}
         go_count_dict, ip_count_dict, mm_count_dict = {}, {}, {}
         for species_gene in gene_network_list:
             if species_gene in species_gene_symbol_dict:
-                symbol_string = '|'.join(species_gene_symbol_dict[species_gene]).replace('\n', '|')
+                symbol_string = '|'.join(species_gene_symbol_dict[
+                    species_gene]).replace('\n', '|')
             else:
                 symbol_string = species_gene[1]
             if species_gene in species_gene_anno_dict:
@@ -455,17 +484,26 @@ def network_to_string(gene_network_list: list,
             else:
                 description_string = ''
             if description_string:
-                each_gene_string = f'{SPECIES_CODE_MAP[species_gene[0]]}: {symbol_string}: {description_string}\n'
-                network_string += each_gene_string
-        go_sorted_ids = sorted(go_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
-        go_all_string = '; '.join([go_id_dict[id] for id, count in go_sorted_ids if id in go_id_dict])
-        network_string += f'{network_type} genes TOP 10 GO enrichment results: {go_all_string}\n'
-        ip_sorted_ids = sorted(ip_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
-        ip_all_string = '; '.join([ip_id_dict[id] for id, count in ip_sorted_ids if id in ip_id_dict])
-        network_string += f'{network_type} genes TOP 10 InterPro enrichment results: {ip_all_string}\n'
-        mm_sorted_ids = sorted(mm_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
-        mm_all_string = '; '.join([mm_id_dict[id] for id, count in mm_sorted_ids if id in mm_id_dict])
-        network_string += f'{network_type} genes TOP 10 MapMan enrichment results: {mm_all_string}\n'
+                network_string += f'{SPECIES_CODE_MAP[species_gene[0]]}: '
+                network_string += f'{symbol_string}: {description_string}\n'
+        go_sorted_ids = sorted(go_count_dict.items(), key=lambda x: x[1],
+                               reverse=True)[:top_n]
+        go_all_string = '; '.join([go_id_dict[id] for id, count in
+                                   go_sorted_ids if id in go_id_dict])
+        network_string += f'{network_type} genes TOP {top_n} '
+        network_string += f'GO enrichment results: {go_all_string}\n'
+        ip_sorted_ids = sorted(ip_count_dict.items(), key=lambda x: x[1],
+                               reverse=True)[:top_n]
+        ip_all_string = '; '.join([ip_id_dict[id] for id, count in
+                                   ip_sorted_ids if id in ip_id_dict])
+        network_string += f'{network_type} genes TOP {top_n} '
+        network_string += f'InterPro enrichment results: {ip_all_string}\n'
+        mm_sorted_ids = sorted(mm_count_dict.items(), key=lambda x: x[1],
+                               reverse=True)[:top_n]
+        mm_all_string = '; '.join([mm_id_dict[id] for id, count in
+                                   mm_sorted_ids if id in mm_id_dict])
+        network_string += f'{network_type} genes TOP {top_n} '
+        network_string += f'MapMan enrichment results: {mm_all_string}\n'
         return network_string
     else:
         return f'No {network_type} genes'
@@ -796,8 +834,8 @@ async def async_gene_function(
                                         output=output_dir,
                                         user_id=user_id,
                                         batch=True)
-        manager.update_task(task_id, 'running', analysis_task_str, output_dir)
         analysis_task_str = json.dumps(analysis_task)
+        manager.update_task(task_id, 'running', analysis_task_str, output_dir)
 
         gene_network_results = await gene_network(
             species_code=species_code,
