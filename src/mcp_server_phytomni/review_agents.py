@@ -158,7 +158,24 @@ async def deep_research(
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
-        response_format=response_format,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "Research_dimensions": {
+                        "type": "array",
+                        "description":
+                            "Four logically interconnected and "
+                            "thematically coherent research aspects",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": ["Research_dimensions"]
+            }
+        },
         stream=stream,
         temperature=temperature,
         top_p=top_p,
