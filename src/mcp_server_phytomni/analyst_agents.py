@@ -75,7 +75,6 @@ async def submit(goal_description: str,
             "type": "openai",
             "url": sc.CODER_URL,
             "model": sc.CODER_MODEL,
-            # "attributes": {"max_tokens": 32768},
         },
         "LLM_Auth": sc.CODER_API.get_secret_value(),
     }
@@ -115,7 +114,6 @@ async def plan_submit(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -159,8 +157,6 @@ async def plan_submit(
             Defaults to `MODEL_ID`.
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             plan generation step. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan.
-            Defaults to `MAX_TOKENS`.
         n: Number of plan choices to generate by the Phyto model.
             Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
@@ -207,7 +203,6 @@ async def plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -398,7 +393,6 @@ async def retrieve_plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -600,7 +594,6 @@ async def plan_submit_wait(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -650,8 +643,6 @@ async def plan_submit_wait(
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             plan generation step within `plan_submit`.
             Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan by the
-            Phyto model within `plan_submit`. Defaults to `MAX_TOKENS`.
         n: Number of plan choices to generate by the Phyto model within
             `plan_submit`. Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
@@ -708,7 +699,6 @@ async def plan_submit_wait(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,

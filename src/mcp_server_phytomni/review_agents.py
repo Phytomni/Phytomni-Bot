@@ -25,7 +25,6 @@ async def deep_research(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = rc.FREQUENCY_PENALTY,
-    max_tokens: int = rc.MAX_TOKENS,
     n: int = rc.N,
     presence_penalty: float = rc.PRESENCE_PENALTY,
     reasoning_effort: str = rc.REASONING_EFFORT,
@@ -74,8 +73,6 @@ async def deep_research(
             Defaults to `MODEL_ID`.
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) for
             `phyto_chat`. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate by `phyto_chat`.
-            Defaults to `MAX_TOKENS`.
         n: Number of choices to generate by `phyto_chat` for query expansion
             and report generation. Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) for
@@ -158,7 +155,6 @@ async def deep_research(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -228,7 +224,6 @@ async def deep_research(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,

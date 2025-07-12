@@ -123,7 +123,6 @@ async def rewrite_nl2sql(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = dc.FREQUENCY_PENALTY,
-    max_tokens: int = dc.MAX_TOKENS,
     n: int = dc.N,
     presence_penalty: float = dc.PRESENCE_PENALTY,
     reasoning_effort: str = dc.REASONING_EFFORT,
@@ -165,8 +164,6 @@ async def rewrite_nl2sql(
             Defaults to `MODEL_ID`.
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             query rewriting step. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the rewritten
-            query. Defaults to `MAX_TOKENS`.
         n: Number of rewritten query choices to generate by the Phyto model.
             Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the query
@@ -226,7 +223,6 @@ async def rewrite_nl2sql(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
