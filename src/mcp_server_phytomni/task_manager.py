@@ -2,6 +2,8 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""This module provides a TaskManager class for managing tasks in a
+SQLite database and functions for interacting with a remote task server."""
 import asyncio
 import sqlite3
 import uuid
@@ -15,11 +17,27 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 
 
 class TaskManager:
+    """Manages tasks in a SQLite database.
+
+    This class provides methods to initialize a database, create new tasks,
+    and update existing tasks.
+
+    Attributes:
+        db_path (str): The path to the SQLite database file.
+    """
     def __init__(self, db_path='server_tasks.db'):
+        """Initializes the TaskManager with the given database path.
+
+        Args:
+            db_path (str, optional): The path to the SQLite database file.
+                                     Defaults to 'server_tasks.db'.
+        """
         self.db_path = db_path
         self._init_db()
 
     def _init_db(self):
+        """Initializes the database and creates the tasks table if it
+        doesn't exist."""
         conn = sqlite3.connect(self.db_path)
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('''
@@ -34,9 +52,15 @@ class TaskManager:
         conn.close()
 
     def _get_connection(self):
+        """Returns a connection to the SQLite database."""
         return sqlite3.connect(self.db_path)
 
     def create_task(self):
+        """Creates a new task with a unique ID and initial status.
+
+        Returns:
+            str: The ID of the newly created task.
+        """
         task_id = str(uuid.uuid4())
         conn = self._get_connection()
         conn.execute('''
@@ -48,6 +72,14 @@ class TaskManager:
         return task_id
 
     def update_task(self, task_id, status, analysis_id, output_dir):
+        """Updates the status, analysis_id, and output_dir of a task.
+
+        Args:
+            task_id (str): The ID of the task to update.
+            status (str): The new status of the task.
+            analysis_id (str): The new analysis ID of the task.
+            output_dir (str): The new output directory of the task.
+        """
         conn = self._get_connection()
         conn.execute('''
             UPDATE tasks
@@ -64,6 +96,32 @@ async def create_task(url,
                       timeout: int = 60,
                       retriable_codes: List[int] = [429, 500, 502, 503, 504],
                       max_retries: int = 5):
+    """Creates a task on a remote server.
+
+    This function sends a POST request to the specified URL to create a new
+    task. It implements a retry mechanism with exponential backoff for
+    transient errors.
+
+    Args:
+        url (str): The URL of the remote server.
+        server_id (str): The ID of the server.
+        server_status (str): The status of the server.
+        tool_name (str): The name of the tool being used.
+        timeout (int, optional): The timeout for the request in seconds.
+                                 Defaults to 60.
+        retriable_codes (List[int], optional): A list of HTTP status codes
+                                               that trigger a retry.
+                                               Defaults to
+                                               [429, 500, 502, 503, 504].
+        max_retries (int, optional): The maximum number of retries.
+                                     Defaults to 5.
+
+    Returns:
+        dict: The JSON response from the server.
+
+    Raises:
+        McpError: If the request fails after all retries.
+    """
     data = {
         'server_id': server_id,
         'server_status': server_status,
@@ -114,6 +172,33 @@ async def update_task(url,
                       timeout: int = 60,
                       retriable_codes: List[int] = [429, 500, 502, 503, 504],
                       max_retries: int = 5):
+    """Updates a task on a remote server.
+
+    This function sends a POST request to the specified URL to update an
+    existing task. It implements a retry mechanism with exponential backoff
+    for transient errors.
+
+    Args:
+        url (str): The URL of the remote server.
+        server_id (str): The ID of the server.
+        server_status (str): The status of the server.
+        server_file_path (str): The path to the file on the server.
+        tool_result (str): The result of the tool execution.
+        timeout (int, optional): The timeout for the request in seconds.
+                                 Defaults to 60.
+        retriable_codes (List[int], optional): A list of HTTP status codes
+                                               that trigger a retry.
+                                               Defaults to
+                                               [429, 500, 502, 503, 504].
+        max_retries (int, optional): The maximum number of retries.
+                                     Defaults to 5.
+
+    Returns:
+        dict: The JSON response from the server.
+
+    Raises:
+        McpError: If the request fails after all retries.
+    """
     data = {
         'server_id': server_id,
         'server_status': server_status,
