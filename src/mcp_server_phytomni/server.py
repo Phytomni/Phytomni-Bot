@@ -20,7 +20,7 @@ from .config.defaults import KnowledgeConfig, ReviewConfig
 from .config.settings import SensitiveConfig
 from .chat_agents import phyto_chat
 from .data_agents import rewrite_nl2sql
-from .deep_genome_agents import gene_function
+from .deep_genome_agents import async_gene_function
 from .in_silico_research_agents import in_silico_research
 from .knowledge_agents import multi_retrieve_generate
 from .review_agents import deep_research
@@ -553,7 +553,7 @@ async def serve() -> None:
                         code=INVALID_PARAMS, message=str(e))) from e
                 deepgenomeconfig = DeepGenomeConfig()
                 sensitiveconfig = SensitiveConfig().load()
-                response = await gene_function(
+                response = await async_gene_function(
                     species_code=args.species_code,
                     gene_id=args.gene_id,
                     workspace_id=deepgenomeconfig.WORKSPACE_ID,
