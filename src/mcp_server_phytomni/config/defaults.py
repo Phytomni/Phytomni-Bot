@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-PROMPT_PATH = Path(__file__).parent.parent / '.prompts.yaml'
+PROMPT_PATH = Path(__file__).parent.parent / 'config/.prompts.yaml'
 MAX_TOKENS = 131072
 
 

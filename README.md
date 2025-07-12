@@ -38,7 +38,7 @@ The server provides the following agents:
 
 1. Create a `.env` file from the example:
    ```bash
-   cp src/mcp_server_phytomni/.env.example src/mcp_server_phytomni/.env
+   cp src/mcp_server_phytomni/config/.env.example src/mcp_server_phytomni/config/.env
    ```
 2. Edit the `.env` file with your credentials and other settings.
 

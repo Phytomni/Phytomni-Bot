@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 
 _current_dir = Path(__file__).parent
 PROJECT_ROOT = _current_dir.parent
-ENV_PATH = PROJECT_ROOT / '.env'
+ENV_PATH = PROJECT_ROOT / 'config/.env'
 
 
 def load_env_file() -> bool:
