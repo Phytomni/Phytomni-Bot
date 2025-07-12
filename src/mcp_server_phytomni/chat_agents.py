@@ -28,7 +28,6 @@ async def phyto_chat(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = cc.FREQUENCY_PENALTY,
-    max_tokens: int = cc.MAX_TOKENS,
     n: int = cc.N,
     presence_penalty: float = cc.PRESENCE_PENALTY,
     reasoning_effort: str = cc.REASONING_EFFORT,
@@ -45,8 +44,8 @@ async def phyto_chat(
     """Generate text using a Phyto model, adapting to different API versions.
 
     This function constructs a request to a Phyto language model.
-    It includes logic for dynamic adjustment of max_tokens
-    and implements retry mechanisms with exponential backoff for transient
+    It includes logic for dynamic adjustment of implements retry mechanisms
+    with exponential backoff for transient
     errors.
 
     Args:
@@ -64,10 +63,6 @@ async def phyto_chat(
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0).
             Positive values discourage repeating tokens.
             Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the completion.
-            If 0 or None, it's dynamically calculated based on the input
-            length to fit within model limits. For models, this corresponds
-            to `max_completion_tokens`. Defaults to `MAX_TOKENS`.
         n: Number of chat completion choices to generate.
             Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0). Positive
@@ -122,9 +117,6 @@ async def phyto_chat(
     ]
     if 'reasoner' not in model:
         reasoning_effort = None
-    if not max_tokens:
-        max_tokens = cc.MAX_TOKENS - int(
-            (len(messages[0]['content']) + len(user_query)) / 5)
 
     async def make_phyto_chat() -> Dict[str, Any]:
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
@@ -135,7 +127,6 @@ async def phyto_chat(
                         messages=messages,
                         model=model,
                         frequency_penalty=frequency_penalty,
-                        # max_completion_tokens=max_tokens,
                         n=n,
                         presence_penalty=presence_penalty,
                         reasoning_effort=reasoning_effort,
@@ -172,7 +163,6 @@ async def phyto_chat(
                         messages=messages,
                         model=model,
                         frequency_penalty=frequency_penalty,
-                        # max_completion_tokens=max_tokens,
                         n=n,
                         presence_penalty=presence_penalty,
                         reasoning_effort=reasoning_effort,
