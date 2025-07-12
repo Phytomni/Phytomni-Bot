@@ -386,16 +386,22 @@ async def multi_retrieve_generate(
         max_retries=max_retries,
     )
     retrieve_results = []
+    total_length = 0
     for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
         if eachdoc["subtitle"]:
-            retrieve_results.append(
+            current_fragment = (
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
                 f'[document {file_id+1} end]')
         else:
-            retrieve_results.append(
+            current_fragment = (
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["content"]} [document {file_id+1} end]')
+        if total_length + len(current_fragment) <= max_tokens:
+            retrieve_results.append(current_fragment)
+            total_length += len(current_fragment)
+        else:
+            break
     retrieve_results = '\n\n'.join(retrieve_results)
     user_query = get_prompt(
         prompt_file, 'user/retrieval',

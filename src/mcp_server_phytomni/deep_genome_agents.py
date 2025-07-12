@@ -780,8 +780,8 @@ async def async_gene_function(
         """
         user_id = uuid.uuid1()
         output = create_output_dir(user_id, gene_id)
-
-        species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(')').lower()
+        species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
+            ')').lower()
         analysis_task = analysis_module(species=species_str,
                                         gene_id=gene_id,
                                         output=output,
@@ -876,17 +876,23 @@ async def async_gene_function(
                 all_doc_list.extend(gene_doc_dict['doc_list'])
 
                 retrieve_results = []
+                total_length = 0
                 for file_id, eachdoc in enumerate(species_gene_doc_dict[
                         (species_code, gene_id)]['doc_list']):
                     if eachdoc["subtitle"]:
-                        retrieve_results.append(
+                        current_fragment = (
                             f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                             f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
                             f'[document {file_id+1} end]')
                     else:
-                        retrieve_results.append(
+                        current_fragment = (
                             f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                             f'{eachdoc["content"]} [document {file_id+1} end]')
+                if total_length + len(current_fragment) <= max_tokens:
+                    retrieve_results.append(current_fragment)
+                    total_length += len(current_fragment)
+                else:
+                    break
                 retrieve_results = '\n\n'.join(retrieve_results)
                 phyto_response = await phyto_chat(
                     user_query=get_prompt(
