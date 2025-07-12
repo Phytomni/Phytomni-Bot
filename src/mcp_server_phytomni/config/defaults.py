@@ -215,6 +215,10 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
             for tasks related to gene function analysis.
     """
     MAX_CONCURRENCY: int = Field(8)
+    CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
+                                 'create_task')
+    UPDATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
+                                 'update_task')
 
 
 class InSilicoResearchConfig(AnalystConfig):

@@ -594,6 +594,8 @@ async def gene_retrieve(
 async def async_gene_function(
     species_code: str,
     gene_id: str,
+    create_task_url: str = dgc.CREATE_TASK_URL,
+    update_task_url: str = dgc.UPDATE_TASK_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
@@ -625,8 +627,15 @@ async def async_gene_function(
     max_concurrency: int = dgc.MAX_CONCURRENCY,
 ) -> Dict[str, Any]:
     manager = _get_manager()
-    task_id = manager.create_task('', '')
-    response = create_task('http://1.95.48.200:8082/v1/nky/server/create_task', task_id, 'running', 'DeepGenomeAgent')
+    task_id = manager.create_task()
+    _ = await create_task(
+        url=create_task_url,
+        server_id=task_id,
+        server_status='running',
+        tool_name='DeepGenomeAgent',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries)
 
     async def gene_function(
         species_code: str,
@@ -923,8 +932,16 @@ async def async_gene_function(
                     retriable_codes=retriable_codes,
                     max_retries=max_retries,
                 )
-        manager.update_task_status(task_id, 'finished')
-        response = update_task('http://1.95.48.200:8082/v1/nky/server/update_task', task_id, 'finished', 'xxx', 'xxx')
+        manager.update_task(task_id, 'finished', '', '')
+        _ = await update_task(
+            url=update_task_url,
+            server_id=task_id,
+            server_status='finished',
+            server_file_path='',
+            tool_result='',
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries)
 
     def run_async():
         asyncio.run(gene_function(
