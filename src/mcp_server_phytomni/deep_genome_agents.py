@@ -888,11 +888,11 @@ async def async_gene_function(
                         current_fragment = (
                             f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                             f'{eachdoc["content"]} [document {file_id+1} end]')
-                if total_length + len(current_fragment) <= max_tokens:
-                    retrieve_results.append(current_fragment)
-                    total_length += len(current_fragment)
-                else:
-                    break
+                    if total_length + len(current_fragment) <= max_tokens:
+                        retrieve_results.append(current_fragment)
+                        total_length += len(current_fragment)
+                    else:
+                        break
                 retrieve_results = '\n\n'.join(retrieve_results)
                 phyto_response = await phyto_chat(
                     user_query=get_prompt(
@@ -911,7 +911,6 @@ async def async_gene_function(
                     base_url=base_url,
                     model=model,
                     frequency_penalty=frequency_penalty,
-                    max_tokens=max_tokens,
                     n=n,
                     presence_penalty=presence_penalty,
                     reasoning_effort=reasoning_effort,
