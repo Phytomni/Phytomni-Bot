@@ -415,43 +415,14 @@ async def gene_annotation(species_code: str,
 def network_to_string(gene_network_list: list,
                       species_gene_symbol_dict: dict,
                       species_gene_anno_dict: dict,
-                      network_type: str,
-                      top_n: int = 10):
-    """Formats gene network information into a string.
-
-    This function takes a list of genes in a network and their associated
-    symbols and annotations, and formats this information into a model-readable
-    string. The string includes the description of each gene and a summary of
-    the top N enriched GO, InterPro, and MapMan terms for the entire network.
-
-    Args:
-        gene_network_list (list): A list of tuples, where each tuple
-                                  represents a gene in the network and
-                                  contains the species code and gene ID.
-        species_gene_symbol_dict (dict): A dictionary mapping a
-                                         (species_code, gene_id) tuple to a
-                                         list of gene symbols.
-        species_gene_anno_dict (dict): A dictionary mapping a
-                                       (species_code, gene_id) tuple to a
-                                       dictionary of gene annotations.
-        network_type (str): The type of the network (e.g., "Orthologous",
-                            "Paralogous"). This is used in the output string.
-        top_n (int, optional): The number of top enriched terms to include in
-                               the summary. Defaults to 10.
-
-    Returns:
-        str: A formatted string containing the gene network information, or a
-             string indicating that no genes of the specified network type
-             were found.
-    """
+                      network_type: str):
     if gene_network_list:
         network_string = ''
         go_id_dict, ip_id_dict, mm_id_dict = {}, {}, {}
         go_count_dict, ip_count_dict, mm_count_dict = {}, {}, {}
         for species_gene in gene_network_list:
             if species_gene in species_gene_symbol_dict:
-                symbol_string = '|'.join(species_gene_symbol_dict[
-                    species_gene]).replace('\n', '|')
+                symbol_string = '|'.join(species_gene_symbol_dict[species_gene]).replace('\n', '|')
             else:
                 symbol_string = species_gene[1]
             if species_gene in species_gene_anno_dict:
@@ -484,26 +455,17 @@ def network_to_string(gene_network_list: list,
             else:
                 description_string = ''
             if description_string:
-                network_string += f'{SPECIES_CODE_MAP[species_gene[0]]}: '
-                network_string += f'{symbol_string}: {description_string}\n'
-        go_sorted_ids = sorted(go_count_dict.items(), key=lambda x: x[1],
-                               reverse=True)[:top_n]
-        go_all_string = '; '.join([go_id_dict[id] for id, count in
-                                   go_sorted_ids if id in go_id_dict])
-        network_string += f'{network_type} genes TOP {top_n} '
-        network_string += f'GO enrichment results: {go_all_string}\n'
-        ip_sorted_ids = sorted(ip_count_dict.items(), key=lambda x: x[1],
-                               reverse=True)[:top_n]
-        ip_all_string = '; '.join([ip_id_dict[id] for id, count in
-                                   ip_sorted_ids if id in ip_id_dict])
-        network_string += f'{network_type} genes TOP {top_n} '
-        network_string += f'InterPro enrichment results: {ip_all_string}\n'
-        mm_sorted_ids = sorted(mm_count_dict.items(), key=lambda x: x[1],
-                               reverse=True)[:top_n]
-        mm_all_string = '; '.join([mm_id_dict[id] for id, count in
-                                   mm_sorted_ids if id in mm_id_dict])
-        network_string += f'{network_type} genes TOP {top_n} '
-        network_string += f'MapMan enrichment results: {mm_all_string}\n'
+                each_gene_string = f'{SPECIES_CODE_MAP[species_gene[0]]}: {symbol_string}: {description_string}\n'
+                network_string += each_gene_string
+        go_sorted_ids = sorted(go_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
+        go_all_string = '; '.join([go_id_dict[id] for id, count in go_sorted_ids if id in go_id_dict])
+        network_string += f'{network_type} genes TOP 10 GO enrichment results: {go_all_string}\n'
+        ip_sorted_ids = sorted(ip_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
+        ip_all_string = '; '.join([ip_id_dict[id] for id, count in ip_sorted_ids if id in ip_id_dict])
+        network_string += f'{network_type} genes TOP 10 InterPro enrichment results: {ip_all_string}\n'
+        mm_sorted_ids = sorted(mm_count_dict.items(), key=lambda x: x[1], reverse=True)[:10]
+        mm_all_string = '; '.join([mm_id_dict[id] for id, count in mm_sorted_ids if id in mm_id_dict])
+        network_string += f'{network_type} genes TOP 10 MapMan enrichment results: {mm_all_string}\n'
         return network_string
     else:
         return f'No {network_type} genes'
@@ -632,8 +594,6 @@ async def gene_retrieve(
 async def async_gene_function(
     species_code: str,
     gene_id: str,
-    create_task_url: str = dgc.CREATE_TASK_URL,
-    update_task_url: str = dgc.UPDATE_TASK_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
@@ -665,15 +625,8 @@ async def async_gene_function(
     max_concurrency: int = dgc.MAX_CONCURRENCY,
 ) -> Dict[str, Any]:
     manager = _get_manager()
-    task_id = manager.create_task()
-    _ = await create_task(
-        url=create_task_url,
-        server_id=task_id,
-        server_status='running',
-        tool_name='DeepGenomeAgent',
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries)
+    task_id = manager.create_task('', '')
+    response = create_task('http://1.95.48.200:8082/v1/nky/server/create_task', task_id, 'running', 'DeepGenomeAgent')
 
     async def gene_function(
         species_code: str,
@@ -826,16 +779,14 @@ async def async_gene_function(
                 final prompt.
         """
         user_id = uuid.uuid1()
-        output_dir = create_output_dir(user_id, gene_id)
+        output = create_output_dir(user_id, gene_id)
         species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
             ')').lower()
         analysis_task = analysis_module(species=species_str,
                                         gene_id=gene_id,
-                                        output=output_dir,
+                                        output=output,
                                         user_id=user_id,
                                         batch=True)
-        analysis_task_str = json.dumps(analysis_task)
-        manager.update_task(task_id, 'running', analysis_task_str, output_dir)
 
         gene_network_results = await gene_network(
             species_code=species_code,
@@ -891,109 +842,90 @@ async def async_gene_function(
         for species_gene, gene_symbol_list in zip(
                 species_gene_list, gene_symbol_results):
             if gene_symbol_list and gene_symbol_list is not McpError:
-                species_gene_symbol_dict.update({
-                    species_gene: gene_symbol_list})
+                species_gene_symbol_dict.update({species_gene: gene_symbol_list})
         species_gene_anno_dict = {}
         for species_gene, gene_anno_dict in zip(
                 species_gene_list, gene_anno_results):
             if gene_anno_dict and gene_anno_dict is not McpError:
                 species_gene_anno_dict.update({species_gene: gene_anno_dict})
 
-        gene_retrieve_results = await gene_retrieve(
-            species=SPECIES_CODE_MAP[species_code],
-            gene_symbol_list=species_gene_symbol_dict[(species_code, gene_id)],
-            repo_id_dict=repo_id_dict,
-            page_num=page_num,
-            filter_string=filter_string,
-            extra_repo_ids=extra_repo_ids,
-            score_threshold=score_threshold,
-            top_n=top_n,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-            semaphore=semaphore,
-        )
-        retrieve_results = []
-        total_length = 0
-        for file_id, eachdoc in enumerate(gene_retrieve_results['doc_list']):
-            if eachdoc["subtitle"]:
-                current_fragment = (
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
-                    f'[document {file_id+1} end]')
-            else:
-                current_fragment = (
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["content"]} [document {file_id+1} end]')
-            if total_length + len(current_fragment) <= max_tokens:
-                retrieve_results.append(current_fragment)
-                total_length += len(current_fragment)
-            else:
-                break
-        retrieve_results = '\n\n'.join(retrieve_results)
+        tasks = []
+        for species_gene, gene_symbol_list in species_gene_symbol_dict.items():
+            species = SPECIES_CODE_MAP[species_gene[0]]
+            tasks.append(gene_retrieve(
+                species=species,
+                gene_symbol_list=gene_symbol_list,
+                repo_id_dict=repo_id_dict,
+                page_num=page_num,
+                filter_string=filter_string,
+                extra_repo_ids=extra_repo_ids,
+                score_threshold=score_threshold,
+                top_n=top_n,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                semaphore=semaphore,
+            ))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        species_gene_doc_dict = {}
+        for species_gene, gene_doc_dict in zip(species_gene_symbol_dict.keys(), results):
+            if gene_doc_dict['doc_list']:
+                species_gene_doc_dict.update({species_gene: gene_doc_dict})
 
-        orthologs_string = network_to_string(gene_orthologs_list,
-                                             species_gene_symbol_dict,
-                                             species_gene_anno_dict,
-                                             'Orthologous')
-        paralogs_string = network_to_string(gene_paralogs_list,
-                                            species_gene_symbol_dict,
-                                            species_gene_anno_dict,
-                                            'Paralogous')
-        interaction_string = network_to_string(gene_interaction_list,
-                                               species_gene_symbol_dict,
-                                               species_gene_anno_dict,
-                                               'Potential interacting')
-        gene_anno = species_gene_anno_dict[(species_code, gene_id)]
-        phyto_response = await phyto_chat(
-            user_query=get_prompt(
-                prompt_file,
-                'user/gene_function_network_anno',
-                {
-                    'species': SPECIES_CODE_MAP[species_code],
-                    'gene_string': '|'.join(species_gene_symbol_dict[
-                        (species_code, gene_id)]),
-                    'retrieve_results': retrieve_results,
-                    'description_string': gene_anno['description'],
-                    'go_string': '; '.join([go_list[1] for go_list
-                                            in gene_anno['go']]),
-                    'interpro_string': '; '.join([ip_list[1] for ip_list
-                                                  in gene_anno['interpro']]),
-                    'mapman_string': '; '.join([mm_list[1] for mm_list
-                                                in gene_anno['mapman']]),
-                    'orthologs_string': orthologs_string,
-                    'paralogs_string': paralogs_string,
-                    'interaction_string': interaction_string,
-                },
-            ),
-            prompt_file=prompt_file,
-            prompt_path=prompt_path,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            frequency_penalty=frequency_penalty,
-            n=n,
-            presence_penalty=presence_penalty,
-            reasoning_effort=reasoning_effort,
-            response_format=response_format,
-            stream=stream,
-            temperature=temperature,
-            top_p=top_p,
-            user=user,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        )
-        manager.update_task(task_id, 'finished', analysis_task_str, output_dir)
-        _ = await update_task(
-            url=update_task_url,
-            server_id=task_id,
-            server_status='finished',
-            server_file_path='',
-            tool_result=json.dumps(phyto_response),
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries)
+                all_doc_list = []
+                all_doc_list.extend(gene_doc_dict['doc_list'])
+
+                retrieve_results = []
+                total_length = 0
+                for file_id, eachdoc in enumerate(species_gene_doc_dict[
+                        (species_code, gene_id)]['doc_list']):
+                    if eachdoc["subtitle"]:
+                        current_fragment = (
+                            f'[document {file_id+1} begin] {eachdoc["title"]}\n'
+                            f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
+                            f'[document {file_id+1} end]')
+                    else:
+                        current_fragment = (
+                            f'[document {file_id+1} begin] {eachdoc["title"]}\n'
+                            f'{eachdoc["content"]} [document {file_id+1} end]')
+                if total_length + len(current_fragment) <= max_tokens:
+                    retrieve_results.append(current_fragment)
+                    total_length += len(current_fragment)
+                else:
+                    break
+                retrieve_results = '\n\n'.join(retrieve_results)
+                phyto_response = await phyto_chat(
+                    user_query=get_prompt(
+                        prompt_file,
+                        'user/gene_function',
+                        {
+                            'species': SPECIES_CODE_MAP[species_code],
+                            'gene_string': '|'.join(species_gene_symbol_dict[
+                                (species_code, gene_id)]),
+                            'retrieve_results': retrieve_results,
+                        },
+                    ),
+                    prompt_file=prompt_file,
+                    prompt_path=prompt_path,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    frequency_penalty=frequency_penalty,
+                    max_tokens=max_tokens,
+                    n=n,
+                    presence_penalty=presence_penalty,
+                    reasoning_effort=reasoning_effort,
+                    response_format=response_format,
+                    stream=stream,
+                    temperature=temperature,
+                    top_p=top_p,
+                    user=user,
+                    timeout=timeout,
+                    retriable_codes=retriable_codes,
+                    max_retries=max_retries,
+                )
+        manager.update_task_status(task_id, 'finished')
+        response = update_task('http://1.95.48.200:8082/v1/nky/server/update_task', task_id, 'finished', 'xxx', 'xxx')
 
     def run_async():
         asyncio.run(gene_function(
@@ -1053,7 +985,7 @@ async def get_interaction_gene_list(gene_id):
 
 async def evolution_analysis(species: str,
                              gene_id,
-                             output='obs://genomiagent/test/output',
+                             output='/obs/phytomni/agent_data/test/test/',
                              user_id='',
                              batch=False):
     # TODO: implement evolution analysis
@@ -1070,14 +1002,12 @@ async def evolution_analysis(species: str,
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        evo_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-evo-task", 
+        compute_resource="medium")
+ 
     task = {
-        'evolution_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'evolution_task': evo_task
     }
     
     return task
@@ -1085,7 +1015,7 @@ async def evolution_analysis(species: str,
 
 async def protein_function_analysis(species,
                                     gene_id,
-                                    output='obs://genomiagent/test/output',
+                                    output='/obs/phytomni/agent_data/test/test/',
                                     user_id='',
                                     batch=False):
     # TODO: implement deepgo2 analysis
@@ -1102,14 +1032,12 @@ async def protein_function_analysis(species,
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        deepgo_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-proteinfunction-task", 
+        compute_resource="large")
+    
     task = {
-        'protein_function_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'protein_function_task': deepgo_task
     }
 
     return task
@@ -1117,7 +1045,7 @@ async def protein_function_analysis(species,
 
 async def protein_structure_analysis(species,
                                      gene_id,
-                                     output='obs://genomiagent/test/output',
+                                     output='/obs/phytomni/agent_data/test/test/',
                                      user_id='',
                                      batch=False):
     # TODO: implement structure analysis
@@ -1134,14 +1062,12 @@ async def protein_structure_analysis(species,
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        af3_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-structure-task", 
+        compute_resource="medium")
+
     task = {
-        'protein_structure_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'protein_structure_task': af3_task
     }
 
     return task
@@ -1149,7 +1075,7 @@ async def protein_structure_analysis(species,
 
 async def promoter_analysis(species,
                             gene_id,
-                            output='obs://genomiagent/test/output',
+                            output='/obs/phytomni/agent_data/test/test/',
                             user_id='',
                             batch=False):
     # TODO: implement promoter analysis
@@ -1161,19 +1087,17 @@ async def promoter_analysis(species,
     goal = get_prompt('ai4ps/.prompts.yaml', 'user/promoter_analysis',
                       {'gene_id': gene_id})
     meta = get_prompt('ai4ps/.prompts.yaml', 'user/promoter_analysis_meta')
-    prompter_task = await submit(
+    promoter_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        prompter_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-motif-task", 
+        compute_resource="small")
+
     task = {
-        'promoter_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'promoter_task': promoter_task
     }
 
     return task
@@ -1181,7 +1105,7 @@ async def promoter_analysis(species,
 
 async def protein_design_analysis(species,
                                   gene_id,
-                                  output='obs://genomiagent/test/output',
+                                  output='/obs/phytomni/agent_data/test/test/',
                                   user_id='',
                                   batch=False):
     # TODO: implement protein_design analysis
@@ -1198,14 +1122,12 @@ async def protein_design_analysis(species,
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        pr_design_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-prdesign-task", 
+        compute_resource="medium")
+
     task = {
-        'protein_design_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'protein_design_task': pr_design_task
     }
 
     return task
@@ -1213,7 +1135,7 @@ async def protein_design_analysis(species,
 
 async def gene_expression_tissues(species, 
                                   gene_id, 
-                                  output='obs://genomiagent/test/output', 
+                                  output='/obs/phytomni/agent_data/test/test/', 
                                   user_id='', 
                                   batch=False):
     if not batch:
@@ -1229,14 +1151,12 @@ async def gene_expression_tissues(species,
         data_list=tissues_data,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    tissues_task_id = json.loads(
-        tissues_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-tissues-task", 
+        compute_resource="small")
+
     task = {
-        'tissues_task': {
-            'task_id': tissues_task_id, 
-            'output': output
-        }
+        'tissues_task': tissues_task
     }
 
     return task
@@ -1244,7 +1164,7 @@ async def gene_expression_tissues(species,
 
 async def gene_expression_cultivars(species, 
                                     gene_id, 
-                                    output='obs://genomiagent/test/output', 
+                                    output='/obs/phytomni/agent_data/test/test/', 
                                     user_id='', 
                                     batch=False):
     if not batch:
@@ -1260,14 +1180,12 @@ async def gene_expression_cultivars(species,
         data_list=cultivars_data,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    cultivars_task_id = json.loads(
-        cultivars_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-cultivars-task", 
+        compute_resource="small")
+
     task = {
-        'cultivars_task': {
-            'task_id': cultivars_task_id, 
-            'output': output
-        }
+        'cultivars_task': cultivars_task
     }
 
     return task
@@ -1275,7 +1193,7 @@ async def gene_expression_cultivars(species,
 
 async def gene_expression_genotypes(species, 
                                     gene_id, 
-                                    output='obs://genomiagent/test/output', 
+                                    output='/obs/phytomni/agent_data/test/test/', 
                                     user_id='', 
                                     batch=False):
     if not batch:
@@ -1291,14 +1209,12 @@ async def gene_expression_genotypes(species,
         data_list=genotypes_data,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    genotypes_task_id = json.loads(
-        genotypes_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-genotypes-task", 
+        compute_resource="small")
+
     task = {
-        'genotypes_task': {
-            'task_id': genotypes_task_id, 
-            'output': output
-        }
+        'genotypes_task': genotypes_task
     }
 
     return task
@@ -1306,7 +1222,7 @@ async def gene_expression_genotypes(species,
 
 async def gene_expression_treatments(species, 
                                      gene_id, 
-                                     output='obs://genomiagent/test/output', 
+                                     output='/obs/phytomni/agent_data/test/test/', 
                                      user_id='', 
                                      batch=False):
     if not batch:
@@ -1322,14 +1238,12 @@ async def gene_expression_treatments(species,
         data_list=treatments_data,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    treatments_task_id = json.loads(
-        treatments_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-treatments-task", 
+        compute_resource="small")
+
     task = {
-        'treatments_task': {
-            'task_id': treatments_task_id, 
-            'output': output
-        }
+        'treatments_task': treatments_task
     }
 
     return task
@@ -1337,7 +1251,7 @@ async def gene_expression_treatments(species,
 
 async def single_cell_analysis(species, 
                                gene_id, 
-                               output='obs://genomiagent/test/output', 
+                               output='/obs/phytomni/agent_data/test/test/', 
                                user_id='', 
                                batch=False):
     if not batch:
@@ -1352,14 +1266,12 @@ async def single_cell_analysis(species,
         data_list=data_list,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    single_cell_task_id = json.loads(
-        single_cell_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-singlecell-task", 
+        compute_resource="small")
+
     task = {
-        'single_cell_task': {
-            'task_id': single_cell_task_id, 
-            'output': output
-        }
+        'single_cell_task': single_cell_task
     }
 
     return task
@@ -1367,7 +1279,7 @@ async def single_cell_analysis(species,
 
 async def ppi_analysis(species,
                        gene_id,
-                       output='obs://genomiagent/test/output',
+                       output='/obs/phytomni/agent_data/test/test/',
                        user_id='',
                        batch=False):
     # TODO: implement ppi analysis
@@ -1375,10 +1287,7 @@ async def ppi_analysis(species,
     interaction_gene = await get_interaction_gene_list(gene_id)
     if len(interaction_gene) == 0:
         task = {
-            'ppi_task': {
-                'task_id': None, 
-                'output': None
-            }
+            'ppi_task': None
         }
 
         return task
@@ -1395,14 +1304,12 @@ async def ppi_analysis(species,
         data_list=data_list, 
         output_dir=output, 
         meta=meta, 
-        execute_code=True)
-    task_id = json.loads(
-        ppi_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-ppi-task", 
+        compute_resource="large")
+
     task = {
-        'ppi_task': {
-            'task_id': task_id, 
-            'output': output
-        }
+        'ppi_task': ppi_task
     }
 
     return task
@@ -1411,7 +1318,7 @@ async def ppi_analysis(species,
 async def smep_analysis(species,
                         gene_id,
                         epic_type='6mA',
-                        output='obs://genomiagent/test/output',
+                        output='/obs/phytomni/agent_data/test/test/',
                         user_id='',
                         batch=False):
     if not batch:
@@ -1428,14 +1335,12 @@ async def smep_analysis(species,
         data_list=data_list,
         output_dir=output,
         meta=smep_meta,
-        execute_code=True)
-    smep_task_id = json.loads(
-        smep_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-smep-task", 
+        compute_resource="small")
+
     task = {
-        'smep_task': {
-            'task_id': smep_task_id, 
-            'output': output
-        }
+        'smep_task': smep_task
     }
 
     return task
@@ -1443,7 +1348,7 @@ async def smep_analysis(species,
 
 async def smoc_analysis(species,
                         gene_id,
-                        output='obs://genomiagent/test/output',
+                        output='/obs/phytomni/agent_data/test/test/',
                         user_id='',
                         batch=False):
     if not batch:
@@ -1461,14 +1366,12 @@ async def smoc_analysis(species,
         data_list=data_list,
         output_dir=output,
         meta=smoc_meta,
-        execute_code=True)
-    smoc_task_id = json.loads(
-        smoc_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-smoc-task", 
+        compute_resource="small")
+    
     task = {
-        'smoc_task': {
-            'task_id': smoc_task_id, 
-            'output': output
-        }
+        'smoc_task': smoc_task
     }
 
     return task
@@ -1476,7 +1379,7 @@ async def smoc_analysis(species,
 
 async def test_api(species, 
                    gene_id, 
-                   output='obs://genomiagent/test/output', 
+                   output='/obs/phytomni/agent_data/test/test/', 
                    user_id='', 
                    batch=False):
     species_code = 'osa'
@@ -1486,10 +1389,7 @@ async def test_api(species,
     msu_id = result[result.caption == 'msu_gene_id_1'].cell_value.values[0]
     if msu_id == None:
         task = {
-            'tissues_task': {
-                'task_id': None, 
-                'output': None
-            }
+            'tissues_task': None
         }
 
         return task
@@ -1506,14 +1406,12 @@ async def test_api(species,
         data_list=tissues_data,
         output_dir=output,
         meta=meta,
-        execute_code=True)
-    tissues_task_id = json.loads(
-        tissues_task.strip().split('\n\n')[-2].split(':', 1)[-1])['data']['outputs']['responseContent']
+        execute_code=True, 
+        task_name="deepgenome-agents-tissues-task-test", 
+        compute_resource="small")
+
     task = {
-        'tissues_task': {
-            'task_id': tissues_task_id, 
-            'output': output
-        }
+        'tissues_task': tissues_task
     }
 
     return task
@@ -1521,7 +1419,7 @@ async def test_api(species,
 
 async def gene_expression_analysis(species,
                                    gene_id,
-                                   output='obs://genomiagent/test/output',
+                                   output='/obs/phytomni/agent_data/test/test/',
                                    user_id='',
                                    batch=False):
     # TODO: implement gene_expression analysis
@@ -1537,22 +1435,10 @@ async def gene_expression_analysis(species,
     msu_id = result[result.caption == 'msu_gene_id_1'].cell_value.values[0]
     if msu_id == None:
         task = {
-            'tissues_task': {
-                'task_id': None, 
-                'output': None
-            },
-            'cultivars_task': {
-                'task_id': None, 
-                'output': None
-            },
-            'genotypes_task': {
-                'task_id': None, 
-                'output': None
-            },
-            'treatments_task': {
-                'task_id': None, 
-                'output': None
-            },
+            'tissues_task': None,
+            'cultivars_task': None,
+            'genotypes_task': None,
+            'treatments_task': None
         }
 
         return task
@@ -1590,7 +1476,7 @@ async def gene_expression_analysis(species,
 async def epic_analysis(species,
                         gene_id,
                         epic_type='6mA',
-                        output='obs://genomiagent/test/output',
+                        output='/obs/phytomni/agent_data/test/test/',
                         user_id='',
                         batch=False):
     if not batch:
@@ -1617,7 +1503,7 @@ async def epic_analysis(species,
 
 async def design_module(species,
                         gene_id,
-                        output='obs://genomiagent/test/output',
+                        output='/obs/phytomni/agent_data/test/test/',
                         user_id='',
                         batch=False):
     if not batch:
@@ -1636,7 +1522,7 @@ async def design_module(species,
 
 async def analysis_module(species,
                           gene_id,
-                          output='obs://genomiagent/test/output',
+                          output='/obs/phytomni/agent_data/test/test/',
                           user_id='',
                           batch=False):
     if not batch:

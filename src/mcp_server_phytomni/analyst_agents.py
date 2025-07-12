@@ -1,7 +1,11 @@
-# Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
-# Author: xieshang (xieshang0608@gmail.com)
-#         guxiaofeng (guxiaofeng@caas.cn)
+import os
+import json
+import uuid
+import requests
+from datetime import datetime, timezone, timedelta
+import urllib3
+from obs import ObsClient
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import asyncio
 from time import time
 from typing import Any, List, Dict, Optional, Union
@@ -14,19 +18,19 @@ from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve
-from .utils import get_prompt, get_token
+from .utils import get_prompt, get_token, upload_analyst_agents_data, delete_analyst_agents_data
 
 ac = AnalystConfig()
 sc = SensitiveConfig().load()
 
-
 async def submit(goal_description: str,
-                 data_list: List[Dict[str, str]],
+                 data_list: Dict[str, str],
                  output_dir: str = ac.OUTPUT_DIR,
                  meta: Optional[str] = None,
-                 use_meta: Optional[bool] = None,
                  execute_code: bool = ac.EXECUTE_CODE,
-                 timeout: float = ac.TIMEOUT,
+                 timeout: float = ac.TIMEOUT, 
+                 task_name: str = ac.TASK_NAME, 
+                 compute_resource: str = ac.COMPUTE_RESOURCE
                  ) -> Dict[str, str]:
     """Submit analysis task to Bioinformatics Agents.
 
@@ -39,74 +43,221 @@ async def submit(goal_description: str,
         output_dir: OBS path for storing analysis results
         meta: Step-by-step instructions for processing
             - Format: "step1, operation; step2, operation..."
-        use_meta:
-            - Auto-determined if not provided (enabled if meta exists)
-            - True: Use provided meta instructions
-            - False: Ignore meta and use goal_description only
         execute_code: Enable automated code execution in workflow
         timeout: Total request timeout (min 5s connect timeout)
+        task_name: task name in ai4s platform.
+        compute_resource: the compute resource in this submit task.
 
     Returns:
         Task submission response with:
             - task_id: Unique identifier for tracking
-            - status: Initial submission status
-            - result: Empty for new tasks
+            - output_dir: The output results dirctory
+            - job_name: The job name in ai4s platform
+            - compute_resource: The compute resouce in this task
             - error: Error message if failed
 
     Raises:
         McpError: On submission failure with error code and message
     """
-    if use_meta is None:
-        if meta:
-            use_meta = True
-        else:
-            meta = None
-            use_meta = False
-    inputs = {
-        "query": goal_description,
-        "tenant_name": sc.DOMAIN_NAME,
-        "data_list": data_list,
-        "output_dir": output_dir,
-        "goal_description": goal_description,
-        "meta": meta,
-        "use_meta": use_meta,
-        "execute_code": execute_code,
-        "model_params": {
-            "type": "openai",
-            "url": sc.CODER_URL,
-            "model": sc.CODER_MODEL,
-        },
-        "LLM_Auth": sc.CODER_API.get_secret_value(),
+    valid_resources = {"small", "medium", "large"}
+    if compute_resource not in valid_resources:
+        raise ValueError(f"compute_resource must be one of {valid_resources}")
+    else:
+        cpu_number = ac.RESOURCE[compute_resource]['cpu']
+        memory = ac.RESOURCE[compute_resource]['memory']
+        app_id = ac.APP_ID[compute_resource]
+    meta = meta + '\nlast step, compress the output folder into a zip file.(zip -r $output_dir.zip $output_dir)'
+    task_name = task_name.replace('_', '-')
+    # create json format input
+    data = {
+        "data_list": data_list, 
+        "output_dir": output_dir, 
+        "goal_description": goal_description, 
+        "meta": meta, 
+        "execute_code": execute_code, 
+        "model_url": sc.CODER_URL,
+        "model_name": sc.CODER_MODEL,
+        "api_key": sc.CODER_API.get_secret_value()
     }
-    payload = {
-        "inputs": inputs,
-        "globals": {},
-        "plugin_configs": [
-            {"plugin_id": "f8a51bd4-dd69-4ba8-a9d5-5cd80a0f3a0d", "config": {}}
-        ],
+    file_id = uuid.uuid1()
+    with open(f"./{file_id}.json", 'w') as ga_data_out:
+        json.dump(data, ga_data_out)
+    print(f'upload data: {file_id}.json')
+    # upload obs
+    try:
+        data_path = upload_analyst_agents_data(f'./{file_id}.json')
+        if os.path.exists(f'./{file_id}.json'):
+            os.remove(f'./{file_id}.json')
+    except OSError:
+        if os.path.exists(f'./{file_id}.json'):
+            os.remove(f'./{file_id}.json')
+        raise OSError('Data information upload obs error.')
+    
+    # submit task
+    timestamp = datetime.now().strftime("%H%M%S-%f")
+    job_name = f"{task_name}-{timestamp}"
+
+    job_headers = {"Content-Type": "application/json", "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)}
+    job_data = {
+        "name": job_name,
+        "labels": [],
+        "description": "",
+        "timeout": 10080,
+        "output_dir": "",
+        "tasks":[{
+            "task_name": f"analyst-agents-{compute_resource}",
+            "display_name": job_name,
+            "inputs":[
+                {"name": "obs-mount", "type": "DIRECTORY", "description": "", "required": True, "pattern": "", "values": ["phytomni:/agent_data/"], "enum": [], "concurrent": ""},
+                {"name": "meta-file", "type": "FILE", "description": "", "required": True, "pattern": "", "values": [data_path], "enum": [], "concurrent": ""}
+            ],
+            "outputs": [],
+            "output_dir": "",
+            "resources": {"cpu": f"{cpu_number}C", "cpu_type": "X86", "gpu": "0", "gpu_type": "", "memory": f"{memory}G"},
+            "summary": "",
+            "labels": []
+        }],
+        "io_acc_id": "",
+        "ioType": "",
+        "priority": 0,
+        "automatic": True,
+        "node_labels": [],
+        "tool_id": app_id,
+        "tool_type": "app"
     }
+    print(job_headers)
+
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         try:
             response = await client.post(
                 url=ac.ANALYSIS_URL,
-                headers={
-                    "X-Auth-Token": await get_token(),
-                    "Content-Type": "application/json"},
-                json=payload,
-                timeout=timeout,
+                headers=job_headers,
+                json=job_data
             )
-            response.raise_for_status()
-            return response.text
+            
+            if response.status_code == 201:
+                response_results = {
+                    'task_id': json.loads(response.text)['id'], 
+                    'output_dir': output_dir, 
+                    'job_name': job_name, 
+                    'compute_resource': compute_resource
+                }
+                
+                return response_results
+            else:
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Failed to submit task"))
         except HTTPError as e:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
                 message=f"Failed to submit task: {str(e)}")) from e
 
 
+async def task_delete(task_id: str,
+                      timeout: float = ac.TIMEOUT,
+                      ) -> Dict[str, str]:
+    """Check task execution status.
+
+    Args:
+        task_id: Unique identifier from submit response
+        timeout: Total request timeout (min 5s connect timeout)
+
+    Returns:
+        Task status details with:
+            - task_id: Confirmation of requested ID
+            - status: One of 'pending', 'running', 'completed', 'failed'
+            - result: Analysis output (if completed)
+            - error: Error details (if failed)
+
+    Raises:
+        McpError: On status check failure with error code and message
+    """
+    client_timeout = Timeout(timeout, connect=timeout)
+    json_data = {"force": True}
+    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+        try:
+            response = await client.post(
+                url=f'{ac.ANALYSIS_URL}/{task_id}/terminate',
+                headers={"Content-Type": "application/json", 
+                         "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)},
+                json=json_data, 
+                timeout=timeout
+            )
+            if response.status_code == 200:
+                print(f"Delete task {task_id} success.")
+            else:
+                print(f"Delete task {task_id} failed.")
+        except HTTPError as e:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f"Failed to delete task {str(e)}")) from e
+
+
+async def task_status(task_id: str,
+                      timeout: float = ac.TIMEOUT,
+                      ) -> Dict[str, str]:
+    """Check task execution status.
+
+    Args:
+        task_id: Unique identifier from submit response
+        timeout: Total request timeout (min 5s connect timeout)
+
+    Returns:
+        Task status details with:
+            - task_id: Confirmation of requested ID
+            - status: One of 'pending', 'running', 'completed', 'failed'
+            - result: Analysis output (if completed)
+            - error: Error details (if failed)
+
+    Raises:
+        McpError: On status check failure with error code and message
+    """
+    client_timeout = Timeout(timeout, connect=timeout)
+    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+        try:
+            response = await client.get(
+                url=f'{ac.ANALYSIS_URL}/{task_id}',
+                headers={"Content-Type": "application/json", 
+                         "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)},
+                timeout=timeout
+            )
+            if response.status_code == 200:
+                return response
+            else:
+                print(f"Check task {task_id} status failed.")
+        except HTTPError as e:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f"Failed to get task status: {str(e)}")) from e
+
+
+async def task_log(task_id: str, 
+                   compute_resource: str, 
+                   timeout: float = ac.TIMEOUT):
+    client_timeout = Timeout(timeout, connect=timeout)
+    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+        try:
+            response = await client.get(
+                url=f'{ac.ANALYSIS_URL}/{task_id}/logs?task_name={compute_resource.lower()}',
+                headers={"Content-Type": "application/json", 
+                         "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)},
+                timeout=timeout
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"Check task {task_id} log failed.")
+        except HTTPError as e:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f"Failed to get task log: {str(e)}")) from e
+
+
 async def plan_submit(
     goal_description: str,
-    data_list: List[Dict[str, str]],
+    data_list: Dict[str, str],
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -114,6 +265,7 @@ async def plan_submit(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -157,6 +309,8 @@ async def plan_submit(
             Defaults to `MODEL_ID`.
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             plan generation step. Defaults to `FREQUENCY_PENALTY`.
+        max_tokens: Maximum number of tokens to generate in the plan.
+            Defaults to `MAX_TOKENS`.
         n: Number of plan choices to generate by the Phyto model.
             Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
@@ -203,6 +357,7 @@ async def plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
+        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -220,9 +375,9 @@ async def plan_submit(
         data_list=data_list,
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'],
-        use_meta=True,
         execute_code=execute_code,
-        timeout=timeout,
+        task_name="plan-submit-task", 
+        timeout=timeout
     )
     return response
 
@@ -365,22 +520,16 @@ async def retrieve_plan_submit(
         max_retries=max_retries,
     )
     retrieve_results = []
-    total_length = 0
     for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
         if eachdoc["subtitle"]:
-            current_fragment = (
+            retrieve_results.append(
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
                 f'[document {file_id+1} end]')
         else:
-            current_fragment = (
+            retrieve_results.append(
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["content"]} [document {file_id+1} end]')
-        if total_length + len(current_fragment) <= max_tokens:
-            retrieve_results.append(current_fragment)
-            total_length += len(current_fragment)
-        else:
-            break
     retrieve_results = '\n\n'.join(retrieve_results)
     user_query = get_prompt(
         prompt_file, 'user/analysis_retrieve',
@@ -393,6 +542,7 @@ async def retrieve_plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
+        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -410,81 +560,11 @@ async def retrieve_plan_submit(
         data_list=data_list,
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'] + meta_meta if meta_meta else phyto_response['choices'][0]['message']['content'],
-        use_meta=True,
         execute_code=execute_code,
+        task_name="retrieve-plan-submit", 
         timeout=timeout,
     )
     return response
-
-
-async def task_status(task_id: str,
-                      timeout: float = ac.TIMEOUT,
-                      ) -> Dict[str, str]:
-    """Check task execution status.
-
-    Args:
-        task_id: Unique identifier from submit response
-        timeout: Total request timeout (min 5s connect timeout)
-
-    Returns:
-        Task status details with:
-            - task_id: Confirmation of requested ID
-            - status: One of 'pending', 'running', 'completed', 'failed'
-            - result: Analysis output (if completed)
-            - error: Error details (if failed)
-
-    Raises:
-        McpError: On status check failure with error code and message
-    """
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        try:
-            response = await client.get(
-                url=f'{ac.ANALYSIS_URL}/{task_id}',
-                headers={"Content-Type": "application/json"},
-                timeout=timeout,
-                )
-            response.raise_for_status()
-            return response.json()
-        except HTTPError as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f"Failed to get task status: {str(e)}")) from e
-
-
-async def task_delete(task_id: str,
-                      timeout: float = ac.TIMEOUT,
-                      ) -> Dict[str, str]:
-    """Check task execution status.
-
-    Args:
-        task_id: Unique identifier from submit response
-        timeout: Total request timeout (min 5s connect timeout)
-
-    Returns:
-        Task status details with:
-            - task_id: Confirmation of requested ID
-            - status: One of 'pending', 'running', 'completed', 'failed'
-            - result: Analysis output (if completed)
-            - error: Error details (if failed)
-
-    Raises:
-        McpError: On status check failure with error code and message
-    """
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        try:
-            response = await client.delete(
-                url=f'{ac.ANALYSIS_URL}/{task_id}',
-                headers={"Content-Type": "application/json"},
-                timeout=timeout,
-                )
-            response.raise_for_status()
-            return response.json()
-        except HTTPError as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f"Failed to get task status: {str(e)}")) from e
 
 
 async def wait_for_completion(
@@ -517,11 +597,11 @@ async def wait_for_completion(
     start_time = time()
     while (time() - start_time) < max_poll:
         status_data = await task_status(task_id, timeout)
-        if status_data.get('status') == 'failed':
+        if status_data.get('status') == 'FAILED':
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
                 message="Task failed"))
-        if 'result' in status_data:
+        if status_data.get('status') == 'FINISH':
             return status_data
         await asyncio.sleep(poll_interval)
     raise asyncio.TimeoutError(
@@ -571,7 +651,6 @@ async def submit_wait(goal_description: str,
         data_list=data_list,
         output_dir=output_dir,
         meta=meta,
-        use_meta=use_meta,
         execute_code=execute_code,
         timeout=timeout,
     )
@@ -594,6 +673,7 @@ async def plan_submit_wait(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -643,6 +723,8 @@ async def plan_submit_wait(
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             plan generation step within `plan_submit`.
             Defaults to `FREQUENCY_PENALTY`.
+        max_tokens: Maximum number of tokens to generate in the plan by the
+            Phyto model within `plan_submit`. Defaults to `MAX_TOKENS`.
         n: Number of plan choices to generate by the Phyto model within
             `plan_submit`. Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
@@ -699,6 +781,7 @@ async def plan_submit_wait(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
+        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
