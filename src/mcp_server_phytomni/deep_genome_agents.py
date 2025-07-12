@@ -664,6 +664,123 @@ async def async_gene_function(
     max_retries: int = dgc.MAX_RETRIES,
     max_concurrency: int = dgc.MAX_CONCURRENCY,
 ) -> Dict[str, Any]:
+    """Determine and summarize the function of a specified gene.
+
+    This function orchestrates a series of asynchronous operations to gather
+    information about a given gene and its network, then uses a large language
+    model (`phyto_chat`) to generate a summary of its function.
+    The process involves:
+    1. Retrieving gene network information (orthologs, paralogs, interactors)
+       using `gene_network`.
+    2. Fetching gene symbols for the primary gene and its network neighbors
+       using `gene_symbol`.
+    3. Obtaining gene annotations (description, GO, InterPro, MapMan) for these
+       genes using `gene_annotation`.
+    4. Retrieving relevant documents from literature repositories for these
+       genes and their symbols using `gene_retrieve`.
+    5. Constructing a prompt with the species, primary gene symbols, and
+       retrieved documents for the primary gene.
+    6. Calling `phyto_chat` to generate a textual summary of the gene's
+       function.
+    7. Augmenting the `phyto_chat` response with the full list of retrieved
+       documents.
+
+    A semaphore is used to limit the concurrency of `gene_symbol`,
+    `gene_annotation`, and `gene_retrieve` calls.
+
+    Args:
+        species_code: The species code for the primary gene of interest.
+        gene_id: The identifier of the primary gene of interest.
+        workspace_id: Identifier for the workspace containing the data,
+            passed to `gene_network`, `gene_symbol`, and `gene_annotation`
+            for database queries. Defaults to `WORKSPACE_ID`.
+        subject_id: Identifier for the specific database subject or schema to
+            query against, passed to `gene_network`, `gene_symbol`, and
+            `gene_annotation`. Defaults to `SUBJECT_ID`.
+        dialog_id: Identifier for the current dialog or conversation session,
+            passed to `gene_network`, `gene_symbol`, and `gene_annotation`.
+            Defaults to an empty string.
+        need_insight: Flag indicating whether to generate insights, passed to
+            `gene_network`, `gene_symbol`, and `gene_annotation`.
+            Defaults to `NEED_INSIGHT`.
+        repo_id_dict: A dictionary mapping repository IDs (str) to their
+            respective page sizes (int) for document retrieval, passed to
+            `gene_retrieve`. Defaults to `REPO_ID_DICT`.
+        page_num: Pagination page number for retrieval results, passed to
+            `gene_retrieve`. Defaults to `PAGE_NUM`.
+        filter_string: Optional filter criteria string for metadata filtering
+            during document retrieval, passed to `gene_retrieve`.
+            Defaults to `FILTER_STRING`.
+        extra_repo_ids: Optional list of additional repository IDs to include
+            in document retrieval, passed to `gene_retrieve`.
+            Defaults to `EXTRA_REPO_IDS`.
+        score_threshold: Minimum relevance score threshold applied during
+            document retrieval, passed to `gene_retrieve`.
+            Defaults to `SCORE_THRESHOLD`.
+        top_n: The number of top-scoring documents to retrieve, passed to
+            `gene_retrieve`. It affects retrieval for each gene symbol and
+            the documents considered for the primary gene's context.
+            Defaults to `TOP_N`.
+        prompt_file: Path to the prompt template file used by `phyto_chat` for
+            generating the gene function summary. Defaults to `PROMPT_FILE`.
+        prompt_path: Path or key within the `prompt_file` to retrieve the
+            specific system prompt for `phyto_chat`. Defaults to `PROMPT_PATH`.
+        api_key: API key for authentication with the Phyto model.
+            Defaults to `API_KEY`.
+        base_url: Base URL of the Phyto API service (`phyto_chat`).
+            Defaults to `BASE_URL`.
+        model: Identifier of the Phyto model to use via `phyto_chat`.
+            Defaults to `MODEL_ID`.
+        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) for
+            `phyto_chat`. Defaults to `FREQUENCY_PENALTY`.
+        max_tokens: Maximum number of tokens to generate by `phyto_chat`.
+            Defaults to `MAX_TOKENS`.
+        n: Number of summary choices to generate by `phyto_chat`.
+            Defaults to `N`.
+        presence_penalty: Penalty for new tokens (-2.0 to 2.0) for
+            `phyto_chat`. Defaults to `PRESENCE_PENALTY`.
+        reasoning_effort: Specifies the reasoning effort for `phyto_chat`.
+            Defaults to `REASONING_EFFORT`.
+        response_format: Specifies the desired output format for `phyto_chat`.
+            Defaults to `RESPONSE_FORMAT`.
+        stream: Enable real-time token streaming output for `phyto_chat`.
+            Defaults to `STREAM`.
+        temperature: Controls randomness (0.0-1.0) for `phyto_chat`.
+            Defaults to `TEMPERATURE`.
+        top_p: Nucleus sampling threshold (0.0-1.0) for `phyto_chat`.
+            Defaults to `TOP_P`.
+        user: Unique session identifier for the end-user,
+            passed to `phyto_chat`. Defaults to `USER`.
+        timeout: Request timeout in seconds for all underlying asynchronous
+            API calls (`gene_network`, `gene_symbol`, `gene_annotation`,
+            `gene_retrieve`, `phyto_chat`). Defaults to `TIMEOUT`.
+        retriable_codes: List of HTTP status codes that will trigger a retry
+            for underlying API calls. Defaults to `RETRIABLE_CODES`.
+        max_retries: Maximum number of retry attempts for underlying API calls.
+            Defaults to `MAX_RETRIES`.
+        max_concurrency: Maximum number of concurrent asynchronous operations
+            (e.g., `gene_symbol`, `gene_annotation`, `gene_retrieve` calls)
+            controlled by the internal semaphore.
+            Defaults to `MAX_CONCURRENCY`.
+
+    Returns:
+        dict: The response dictionary from `phyto_chat`, which typically
+        includes a 'choices' list with the generated summary of the gene's
+        function. This dictionary is augmented with a 'doc_list' key
+        (containing all documents retrieved for the primary gene and its
+        network neighbors) and a 'total' key (a placeholder integer).
+        Returns an empty dictionary if essential preliminary data (e.g.,
+        symbols or documents for the primary gene) cannot be obtained.
+
+    Raises:
+        McpError: If any of the underlying asynchronous calls (`gene_network`,
+            `gene_symbol`, `gene_annotation`, `gene_retrieve`, `phyto_chat`)
+            fail after all retry attempts.
+        KeyError: If a `species_code` (either the input `species_code` or one
+            derived from `gene_network` results) is not found in the internal
+            `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
+            final prompt.
+    """
     manager = _get_manager()
     task_id = manager.create_task()
     _ = await create_task(
@@ -710,16 +827,17 @@ async def async_gene_function(
     ) -> Dict[str, Any]:
         """Determine and summarize the function of a specified gene.
 
-        This function orchestrates a series of asynchronous operations to gather
-        information about a given gene and its network, then uses a large language
-        model (`phyto_chat`) to generate a summary of its function.
+        This function orchestrates a series of asynchronous operations to
+        gather information about a given gene and its network, then uses a
+        large language model (`phyto_chat`) to generate a summary of its
+        function.
         The process involves:
-        1. Retrieving gene network information (orthologs, paralogs, interactors)
-        using `gene_network`.
+        1. Retrieving gene network information (orthologs, paralogs,
+        interactors) using `gene_network`.
         2. Fetching gene symbols for the primary gene and its network neighbors
         using `gene_symbol`.
-        3. Obtaining gene annotations (description, GO, InterPro, MapMan) for these
-        genes using `gene_annotation`.
+        3. Obtaining gene annotations (description, GO, InterPro, MapMan) for
+        these genes using `gene_annotation`.
         4. Retrieving relevant documents from literature repositories for these
         genes and their symbols using `gene_retrieve`.
         5. Constructing a prompt with the species, primary gene symbols, and
@@ -738,25 +856,25 @@ async def async_gene_function(
             workspace_id: Identifier for the workspace containing the data,
                 passed to `gene_network`, `gene_symbol`, and `gene_annotation`
                 for database queries. Defaults to `WORKSPACE_ID`.
-            subject_id: Identifier for the specific database subject or schema to
-                query against, passed to `gene_network`, `gene_symbol`, and
+            subject_id: Identifier for the specific database subject or schema
+                to query against, passed to `gene_network`, `gene_symbol`, and
                 `gene_annotation`. Defaults to `SUBJECT_ID`.
-            dialog_id: Identifier for the current dialog or conversation session,
-                passed to `gene_network`, `gene_symbol`, and `gene_annotation`.
-                Defaults to an empty string.
-            need_insight: Flag indicating whether to generate insights, passed to
-                `gene_network`, `gene_symbol`, and `gene_annotation`.
+            dialog_id: Identifier for the current dialog or conversation
+                session, passed to `gene_network`, `gene_symbol`, and
+                `gene_annotation`. Defaults to an empty string.
+            need_insight: Flag indicating whether to generate insights, passed
+                to `gene_network`, `gene_symbol`, and `gene_annotation`.
                 Defaults to `NEED_INSIGHT`.
             repo_id_dict: A dictionary mapping repository IDs (str) to their
                 respective page sizes (int) for document retrieval, passed to
                 `gene_retrieve`. Defaults to `REPO_ID_DICT`.
             page_num: Pagination page number for retrieval results, passed to
                 `gene_retrieve`. Defaults to `PAGE_NUM`.
-            filter_string: Optional filter criteria string for metadata filtering
-                during document retrieval, passed to `gene_retrieve`.
+            filter_string: Optional filter criteria string for metadata
+                filtering during document retrieval, passed to `gene_retrieve`.
                 Defaults to `FILTER_STRING`.
-            extra_repo_ids: Optional list of additional repository IDs to include
-                in document retrieval, passed to `gene_retrieve`.
+            extra_repo_ids: Optional list of additional repository IDs to
+                include in document retrieval, passed to `gene_retrieve`.
                 Defaults to `EXTRA_REPO_IDS`.
             score_threshold: Minimum relevance score threshold applied during
                 document retrieval, passed to `gene_retrieve`.
@@ -765,10 +883,12 @@ async def async_gene_function(
                 `gene_retrieve`. It affects retrieval for each gene symbol and
                 the documents considered for the primary gene's context.
                 Defaults to `TOP_N`.
-            prompt_file: Path to the prompt template file used by `phyto_chat` for
-                generating the gene function summary. Defaults to `PROMPT_FILE`.
+            prompt_file: Path to the prompt template file used by `phyto_chat`
+                for generating the gene function summary.
+                Defaults to `PROMPT_FILE`.
             prompt_path: Path or key within the `prompt_file` to retrieve the
-                specific system prompt for `phyto_chat`. Defaults to `PROMPT_PATH`.
+                specific system prompt for `phyto_chat`.
+                Defaults to `PROMPT_PATH`.
             api_key: API key for authentication with the Phyto model.
                 Defaults to `API_KEY`.
             base_url: Base URL of the Phyto API service (`phyto_chat`).
@@ -785,8 +905,8 @@ async def async_gene_function(
                 `phyto_chat`. Defaults to `PRESENCE_PENALTY`.
             reasoning_effort: Specifies the reasoning effort for `phyto_chat`.
                 Defaults to `REASONING_EFFORT`.
-            response_format: Specifies the desired output format for `phyto_chat`.
-                Defaults to `RESPONSE_FORMAT`.
+            response_format: Specifies the desired output format for
+                `phyto_chat`. Defaults to `RESPONSE_FORMAT`.
             stream: Enable real-time token streaming output for `phyto_chat`.
                 Defaults to `STREAM`.
             temperature: Controls randomness (0.0-1.0) for `phyto_chat`.
@@ -798,13 +918,13 @@ async def async_gene_function(
             timeout: Request timeout in seconds for all underlying asynchronous
                 API calls (`gene_network`, `gene_symbol`, `gene_annotation`,
                 `gene_retrieve`, `phyto_chat`). Defaults to `TIMEOUT`.
-            retriable_codes: List of HTTP status codes that will trigger a retry
-                for underlying API calls. Defaults to `RETRIABLE_CODES`.
-            max_retries: Maximum number of retry attempts for underlying API calls.
-                Defaults to `MAX_RETRIES`.
-            max_concurrency: Maximum number of concurrent asynchronous operations
-                (e.g., `gene_symbol`, `gene_annotation`, `gene_retrieve` calls)
-                controlled by the internal semaphore.
+            retriable_codes: List of HTTP status codes that will trigger a
+                retry for underlying API calls. Defaults to `RETRIABLE_CODES`.
+            max_retries: Maximum number of retry attempts for underlying API
+                calls. Defaults to `MAX_RETRIES`.
+            max_concurrency: Maximum number of concurrent asynchronous
+                operations (e.g., `gene_symbol`, `gene_annotation`,
+                `gene_retrieve` calls) controlled by the internal semaphore.
                 Defaults to `MAX_CONCURRENCY`.
 
         Returns:
@@ -817,13 +937,13 @@ async def async_gene_function(
             symbols or documents for the primary gene) cannot be obtained.
 
         Raises:
-            McpError: If any of the underlying asynchronous calls (`gene_network`,
-                `gene_symbol`, `gene_annotation`, `gene_retrieve`, `phyto_chat`)
-                fail after all retry attempts.
-            KeyError: If a `species_code` (either the input `species_code` or one
-                derived from `gene_network` results) is not found in the internal
-                `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
-                final prompt.
+            McpError: If any of the underlying asynchronous calls
+                (`gene_network`, `gene_symbol`, `gene_annotation`,
+                `gene_retrieve`, `phyto_chat`) fail after all retry attempts.
+            KeyError: If a `species_code` (either the input `species_code` or
+                one derived from `gene_network` results) is not found in the
+                internal `SPECIES_CODE_MAP` when preparing data for
+                `gene_retrieve` or the final prompt.
         """
         user_id = uuid.uuid1()
         output_dir = create_output_dir(user_id, gene_id)
