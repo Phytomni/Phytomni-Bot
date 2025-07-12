@@ -2,9 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+import asyncio
 import json
 import uuid
-from asyncio import gather, Semaphore
+from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -16,6 +17,7 @@ from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
 from .knowledge_agents import multi_retrieve
+from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
 from .utils import create_output_dir, get_data_list
 
@@ -88,6 +90,14 @@ SPECIES_CODE_MAP = {
 }
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
+_manager = None
+
+
+def _get_manager():
+    global _manager
+    if _manager is None:
+        _manager = TaskManager()
+    return _manager
 
 
 async def gene_network(species_code: str,
@@ -178,7 +188,7 @@ async def gene_network(species_code: str,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    gene_homology_response, gene_interaction_response = await gather(
+    gene_homology_response, gene_interaction_response = await asyncio.gather(
         homology_task,
         interaction_task
     )
@@ -209,7 +219,7 @@ async def gene_symbol(species_code: str,
                       timeout: float = dgc.TIMEOUT,
                       retriable_codes: List[int] = dgc.RETRIABLE_CODES,
                       max_retries: int = dgc.MAX_RETRIES,
-                      semaphore: Optional[Semaphore] = None
+                      semaphore: Optional[asyncio.Semaphore] = None
                       ) -> List[str]:
     """Retrieve gene symbols for a specific gene ID and species code.
 
@@ -305,7 +315,7 @@ async def gene_annotation(species_code: str,
                           timeout: float = dgc.TIMEOUT,
                           retriable_codes: List[int] = dgc.RETRIABLE_CODES,
                           max_retries: int = dgc.MAX_RETRIES,
-                          semaphore: Optional[Semaphore] = None
+                          semaphore: Optional[asyncio.Semaphore] = None
                           ) -> Dict[str, Union[str, List[str]]]:
     """Retrieve various annotations for a specific gene ID and species code.
 
@@ -371,7 +381,7 @@ async def gene_annotation(species_code: str,
             'What is the mapman_9 and mapman_description_9 whose '
             f'gene_id_9 is {gene_id} and species_code_9 is {species_code}?',
         ]
-        responses = await gather(
+        responses = await asyncio.gather(
             *(nl2sql(
                 message_content=gene_query,
                 workspace_id=workspace_id,
@@ -402,7 +412,10 @@ async def gene_annotation(species_code: str,
         return await get_gene_annotation()
 
 
-def network_to_string(gene_network_list: list, species_gene_symbol_dict: dict, species_gene_anno_dict: dict, network_type: str):
+def network_to_string(gene_network_list: list,
+                      species_gene_symbol_dict: dict,
+                      species_gene_anno_dict: dict,
+                      network_type: str):
     if gene_network_list:
         network_string = ''
         go_id_dict, ip_id_dict, mm_id_dict = {}, {}, {}
@@ -470,7 +483,7 @@ async def gene_retrieve(
     timeout: float = dgc.TIMEOUT,
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
-    semaphore: Optional[Semaphore] = None,
+    semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Retrieve documents related to a list of gene symbols for a given
         species.
@@ -554,7 +567,7 @@ async def gene_retrieve(
                     retriable_codes=retriable_codes,
                     max_retries=max_retries,
                 ))
-            results = await gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             merged_docs = []
             for result in results:
                 if isinstance(result, dict) and 'doc_list' in result:
@@ -578,7 +591,7 @@ async def gene_retrieve(
         return await get_gene_retrieve()
 
 
-async def gene_function(
+async def async_gene_function(
     species_code: str,
     gene_id: str,
     workspace_id: str = dgc.WORKSPACE_ID,
@@ -611,155 +624,173 @@ async def gene_function(
     max_retries: int = dgc.MAX_RETRIES,
     max_concurrency: int = dgc.MAX_CONCURRENCY,
 ) -> Dict[str, Any]:
-    """Determine and summarize the function of a specified gene.
+    manager = _get_manager()
+    task_id = manager.create_task('', '')
+    response = create_task('http://1.95.48.200:8082/v1/nky/server/create_task', task_id, 'running', 'DeepGenomeAgent')
 
-    This function orchestrates a series of asynchronous operations to gather
-    information about a given gene and its network, then uses a large language
-    model (`phyto_chat`) to generate a summary of its function.
-    The process involves:
-    1. Retrieving gene network information (orthologs, paralogs, interactors)
-       using `gene_network`.
-    2. Fetching gene symbols for the primary gene and its network neighbors
-       using `gene_symbol`.
-    3. Obtaining gene annotations (description, GO, InterPro, MapMan) for these
-       genes using `gene_annotation`.
-    4. Retrieving relevant documents from literature repositories for these
-       genes and their symbols using `gene_retrieve`.
-    5. Constructing a prompt with the species, primary gene symbols, and
-       retrieved documents for the primary gene.
-    6. Calling `phyto_chat` to generate a textual summary of the gene's
-       function.
-    7. Augmenting the `phyto_chat` response with the full list of retrieved
-       documents.
+    async def gene_function(
+        species_code: str,
+        gene_id: str,
+        workspace_id: str = dgc.WORKSPACE_ID,
+        subject_id: str = dgc.SUBJECT_ID,
+        dialog_id: str = dgc.DIALOG_ID,
+        need_insight: bool = dgc.NEED_INSIGHT,
+        repo_id_dict: Optional[Dict[str, int]] = dgc.REPO_ID_DICT,
+        page_num: int = dgc.PAGE_NUM,
+        filter_string: Optional[str] = dgc.FILTER_STRING,
+        extra_repo_ids: Optional[List[str]] = dgc.EXTRA_REPO_IDS,
+        score_threshold: float = dgc.SCORE_THRESHOLD,
+        top_n: int = dgc.TOP_N,
+        prompt_file: str = dgc.PROMPT_FILE,
+        prompt_path: str = dgc.PROMPT_PATH,
+        api_key: str = sc.API_KEY.get_secret_value(),
+        base_url: str = sc.BASE_URL,
+        model: str = sc.MODEL_ID,
+        frequency_penalty: float = dgc.FREQUENCY_PENALTY,
+        max_tokens: int = dgc.MAX_TOKENS,
+        n: int = dgc.N,
+        presence_penalty: float = dgc.PRESENCE_PENALTY,
+        reasoning_effort: str = dgc.REASONING_EFFORT,
+        response_format: Dict[str, Union[str, Dict]] = dgc.RESPONSE_FORMAT,
+        stream: bool = dgc.STREAM,
+        temperature: float = dgc.TEMPERATURE,
+        top_p: float = dgc.TOP_P,
+        user: str = dgc.USER,
+        timeout: float = dgc.TIMEOUT,
+        retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+        max_retries: int = dgc.MAX_RETRIES,
+        max_concurrency: int = dgc.MAX_CONCURRENCY,
+    ) -> Dict[str, Any]:
+        """Determine and summarize the function of a specified gene.
 
-    A semaphore is used to limit the concurrency of `gene_symbol`,
-    `gene_annotation`, and `gene_retrieve` calls.
+        This function orchestrates a series of asynchronous operations to gather
+        information about a given gene and its network, then uses a large language
+        model (`phyto_chat`) to generate a summary of its function.
+        The process involves:
+        1. Retrieving gene network information (orthologs, paralogs, interactors)
+        using `gene_network`.
+        2. Fetching gene symbols for the primary gene and its network neighbors
+        using `gene_symbol`.
+        3. Obtaining gene annotations (description, GO, InterPro, MapMan) for these
+        genes using `gene_annotation`.
+        4. Retrieving relevant documents from literature repositories for these
+        genes and their symbols using `gene_retrieve`.
+        5. Constructing a prompt with the species, primary gene symbols, and
+        retrieved documents for the primary gene.
+        6. Calling `phyto_chat` to generate a textual summary of the gene's
+        function.
+        7. Augmenting the `phyto_chat` response with the full list of retrieved
+        documents.
 
-    Args:
-        species_code: The species code for the primary gene of interest.
-        gene_id: The identifier of the primary gene of interest.
-        workspace_id: Identifier for the workspace containing the data,
-            passed to `gene_network`, `gene_symbol`, and `gene_annotation`
-            for database queries. Defaults to `WORKSPACE_ID`.
-        subject_id: Identifier for the specific database subject or schema to
-            query against, passed to `gene_network`, `gene_symbol`, and
-            `gene_annotation`. Defaults to `SUBJECT_ID`.
-        dialog_id: Identifier for the current dialog or conversation session,
-            passed to `gene_network`, `gene_symbol`, and `gene_annotation`.
-            Defaults to an empty string.
-        need_insight: Flag indicating whether to generate insights, passed to
-            `gene_network`, `gene_symbol`, and `gene_annotation`.
-            Defaults to `NEED_INSIGHT`.
-        repo_id_dict: A dictionary mapping repository IDs (str) to their
-            respective page sizes (int) for document retrieval, passed to
-            `gene_retrieve`. Defaults to `REPO_ID_DICT`.
-        page_num: Pagination page number for retrieval results, passed to
-            `gene_retrieve`. Defaults to `PAGE_NUM`.
-        filter_string: Optional filter criteria string for metadata filtering
-            during document retrieval, passed to `gene_retrieve`.
-            Defaults to `FILTER_STRING`.
-        extra_repo_ids: Optional list of additional repository IDs to include
-            in document retrieval, passed to `gene_retrieve`.
-            Defaults to `EXTRA_REPO_IDS`.
-        score_threshold: Minimum relevance score threshold applied during
-            document retrieval, passed to `gene_retrieve`.
-            Defaults to `SCORE_THRESHOLD`.
-        top_n: The number of top-scoring documents to retrieve, passed to
-            `gene_retrieve`. It affects retrieval for each gene symbol and
-            the documents considered for the primary gene's context.
-            Defaults to `TOP_N`.
-        prompt_file: Path to the prompt template file used by `phyto_chat` for
-            generating the gene function summary. Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the `prompt_file` to retrieve the
-            specific system prompt for `phyto_chat`. Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model.
-            Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service (`phyto_chat`).
-            Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use via `phyto_chat`.
-            Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) for
-            `phyto_chat`. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate by `phyto_chat`.
-            Defaults to `MAX_TOKENS`.
-        n: Number of summary choices to generate by `phyto_chat`.
-            Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) for
-            `phyto_chat`. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for `phyto_chat`.
-            Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for `phyto_chat`.
-            Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for `phyto_chat`.
-            Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for `phyto_chat`.
-            Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for `phyto_chat`.
-            Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user,
-            passed to `phyto_chat`. Defaults to `USER`.
-        timeout: Request timeout in seconds for all underlying asynchronous
-            API calls (`gene_network`, `gene_symbol`, `gene_annotation`,
-            `gene_retrieve`, `phyto_chat`). Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying API calls. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for underlying API calls.
-            Defaults to `MAX_RETRIES`.
-        max_concurrency: Maximum number of concurrent asynchronous operations
-            (e.g., `gene_symbol`, `gene_annotation`, `gene_retrieve` calls)
-            controlled by the internal semaphore.
-            Defaults to `MAX_CONCURRENCY`.
+        A semaphore is used to limit the concurrency of `gene_symbol`,
+        `gene_annotation`, and `gene_retrieve` calls.
 
-    Returns:
-        dict: The response dictionary from `phyto_chat`, which typically
-        includes a 'choices' list with the generated summary of the gene's
-        function. This dictionary is augmented with a 'doc_list' key
-        (containing all documents retrieved for the primary gene and its
-        network neighbors) and a 'total' key (a placeholder integer).
-        Returns an empty dictionary if essential preliminary data (e.g.,
-        symbols or documents for the primary gene) cannot be obtained.
+        Args:
+            species_code: The species code for the primary gene of interest.
+            gene_id: The identifier of the primary gene of interest.
+            workspace_id: Identifier for the workspace containing the data,
+                passed to `gene_network`, `gene_symbol`, and `gene_annotation`
+                for database queries. Defaults to `WORKSPACE_ID`.
+            subject_id: Identifier for the specific database subject or schema to
+                query against, passed to `gene_network`, `gene_symbol`, and
+                `gene_annotation`. Defaults to `SUBJECT_ID`.
+            dialog_id: Identifier for the current dialog or conversation session,
+                passed to `gene_network`, `gene_symbol`, and `gene_annotation`.
+                Defaults to an empty string.
+            need_insight: Flag indicating whether to generate insights, passed to
+                `gene_network`, `gene_symbol`, and `gene_annotation`.
+                Defaults to `NEED_INSIGHT`.
+            repo_id_dict: A dictionary mapping repository IDs (str) to their
+                respective page sizes (int) for document retrieval, passed to
+                `gene_retrieve`. Defaults to `REPO_ID_DICT`.
+            page_num: Pagination page number for retrieval results, passed to
+                `gene_retrieve`. Defaults to `PAGE_NUM`.
+            filter_string: Optional filter criteria string for metadata filtering
+                during document retrieval, passed to `gene_retrieve`.
+                Defaults to `FILTER_STRING`.
+            extra_repo_ids: Optional list of additional repository IDs to include
+                in document retrieval, passed to `gene_retrieve`.
+                Defaults to `EXTRA_REPO_IDS`.
+            score_threshold: Minimum relevance score threshold applied during
+                document retrieval, passed to `gene_retrieve`.
+                Defaults to `SCORE_THRESHOLD`.
+            top_n: The number of top-scoring documents to retrieve, passed to
+                `gene_retrieve`. It affects retrieval for each gene symbol and
+                the documents considered for the primary gene's context.
+                Defaults to `TOP_N`.
+            prompt_file: Path to the prompt template file used by `phyto_chat` for
+                generating the gene function summary. Defaults to `PROMPT_FILE`.
+            prompt_path: Path or key within the `prompt_file` to retrieve the
+                specific system prompt for `phyto_chat`. Defaults to `PROMPT_PATH`.
+            api_key: API key for authentication with the Phyto model.
+                Defaults to `API_KEY`.
+            base_url: Base URL of the Phyto API service (`phyto_chat`).
+                Defaults to `BASE_URL`.
+            model: Identifier of the Phyto model to use via `phyto_chat`.
+                Defaults to `MODEL_ID`.
+            frequency_penalty: Penalty for token repetition (-2.0 to 2.0) for
+                `phyto_chat`. Defaults to `FREQUENCY_PENALTY`.
+            max_tokens: Maximum number of tokens to generate by `phyto_chat`.
+                Defaults to `MAX_TOKENS`.
+            n: Number of summary choices to generate by `phyto_chat`.
+                Defaults to `N`.
+            presence_penalty: Penalty for new tokens (-2.0 to 2.0) for
+                `phyto_chat`. Defaults to `PRESENCE_PENALTY`.
+            reasoning_effort: Specifies the reasoning effort for `phyto_chat`.
+                Defaults to `REASONING_EFFORT`.
+            response_format: Specifies the desired output format for `phyto_chat`.
+                Defaults to `RESPONSE_FORMAT`.
+            stream: Enable real-time token streaming output for `phyto_chat`.
+                Defaults to `STREAM`.
+            temperature: Controls randomness (0.0-1.0) for `phyto_chat`.
+                Defaults to `TEMPERATURE`.
+            top_p: Nucleus sampling threshold (0.0-1.0) for `phyto_chat`.
+                Defaults to `TOP_P`.
+            user: Unique session identifier for the end-user,
+                passed to `phyto_chat`. Defaults to `USER`.
+            timeout: Request timeout in seconds for all underlying asynchronous
+                API calls (`gene_network`, `gene_symbol`, `gene_annotation`,
+                `gene_retrieve`, `phyto_chat`). Defaults to `TIMEOUT`.
+            retriable_codes: List of HTTP status codes that will trigger a retry
+                for underlying API calls. Defaults to `RETRIABLE_CODES`.
+            max_retries: Maximum number of retry attempts for underlying API calls.
+                Defaults to `MAX_RETRIES`.
+            max_concurrency: Maximum number of concurrent asynchronous operations
+                (e.g., `gene_symbol`, `gene_annotation`, `gene_retrieve` calls)
+                controlled by the internal semaphore.
+                Defaults to `MAX_CONCURRENCY`.
 
-    Raises:
-        McpError: If any of the underlying asynchronous calls (`gene_network`,
-            `gene_symbol`, `gene_annotation`, `gene_retrieve`, `phyto_chat`)
-            fail after all retry attempts.
-        KeyError: If a `species_code` (either the input `species_code` or one
-            derived from `gene_network` results) is not found in the internal
-            `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
-            final prompt.
-    """
-    # user_id = uuid.uuid1()
-    # output = create_output_dir(user_id, gene_id)
+        Returns:
+            dict: The response dictionary from `phyto_chat`, which typically
+            includes a 'choices' list with the generated summary of the gene's
+            function. This dictionary is augmented with a 'doc_list' key
+            (containing all documents retrieved for the primary gene and its
+            network neighbors) and a 'total' key (a placeholder integer).
+            Returns an empty dictionary if essential preliminary data (e.g.,
+            symbols or documents for the primary gene) cannot be obtained.
 
-    # species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(')').lower()
-    # analysis_task = analysis_module(species=species_str,
-    #                                 gene_id=gene_id,
-    #                                 output=output,
-    #                                 user_id=user_id,
-    #                                 batch=True)
+        Raises:
+            McpError: If any of the underlying asynchronous calls (`gene_network`,
+                `gene_symbol`, `gene_annotation`, `gene_retrieve`, `phyto_chat`)
+                fail after all retry attempts.
+            KeyError: If a `species_code` (either the input `species_code` or one
+                derived from `gene_network` results) is not found in the internal
+                `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
+                final prompt.
+        """
+        user_id = uuid.uuid1()
+        output = create_output_dir(user_id, gene_id)
 
-    gene_network_results = await gene_network(
-        species_code=species_code,
-        gene_id=gene_id,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    # gene_orthologs_list = gene_network_results[0]
-    # gene_paralogs_list = gene_network_results[1]
-    # gene_interaction_list = gene_network_results[2]
-    species_gene_list = sum(gene_network_results, [])
-    species_gene_list = [(species_code, gene_id)] + species_gene_list
-    semaphore = Semaphore(max_concurrency)
+        species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(')').lower()
+        analysis_task = analysis_module(species=species_str,
+                                        gene_id=gene_id,
+                                        output=output,
+                                        user_id=user_id,
+                                        batch=True)
 
-    tasks = [
-        gene_symbol(
-            species_code=each_species_code,
-            gene_id=each_gene_id,
+        gene_network_results = await gene_network(
+            species_code=species_code,
+            gene_id=gene_id,
             workspace_id=workspace_id,
             subject_id=subject_id,
             dialog_id=dialog_id,
@@ -767,122 +798,167 @@ async def gene_function(
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
-            semaphore=semaphore,
         )
-        for each_species_code, each_gene_id in species_gene_list
-    ] + [
-        gene_annotation(
-            species_code=each_species_code,
-            gene_id=each_gene_id,
+        gene_orthologs_list = gene_network_results[0]
+        gene_paralogs_list = gene_network_results[1]
+        gene_interaction_list = gene_network_results[2]
+        species_gene_list = sum(gene_network_results, [])
+        species_gene_list = [(species_code, gene_id)] + species_gene_list
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        tasks = [
+            gene_symbol(
+                species_code=each_species_code,
+                gene_id=each_gene_id,
+                workspace_id=workspace_id,
+                subject_id=subject_id,
+                dialog_id=dialog_id,
+                need_insight=need_insight,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                semaphore=semaphore,
+            )
+            for each_species_code, each_gene_id in species_gene_list
+        ] + [
+            gene_annotation(
+                species_code=each_species_code,
+                gene_id=each_gene_id,
+                workspace_id=workspace_id,
+                subject_id=subject_id,
+                dialog_id=dialog_id,
+                need_insight=need_insight,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                semaphore=semaphore,
+            )
+            for each_species_code, each_gene_id in species_gene_list
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        gene_symbol_results = results[:len(species_gene_list)]
+        gene_anno_results = results[len(species_gene_list):]
+        species_gene_symbol_dict = {}
+        for species_gene, gene_symbol_list in zip(
+                species_gene_list, gene_symbol_results):
+            if gene_symbol_list and gene_symbol_list is not McpError:
+                species_gene_symbol_dict.update({species_gene: gene_symbol_list})
+        species_gene_anno_dict = {}
+        for species_gene, gene_anno_dict in zip(
+                species_gene_list, gene_anno_results):
+            if gene_anno_dict and gene_anno_dict is not McpError:
+                species_gene_anno_dict.update({species_gene: gene_anno_dict})
+
+        tasks = []
+        for species_gene, gene_symbol_list in species_gene_symbol_dict.items():
+            species = SPECIES_CODE_MAP[species_gene[0]]
+            tasks.append(gene_retrieve(
+                species=species,
+                gene_symbol_list=gene_symbol_list,
+                repo_id_dict=repo_id_dict,
+                page_num=page_num,
+                filter_string=filter_string,
+                extra_repo_ids=extra_repo_ids,
+                score_threshold=score_threshold,
+                top_n=top_n,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                semaphore=semaphore,
+            ))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        species_gene_doc_dict = {}
+        for species_gene, gene_doc_dict in zip(species_gene_symbol_dict.keys(), results):
+            if gene_doc_dict['doc_list']:
+                species_gene_doc_dict.update({species_gene: gene_doc_dict})
+
+                all_doc_list = []
+                all_doc_list.extend(gene_doc_dict['doc_list'])
+
+                retrieve_results = []
+                for file_id, eachdoc in enumerate(species_gene_doc_dict[
+                        (species_code, gene_id)]['doc_list']):
+                    if eachdoc["subtitle"]:
+                        retrieve_results.append(
+                            f'[document {file_id+1} begin] {eachdoc["title"]}\n'
+                            f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
+                            f'[document {file_id+1} end]')
+                    else:
+                        retrieve_results.append(
+                            f'[document {file_id+1} begin] {eachdoc["title"]}\n'
+                            f'{eachdoc["content"]} [document {file_id+1} end]')
+                retrieve_results = '\n\n'.join(retrieve_results)
+                phyto_response = await phyto_chat(
+                    user_query=get_prompt(
+                        prompt_file,
+                        'user/gene_function',
+                        {
+                            'species': SPECIES_CODE_MAP[species_code],
+                            'gene_string': '|'.join(species_gene_symbol_dict[
+                                (species_code, gene_id)]),
+                            'retrieve_results': retrieve_results,
+                        },
+                    ),
+                    prompt_file=prompt_file,
+                    prompt_path=prompt_path,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    frequency_penalty=frequency_penalty,
+                    max_tokens=max_tokens,
+                    n=n,
+                    presence_penalty=presence_penalty,
+                    reasoning_effort=reasoning_effort,
+                    response_format=response_format,
+                    stream=stream,
+                    temperature=temperature,
+                    top_p=top_p,
+                    user=user,
+                    timeout=timeout,
+                    retriable_codes=retriable_codes,
+                    max_retries=max_retries,
+                )
+        manager.update_task_status(task_id, 'finished')
+        response = update_task('http://1.95.48.200:8082/v1/nky/server/update_task', task_id, 'finished', 'xxx', 'xxx')
+
+    def run_async():
+        asyncio.run(gene_function(
+            species_code=species_code,
+            gene_id=gene_id,
             workspace_id=workspace_id,
             subject_id=subject_id,
             dialog_id=dialog_id,
             need_insight=need_insight,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-            semaphore=semaphore,
-        )
-        for each_species_code, each_gene_id in species_gene_list
-    ]
-    results = await gather(*tasks, return_exceptions=True)
-    gene_symbol_results = results[:len(species_gene_list)]
-    gene_anno_results = results[len(species_gene_list):]
-    species_gene_symbol_dict = {}
-    for species_gene, gene_symbol_list in zip(
-            species_gene_list, gene_symbol_results):
-        if gene_symbol_list and gene_symbol_list is not McpError:
-            species_gene_symbol_dict.update({species_gene: gene_symbol_list})
-    species_gene_anno_dict = {}
-    for species_gene, gene_anno_dict in zip(
-            species_gene_list, gene_anno_results):
-        if gene_anno_dict and gene_anno_dict is not McpError:
-            species_gene_anno_dict.update({species_gene: gene_anno_dict})
-
-    tasks = []
-    for species_gene, gene_symbol_list in species_gene_symbol_dict.items():
-        species = SPECIES_CODE_MAP[species_gene[0]]
-        tasks.append(gene_retrieve(
-            species=species,
-            gene_symbol_list=gene_symbol_list,
             repo_id_dict=repo_id_dict,
             page_num=page_num,
             filter_string=filter_string,
             extra_repo_ids=extra_repo_ids,
             score_threshold=score_threshold,
             top_n=top_n,
+            prompt_file=prompt_file,
+            prompt_path=prompt_path,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            frequency_penalty=frequency_penalty,
+            max_tokens=max_tokens,
+            n=n,
+            presence_penalty=presence_penalty,
+            reasoning_effort=reasoning_effort,
+            response_format=response_format,
+            stream=stream,
+            temperature=temperature,
+            top_p=top_p,
+            user=user,
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
-            semaphore=semaphore,
-        ))
-    results = await gather(*tasks, return_exceptions=True)
-    species_gene_doc_dict = {}
-    for species_gene, gene_doc_dict in zip(species_gene_symbol_dict.keys(), results):
-        if gene_doc_dict['doc_list']:
-            species_gene_doc_dict.update({species_gene: gene_doc_dict})
+            max_concurrency=max_concurrency))
 
-
-
-
-            all_doc_list = []
-            all_doc_list.extend(gene_doc_dict['doc_list'])
-
-            retrieve_results = []
-            for file_id, eachdoc in enumerate(species_gene_doc_dict[
-                    (species_code, gene_id)]['doc_list']):
-                if eachdoc["subtitle"]:
-                    retrieve_results.append(
-                        f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                        f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
-                        f'[document {file_id+1} end]')
-                else:
-                    retrieve_results.append(
-                        f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                        f'{eachdoc["content"]} [document {file_id+1} end]')
-            retrieve_results = '\n\n'.join(retrieve_results)
-            phyto_response = await phyto_chat(
-                user_query=get_prompt(
-                    prompt_file,
-                    'user/gene_function',
-                    {
-                        'species': SPECIES_CODE_MAP[species_code],
-                        'gene_string': '|'.join(species_gene_symbol_dict[
-                            (species_code, gene_id)]),
-                        'retrieve_results': retrieve_results,
-                    },
-                ),
-                prompt_file=prompt_file,
-                prompt_path=prompt_path,
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                frequency_penalty=frequency_penalty,
-                max_tokens=max_tokens,
-                n=n,
-                presence_penalty=presence_penalty,
-                reasoning_effort=reasoning_effort,
-                response_format=response_format,
-                stream=stream,
-                temperature=temperature,
-                top_p=top_p,
-                user=user,
-                timeout=timeout,
-                retriable_codes=retriable_codes,
-                max_retries=max_retries,
-            )
-            phyto_response['choices'][0]['message'].update(
-                {'doc_list': all_doc_list, 'total': 10000})
-            # phyto_response['choices'][0]['message'].update(analysis_task)
-            return phyto_response
-        else:
-            phyto_response = {'choices': [{'message': {'content': ''}}]}
-            # phyto_response['choices'][0]['message'].update(analysis_task)
-            return phyto_response
-    else:
-        phyto_response = {'choices': [{'message': {'content': ''}}]}
-        # phyto_response['choices'][0]['message'].update(analysis_task)
-        return phyto_response
+    thread = Thread(target=run_async)
+    thread.daemon = True
+    thread.start()
+    return task_id
 
 
 async def get_interaction_gene_list(gene_id):
