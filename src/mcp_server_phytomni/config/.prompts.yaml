@@ -528,14 +528,28 @@ user:
     \n**Knowledge for Point 1:** \n{{knowledge_1}}\n\n**Research Point 2:**\n{{research_point_2}}\n\
     \n**Knowledge for Point 2:** \n{{knowledge_2}}\n\n**Research Point 3:**\n{{research_point_3}}\n\
     \n**Knowledge for Point 3:**\n{{knowledge_3}}\n\n**Research Point 4:**\n{{research_point_4}}\n\
-    \n**Knowledge for Point 4:**\n{{knowledge_4}}\n\nHere is the format of the output\
-    \ you should provide. Please make sure to answer strictly \nin accordance with\
-    \ the following output format:\n\n**Title**: \"user query\"\n\n**Results**:\n\n\
-    {{research_point_1}}\n\n\"contents for Research Point 1\" \n\n{{research_point_2}}\n\
-    \n\"Results for Research Point 2\" \n\n{{research_point_3}}\n\n\"contents for\
-    \ Research Point 3\" \n\n{{research_point_4}}\n\n\"contents for Research Point\
-    \ 4\" \n\n**Conclusion**: \n\"Conclusion of the report, summarizing the main findings\
-    \ and implications of the research.\""
+    \n**Knowledge for Point 4:**\n{{knowledge_4}}\n\nIn the search results I provide\
+    \ to you, each result is formatted as [document X begin]...[document X end], where\
+    \ X represents the numerical index of each article. Please cite the context at\
+    \ the end of the relevant sentence when appropriate. Use the document format [document:X]\
+    \ in the corresponding part of your answer. If a sentence is derived from multiple\
+    \ contexts, list all relevant document numbers, such as [document:3][document:5].\
+    \ Be sure not to cluster all documents at the end; instead, include them in the\
+    \ corresponding parts of the answer. For creative tasks (e.g., writing an essay),\
+    \ ensure that references are cited within the body of the text, such as [document:3][document:5],\
+    \ rather than only at the end of the text. You need to interpret and summarize\
+    \ the user's requirements, choose an appropriate format, fully utilize the search\
+    \ results, extract key information, and generate an answer that is insightful,\
+    \ creative, and professional. Extend the length of your response as much as possible,\
+    \ addressing each point in detail and from multiple perspectives, ensuring the\
+    \ content is rich and thorough.\n\nHere is the format of the output you should\
+    \ provide. Please make sure to answer strictly in accordance with the following\
+    \ output format:\n\n**Title**: \"user query\"\n\n**Results**:\n\n{{research_point_1}}\n\
+    \n\"contents for Research Point 1\" \n\n{{research_point_2}}\n\n\"Results for\
+    \ Research Point 2\" \n\n{{research_point_3}}\n\n\"contents for Research Point\
+    \ 3\" \n\n{{research_point_4}}\n\n\"contents for Research Point 4\" \n\n**Conclusion**:\
+    \ \n\"Conclusion of the report, summarizing the main findings and implications\
+    \ of the research.\""
   in_silico_research_goals: "You are an expert-level In Silico Research Agent. Your\
     \ function is to analyze a scientific research paper and decompose it into a series\
     \ of high-level, end-to-end research objectives. Each objective represents a complete\
