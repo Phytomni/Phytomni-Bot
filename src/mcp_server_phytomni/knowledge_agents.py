@@ -414,7 +414,6 @@ async def multi_retrieve_generate(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
