@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-PROMPT_PATH = Path(__file__).parent.parent / '.prompts.yaml'
+PROMPT_PATH = Path(__file__).parent.parent / 'config/.prompts.yaml'
 MAX_TOKENS = 131072
 
 
@@ -26,11 +26,11 @@ class ServerConfig(BaseSettings):
         MAX_RETRIES (int): Maximum number of retry attempts for API calls.
         TOKEN_URL (str): URL for obtaining authentication tokens.
         REGION (str): Cloud service region.
-        ANALYSIS_REGION (str): Analyst agents cloud service region.
         RETRIEVE_URL (str): URL for the document retrieval service.
         RERANK_URL (str): URL for the document reranking service.
         DATABASE_URL (str): URL for the database query service (e.g., NLQ).
         ANALYSIS_URL (str): URL for the workflow analysis service.
+        ANALYSIS_REGION (str): Analyst agents cloud service region.
         REPO_ID (str): A default or primary repository identifier.
         REPO_ID_DICT (Dict[str, int]): Dictionary mapping repository IDs to
             associated integer values (e.g., page sizes or token limits).
@@ -50,7 +50,6 @@ class ServerConfig(BaseSettings):
     TOKEN_URL: str = Field(
         'https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens')
     REGION: str = Field('cn-southwest-2')
-    ANALYSIS_REGION: str = Field('cn-east-3')
 
     RETRIEVE_URL: str = Field(
         'http://1.95.74.240:8000/v1/koosearch/experience/search')
@@ -62,6 +61,7 @@ class ServerConfig(BaseSettings):
         'https://eihealth.cn-east-3.myhuaweicloud.com/v1/'
         'f9afc0650aec4f9cbc7af24e9e199e77/eihealth-projects/'
         '6d50805e-8546-4c8b-a3c0-f7aa8b82bb74/jobs')
+    ANALYSIS_REGION: str = Field('cn-east-3')
 
     REPO_ID: str = Field('a34b2477-a4b1-4a30-8726-77bbf66ca048')
     REPO_ID_DICT: Dict[str, int] = Field({
@@ -198,12 +198,14 @@ class AnalystConfig(KnowledgeConfig):
     MAX_POLL: float = Field(86400)
     COMPUTE_RESOURCE: Literal['small', 'medium', 'large'] = Field('small')
     TASK_NAME: str = Field('analyst-agents-task')
-    APP_ID: Dict[str, str] = Field({'small': 'fa83143f-5e07-11f0-bbb4-fa163e7f72d1', 
-                                    'medium': '1d1b3dc5-5e08-11f0-bbb4-fa163e7f72d1', 
-                                    'large': '31b31aac-5e08-11f0-bbb4-fa163e7f72d1'})
-    RESOURCE: Dict[str, Dict[str, int]] = Field({'small': {'cpu': 4, 'memory': 16}, 
-                                                 'medium': {'cpu': 8, 'memory': 32}, 
-                                                 'large': {'cpu': 16, 'memory': 64}})
+    APP_ID: Dict[str, str] = Field({
+        'small': 'fa83143f-5e07-11f0-bbb4-fa163e7f72d1',
+        'medium': '1d1b3dc5-5e08-11f0-bbb4-fa163e7f72d1',
+        'large': '31b31aac-5e08-11f0-bbb4-fa163e7f72d1'})
+    RESOURCE: Dict[str, Dict[str, int]] = Field({
+        'small': {'cpu': 4, 'memory': 16},
+        'medium': {'cpu': 8, 'memory': 32},
+        'large': {'cpu': 16, 'memory': 64}})
 
 
 class ReviewConfig(KnowledgeConfig):
@@ -228,6 +230,10 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
             for tasks related to gene function analysis.
     """
     MAX_CONCURRENCY: int = Field(8)
+    CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
+                                 'create_task')
+    UPDATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
+                                 'update_task')
 
 
 class InSilicoResearchConfig(AnalystConfig):
