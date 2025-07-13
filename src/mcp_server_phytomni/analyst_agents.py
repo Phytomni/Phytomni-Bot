@@ -3,30 +3,28 @@
 # Author: maoyichao (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-import os
-import json
-import uuid
-import requests
-from datetime import datetime, timezone, timedelta
-import urllib3
-from obs import ObsClient
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import asyncio
-from time import time
+import datetime
+import json
+import time
+from traceback import format_exc
 from typing import Any, List, Dict, Optional, Union
+from uuid import uuid1
 
 from httpx import AsyncClient, HTTPError, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
+from obs import PutObjectHeader, ObsClient
 
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve
-from .utils import get_prompt, get_token, upload_analyst_agents_data, delete_analyst_agents_data
+from .utils import get_prompt, get_token
 
 ac = AnalystConfig()
 sc = SensitiveConfig().load()
+
 
 async def submit(goal_description: str,
                  data_list: Dict[str, str],
@@ -71,20 +69,21 @@ async def submit(goal_description: str,
         cpu_number = ac.RESOURCE[compute_resource]['cpu']
         memory = ac.RESOURCE[compute_resource]['memory']
         app_id = ac.APP_ID[compute_resource]
-    meta = meta + '\nlast step, compress the output folder into a zip file.(zip -r $output_dir.zip $output_dir)'
+    meta += '\nlast step, compress the output folder into a zip file. '
+    meta += '(zip -r $output_dir.zip $output_dir)'
     task_name = task_name.replace('_', '-')
     # create json format input
     data = {
-        "data_list": data_list, 
-        "output_dir": output_dir, 
-        "goal_description": goal_description, 
-        "meta": meta, 
-        "execute_code": execute_code, 
+        "data_list": data_list,
+        "output_dir": output_dir,
+        "goal_description": goal_description,
+        "meta": meta,
+        "execute_code": execute_code,
         "model_url": sc.CODER_URL,
         "model_name": sc.CODER_MODEL,
-        "api_key": sc.CODER_API.get_secret_value()
+        "api_key": sc.CODER_API_KEY.get_secret_value()
     }
-    file_id = uuid.uuid1()
+    file_id = uuid1()
     with open(f"./{file_id}.json", 'w') as ga_data_out:
         json.dump(data, ga_data_out)
     print(f'upload data: {file_id}.json')
@@ -99,7 +98,7 @@ async def submit(goal_description: str,
         raise OSError('Data information upload obs error.')
     
     # submit task
-    timestamp = datetime.now().strftime("%H%M%S-%f")
+    timestamp = datetime.datetime.now().strftime("%H%M%S-%f")
     job_name = f"{task_name}-{timestamp}"
 
     job_headers = {"Content-Type": "application/json", "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)}
@@ -600,8 +599,8 @@ async def wait_for_completion(
         asyncio.TimeoutError: If exceeds max_poll duration
         RuntimeError: On unexpected status response format
     """
-    start_time = time()
-    while (time() - start_time) < max_poll:
+    start_time = time.time()
+    while (time.time() - start_time) < max_poll:
         status_data = await task_status(task_id, timeout)
         if status_data.get('status') == 'FAILED':
             raise McpError(ErrorData(
@@ -996,3 +995,61 @@ async def retrieve_plan_submit_wait(
         timeout=timeout,
     )
     return response
+
+
+def upload_analyst_agents_data(
+    analyst_agents_datapath: str,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+) -> str:
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
+    try:
+        headers = PutObjectHeader()
+        headers.contentType = 'text/plain'
+        object_file = analyst_agents_datapath.split('/')[-1]
+        object_key = f'agent_data/tmp_data/{object_file}'
+        response = obsclient.putFile(
+            bucketName=bucket_name,
+            objectKey=object_key,
+            file_path=object_file,
+            metadata={'meta1': 'value1', 'meta2': 'value2'},
+            headers=headers)
+        if response.status < 300:
+            return f'{bucket_name}:/{object_key}'
+        else:
+            raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
+                          f'errorCode: {response.errorCode}\n'
+                          f'errorMessage: {response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Put File Failed\n{format_exc()}') from exc
+
+
+def delete_analyst_agents_data(
+    analyst_agents_datapath: str,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+) -> str:
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
+    try:
+        object_key = analyst_agents_datapath
+        response = obsclient.deleteObject(bucket_name, object_key)
+        if response.status < 300:
+            return (f'Delete Object Succeeded\n'
+                    f'requestId: {response.requestId}\n'
+                    f'deleteMarker: {response.body.deleteMarker}\n'
+                    f'versionId: {response.body.versionId}')
+        else:
+            raise OSError(f'Delete Object Failed\n'
+                          f'requestId: {response.requestId}\n'
+                          f'errorCode: {response.errorCode}\n'
+                          f'errorMessage: {response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Delete Object Failed\n{format_exc()}') from exc
