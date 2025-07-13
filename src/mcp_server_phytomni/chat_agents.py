@@ -155,7 +155,7 @@ async def phyto_chat(
                             'audio': None,
                             'function_call': None,
                             'tool_calls': []},
-                        'stop_reason': None
+                        'stop_reason': None,
                     }]})
                     return chat_completions
                 else:
