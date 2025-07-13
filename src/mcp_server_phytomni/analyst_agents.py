@@ -7,11 +7,14 @@ import asyncio
 import datetime
 import json
 import time
+from pathlib import Path
+from random import uniform
 from traceback import format_exc
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, List, Literal, Dict, Optional, Union
 from uuid import uuid1
 
-from httpx import AsyncClient, HTTPError, Timeout
+from httpx import AsyncClient, ConnectError, HTTPError, HTTPStatusError
+from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import PutObjectHeader, ObsClient
@@ -26,15 +29,31 @@ ac = AnalystConfig()
 sc = SensitiveConfig().load()
 
 
-async def submit(goal_description: str,
-                 data_list: Dict[str, str],
-                 output_dir: str = ac.OUTPUT_DIR,
-                 meta: Optional[str] = None,
-                 execute_code: bool = ac.EXECUTE_CODE,
-                 timeout: float = ac.TIMEOUT, 
-                 task_name: str = ac.TASK_NAME, 
-                 compute_resource: str = ac.COMPUTE_RESOURCE
-                 ) -> Dict[str, str]:
+async def submit(
+    goal_description: str,
+    data_list: Dict[str, str],
+    output_dir: str = ac.OUTPUT_DIR,
+    meta: Optional[str] = None,
+    execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME,
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> Dict[str, str]:
     """Submit analysis task to Bioinformatics Agents.
 
     Args:
@@ -62,62 +81,81 @@ async def submit(goal_description: str,
     Raises:
         McpError: On submission failure with error code and message
     """
-    valid_resources = {"small", "medium", "large"}
-    if compute_resource not in valid_resources:
-        raise ValueError(f"compute_resource must be one of {valid_resources}")
-    else:
-        cpu_number = ac.RESOURCE[compute_resource]['cpu']
-        memory = ac.RESOURCE[compute_resource]['memory']
-        app_id = ac.APP_ID[compute_resource]
-    meta += '\nlast step, compress the output folder into a zip file. '
-    meta += '(zip -r $output_dir.zip $output_dir)'
-    task_name = task_name.replace('_', '-')
-    # create json format input
+    meta += '\nlast step, compress the output folder into a zip file '
+    meta += '(zip -r $output_dir.zip $output_dir).'
     data = {
-        "data_list": data_list,
-        "output_dir": output_dir,
-        "goal_description": goal_description,
-        "meta": meta,
-        "execute_code": execute_code,
-        "model_url": sc.CODER_URL,
-        "model_name": sc.CODER_MODEL,
-        "api_key": sc.CODER_API_KEY.get_secret_value()
-    }
+        'goal_description': goal_description,
+        'data_list': data_list,
+        'output_dir': output_dir,
+        'meta': meta,
+        'execute_code': execute_code,
+        'model_url': model_url,
+        'model_name': model_name,
+        'api_key': api_key}
     file_id = uuid1()
-    with open(f"./{file_id}.json", 'w') as ga_data_out:
-        json.dump(data, ga_data_out)
-    print(f'upload data: {file_id}.json')
-    # upload obs
+    josn_file = Path(f'{file_id}.json')
     try:
-        data_path = upload_analyst_agents_data(f'./{file_id}.json')
-        if os.path.exists(f'./{file_id}.json'):
-            os.remove(f'./{file_id}.json')
-    except OSError:
-        if os.path.exists(f'./{file_id}.json'):
-            os.remove(f'./{file_id}.json')
-        raise OSError('Data information upload obs error.')
-    
-    # submit task
-    timestamp = datetime.datetime.now().strftime("%H%M%S-%f")
-    job_name = f"{task_name}-{timestamp}"
+        with open(josn_file, 'w', encoding='utf-8') as open_json:
+            json.dump(data, open_json)
+        data_path = upload_analyst_agents_data(
+            analyst_agents_datapath=str(josn_file),
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            )
+    except OSError as exc:
+        raise OSError('Data information upload obs error.') from exc
+    finally:
+        if josn_file.exists():
+            josn_file.unlink()
 
-    job_headers = {"Content-Type": "application/json", "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)}
+    job_headers = {"Content-Type": "application/json",
+                   "X-Auth-Token": await get_token(timeout=timeout,
+                                                   region=region)}
+    task_name = task_name.replace('_', '-')
+    time_stamp = datetime.datetime.now().strftime('%H%M%S-%f')
+    job_name = f'{task_name}-{time_stamp}'
     job_data = {
         "name": job_name,
         "labels": [],
         "description": "",
         "timeout": 10080,
         "output_dir": "",
-        "tasks":[{
+        "tasks": [{
             "task_name": f"analyst-agents-{compute_resource}",
             "display_name": job_name,
-            "inputs":[
-                {"name": "obs-mount", "type": "DIRECTORY", "description": "", "required": True, "pattern": "", "values": ["phytomni:/agent_data/"], "enum": [], "concurrent": ""},
-                {"name": "meta-file", "type": "FILE", "description": "", "required": True, "pattern": "", "values": [data_path], "enum": [], "concurrent": ""}
+            "inputs": [
+                {
+                    "name": "obs-mount",
+                    "type": "DIRECTORY",
+                    "description": "",
+                    "required": True,
+                    "pattern": "",
+                    "values": ["phytomni:/agent_data/"],
+                    "enum": [],
+                    "concurrent": ""
+                },
+                {
+                    "name": "meta-file",
+                    "type": "FILE",
+                    "description": "",
+                    "required": True,
+                    "pattern": "",
+                    "values": [data_path],
+                    "enum": [],
+                    "concurrent": ""
+                },
             ],
             "outputs": [],
             "output_dir": "",
-            "resources": {"cpu": f"{cpu_number}C", "cpu_type": "X86", "gpu": "0", "gpu_type": "", "memory": f"{memory}G"},
+            "resources": {
+                "cpu": f"{resource_dict[compute_resource]['cpu']}C",
+                "cpu_type": "X86",
+                "gpu": "0",
+                "gpu_type": "",
+                "memory": f"{resource_dict[compute_resource]['memory']}G"
+            },
             "summary": "",
             "labels": []
         }],
@@ -126,37 +164,51 @@ async def submit(goal_description: str,
         "priority": 0,
         "automatic": True,
         "node_labels": [],
-        "tool_id": app_id,
-        "tool_type": "app"
+        "tool_id": app_id_dict[compute_resource],
+        "tool_type": "app",
     }
-    print(job_headers)
-
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        try:
-            response = await client.post(
-                url=ac.ANALYSIS_URL,
-                headers=job_headers,
-                json=job_data
-            )
-            
-            if response.status_code == 201:
-                response_results = {
-                    'task_id': json.loads(response.text)['id'], 
-                    'output_dir': output_dir, 
-                    'job_name': job_name, 
-                    'compute_resource': compute_resource
-                }
-                
-                return response_results
-            else:
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(
+                    analysis_url,
+                    headers=job_headers,
+                    json=job_data
+                )
+                if response.status_code == 201:
+                    return {
+                        'task_id': json.loads(response.text)['id'],
+                        'output_dir': output_dir,
+                        'job_name': job_name,
+                        'compute_resource': compute_resource,
+                    }
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to submit task"))
-        except HTTPError as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f"Failed to submit task: {str(e)}")) from e
+                    message='Failed to submit task'))
+
+            except HTTPStatusError as e:
+                if (
+                    hasattr(e, 'response') and
+                    e.response is not None and
+                    e.response.status_code in retriable_codes and
+                    attempt < max_retries
+                ):
+                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Failed to submit task: {str(e)}")) from e
+
+            except (ConnectError, TimeoutException) as e:
+                if attempt < max_retries:
+                    await asyncio.sleep(1.5 ** attempt)
+                    continue
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Network error: {str(e)}"
+                )) from e
 
 
 async def task_delete(task_id: str,
@@ -1020,10 +1072,9 @@ def upload_analyst_agents_data(
             headers=headers)
         if response.status < 300:
             return f'{bucket_name}:/{object_key}'
-        else:
-            raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
-                          f'errorCode: {response.errorCode}\n'
-                          f'errorMessage: {response.errorMessage}')
+        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
+                      f'errorCode: {response.errorCode}\n'
+                      f'errorMessage: {response.errorMessage}')
     except Exception as exc:
         raise OSError(f'Put File Failed\n{format_exc()}') from exc
 
@@ -1046,10 +1097,9 @@ def delete_analyst_agents_data(
                     f'requestId: {response.requestId}\n'
                     f'deleteMarker: {response.body.deleteMarker}\n'
                     f'versionId: {response.body.versionId}')
-        else:
-            raise OSError(f'Delete Object Failed\n'
-                          f'requestId: {response.requestId}\n'
-                          f'errorCode: {response.errorCode}\n'
-                          f'errorMessage: {response.errorMessage}')
+        raise OSError(f'Delete Object Failed\n'
+                      f'requestId: {response.requestId}\n'
+                      f'errorCode: {response.errorCode}\n'
+                      f'errorMessage: {response.errorMessage}')
     except Exception as exc:
         raise OSError(f'Delete Object Failed\n{format_exc()}') from exc
