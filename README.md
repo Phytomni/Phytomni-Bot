@@ -1,6 +1,6 @@
 # Phytomni-Bot
 
-Phytomni-Bot is a server for plant science research that provides a suite of specialized AI agents to assist with various tasks, from basic Q&A to complex bioinformatics analysis. It is built on the Multi-Capability Protocol (MCP) and exposes different agents as tools that can be called remotely.
+Phytomni-Bot is a server for plant science research that provides a suite of specialized AI agents to assist with various tasks, from basic Q&A to complex bioinformatics analysis. It is built on the Model Context Protocol (MCP) and exposes different agents as tools that can be called remotely.
 
 ## Features
 
