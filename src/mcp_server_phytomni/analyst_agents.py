@@ -1,3 +1,8 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Author: maoyichao (maoyc_0316@163.com)
+#         xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 import os
 import json
 import uuid
@@ -265,7 +270,6 @@ async def plan_submit(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -309,8 +313,6 @@ async def plan_submit(
             Defaults to `MODEL_ID`.
         frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
             plan generation step. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan.
-            Defaults to `MAX_TOKENS`.
         n: Number of plan choices to generate by the Phyto model.
             Defaults to `N`.
         presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
@@ -357,7 +359,6 @@ async def plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -520,16 +521,22 @@ async def retrieve_plan_submit(
         max_retries=max_retries,
     )
     retrieve_results = []
+    total_length = 0
     for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
         if eachdoc["subtitle"]:
-            retrieve_results.append(
+            current_fragment = (
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
                 f'[document {file_id+1} end]')
         else:
-            retrieve_results.append(
+            current_fragment = (
                 f'[document {file_id+1} begin] {eachdoc["title"]}\n'
                 f'{eachdoc["content"]} [document {file_id+1} end]')
+        if total_length + len(current_fragment) <= max_tokens:
+            retrieve_results.append(current_fragment)
+            total_length += len(current_fragment)
+        else:
+            break
     retrieve_results = '\n\n'.join(retrieve_results)
     user_query = get_prompt(
         prompt_file, 'user/analysis_retrieve',
@@ -542,7 +549,6 @@ async def retrieve_plan_submit(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
@@ -561,7 +567,7 @@ async def retrieve_plan_submit(
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'] + meta_meta if meta_meta else phyto_response['choices'][0]['message']['content'],
         execute_code=execute_code,
-        task_name="retrieve-plan-submit", 
+        task_name="retrieve-plan-submit",
         timeout=timeout,
     )
     return response
@@ -673,7 +679,6 @@ async def plan_submit_wait(
     base_url: str = sc.BASE_URL,
     model: str = sc.MODEL_ID,
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
     reasoning_effort: str = ac.REASONING_EFFORT,
@@ -781,7 +786,6 @@ async def plan_submit_wait(
         base_url=base_url,
         model=model,
         frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
         n=n,
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,

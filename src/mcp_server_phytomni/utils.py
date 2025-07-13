@@ -24,7 +24,8 @@ serverconfig = ServerConfig()
 sensitiveconfig = SensitiveConfig().load()
 
 
-async def get_token(timeout: float = serverconfig.TIMEOUT, region: str = serverconfig.REGION) -> str:
+async def get_token(timeout: float = serverconfig.TIMEOUT,
+                    region: str = serverconfig.REGION) -> str:
     """Obtain X-Subject-Token for API authentication.
 
     Args:
@@ -56,8 +57,7 @@ async def get_token(timeout: float = serverconfig.TIMEOUT, region: str = serverc
                         },
                     },
                 },
-                "scope": {"project": {
-                    "name": region}},
+                "scope": {"project": {"name": region}},
             },
         }
         try:
