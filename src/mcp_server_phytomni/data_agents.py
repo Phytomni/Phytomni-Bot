@@ -2,6 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""This module provides functions for interacting with a database using
+natural language queries.
+
+It includes functions to convert natural language to SQL, execute the query,
+and to first rewrite the natural language query using a language model for
+better performance.
+"""
 import asyncio
 from random import uniform
 from typing import Any, Dict, List, Union
@@ -22,6 +29,7 @@ sc = SensitiveConfig().load()
 
 
 async def nl2sql(message_content: str,
+                 database_url: str = dc.DATABASE_URL,
                  workspace_id: str = dc.WORKSPACE_ID,
                  subject_id: str = dc.SUBJECT_ID,
                  dialog_id: str = dc.DIALOG_ID,
@@ -41,33 +49,28 @@ async def nl2sql(message_content: str,
 
     Args:
         message_content: The natural language query to be processed.
+        database_url: The URL of the NL2SQL service.
         workspace_id: Identifier for the workspace containing the data.
-            Defaults to `WORKSPACE_ID`.
         subject_id: Identifier for the specific database subject or schema
-            to query against. Defaults to `SUBJECT_ID`.
+            to query against.
         dialog_id: Identifier for the current dialog or conversation session.
-            If an empty string is provided (default), a new unique dialog ID
+            If an empty string is provided, a new unique dialog ID
             will be generated.
         need_insight: Flag indicating whether to generate insights based on
-            the query results. Defaults to `NEED_INSIGHT`.
+            the query results.
         simplify_response: Flag indicating whether the structure of the
-            response should be simplified. Defaults to `SIMPLIFY_RESPONSE`.
-        timeout: Total request timeout in seconds for each API call attempt,
-            including connection. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            attempt. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for API calls that fail
-            with a retriable status code or network error.
-            Defaults to `MAX_RETRIES`.
+            response should be simplified.
+        timeout: Total request timeout in seconds for each API call attempt.
+        retriable_codes: List of HTTP status codes that will trigger a retry.
+        max_retries: Maximum number of retry attempts for failed requests.
 
     Returns:
         A list of dictionaries representing the JSON response from the
-        NL2SQL service, typically containing the query results or related
-        information. The exact structure depends on the service implementation.
+        NL2SQL service.
 
     Raises:
         McpError: If the API call to the NL2SQL service fails after all
-            retry attempts due to HTTP errors or network issues.
+            retry attempts.
     """
     dialog_id = dialog_id if dialog_id else str(uuid1())
     client_timeout = Timeout(timeout, connect=timeout)
@@ -75,7 +78,7 @@ async def nl2sql(message_content: str,
         for attempt in range(max_retries + 1):
             try:
                 response = await client.post(
-                    url=dc.DATABASE_URL,
+                    database_url,
                     headers={"X-Auth-Token": await get_token(),
                              "X-Workspace-Id": workspace_id,
                              "Content-Type": "application/json"},
@@ -131,6 +134,7 @@ async def rewrite_nl2sql(
     temperature: float = dc.TEMPERATURE,
     top_p: float = dc.TOP_P,
     user: str = dc.USER,
+    database_url: str = dc.DATABASE_URL,
     workspace_id: str = dc.WORKSPACE_ID,
     subject_id: str = dc.SUBJECT_ID,
     dialog_id: str = dc.DIALOG_ID,
@@ -140,77 +144,44 @@ async def rewrite_nl2sql(
     retriable_codes: List[int] = dc.RETRIABLE_CODES,
     max_retries: int = dc.MAX_RETRIES,
 ) -> Dict[str, Any]:
-    """Rewrite a natural language query using a language model and then
-        execute it via NL2SQL.
+    """Rewrite a natural language query and then execute it via NL2SQL.
 
     This function first processes the `user_query` through the `phyto_chat`
-    service to potentially rephrase or enhance it for better NL2SQL
-    performance. The rewritten query is then passed to the `nl2sql` function
-    to be converted into SQL and executed against a database.
+    service to rephrase or enhance it for better NL2SQL performance. The
+    rewritten query is then passed to the `nl2sql` function to be converted
+    into SQL and executed against a database.
 
     Args:
-        user_query: The user's initial natural language query or prompt.
-            This query is first rewritten by a language model.
-        prompt_file: Path to the prompt template file used for constructing
-            the prompt for the query rewriting step. Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt for query rewriting.
-            Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model for query
-            rewriting. Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service for query rewriting.
-            Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use for query rewriting.
-            Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
-            query rewriting step. Defaults to `FREQUENCY_PENALTY`.
-        n: Number of rewritten query choices to generate by the Phyto model.
-            Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the query
-            rewriting step. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible Phyto
-            models during query rewriting. Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for the Phyto
-            model during query rewriting. Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for the query rewriting
-            step. Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for the query rewriting
-            step. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for the query rewriting
-            step. Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user, passed to the
-            Phyto model. Defaults to `USER`.
-        workspace_id: Identifier for the workspace containing the data, passed
-            to the `nl2sql` function. Defaults to `WORKSPACE_ID`.
-        subject_id: Identifier for the specific database subject or schema to
-            query against, passed to the `nl2sql` function.
-            Defaults to `SUBJECT_ID`.
-        dialog_id: Identifier for the current dialog or conversation session,
-            passed to the `nl2sql` function. If an empty string is provided
-            (default), a new unique dialog ID will be generated by this
-            function before calling `nl2sql`.
-        need_insight: Flag indicating whether to generate insights based on the
-            query results, passed to the `nl2sql` function.
-            Defaults to `NEED_INSIGHT`.
-        simplify_response: Flag indicating whether the structure of the
-            response from the `nl2sql` function should be simplified.
-            Defaults to `SIMPLIFY_RESPONSE`.
-        timeout: Total request timeout in seconds for each underlying API call
-            (both Phyto rewriting and NL2SQL execution). Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying API calls. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for underlying API calls.
-            Defaults to `MAX_RETRIES`.
+        user_query: The user's initial natural language query.
+        prompt_file: Path to the prompt template file for query rewriting.
+        prompt_path: Path or key within the prompt file for query rewriting.
+        api_key: API key for the Phyto model.
+        base_url: Base URL of the Phyto API service.
+        model: Identifier of the Phyto model to use.
+        frequency_penalty: Frequency penalty for the Phyto model.
+        n: Number of rewritten query choices to generate.
+        presence_penalty: Presence penalty for the Phyto model.
+        reasoning_effort: Reasoning effort for the Phyto model.
+        response_format: Desired output format for the Phyto model.
+        stream: Whether to stream the response from the Phyto model.
+        temperature: Temperature for the Phyto model.
+        top_p: Top_p for the Phyto model.
+        user: Unique session identifier for the end-user.
+        database_url: The URL of the NL2SQL service.
+        workspace_id: Identifier for the workspace containing the data.
+        subject_id: Identifier for the specific database subject or schema.
+        dialog_id: Identifier for the current dialog or conversation session.
+        need_insight: Flag indicating whether to generate insights.
+        simplify_response: Flag indicating whether to simplify the response.
+        timeout: Timeout for each API call in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retries for failed requests.
 
     Returns:
-        A dictionary representing the JSON response from the `nl2sql` service,
-        obtained after executing the rewritten query. The exact structure
-        depends on the `nl2sql` service implementation and the
-        `simplify_response` flag.
+        A dictionary representing the JSON response from the `nl2sql` service.
 
     Raises:
-        McpError: If either the `phyto_chat` query rewriting step or the
-            subsequent `nl2sql` execution fails after all retry attempts.
+        McpError: If either the query rewriting or the NL2SQL execution fails.
     """
     dialog_id = dialog_id if dialog_id else str(uuid1())
     user_query = get_prompt(prompt_file, 'user/database',
@@ -237,6 +208,7 @@ async def rewrite_nl2sql(
     )
     response = await nl2sql(
         message_content=phyto_response['choices'][0]['message']['content'],
+        database_url=database_url,
         workspace_id=workspace_id,
         subject_id=subject_id,
         dialog_id=dialog_id,
