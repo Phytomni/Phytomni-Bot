@@ -46,12 +46,14 @@ def generate_env_template() -> None:
 DOMAIN_NAME=your_domain_name
 USER_NAME=your_username
 USER_PASSWORD=your_password
+AccessKeyID=your_AccessKeyID
+SecretAccessKey=your_SecretAccessKey
 BASE_URL=your_base_url
 MODEL_ID=your_model_id
-API_KEY=***
+API_KEY=your_api_key
 CODER_URL=your_coder_url
 CODER_MODEL=your_coder_model
-CODER_API=sk-20250101
+CODER_API_KEY=your_coder_api_key
 """
     env_example = Path(__file__).parent.parent / '.env.example'
     if not env_example.exists():
@@ -90,12 +92,14 @@ class SensitiveConfig(BaseSettings):
     DOMAIN_NAME: str
     USER_NAME: str
     USER_PASSWORD: SecretStr
+    AccessKeyID: SecretStr
+    SecretAccessKey: SecretStr
     BASE_URL: str
     MODEL_ID: str
     API_KEY: SecretStr
     CODER_URL: str
     CODER_MODEL: str
-    CODER_API: SecretStr
+    CODER_API_KEY: SecretStr
 
     class Config:
         """Pydantic configuration for the `SensitiveConfig` model.
@@ -119,12 +123,14 @@ class SensitiveConfig(BaseSettings):
             'DOMAIN_NAME': {'env': 'DOMAIN_NAME'},
             'USER_NAME': {'env': 'USER_NAME'},
             'USER_PASSWORD': {'env': 'USER_PASSWORD'},
+            'AccessKeyID':  {'env': 'AccessKeyID'},
+            'SecretAccessKey':  {'env': 'SecretAccessKey'},
             'BASE_URL': {'env': 'BASE_URL'},
             'MODEL_ID': {'env': 'MODEL_ID'},
             'API_KEY': {'env': 'API_KEY'},
             'CODER_URL': {'env': 'CODER_URL'},
             'CODER_MODEL': {'env': 'CODER_MODEL'},
-            'CODER_API': {'env': 'CODER_API'},
+            'CODER_API_KEY': {'env': 'CODER_API_KEY'},
         }
         env_file = ENV_PATH
         env_file_encoding = 'utf-8'

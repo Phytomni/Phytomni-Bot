@@ -192,10 +192,9 @@ class AnalystConfig(KnowledgeConfig):
         APP_ID: app id in difference compute resource
         RESOURCE: cpu and memory information in difference compute resource.
     """
+    OBS_SERVER: str = Field('https://obs.cn-east-3.myhuaweicloud.com')
+    BUCKET_NAME: str = Field('phytomni')
     OUTPUT_DIR: str = Field('/obs/phytomni/agent_data/test/test/')
-    EXECUTE_CODE: bool = Field(True)
-    POLL_INTERVAL: float = Field(300)
-    MAX_POLL: float = Field(86400)
     COMPUTE_RESOURCE: Literal['small', 'medium', 'large'] = Field('small')
     TASK_NAME: str = Field('analyst-agents-task')
     APP_ID: Dict[str, str] = Field({
@@ -206,6 +205,9 @@ class AnalystConfig(KnowledgeConfig):
         'small': {'cpu': 4, 'memory': 16},
         'medium': {'cpu': 8, 'memory': 32},
         'large': {'cpu': 16, 'memory': 64}})
+    EXECUTE_CODE: bool = Field(True)
+    POLL_INTERVAL: float = Field(300)
+    MAX_POLL: float = Field(86400)
 
 
 class ReviewConfig(KnowledgeConfig):
