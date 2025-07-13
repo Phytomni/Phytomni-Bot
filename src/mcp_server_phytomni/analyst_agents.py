@@ -91,9 +91,9 @@ async def submit(
         'execute_code': execute_code,
         'model_url': model_url,
         'model_name': model_name,
-        'api_key': api_key}
-    file_id = uuid1()
-    josn_file = Path(f'{file_id}.json')
+        'api_key': api_key,
+    }
+    josn_file = Path(f'{uuid1()}.json')
     try:
         with open(josn_file, 'w', encoding='utf-8') as open_json:
             json.dump(data, open_json)
@@ -134,7 +134,7 @@ async def submit(
                     "pattern": "",
                     "values": ["phytomni:/agent_data/"],
                     "enum": [],
-                    "concurrent": ""
+                    "concurrent": "",
                 },
                 {
                     "name": "meta-file",
@@ -144,7 +144,7 @@ async def submit(
                     "pattern": "",
                     "values": [data_path],
                     "enum": [],
-                    "concurrent": ""
+                    "concurrent": "",
                 },
             ],
             "outputs": [],
@@ -157,7 +157,7 @@ async def submit(
                 "memory": f"{resource_dict[compute_resource]['memory']}G"
             },
             "summary": "",
-            "labels": []
+            "labels": [],
         }],
         "io_acc_id": "",
         "ioType": "",
@@ -174,7 +174,7 @@ async def submit(
                 response = await client.post(
                     analysis_url,
                     headers=job_headers,
-                    json=job_data
+                    json=job_data,
                 )
                 if response.status_code == 201:
                     return {
