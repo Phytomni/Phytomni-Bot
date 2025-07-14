@@ -653,25 +653,25 @@ user:
     data that we have provided you with, now your task goal is: Please help me to
     predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
     NIP.'
-  evolution_analysis_meta: "Note1: You don't need to build nr database index; \nNote2:\
-    \ You need to install diamond software using conda; \nstep1, Find Gene's Protein\
-    \ Sequence using grep; \nstep2, Sequence alignment using diamond blastp to find\
-    \ top40 sequence[--max-target-seqs 40], using 16 threads[-t 16](conda install\
-    \ diamond); \nstep3, Extract the sequence ids from the blast result using awk;\
-    \ \nstep4, Extract the matched sequences from the database using seqkit(conda\
-    \ install seqkit); \nstep5, Append protein sequences of unknown function to the\
-    \ end of the matched sequences file; \nstep6, Multiple sequence alignment using\
-    \ clustalw2(conda install clustalw); \nstep7, Constructing the phylogenetic tree\
-    \ using fasttree(conda install fasttree); \nstep8, Searching for conserved domains\
-    \ of protein using hmmscan"
+  evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2:\
+    \  You need to install diamond software using conda;\nstep1, Find Gene's Protein \
+    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find top40 \
+    \ sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install diamond -c \
+    \ bioconda);\nstep3, Extract the sequence ids from the blast result using awk;\nstep4,\
+    \  Extract the matched sequences from the database using seqkit(conda install seqkit -c\
+    \  bioconda);\nstep5, Append protein sequences of unknown function to the end of the \
+    \ matched sequences file;\nstep6, Multiple sequence alignment using clustalw2(conda \ 
+    \ install clustalw -c bioconda);\nstep7, Constructing the phylogenetic tree using \ 
+    \ fasttree(conda install fasttree -c bioconda);\nstep8, Searching for conserved \ 
+    \ domains of protein using hmmscan"
   deepgo2_analysis_meta: "Note1, You need to use deepgo2 environment to predict protein\
     \ go function; \nNote2, You do not need to install torch with conda or pip; \n\
     Note3, deepgo2 usage is as follows, \n<deepgo usage> \n        Options \n    \
     \        -if, --in-file TEXT        Input FASTA file  [required] \n          \
     \  -of, --out-file TEXT       Output dir  [required] \n            --data-root,\
     \ -dr TEXT      Prediction model  [required] \n</deepgo usage> \n<deepgo example>\
-    \ \n    commond_line: conda activate epic && mkdir output && python /home/health-user/deepgo2/predict.py\
-    \ -if $fasta -of ./output --data-root /home/health-user/deepgo2/data \n</deepgo\
+    \ \n    commond_line: conda activate deepgo2 && mkdir output && python /opt/health/deepgo2/predict.py\
+    \ -if $fasta -of ./output --data-root /opt/health/deepgo2/data \n</deepgo\
     \ example> \nNote4, DeepGO2 tool output_dir is the fasta sequences dir; \nNote5,\
     \ You need to activate deepgo2 environment before executing the code at each step;\
     \ \nstep1, Find Gene's Protein Sequence using grep; \nstep2, predict protein go\
@@ -705,14 +705,14 @@ user:
     \ using grep; \nstep2, Organize the protein sequences into an input JSON format\
     \ file, and save it; \nstep3, Predict Protein Sturctre using protenix. (conda\
     \ activate af3)"
-  promoter_analysis_meta: "step1, Find Gene's Promoter Sequence using grep; \nstep2,\
-    \ Make blast index of gene promoter sequence(65_species_promoters.fa index); \n\
-    step3, Sequence alignment using blastn to find top5 gene promoter sequence in\
-    \ rice; \nstep4, Extract the gene promoter sequence ids from the blastn result\
-    \ using awk; \nstep5, Extract the matched gene promoter sequences from the promoter\
-    \ database file using seqkit; \nstep6, Append the gene promoter sequence we analyzed\
-    \ to the end of the matched sequences file; \nstep7, Analysis the conserved motif\
-    \ in the gene promoter sequences using meme(conda install meme)"
+  promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you \
+    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence using\
+    \  grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter sequence\
+    \  in rice; \nstep3, Extract the gene promoter sequence ids from the blastn result \
+    \ using awk; \nstep4, Extract the matched gene promoter sequences from the promoter \
+    \ database file using seqkit; \nstep5, Append the gene promoter sequence we analyzed \
+    \ to the end of the matched sequences file; \nstep6, Analysis the conserved motif in \
+    \ the gene promoter sequences using meme(conda install meme -c bioconda)"
   protein_design_analysis_meta: "Note1: You don't need to build nr database index;\
     \ \nNote2: You need to install diamond software using conda(conda install diamond);\
     \ \nNote3: You need to install cd-hit software using conda(conda install cd-hit);\
@@ -774,61 +774,50 @@ user:
     \ --protein_file $your_protein_file --align_file $water_out --out $out_dir \n\
     </compute_psap_score usage example> \nstep1, Find Gene's Protein Sequence using\
     \ grep; \nstep2, Sequence alignment using diamond blastp to find top5000 sequence[--max-target-seqs\
-    \ 5000], using 16 threads[-t 16](conda install diamond); \nstep3, Extract the\
+    \ 5000], using 16 threads[-t 16] and --tmpdir $tmp paramter(conda install diamond -c bioconda); \nstep3, Extract the\
     \ sequence ids from the blast result using awk; \nstep4, Extract the matched sequences\
-    \ from the database using seqkit(conda install seqkit); \nstep5, De-redundancy\
-    \ of 5000 protein sequences using cd-hit(conda install cd-hit); \nstep6, Use water\
+    \ from the database using seqkit(conda install seqkit -c bioconda); \nstep5, De-redundancy\
+    \ of 5000 protein sequences using cd-hit(conda install cd-hit -c bioconda); \nstep6, Use water\
     \ software to align the target protein sequence with the de-redundant protein\
-    \ sequence(conda install emboss); \nstep7, PSAP calculation using script compute_psap_score.py(conda\
+    \ sequence(conda install emboss -c bioconda); \nstep7, PSAP calculation using script compute_psap_score.py(conda\
     \ activate af3)"
-  gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
-    \ conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
-    \ install seaborn packages(conda activate af3 && pip install seaborn -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \ \nstep1, prepare file list according user want to plot tissues file;  \nstep2,\
-    \ plot gene expression in different tissues using plot script. \n<usage> \n  \
-    \      usage: gene_expression_boxplot.py [-h] [--gene_id GENE_ID] [--sample_dir\
-    \ SAMPLE_DIR] [--sample_list SAMPLE_LIST] [--exp_file EXP_FILE] [--plot_type PLOT_TYPE]\
-    \ [--out OUT] \n        options: \n        -h, --help            show this help\
-    \ message and exit \n        --gene_id GENE_ID     the gene id you want to plot.\
-    \ \n        --sample_dir SAMPLE_DIR \n                                sample file\
-    \ folder path.(default: /home/health-user/genome-agent-api-service/runtime/input/)\
-    \ \n        --sample_list SAMPLE_LIST \n                                sample\
-    \ list file. \n        --exp_file EXP_FILE   expression file path. \n        --plot_type\
-    \ PLOT_TYPE the type of picture for boxplot \n        --out OUT             output\
-    \ folder path. \n        $plot_type:  \n        1. tissues \n        2. cultivars\
-    \ \n        3. genotypes \n        4. treatments \n</usage> \n<example> \nQuestion:\
-    \  Please plot the expression of the gene MYC between roots and leaves \n    \
-    \        You need to prepare a file, including ROOT.txt and LEAF.txt; \n     \
-    \       <file_content> \n                ROOT.txt \n                LEAF.txt \n\
-    \            </file_content> \n            <cmd_line> \n                conda\
-    \ activate af3 && pip install seaborn && python /home/health-user/genome-agent-api-service/runtime/input/gene_expression_boxplot.py\
-    \ --gene_id MYC --sample_dir /home/health-user/genome-agent-api-service/runtime/input/\
-    \ --sample_list $prepare_file --exp_file $exp_file_path --plot_type tissues --out\
-    \ $out \n            </cmd_line> \nQuestion:  Differences in gene expression of\
-    \ MYC gene under high temperature and normal conditions \n            You need\
-    \ to prepare a file, including ROOT.txt and LEAF.txt; \n            <file_content>\
-    \ \n                HEAT_STRESS.txt \n                CONTROL.txt \n         \
-    \   </file_content> \n            <cmd_line> \n                conda activate\
-    \ af3 && pip install seaborn && python /home/health-user/genome-agent-api-service/runtime/input/gene_expression_boxplot.py\
-    \ --gene_id MYC --sample_dir /home/health-user/genome-agent-api-service/runtime/input/\
-    \ --sample_list $prepare_file --exp_file $exp_file_path --plot_type treatments\
-    \ --out $out \n            </cmd_line> \n</example>"
-  single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda(conda\
-    \ activate af3);  \nNote2: You need to activate af3 environment and install scanpy\
-    \ and anndata packages(conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \ \nstep1, install the packages and plot the gene expression in different tissues\
-    \ using plot_gene.py;(conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\
-    \  \n<usage> \n        usage: plot_gene.py [-h] [-i SINGLE_CELL_DATA] [-o OUTPUT_DIR]\
-    \ [-g GENE_ID] \n        options: \n        -h, --help            show this help\
-    \ message and exit \n        -i SINGLE_CELL_DATA   single cell data\n        -o\
-    \ OUTPUT_DIR   output folder path \n        -g GENE_ID  the gene id you want to\
-    \ plot. \n</usage> \n<example> \nQuestion:  Please plot the expression of the\
-    \ gene MYC in different cells. \n            <cmd_line> \n                conda\
-    \ activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ && python /home/health-user/genome-agent-api-service/runtime/input/plot_gene.py\
-    \ -i /home/health-user/genome-agent-api-service/runtime/input/rice_scRNA_omics.h5ad\
-    \ --sample_dir /home/health-user/runtime/input/ -o $output_dir -g MYC \n     \
-    \       </cmd_line> \n</example>"
+  gene_expression_analysis_meta: "Note1: You need to activate af3 environment using conda(conda activate af3);\
+    \   \nNote2: You need to activate af3 environment and install seaborn packages(conda activate af3 && pip install \
+    \ seaborn -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple); \nstep1, Use the script to draw gene expression\
+    \  patterns based on the sample list we provided.\n<usage> \n        usage: gene_expression_boxplot.py [-h] \
+    \ [--gene_id GENE_ID] [--sample_dir SAMPLE_DIR] [--sample_list SAMPLE_LIST] [--exp_file EXP_FILE] [--plot_type PLOT_TYPE]\
+    \  [--out OUT] \n        options: \n        -h, --help            show this help message and exit \n        \
+    \ --gene_id GENE_ID     the gene id you want to plot. \n        --sample_dir SAMPLE_DIR \n                                \
+    \ sample file folder path.(default: /opt/health/genome-agent-api-service/runtime/input/) \n        \
+    \ --sample_list SAMPLE_LIST \n                                sample list file.(default: \
+    \ /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt) \n        \
+    \ --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv) \n\
+    \         --plot_type PLOT_TYPE the type of picture for boxplot \n        --out OUT             output folder path. \n        \
+    \ $plot_type:  \n        1. tissues \n        2. cultivars \n        3. genotypes \n        4. treatments \n</usage> \n\
+    \ <example> \nQuestion:  Please plot the expression of the gene MYC between roots and leaves \n            \
+    \ You need to prepare a file, including ROOT.txt and LEAF.txt; \n            <file_content> \n                \
+    \ ROOT.txt \n                LEAF.txt \n            </file_content> \n            <cmd_line> \n                \
+    \ conda activate af3 && pip install seaborn && python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir \
+    \ --sample_list $prepare_file --exp_file $exp_file_path --plot_type tissues --out $out \n            </cmd_line> \n\
+    \ Question:  Differences in gene expression of MYC gene under high temperature and normal conditions \n            \
+    \ You need to prepare a file, including ROOT.txt and LEAF.txt; \n            <file_content> \n                \
+    \ HEAT_STRESS.txt \n                CONTROL.txt \n            </file_content> \n            <cmd_line> \n                \
+    \ conda activate af3 && pip install seaborn && python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir \
+    \ --sample_list $prepare_file --exp_file $exp_file_path --plot_type treatments --out $out \n            </cmd_line> \n</example>"
+  single_cell_analysis_meta: "Note1: You do not need to install any software;\nNote2: \
+    \ You'll need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find \
+    \ Gene's prompter Sequence using grep;\nstep2, Prediction of modifications in promoters\
+    \  using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep && \
+    \ cd /opt/health/epic_models/smep)\n<smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl \
+    \ -I $fasta_file -O /$output_dir/$out_file -T $epigenetic_modification_type\n    $epigenetic_modification_type:\n\
+    \     1. 5mC\n    2. 6mA\n    3. m6A\n    4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n    \
+    \ Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
+    \     Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n    \
+    \ Note3: out_file You can specify files in any path\n</smep usage>\n<smep example>\n    \
+    \ question: please help me to predict the 5mC modification of A gene prompter\n    \
+    \ commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep \
+    \ && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa \
+    \ -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>"
   ppi_analysis_meta: "Note1: You don't need to install protenix software using conda;\
     \ \nNote2: You need to activate af3 environment;(conda activate af3); \nNote3:\
     \ protenix commdline softwore usage is as follows: \n<proteix usage method> \n\
@@ -879,28 +868,24 @@ user:
     \ can't find, skipped this gene!); \nstep4, Organize the protein sequences into\
     \ an input JSON format file, and save it using python script; \nstep5, Predict\
     \ Protein Sturctre using protenix. (conda activate af3)"
-  smep_analysis_meta: "Note1: You do not need to install any software; \nNote2: You'll\
-    \ need to strictly adhere to Meta and generate a two-step plan; \nNote3: When\
-    \ the output folder is generated, the absolute path of the output is prefixed\
-    \ with /home/health-user/genome-agent-api-service/runtime/$dir \nstep1, Find Gene's\
-    \ prompter Sequence using grep; \nstep2, Prediction of modifications in promoters\
-    \ using SMEP(conda activate epic && cp /home/health-user/genome-agent-api-service/runtime/$dir/$step1_fasta_file\
-    \ /home/health-user/epic_models/smep && cd /home/health-user/epic_models/smep)\
-    \ \n<smep usage> \n    perl smep_prediction_py3.5.pl -I $fasta_file -O /home/health-user/genome-agent-api-service/runtime/$dir/$out_file\
-    \ -T $epigenetic_modification_type \n    $epigenetic_modification_type: \n   \
-    \ 1. 5mC \n    2. 6mA \n    3. m6A \n    4. H3K27me3 \n    5. H3K4me3 \n    6.\
-    \ H3K9ac \n    Note1: When you run the script, you must be under the path /home/health-user/epic_models/smep/\
-    \ \n    Note2: The fasta_file must be saved under the path /home/health-user/epic_models/smep/\
-    \ \n    Note3: out_file You can specify files in any path \n</smep usage> \n<smep\
-    \ example> \n    question: please help me to predict the 5mC modification of A\
-    \ gene prompter \n    commond_line: conda activate epic && cp A_gene_prompter.fa\
-    \ /home/health-user/epic_models/smep && cd /home/health-user/epic_models/smep\
-    \ && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa -O /home/health-user/genome-agent-api-service/runtime/$dir/A_gene_prompter_5mC.out\
-    \ -T 5mC \n<smep example>"
+  smep_analysis_meta: "Note1: You do not need to install any software;\nNote2: You'll \
+    \ need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find Gene's\
+    \  prompter Sequence using grep;\nstep2, Prediction of modifications in promoters \
+    \ using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep \
+    \ && cd /opt/health/epic_models/smep)\n<smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl\
+    \  -I $fasta_file -O /$output_dir/$out_file -T $epigenetic_modification_type\n    \
+    \ $epigenetic_modification_type:\n    1. 5mC\n    2. 6mA\n    3. m6A\n    4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n\
+    \     Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
+    \     Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n    \
+    \ Note3: out_file You can specify files in any path\n</smep usage>\n<smep example>\n    \
+    \ question: please help me to predict the 5mC modification of A gene prompter\n    \
+    \ commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep \
+    \ && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa \
+    \ -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>"
   smoc_analysis_meta: "Note: You do not need to install any software; \nstep1, Find\
     \ Gene's prompter Sequence using grep; \nstep2, Prediction of chromatin accessibility\
-    \ in promoters using SMOC(conda activate epic) \n<smoc usage> \n    python /home/health-user/epic_models/smoc/script/smoc_pred_dw_v1.py\
-    \ --input $input_fasta --model /home/health-user/epic_models/smoc/model/$model_type\
+    \ in promoters using SMOC(conda activate epic) \n<smoc usage> \n    python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
+    \ --input $input_fasta --model /opt/health/epic_models/smoc/model/$model_type\
     \ --output $out_dir --threshold 0.8 --window_size 800  \n    $model_type:  \n\
     \    1. Best_model_9311CK.h5: Wild-type chromatin accessibility of variety 9311\
     \ \n    2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state\
@@ -909,8 +894,8 @@ user:
     \ heat-excited state of variety NIP \n</smoc usage> \n<smoc example> \n    question:\
     \ please help me to predict the wild-type chromatin accessibility of Oryza sativa\
     \ Os12g0263100 gene prompter in 9311. \n    commond_line: conda activate epic\
-    \ && python /home/health-user/epic_models/smoc/script/smoc_pred_dw_v1.py --input\
-    \ $input_fasta --model /home/health-user/epic_models/smoc/model/Best_model_9311CK.h5\
+    \ && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input\
+    \ $input_fasta --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5\
     \ --output ./  \n<smoc example>"
   gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
     Please provide a comprehensive and accurate description of the {{species}} gene(s)\
