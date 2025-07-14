@@ -24,7 +24,7 @@ The server provides the following agents:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/Phytomni-Bot.git
+   git clone https://github.com/Phytomni/Phytomni-Bot.git
    cd Phytomni-Bot
    ```
 2. Install the dependencies using [uv](https://github.com/astral-sh/uv):
