@@ -2,6 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""This module provides a client for interacting with Phyto language models.
+
+It includes a function to generate text based on a user query and a system
+prompt, with support for various model parameters and retry mechanisms.
+"""
 import asyncio
 from random import uniform
 from typing import Any, Dict, List, Optional, Union
@@ -41,69 +46,38 @@ async def phyto_chat(
     max_retries: int = cc.MAX_RETRIES,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
-    """Generate text using a Phyto model, adapting to different API versions.
+    """Generate text using a Phyto model.
 
-    This function constructs a request to a Phyto language model.
-    It includes logic for dynamic adjustment of implements retry mechanisms
-    with exponential backoff for transient
-    errors.
+    This function sends a request to a Phyto language model and returns the
+    generated text. It supports various model parameters and includes a retry
+    mechanism with exponential backoff for transient errors.
 
     Args:
-        user_query: The user's natural language query or prompt.
-        prompt_file: Path to the prompt template file containing system
-            prompts. Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt. Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication, primarily for Phyto models.
-            Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service.
-            Defaults to `BASE_URL`.
-        model: Identifier of the model to use. This determines
-            which internal API call structure is used. Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0).
-            Positive values discourage repeating tokens.
-            Defaults to `FREQUENCY_PENALTY`.
-        n: Number of chat completion choices to generate.
-            Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0). Positive
-            values encourage introducing new concepts.
-            Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible
-            Phyto models (e.g., "auto", "high").
-            Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for Phyto
-            models, e.g., `{"type": "json_object"}` for JSON mode.
-            Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output.
-            Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0). Lower values (e.g., 0.2)
-            make output more deterministic, higher values (e.g., 0.8) make it
-            more random. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0). The model considers
-            tokens with `top_p` probability mass. E.g., 0.1 means only
-            tokens comprising the top 10% probability mass are considered.
-            Mutually exclusive with temperature in some models.
-            Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user (1-64 characters).
-            Defaults to `USER`.
-        timeout: Total request timeout in seconds for each API call attempt,
-            including connection. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            attempt. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for API calls that fail
-            with a retriable status code or network error.
-            Defaults to `MAX_RETRIES`.
-        semaphore: An optional asyncio.Semaphore to limit the number of
-            concurrent calls to the Phyto API. Defaults to `None`.
+        user_query: The user's natural language query.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path to the specific prompt within the template file.
+        api_key: The API key for the Phyto model.
+        base_url: The base URL for the Phyto API service.
+        model: The ID of the model to use.
+        frequency_penalty: The frequency penalty for the model.
+        n: The number of chat completion choices to generate.
+        presence_penalty: The presence penalty for the model.
+        reasoning_effort: The reasoning effort for the model.
+        response_format: The desired response format from the model.
+        stream: Whether to stream the response from the model.
+        temperature: The temperature for the model.
+        top_p: The top_p for the model.
+        user: The user ID for the model.
+        timeout: The timeout for each API call in seconds.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retries for failed requests.
+        semaphore: An optional semaphore to limit concurrency.
 
     Returns:
         A dictionary containing the API response from the Phyto model.
-        The structure of this dictionary depends on the model and API version
-        used.
 
     Raises:
-        McpError: If the API call fails after all retry attempts due to
-            HTTP errors, network issues, or if an unhandled error occurs.
+        McpError: If the API call fails after all retry attempts.
     """
     messages = [
         {
