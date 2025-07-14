@@ -1501,27 +1501,27 @@
         "oryza sativa": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/sample_class/tissues/": "Tissue sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/tissues_sample.txt": "Tissue sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/sample_class/cultivars/": "Cultivar sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/cultivars_sample.txt": "Cultivar sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/sample_class/genotypes/": "Genotype sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/genotypes_sample.txt": "Genotype sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/sample_class/treatments/": "Treatment sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/treatments_sample.txt": "Treatment sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice"
             }
         },
         "actinidia chinensis": {
@@ -1887,105 +1887,105 @@
         "arabidopsis thaliana": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/sample_class/tissues/": "Tissue sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/tissues_sample.txt": "Tissue sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/sample_class/cultivars/": "Cultivar sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/cultivars_sample.txt": "Cultivar sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/sample_class/genotypes/": "Genotype sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/genotypes_sample.txt": "Genotype sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/sample_class/treatments/": "Treatment sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/treatments_sample.txt": "Treatment sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana"
             }
         },
         "glycine max": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/sample_class/tissues/": "Tissue sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/tissues_sample.txt": "Tissue sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/sample_class/cultivars/": "Cultivar sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/cultivars_sample.txt": "Cultivar sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/sample_class/genotypes/": "Genotype sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/genotypes_sample.txt": "Genotype sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/sample_class/treatments/": "Treatment sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/treatments_sample.txt": "Treatment sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean"
             }
         },
         "triticum aestivum": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/sample_class/tissues/": "Tissue sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/tissues_sample.txt": "Tissue sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/sample_class/cultivars/": "Cultivar sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/cultivars_sample.txt": "Cultivar sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/sample_class/genotypes/": "Genotype sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/genotypes_sample.txt": "Genotype sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/sample_class/treatments/": "Treatment sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/treatments_sample.txt": "Treatment sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat"
             }
         },
         "zea mays": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/sample_class/tissues/": "Tissue sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/tissues_sample.txt": "Tissue sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/maize.csv": "Gene Expression Matrix in maize"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize"
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.", 
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/sample_class/cultivars/": "Cultivar sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/cultivars_sample.txt": "Cultivar sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/maize.csv": "Gene Expression Matrix in maize"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize"
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/sample_class/genotypes/": "Genotype sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/genotypes_sample.txt": "Genotype sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/maize.csv": "Gene Expression Matrix in maize"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize"
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/sample_class/treatments/": "Treatment sample files Path",
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/treatments_sample.txt": "Treatment sample list file",
-                "/obs/phytomni/agent_data/raw_data/05.transcriptome/zea_mays/maize.csv": "Gene Expression Matrix in maize"
+                "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize"
             }
         }
     },
