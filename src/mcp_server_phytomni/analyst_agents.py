@@ -212,7 +212,11 @@ async def submit(
 
 
 async def task_delete(task_id: str,
+                      analysis_url: str = ac.ANALYSIS_URL,
+                      region: str = ac.ANALYSIS_REGION,
                       timeout: float = ac.TIMEOUT,
+                      retriable_codes: List[int] = ac.RETRIABLE_CODES,
+                      max_retries: int = ac.MAX_RETRIES,
                       ) -> Dict[str, str]:
     """Check task execution status.
 
@@ -231,24 +235,44 @@ async def task_delete(task_id: str,
         McpError: On status check failure with error code and message
     """
     client_timeout = Timeout(timeout, connect=timeout)
-    json_data = {"force": True}
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        try:
-            response = await client.post(
-                url=f'{ac.ANALYSIS_URL}/{task_id}/terminate',
-                headers={"Content-Type": "application/json", 
-                         "X-Auth-Token": await get_token(region=ac.ANALYSIS_REGION)},
-                json=json_data, 
-                timeout=timeout
-            )
-            if response.status_code == 200:
-                print(f"Delete task {task_id} success.")
-            else:
-                print(f"Delete task {task_id} failed.")
-        except HTTPError as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f"Failed to delete task {str(e)}")) from e
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(
+                    url=f'{analysis_url}/{task_id}/terminate',
+                    headers={"Content-Type": "application/json",
+                             "X-Auth-Token": await get_token(region=region)},
+                    json={'force': True},
+                    timeout=timeout,
+                )
+                if response.status_code == 200:
+                    return f'Delete task {task_id} success.'
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message='Failed to delete task'))
+
+            except HTTPStatusError as e:
+                if (
+                    hasattr(e, 'response') and
+                    e.response is not None and
+                    e.response.status_code in retriable_codes and
+                    attempt < max_retries
+                ):
+                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Failed to delete task: {str(e)}")) from e
+
+            except (ConnectError, TimeoutException) as e:
+                if attempt < max_retries:
+                    await asyncio.sleep(1.5 ** attempt)
+                    continue
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Network error: {str(e)}"
+                )) from e
 
 
 async def task_status(task_id: str,
