@@ -664,6 +664,9 @@ async def async_gene_function(
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
     max_concurrency: int = dgc.MAX_CONCURRENCY,
+    use_data_agent: bool = True,
+    use_analyst_agent: bool = True,
+    direct_return: bool = False,
 ) -> Dict[str, Any]:
     """Determine and summarize the function of a specified gene.
 
@@ -782,16 +785,17 @@ async def async_gene_function(
             `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
             final prompt.
     """
-    manager = _get_manager()
-    task_id = manager.create_task()
-    _ = await create_task(
-        url=create_task_url,
-        server_id=task_id,
-        server_status='running',
-        tool_name='DeepGenomeAgent',
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries)
+    if not direct_return:
+        manager = _get_manager()
+        task_id = manager.create_task()
+        _ = await create_task(
+            url=create_task_url,
+            server_id=task_id,
+            server_status='running',
+            tool_name='DeepGenomeAgent',
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries)
 
     async def gene_function(
         species_code: str,
@@ -825,6 +829,9 @@ async def async_gene_function(
         retriable_codes: List[int] = dgc.RETRIABLE_CODES,
         max_retries: int = dgc.MAX_RETRIES,
         max_concurrency: int = dgc.MAX_CONCURRENCY,
+        use_data_agent: bool = True,
+        use_analyst_agent: bool = True,
+        direct_return: bool = False,
     ) -> Dict[str, Any]:
         """Determine and summarize the function of a specified gene.
 
@@ -946,36 +953,40 @@ async def async_gene_function(
                 internal `SPECIES_CODE_MAP` when preparing data for
                 `gene_retrieve` or the final prompt.
         """
-        user_id = uuid.uuid1()
-        output_dir = create_output_dir(user_id, gene_id)
-        species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
-            ')').lower()
-        analysis_task = analysis_module(species=species_str,
-                                        gene_id=gene_id,
-                                        output=output_dir,
-                                        user_id=user_id,
-                                        batch=True)
-        analysis_task_str = json.dumps(analysis_task)
-        manager.update_task(task_id, 'running', analysis_task_str, output_dir)
+        if use_analyst_agent:
+            user_id = uuid.uuid1()
+            output_dir = create_output_dir(user_id, gene_id)
+            species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
+                ')').lower()
+            analysis_task = analysis_module(species=species_str,
+                                            gene_id=gene_id,
+                                            output=output_dir,
+                                            user_id=user_id,
+                                            batch=True)
+            if not direct_return:
+                analysis_task_str = json.dumps(analysis_task)
+                manager.update_task(task_id, 'running',
+                                    analysis_task_str, output_dir)
 
-        gene_network_results = await gene_network(
-            species_code=species_code,
-            gene_id=gene_id,
-            workspace_id=workspace_id,
-            subject_id=subject_id,
-            dialog_id=dialog_id,
-            need_insight=need_insight,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        )
-        gene_orthologs_list = gene_network_results[0]
-        gene_paralogs_list = gene_network_results[1]
-        gene_interaction_list = gene_network_results[2]
-        species_gene_list = sum(gene_network_results, [])
-        species_gene_list = [(species_code, gene_id)] + species_gene_list
+        species_gene_list = [(species_code, gene_id)]
+        if use_data_agent:
+            gene_network_results = await gene_network(
+                species_code=species_code,
+                gene_id=gene_id,
+                workspace_id=workspace_id,
+                subject_id=subject_id,
+                dialog_id=dialog_id,
+                need_insight=need_insight,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            gene_orthologs_list = gene_network_results[0]
+            gene_paralogs_list = gene_network_results[1]
+            gene_interaction_list = gene_network_results[2]
+            species_gene_list += sum(gene_network_results, [])
+
         semaphore = asyncio.Semaphore(max_concurrency)
-
         tasks = [
             gene_symbol(
                 species_code=each_species_code,
@@ -1053,68 +1064,106 @@ async def async_gene_function(
                 break
         retrieve_results = '\n\n'.join(retrieve_results)
 
-        orthologs_string = network_to_string(gene_orthologs_list,
-                                             species_gene_symbol_dict,
-                                             species_gene_anno_dict,
-                                             'Orthologous')
-        paralogs_string = network_to_string(gene_paralogs_list,
-                                            species_gene_symbol_dict,
-                                            species_gene_anno_dict,
-                                            'Paralogous')
-        interaction_string = network_to_string(gene_interaction_list,
-                                               species_gene_symbol_dict,
-                                               species_gene_anno_dict,
-                                               'Potential interacting')
-        gene_anno = species_gene_anno_dict[(species_code, gene_id)]
-        phyto_response = await phyto_chat(
-            user_query=get_prompt(
-                prompt_file,
-                'user/gene_function_network_anno',
-                {
-                    'species': SPECIES_CODE_MAP[species_code],
-                    'gene_string': '|'.join(species_gene_symbol_dict[
-                        (species_code, gene_id)]),
-                    'retrieve_results': retrieve_results,
-                    'description_string': gene_anno['description'],
-                    'go_string': '; '.join([go_list[1] for go_list
-                                            in gene_anno['go']]),
-                    'interpro_string': '; '.join([ip_list[1] for ip_list
-                                                  in gene_anno['interpro']]),
-                    'mapman_string': '; '.join([mm_list[1] for mm_list
-                                                in gene_anno['mapman']]),
-                    'orthologs_string': orthologs_string,
-                    'paralogs_string': paralogs_string,
-                    'interaction_string': interaction_string,
-                },
-            ),
-            prompt_file=prompt_file,
-            prompt_path=prompt_path,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            frequency_penalty=frequency_penalty,
-            n=n,
-            presence_penalty=presence_penalty,
-            reasoning_effort=reasoning_effort,
-            response_format=response_format,
-            stream=stream,
-            temperature=temperature,
-            top_p=top_p,
-            user=user,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        )
-        manager.update_task(task_id, 'finished', analysis_task_str, output_dir)
-        _ = await update_task(
-            url=update_task_url,
-            server_id=task_id,
-            server_status='finished',
-            server_file_path='',
-            tool_result=json.dumps(phyto_response),
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries)
+        if use_data_agent:
+            orthologs_string = network_to_string(gene_orthologs_list,
+                                                 species_gene_symbol_dict,
+                                                 species_gene_anno_dict,
+                                                 'Orthologous')
+            paralogs_string = network_to_string(gene_paralogs_list,
+                                                species_gene_symbol_dict,
+                                                species_gene_anno_dict,
+                                                'Paralogous')
+            interaction_string = network_to_string(gene_interaction_list,
+                                                   species_gene_symbol_dict,
+                                                   species_gene_anno_dict,
+                                                   'Potential interacting')
+            gene_anno = species_gene_anno_dict[(species_code, gene_id)]
+            phyto_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_network_anno',
+                    {
+                        'species': SPECIES_CODE_MAP[species_code],
+                        'gene_string': '|'.join(species_gene_symbol_dict[
+                            (species_code, gene_id)]),
+                        'retrieve_results': retrieve_results,
+                        'description_string': gene_anno['description'],
+                        'go_string': '; '.join([go_list[1] for go_list
+                                                in gene_anno['go']]),
+                        'interpro_string': '; '.join([ip_list[1] for ip_list
+                                                      in gene_anno['interpro']]),
+                        'mapman_string': '; '.join([mm_list[1] for mm_list
+                                                    in gene_anno['mapman']]),
+                        'orthologs_string': orthologs_string,
+                        'paralogs_string': paralogs_string,
+                        'interaction_string': interaction_string,
+                    },
+                ),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream,
+                temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+        else:
+            phyto_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function',
+                    {
+                        'species': SPECIES_CODE_MAP[species_code],
+                        'gene_string': '|'.join(species_gene_symbol_dict[
+                            (species_code, gene_id)]),
+                        'retrieve_results': retrieve_results,
+                    },
+                ),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream,
+                temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+        if direct_return:
+            phyto_response['choices'][0]['message'].update(
+                {'doc_list': gene_retrieve_results['doc_list'], 'total': 10000})
+            return phyto_response
+        else:
+            _ = await update_task(
+                url=update_task_url,
+                server_id=task_id,
+                server_status='finished',
+                server_file_path='',
+                tool_result=json.dumps(phyto_response),
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries)
+            if use_analyst_agent:
+                manager.update_task(task_id, 'finished',
+                                    analysis_task_str, output_dir)
 
     def run_async():
         asyncio.run(gene_function(
@@ -1148,12 +1197,54 @@ async def async_gene_function(
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
-            max_concurrency=max_concurrency))
+            max_concurrency=max_concurrency,
+            use_data_agent=use_data_agent,
+            use_analyst_agent=use_analyst_agent,
+            direct_return=direct_return,
+        ))
 
-    thread = Thread(target=run_async)
-    thread.daemon = True
-    thread.start()
-    return task_id
+    if direct_return:
+        return await gene_function(
+            species_code=species_code,
+            gene_id=gene_id,
+            workspace_id=workspace_id,
+            subject_id=subject_id,
+            dialog_id=dialog_id,
+            need_insight=need_insight,
+            repo_id_dict=repo_id_dict,
+            page_num=page_num,
+            filter_string=filter_string,
+            extra_repo_ids=extra_repo_ids,
+            score_threshold=score_threshold,
+            top_n=top_n,
+            prompt_file=prompt_file,
+            prompt_path=prompt_path,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            frequency_penalty=frequency_penalty,
+            max_tokens=max_tokens,
+            n=n,
+            presence_penalty=presence_penalty,
+            reasoning_effort=reasoning_effort,
+            response_format=response_format,
+            stream=stream,
+            temperature=temperature,
+            top_p=top_p,
+            user=user,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            use_data_agent=use_data_agent,
+            use_analyst_agent=use_analyst_agent,
+            direct_return=direct_return,
+        )
+    else:
+        thread = Thread(target=run_async)
+        thread.daemon = True
+        thread.start()
+        return task_id
 
 
 async def get_interaction_gene_list(gene_id):
