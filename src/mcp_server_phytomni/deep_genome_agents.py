@@ -1090,8 +1090,8 @@ async def async_gene_function(
                         'description_string': gene_anno['description'],
                         'go_string': '; '.join([go_list[1] for go_list
                                                 in gene_anno['go']]),
-                        'interpro_string': '; '.join([ip_list[1] for ip_list
-                                                      in gene_anno['interpro']]),
+                        'interpro_string': '; '.join([
+                            ip_list[1] for ip_list in gene_anno['interpro']]),
                         'mapman_string': '; '.join([mm_list[1] for mm_list
                                                     in gene_anno['mapman']]),
                         'orthologs_string': orthologs_string,
@@ -1149,7 +1149,8 @@ async def async_gene_function(
             )
         if direct_return:
             phyto_response['choices'][0]['message'].update(
-                {'doc_list': gene_retrieve_results['doc_list'], 'total': 10000})
+                {'doc_list': gene_retrieve_results['doc_list'],
+                 'total': 10000})
             return phyto_response
         else:
             _ = await update_task(
