@@ -30,7 +30,7 @@ def load_env_file() -> bool:
         generate_env_template()
         raise FileNotFoundError(
             'Missing .env file. '
-            f'Please create using {PROJECT_ROOT}/.env.example'
+            f'Please create using {PROJECT_ROOT}/config/.env.example'
         )
     load_dotenv(ENV_PATH, override=True)
     return True
