@@ -5,7 +5,7 @@
 import asyncio
 from enum import Enum
 from json import dumps
-from typing import Annotated, Dict, List
+from typing import Annotated, Dict
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -68,19 +68,29 @@ class AnalystAgent(BaseModel):
         ),
     ]
     data_list: Annotated[
-        List[Dict[str, str]],
+        Dict[str, str],
         Field(
-            description="List of input datasets where "
-                        "each item is a dictionary containing: "
-                        "'obs_url' (OBS path to sequence file) and "
-                        "'description' (data source characteristics)",
+            description="Input datasets dictionary mapping OBS file paths to "
+                        "their detailed descriptions. Keys should be absolute "
+                        "OBS paths pointing to genomic data files. Values "
+                        "should comprehensively describe the data "
+                        "characteristics including sequencing type, organism "
+                        "source, data quality metrics, experimental "
+                        "conditions, and intended analysis purpose",
             json_schema_extra={
-                "example": [{
-                    "obs_url": "obs://bucket/path/to/file.fastq",
-                    "description": "Whole genome sequencing data.",
-                }],
-                "x-java-default": "new ArrayList<>()",
-                "x-csharp-default": "new List<Dictionary<string, string>>()",
+                "example": {
+                    "/obs/phytomni/path/to/reference.fasta":
+                        "High-quality reference genome assembly for target "
+                        "organism, containing complete chromosomal sequences.",
+                    "/obs/phytomni/path/to/sequence.fastq":
+                        "Illumina paired-end whole genome sequencing data, "
+                        "150bp read length, from fresh tissue sample "
+                        "collected under standard conditions, intended for "
+                        "SNP/InDel detection and comparative genomics "
+                        "analysis.",
+                },
+                "x-java-default": "new HashMap<>()",
+                "x-csharp-default": "new Dictionary<string, string>()",
             }
         ),
     ]
@@ -188,19 +198,29 @@ class InSilicoResearchAgent(BaseModel):
         ),
     ]
     data_list: Annotated[
-        List[Dict[str, str]],
+        Dict[str, str],
         Field(
-            description="List of input datasets where "
-                        "each item is a dictionary containing: "
-                        "'obs_url' (OBS path to sequence file) and "
-                        "'description' (data source characteristics)",
+            description="Input datasets dictionary mapping OBS file paths to "
+                        "their detailed descriptions. Keys should be absolute "
+                        "OBS paths pointing to genomic data files. Values "
+                        "should comprehensively describe the data "
+                        "characteristics including sequencing type, organism "
+                        "source, data quality metrics, experimental "
+                        "conditions, and intended analysis purpose",
             json_schema_extra={
-                "example": [{
-                    "obs_url": "obs://bucket/path/to/file.fastq",
-                    "description": "Whole genome sequencing data.",
-                }],
-                "x-java-default": "new ArrayList<>()",
-                "x-csharp-default": "new List<Dictionary<string, string>>()",
+                "example": {
+                    "/obs/phytomni/path/to/reference.fasta":
+                        "High-quality reference genome assembly for target "
+                        "organism, containing complete chromosomal sequences.",
+                    "/obs/phytomni/path/to/sequence.fastq":
+                        "Illumina paired-end whole genome sequencing data, "
+                        "150bp read length, from fresh tissue sample "
+                        "collected under standard conditions, intended for "
+                        "SNP/InDel detection and comparative genomics "
+                        "analysis.",
+                },
+                "x-java-default": "new HashMap<>()",
+                "x-csharp-default": "new Dictionary<string, string>()",
             }
         ),
     ]
@@ -389,11 +409,14 @@ async def serve() -> None:
                 sensitiveconfig = SensitiveConfig().load()
                 response = await multi_retrieve_generate(
                     user_query=args.user_query,
+                    retrieve_url=knowledgeconfig.RETRIEVE_URL,
                     repo_id_dict=knowledgeconfig.REPO_ID_DICT,
                     page_num=knowledgeconfig.PAGE_NUM,
                     filter_string=knowledgeconfig.FILTER_STRING,
                     scope=knowledgeconfig.SCOPE,
                     extra_repo_ids=knowledgeconfig.EXTRA_REPO_IDS,
+                    rerank_url=knowledgeconfig.RERANK_URL,
+                    rerank_batch_size=knowledgeconfig.RERANK_BATCH_SIZE,
                     score_threshold=knowledgeconfig.SCORE_THRESHOLD,
                     top_n=knowledgeconfig.TOP_N,
                     prompt_file=knowledgeconfig.PROMPT_FILE,
@@ -444,6 +467,7 @@ async def serve() -> None:
                     temperature=dataconfig.TEMPERATURE,
                     top_p=dataconfig.TOP_P,
                     user=dataconfig.USER,
+                    database_url=dataconfig.DATABASE_URL,
                     workspace_id=dataconfig.WORKSPACE_ID,
                     subject_id=dataconfig.SUBJECT_ID,
                     dialog_id=dataconfig.DIALOG_ID,
@@ -553,6 +577,8 @@ async def serve() -> None:
                 response = await async_gene_function(
                     species_code=args.species_code,
                     gene_id=args.gene_id,
+                    create_task_url=deepgenomeconfig.CREATE_TASK_URL,
+                    update_task_url=deepgenomeconfig.UPDATE_TASK_URL,
                     workspace_id=deepgenomeconfig.WORKSPACE_ID,
                     subject_id=deepgenomeconfig.SUBJECT_ID,
                     dialog_id=deepgenomeconfig.DIALOG_ID,
@@ -625,7 +651,7 @@ async def serve() -> None:
                     execute_code=insilicoresearchconfig.EXECUTE_CODE,
                     timeout=insilicoresearchconfig.TIMEOUT,
                     retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
-                    max_retries=insilicoresearchconfig.MAX_RETRIES
+                    max_retries=insilicoresearchconfig.MAX_RETRIES,
                 )
                 return [TextContent(
                     type='text',
