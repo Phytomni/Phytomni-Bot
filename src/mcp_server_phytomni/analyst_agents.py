@@ -284,7 +284,7 @@ async def task_status(task_id: str,
                       timeout: float = ac.TIMEOUT,
                       retriable_codes: List[int] = ac.RETRIABLE_CODES,
                       max_retries: int = ac.MAX_RETRIES,
-                      ) -> str:
+                      ) -> dict:
     """Check task execution status.
 
     Args:
@@ -352,7 +352,7 @@ async def task_log(task_id: str,
                    timeout: float = ac.TIMEOUT,
                    retriable_codes: List[int] = ac.RETRIABLE_CODES,
                    max_retries: int = ac.MAX_RETRIES,
-                   ) -> str:
+                   ) -> dict:
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -779,9 +779,13 @@ async def retrieve_plan_submit(
 
 async def wait_for_completion(
     task_id: str,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
     poll_interval: float = ac.POLL_INTERVAL,
     max_poll: float = ac.MAX_POLL,
-    timeout: float = ac.TIMEOUT,
 ) -> Dict[str, Any]:
     """Asynchronously monitor task execution until completion or timeout.
 
@@ -806,16 +810,24 @@ async def wait_for_completion(
     """
     start_time = time.time()
     while (time.time() - start_time) < max_poll:
-        status_data = await task_status(task_id, timeout)
-        if status_data.get('status') == 'FAILED':
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message="Task failed"))
+        status_data = await task_status(
+            task_id,
+            analysis_url=analysis_url,
+            region=region,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+        )
         if status_data.get('status') == 'FINISH':
             return status_data
+        elif status_data.get('status') == 'FAILED':
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message='Task failed',
+            ))
         await asyncio.sleep(poll_interval)
     raise asyncio.TimeoutError(
-        f"Exceeded max polling time {max_poll/60} minutes")
+        f'Exceeded max polling time {max_poll/60} minutes')
 
 
 async def submit_wait(goal_description: str,
