@@ -393,7 +393,7 @@ async def rerank(user_query: str,
                  timeout: float = kc.TIMEOUT,
                  retriable_codes: List[int] = kc.RETRIABLE_CODES,
                  max_retries: int = kc.MAX_RETRIES,
-                 ):
+                 ) -> list:
     """Rerank a list of documents based on a user query.
 
     This function sends a list of documents to a reranking service to obtain
@@ -465,7 +465,7 @@ async def rerank(user_query: str,
             docs.append({
                 'id': doc['chunk_id'],
                 'title': doc['title'],
-                'content': doc['content']
+                'content': doc['content'],
             })
             id_doc_dict.update({doc['chunk_id']: doc})
 
