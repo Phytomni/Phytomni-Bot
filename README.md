@@ -66,6 +66,7 @@ The server communicates over standard I/O using the MCP protocol. It exposes two
 - [pydantic](https://pypi.org/project/pydantic/)
 - [pydantic-settings](https://pypi.org/project/pydantic-settings/)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
+- [pyyaml](https://pypi.org/project/pyyaml/)
 
 ## License
 
