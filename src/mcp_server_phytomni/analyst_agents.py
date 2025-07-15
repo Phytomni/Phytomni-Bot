@@ -3,6 +3,27 @@
 # Author: maoyichao (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""
+This module provides a suite of asynchronous functions for interacting with a
+bioinformatics analysis platform. It enables submitting analysis tasks,
+monitoring their status, and managing them programmatically. The module
+leverages a combination of HTTP requests for API communication, object storage
+for data handling, and large language models for generating analysis plans.
+
+Key functionalities include:
+- Submitting complex bioinformatics tasks with specified parameters and data.
+- Generating analysis plans using language models, with or without retrieval
+  augmentation.
+- Monitoring the lifecycle of submitted tasks (e.g., pending, running,
+  completed, failed).
+- Handling asynchronous operations with retries and timeouts for robustness.
+- Uploading and deleting data from an Object Storage Service (OBS).
+
+The module is designed to be used in scenarios where automated, reproducible,
+and scalable bioinformatics analyses are required. It abstracts away the
+complexities of direct API and service interactions, providing a simplified
+interface for developers and researchers.
+"""
 import asyncio
 import datetime
 import json
@@ -55,32 +76,50 @@ async def submit(
     max_retries: int = ac.MAX_RETRIES,
     max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, str]:
-    """Submit analysis task to Bioinformatics Agents.
+    """
+    Submits an analysis task to the Bioinformatics Agents platform.
+
+    This function constructs and sends a request to initiate a new analysis
+    task based on the provided parameters. It handles the creation of a JSON
+    payload, uploads it to object storage, and then triggers the analysis
+    workflow.
 
     Args:
-        goal_description: Natural language description of analysis goals
-            - Must include task execution steps using meta_info
-        data_list: List of input data sources with:
-            - obs_url: OBS path to input files (required)
-            - description: Brief explanation of data source
-        output_dir: OBS path for storing analysis results
-        meta: Step-by-step instructions for processing
-            - Format: "step1, operation; step2, operation..."
-        execute_code: Enable automated code execution in workflow
-        timeout: Total request timeout (min 5s connect timeout)
-        task_name: task name in ai4s platform.
-        compute_resource: the compute resource in this submit task.
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        meta: Step-by-step instructions for processing.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model to be used.
+        coder_api_key: The API key for the coding model service.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for the OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name assigned to the task on the AI4S platform.
+        resource_dict: A dictionary defining the computational resources
+            (CPU, memory) for different resource levels.
+        app_id_dict: A dictionary mapping compute resource levels to
+            application IDs.
+        compute_resource: The level of compute resources to allocate for the
+            task ('small', 'medium', or 'large').
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+        max_poll: The maximum total duration in seconds to monitor the task.
 
     Returns:
-        Task submission response with:
-            - task_id: Unique identifier for tracking
-            - output_dir: The output results dirctory
-            - job_name: The job name in ai4s platform
-            - compute_resource: The compute resouce in this task
-            - error: Error message if failed
+        A dictionary containing the submission response, which includes the
+        task ID, output directory, job name, and compute resource details.
 
     Raises:
-        McpError: On submission failure with error code and message
+        McpError: If the task submission fails after all retries.
+        OSError: If uploading the data information to OBS fails.
     """
     meta += '\nlast step, compress the output folder into a zip file '
     meta += '(zip -r $output_dir.zip $output_dir).'
@@ -220,21 +259,26 @@ async def task_delete(task_id: str,
                       retriable_codes: List[int] = ac.RETRIABLE_CODES,
                       max_retries: int = ac.MAX_RETRIES,
                       ) -> str:
-    """Check task execution status.
+    """
+    Deletes a specified task from the analysis platform.
+
+    This function sends a request to terminate and delete a task using its
+    unique ID. It includes retry logic for transient network or server issues.
 
     Args:
-        task_id: Unique identifier from submit response
-        timeout: Total request timeout (min 5s connect timeout)
+        task_id: The unique identifier of the task to be deleted.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
 
     Returns:
-        Task status details with:
-            - task_id: Confirmation of requested ID
-            - status: One of 'pending', 'running', 'completed', 'failed'
-            - result: Analysis output (if completed)
-            - error: Error details (if failed)
+        A confirmation message indicating that the task was successfully
+        deleted.
 
     Raises:
-        McpError: On status check failure with error code and message
+        McpError: If the task deletion fails after all retries.
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -286,21 +330,27 @@ async def task_status(task_id: str,
                       retriable_codes: List[int] = ac.RETRIABLE_CODES,
                       max_retries: int = ac.MAX_RETRIES,
                       ) -> dict:
-    """Check task execution status.
+    """
+    Checks the execution status of a specified task.
+
+    This function queries the analysis platform for the current status of a
+    task identified by its ID. It provides details such as whether the task is
+    pending, running, completed, or failed.
 
     Args:
-        task_id: Unique identifier from submit response
-        timeout: Total request timeout (min 5s connect timeout)
+        task_id: The unique identifier of the task to check.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
 
     Returns:
-        Task status details with:
-            - task_id: Confirmation of requested ID
-            - status: One of 'pending', 'running', 'completed', 'failed'
-            - result: Analysis output (if completed)
-            - error: Error details (if failed)
+        A dictionary containing the task's status details, including its ID,
+        current status, and potentially results or error information.
 
     Raises:
-        McpError: On status check failure with error code and message
+        McpError: If checking the task status fails after all retries.
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -354,6 +404,27 @@ async def task_log(task_id: str,
                    retriable_codes: List[int] = ac.RETRIABLE_CODES,
                    max_retries: int = ac.MAX_RETRIES,
                    ) -> dict:
+    """
+    Retrieves the execution log for a specified task.
+
+    This function fetches the logs generated by a task during its execution,
+    which can be useful for debugging or monitoring progress.
+
+    Args:
+        task_id: The unique identifier of the task.
+        analysis_url: The URL for the analysis submission API.
+        compute_resource: The level of compute resources used by the task.
+        region: The geographical region of the analysis service.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+
+    Returns:
+        A dictionary containing the task's log data.
+
+    Raises:
+        McpError: If fetching the task log fails after all retries.
+    """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -435,72 +506,58 @@ async def plan_submit(
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
 ) -> Dict[str, str]:
-    """Generate a plan using a language model and submit it for execution.
+    """
+    Generates a plan using a language model and submits it for execution.
 
     This function first utilizes the `phyto_chat` service to process the
-    `goal_description`, likely to generate a structured plan or metadata
-    for an analysis task. This generated metadata, along with the original
-    `goal_description` and `data_list`, is then passed to the `submit`
-    function for further processing or execution.
+    `goal_description` and generate a structured plan. This plan, along with
+    the original goal and data, is then passed to the `submit` function for
+    execution.
 
     Args:
-        goal_description: A natural language description of the goal or task
-            to be achieved. This is used to generate a plan via `phyto_chat`.
-        data_list: A list of dictionaries, where each dictionary represents
-            a data item or source relevant to the goal.
-        output_dir: Directory path where outputs from the `submit` function
-            (e.g., execution results, generated files) should be stored.
-            Defaults to `OUTPUT_DIR`.
-        prompt_file: Path to the prompt template file used for constructing
-            the prompt for the plan generation step via `phyto_chat`.
-            Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt for plan generation.
-            Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model for plan
-            generation. Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service for plan generation.
-            Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use for plan generation.
-            Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
-            plan generation step. Defaults to `FREQUENCY_PENALTY`.
-        n: Number of plan choices to generate by the Phyto model.
-            Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
-            generation step. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible Phyto
-            models during plan generation. Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for the Phyto
-            model during plan generation. Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for the plan generation
-            step. Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for the plan generation
-            step. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for the plan generation
-            step. Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user, passed to the
-            Phyto model. Defaults to `USER`.
-        execute_code: Flag indicating whether any code generated or referenced
-            in the plan should be executed by the `submit` function.
-            Defaults to `EXECUTE_CODE`.
-        timeout: Total request timeout in seconds for each underlying API call
-            (both `phyto_chat` plan generation and the `submit` call).
-            Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying API calls. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for underlying API calls.
-            Defaults to `MAX_RETRIES`.
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path or key for the specific system prompt.
+        api_key: The API key for the language model.
+        base_url: The base URL of the language model API.
+        model: The identifier of the language model.
+        frequency_penalty: The penalty for token repetition.
+        n: The number of plan choices to generate.
+        presence_penalty: The penalty for new tokens.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The desired output format from the language model.
+        stream: A flag to enable real-time token streaming.
+        temperature: The randomness control for generation.
+        top_p: The nucleus sampling threshold.
+        user: A unique session identifier for the user.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model to be used.
+        coder_api_key: The API key for the coding model service.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for the OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name assigned to the task on the AI4S platform.
+        resource_dict: A dictionary defining the computational resources.
+        app_id_dict: A dictionary mapping compute resources to app IDs.
+        compute_resource: The level of compute resources to allocate.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
 
     Returns:
-        A dictionary containing the response from the `submit` function,
-        which typically includes information about the submission status or
-        execution results. The exact structure depends on the `submit`
-        function's implementation.
+        A dictionary with the response from the `submit` function, typically
+        containing submission status information.
 
     Raises:
-        McpError: If either the `phyto_chat` plan generation step or the
-            subsequent `submit` call fails after all retry attempts.
+        McpError: If plan generation or submission fails.
     """
     phyto_response = await phyto_chat(
         user_query=get_prompt(prompt_file, 'user/analysis',
@@ -551,7 +608,7 @@ async def plan_submit(
 
 async def retrieve_plan_submit(
     goal_description: str,
-    data_list: List[Dict[str, str]],
+    data_list: Dict[str, str],
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -599,95 +656,68 @@ async def retrieve_plan_submit(
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
 ) -> Dict[str, str]:
-    """Perform retrieval-augmented plan generation and submit for execution.
+    """
+    Performs retrieval-augmented plan generation and submits it for execution.
 
-    This function first retrieves relevant documents using `multi_retrieve`
-    based on the `goal_description`. These documents are then used to augment
-    the `goal_description` into a new prompt. This augmented prompt is passed
-    to `phyto_chat` to generate a plan or metadata. Finally, the original
-    `goal_description`, `data_list`, the generated metadata, and other
-    parameters are passed to the `submit` function for processing or execution.
+    This function first retrieves relevant documents, uses them to augment the
+    goal description, generates a plan with a language model, and then submits
+    this plan for execution.
 
     Args:
-        goal_description: A natural language description of the goal or task.
-            It is used for document retrieval and as the basis for the
-            augmented prompt for plan generation.
-        data_list: A list of dictionaries, where each dictionary represents
-            a data item or source relevant to the goal, passed to the `submit`
-            function.
-        output_dir: Directory path where outputs from the `submit` function
-            (e.g., execution results, generated files) should be stored.
-            Defaults to `OUTPUT_DIR`.
-        repo_id_dict: A dictionary mapping repository IDs (str) to their
-            respective page sizes (int) for document retrieval. If None,
-            defaults to `REPO_ID_DICT`.
-        page_num: Pagination page number for retrieval results from each
-            repository. Defaults to `PAGE_NUM`.
-        filter_string: Optional filter criteria string for metadata filtering
-            during document retrieval from each repository.
-            Defaults to `FILTER_STRING`.
-        scope: Search scope for each retrieval, can be 'doc', 'keyword', or
-            'both'. Defaults to `SCOPE`.
-        extra_repo_ids: Optional list of additional repository IDs to include
-            in the document retrieval. Defaults to `EXTRA_REPO_IDS`.
-        score_threshold: Minimum relevance score threshold applied during
-            document retrieval. Defaults to `SCORE_THRESHOLD`.
-        top_n: The total number of top-scoring documents to retrieve and use
-            as context for plan generation. Defaults to `TOP_N`.
-        prompt_file: Path to the prompt template file used for constructing
-            the prompt for the plan generation step (after retrieval) via
-            `phyto_chat`. Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt for plan generation.
-            Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model for plan
-            generation. Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service for plan generation.
-            Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use for plan generation.
-            Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
-            plan generation step. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan by the
-            Phyto model. Defaults to `MAX_TOKENS`.
-        n: Number of plan choices to generate by the Phyto model.
-            Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
-            generation step. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible Phyto
-            models during plan generation. Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for the Phyto
-            model during plan generation. Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for the plan generation
-            step. Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for the plan generation
-            step. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for the plan generation
-            step. Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user, passed to the
-            Phyto model. Defaults to `USER`.
-        execute_code: Flag indicating whether any code generated or referenced
-            in the plan should be executed by the `submit` function.
-            Defaults to `EXECUTE_CODE`.
-        timeout: Total request timeout in seconds for each underlying API call
-            (`multi_retrieve`, `phyto_chat`, and `submit`).
-            Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for `multi_retrieve` and `phyto_chat` API calls.
-            Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for `multi_retrieve` and
-            `phyto_chat` API calls. Defaults to `MAX_RETRIES`.
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        retrieve_url: The URL for the document retrieval service.
+        repo_id_dict: A dictionary of repository IDs for retrieval.
+        page_num: The page number for retrieval results.
+        filter_string: A string for filtering retrieval results.
+        scope: The scope of the retrieval ('doc', 'keyword', 'both').
+        extra_repo_ids: A list of additional repository IDs.
+        rerank_url: The URL for the reranking service.
+        rerank_batch_size: The batch size for reranking.
+        score_threshold: The minimum score for retrieved documents.
+        top_n: The number of top documents to retrieve.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path or key for the system prompt.
+        api_key: The API key for the language model.
+        base_url: The base URL of the language model API.
+        model: The identifier of the language model.
+        frequency_penalty: The penalty for token repetition.
+        max_tokens: The maximum number of tokens to generate.
+        n: The number of plan choices to generate.
+        presence_penalty: The penalty for new tokens.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The desired output format.
+        stream: A flag for real-time token streaming.
+        temperature: The randomness control for generation.
+        top_p: The nucleus sampling threshold.
+        user: A unique session identifier for the user.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model.
+        coder_api_key: The API key for the coding model.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name of the task.
+        resource_dict: A dictionary of computational resources.
+        app_id_dict: A dictionary mapping compute resources to app IDs.
+        compute_resource: The level of compute resources to allocate.
+        meta_meta: Additional metadata to append to the generated plan.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
 
     Returns:
-        A dictionary containing the response from the `submit` function,
-        which typically includes information about the submission status or
-        execution results. The exact structure depends on the `submit`
-        function's implementation.
+        A dictionary with the response from the `submit` function.
 
     Raises:
-        McpError: If the `multi_retrieve` step, the `phyto_chat` plan
-            generation step, or the subsequent `submit` call fails after
-            all retry attempts.
+        McpError: If retrieval, plan generation, or submission fails.
     """
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
@@ -788,26 +818,30 @@ async def wait_for_completion(
     poll_interval: float = ac.POLL_INTERVAL,
     max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
-    """Asynchronously monitor task execution until completion or timeout.
+    """
+    Asynchronously monitors a task until it completes or times out.
+
+    This function repeatedly polls the status of a task until it reaches a
+    terminal state (e.g., 'SUCCEEDED', 'FAILED', 'CANCELLED') or the
+    maximum polling time is exceeded.
 
     Args:
-        task_id: Unique identifier from task submission
-            - Must match existing task in processing queue
-        poll_interval: Status check frequency in seconds
-            - Minimum 2s recommended to avoid rate limiting
-        max_poll: Maximum total monitoring duration in seconds
-            - Default 1800s (30 minutes)
-        timeout: Total request timeout (min 5s connect timeout)
+        task_id: The unique identifier of the task to monitor.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+        poll_interval: The interval in seconds between polling for task status.
+        max_poll: The maximum total duration in seconds to monitor the task.
 
     Returns:
-        Final task status containing:
-            - status: 'completed' state confirmation
-            - result: Full execution output data
+        A dictionary containing the final status of the task.
 
     Raises:
-        McpError: When task enters failed state
-        asyncio.TimeoutError: If exceeds max_poll duration
-        RuntimeError: On unexpected status response format
+        McpError: If the task enters a 'FAILED' or 'CANCELLED' state, or if
+            an unexpected status is returned.
+        asyncio.TimeoutError: If the maximum polling duration is exceeded.
     """
     start_time = time.time()
     while (time.time() - start_time) < max_poll:
@@ -872,33 +906,46 @@ async def submit_wait(
     poll_interval: float = ac.POLL_INTERVAL,
     max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
-    """Submit analysis task to Bioinformatics Agents and
-        monitor task execution until completion or timeout.
+    """
+    Submits an analysis task and waits for its completion.
+
+    This function combines the functionality of `submit` and
+    `wait_for_completion`. It first submits a task and then monitors it
+    until it finishes or times out.
 
     Args:
-        goal_description: Natural language description of analysis goals
-            - Must include task execution steps using meta_info
-        data_list: List of input data sources with:
-            - obs_url: OBS path to input files (required)
-            - description: Brief explanation of data source
-        output_dir: OBS path for storing analysis results
-        meta: Step-by-step instructions for processing
-            - Format: "step1, operation; step2, operation..."
-        use_meta:
-            - Auto-determined if not provided (enabled if meta exists)
-            - True: Use provided meta instructions
-            - False: Ignore meta and use goal_description only
-        execute_code: Enable automated code execution in workflow
-        poll_interval: Status check frequency in seconds
-            - Minimum 2s recommended to avoid rate limiting
-        max_poll: Maximum total monitoring duration in seconds
-            - Default 1800s (30 minutes)
-        timeout: Total request timeout (min 5s connect timeout)
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        meta: Step-by-step instructions for processing.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model.
+        coder_api_key: The API key for the coding model.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name of the task.
+        resource_dict: A dictionary of computational resources.
+        app_id_dict: A dictionary mapping compute resources to app IDs.
+        compute_resource: The level of compute resources to allocate.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+        poll_interval: The interval in seconds between polling for task status.
+        max_poll: The maximum total duration in seconds to monitor the task.
 
     Returns:
-        Final task status containing:
-            - status: 'completed' state confirmation
-            - result: Full execution output data
+        A dictionary containing the final status and results of the task.
+
+    Raises:
+        McpError: If the task fails or is cancelled.
+        asyncio.TimeoutError: If the polling duration is exceeded.
     """
     task_dict = await submit(
         goal_description=goal_description,
@@ -938,7 +985,7 @@ async def submit_wait(
 
 async def plan_submit_wait(
     goal_description: str,
-    data_list: List[Dict[str, str]],
+    data_list: Dict[str, str],
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -976,87 +1023,58 @@ async def plan_submit_wait(
     poll_interval: float = ac.POLL_INTERVAL,
     max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
-    """Generate a plan, submit it for asynchronous execution, and wait for
-        completion.
+    """
+    Generates a plan, submits it, and waits for completion.
 
-    This function orchestrates a multi-step process:
-    1. It calls `plan_submit` to generate a plan based on `goal_description`
-       (using `phyto_chat`) and submit this plan along with `data_list` for
-       asynchronous processing. The `plan_submit` function returns a task ID.
-    2. It then calls `wait_for_completion` with the obtained task ID,
-       polling until the task is finished or a timeout (`max_poll`) occurs.
+    This function orchestrates a multi-step process: generating a plan based
+    on the goal description, submitting it for asynchronous execution, and then
+    polling until the task is finished or times out.
 
     Args:
-        goal_description: A natural language description of the goal or task
-            to be achieved. This is used by `plan_submit` to generate a plan.
-        data_list: A list of dictionaries, where each dictionary represents
-            a data item or source relevant to the goal,
-            passed to `plan_submit`.
-        output_dir: Directory path where outputs from the task execution
-            (e.g., execution results, generated files) should be stored.
-            Used by `plan_submit`. Defaults to `OUTPUT_DIR`.
-        prompt_file: Path to the prompt template file used for constructing
-            the prompt for the plan generation step within `plan_submit`.
-            Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt for plan generation within `plan_submit`.
-            Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model for plan
-            generation within `plan_submit`. Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service for plan generation
-            within `plan_submit`. Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use for plan generation
-            within `plan_submit`. Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
-            plan generation step within `plan_submit`.
-            Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan by the
-            Phyto model within `plan_submit`. Defaults to `MAX_TOKENS`.
-        n: Number of plan choices to generate by the Phyto model within
-            `plan_submit`. Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
-            generation step within `plan_submit`.
-            Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible Phyto
-            models during plan generation within `plan_submit`.
-            Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for the Phyto
-            model during plan generation within `plan_submit`.
-            Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for the plan generation
-            step within `plan_submit`. Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for the plan generation
-            step within `plan_submit`. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for the plan generation
-            step within `plan_submit`. Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user, passed to the
-            Phyto model within `plan_submit`. Defaults to `USER`.
-        execute_code: Flag indicating whether any code generated or referenced
-            in the plan should be executed. Passed to `plan_submit`.
-            Defaults to `EXECUTE_CODE`.
-        poll_interval: Time in seconds to wait between polling attempts for
-            task completion by `wait_for_completion`.
-            Defaults to `POLL_INTERVAL`.
-        max_poll: Maximum total time in seconds to wait for task completion
-            by polling in `wait_for_completion`. Defaults to `MAX_POLL`.
-        timeout: Total request timeout in seconds for API calls made during
-            the `plan_submit` phase and for individual polling requests made
-            by `wait_for_completion`. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for API calls made during the `plan_submit` phase.
-            Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for API calls made
-            during the `plan_submit` phase. Defaults to `MAX_RETRIES`.
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path or key for the system prompt.
+        api_key: The API key for the language model.
+        base_url: The base URL of the language model API.
+        model: The identifier of the language model.
+        frequency_penalty: The penalty for token repetition.
+        n: The number of plan choices to generate.
+        presence_penalty: The penalty for new tokens.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The desired output format.
+        stream: A flag for real-time token streaming.
+        temperature: The randomness control for generation.
+        top_p: The nucleus sampling threshold.
+        user: A unique session identifier for the user.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model.
+        coder_api_key: The API key for the coding model.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name of the task.
+        resource_dict: A dictionary of computational resources.
+        app_id_dict: A dictionary mapping compute resources to app IDs.
+        compute_resource: The level of compute resources to allocate.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+        poll_interval: The interval in seconds between polling for task status.
+        max_poll: The maximum total duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the final result or status of the completed
-        task, as returned by `wait_for_completion`. The exact structure
-        depends on the implementation of the task processing and
-        `wait_for_completion`.
+        A dictionary with the final result or status of the completed task.
 
     Raises:
-        McpError: If the `plan_submit` step fails or if `wait_for_completion`
-            encounters an unrecoverable error or times out based on `max_poll`.
+        McpError: If the submission fails or the task encounters an error.
     """
     task_dict = await plan_submit(
         goal_description=goal_description,
@@ -1109,7 +1127,7 @@ async def plan_submit_wait(
 
 async def retrieve_plan_submit_wait(
     goal_description: str,
-    data_list: List[Dict[str, str]],
+    data_list: Dict[str, str],
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -1159,120 +1177,71 @@ async def retrieve_plan_submit_wait(
     poll_interval: float = ac.POLL_INTERVAL,
     max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
-    """Retrieve documents, generate an augmented plan, submit for execution,
-        and wait.
+    """
+    Retrieves documents, generates a plan, submits it, and waits for
+    completion.
 
     This function orchestrates a retrieval-augmented planning and execution
-        workflow:
-    1. It calls `retrieve_plan_submit` which:
-        a. Retrieves relevant documents based on `goal_description` using
-           `multi_retrieve`.
-        b. Augments the `goal_description` with these documents to create a
-           new prompt.
-        c. Uses `phyto_chat` with this augmented prompt to generate a
-           plan/metadata.
-        d. Submits this plan, original `goal_description`, and `data_list` for
-           asynchronous processing via the `submit` function. This step returns
-           a task ID.
-    2. It then calls `wait_for_completion` with the obtained task ID,
-       polling until the task is finished or a timeout (`max_poll`) occurs.
+    workflow. It retrieves relevant documents, generates an augmented plan,
+    submits it for execution, and then waits for the task to complete.
 
     Args:
-        goal_description: A natural language description of the goal or task.
-            It is used by `retrieve_plan_submit` for document retrieval and
-            as the basis for the augmented prompt for plan generation.
-        data_list: A list of dictionaries, where each dictionary represents
-            a data item or source relevant to the goal. Passed to
-            `retrieve_plan_submit`.
-        output_dir: Directory path where outputs from the task execution
-            (e.g., execution results, generated files) should be stored.
-            Used by `retrieve_plan_submit`. Defaults to `OUTPUT_DIR`.
-        repo_id_dict: A dictionary mapping repository IDs (str) to their
-            respective page sizes (int) for document retrieval. Used by
-            `retrieve_plan_submit`. If None, defaults to `REPO_ID_DICT`.
-        page_num: Pagination page number for retrieval results from each
-            repository. Used by `retrieve_plan_submit`. Defaults to `PAGE_NUM`.
-        filter_string: Optional filter criteria string for metadata filtering
-            during document retrieval. Used by `retrieve_plan_submit`.
-            Defaults to `FILTER_STRING`.
-        scope: Search scope for each retrieval ('doc', 'keyword', or 'both').
-            Used by `retrieve_plan_submit`. Defaults to `SCOPE`.
-        extra_repo_ids: Optional list of additional repository IDs to include
-            in the document retrieval. Used by `retrieve_plan_submit`.
-            Defaults to `EXECUTE_CODE`.
-        score_threshold: Minimum relevance score threshold applied during
-            document retrieval. Used by `retrieve_plan_submit`.
-            Defaults to `SCORE_THRESHOLD`.
-        top_n: The total number of top-scoring documents to retrieve for
-            augmenting the plan generation. Used by `retrieve_plan_submit`.
-            Defaults to `TOP_N`.
-        prompt_file: Path to the prompt template file used for constructing
-            the prompt for the plan generation step within
-            `retrieve_plan_submit`. Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the prompt file to retrieve the
-            specific system prompt for plan generation within
-            `retrieve_plan_submit`. Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model for plan
-            generation within `retrieve_plan_submit`. Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service for plan generation
-            within `retrieve_plan_submit`. Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use for plan generation
-            within `retrieve_plan_submit`. Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) in the
-            plan generation step within `retrieve_plan_submit`.
-            Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: Maximum number of tokens to generate in the plan by the
-            Phyto model within `retrieve_plan_submit`.
-            Defaults to `MAX_TOKENS`.
-        n: Number of plan choices to generate by the Phyto model within
-            `retrieve_plan_submit`. Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) in the plan
-            generation step within `retrieve_plan_submit`.
-            Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for compatible Phyto
-            models during plan generation within `retrieve_plan_submit`.
-            Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for the Phyto
-            model during plan generation within `retrieve_plan_submit`.
-            Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for the plan generation
-            step within `retrieve_plan_submit`. Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for the plan generation
-            step within `retrieve_plan_submit`. Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for the plan generation
-            step within `retrieve_plan_submit`. Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user, passed to the
-            Phyto model within `retrieve_plan_submit`. Defaults to `USER`.
-        execute_code: Flag indicating whether any code generated or referenced
-            in the plan should be executed. Passed to `retrieve_plan_submit`.
-            Defaults to `EXECUTE_CODE`.
-        poll_interval: Time in seconds to wait between polling attempts for
-            task completion by `wait_for_completion`.
-            Defaults to `POLL_INTERVAL`.
-        max_poll: Maximum total time in seconds to wait for task completion
-            by polling in `wait_for_completion`. Defaults to `MAX_POLL`.
-        timeout: Total request timeout in seconds. This applies to API calls
-            made during the `retrieve_plan_submit` phase (including document
-            retrieval, plan generation, and initial submission) and also to
-            individual polling requests made by `wait_for_completion`.
-            Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for API calls made during the `retrieve_plan_submit` phase
-            (e.g., document retrieval, plan generation).
-            Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for API calls made
-            during the `retrieve_plan_submit` phase. Defaults to `MAX_RETRIES`.
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of input data sources, where keys are
+            identifiers and values are their descriptions or paths.
+        output_dir: The OBS path for storing analysis results.
+        retrieve_url: The URL for the document retrieval service.
+        repo_id_dict: A dictionary of repository IDs for retrieval.
+        page_num: The page number for retrieval results.
+        filter_string: A string for filtering retrieval results.
+        scope: The scope of the retrieval.
+        extra_repo_ids: A list of additional repository IDs.
+        rerank_url: The URL for the reranking service.
+        rerank_batch_size: The batch size for reranking.
+        score_threshold: The minimum score for retrieved documents.
+        top_n: The number of top documents to retrieve.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path or key for the system prompt.
+        api_key: The API key for the language model.
+        base_url: The base URL of the language model API.
+        model: The identifier of the language model.
+        frequency_penalty: The penalty for token repetition.
+        max_tokens: The maximum number of tokens to generate.
+        n: The number of plan choices to generate.
+        presence_penalty: The penalty for new tokens.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The desired output format.
+        stream: A flag for real-time token streaming.
+        temperature: The randomness control for generation.
+        top_p: The nucleus sampling threshold.
+        user: A unique session identifier for the user.
+        execute_code: A boolean flag to enable or disable automated code
+            execution within the workflow.
+        model_url: The URL of the coding model service.
+        model_name: The name of the coding model.
+        coder_api_key: The API key for the coding model.
+        access_key_id: The access key ID for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The server endpoint for OBS.
+        bucket_name: The name of the OBS bucket.
+        analysis_url: The URL for the analysis submission API.
+        region: The geographical region of the analysis service.
+        task_name: The name of the task.
+        resource_dict: A dictionary of computational resources.
+        app_id_dict: A dictionary mapping compute resources to app IDs.
+        compute_resource: The level of compute resources to allocate.
+        meta_meta: Additional metadata to append to the plan.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+        poll_interval: The interval in seconds between polling for task status.
+        max_poll: The maximum total duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the final result or status of the completed
-        task, as returned by `wait_for_completion`. The exact structure
-        depends on the implementation of the task processing and
-        `wait_for_completion`.
+        A dictionary with the final result or status of the completed task.
 
     Raises:
-        McpError: If the `retrieve_plan_submit` step fails or if
-            `wait_for_completion` encounters an unrecoverable error or
-            times out based on `max_poll`.
+        McpError: If the submission fails or the task encounters an error.
     """
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
@@ -1344,6 +1313,27 @@ def upload_analyst_agents_data(
     obs_server: str = ac.OBS_SERVER,
     bucket_name: str = ac.BUCKET_NAME,
 ) -> str:
+    """
+    Uploads data to an Object Storage Service (OBS) bucket.
+
+    This function takes a local file path and uploads the file to a specified
+    OBS bucket. It handles the connection and authentication with the OBS
+    service.
+
+    Args:
+        analyst_agents_datapath: The local path to the file to be uploaded.
+        access_key_id: The access key ID for the OBS bucket.
+        secret_access_key: The secret access key for the OBS bucket.
+        obs_server: The server address of the OBS.
+        bucket_name: The name of the OBS bucket.
+
+    Returns:
+        The OBS path of the uploaded file, in the format
+        'bucket_name:/object_key'.
+
+    Raises:
+        OSError: If the file upload to OBS fails.
+    """
     obsclient = ObsClient(access_key_id=access_key_id,
                           secret_access_key=secret_access_key,
                           server=obs_server)
@@ -1374,6 +1364,26 @@ def delete_analyst_agents_data(
     obs_server: str = ac.OBS_SERVER,
     bucket_name: str = ac.BUCKET_NAME,
 ) -> str:
+    """
+    Deletes data from an Object Storage Service (OBS) bucket.
+
+    This function removes a specified object from an OBS bucket using its path.
+    It handles the connection and authentication required for the deletion.
+
+    Args:
+        analyst_agents_datapath: The OBS path of the file to be deleted.
+        access_key_id: The access key ID for the OBS bucket.
+        secret_access_key: The secret access key for the OBS bucket.
+        obs_server: The server address of the OBS.
+        bucket_name: The name of the OBS bucket.
+
+    Returns:
+        A confirmation message indicating the successful deletion of the
+        object, including details like the request ID.
+
+    Raises:
+        OSError: If the file deletion from OBS fails.
+    """
     obsclient = ObsClient(access_key_id=access_key_id,
                           secret_access_key=secret_access_key,
                           server=obs_server)
