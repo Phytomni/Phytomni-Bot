@@ -81,12 +81,12 @@ async def phyto_chat(
     """
     messages = [
         {
-            "role": "system",
-            "content": get_prompt(prompt_file, prompt_path),
+            'role': 'system',
+            'content': get_prompt(prompt_file, prompt_path),
         },
         {
-            "role": "user",
-            "content": user_query,
+            'role': 'user',
+            'content': user_query,
         },
     ]
     if 'reasoner' not in model:
@@ -161,7 +161,7 @@ async def phyto_chat(
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to generate from Phyto: {str(e)}"
+                    message=f'Failed to generate from Phyto: {str(e)}',
                 )) from e
 
             except (ConnectError, TimeoutException) as e:
@@ -170,7 +170,7 @@ async def phyto_chat(
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
     if semaphore is not None:

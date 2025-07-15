@@ -79,15 +79,15 @@ async def nl2sql(message_content: str,
             try:
                 response = await client.post(
                     database_url,
-                    headers={"X-Auth-Token": await get_token(),
-                             "X-Workspace-Id": workspace_id,
-                             "Content-Type": "application/json"},
+                    headers={'X-Auth-Token': await get_token(),
+                             'X-Workspace-Id': workspace_id,
+                             'Content-Type': 'application/json'},
                     json={
-                        "subject_id": subject_id,
-                        "dialog_id": dialog_id if dialog_id else str(uuid1()),
-                        "message_content": message_content,
-                        "need_insight": need_insight,
-                        "simplify_response": simplify_response,
+                        'subject_id': subject_id,
+                        'dialog_id': dialog_id if dialog_id else str(uuid1()),
+                        'message_content': message_content,
+                        'need_insight': need_insight,
+                        'simplify_response': simplify_response,
                     },
                     timeout=timeout,
                 )
@@ -106,7 +106,8 @@ async def nl2sql(message_content: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to query SQL database: {str(e)}")) from e
+                    message=f'Failed to query SQL database: {str(e)}',
+                )) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
@@ -114,7 +115,7 @@ async def nl2sql(message_content: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}'
                 )) from e
 
 

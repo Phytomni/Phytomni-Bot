@@ -13,7 +13,7 @@ from traceback import format_exc
 from typing import Any, List, Literal, Dict, Optional, Union
 from uuid import uuid1
 
-from httpx import AsyncClient, ConnectError, HTTPError, HTTPStatusError
+from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
@@ -110,62 +110,62 @@ async def submit(
         if josn_file.exists():
             josn_file.unlink()
 
-    job_headers = {"Content-Type": "application/json",
-                   "X-Auth-Token": await get_token(timeout=timeout,
+    job_headers = {'Content-Type': 'application/json',
+                   'X-Auth-Token': await get_token(timeout=timeout,
                                                    region=region)}
     task_name = task_name.replace('_', '-')
     time_stamp = datetime.datetime.now().strftime('%H%M%S-%f')
     job_name = f'{task_name}-{time_stamp}'
     job_data = {
-        "name": job_name,
-        "labels": [],
-        "description": "",
-        "timeout": 10080,
-        "output_dir": "",
-        "tasks": [{
-            "task_name": f"analyst-agents-{compute_resource}",
-            "display_name": job_name,
-            "inputs": [
+        'name': job_name,
+        'labels': [],
+        'description': '',
+        'timeout': 10080,
+        'output_dir': '',
+        'tasks': [{
+            'task_name': f'analyst-agents-{compute_resource}',
+            'display_name': job_name,
+            'inputs': [
                 {
-                    "name": "obs-mount",
-                    "type": "DIRECTORY",
-                    "description": "",
-                    "required": True,
-                    "pattern": "",
-                    "values": ["phytomni:/agent_data/"],
-                    "enum": [],
-                    "concurrent": "",
+                    'name': 'obs-mount',
+                    'type': 'DIRECTORY',
+                    'description': '',
+                    'required': True,
+                    'pattern': '',
+                    'values': ['phytomni:/agent_data/'],
+                    'enum': [],
+                    'concurrent': '',
                 },
                 {
-                    "name": "meta-file",
-                    "type": "FILE",
-                    "description": "",
-                    "required": True,
-                    "pattern": "",
-                    "values": [data_path],
-                    "enum": [],
-                    "concurrent": "",
+                    'name': 'meta-file',
+                    'type': 'FILE',
+                    'description': '',
+                    'required': True,
+                    'pattern': '',
+                    'values': [data_path],
+                    'enum': [],
+                    'concurrent': '',
                 },
             ],
-            "outputs": [],
-            "output_dir": "",
-            "resources": {
-                "cpu": f"{resource_dict[compute_resource]['cpu']}C",
-                "cpu_type": "X86",
-                "gpu": "0",
-                "gpu_type": "",
-                "memory": f"{resource_dict[compute_resource]['memory']}G"
+            'outputs': [],
+            'output_dir': '',
+            'resources': {
+                'cpu': f"{resource_dict[compute_resource]['cpu']}C",
+                'cpu_type': 'X86',
+                'gpu': '0',
+                'gpu_type': '',
+                'memory': f"{resource_dict[compute_resource]['memory']}G"
             },
-            "summary": "",
-            "labels": [],
+            'summary': '',
+            'labels': [],
         }],
-        "io_acc_id": "",
-        "ioType": "",
-        "priority": 0,
-        "automatic": True,
-        "node_labels": [],
-        "tool_id": app_id_dict[compute_resource],
-        "tool_type": "app",
+        'io_acc_id': '',
+        'ioType': '',
+        'priority': 0,
+        'automatic': True,
+        'node_labels': [],
+        'tool_id': app_id_dict[compute_resource],
+        'tool_type': 'app',
     }
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -199,7 +199,8 @@ async def submit(
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to submit task: {str(e)}")) from e
+                    message=f'Failed to submit task: {str(e)}',
+                )) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
@@ -207,7 +208,7 @@ async def submit(
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
 
@@ -240,8 +241,8 @@ async def task_delete(task_id: str,
             try:
                 response = await client.post(
                     url=f'{analysis_url}/{task_id}/terminate',
-                    headers={"Content-Type": "application/json",
-                             "X-Auth-Token": await get_token(timeout=timeout,
+                    headers={'Content-Type': 'application/json',
+                             'X-Auth-Token': await get_token(timeout=timeout,
                                                              region=region)},
                     json={'force': True},
                     timeout=timeout,
@@ -264,7 +265,8 @@ async def task_delete(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to delete task: {str(e)}")) from e
+                    message=f'Failed to delete task: {str(e)}',
+                )) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
@@ -272,7 +274,7 @@ async def task_delete(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
 
@@ -305,8 +307,8 @@ async def task_status(task_id: str,
             try:
                 response = await client.get(
                     f'{analysis_url}/{task_id}',
-                    headers={"Content-Type": "application/json",
-                             "X-Auth-Token": await get_token(timeout=timeout,
+                    headers={'Content-Type': 'application/json',
+                             'X-Auth-Token': await get_token(timeout=timeout,
                                                              region=region)},
                     timeout=timeout,
                 )
@@ -328,7 +330,8 @@ async def task_status(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to delete task: {str(e)}")) from e
+                    message=f'Failed to delete task: {str(e)}',
+                )) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
@@ -336,7 +339,7 @@ async def task_status(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
 
@@ -357,8 +360,8 @@ async def task_log(task_id: str,
                 response = await client.get(
                     f'{analysis_url}/{task_id}/logs'
                     f'?task_name=analyst-agents-{compute_resource}',
-                    headers={"Content-Type": "application/json",
-                             "X-Auth-Token": await get_token(timeout=timeout,
+                    headers={'Content-Type': 'application/json',
+                             'X-Auth-Token': await get_token(timeout=timeout,
                                                              region=region)},
                     timeout=timeout,
                 )
@@ -380,7 +383,8 @@ async def task_log(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to delete task: {str(e)}")) from e
+                    message=f'Failed to delete task: {str(e)}',
+                )) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
@@ -388,7 +392,7 @@ async def task_log(task_id: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
 
@@ -705,15 +709,15 @@ async def retrieve_plan_submit(
     retrieve_results = []
     total_length = 0
     for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
-        if eachdoc["subtitle"]:
+        if eachdoc['subtitle']:
             current_fragment = (
-                f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
+                f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                f"{eachdoc['subtitle']}\n{eachdoc['content']} "
                 f'[document {file_id+1} end]')
         else:
             current_fragment = (
-                f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                f'{eachdoc["content"]} [document {file_id+1} end]')
+                f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                f"{eachdoc['content']} [document {file_id+1} end]")
         if total_length + len(current_fragment) <= max_tokens:
             retrieve_results.append(current_fragment)
             total_length += len(current_fragment)

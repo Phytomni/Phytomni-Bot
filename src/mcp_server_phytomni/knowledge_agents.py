@@ -80,14 +80,14 @@ async def retrieve(user_query: str,
             try:
                 response = await client.post(
                     retrieve_url,
-                    headers={"Content-Type": "application/json"},
-                    json={"repo_id": repo_id,
-                          "content": user_query,
-                          "page_num": page_num,
-                          "page_size": page_size,
-                          "filter_string": filter_string,
-                          "scope": scope,
-                          "extra_repo_ids": extra_repo_ids},
+                    headers={'Content-Type': 'application/json'},
+                    json={'repo_id': repo_id,
+                          'content': user_query,
+                          'page_num': page_num,
+                          'page_size': page_size,
+                          'filter_string': filter_string,
+                          'scope': scope,
+                          'extra_repo_ids': extra_repo_ids},
                     timeout=timeout,
                 )
                 response.raise_for_status()
@@ -105,7 +105,7 @@ async def retrieve(user_query: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to retrieve knowledge base: {str(e)}"
+                    message=f'Failed to retrieve knowledge base: {str(e)}',
                 )) from e
 
             except (ConnectError, TimeoutException) as e:
@@ -114,7 +114,7 @@ async def retrieve(user_query: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
     client_timeout = Timeout(timeout, connect=timeout)
@@ -129,7 +129,7 @@ async def retrieve(user_query: str,
         else:
             raise ValueError("Invalid scope value. Must be 'doc', 'keyword',"
                              " or 'both'.")
-    return {"doc_list": await rerank(
+    return {'doc_list': await rerank(
                 user_query=user_query,
                 doc_list=doc_list,
                 rerank_url=rerank_url,
@@ -140,8 +140,7 @@ async def retrieve(user_query: str,
                 retriable_codes=retriable_codes,
                 max_retries=max_retries,
             ),
-            "total": 10000,
-            }
+            'total': 10000}
 
 
 async def multi_retrieve(
@@ -229,13 +228,13 @@ async def multi_retrieve(
             if top_n is not None and top_n > 0:
                 sorted_docs = sorted_docs[:top_n]
             return {
-                "doc_list": sorted_docs,
-                "total": 10000,
+                'doc_list': sorted_docs,
+                'total': 10000,
             }
         except Exception as e:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
-                message=f"Multi-retrieve operation failed: {str(e)}"
+                message=f'Multi-retrieve operation failed: {str(e)}',
             )) from e
 
     if semaphore is not None:
@@ -343,15 +342,15 @@ async def multi_retrieve_generate(
     retrieve_results = []
     total_length = 0
     for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
-        if eachdoc["subtitle"]:
+        if eachdoc['subtitle']:
             current_fragment = (
-                f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
+                f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                f"{eachdoc['subtitle']}\n{eachdoc['content']} "
                 f'[document {file_id+1} end]')
         else:
             current_fragment = (
-                f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                f'{eachdoc["content"]} [document {file_id+1} end]')
+                f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                f"{eachdoc['content']} [document {file_id+1} end]")
         if total_length + len(current_fragment) <= max_tokens:
             retrieve_results.append(current_fragment)
             total_length += len(current_fragment)
@@ -426,11 +425,11 @@ async def rerank(user_query: str,
             try:
                 response = await client.post(
                     rerank_url,
-                    headers={"Content-Type": "application/json"},
-                    json={"query": user_query,
-                          "ranking_order": ["title", "content"],
-                          "docs": docs_batch,
-                          "top_n": top_n},
+                    headers={'Content-Type': 'application/json'},
+                    json={'query': user_query,
+                          'ranking_order': ['title', 'content'],
+                          'docs': docs_batch,
+                          'top_n': top_n},
                     timeout=timeout,
                 )
                 response.raise_for_status()
@@ -448,7 +447,7 @@ async def rerank(user_query: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to rerank: {str(e)}"
+                    message=f'Failed to rerank: {str(e)}',
                 )) from e
 
             except (ConnectError, TimeoutException) as e:
@@ -457,7 +456,7 @@ async def rerank(user_query: str,
                     continue
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
+                    message=f'Network error: {str(e)}',
                 )) from e
 
     docs, id_doc_dict = [], {}
