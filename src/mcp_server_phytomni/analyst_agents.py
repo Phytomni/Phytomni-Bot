@@ -311,7 +311,7 @@ async def task_status(task_id: str,
                     timeout=timeout,
                 )
                 if response.status_code == 200:
-                    return response
+                    return response.json()
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
                     message=f'Check task {task_id} status failed.'))
@@ -356,14 +356,14 @@ async def task_log(task_id: str,
             try:
                 response = await client.get(
                     f'{analysis_url}/{task_id}/logs'
-                    f'?task_name={compute_resource}',
+                    f'?task_name=analyst-agents-{compute_resource}',
                     headers={"Content-Type": "application/json",
                              "X-Auth-Token": await get_token(timeout=timeout,
                                                              region=region)},
                     timeout=timeout,
                 )
                 if response.status_code == 200:
-                    return response
+                    return response.json()
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
                     message=f'Check task {task_id} log failed.'))
