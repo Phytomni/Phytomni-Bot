@@ -311,7 +311,7 @@ async def task_status(task_id: str,
                     timeout=timeout,
                 )
                 if response.status_code == 200:
-                    return response
+                    return response.json()
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
                     message=f'Check task {task_id} status failed.'))
@@ -363,7 +363,7 @@ async def task_log(task_id: str,
                     timeout=timeout,
                 )
                 if response.status_code == 200:
-                    return response
+                    return response.json()
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
                     message=f'Check task {task_id} log failed.'))
