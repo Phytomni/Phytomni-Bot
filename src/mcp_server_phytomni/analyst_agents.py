@@ -356,7 +356,7 @@ async def task_log(task_id: str,
             try:
                 response = await client.get(
                     f'{analysis_url}/{task_id}/logs'
-                    f'?task_name={compute_resource}',
+                    f'?task_name=analyst-agents-{compute_resource}',
                     headers={"Content-Type": "application/json",
                              "X-Auth-Token": await get_token(timeout=timeout,
                                                              region=region)},
