@@ -37,7 +37,7 @@ async def submit(
     execute_code: bool = ac.EXECUTE_CODE,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
-    api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
     access_key_id: str = sc.AccessKeyID.get_secret_value(),
     secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
     obs_server: str = ac.OBS_SERVER,
@@ -91,7 +91,7 @@ async def submit(
         'execute_code': execute_code,
         'model_url': model_url,
         'model_name': model_name,
-        'api_key': api_key,
+        'api_key': coder_api_key,
     }
     josn_file = Path(f'{uuid1()}.json')
     try:
@@ -411,6 +411,21 @@ async def plan_submit(
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
     execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME + '-plan',
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
@@ -509,8 +524,22 @@ async def plan_submit(
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'],
         execute_code=execute_code,
-        task_name="plan-submit-task", 
-        timeout=timeout
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
     )
     return response
 
@@ -519,11 +548,14 @@ async def retrieve_plan_submit(
     goal_description: str,
     data_list: List[Dict[str, str]],
     output_dir: str = ac.OUTPUT_DIR,
+    retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
     page_num: int = ac.PAGE_NUM,
     filter_string: Optional[str] = ac.FILTER_STRING,
     scope: str = ac.SCOPE,
     extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
+    rerank_url: str = ac.RERANK_URL,
+    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
     score_threshold: float = ac.SCORE_THRESHOLD,
     top_n: int = ac.TOP_N,
     prompt_file: str = ac.PROMPT_FILE,
@@ -542,6 +574,21 @@ async def retrieve_plan_submit(
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
     execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME + '-retrieve-plan',
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
     meta_meta: Optional[str] = None,
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
@@ -641,11 +688,14 @@ async def retrieve_plan_submit(
         repo_id_dict = ac.REPO_ID_DICT
     retrieve_response = await multi_retrieve(
         user_query=goal_description,
+        retrieve_url=retrieve_url,
         repo_id_dict=repo_id_dict,
         page_num=page_num,
         filter_string=filter_string,
         scope=scope,
         extra_repo_ids=extra_repo_ids,
+        rerank_url=rerank_url,
+        rerank_batch_size=rerank_batch_size,
         score_threshold=score_threshold,
         top_n=top_n,
         timeout=timeout,
@@ -693,14 +743,32 @@ async def retrieve_plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    meta = (
+        phyto_response['choices'][0]['message']['content'] + meta_meta
+        if meta_meta else phyto_response['choices'][0]['message']['content']
+    )
     response = await submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
-        meta=phyto_response['choices'][0]['message']['content'] + meta_meta if meta_meta else phyto_response['choices'][0]['message']['content'],
+        meta=meta,
         execute_code=execute_code,
-        task_name="retrieve-plan-submit",
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
         timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
     )
     return response
 
