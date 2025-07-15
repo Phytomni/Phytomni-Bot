@@ -85,7 +85,7 @@ async def extract_goals(
 
 async def in_silico_research(
     user_query: str,
-    data_list: List[Dict[str, str]],
+    data_list: Dict[str, str],
     output_dir: str = isrc.OUTPUT_DIR,
     repo_id_dict: Optional[Dict[str, int]] = isrc.REPO_ID_DICT,
     page_num: int = isrc.PAGE_NUM,
@@ -112,7 +112,7 @@ async def in_silico_research(
     execute_code: bool = isrc.EXECUTE_CODE,
     timeout: float = isrc.TIMEOUT,
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
-    max_retries: int = isrc.MAX_RETRIES
+    max_retries: int = isrc.MAX_RETRIES,
 ) -> List:
     goal_list = await extract_goals(
         user_query=user_query,
