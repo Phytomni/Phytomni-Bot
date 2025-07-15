@@ -33,7 +33,7 @@ async def submit(
     goal_description: str,
     data_list: Dict[str, str],
     output_dir: str = ac.OUTPUT_DIR,
-    meta: Optional[str] = None,
+    meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
@@ -53,6 +53,7 @@ async def submit(
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
+    max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, str]:
     """Submit analysis task to Bioinformatics Agents.
 
@@ -120,7 +121,7 @@ async def submit(
         'name': job_name,
         'labels': [],
         'description': '',
-        'timeout': 10080,
+        'timeout': max_poll,
         'output_dir': '',
         'tasks': [{
             'task_name': f'analyst-agents-{compute_resource}',
@@ -522,7 +523,7 @@ async def plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    response = await submit(
+    task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
@@ -545,7 +546,7 @@ async def plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    return response
+    return task_dict
 
 
 async def retrieve_plan_submit(
@@ -751,7 +752,7 @@ async def retrieve_plan_submit(
         phyto_response['choices'][0]['message']['content'] + meta_meta
         if meta_meta else phyto_response['choices'][0]['message']['content']
     )
-    response = await submit(
+    task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
@@ -774,7 +775,7 @@ async def retrieve_plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    return response
+    return task_dict
 
 
 async def wait_for_completion(
@@ -818,28 +819,59 @@ async def wait_for_completion(
             retriable_codes=retriable_codes,
             max_retries=max_retries,
         )
-        if status_data.get('status') == 'FINISH':
-            return status_data
-        elif status_data.get('status') == 'FAILED':
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message='Task failed',
-            ))
-        await asyncio.sleep(poll_interval)
+        match status_data.get('status'):
+            case 'CANCELLED':
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message='Task cancelled',
+                ))
+            case 'FAILED':
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message='Task failed',
+                ))
+            case 'PENDING':
+                await asyncio.sleep(poll_interval)
+            case 'RUNNING':
+                await asyncio.sleep(poll_interval)
+            case 'SUCCEEDED':
+                return status_data
+            case _:
+                raise McpError(ErrorData(
+                    code=INTERNAL_ERROR,
+                    message='Task status error',
+                ))
     raise asyncio.TimeoutError(
         f'Exceeded max polling time {max_poll/60} minutes')
 
 
-async def submit_wait(goal_description: str,
-                      data_list: List[Dict[str, str]],
-                      output_dir: str = ac.OUTPUT_DIR,
-                      meta: str = '',
-                      use_meta: Optional[bool] = None,
-                      execute_code: bool = ac.EXECUTE_CODE,
-                      poll_interval: float = ac.POLL_INTERVAL,
-                      max_poll: float = ac.MAX_POLL,
-                      timeout: float = ac.TIMEOUT,
-                      ) -> Dict[str, Any]:
+async def submit_wait(
+    goal_description: str,
+    data_list: Dict[str, str],
+    output_dir: str = ac.OUTPUT_DIR,
+    meta: str = '',
+    execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME,
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+    poll_interval: float = ac.POLL_INTERVAL,
+    max_poll: float = ac.MAX_POLL,
+) -> Dict[str, Any]:
     """Submit analysis task to Bioinformatics Agents and
         monitor task execution until completion or timeout.
 
@@ -868,19 +900,38 @@ async def submit_wait(goal_description: str,
             - status: 'completed' state confirmation
             - result: Full execution output data
     """
-    task_id = await submit(
+    task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
         meta=meta,
         execute_code=execute_code,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
         timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
     )
     response = await wait_for_completion(
-        task_id=task_id,
+        task_id=task_dict['task_id'],
+        analysis_url=analysis_url,
+        region=region,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
         poll_interval=poll_interval,
         max_poll=max_poll,
-        timeout=timeout,
     )
     return response
 
@@ -904,11 +955,26 @@ async def plan_submit_wait(
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
     execute_code: bool = ac.EXECUTE_CODE,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME + '-plan',
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
+    poll_interval: float = ac.POLL_INTERVAL,
+    max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
     """Generate a plan, submit it for asynchronous execution, and wait for
         completion.
@@ -992,7 +1058,7 @@ async def plan_submit_wait(
         McpError: If the `plan_submit` step fails or if `wait_for_completion`
             encounters an unrecoverable error or times out based on `max_poll`.
     """
-    task_id = await plan_submit(
+    task_dict = await plan_submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
@@ -1011,15 +1077,32 @@ async def plan_submit_wait(
         top_p=top_p,
         user=user,
         execute_code=execute_code,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
     response = await wait_for_completion(
-        task_id=task_id,
+        task_id=task_dict['task_id'],
+        analysis_url=analysis_url,
+        region=region,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
         poll_interval=poll_interval,
         max_poll=max_poll,
-        timeout=timeout,
     )
     return response
 
@@ -1028,11 +1111,14 @@ async def retrieve_plan_submit_wait(
     goal_description: str,
     data_list: List[Dict[str, str]],
     output_dir: str = ac.OUTPUT_DIR,
+    retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
     page_num: int = ac.PAGE_NUM,
     filter_string: Optional[str] = ac.FILTER_STRING,
     scope: str = ac.SCOPE,
-    extra_repo_ids: Optional[List[str]] = ac.EXECUTE_CODE,
+    extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
+    rerank_url: str = ac.RERANK_URL,
+    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
     score_threshold: float = ac.SCORE_THRESHOLD,
     top_n: int = ac.TOP_N,
     prompt_file: str = ac.PROMPT_FILE,
@@ -1051,11 +1137,27 @@ async def retrieve_plan_submit_wait(
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
     execute_code: bool = ac.EXECUTE_CODE,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME + '-retrieve-plan',
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        'small', 'medium', 'large'
+    ] = ac.COMPUTE_RESOURCE,
+    meta_meta: Optional[str] = None,
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
+    poll_interval: float = ac.POLL_INTERVAL,
+    max_poll: float = ac.MAX_POLL,
 ) -> Dict[str, Any]:
     """Retrieve documents, generate an augmented plan, submit for execution,
         and wait.
@@ -1174,15 +1276,18 @@ async def retrieve_plan_submit_wait(
     """
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
-    task_id = await retrieve_plan_submit(
+    task_dict = await retrieve_plan_submit(
         goal_description=goal_description,
         data_list=data_list,
         output_dir=output_dir,
+        retrieve_url=retrieve_url,
         repo_id_dict=repo_id_dict,
         page_num=page_num,
         filter_string=filter_string,
         scope=scope,
         extra_repo_ids=extra_repo_ids,
+        rerank_url=rerank_url,
+        rerank_batch_size=rerank_batch_size,
         score_threshold=score_threshold,
         top_n=top_n,
         prompt_file=prompt_file,
@@ -1201,15 +1306,33 @@ async def retrieve_plan_submit_wait(
         top_p=top_p,
         user=user,
         execute_code=execute_code,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
+        meta_meta=meta_meta,
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
     response = await wait_for_completion(
-        task_id=task_id,
+        task_id=task_dict['task_id'],
+        analysis_url=analysis_url,
+        region=region,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
         poll_interval=poll_interval,
         max_poll=max_poll,
-        timeout=timeout,
     )
     return response
 
