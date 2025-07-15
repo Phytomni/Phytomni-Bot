@@ -209,3 +209,6 @@ __marimo__/
 
 # SQLite
 .db
+
+# Gemini CLI
+package-lock.json
