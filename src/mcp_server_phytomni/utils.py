@@ -2,27 +2,21 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-import time
-import traceback
-import uuid
-from json import dumps, load
+from json import dumps
 from math import ceil
 from pathlib import Path
 from re import sub
 from typing import Dict, Optional
 from yaml import safe_load
-from traceback import format_exc
 
 from httpx import AsyncClient, HTTPError, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
-from obs import ObsClient
 
-from .config.defaults import ServerConfig, AnalystConfig
+from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
 
 serverconfig = ServerConfig()
-analysisConfig = AnalystConfig()
 sensitiveconfig = SensitiveConfig().load()
 
 
@@ -205,64 +199,3 @@ def split_list(lst, max_size: int = 128):
         chunks.append(lst[index:index+chunk_size])
         index += chunk_size
     return chunks
-
-
-def get_data_list(data_file: str,
-                  analysis_type: str,
-                  species: str) -> list:
-    """Generate ready-to-use prompt from template components.
-
-    Combines template loading and rendering in one workflow:
-    1. Load base template from YAML file
-    2. Apply parameter substitutions
-
-    Args:
-        data_file: data_list_file for json format
-        analysis_type: analysis_type[evolution_analysis, deepgo2_analysis, structure_analysis,
-                                    prompter_analysis, protein_design_analysis, gene_expression_analysis, ppi_analysis]
-        species: 65 species ...
-
-    Returns:
-        data_list for analysis
-    """
-    try:
-        with open(data_file) as f:
-            data = load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Data file not found: {data_file}")
-    try:
-        analysis_data_list = data[analysis_type]
-    except KeyError:
-        raise KeyError(f"Analysis type not found: {analysis_type}")
-    try:
-        data_list = analysis_data_list[species]
-    except KeyError:
-        raise KeyError(f"Species not found: {species}")
-
-    return data_list
-
-
-def create_output_dir(user_id: str, 
-                      task: str, 
-                      access_key_id: str = sensitiveconfig.AccessKeyID.get_secret_value(), 
-                      secret_access_key: str = sensitiveconfig.SecretAccessKey.get_secret_value(), 
-                      obs_server: str = analysisConfig.OBS_SERVER, 
-                      bucket_name: str = analysisConfig.BUCKET_NAME) -> str:
-    
-
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
-    try:
-        output_dir = f"agent_data/user_data/{user_id}/output/{task}_{int(time.time())}_{uuid.uuid1()}/"
-        response = obsclient.putContent(bucketName=bucket_name, 
-                                        objectKey=output_dir,
-                                        content=None)
-        if response.status < 300:
-            output = f"/obs/{bucket_name}/{output_dir}"
-            return output
-        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
-                      f'errorCode: {response.errorCode}\n'
-                      f'errorMessage: {response.errorMessage}')
-    except Exception as exc:
-        raise OSError(f'Put File Failed\n{format_exc()}') from exc

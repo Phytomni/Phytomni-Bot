@@ -5,28 +5,24 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
 import json
-import uuid
-from threading import Thread
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-from traceback import format_exc
+import time
 from pathlib import Path
-from obs import ObsClient
-from obs import GetObjectHeader
+from threading import Thread
+from traceback import format_exc
+from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid1
 
-import pandas as pd
+from obs import GetObjectHeader, ObsClient
 from mcp.shared.exceptions import McpError
 
 from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
-from .config.defaults import AnalystConfig
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
 from .knowledge_agents import multi_retrieve
 from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
-from .utils import create_output_dir, get_data_list
 
 SPECIES_CODE_MAP = {
     'osa': 'rice (Oryza sativa)',
@@ -95,7 +91,6 @@ SPECIES_CODE_MAP = {
     'cbr': 'Chara braunii',
     'tae': 'wheat (Triticum aestivum)',
 }
-ac = AnalystConfig()
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
 _manager = None
@@ -302,8 +297,7 @@ async def gene_symbol(species_code: str,
                         else:
                             gene_symbol_list.append(cell_raw_value)
                 return gene_symbol_list
-            else:
-                return []
+            return []
         else:
             return []
 
@@ -973,7 +967,7 @@ async def async_gene_function(
                 `gene_retrieve` or the final prompt.
         """
         if use_analyst_agent:
-            user_id = uuid.uuid1()
+            user_id = uuid1()
             output_dir = create_output_dir(user_id, gene_id)
             species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
                 ')').lower()
@@ -1324,13 +1318,13 @@ async def evolution_analysis(species: str,
 
 async def protein_function_analysis(species,
                                     gene_id,
-                                    output='/obs/phytomni/agent_data/test/test/',
+                                    output='/obs/phytomni/agent_data/test/',
                                     user_id='',
                                     batch=False):
     # TODO: implement deepgo2 analysis
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'protein_function_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'deepgo2_analysis', species)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/deepgo2_analysis',
@@ -1354,13 +1348,13 @@ async def protein_function_analysis(species,
 
 async def protein_structure_analysis(species,
                                      gene_id,
-                                     output='/obs/phytomni/agent_data/test/test/',
+                                     output='/obs/phytomni/agent_data/test/',
                                      user_id='',
                                      batch=False):
     # TODO: implement structure analysis
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'protein_structure_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'structure_analysis', species)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/structure_analysis',
@@ -1384,13 +1378,13 @@ async def protein_structure_analysis(species,
 
 async def promoter_analysis(species,
                             gene_id,
-                            output='/obs/phytomni/agent_data/test/test/',
+                            output='/obs/phytomni/agent_data/test/',
                             user_id='',
                             batch=False):
     # TODO: implement promoter analysis
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'promoter_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/promoter_analysis',
@@ -1414,13 +1408,13 @@ async def promoter_analysis(species,
 
 async def protein_design_analysis(species,
                                   gene_id,
-                                  output='/obs/phytomni/agent_data/test/test/',
+                                  output='/obs/phytomni/agent_data/test/',
                                   user_id='',
                                   batch=False):
     # TODO: implement protein_design analysis
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'protein_design_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'protein_design_analysis', species)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/protein_design_analysis',
@@ -1444,12 +1438,12 @@ async def protein_design_analysis(species,
 
 async def gene_expression_tissues(species, 
                                   gene_id, 
-                                  output='/obs/phytomni/agent_data/test/test/', 
+                                  output='/obs/phytomni/agent_data/test/', 
                                   user_id='', 
                                   batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'tissues_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     tissues_data = data_list['tissues']
@@ -1473,12 +1467,12 @@ async def gene_expression_tissues(species,
 
 async def gene_expression_cultivars(species, 
                                     gene_id, 
-                                    output='/obs/phytomni/agent_data/test/test/', 
+                                    output='/obs/phytomni/agent_data/test/', 
                                     user_id='', 
                                     batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'cultivars_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     cultivars_data = data_list['cultivars']
@@ -1502,12 +1496,12 @@ async def gene_expression_cultivars(species,
 
 async def gene_expression_genotypes(species, 
                                     gene_id, 
-                                    output='/obs/phytomni/agent_data/test/test/', 
+                                    output='/obs/phytomni/agent_data/test/', 
                                     user_id='', 
                                     batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'genotypes_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     genotypes_data = data_list['genotypes']
@@ -1531,12 +1525,12 @@ async def gene_expression_genotypes(species,
 
 async def gene_expression_treatments(species, 
                                      gene_id, 
-                                     output='/obs/phytomni/agent_data/test/test/', 
+                                     output='/obs/phytomni/agent_data/test/', 
                                      user_id='', 
                                      batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'treatments_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     treatments_data = data_list['treatments']
@@ -1560,12 +1554,12 @@ async def gene_expression_treatments(species,
 
 async def single_cell_analysis(species, 
                                gene_id, 
-                               output='/obs/phytomni/agent_data/test/test/', 
+                               output='/obs/phytomni/agent_data/test/', 
                                user_id='', 
                                batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'single_cell_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'single_cell_analysis', species)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/single_cell_analysis', {'gene_id': gene_id})
@@ -1588,7 +1582,7 @@ async def single_cell_analysis(species,
 
 async def ppi_analysis(species,
                        gene_id,
-                       output='/obs/phytomni/agent_data/test/test/',
+                       output='/obs/phytomni/agent_data/test/',
                        user_id='',
                        batch=False):
     # TODO: implement ppi analysis
@@ -1602,7 +1596,7 @@ async def ppi_analysis(species,
         return task
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'ppi_task')
     interaction_gene = ', '.join(interaction_gene)
     goal = get_prompt(dgc.PROMPT_FILE, 'user/ppi_analysis',
@@ -1627,12 +1621,12 @@ async def ppi_analysis(species,
 async def smep_analysis(species,
                         gene_id,
                         epic_type='6mA',
-                        output='/obs/phytomni/agent_data/test/test/',
+                        output='/obs/phytomni/agent_data/test/',
                         user_id='',
                         batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'smep_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
     smep_goal = get_prompt(dgc.PROMPT_FILE, 'user/smep_analysis',
@@ -1657,12 +1651,12 @@ async def smep_analysis(species,
 
 async def smoc_analysis(species,
                         gene_id,
-                        output='/obs/phytomni/agent_data/test/test/',
+                        output='/obs/phytomni/agent_data/test/',
                         user_id='',
                         batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'smoc_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
     # 染色质可及性预测写死了，预测的NIPCK
@@ -1688,7 +1682,7 @@ async def smoc_analysis(species,
 
 async def test_api(species, 
                    gene_id, 
-                   output='/obs/phytomni/agent_data/test/test/', 
+                   output='/obs/phytomni/agent_data/test/', 
                    user_id='', 
                    batch=False):
     species_code = 'osa'
@@ -1704,7 +1698,7 @@ async def test_api(species,
         return task
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'gene_expression_task')
     data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     tissues_data = data_list['tissues']
@@ -1728,7 +1722,7 @@ async def test_api(species,
 
 async def gene_expression_analysis(species,
                                    gene_id,
-                                   output='/obs/phytomni/agent_data/test/test/',
+                                   output='/obs/phytomni/agent_data/test/',
                                    user_id='',
                                    batch=False):
     # TODO: implement gene_expression analysis
@@ -1753,7 +1747,7 @@ async def gene_expression_analysis(species,
         return task
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'gene_expression_task')
     tissues_task = await gene_expression_tissues(species=species, 
                                                  gene_id=msu_id, 
@@ -1785,12 +1779,12 @@ async def gene_expression_analysis(species,
 async def epic_analysis(species,
                         gene_id,
                         epic_type='6mA',
-                        output='/obs/phytomni/agent_data/test/test/',
+                        output='/obs/phytomni/agent_data/test/',
                         user_id='',
                         batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'epic_task')
     smep_task = await smep_analysis(species=species, 
                                     gene_id=gene_id, 
@@ -1812,12 +1806,12 @@ async def epic_analysis(species,
 
 async def design_module(species,
                         gene_id,
-                        output='/obs/phytomni/agent_data/test/test/',
+                        output='/obs/phytomni/agent_data/test/',
                         user_id='',
                         batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'design_task')
     # step1: 蛋白质设计
     protein_design_task = await protein_design_analysis(species=species,
@@ -1831,12 +1825,12 @@ async def design_module(species,
 
 async def analysis_module(species,
                           gene_id,
-                          output='/obs/phytomni/agent_data/test/test/',
+                          output='/obs/phytomni/agent_data/test/',
                           user_id='',
                           batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'analysis_task')
     # step1: 进化分析
     evo_task = await evolution_analysis(species=species,
@@ -1904,12 +1898,12 @@ async def analysis_module(species,
 
 async def gene_analysis(species,
                         gene_id,
-                        output='/obs/phytomni/agent_data/test/test/',
+                        output='/obs/phytomni/agent_data/test/',
                         user_id='',
                         batch=False):
     if not batch:
         if user_id == '':
-            user_id = uuid.uuid1()
+            user_id = uuid1()
         output = create_output_dir(user_id, 'analysis_task')
     # step1: evolution analysis
     evo_task = await evolution_analysis(species=species,
@@ -2029,3 +2023,63 @@ def download_obs_out(
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
 
 
+def create_output_dir(
+    user_id: str,
+    task: str,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+) -> str:
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
+    try:
+        output_dir = (f'agent_data/user_data/{user_id}/output/'
+                      f'{task}_{int(time.time())}_{uuid1()}/')
+        response = obsclient.putContent(bucketName=bucket_name,
+                                        objectKey=output_dir,
+                                        content=None)
+        if response.status < 300:
+            return f'/obs/{bucket_name}/{output_dir}'
+        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
+                      f'errorCode: {response.errorCode}\n'
+                      f'errorMessage: {response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Put File Failed\n{format_exc()}') from exc
+
+
+def get_data_list(data_file: str,
+                  analysis_type: str,
+                  species: str) -> list:
+    """Generate ready-to-use prompt from template components.
+
+    Combines template loading and rendering in one workflow:
+    1. Load base template from YAML file
+    2. Apply parameter substitutions
+
+    Args:
+        data_file: data_list_file for json format
+        analysis_type: analysis_type[evolution_analysis, deepgo2_analysis,
+                                     structure_analysis, prompter_analysis,
+                                     protein_design_analysis,
+                                     gene_expression_analysis, ppi_analysis]
+        species: 65 species ...
+
+    Returns:
+        data_list for analysis
+    """
+    try:
+        with open(data_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f'Data file not found: {data_file}') from exc
+    try:
+        analysis_data_list = data[analysis_type]
+    except KeyError as exc:
+        raise KeyError(f'Analysis type not found: {analysis_type}') from exc
+    try:
+        data_list = analysis_data_list[species]
+    except KeyError as exc:
+        raise KeyError(f'Species not found: {species}') from exc
+    return data_list
