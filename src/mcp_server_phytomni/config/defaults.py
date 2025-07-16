@@ -8,9 +8,10 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-PROMPT_PATH = Path(__file__).parent.parent / 'config/.prompts.yaml'
 MAX_TOKENS = 131072
-DEEPGENOME_DATA_PATH = Path(__file__).parent.parent / 'config/species_data_list.json'
+PARENT_PATH = Path(__file__).parent.parent
+PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
+DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
 
 
 class ServerConfig(BaseSettings):
