@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 
 PROMPT_PATH = Path(__file__).parent.parent / 'config/.prompts.yaml'
 MAX_TOKENS = 131072
+DEEPGENOME_DATA_PATH = Path(__file__).parent.parent / 'config/species_data_list.json'
 
 
 class ServerConfig(BaseSettings):
@@ -231,6 +232,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
         MAX_CONCURRENCY (int): Maximum number of concurrent operations allowed
             for tasks related to gene function analysis.
     """
+    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
     MAX_CONCURRENCY: int = Field(8)
     CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
                                  'create_task')

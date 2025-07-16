@@ -1,5 +1,5 @@
 {
-    "evolution_data": {
+    "evolution_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
             "/obs/phytomni/agent_data/raw_data/01.database/pfam/Pfam-A.hmm": "Pfam database",
@@ -390,7 +390,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\""
         }
     },
-    "deepgo2_data": {
+    "deepgo2_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_sativa/Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa": "All protein sequences for Oryza Sativa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa > $out_file\""
         },
@@ -585,7 +585,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\""
         }
     },
-    "protenix_data": {
+    "structure_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_sativa/Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa": "All protein sequences for Oryza Sativa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa > $out_file\""
         },
@@ -780,7 +780,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\""
         }
     },
-    "prompter_motif_data": {
+    "promoter_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/": "65 species database for blastn index, index_name: promoter, if you want to use nt database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/promoter paramter",
@@ -1106,7 +1106,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Zea mays, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna_sm.AllPrompter.upper.fa > $out_file\""
         }
     },
-    "protein_design_data": {
+    "protein_design_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
@@ -1497,7 +1497,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\""
         }
     },
-    "bulk_gene_data": {
+    "gene_expression_analysis": {
         "oryza sativa": {
             "tissues": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different tissues, You need to create a list of tissues file based on the tissues users expect to see.", 
@@ -1989,7 +1989,7 @@
             }
         }
     },
-    "ppi_data": {
+    "ppi_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_sativa/Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa": "All protein sequences for Oryza Sativa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa > $out_file\""
         },
@@ -2184,7 +2184,7 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\""
         }
     },
-    "single_cell_data": {
+    "single_cell_analysis": {
         "oryza sativa": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/rice_scRNA_omics.h5ad": "Single Cell Gene Expression Matrix in Rice."
