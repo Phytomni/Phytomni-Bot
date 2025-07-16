@@ -1364,36 +1364,6 @@ async def evolution_analysis(
     return {'evolution_task': evo_task}
 
 
-async def protein_function_analysis(species,
-                                    gene_id,
-                                    output='/obs/phytomni/agent_data/test/',
-                                    user_id='',
-                                    batch=False):
-    # TODO: implement deepgo2 analysis
-    if not batch:
-        if user_id == '':
-            user_id = uuid1()
-        output = create_output_dir(user_id, 'protein_function_task')
-    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'deepgo2_analysis', species)
-    goal = get_prompt(dgc.PROMPT_FILE, 'user/deepgo2_analysis',
-                      {'gene_id': gene_id})
-    meta = get_prompt(dgc.PROMPT_FILE, 'user/deepgo2_analysis_meta')
-    deepgo_task = await submit(
-        goal_description=goal, 
-        data_list=data_list, 
-        output_dir=output, 
-        meta=meta, 
-        execute_code=True, 
-        task_name="deepgenome-agents-proteinfunction-task", 
-        compute_resource="large")
-    
-    task = {
-        'protein_function_task': deepgo_task
-    }
-
-    return task
-
-
 async def protein_structure_analysis(species,
                                      gene_id,
                                      output='/obs/phytomni/agent_data/test/',
