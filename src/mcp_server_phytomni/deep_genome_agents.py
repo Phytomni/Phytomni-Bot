@@ -1306,34 +1306,62 @@ async def get_interaction_gene_list(
     return gene_interaction_list
 
 
-async def evolution_analysis(species: str,
-                             gene_id,
-                             output='/obs/phytomni/agent_data/test/test/',
-                             user_id='',
-                             batch=False):
-    # TODO: implement evolution analysis
-    # batch参数，确保每个功能模块能够单独调用
+async def evolution_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = '',
+    batch: bool = False,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    goal_description = get_prompt(dgc.PROMPT_FILE, 'user/evolution_analysis',
+                                  {'gene_id': gene_id})
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'evolution_analysis',
+                              species)
     if not batch:
-        if user_id == '':
-            user_id = uuid.uuid1()
-        output = create_output_dir(user_id, 'evolution_task')
-    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'evolution_analysis', species)
-    goal = get_prompt(dgc.PROMPT_FILE, 'user/evolution_analysis', {'gene_id': gene_id})
+        if not user_id:
+            user_id = uuid1()
+        output_dir = create_output_dir(user_id, 'evolution_task')
     meta = get_prompt(dgc.PROMPT_FILE, 'user/evolution_analysis_meta')
     evo_task = await submit(
-        goal_description=goal, 
-        data_list=data_list, 
-        output_dir=output, 
-        meta=meta, 
-        execute_code=True, 
-        task_name="deepgenome-agents-evo-task", 
-        compute_resource="medium")
- 
-    task = {
-        'evolution_task': evo_task
-    }
-    
-    return task
+        goal_description=goal_description,
+        data_list=data_list,
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-evo-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='medium',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'evolution_task': evo_task}
 
 
 async def protein_function_analysis(species,
