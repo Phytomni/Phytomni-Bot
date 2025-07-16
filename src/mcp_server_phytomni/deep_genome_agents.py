@@ -9,11 +9,17 @@ import uuid
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from traceback import format_exc
+from pathlib import Path
+from obs import ObsClient
+from obs import GetObjectHeader
+
 import pandas as pd
 from mcp.shared.exceptions import McpError
 
-from .analyst_agents import submit
+from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
+from .config.defaults import AnalystConfig
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
@@ -89,6 +95,7 @@ SPECIES_CODE_MAP = {
     'cbr': 'Chara braunii',
     'tae': 'wheat (Triticum aestivum)',
 }
+ac = AnalystConfig()
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
 _manager = None
@@ -1296,9 +1303,9 @@ async def evolution_analysis(species: str,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'evolution_task')
-    data_list = get_data_list('config/species_data_list.json', 'evolution_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/evolution_analysis', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/evolution_analysis_meta')
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'evolution_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/evolution_analysis', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/evolution_analysis_meta')
     evo_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1325,10 +1332,10 @@ async def protein_function_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'protein_function_task')
-    data_list = get_data_list('config/species_data_list.json', 'deepgo2_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/deepgo2_analysis',
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'deepgo2_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/deepgo2_analysis',
                       {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/deepgo2_analysis_meta')
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/deepgo2_analysis_meta')
     deepgo_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1355,10 +1362,10 @@ async def protein_structure_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'protein_structure_task')
-    data_list = get_data_list('config/species_data_list.json', 'structure_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/structure_analysis',
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'structure_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/structure_analysis',
                       {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/structure_analysis_meta')
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/structure_analysis_meta')
     af3_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1385,10 +1392,10 @@ async def promoter_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'promoter_task')
-    data_list = get_data_list('config/species_data_list.json', 'promoter_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/promoter_analysis',
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/promoter_analysis',
                       {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/promoter_analysis_meta')
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/promoter_analysis_meta')
     promoter_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1415,10 +1422,10 @@ async def protein_design_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'protein_design_task')
-    data_list = get_data_list('config/species_data_list.json', 'protein_design_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/protein_design_analysis',
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'protein_design_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/protein_design_analysis',
                       {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/protein_design_analysis_meta')
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/protein_design_analysis_meta')
     pr_design_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1444,10 +1451,10 @@ async def gene_expression_tissues(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'tissues_task')
-    data_list = get_data_list('config/species_data_list.json', 'gene_expression_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     tissues_data = data_list['tissues']
-    tissue_goal = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis/tissue', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis_meta')
+    tissue_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/tissue', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
     tissues_task = await submit(
         goal_description=tissue_goal,
         data_list=tissues_data,
@@ -1473,10 +1480,10 @@ async def gene_expression_cultivars(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'cultivars_task')
-    data_list = get_data_list('config/species_data_list.json', 'gene_expression_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     cultivars_data = data_list['cultivars']
-    cultivar_goal = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis/cultivar', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis_meta')
+    cultivar_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/cultivar', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
     cultivars_task = await submit(
         goal_description=cultivar_goal,
         data_list=cultivars_data,
@@ -1502,10 +1509,10 @@ async def gene_expression_genotypes(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'genotypes_task')
-    data_list = get_data_list('config/species_data_list.json', 'gene_expression_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     genotypes_data = data_list['genotypes']
-    genotype_goal = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis/genotype', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis_meta')
+    genotype_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/genotype', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
     genotypes_task = await submit(
         goal_description=genotype_goal,
         data_list=genotypes_data,
@@ -1531,10 +1538,10 @@ async def gene_expression_treatments(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'treatments_task')
-    data_list = get_data_list('config/species_data_list.json', 'gene_expression_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     treatments_data = data_list['treatments']
-    treatment_goal = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis/treatment', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis_meta')
+    treatment_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/treatment', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
     treatments_task = await submit(
         goal_description=treatment_goal,
         data_list=treatments_data,
@@ -1560,9 +1567,9 @@ async def single_cell_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'single_cell_task')
-    data_list = get_data_list('config/species_data_list.json', 'single_cell_analysis', species)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/single_cell_analysis', {'gene_id': gene_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/single_cell_analysis_meta')
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'single_cell_analysis', species)
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/single_cell_analysis', {'gene_id': gene_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/single_cell_analysis_meta')
     single_cell_task = await submit(
         goal_description=goal,
         data_list=data_list,
@@ -1585,7 +1592,7 @@ async def ppi_analysis(species,
                        user_id='',
                        batch=False):
     # TODO: implement ppi analysis
-    data_list = get_data_list('config/species_data_list.json', 'ppi_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'ppi_analysis', species)
     interaction_gene = await get_interaction_gene_list(gene_id)
     if len(interaction_gene) == 0:
         task = {
@@ -1598,9 +1605,9 @@ async def ppi_analysis(species,
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'ppi_task')
     interaction_gene = ', '.join(interaction_gene)
-    goal = get_prompt('ai4ps/.prompts.yaml', 'user/ppi_analysis',
+    goal = get_prompt(dgc.PROMPT_FILE, 'user/ppi_analysis',
                       {'gene_id': gene_id, 'interaction_gene': interaction_gene})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/ppi_analysis_meta')
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/ppi_analysis_meta')
     ppi_task = await submit(
         goal_description=goal, 
         data_list=data_list, 
@@ -1627,10 +1634,10 @@ async def smep_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'smep_task')
-    data_list = get_data_list('config/species_data_list.json', 'promoter_analysis', species)
-    smep_goal = get_prompt('ai4ps/.prompts.yaml', 'user/smep_analysis',
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
+    smep_goal = get_prompt(dgc.PROMPT_FILE, 'user/smep_analysis',
                            {'gene_id': gene_id, 'epic_type': epic_type})
-    smep_meta = get_prompt('ai4ps/.prompts.yaml', 'user/smep_analysis_meta')
+    smep_meta = get_prompt(dgc.PROMPT_FILE, 'user/smep_analysis_meta')
 
     smep_task = await submit(
         goal_description=smep_goal,
@@ -1657,11 +1664,11 @@ async def smoc_analysis(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'smoc_task')
-    data_list = get_data_list('config/species_data_list.json', 'promoter_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
     # 染色质可及性预测写死了，预测的NIPCK
-    smoc_goal = get_prompt('ai4ps/.prompts.yaml', 'user/smoc_analysis',
+    smoc_goal = get_prompt(dgc.PROMPT_FILE, 'user/smoc_analysis',
                            {'gene_id': gene_id})
-    smoc_meta = get_prompt('ai4ps/.prompts.yaml', 'user/smoc_analysis_meta')
+    smoc_meta = get_prompt(dgc.PROMPT_FILE, 'user/smoc_analysis_meta')
 
     smoc_task = await submit(
         goal_description=smoc_goal,
@@ -1699,10 +1706,10 @@ async def test_api(species,
         if user_id == '':
             user_id = uuid.uuid1()
         output = create_output_dir(user_id, 'gene_expression_task')
-    data_list = get_data_list('config/species_data_list.json', 'gene_expression_analysis', species)
+    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
     tissues_data = data_list['tissues']
-    tissue_goal = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis/tissue', {'gene_id': msu_id})
-    meta = get_prompt('ai4ps/.prompts.yaml', 'user/gene_expression_analysis_meta')
+    tissue_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/tissue', {'gene_id': msu_id})
+    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
     tissues_task = await submit(
         goal_description=tissue_goal,
         data_list=tissues_data,
@@ -1893,3 +1900,132 @@ async def analysis_module(species,
         analysis_task.update(d)
 
     return analysis_task
+
+
+async def gene_analysis(species,
+                        gene_id,
+                        output='/obs/phytomni/agent_data/test/test/',
+                        user_id='',
+                        batch=False):
+    if not batch:
+        if user_id == '':
+            user_id = uuid.uuid1()
+        output = create_output_dir(user_id, 'analysis_task')
+    # step1: evolution analysis
+    evo_task = await evolution_analysis(species=species,
+                                        gene_id=gene_id,
+                                        output=output,
+                                        user_id=user_id,
+                                        batch=True)
+    # step2: promoter motif analysis
+    promoter_task = await promoter_analysis(species=species,
+                                            gene_id=gene_id,
+                                            output=output,
+                                            user_id=user_id,
+                                            batch=True)
+    # step3: epigentics analysis
+    epic_task = await epic_analysis(species=species,
+                                    gene_id=gene_id,
+                                    epic_type='6mA',
+                                    output=output,
+                                    user_id=user_id,
+                                    batch=True)
+    # step4: bulk gene expression analysis
+    gene_exp_task = await gene_expression_analysis(species=species,
+                                                   gene_id=gene_id,
+                                                   output=output,
+                                                   user_id=user_id,
+                                                   batch=True)
+    # step5: single cell gene expression analysis
+    single_cell_exp_task = await single_cell_analysis(species=species, 
+                                                      gene_id=gene_id, 
+                                                      output=output, 
+                                                      user_id=user_id, 
+                                                      batch=True)
+    # step6: 蛋白质分析
+    # function_task = await protein_function_analysis(species=species,
+    #                                                 gene_id=gene_id,
+    #                                                 output=output,
+    #                                                 user_id=user_id,
+    #                                                 batch=True)
+    # print(function_task)
+    structure_task = await protein_structure_analysis(species=species,
+                                                      gene_id=gene_id,
+                                                      output=output,
+                                                      user_id=user_id,
+                                                      batch=True)
+    
+    analysis_task = {}
+    # for d in [evo_task, promoter_task, epic_task, gene_exp_task, single_cell_exp_task, function_task, structure_task, ppi_task]:
+    for d in [evo_task, promoter_task, epic_task, gene_exp_task, single_cell_exp_task, structure_task]:
+        analysis_task.update(d)
+
+    return analysis_task
+
+
+async def generate_analysis_results():
+    species = "oryza sativa"
+    gene_id = "Os01g0177400"
+    user_id = "test_user"
+    test_task = await single_cell_analysis(species, 
+                                           gene_id, 
+                                           user_id=user_id, 
+                                           batch=False)
+    test = await wait_for_completion(test_task['single_cell_task']['task_id'])
+    
+    return (test_task, test)
+
+
+def download_obs_out(
+    output_dir: str, 
+    is_all: bool = True, 
+    target_file_feature: str = "", 
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME, 
+):
+    output_path = './.out'
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+    headers = GetObjectHeader()
+    headers.if_modified_since = 'date'
+
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
+    max_num = 1000
+    mark = None
+    try:
+        while True:
+            file_response = obsclient.listObjects(bucket_name, 
+                                                  output_dir, 
+                                                  marker=mark, 
+                                                  max_keys=max_num, 
+                                                  encoding_type='url')
+            if file_response.status < 300: 
+                for content in file_response.body.contents[1:]: 
+                    obj_file = content.key
+                    output_file = obj_file.split('/')[-1]
+                    # 如果非全部下载时，需要匹配文件特征，如“.png”等
+                    if not is_all and target_file_feature not in output_file:
+                        continue
+                    full_path = f"{output_path}/{output_file}"
+                    download_response = obsclient.getObject(bucket_name, 
+                                                            obj_file, 
+                                                            full_path, 
+                                                            headers=headers)
+                    if download_response.status > 300:
+                        yield f"{output_file} download failed."
+                        continue
+                if file_response.body.is_truncated is True:
+                    mark = file_response.body.next_marker
+                else:
+                    break
+            else: 
+                raise OSError(f'Get File List Failed\nrequestId: {file_response.requestId}\n'
+                              f'errorCode: {file_response.errorCode}\n'
+                              f'errorMessage: {file_response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Download File Failed\n{format_exc()}') from exc
+
+
