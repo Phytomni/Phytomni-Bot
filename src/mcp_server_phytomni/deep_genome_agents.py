@@ -1270,11 +1270,32 @@ async def async_gene_function(
         return task_id
 
 
-async def get_interaction_gene_list(gene_id):
-    # 查询互作基因
-    # ？！！ 注意，需要根据combined socre过滤，王老师给了prompot，需要修改。。。
+async def get_interaction_gene_list(
+    gene_id,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+) -> list:
     results = await nl2sql(
-        f"Give the query_gene_id_11, query_protein_11, interact_gene_id_11, interact_protein_11 and combined_score_11 '{gene_id}' or interact_gene_id_11 is '{gene_id}'.")
+        'Give the query_gene_id_11, query_protein_11, interact_gene_id_11, '
+        f"interact_protein_11 and combined_score_11 '{gene_id}' or "
+        f"interact_gene_id_11 is '{gene_id}'.",
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=simplify_response,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
     gene_interaction_set = set()
     for gene_interaction in results['data']:
         if gene_interaction[0] == gene_id:
@@ -1282,7 +1303,6 @@ async def get_interaction_gene_list(gene_id):
         elif gene_interaction[2] == gene_id:
             gene_interaction_set.add((gene_interaction[0]))
     gene_interaction_list = sorted(gene_interaction_set)
-
     return gene_interaction_list
 
 
