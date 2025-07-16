@@ -841,21 +841,18 @@ user:
     \ --gene_id MYC --sample_dir $sample_dir  --sample_list $prepare_file --exp_file\
     \ $exp_file_path --plot_type treatments --out $out \n            </cmd_line> \n\
     </example>"
-  single_cell_analysis_meta: "Note1: You do not need to install any software;\nNote2:\
-    \  You'll need to strictly adhere to Meta and generate a two-step plan;\nstep1,\
-    \ Find  Gene's prompter Sequence using grep;\nstep2, Prediction of modifications\
-    \ in promoters  using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep\
-    \ &&  cd /opt/health/epic_models/smep)\n<smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl\
-    \  -I $fasta_file -O /$output_dir/$out_file -T $epigenetic_modification_type\n\
-    \    $epigenetic_modification_type:\n     1. 5mC\n    2. 6mA\n    3. m6A\n   \
-    \ 4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n     Note1: When you run the script,\
-    \ you must be under the path /opt/health/epic_models/smep/\n     Note2: The fasta_file\
-    \ must be saved under the path /opt/health/epic_models/smep/\n     Note3: out_file\
-    \ You can specify files in any path\n</smep usage>\n<smep example>\n     question:\
-    \ please help me to predict the 5mC modification of A gene prompter\n     commond_line:\
-    \ conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep  &&\
-    \ cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
-    \  -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>"
+  single_cell_analysis_meta: "\nNote1: You need to activate af3 environment using conda(conda \
+    \ activate af3);  \nNote2: You need to activate af3 environment and install scanpy and \
+    \ anndata packages(conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \  \nstep1, install the packages and plot the gene expression in different tissues using plot_gene.py;(conda \
+    \ activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)  \n\
+    \ Tool Usage method:\n        usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA] [-o OUTPUT_DIR] [-g GENE_ID] \n\
+    \         options: \n        -h, --help            show this help message and exit \n        \
+    \ -i SINGLE_CELL_DATA   single cell data\n        -o OUTPUT_DIR   output folder path \n        \
+    \ -g GENE_ID  the gene id you want to plot. \nTool Usage example:\n    Question:  Please plot the expression\
+    \  of the gene MYC in different cells. \n    Cmd line code: conda activate af3 && pip install scanpy anndata\
+    \  -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python plot_single_cell_gene.py \
+    \ -i rice_scRNA_omics.h5ad -o $output_dir -g MYC\n"
   ppi_analysis_meta: "Note1: You don't need to install protenix software using conda;\
     \ \nNote2: You need to activate af3 environment;(conda activate af3); \nNote3:\
     \ protenix commdline softwore usage is as follows: \n<proteix usage method> \n\
