@@ -11,16 +11,18 @@ from pathlib import Path
 from re import sub
 from typing import Dict, Optional
 from yaml import safe_load
+from traceback import format_exc
 
 from httpx import AsyncClient, HTTPError, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import ObsClient
 
-from .config.defaults import ServerConfig
+from .config.defaults import ServerConfig, AnalystConfig
 from .config.settings import SensitiveConfig
 
 serverconfig = ServerConfig()
+analysisConfig = AnalystConfig()
 sensitiveconfig = SensitiveConfig().load()
 
 
@@ -241,36 +243,26 @@ def get_data_list(data_file: str,
 
 
 def create_output_dir(user_id: str, 
-                      task: str) -> str:
-    # 创建输出文件夹
-    ak = 'HPUAE0AYEP7UL66O2S77'
-    sk = 'Fdu2iGnvPoVdYbiFrVZlJEbYxm7HnMPJteLPcs3U'
-    server = "https://obs.cn-east-3.myhuaweicloud.com"
-    # 创建obsClient实例
-    obsClient = ObsClient(access_key_id=ak, secret_access_key=sk, server=server)
-    # print(f"agent_data/user_data/{user_id}/output/{task}_{int(time.time())}_{uuid.uuid1()}/")
+                      task: str, 
+                      access_key_id: str = sensitiveconfig.AccessKeyID.get_secret_value(), 
+                      secret_access_key: str = sensitiveconfig.SecretAccessKey.get_secret_value(), 
+                      obs_server: str = analysisConfig.OBS_SERVER, 
+                      bucket_name: str = analysisConfig.BUCKET_NAME) -> str:
+    
+
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
     try:
-        bucketName = "genomiagent"
-        # 上传后的文件夹名称，以'/'结尾
         output_dir = f"agent_data/user_data/{user_id}/output/{task}_{int(time.time())}_{uuid.uuid1()}/"
-        # 对象名以'/'结尾即为创建文件夹，创建文件夹时为了不造成意料之外的计费，请不要上传内容
-        resp = obsClient.putContent(bucketName, output_dir, content=None)
-        # 返回码为2xx时，接口调用成功，否则接口调用失败
-        if resp.status < 300:
-            print('Put Content Succeeded')
-            print('requestId:', resp.requestId)
-            output = f"obs://genomiagent/{output_dir}"
-            
+        response = obsclient.putContent(bucketName=bucket_name, 
+                                        objectKey=output_dir,
+                                        content=None)
+        if response.status < 300:
+            output = f"/obs/{bucket_name}/{output_dir}"
             return output
-        else:
-            print('Put Content Failed')
-            print('requestId:', resp.requestId)
-            print('errorCode:', resp.errorCode)
-            print('errorMessage:', resp.errorMessage)
-
-            raise OSError(f'Create Out dir Error')
-    except:
-        print('Put Content Failed')
-        print(traceback.format_exc())
-
-        raise OSError('Create Out dir Error')
+        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
+                      f'errorCode: {response.errorCode}\n'
+                      f'errorMessage: {response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Put File Failed\n{format_exc()}') from exc
