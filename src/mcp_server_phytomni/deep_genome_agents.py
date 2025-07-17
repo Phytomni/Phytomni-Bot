@@ -1306,9 +1306,9 @@ async def evolution_analysis(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1366,9 +1366,9 @@ async def protein_structure_analysis(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1426,9 +1426,9 @@ async def promoter_analysis(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1486,9 +1486,9 @@ async def protein_design_analysis(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1546,9 +1546,9 @@ async def gene_expression_tissues(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1607,9 +1607,9 @@ async def gene_expression_cultivars(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1668,9 +1668,9 @@ async def gene_expression_genotypes(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1729,9 +1729,9 @@ async def gene_expression_treatments(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1790,9 +1790,9 @@ async def single_cell_analysis(
     gene_id: str,
     user_id: str = '',
     batch: bool = False,
-    output_dir: str = dgc.OUTPUT_DIR,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
     coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
@@ -1844,42 +1844,85 @@ async def single_cell_analysis(
     return {'single_cell_task': single_cell_task}
 
 
-async def ppi_analysis(species,
-                       gene_id,
-                       output='/obs/phytomni/agent_data/test/',
-                       user_id='',
-                       batch=False):
-    # TODO: implement ppi analysis
-    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'ppi_analysis', species)
-    interaction_gene = await get_interaction_gene_list(gene_id)
+async def ppi_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = '',
+    batch: bool = False,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    interaction_gene = await get_interaction_gene_list(
+        gene_id=gene_id,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=simplify_response,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
     if len(interaction_gene) == 0:
-        task = {
-            'ppi_task': None
-        }
-
-        return task
-    if not batch:
-        if user_id == '':
-            user_id = uuid1()
-        output = create_output_dir(user_id, 'ppi_task')
+        return {'ppi_task': None}
     interaction_gene = ', '.join(interaction_gene)
-    goal = get_prompt(dgc.PROMPT_FILE, 'user/ppi_analysis',
-                      {'gene_id': gene_id, 'interaction_gene': interaction_gene})
-    meta = get_prompt(dgc.PROMPT_FILE, 'user/ppi_analysis_meta')
+    goal_description = get_prompt(
+        prompt_file, 'user/ppi_analysis',
+        {'gene_id': gene_id, 'interaction_gene': interaction_gene})
+    data_list = get_data_list(deepgenome_data, 'ppi_analysis', species)
+    if not batch:
+        if not user_id:
+            user_id = uuid1()
+        output_dir = create_output_dir(user_id, 'ppi_task')
+    meta = get_prompt(prompt_file, 'user/ppi_analysis_meta')
     ppi_task = await submit(
-        goal_description=goal, 
-        data_list=data_list, 
-        output_dir=output, 
-        meta=meta, 
-        execute_code=True, 
-        task_name="deepgenome-agents-ppi-task", 
-        compute_resource="large")
-
-    task = {
-        'ppi_task': ppi_task
-    }
-
-    return task
+        goal_description=goal_description,
+        data_list=data_list,
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-ppi-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='large',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'ppi_task': ppi_task}
 
 
 async def smep_analysis(species,
