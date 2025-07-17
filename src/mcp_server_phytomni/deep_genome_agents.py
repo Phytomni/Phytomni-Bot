@@ -2045,46 +2045,6 @@ async def smoc_analysis(
     return {'smoc_task': smoc_task}
 
 
-async def test_api(species, 
-                   gene_id, 
-                   output='/obs/phytomni/agent_data/test/', 
-                   user_id='', 
-                   batch=False):
-    species_code = 'osa'
-    results = await nl2sql(f'List all the columns whose gene_id_1 is {gene_id} and species_code_1 is {species_code}?', 
-                           simplify_response=False)
-    result = pd.DataFrame(results['query_data'][1])
-    msu_id = result[result.caption == 'msu_gene_id_1'].cell_value.values[0]
-    if msu_id == None:
-        task = {
-            'tissues_task': None
-        }
-
-        return task
-    if not batch:
-        if user_id == '':
-            user_id = uuid1()
-        output = create_output_dir(user_id, 'gene_expression_task')
-    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'gene_expression_analysis', species)
-    tissues_data = data_list['tissues']
-    tissue_goal = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis/tissue', {'gene_id': msu_id})
-    meta = get_prompt(dgc.PROMPT_FILE, 'user/gene_expression_analysis_meta')
-    tissues_task = await submit(
-        goal_description=tissue_goal,
-        data_list=tissues_data,
-        output_dir=output,
-        meta=meta,
-        execute_code=True, 
-        task_name="deepgenome-agents-tissues-task-test", 
-        compute_resource="small")
-
-    task = {
-        'tissues_task': tissues_task
-    }
-
-    return task
-
-
 async def gene_expression_analysis(species,
                                    gene_id,
                                    output='/obs/phytomni/agent_data/test/',
