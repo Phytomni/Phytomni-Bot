@@ -93,14 +93,13 @@ SPECIES_CODE_MAP = {
 }
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
-_manager = None
+_manager_cache = {}
 
 
 def _get_manager():
-    global _manager
-    if _manager is None:
-        _manager = TaskManager()
-    return _manager
+    if 'instance' not in _manager_cache:
+        _manager_cache['instance'] = TaskManager()
+    return _manager_cache['instance']
 
 
 async def gene_network(species_code: str,
