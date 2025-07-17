@@ -1986,35 +1986,63 @@ async def smep_analysis(
     return {'smep_task': smep_task}
 
 
-async def smoc_analysis(species,
-                        gene_id,
-                        output='/obs/phytomni/agent_data/test/',
-                        user_id='',
-                        batch=False):
+async def smoc_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = '',
+    batch: bool = False,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    goal_description = get_prompt(prompt_file, 'user/smoc_analysis',
+                                  {'gene_id': gene_id})
+    data_list = get_data_list(deepgenome_data, 'promoter_analysis', species)
     if not batch:
-        if user_id == '':
+        if not user_id:
             user_id = uuid1()
-        output = create_output_dir(user_id, 'smoc_task')
-    data_list = get_data_list(dgc.DEEPGENOME_DATA, 'promoter_analysis', species)
-    # 染色质可及性预测写死了，预测的NIPCK
-    smoc_goal = get_prompt(dgc.PROMPT_FILE, 'user/smoc_analysis',
-                           {'gene_id': gene_id})
-    smoc_meta = get_prompt(dgc.PROMPT_FILE, 'user/smoc_analysis_meta')
-
+        output_dir = create_output_dir(user_id, 'smoc_task')
+    meta = get_prompt(prompt_file, 'user/smoc_analysis_meta')
     smoc_task = await submit(
-        goal_description=smoc_goal,
+        goal_description=goal_description,
         data_list=data_list,
-        output_dir=output,
-        meta=smoc_meta,
-        execute_code=True, 
-        task_name="deepgenome-agents-smoc-task", 
-        compute_resource="small")
-    
-    task = {
-        'smoc_task': smoc_task
-    }
-
-    return task
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-smoc-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='small',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'smoc_task': smoc_task}
 
 
 async def test_api(species, 
