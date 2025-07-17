@@ -1277,7 +1277,7 @@ async def get_interaction_gene_list(
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
 ) -> list:
-    results = await nl2sql(
+    response = await nl2sql(
         'Give the query_gene_id_11, query_protein_11, interact_gene_id_11, '
         f"interact_protein_11 and combined_score_11 '{gene_id}' or "
         f"interact_gene_id_11 is '{gene_id}'.",
@@ -1292,7 +1292,7 @@ async def get_interaction_gene_list(
         max_retries=max_retries,
     )
     gene_interaction_set = set()
-    for gene_interaction in results['data']:
+    for gene_interaction in response['data']:
         if gene_interaction[0] == gene_id:
             gene_interaction_set.add((gene_interaction[2]))
         elif gene_interaction[2] == gene_id:
@@ -2045,60 +2045,157 @@ async def smoc_analysis(
     return {'smoc_task': smoc_task}
 
 
-async def gene_expression_analysis(species,
-                                   gene_id,
-                                   output='/obs/phytomni/agent_data/test/',
-                                   user_id='',
-                                   batch=False):
-    # TODO: implement gene_expression analysis
-    '''
-    conda activate af3 && pip install seaborn
-    '''
-    # Conversion gene ID
-    # species_code 如何更改集成？！？
-    species_code = 'osa'
-    results = await nl2sql(f'List all the columns whose gene_id_1 is {gene_id} and species_code_1 is {species_code}?',
-                           simplify_response=False)
-    result = pd.DataFrame(results['query_data'][1])
-    msu_id = result[result.caption == 'msu_gene_id_1'].cell_value.values[0]
-    if msu_id == None:
-        task = {
-            'tissues_task': None,
-            'cultivars_task': None,
-            'genotypes_task': None,
-            'treatments_task': None
-        }
-
-        return task
+async def gene_expression_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = '',
+    batch: bool = True,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    response = await nl2sql(
+        f'List all the columns whose gene_id_1 is {gene_id} and '
+        f'species_code_1 is {find_species_code(species)}?',
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=False,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    msu_id = next(item['cell_value'] for item in response['query_data'][1]
+                  if item['caption'] == 'msu_gene_id_1')
+    if not msu_id:
+        return {'tissues_task': None,
+                'cultivars_task': None,
+                'genotypes_task': None,
+                'treatments_task': None}
     if not batch:
-        if user_id == '':
+        if not user_id:
             user_id = uuid1()
-        output = create_output_dir(user_id, 'gene_expression_task')
-    tissues_task = await gene_expression_tissues(species=species, 
-                                                 gene_id=msu_id, 
-                                                 output=output, 
-                                                 user_id=user_id, 
-                                                 batch=True)
-    cultivars_task = await gene_expression_cultivars(species=species, 
-                                                     gene_id=msu_id, 
-                                                     output=output, 
-                                                     user_id=user_id, 
-                                                     batch=True)
-    genotypes_task = await gene_expression_genotypes(species=species, 
-                                                     gene_id=msu_id, 
-                                                     output=output, 
-                                                     user_id=user_id, 
-                                                     batch=True)
-    treatments_task = await gene_expression_treatments(species=species, 
-                                                       gene_id=msu_id, 
-                                                       output=output, 
-                                                       user_id=user_id, 
-                                                       batch=True)
-    task = {}
-    for d in [tissues_task, cultivars_task, genotypes_task, treatments_task]:
-        task.update(d)
-
-    return task
+        output_dir = create_output_dir(user_id, 'gene_expression_task')
+    tissues_task = await gene_expression_tissues(
+        species=species,
+        gene_id=msu_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    cultivars_task = await gene_expression_cultivars(
+        species=species,
+        gene_id=msu_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    genotypes_task = await gene_expression_genotypes(
+        species=species,
+        gene_id=msu_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    treatments_task = await gene_expression_treatments(
+        species=species,
+        gene_id=msu_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {**tissues_task, **cultivars_task,
+            **genotypes_task, **treatments_task}
 
 
 async def epic_analysis(species,
@@ -2464,3 +2561,10 @@ def get_data_list(data_file: str,
     except KeyError as exc:
         raise KeyError(f'Species not found: {species}') from exc
     return data_list
+
+
+def find_species_code(species: str):
+    for species_code, description in SPECIES_CODE_MAP.items():
+        if species.lower() in description.lower():
+            return species_code
+    return None
