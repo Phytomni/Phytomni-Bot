@@ -209,6 +209,7 @@ class AnalystConfig(KnowledgeConfig):
         'medium': '1d1b3dc5-5e08-11f0-bbb4-fa163e7f72d1',
         'large': '31b31aac-5e08-11f0-bbb4-fa163e7f72d1'})
     EXECUTE_CODE: bool = Field(True)
+    USER_ID: str = Field('')
     POLL_INTERVAL: float = Field(300)
     MAX_POLL: float = Field(86400)
 
@@ -241,6 +242,8 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
                                  'create_task')
     UPDATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
                                  'update_task')
+    BATCH: bool = Field(True)
+    EPIC_TYPE: str = Field('6mA')
 
 
 class DigitalDesignConfig(AnalystConfig):
