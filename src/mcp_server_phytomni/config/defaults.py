@@ -243,9 +243,16 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
                                  'update_task')
 
 
+class DigitalDesignConfig(AnalystConfig):
+    """Configuration settings specific to digital design tasks.
+
+    Inherits settings from `AnalystConfig`.
+    """
+    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
+
+
 class InSilicoResearchConfig(AnalystConfig):
     """Configuration settings specific to in silico research tasks.
 
     Inherits settings from `AnalystConfig`.
     """
-    MAX_CONCURRENCY: int = Field(32)
