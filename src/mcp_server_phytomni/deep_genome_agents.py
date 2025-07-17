@@ -2198,32 +2198,85 @@ async def gene_expression_analysis(
             **genotypes_task, **treatments_task}
 
 
-async def epic_analysis(species,
-                        gene_id,
-                        epic_type='6mA',
-                        output='/obs/phytomni/agent_data/test/',
-                        user_id='',
-                        batch=False):
+async def epic_analysis(
+    species: str,
+    gene_id: str,
+    epic_type: str = '6mA',
+    user_id: str = '',
+    batch: bool = True,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
     if not batch:
-        if user_id == '':
+        if not user_id:
             user_id = uuid1()
-        output = create_output_dir(user_id, 'epic_task')
-    smep_task = await smep_analysis(species=species, 
-                                    gene_id=gene_id, 
-                                    epic_type=epic_type, 
-                                    output=output, 
-                                    user_id=user_id, 
-                                    batch=True)
-    smoc_task = await smoc_analysis(species=species, 
-                                    gene_id=gene_id, 
-                                    output=output, 
-                                    user_id=user_id, 
-                                    batch=True)
-    task = {}
-    for d in [smep_task, smoc_task]:
-        task.update(d)
-
-    return task
+        output_dir = create_output_dir(user_id, 'epic_task')
+    smep_task = await smep_analysis(
+        species=species,
+        gene_id=gene_id,
+        epic_type=epic_type,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    smoc_task = await smoc_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {**smep_task, **smoc_task}
 
 
 async def design_module(species,
