@@ -2016,36 +2016,36 @@ async def gene_analysis(species,
             user_id = uuid1()
         output = create_output_dir(user_id, 'analysis_task')
     # step1: evolution analysis
-    evo_task = await evolution_analysis(species=species,
-                                        gene_id=gene_id,
-                                        output=output,
-                                        user_id=user_id,
-                                        batch=True)
+    # evo_task = await evolution_analysis(species=species,
+    #                                     gene_id=gene_id,
+    #                                     output=output,
+    #                                     user_id=user_id,
+    #                                     batch=False)
     # step2: promoter motif analysis
-    promoter_task = await promoter_analysis(species=species,
-                                            gene_id=gene_id,
-                                            output=output,
-                                            user_id=user_id,
-                                            batch=True)
+    # promoter_task = await promoter_analysis(species=species,
+    #                                         gene_id=gene_id,
+    #                                         output=output,
+    #                                         user_id=user_id,
+    #                                         batch=False)
     # step3: epigentics analysis
     epic_task = await epic_analysis(species=species,
                                     gene_id=gene_id,
                                     epic_type='6mA',
                                     output=output,
                                     user_id=user_id,
-                                    batch=True)
+                                    batch=False)
     # step4: bulk gene expression analysis
-    gene_exp_task = await gene_expression_analysis(species=species,
-                                                   gene_id=gene_id,
-                                                   output=output,
-                                                   user_id=user_id,
-                                                   batch=True)
+    # gene_exp_task = await gene_expression_analysis(species=species,
+    #                                                gene_id=gene_id,
+    #                                                output=output,
+    #                                                user_id=user_id,
+    #                                                batch=False)
     # step5: single cell gene expression analysis
     single_cell_exp_task = await single_cell_analysis(species=species, 
                                                       gene_id=gene_id, 
                                                       output=output, 
                                                       user_id=user_id, 
-                                                      batch=True)
+                                                      batch=False)
     # step6: 蛋白质分析
     # function_task = await protein_function_analysis(species=species,
     #                                                 gene_id=gene_id,
@@ -2053,43 +2053,89 @@ async def gene_analysis(species,
     #                                                 user_id=user_id,
     #                                                 batch=True)
     # print(function_task)
-    structure_task = await protein_structure_analysis(species=species,
-                                                      gene_id=gene_id,
-                                                      output=output,
-                                                      user_id=user_id,
-                                                      batch=True)
+    # structure_task = await protein_structure_analysis(species=species,
+    #                                                   gene_id=gene_id,
+    #                                                   output=output,
+    #                                                   user_id=user_id,
+    #                                                   batch=False)
     
     analysis_task = {}
-    # for d in [evo_task, promoter_task, epic_task, gene_exp_task, single_cell_exp_task, function_task, structure_task, ppi_task]:
-    for d in [evo_task, promoter_task, epic_task, gene_exp_task, single_cell_exp_task, structure_task]:
+    for d in [epic_task, single_cell_exp_task]:
+    # for d in [evo_task, promoter_task, epic_task, gene_exp_task, single_cell_exp_task, structure_task]:
         analysis_task.update(d)
 
     return analysis_task
+
+
+async def generate_gene_summary():
+    pass
 
 
 async def generate_analysis_results():
     species = "oryza sativa"
     gene_id = "Os01g0177400"
     user_id = "test_user"
-    test_task = await single_cell_analysis(species, 
-                                           gene_id, 
-                                           user_id=user_id, 
-                                           batch=False)
-    test = await wait_for_completion(test_task['single_cell_task']['task_id'])
     
-    return (test_task, test)
+    gene_task = await gene_analysis(species=species, 
+                                    gene_id=gene_id, 
+                                    user_id=user_id, 
+                                    batch=True)
+    print(gene_task)
+    processing_wait_tasks = []
+    for task_name, task_dict in gene_task.items():
+        processing_wait_tasks.append(
+            wait_and_download(
+                task_name=task_name, 
+                task_dict=task_dict, 
+                gene_id=gene_id
+            )
+        )
+    results = await asyncio.gather(*processing_wait_tasks)
+
+    return "All Job Finish."
+
+
+async def wait_and_download(
+        task_name: str, 
+        task_dict: str, 
+        gene_id: str
+):
+    target_map = {
+        'smep_task': ['.out', '.summary'], 
+        'smoc_task': ['.csv', '.summary'], 
+        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'], 
+        'structure_task': ['.cif', '.json', '.summary'], 
+        'promoter_task': ['meme.txt', '.eps', '.html', '.summary'], 
+        'single_cell_task': ['.png', '.summary'], 
+        'tissues_task': ['.png', '.summary'], 
+        'cultivars_task': ['.png', '.summary'], 
+        'genotypes_task': ['.png', '.summary'], 
+        'treatments_task': ['.png', '.summary']
+    }
+    output_dir = task_dict['output_dir'].split("/obs/phytomni/")[-1]
+    wait_info = await wait_for_completion(task_dict['task_id'])
+
+    for download_status in download_obs_out(gene_id=gene_id, 
+                                            obs_output_path=output_dir, 
+                                            is_all=False, 
+                                            target_file_feature=target_map[task_name]):
+        print(download_status)
+    
+    return f"{task_name} results download succeed."
 
 
 def download_obs_out(
-    output_dir: str, 
+    gene_id: str, 
+    obs_output_path: str,
+    output_dir: str = dgc.DEEPGENOME_OUT, 
     is_all: bool = True, 
     target_file_feature: str = "", 
     access_key_id: str = sc.AccessKeyID.get_secret_value(),
     secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME, 
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME, 
 ):
-    output_path = './.out'
+    output_path = f"{output_dir}/{gene_id}"
     Path(output_path).mkdir(parents=True, exist_ok=True)
     headers = GetObjectHeader()
     headers.if_modified_since = 'date'
@@ -2102,16 +2148,23 @@ def download_obs_out(
     try:
         while True:
             file_response = obsclient.listObjects(bucket_name, 
-                                                  output_dir, 
+                                                  obs_output_path, 
                                                   marker=mark, 
                                                   max_keys=max_num, 
                                                   encoding_type='url')
             if file_response.status < 300: 
-                for content in file_response.body.contents[1:]: 
+                for content in file_response.body.contents: 
                     obj_file = content.key
+                    # skip folder
+                    if obj_file.endswith('/'):
+                        continue
                     output_file = obj_file.split('/')[-1]
                     # 如果非全部下载时，需要匹配文件特征，如“.png”等
-                    if not is_all and target_file_feature not in output_file:
+                    # if not is_all and target_file_feature not in output_file:
+                    if not is_all and not any(
+                        output_file.endswith(suffix) for suffix in target_file_feature
+                    ):
+                        
                         continue
                     full_path = f"{output_path}/{output_file}"
                     download_response = obsclient.getObject(bucket_name, 
@@ -2120,6 +2173,9 @@ def download_obs_out(
                                                             headers=headers)
                     if download_response.status > 300:
                         yield f"{output_file} download failed."
+                        continue
+                    else:
+                        yield f"{output_file} download succeed."
                         continue
                 if file_response.body.is_truncated is True:
                     mark = file_response.body.next_marker
