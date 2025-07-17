@@ -1401,3 +1401,65 @@ def delete_analyst_agents_data(
                       f'errorMessage: {response.errorMessage}')
     except Exception as exc:
         raise OSError(f'Delete Object Failed\n{format_exc()}') from exc
+
+
+def get_data_list(data_file: str,
+                  analysis_type: str,
+                  species: str) -> list:
+    """Generate ready-to-use prompt from template components.
+
+    Combines template loading and rendering in one workflow:
+    1. Load base template from YAML file
+    2. Apply parameter substitutions
+
+    Args:
+        data_file: data_list_file for json format
+        analysis_type: analysis_type[evolution_analysis, deepgo2_analysis,
+                                     structure_analysis, prompter_analysis,
+                                     protein_design_analysis,
+                                     gene_expression_analysis, ppi_analysis]
+        species: 65 species ...
+
+    Returns:
+        data_list for analysis
+    """
+    try:
+        with open(data_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f'Data file not found: {data_file}') from exc
+    try:
+        analysis_data_list = data[analysis_type]
+    except KeyError as exc:
+        raise KeyError(f'Analysis type not found: {analysis_type}') from exc
+    try:
+        data_list = analysis_data_list[species]
+    except KeyError as exc:
+        raise KeyError(f'Species not found: {species}') from exc
+    return data_list
+
+
+def create_output_dir(
+    user_id: str,
+    task: str,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+) -> str:
+    obsclient = ObsClient(access_key_id=access_key_id,
+                          secret_access_key=secret_access_key,
+                          server=obs_server)
+    try:
+        output_dir = (f'agent_data/user_data/{user_id}/output/'
+                      f'{task}_{int(time.time())}_{uuid1()}/')
+        response = obsclient.putContent(bucketName=bucket_name,
+                                        objectKey=output_dir,
+                                        content=None)
+        if response.status < 300:
+            return f'/obs/{bucket_name}/{output_dir}'
+        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
+                      f'errorCode: {response.errorCode}\n'
+                      f'errorMessage: {response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Put File Failed\n{format_exc()}') from exc
