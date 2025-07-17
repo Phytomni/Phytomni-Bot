@@ -965,7 +965,14 @@ async def async_gene_function(
         """
         if use_analyst_agent:
             user_id = uuid1()
-            output_dir = create_output_dir(user_id, gene_id)
+            output_dir = create_output_dir(
+                user_id=user_id,
+                task=gene_id,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+            )
             species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
                 ')').lower()
             analysis_task = analysis_module(species=species_str,
@@ -1332,7 +1339,14 @@ async def evolution_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'evolution_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='evolution_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/evolution_analysis_meta')
     evo_task = await submit(
         goal_description=goal_description,
@@ -1392,7 +1406,14 @@ async def protein_structure_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'protein_structure_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='protein_structure_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/structure_analysis_meta')
     af3_task = await submit(
         goal_description=goal_description,
@@ -1452,7 +1473,14 @@ async def promoter_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'promoter_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='promoter_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/promoter_analysis_meta')
     promoter_task = await submit(
         goal_description=goal_description,
@@ -1513,7 +1541,14 @@ async def gene_expression_tissues(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'tissues_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='tissues_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/gene_expression_analysis_meta')
     tissues_task = await submit(
         goal_description=goal_description,
@@ -1574,7 +1609,14 @@ async def gene_expression_cultivars(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'cultivars_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='cultivars_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/gene_expression_analysis_meta')
     cultivars_task = await submit(
         goal_description=goal_description,
@@ -1635,7 +1677,14 @@ async def gene_expression_genotypes(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'genotypes_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='genotypes_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/gene_expression_analysis_meta')
     genotypes_task = await submit(
         goal_description=goal_description,
@@ -1696,7 +1745,14 @@ async def gene_expression_treatments(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'treatments_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='treatments_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/gene_expression_analysis_meta')
     treatments_task = await submit(
         goal_description=goal_description,
@@ -1755,7 +1811,14 @@ async def single_cell_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'single_cell_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='single_cell_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/single_cell_analysis_meta')
     single_cell_task = await submit(
         goal_description=goal_description,
@@ -1836,7 +1899,14 @@ async def ppi_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'ppi_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='ppi_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/ppi_analysis_meta')
     ppi_task = await submit(
         goal_description=goal_description,
@@ -1897,7 +1967,14 @@ async def smep_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'smep_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='smep_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/smep_analysis_meta')
     smep_task = await submit(
         goal_description=goal_description,
@@ -1956,7 +2033,14 @@ async def smoc_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'smoc_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='smoc_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta = get_prompt(prompt_file, 'user/smoc_analysis_meta')
     smoc_task = await submit(
         goal_description=goal_description,
@@ -2037,7 +2121,14 @@ async def gene_expression_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'gene_expression_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='gene_expression_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     tissues_task = await gene_expression_tissues(
         species=species,
         gene_id=msu_id,
@@ -2166,7 +2257,14 @@ async def epic_analysis(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'epic_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='epic_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     smep_task = await smep_analysis(
         species=species,
         gene_id=gene_id,
@@ -2253,7 +2351,14 @@ async def analysis_module(
     if not batch:
         if not user_id:
             user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'analysis_task')
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='analysis_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     evo_task = await evolution_analysis(
         species=species,
         gene_id=gene_id,
