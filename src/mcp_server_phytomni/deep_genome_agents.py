@@ -5,7 +5,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
 import json
-import time
 from pathlib import Path
 from threading import Thread
 from traceback import format_exc
@@ -15,6 +14,7 @@ from uuid import uuid1
 from obs import GetObjectHeader, ObsClient
 from mcp.shared.exceptions import McpError
 
+from .analyst_agents import create_output_dir, get_data_list
 from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
@@ -1481,66 +1481,6 @@ async def promoter_analysis(
     return {'promoter_task': promoter_task}
 
 
-async def protein_design_analysis(
-    species: str,
-    gene_id: str,
-    user_id: str = '',
-    batch: bool = False,
-    prompt_file: str = dgc.PROMPT_FILE,
-    deepgenome_data: str = dgc.DEEPGENOME_DATA,
-    output_dir: str = dgc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME,
-    analysis_url: str = dgc.ANALYSIS_URL,
-    region: str = dgc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
-    app_id_dict: Dict[str, str] = dgc.APP_ID,
-    timeout: float = dgc.TIMEOUT,
-    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
-    max_retries: int = dgc.MAX_RETRIES,
-    max_poll: float = dgc.MAX_POLL,
-) -> dict:
-    goal_description = get_prompt(prompt_file, 'user/protein_design_analysis',
-                                  {'gene_id': gene_id})
-    data_list = get_data_list(deepgenome_data, 'protein_design_analysis',
-                              species)
-    if not batch:
-        if not user_id:
-            user_id = uuid1()
-        output_dir = create_output_dir(user_id, 'protein_design_task')
-    meta = get_prompt(prompt_file, 'user/protein_design_analysis_meta')
-    pr_design_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        output_dir=output_dir,
-        meta=meta,
-        execute_code=True,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name='deepgenome-agents-prdesign-task',
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource='medium',
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    return {'protein_design_task': pr_design_task}
-
-
 async def gene_expression_tissues(
     species: str,
     gene_id: str,
@@ -2279,25 +2219,6 @@ async def epic_analysis(
     return {**smep_task, **smoc_task}
 
 
-async def design_module(species,
-                        gene_id,
-                        output='/obs/phytomni/agent_data/test/',
-                        user_id='',
-                        batch=False):
-    if not batch:
-        if user_id == '':
-            user_id = uuid1()
-        output = create_output_dir(user_id, 'design_task')
-    # step1: 蛋白质设计
-    protein_design_task = await protein_design_analysis(species=species,
-                                                        gene_id=gene_id,
-                                                        output=output,
-                                                        user_id=user_id,
-                                                        batch=True)
-    
-    return protein_design_task
-
-
 async def analysis_module(species,
                           gene_id,
                           output='/obs/phytomni/agent_data/test/',
@@ -2552,68 +2473,6 @@ def download_obs_out(
                               f'errorMessage: {file_response.errorMessage}')
     except Exception as exc:
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
-
-
-def create_output_dir(
-    user_id: str,
-    task: str,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME,
-) -> str:
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
-    try:
-        output_dir = (f'agent_data/user_data/{user_id}/output/'
-                      f'{task}_{int(time.time())}_{uuid1()}/')
-        response = obsclient.putContent(bucketName=bucket_name,
-                                        objectKey=output_dir,
-                                        content=None)
-        if response.status < 300:
-            return f'/obs/{bucket_name}/{output_dir}'
-        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
-                      f'errorCode: {response.errorCode}\n'
-                      f'errorMessage: {response.errorMessage}')
-    except Exception as exc:
-        raise OSError(f'Put File Failed\n{format_exc()}') from exc
-
-
-def get_data_list(data_file: str,
-                  analysis_type: str,
-                  species: str) -> list:
-    """Generate ready-to-use prompt from template components.
-
-    Combines template loading and rendering in one workflow:
-    1. Load base template from YAML file
-    2. Apply parameter substitutions
-
-    Args:
-        data_file: data_list_file for json format
-        analysis_type: analysis_type[evolution_analysis, deepgo2_analysis,
-                                     structure_analysis, prompter_analysis,
-                                     protein_design_analysis,
-                                     gene_expression_analysis, ppi_analysis]
-        species: 65 species ...
-
-    Returns:
-        data_list for analysis
-    """
-    try:
-        with open(data_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f'Data file not found: {data_file}') from exc
-    try:
-        analysis_data_list = data[analysis_type]
-    except KeyError as exc:
-        raise KeyError(f'Analysis type not found: {analysis_type}') from exc
-    try:
-        data_list = analysis_data_list[species]
-    except KeyError as exc:
-        raise KeyError(f'Species not found: {species}') from exc
-    return data_list
 
 
 def find_species_code(species: str):
