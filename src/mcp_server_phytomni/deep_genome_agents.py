@@ -506,8 +506,7 @@ def network_to_string(gene_network_list: list,
         network_string += f'{network_type} genes TOP {top_n} '
         network_string += f'MapMan enrichment results: {mm_all_string}\n'
         return network_string
-    else:
-        return f'No {network_type} genes'
+    return f'No {network_type} genes'
 
 
 async def gene_retrieve(
@@ -626,8 +625,7 @@ async def gene_retrieve(
                 "doc_list": sorted_docs,
                 "total": 10000,
             }
-        else:
-            return {}
+        return {}
 
     if semaphore is not None:
         async with semaphore:
@@ -1167,19 +1165,18 @@ async def async_gene_function(
                 {'doc_list': gene_retrieve_results['doc_list'],
                  'total': 10000})
             return phyto_response
-        else:
-            _ = await update_task(
-                url=update_task_url,
-                server_id=task_id,
-                server_status='finished',
-                server_file_path='',
-                tool_result=json.dumps(phyto_response),
-                timeout=timeout,
-                retriable_codes=retriable_codes,
-                max_retries=max_retries)
-            if use_analyst_agent:
-                manager.update_task(task_id, 'finished',
-                                    analysis_task_str, output_dir)
+        _ = await update_task(
+            url=update_task_url,
+            server_id=task_id,
+            server_status='finished',
+            server_file_path='',
+            tool_result=json.dumps(phyto_response),
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries)
+        if use_analyst_agent:
+            manager.update_task(task_id, 'finished',
+                                analysis_task_str, output_dir)
 
     def run_async():
         asyncio.run(gene_function(
@@ -1262,11 +1259,10 @@ async def async_gene_function(
             use_analyst_agent=use_analyst_agent,
             direct_return=direct_return,
         )
-    else:
-        thread = Thread(target=run_async)
-        thread.daemon = True
-        thread.start()
-        return task_id
+    thread = Thread(target=run_async)
+    thread.daemon = True
+    thread.start()
+    return task_id
 
 
 async def get_interaction_gene_list(
