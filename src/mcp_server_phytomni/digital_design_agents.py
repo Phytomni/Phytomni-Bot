@@ -18,7 +18,7 @@ sc = SensitiveConfig().load()
 async def protein_design_analysis(
     species: str,
     gene_id: str,
-    user_id: str = '',
+    user_id: str = ddc.USER_ID,
     batch: bool = False,
     prompt_file: str = ddc.PROMPT_FILE,
     deepgenome_data: str = ddc.DEEPGENOME_DATA,
@@ -78,7 +78,7 @@ async def protein_design_analysis(
 async def design_module(
     species: str,
     gene_id: str,
-    user_id: str = '',
+    user_id: str = ddc.USER_ID,
     batch: bool = True,
     prompt_file: str = ddc.PROMPT_FILE,
     deepgenome_data: str = ddc.DEEPGENOME_DATA,
