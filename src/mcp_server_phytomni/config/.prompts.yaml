@@ -686,7 +686,7 @@ user:
     \ summary(the tsv format)\n        --gene_id GENE_ID  the summary gene_id\n\
     \         --out_dir OUT_DIR  output_folder\n    Tool_Example:\n        \
     \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id --out_dir $out_dir\n\
+    \  python summary_domain.py --input $output_dir/$domain_file --gene_id $gene_id --out_dir $out_dir\n\
     \     \n    Tool_Usage:\n        usage: summary_tree.py [-h] [--input INPUT] \
     \ [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help\
     \          show this help message and exit\n        --input INPUT      the tree file\
