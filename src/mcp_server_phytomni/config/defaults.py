@@ -13,6 +13,7 @@ PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
 DEEPGENOME_OUT_PATH = PARENT_PATH / '.out'
+DEEPGENOME_GENE_TEMPLATE = PARENT_PATH / 'gene_function_result.md'
 
 
 class ServerConfig(BaseSettings):
@@ -237,6 +238,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     """
     DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
     DEEPGENOME_OUT: str = Field(str(DEEPGENOME_OUT_PATH))
+    TEMPLATE: str = Field(str(DEEPGENOME_GENE_TEMPLATE))
     MAX_CONCURRENCY: int = Field(8)
     CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
                                  'create_task')
