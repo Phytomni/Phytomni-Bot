@@ -13,6 +13,7 @@ from uuid import uuid1
 
 import glob
 import re
+import os
 import pandas as pd
 from pycirclize import Circos
 from Bio import Phylo
@@ -2693,54 +2694,54 @@ async def gene_analysis(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    # evo_task = await evolution_analysis(
-    #     species=species,
-    #     gene_id=gene_id,
-    #     user_id=user_id,
-    #     batch=batch,
-    #     prompt_file=prompt_file,
-    #     deepgenome_data=deepgenome_data,
-    #     output_dir=output_dir,
-    #     model_url=model_url,
-    #     model_name=model_name,
-    #     coder_api_key=coder_api_key,
-    #     access_key_id=access_key_id,
-    #     secret_access_key=secret_access_key,
-    #     obs_server=obs_server,
-    #     bucket_name=bucket_name,
-    #     analysis_url=analysis_url,
-    #     region=region,
-    #     resource_dict=resource_dict,
-    #     app_id_dict=app_id_dict,
-    #     timeout=timeout,
-    #     retriable_codes=retriable_codes,
-    #     max_retries=max_retries,
-    #     max_poll=max_poll,
-    # )
-    # promoter_task = await promoter_analysis(
-    #     species=species,
-    #     gene_id=gene_id,
-    #     user_id=user_id,
-    #     batch=batch,
-    #     prompt_file=prompt_file,
-    #     deepgenome_data=deepgenome_data,
-    #     output_dir=output_dir,
-    #     model_url=model_url,
-    #     model_name=model_name,
-    #     coder_api_key=coder_api_key,
-    #     access_key_id=access_key_id,
-    #     secret_access_key=secret_access_key,
-    #     obs_server=obs_server,
-    #     bucket_name=bucket_name,
-    #     analysis_url=analysis_url,
-    #     region=region,
-    #     resource_dict=resource_dict,
-    #     app_id_dict=app_id_dict,
-    #     timeout=timeout,
-    #     retriable_codes=retriable_codes,
-    #     max_retries=max_retries,
-    #     max_poll=max_poll,
-    # )
+    evo_task = await evolution_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    promoter_task = await promoter_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
     epic_task = await epic_analysis(
         species=species,
         gene_id=gene_id,
@@ -2766,40 +2767,16 @@ async def gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    # gene_exp_task = await gene_expression_analysis(
-    #     species=species,
-    #     gene_id=gene_id,
-    #     user_id=user_id,
-    #     batch=False,
-    #     database_url=database_url,
-    #     workspace_id=workspace_id,
-    #     subject_id=subject_id,
-    #     dialog_id=dialog_id,
-    #     need_insight=need_insight,
-    #     prompt_file=prompt_file,
-    #     deepgenome_data=deepgenome_data,
-    #     output_dir=output_dir,
-    #     model_url=model_url,
-    #     model_name=model_name,
-    #     coder_api_key=coder_api_key,
-    #     access_key_id=access_key_id,
-    #     secret_access_key=secret_access_key,
-    #     obs_server=obs_server,
-    #     bucket_name=bucket_name,
-    #     analysis_url=analysis_url,
-    #     region=region,
-    #     resource_dict=resource_dict,
-    #     app_id_dict=app_id_dict,
-    #     timeout=timeout,
-    #     retriable_codes=retriable_codes,
-    #     max_retries=max_retries,
-    #     max_poll=max_poll,
-    # )
-    single_cell_exp_task = await single_cell_analysis(
+    gene_exp_task = await gene_expression_analysis(
         species=species,
         gene_id=gene_id,
         user_id=user_id,
         batch=False,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -2819,141 +2796,363 @@ async def gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    # structure_task = await protein_structure_analysis(
-    #     species=species,
-    #     gene_id=gene_id,
-    #     user_id=user_id,
-    #     batch=batch,
-    #     prompt_file=prompt_file,
-    #     deepgenome_data=deepgenome_data,
-    #     output_dir=output_dir,
-    #     model_url=model_url,
-    #     model_name=model_name,
-    #     coder_api_key=coder_api_key,
-    #     access_key_id=access_key_id,
-    #     secret_access_key=secret_access_key,
-    #     obs_server=obs_server,
-    #     bucket_name=bucket_name,
-    #     analysis_url=analysis_url,
-    #     region=region,
-    #     resource_dict=resource_dict,
-    #     app_id_dict=app_id_dict,
-    #     timeout=timeout,
-    #     retriable_codes=retriable_codes,
-    #     max_retries=max_retries,
-    #     max_poll=max_poll,
-    # )
-    # ppi_task = await ppi_analysis(
-    #     species=species,
-    #     gene_id=gene_id,
-    #     user_id=user_id,
-    #     batch=batch,
-    #     database_url=database_url,
-    #     workspace_id=workspace_id,
-    #     subject_id=subject_id,
-    #     dialog_id=dialog_id,
-    #     need_insight=need_insight,
-    #     simplify_response=simplify_response,
-    #     prompt_file=prompt_file,
-    #     deepgenome_data=deepgenome_data,
-    #     output_dir=output_dir,
-    #     model_url=model_url,
-    #     model_name=model_name,
-    #     coder_api_key=coder_api_key,
-    #     access_key_id=access_key_id,
-    #     secret_access_key=secret_access_key,
-    #     obs_server=obs_server,
-    #     bucket_name=bucket_name,
-    #     analysis_url=analysis_url,
-    #     region=region,
-    #     resource_dict=resource_dict,
-    #     app_id_dict=app_id_dict,
-    #     timeout=timeout,
-    #     retriable_codes=retriable_codes,
-    #     max_retries=max_retries,
-    #     max_poll=max_poll,
-    # )
-    # results = {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-    #            **single_cell_exp_task, **structure_task, **ppi_task}
-    results = {**gene_exp_task,
-               **single_cell_exp_task}
+    single_cell_exp_task = await single_cell_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    structure_task = await protein_structure_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    ppi_task = await ppi_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=simplify_response,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    results = {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
+               **single_cell_exp_task, **structure_task, **ppi_task}
     
     return results
 
 
-async def generate_gene_summary():
-    # test function
-    species = "oryza sativa"
-    gene_id = "Os01g0177400"
-    user_id = "test_user"
-    task = await generate_analysis_results(species=species, gene_id=gene_id, user_id=user_id)
-    out_path = f"{dgc.DEEPGENOME_OUT}/{gene_id}"
+async def generate_gene_summary(
+    species: str, 
+    gene_id: str, 
+    epic_type: str = '6mA',
+    user_id: str = dgc.USER_ID, 
+    batch: bool = dgc.BATCH, 
+    deepgenome_out: str = dgc.DEEPGENOME_OUT, 
+    result_template: str = dgc.TEMPLATE,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+):
+    '''
+    main function
+    To generate markdown results
+    '''
+    task = await generate_analysis_results(species=species, 
+                                           gene_id=gene_id, 
+                                           epic_type=epic_type, 
+                                           user_id=user_id, 
+                                           batch=batch, 
+                                           database_url=database_url, 
+                                           workspace_id=workspace_id, 
+                                           subject_id=subject_id, 
+                                           dialog_id=dialog_id, 
+                                           need_insight=need_insight, 
+                                           simplify_response=simplify_response, 
+                                           prompt_file=prompt_file, 
+                                           deepgenome_data=deepgenome_data,
+                                           output_dir=output_dir, 
+                                           model_url=model_url, 
+                                           model_name=model_name, 
+                                           coder_api_key=coder_api_key, 
+                                           access_key_id=access_key_id, 
+                                           secret_access_key=secret_access_key, 
+                                           obs_server=obs_server, 
+                                           bucket_name=bucket_name, 
+                                           analysis_url=analysis_url, 
+                                           region=region, 
+                                           resource_dict=resource_dict, 
+                                           app_id_dict=app_id_dict, 
+                                           timeout=timeout, 
+                                           retriable_codes=retriable_codes, 
+                                           max_retries=max_retries, 
+                                           max_poll=max_poll)
+    out_path = f"{deepgenome_out}/{gene_id}"
 
     if task:
-        with open(dgc.TEMPERATURE) as fi:
+        with open(result_template) as fi:
             gene_results = fi.read()
         
         gene_results = gene_results.replace("[Gene Name]", gene_id)
-        # try:
-        #     tree_img = f"{out_path}/{gene_id}_tree.png"
-        #     gene_results = gene_results.replace("TREE_IMG", tree_img)
-        # except Exception as e:
-        #     tree_img = ""
-        # domain_md = f"{out_path}/{gene_id}_domain.md"
-        # try:
-        #     with open(domain_md) as fi:
-        #         domain = fi.read()
-        #     gene_results = gene_results.replace("[markdown table]", domain)
-        # except Exception as e:
-        #     domain = ""
+        try:
+            for out_file in os.listdir(out_path):
+                if out_file.endswith('nwk') or out_file.endswith('newick'):
+                    tree_file = out_file
+            plot_evolution_tree(tree_file=tree_file, 
+                                out_file=f"{out_path}/{gene_id}_tree.png",
+                                gene_id=gene_id)
+            tree_img_path = f"./{gene_id}/{gene_id}_tree.png"
+            gene_results = gene_results.replace("TREE_IMG", tree_img_path)
+            tree_summary = f"{out_path}/{gene_id}_tree.summary"
+            with open(tree_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[TREE]", summary)
+        except Exception as e:
+            gene_results = gene_results.replace("![Phylogenetic Tree](TREE_IMG)", "")
+            gene_results = gene_results.replace("[TREE]", "None Results")
+        try:
+            for out_file in os.listdir(out_path):
+                if "domain" in out_file:
+                    domain_file = out_file
+            domain2markdown(domain_file=domain_file, out_file=f"{out_path}/{gene_id}_domain.md")
+            with open(f"{out_path}/{gene_id}_domain.md") as domain_f:
+                domain = domain_f.read()
+            gene_results = gene_results.replace("[markdown table]", domain)
+            domain_summary = f"{out_path}/{gene_id}_domain.summary"
+            with open(domain_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[DOMAIN]", summary)
+        except Exception as e:
+            gene_results = gene_results.replace("[markdown table]", "")
+            gene_results = gene_results.replace("[DOMAIN]", "None Results")
         try:
             tissue_img = glob.glob(f"{out_path}/*tissues.png", recursive=True)[0]
+            target_file = tissue_img.split('/')[-1]
+            tissue_img = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("TISSUE_IMG", tissue_img)
+            tissues_summary = f"{out_path}/{gene_id}_tissues.summary"
+            with open(tissues_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[TISSUE]", summary)
         except Exception as e:
-            tissue_img = ""
+            gene_results = gene_results.replace("![Tissue Expression](TISSUE_IMG)", "")
+            gene_results = gene_results.replace("[TISSUE]", "None Results")
         try:
             cultivar_img = glob.glob(f"{out_path}/*cultivars.png", recursive=True)[0]
+            target_file = cultivar_img.split('/')[-1]
+            cultivar_img = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("CULTIVAR_IMG", cultivar_img)
+            cultivars_summary = f"{out_path}/{gene_id}_cultivars.summary"
+            with open(cultivars_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[CULTIVAR]", summary)
         except Exception as e:
-            cultivar_img = ""
+            gene_results = gene_results.replace("![Cultivar Expression](CULTIVAR_IMG)", "")
+            gene_results = gene_results.replace("[CULTIVAR]", "None Results")
         try:
             genotype_img = glob.glob(f"{out_path}/*genotypes.png", recursive=True)[0]
+            target_file = genotype_img.split('/')[-1]
+            genotype_img = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("MUTANT_IMG", genotype_img)
+            genotypes_summary = f"{out_path}/{gene_id}_genotypes.summary"
+            with open(genotypes_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[MUTANT]", summary)
         except Exception as e:
-            genotype_img = ""
+            gene_results = gene_results.replace("![Mutant Expression](MUTANT_IMG)", "")
+            gene_results = gene_results.replace("[MUTANT]", "None Results")
         try:
             treatment_img = glob.glob(f"{out_path}/*treatments.png", recursive=True)[0]
+            target_file = treatment_img.split('/')[-1]
+            treatment_img = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("TREATMENT_IMG", treatment_img)
+            treatments_summary = f"{out_path}/{gene_id}_treatments.summary"
+            with open(treatments_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[TREATMENT]", summary)
         except Exception as e:
-            treatment_img = ""
+            gene_results = gene_results.replace("![Treatment Expression](TREATMENT_IMG)", "")
+            gene_results = gene_results.replace("[TREATMENT]", "None Results")
         try:
             sc_umap = glob.glob(f"{out_path}/*_umap.png", recursive=True)[0]
+            target_file = sc_umap.split('/')[-1]
+            sc_umap = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("UMAP_IMG", sc_umap)
-        except Exception as e:
-            sc_umap = ""
-        try:
             sc_violin = glob.glob(f"{out_path}/*_violin_plot.png", recursive=True)[0]
+            target_file = sc_violin.split('/')[-1]
+            sc_violin = f"./{gene_id}/{target_file}"
             gene_results = gene_results.replace("VIOLIN_IMG", sc_violin)
+            sc_summary = f"{out_path}/{gene_id}_single_cell.summary"
+            with open(sc_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[SINGLE_CELL]", summary)
         except Exception as e:
-            sc_violin = ""
-        # meme_result = f"{out_path}/meme.txt"
+            gene_results = gene_results.replace("![UMAP Plot](UMAP_IMG)", "")
+            gene_results = gene_results.replace("![Violin Plot](VIOLIN_IMG)", "")
+            gene_results = gene_results.replace("[SINGLE_CELL]", "None Results")
         
-        
-        with open(f"{dgc.DEEPGENOME_OUT}/{gene_id}_results.md", "w") as fo:
+
+        protein_structure_files = glob.glob(f"{out_path}/*_seed_101_sample_0.cif", recursive=True)
+        if len(protein_structure_files) == 0:
+            gene_results = gene_results.replace("![3D Structure](STRUCTURE_IMG)", "")
+            gene_results = gene_results.replace("[STRUCTURE]", "None Results")
+        else:
+            # Note: 修改结构总结的脚本！！！
+            for structure_file in protein_structure_files:
+                target_file = structure_file.split('/')[-1]
+                structure_file = f"./{gene_id}/{target_file}"
+                gene_results = gene_results.replace("STRUCTURE_IMG", structure_file)
+                gene_results = gene_results.replace("**Interpretation:**\\n[STRUCTURE]", "![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]")
+            gene_results = gene_results.replace("![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]", "**Interpretation:**\\n[STRUCTURE]")
+            structure_summary = f"{out_path}/{gene_id}_sturcture.summary"
+            with open(structure_summary) as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[STRUCTURE]", summary)
+        epic_summary = ""
+        try:
+            smep_summary = f"{out_path}/{gene_id}_smep.summary"
+            with open(smep_summary) as summary_file:
+                summary = summary_file.read()
+            epic_summary += summary
+        except Exception as e:
+            epic_summary += ""
+        try:
+            smoc_summary = f"{out_path}/{gene_id}_smoc.summary"
+            with open(smoc_summary) as summary_file:
+                summary = summary_file.read()
+            epic_summary += summary
+        except Exception as e:
+            epic_summary += ""
+        gene_results = gene_results.replace("[EPIC]", epic_summary)
+        ##### 还缺少一个motif的总结
+
+        with open(f"{deepgenome_out}/{gene_id}_results.md", "w") as fo:
             fo.write(gene_results)
     
 
-async def generate_analysis_results(species, 
-                                    gene_id, 
-                                    user_id):
+async def generate_analysis_results(
+    species: str,
+    gene_id: str,
+    epic_type: str = '6mA',
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+):
     # species = "oryza sativa"
     # gene_id = "Os01g0177400"
     # user_id = "test_user"
     
     gene_task = await gene_analysis(species=species, 
                                     gene_id=gene_id, 
+                                    epic_type=epic_type, 
                                     user_id=user_id, 
-                                    batch=True)
+                                    batch=batch, 
+                                    database_url=database_url, 
+                                    workspace_id=workspace_id, 
+                                    subject_id=subject_id, 
+                                    dialog_id=dialog_id, 
+                                    need_insight=need_insight, 
+                                    simplify_response=simplify_response, 
+                                    prompt_file=prompt_file, 
+                                    deepgenome_data=deepgenome_data,
+                                    output_dir=output_dir, 
+                                    model_url=model_url, 
+                                    model_name=model_name, 
+                                    coder_api_key=coder_api_key, 
+                                    access_key_id=access_key_id, 
+                                    secret_access_key=secret_access_key, 
+                                    obs_server=obs_server, 
+                                    bucket_name=bucket_name, 
+                                    analysis_url=analysis_url, 
+                                    region=region, 
+                                    resource_dict=resource_dict, 
+                                    app_id_dict=app_id_dict, 
+                                    timeout=timeout, 
+                                    retriable_codes=retriable_codes, 
+                                    max_retries=max_retries, 
+                                    max_poll=max_poll)
     print(gene_task)
     processing_wait_tasks = []
     for task_name, task_dict in gene_task.items():
@@ -2970,9 +3169,9 @@ async def generate_analysis_results(species,
 
 
 async def wait_and_download(
-        task_name: str, 
-        task_dict: str, 
-        gene_id: str
+    task_name: str, 
+    task_dict: str, 
+    gene_id: str
 ):
     target_map = {
         'smep_task': ['.out', '.summary'], 
