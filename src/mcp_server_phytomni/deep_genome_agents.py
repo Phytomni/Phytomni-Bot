@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
 import glob
+import re
+import pandas as pd
 from pycirclize import Circos
 from Bio import Phylo
 import matplotlib.pyplot as plt
@@ -3094,4 +3096,58 @@ def plot_evolution_tree(tree_file: str,
     plt.title(f"Phylogenetic Tree for {gene_id}", size=16, x=0.5, y=1.2)
     plt.tight_layout()
     plt.savefig(out_file, dpi=300, bbox_inches='tight')
+
+
+def domain2markdown(domain_file: str, 
+                    out_file: str):
+    with open(domain_file, 'r') as f:
+        lines = [line for line in f if not line.startswith('#') and line.strip()]
+
+    data = []
+    for line in lines:
+        parts = re.split(r'\s+', line.strip())
+        # select main information
+        target_name = parts[0]
+        target_accession = parts[1]
+        tlen = parts[2]
+        query_name = parts[3]
+        query_accession = parts[4]
+        qlen = parts[5]
+        full_evalue = parts[6]
+        full_score = parts[7]
+        full_bias = parts[8]
+        domain_num = parts[9]
+        domain_total = parts[10]
+        domain_cevalue = parts[11]
+        domain_ievalue = parts[12]
+        domain_score = parts[13]
+        domain_bias = parts[14]
+        hmm_from = parts[15]
+        hmm_to = parts[16]
+        ali_from = parts[17]
+        ali_to = parts[18]
+        env_from = parts[19]
+        env_to = parts[20]
+        acc = parts[21]
+        description = ' '.join(parts[22:]) if len(parts) > 22 else ''
+        
+        data.append([
+            target_name, target_accession, tlen, query_name, query_accession, qlen,
+            full_evalue, full_score, full_bias, domain_num, domain_total,
+            domain_cevalue, domain_ievalue, domain_score, domain_bias,
+            hmm_from, hmm_to, ali_from, ali_to, env_from, env_to, acc, description
+        ])
+
+    # columns name
+    columns = [
+        'target_name', 'target_accession', 'tlen', 'query_name', 'query_accession', 'qlen',
+        'full_evalue', 'full_score', 'full_bias', 'domain_num', 'domain_total',
+        'domain_cevalue', 'domain_ievalue', 'domain_score', 'domain_bias',
+        'hmm_from', 'hmm_to', 'ali_from', 'ali_to', 'env_from', 'env_to', 'acc', 'description'
+    ]
+
+    df = pd.DataFrame(data, columns=columns)
+    markdown_table = df.to_markdown(index=False)
+    with open(out_file, "w") as f:
+        f.write(markdown_table)
 
