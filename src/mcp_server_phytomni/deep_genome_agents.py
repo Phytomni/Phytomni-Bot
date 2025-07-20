@@ -3087,11 +3087,11 @@ async def generate_gene_summary(
         try:
             motif_results_file = f"{out_path}/meme.txt"
             plot_motif(motif_results_file, out_path)
-            gene_results = gene_results.replace("MOTIF1_IMG", f"{out_path}/motif_1_logo.png")
-            gene_results = gene_results.replace("MOTIF2_IMG", f"{out_path}/motif_2_logo.png")
-            gene_results = gene_results.replace("MOTIF3_IMG", f"{out_path}/motif_3_logo.png")
-            gene_results = gene_results.replace("MOTIF4_IMG", f"{out_path}/motif_4_logo.png")
-            gene_results = gene_results.replace("MOTIF5_IMG", f"{out_path}/motif_5_logo.png")
+            gene_results = gene_results.replace("MOTIF1_IMG", f"./{gene_id}/motif_1_logo.png")
+            gene_results = gene_results.replace("MOTIF2_IMG", f"./{gene_id}/motif_2_logo.png")
+            gene_results = gene_results.replace("MOTIF3_IMG", f"./{gene_id}/motif_3_logo.png")
+            gene_results = gene_results.replace("MOTIF4_IMG", f"./{gene_id}/motif_4_logo.png")
+            gene_results = gene_results.replace("MOTIF5_IMG", f"./{gene_id}/motif_5_logo.png")
             with open(f"{out_path}/{gene_id}_motif.summary") as summary_file:
                 summary = summary_file.read()
             gene_results = gene_results.replace("[MOTIF]", summary)
