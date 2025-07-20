@@ -3179,7 +3179,7 @@ async def wait_and_download(
         'smoc_task': ['.csv', '.summary'], 
         'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'], 
         'structure_task': ['.cif', '.json', '.summary'], 
-        'promoter_task': ['meme.txt', '.eps', '.html', '.summary'], 
+        'promoter_task': ['meme.txt', '.summary'], 
         'single_cell_task': ['.png', '.summary'], 
         'tissues_task': ['.png', '.summary'], 
         'cultivars_task': ['.png', '.summary'], 
