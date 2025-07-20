@@ -14,6 +14,7 @@ from uuid import uuid1
 import glob
 import re
 import os
+import logomaker
 import pandas as pd
 from pycirclize import Circos
 from Bio import Phylo
@@ -3349,4 +3350,34 @@ def domain2markdown(domain_file: str,
     markdown_table = df.to_markdown(index=False)
     with open(out_file, "w") as f:
         f.write(markdown_table)
+
+
+def plot_motif(meme_results_file: str, 
+               output_dir: str):
+    with open(meme_results_file) as meme_in:
+        meme_results = meme_in.read()
+    # match meme result
+    pattern = r"letter-probability matrix:.*?\n((?:\s*[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\n)+)"
+    matches = re.findall(pattern, meme_results, re.DOTALL)
+    motif_matrices = []
+    motif_index = 1
+    for matrix_str in matches:
+        matrix = []
+        for line in matrix_str.strip().split('\n'):
+            # 提取每行的四个概率值
+            probabilities = re.findall(r"[\d.]+", line)
+            if len(probabilities) == 4:
+                # 将字符串转换为浮点数，并保留小数点后6位
+                matrix.append([float(f"{float(p):.6f}") for p in probabilities])
+        # plot motif logo
+        motif_matrices.append(matrix)
+        # Create PWM DataFrame
+        df = pd.DataFrame(matrix, columns=['A', 'C', 'G', 'T'])
+        plt.figure(figsize=(10, 1))
+        logo = logomaker.Logo(df, color_scheme='classic')
+        plt.ylabel("Probability")
+        plt.title("Motif Logo")
+        plt.savefig(f'{output_dir}/motif_{motif_index}_logo.png', dpi=300)
+        motif_index += 1
+    
 
