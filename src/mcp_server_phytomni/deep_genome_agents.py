@@ -3050,7 +3050,6 @@ async def generate_gene_summary(
             gene_results = gene_results.replace("![UMAP Plot](UMAP_IMG)", "")
             gene_results = gene_results.replace("![Violin Plot](VIOLIN_IMG)", "")
             gene_results = gene_results.replace("[SINGLE_CELL]", "None Results")
-        
 
         protein_structure_files = glob.glob(f"{out_path}/*_seed_101_sample_0.cif", recursive=True)
         if len(protein_structure_files) == 0:
@@ -3084,7 +3083,25 @@ async def generate_gene_summary(
         except Exception as e:
             epic_summary += ""
         gene_results = gene_results.replace("[EPIC]", epic_summary)
-        ##### 还缺少一个motif的总结
+        # motif
+        try:
+            motif_results_file = f"{out_path}/meme.txt"
+            plot_motif(motif_results_file, out_path)
+            gene_results = gene_results.replace("MOTIF1_IMG", f"{out_path}/motif_1_logo.png")
+            gene_results = gene_results.replace("MOTIF2_IMG", f"{out_path}/motif_2_logo.png")
+            gene_results = gene_results.replace("MOTIF3_IMG", f"{out_path}/motif_3_logo.png")
+            gene_results = gene_results.replace("MOTIF4_IMG", f"{out_path}/motif_4_logo.png")
+            gene_results = gene_results.replace("MOTIF5_IMG", f"{out_path}/motif_5_logo.png")
+            with open(f"{out_path}/{gene_id}_motif.summary") as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[MOTIF]", summary)
+        except Exception as e:
+            gene_results = gene_results.replace("![Motif 1](MOTIF1_IMG)", "")
+            gene_results = gene_results.replace("![Motif 2](MOTIF2_IMG)", "")
+            gene_results = gene_results.replace("![Motif 3](MOTIF3_IMG)", "")
+            gene_results = gene_results.replace("![Motif 4](MOTIF4_IMG)", "")
+            gene_results = gene_results.replace("![Motif 5](MOTIF5_IMG)", "")
+            gene_results = gene_results.replace("[MOTIF]", "None Results")
 
         with open(f"{deepgenome_out}/{gene_id}_results.md", "w") as fo:
             fo.write(gene_results)
