@@ -14,6 +14,7 @@ from uuid import uuid1
 import glob
 import re
 import os
+import logomaker
 import pandas as pd
 from pycirclize import Circos
 from Bio import Phylo
@@ -2771,7 +2772,7 @@ async def gene_analysis(
         species=species,
         gene_id=gene_id,
         user_id=user_id,
-        batch=False,
+        batch=batch,
         database_url=database_url,
         workspace_id=workspace_id,
         subject_id=subject_id,
@@ -2844,38 +2845,9 @@ async def gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    ppi_task = await ppi_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        database_url=database_url,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        simplify_response=simplify_response,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
+
     results = {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-               **single_cell_exp_task, **structure_task, **ppi_task}
+               **single_cell_exp_task, **structure_task}
     
     return results
 
@@ -3049,7 +3021,6 @@ async def generate_gene_summary(
             gene_results = gene_results.replace("![UMAP Plot](UMAP_IMG)", "")
             gene_results = gene_results.replace("![Violin Plot](VIOLIN_IMG)", "")
             gene_results = gene_results.replace("[SINGLE_CELL]", "None Results")
-        
 
         protein_structure_files = glob.glob(f"{out_path}/*_seed_101_sample_0.cif", recursive=True)
         if len(protein_structure_files) == 0:
@@ -3083,7 +3054,25 @@ async def generate_gene_summary(
         except Exception as e:
             epic_summary += ""
         gene_results = gene_results.replace("[EPIC]", epic_summary)
-        ##### 还缺少一个motif的总结
+        # motif
+        try:
+            motif_results_file = f"{out_path}/meme.txt"
+            plot_motif(motif_results_file, out_path)
+            gene_results = gene_results.replace("MOTIF1_IMG", f"./{gene_id}/motif_1_logo.png")
+            gene_results = gene_results.replace("MOTIF2_IMG", f"./{gene_id}/motif_2_logo.png")
+            gene_results = gene_results.replace("MOTIF3_IMG", f"./{gene_id}/motif_3_logo.png")
+            gene_results = gene_results.replace("MOTIF4_IMG", f"./{gene_id}/motif_4_logo.png")
+            gene_results = gene_results.replace("MOTIF5_IMG", f"./{gene_id}/motif_5_logo.png")
+            with open(f"{out_path}/{gene_id}_motif.summary") as summary_file:
+                summary = summary_file.read()
+            gene_results = gene_results.replace("[MOTIF]", summary)
+        except Exception as e:
+            gene_results = gene_results.replace("![Motif 1](MOTIF1_IMG)", "")
+            gene_results = gene_results.replace("![Motif 2](MOTIF2_IMG)", "")
+            gene_results = gene_results.replace("![Motif 3](MOTIF3_IMG)", "")
+            gene_results = gene_results.replace("![Motif 4](MOTIF4_IMG)", "")
+            gene_results = gene_results.replace("![Motif 5](MOTIF5_IMG)", "")
+            gene_results = gene_results.replace("[MOTIF]", "None Results")
 
         with open(f"{deepgenome_out}/{gene_id}_results.md", "w") as fo:
             fo.write(gene_results)
@@ -3178,7 +3167,7 @@ async def wait_and_download(
         'smoc_task': ['.csv', '.summary'], 
         'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'], 
         'structure_task': ['.cif', '.json', '.summary'], 
-        'promoter_task': ['meme.txt', '.eps', '.html', '.summary'], 
+        'promoter_task': ['meme.txt', '.summary'], 
         'single_cell_task': ['.png', '.summary'], 
         'tissues_task': ['.png', '.summary'], 
         'cultivars_task': ['.png', '.summary'], 
@@ -3202,7 +3191,7 @@ def download_obs_out(
     obs_output_path: str,
     output_dir: str = dgc.DEEPGENOME_OUT, 
     is_all: bool = True, 
-    target_file_feature: str = "", 
+    target_file_feature: list = [""], 
     access_key_id: str = sc.AccessKeyID.get_secret_value(),
     secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
     obs_server: str = dgc.OBS_SERVER,
@@ -3349,4 +3338,34 @@ def domain2markdown(domain_file: str,
     markdown_table = df.to_markdown(index=False)
     with open(out_file, "w") as f:
         f.write(markdown_table)
+
+
+def plot_motif(meme_results_file: str, 
+               output_dir: str):
+    with open(meme_results_file) as meme_in:
+        meme_results = meme_in.read()
+    # match meme result
+    pattern = r"letter-probability matrix:.*?\n((?:\s*[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\n)+)"
+    matches = re.findall(pattern, meme_results, re.DOTALL)
+    motif_matrices = []
+    motif_index = 1
+    for matrix_str in matches:
+        matrix = []
+        for line in matrix_str.strip().split('\n'):
+            # 提取每行的四个概率值
+            probabilities = re.findall(r"[\d.]+", line)
+            if len(probabilities) == 4:
+                # 将字符串转换为浮点数，并保留小数点后6位
+                matrix.append([float(f"{float(p):.6f}") for p in probabilities])
+        # plot motif logo
+        motif_matrices.append(matrix)
+        # Create PWM DataFrame
+        df = pd.DataFrame(matrix, columns=['A', 'C', 'G', 'T'])
+        plt.figure(figsize=(10, 1))
+        logo = logomaker.Logo(df, color_scheme='classic')
+        plt.ylabel("Probability")
+        plt.title("Motif Logo")
+        plt.savefig(f'{output_dir}/motif_{motif_index}_logo.png', dpi=300)
+        motif_index += 1
+    
 
