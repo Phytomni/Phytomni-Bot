@@ -38,7 +38,7 @@ from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
-from obs import PutObjectHeader, ObsClient
+from obs import GetObjectHeader, PutObjectHeader, ObsClient
 
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
@@ -1447,15 +1447,15 @@ def create_output_dir(
     obs_server: str = ac.OBS_SERVER,
     bucket_name: str = ac.BUCKET_NAME,
 ) -> str:
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
+    obs_client = ObsClient(access_key_id=access_key_id,
+                           secret_access_key=secret_access_key,
+                           server=obs_server)
     try:
         output_dir = (f'agent_data/user_data/{user_id}/output/'
                       f'{task}_{int(time.time())}_{uuid1()}/')
-        response = obsclient.putContent(bucketName=bucket_name,
-                                        objectKey=output_dir,
-                                        content=None)
+        response = obs_client.putContent(bucketName=bucket_name,
+                                         objectKey=output_dir,
+                                         content=None)
         if response.status < 300:
             return f'/obs/{bucket_name}/{output_dir}'
         raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
@@ -1463,3 +1463,67 @@ def create_output_dir(
                       f'errorMessage: {response.errorMessage}')
     except Exception as exc:
         raise OSError(f'Put File Failed\n{format_exc()}') from exc
+
+
+def download_obs_out(
+    task_dir: str,
+    obs_output_path: str,
+    download_path: str = ac.DOWNLOAD_PATH,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    target_file_feature: List[str] = ac.TARGET_FILE_FEATURE,
+    bucket_name: str = ac.BUCKET_NAME,
+    marker: Optional[str] = ac.DOWNLOAD_MARKER,
+    max_keys: int = ac.DOWNLOAD_MAX_KEYS,
+    if_download_all: bool = ac.IF_DOWNLOAD_ALL,
+):
+    output_path = Path(f'{download_path}/{task_dir}')
+    output_path.mkdir(parents=True, exist_ok=True)
+    headers = GetObjectHeader()
+    headers.if_modified_since = 'date'
+    obs_client = ObsClient(access_key_id=access_key_id,
+                           secret_access_key=secret_access_key,
+                           server=obs_server)
+    try:
+        while True:
+            file_response = obs_client.listObjects(bucketName=bucket_name,
+                                                   prefix=obs_output_path,
+                                                   marker=marker,
+                                                   max_keys=max_keys,
+                                                   encoding_type='url')
+            if file_response.status < 300:
+                for content in file_response.body.contents:
+                    obj_file = content.key
+                    if obj_file.endswith('/'):
+                        continue
+                    output_file = obj_file.split('/')[-1]
+                    if not if_download_all and not any(
+                        output_file.endswith(suffix)
+                        for suffix in target_file_feature
+                    ):
+                        continue
+                    full_path = str(output_path / output_file)
+                    download_response = obs_client.getObject(
+                        bucketName=bucket_name,
+                        objectKey=obj_file,
+                        downloadPath=full_path,
+                        headers=headers,
+                    )
+                    if download_response.status > 300:
+                        yield f'{output_file} download failed.'
+                        continue
+                    else:
+                        yield f'{output_file} download succeed.'
+                        continue
+                if file_response.body.is_truncated is True:
+                    marker = file_response.body.next_marker
+                else:
+                    break
+            else:
+                raise OSError(f'Get File List Failed\n'
+                              f'requestId: {file_response.requestId}\n'
+                              f'errorCode: {file_response.errorCode}\n'
+                              f'errorMessage: {file_response.errorMessage}')
+    except Exception as exc:
+        raise OSError(f'Download File Failed\n{format_exc()}') from exc

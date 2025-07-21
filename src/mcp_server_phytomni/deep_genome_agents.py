@@ -1,4 +1,3 @@
-# Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: maoyc_0316@163.com
 #         xieshang (xieshang0608@gmail.com)
@@ -8,9 +7,7 @@ import glob
 import json
 import re
 import os
-from pathlib import Path
 from threading import Thread
-from traceback import format_exc
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
@@ -18,11 +15,10 @@ import logomaker
 import pandas as pd
 from Bio import Phylo
 from matplotlib import pyplot as plt
-from obs import GetObjectHeader, ObsClient
 from pycirclize import Circos
 from mcp.shared.exceptions import McpError
 
-from .analyst_agents import create_output_dir, get_data_list
+from .analyst_agents import create_output_dir, download_obs_out, get_data_list
 from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
@@ -3085,7 +3081,6 @@ async def generate_analysis_results(
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
     need_insight: bool = dgc.NEED_INSIGHT,
-    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -3105,146 +3100,72 @@ async def generate_analysis_results(
     max_retries: int = dgc.MAX_RETRIES,
     max_poll: float = dgc.MAX_POLL,
 ):
-    # species = "oryza sativa"
-    # gene_id = "Os01g0177400"
-    # user_id = "test_user"
-    
-    gene_task = await gene_analysis(species=species, 
-                                    gene_id=gene_id, 
-                                    epic_type=epic_type, 
-                                    user_id=user_id, 
-                                    batch=batch, 
-                                    database_url=database_url, 
-                                    workspace_id=workspace_id, 
-                                    subject_id=subject_id, 
-                                    dialog_id=dialog_id, 
-                                    need_insight=need_insight, 
-                                    simplify_response=simplify_response, 
-                                    prompt_file=prompt_file, 
-                                    deepgenome_data=deepgenome_data,
-                                    output_dir=output_dir, 
-                                    model_url=model_url, 
-                                    model_name=model_name, 
-                                    coder_api_key=coder_api_key, 
-                                    access_key_id=access_key_id, 
-                                    secret_access_key=secret_access_key, 
-                                    obs_server=obs_server, 
-                                    bucket_name=bucket_name, 
-                                    analysis_url=analysis_url, 
-                                    region=region, 
-                                    resource_dict=resource_dict, 
-                                    app_id_dict=app_id_dict, 
-                                    timeout=timeout, 
-                                    retriable_codes=retriable_codes, 
-                                    max_retries=max_retries, 
-                                    max_poll=max_poll)
-    print(gene_task)
+    gene_task = await gene_analysis(
+        species=species,
+        gene_id=gene_id,
+        epic_type=epic_type,
+        user_id=user_id,
+        batch=batch,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
     processing_wait_tasks = []
     for task_name, task_dict in gene_task.items():
         processing_wait_tasks.append(
             wait_and_download(
-                task_name=task_name, 
-                task_dict=task_dict, 
-                gene_id=gene_id
-            )
-        )
+                task_name=task_name,
+                task_dict=task_dict,
+                gene_id=gene_id,
+            ))
     results = await asyncio.gather(*processing_wait_tasks)
-
     return "All Job Finish."
 
 
-async def wait_and_download(
-    task_name: str, 
-    task_dict: str, 
-    gene_id: str
-):
+async def wait_and_download(task_name: str,
+                            task_dict: str,
+                            gene_id: str):
     target_map = {
-        'smep_task': ['.out', '.summary'], 
-        'smoc_task': ['.csv', '.summary'], 
-        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'], 
-        'structure_task': ['.cif', '.json', '.summary'], 
-        'promoter_task': ['meme.txt', '.summary'], 
-        'single_cell_task': ['.png', '.summary'], 
-        'tissues_task': ['.png', '.summary'], 
-        'cultivars_task': ['.png', '.summary'], 
-        'genotypes_task': ['.png', '.summary'], 
-        'treatments_task': ['.png', '.summary']
+        'smep_task': ['.out', '.summary'],
+        'smoc_task': ['.csv', '.summary'],
+        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
+        'structure_task': ['.cif', '.json', '.summary'],
+        'promoter_task': ['meme.txt', '.summary'],
+        'single_cell_task': ['.png', '.summary'],
+        'tissues_task': ['.png', '.summary'],
+        'cultivars_task': ['.png', '.summary'],
+        'genotypes_task': ['.png', '.summary'],
+        'treatments_task': ['.png', '.summary'],
     }
     output_dir = task_dict['output_dir'].split("/obs/phytomni/")[-1]
     wait_info = await wait_for_completion(task_dict['task_id'])
-
-    for download_status in download_obs_out(gene_id=gene_id, 
-                                            obs_output_path=output_dir, 
-                                            is_all=False, 
-                                            target_file_feature=target_map[task_name]):
-        print(download_status)
-    
-    return f"{task_name} results download succeed."
-
-
-def download_obs_out(
-    gene_id: str, 
-    obs_output_path: str,
-    output_dir: str = dgc.DEEPGENOME_OUT, 
-    is_all: bool = True, 
-    target_file_feature: list = [""], 
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME, 
-):
-    output_path = f"{output_dir}/{gene_id}"
-    Path(output_path).mkdir(parents=True, exist_ok=True)
-    headers = GetObjectHeader()
-    headers.if_modified_since = 'date'
-
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
-    max_num = 1000
-    mark = None
-    try:
-        while True:
-            file_response = obsclient.listObjects(bucket_name, 
-                                                  obs_output_path, 
-                                                  marker=mark, 
-                                                  max_keys=max_num, 
-                                                  encoding_type='url')
-            if file_response.status < 300: 
-                for content in file_response.body.contents: 
-                    obj_file = content.key
-                    # skip folder
-                    if obj_file.endswith('/'):
-                        continue
-                    output_file = obj_file.split('/')[-1]
-                    # 如果非全部下载时，需要匹配文件特征，如“.png”等
-                    # if not is_all and target_file_feature not in output_file:
-                    if not is_all and not any(
-                        output_file.endswith(suffix) for suffix in target_file_feature
-                    ):
-                        
-                        continue
-                    full_path = f"{output_path}/{output_file}"
-                    download_response = obsclient.getObject(bucket_name, 
-                                                            obj_file, 
-                                                            full_path, 
-                                                            headers=headers)
-                    if download_response.status > 300:
-                        yield f"{output_file} download failed."
-                        continue
-                    else:
-                        yield f"{output_file} download succeed."
-                        continue
-                if file_response.body.is_truncated is True:
-                    mark = file_response.body.next_marker
-                else:
-                    break
-            else: 
-                raise OSError(f'Get File List Failed\nrequestId: {file_response.requestId}\n'
-                              f'errorCode: {file_response.errorCode}\n'
-                              f'errorMessage: {file_response.errorMessage}')
-    except Exception as exc:
-        raise OSError(f'Download File Failed\n{format_exc()}') from exc
+    for download_status in download_obs_out(
+            gene_id=gene_id,
+            obs_output_path=output_dir,
+            is_all=False,
+            target_file_feature=target_map[task_name]):
+        pass
+    return f'{task_name} results download succeed.'
 
 
 def find_species_code(species: str):
