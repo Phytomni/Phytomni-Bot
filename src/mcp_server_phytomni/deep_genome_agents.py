@@ -4,22 +4,22 @@
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
+import glob
 import json
+import re
+import os
 from pathlib import Path
 from threading import Thread
 from traceback import format_exc
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
-import glob
-import re
-import os
 import logomaker
 import pandas as pd
-from pycirclize import Circos
 from Bio import Phylo
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 from obs import GetObjectHeader, ObsClient
+from pycirclize import Circos
 from mcp.shared.exceptions import McpError
 
 from .analyst_agents import create_output_dir, get_data_list
