@@ -2845,38 +2845,9 @@ async def gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    ppi_task = await ppi_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        database_url=database_url,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        simplify_response=simplify_response,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
+
     results = {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-               **single_cell_exp_task, **structure_task, **ppi_task}
+               **single_cell_exp_task, **structure_task}
     
     return results
 
