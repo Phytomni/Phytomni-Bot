@@ -2430,7 +2430,7 @@ async def epic_analysis(
 async def analysis_module(
     species: str,
     gene_id: str,
-    epic_type: str = '6mA',
+    epic_type: str = dgc.EPIC_TYPE,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
     database_url: str = dgc.DATABASE_URL,
@@ -2656,7 +2656,7 @@ async def analysis_module(
 async def gene_analysis(
     species: str,
     gene_id: str,
-    epic_type: str = '6mA',
+    epic_type: str = dgc.EPIC_TYPE,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
     database_url: str = dgc.DATABASE_URL,
@@ -2664,7 +2664,6 @@ async def gene_analysis(
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
     need_insight: bool = dgc.NEED_INSIGHT,
-    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2845,17 +2844,14 @@ async def gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-
-    results = {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-               **single_cell_exp_task, **structure_task}
-    
-    return results
+    return {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
+            **single_cell_exp_task, **structure_task}
 
 
 async def generate_gene_summary(
     species: str, 
     gene_id: str, 
-    epic_type: str = '6mA',
+    epic_type: str = dgc.EPIC_TYPE,
     user_id: str = dgc.USER_ID, 
     batch: bool = dgc.BATCH, 
     deepgenome_out: str = dgc.DEEPGENOME_OUT, 
@@ -3081,7 +3077,7 @@ async def generate_gene_summary(
 async def generate_analysis_results(
     species: str,
     gene_id: str,
-    epic_type: str = '6mA',
+    epic_type: str = dgc.EPIC_TYPE,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
     database_url: str = dgc.DATABASE_URL,
