@@ -7,6 +7,7 @@ import glob
 import json
 import re
 import os
+from collections import deque
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
@@ -3068,7 +3069,7 @@ async def generate_gene_summary(
 
         with open(f"{deepgenome_out}/{gene_id}_results.md", "w") as fo:
             fo.write(gene_results)
-    
+
 
 async def generate_analysis_results(
     species: str,
@@ -3095,11 +3096,27 @@ async def generate_analysis_results(
     region: str = dgc.ANALYSIS_REGION,
     resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
     app_id_dict: Dict[str, str] = dgc.APP_ID,
+    download_path: str = dgc.DOWNLOAD_PATH,
+    marker: Optional[str] = dgc.DOWNLOAD_MARKER,
+    max_keys: int = dgc.DOWNLOAD_MAX_KEYS,
     timeout: float = dgc.TIMEOUT,
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
+    poll_interval: float = dgc.POLL_INTERVAL,
     max_poll: float = dgc.MAX_POLL,
-):
+) -> str:
+    target_map = {
+        'smep_task': ['.out', '.summary'],
+        'smoc_task': ['.csv', '.summary'],
+        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
+        'structure_task': ['.cif', '.json', '.summary'],
+        'promoter_task': ['meme.txt', '.summary'],
+        'single_cell_task': ['.png', '.summary'],
+        'tissues_task': ['.png', '.summary'],
+        'cultivars_task': ['.png', '.summary'],
+        'genotypes_task': ['.png', '.summary'],
+        'treatments_task': ['.png', '.summary'],
+    }
     gene_task = await gene_analysis(
         species=species,
         gene_id=gene_id,
@@ -3130,42 +3147,39 @@ async def generate_analysis_results(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    processing_wait_tasks = []
-    for task_name, task_dict in gene_task.items():
-        processing_wait_tasks.append(
-            wait_and_download(
-                task_name=task_name,
-                task_dict=task_dict,
-                gene_id=gene_id,
-            ))
-    results = await asyncio.gather(*processing_wait_tasks)
-    return "All Job Finish."
 
+    async def wait_and_download(task_name: str, task_dict: str) -> str:
+        _ = await wait_for_completion(
+            task_id=task_dict['task_id'],
+            analysis_url=analysis_url,
+            region=region,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+            poll_interval=poll_interval,
+            max_poll=max_poll,
+            )
+        obs_output_path = task_dict['output_dir'].split("/obs/phytomni/")[-1]
+        deque(download_obs_out(
+            task_dir=gene_id,
+            obs_output_path=obs_output_path,
+            download_path=download_path,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            target_file_feature=target_map[task_name],
+            bucket_name=bucket_name,
+            marker=marker,
+            max_keys=max_keys,
+            if_download_all=False,
+        ), maxlen=0)
+        return f'{task_name} results download succeed.'
 
-async def wait_and_download(task_name: str,
-                            task_dict: str,
-                            gene_id: str):
-    target_map = {
-        'smep_task': ['.out', '.summary'],
-        'smoc_task': ['.csv', '.summary'],
-        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
-        'structure_task': ['.cif', '.json', '.summary'],
-        'promoter_task': ['meme.txt', '.summary'],
-        'single_cell_task': ['.png', '.summary'],
-        'tissues_task': ['.png', '.summary'],
-        'cultivars_task': ['.png', '.summary'],
-        'genotypes_task': ['.png', '.summary'],
-        'treatments_task': ['.png', '.summary'],
-    }
-    output_dir = task_dict['output_dir'].split("/obs/phytomni/")[-1]
-    wait_info = await wait_for_completion(task_dict['task_id'])
-    for download_status in download_obs_out(
-            gene_id=gene_id,
-            obs_output_path=output_dir,
-            is_all=False,
-            target_file_feature=target_map[task_name]):
-        pass
-    return f'{task_name} results download succeed.'
+    _ = await asyncio.gather(*[
+        wait_and_download(task_name, task_dict)
+        for task_name, task_dict in gene_task.items()
+    ])
+    return 'All Job Finish.'
 
 
 def find_species_code(species: str):
