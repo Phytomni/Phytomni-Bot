@@ -12,9 +12,9 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
-import logomaker
 import pandas as pd
 from Bio import Phylo
+from logomaker import Logo
 from matplotlib import pyplot as plt
 from pycirclize import Circos
 from mcp.shared.exceptions import McpError
@@ -2907,8 +2907,8 @@ async def generate_gene_summary(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    out_path = Path(f'{deepgenome_out}/{gene_id}')
     if task:
+        out_path = Path(f'{deepgenome_out}/{gene_id}')
         with open(result_template, 'r', encoding='utf-8') as fi:
             gene_results = fi.read()
         gene_results = gene_results.replace('[Gene Name]', gene_id)
@@ -2926,7 +2926,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[TREE]', summary)
-        except Exception:
+        except (FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Phylogenetic Tree](TREE_IMG)', '')
             gene_results = gene_results.replace('[TREE]', 'None Results')
@@ -2946,9 +2946,10 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[DOMAIN]', summary)
-        except Exception:
+        except (FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace('[markdown table]', '')
             gene_results = gene_results.replace('[DOMAIN]', 'None Results')
+
         try:
             target_file = next(out_path.rglob('*tissues.png')).name
             tissue_img = f'{gene_id}/{target_file}'
@@ -2957,7 +2958,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[TISSUE]', summary)
-        except Exception:
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Tissue Expression](TISSUE_IMG)', '')
             gene_results = gene_results.replace('[TISSUE]', 'None Results')
@@ -2969,7 +2970,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[CULTIVAR]', summary)
-        except Exception:
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Cultivar Expression](CULTIVAR_IMG)', '')
             gene_results = gene_results.replace('[CULTIVAR]', 'None Results')
@@ -2981,7 +2982,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[MUTANT]', summary)
-        except Exception:
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Mutant Expression](MUTANT_IMG)', '')
             gene_results = gene_results.replace('[MUTANT]', 'None Results')
@@ -2993,10 +2994,11 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[TREATMENT]', summary)
-        except Exception:
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Treatment Expression](TREATMENT_IMG)', '')
             gene_results = gene_results.replace('[TREATMENT]', 'None Results')
+
         try:
             target_file = next(out_path.rglob('*_umap.png')).name
             sc_umap = f'{gene_id}/{target_file}'
@@ -3008,7 +3010,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[SINGLE_CELL]', summary)
-        except Exception:
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace('![UMAP Plot](UMAP_IMG)', '')
             gene_results = gene_results.replace(
                 '![Violin Plot](VIOLIN_IMG)', '')
@@ -3038,22 +3040,24 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[STRUCTURE]', summary)
+
         epic_summary = ''
         try:
             with open(out_path / f'{gene_id}_smep.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 epic_summary += summary
-        except Exception:
+        except (FileNotFoundError, OSError, IOError):
             epic_summary += ''
         try:
             with open(out_path / f'{gene_id}_smoc.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 epic_summary += summary
-        except Exception:
+        except (FileNotFoundError, OSError, IOError):
             epic_summary += ''
         gene_results = gene_results.replace('[EPIC]', epic_summary)
+
         try:
             plot_motif(str(out_path / 'meme.txt'), str(out_path))
             gene_results = gene_results.replace(
@@ -3070,7 +3074,7 @@ async def generate_gene_summary(
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[MOTIF]', summary)
-        except Exception:
+        except (FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace('![Motif 1](MOTIF1_IMG)', '')
             gene_results = gene_results.replace('![Motif 2](MOTIF2_IMG)', '')
             gene_results = gene_results.replace('![Motif 3](MOTIF3_IMG)', '')
@@ -3261,7 +3265,7 @@ def plot_motif(meme_results_file: str, output_dir: str):
         motif_matrices.append(matrix)
         df = pd.DataFrame(matrix, columns=['A', 'C', 'G', 'T'])
         plt.figure(figsize=(10, 1))
-        _ = logomaker.Logo(df, color_scheme='classic')
+        _ = Logo(df, color_scheme='classic')
         plt.ylabel('Probability')
         plt.title('Motif Logo')
         plt.savefig(f'{output_dir}/motif_{motif_index}_logo.png', dpi=300)
