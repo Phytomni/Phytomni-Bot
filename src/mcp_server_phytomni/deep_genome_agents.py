@@ -3109,7 +3109,7 @@ async def generate_analysis_results(
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
         'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
-        'structure_task': ['.cif', '.json', '.summary'],
+        'protein_structure_task': ['.cif', '.json', '.summary'],
         'promoter_task': ['meme.txt', '.summary'],
         'single_cell_task': ['.png', '.summary'],
         'tissues_task': ['.png', '.summary'],
