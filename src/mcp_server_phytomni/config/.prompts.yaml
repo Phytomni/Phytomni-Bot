@@ -667,6 +667,8 @@ user:
     data that we have provided you with, now your task goal is: Please help me to
     predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
     NIP.'
+  gene_network_analysis: 'Please help me to analysis the hormone regulatory network in 
+    the traits of {{to_id}}'
   evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2: \
     \ You need to install diamond software using conda;\nstep1, Find Gene's Protein \
     \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find \
@@ -873,7 +875,7 @@ user:
     \ (conda activate af3);  \nNote2: You need to activate af3 environment and install\
     \  scanpy and anndata packages(conda activate af3 && pip install scanpy anndata -i\
     \  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple); \nstep1, install the \
-    \ packages and plot the gene expression in different tissues using plot_gene.py;\
+    \ packages and plot the gene expression in different cells using plot_single_cell_gene.py;\
     \ (conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
     \ \nstep2, summary the results using summary_single_cell.py(conda activate af3 && \
     \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
@@ -988,6 +990,7 @@ user:
     \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\
     \ \n</summary example>"
+  gene_network_analysis_meta: ""
   gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
     Please provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
