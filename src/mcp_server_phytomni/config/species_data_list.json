@@ -2587,7 +2587,7 @@
     },
     "single_cell_analysis": {
         "oryza sativa": {
-            "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
+            "/obs/phytomni/agent_data/scripts/plot_single_cell_rice.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/rice_scRNA_omics.h5ad": "Single Cell Gene Expression Matrix in Rice.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
         },
@@ -2670,6 +2670,14 @@
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/maize_merge_snRNA_ano_merge_harmonyh5Seurat.h5ad": "Single Cell Gene Expression Matrix in maize.",
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+        }
+    }, 
+    "gene_network_analysis": {
+        "oryza sativa": {
+            "/obs/phytomni/agent_data/scripts/construct_network.py": "A scripts to generate network node traits types and top20 genes", 
+            "/obs/phytomni/agent_data/raw_data/08.network_data/oryza_sativa/network_to_annotation.tsv": "Annotation information for gene's TO id", 
+            "/obs/phytomni/agent_data/raw_data/08.network_data/oryza_sativa/hormone_gene_network.txt": "Hormone regulatory networks", 
+            "/obs/phytomni/agent_data/raw_data/08.network_data/oryza_sativa/hormone_gene_network_class.txt": "Hormone regulatory network node hormone type class"
         }
     }
 }
