@@ -12,6 +12,7 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
+import random
 import logomaker
 import pandas as pd
 from Bio import Phylo
@@ -3156,7 +3157,7 @@ async def generate_analysis_results(
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
-            poll_interval=poll_interval,
+            poll_interval=random.randint(300, 900),
             max_poll=max_poll,
             )
         obs_output_path = task_dict['output_dir'].split("/obs/phytomni/")[-1]
