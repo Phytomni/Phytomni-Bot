@@ -2922,7 +2922,7 @@ async def generate_gene_summary(
             for out_file in os.listdir(out_path):
                 if out_file.endswith('nwk') or out_file.endswith('newick'):
                     tree_file = out_file
-            plot_evolution_tree(tree_file=tree_file, 
+            plot_evolution_tree(tree_file=f"{out_path}/{tree_file}", 
                                 out_file=f"{out_path}/{gene_id}_tree.png",
                                 gene_id=gene_id)
             tree_img_path = f"./{gene_id}/{gene_id}_tree.png"
@@ -2936,9 +2936,9 @@ async def generate_gene_summary(
             gene_results = gene_results.replace("[TREE]", "None Results")
         try:
             for out_file in os.listdir(out_path):
-                if "domain" in out_file:
+                if "domain" in out_file and "summary" not in out_file:
                     domain_file = out_file
-            domain2markdown(domain_file=domain_file, out_file=f"{out_path}/{gene_id}_domain.md")
+            domain2markdown(domain_file=f"{out_path}/{domain_file}", out_file=f"{out_path}/{gene_id}_domain.md")
             with open(f"{out_path}/{gene_id}_domain.md") as domain_f:
                 domain = domain_f.read()
             gene_results = gene_results.replace("[markdown table]", domain)
@@ -3027,7 +3027,7 @@ async def generate_gene_summary(
                 gene_results = gene_results.replace("STRUCTURE_IMG", structure_file)
                 gene_results = gene_results.replace("**Interpretation:**\\n[STRUCTURE]", "![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]")
             gene_results = gene_results.replace("![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]", "**Interpretation:**\\n[STRUCTURE]")
-            structure_summary = f"{out_path}/{gene_id}_sturcture.summary"
+            structure_summary = f"{out_path}/{gene_id}_structure.summary"
             with open(structure_summary) as summary_file:
                 summary = summary_file.read()
             gene_results = gene_results.replace("[STRUCTURE]", summary)
