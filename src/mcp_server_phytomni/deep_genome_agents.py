@@ -3,11 +3,10 @@
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
-import glob
-import json
 import re
-import os
 from collections import deque
+from json import dumps
+from pathlib import Path
 from random import randint
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -181,8 +180,8 @@ async def gene_network(species_code: str,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    message_content = ("Give the query_gene_id_11, query_protein_11, "
-                       "interact_gene_id_11 and interact_protein_11 where "
+    message_content = ('Give the query_gene_id_11, query_protein_11, '
+                       'interact_gene_id_11 and interact_protein_11 where '
                        f"query_gene_id_11 is '{gene_id}' or "
                        f"interact_gene_id_11 is '{gene_id}'.")
     interaction_task = nl2sql(
@@ -628,8 +627,8 @@ async def gene_retrieve(
             if top_n is not None and top_n > 0:
                 sorted_docs = sorted_docs[:top_n]
             return {
-                "doc_list": sorted_docs,
-                "total": 10000,
+                'doc_list': sorted_docs,
+                'total': 10000,
             }
         return {}
 
@@ -1051,7 +1050,7 @@ async def async_gene_function(
                 max_poll=max_poll,
             )
             if not direct_return:
-                analysis_task_str = json.dumps(analysis_task)
+                analysis_task_str = dumps(analysis_task)
                 manager.update_task(task_id, 'running',
                                     analysis_task_str, output_dir)
 
@@ -1138,15 +1137,15 @@ async def async_gene_function(
         retrieve_results = []
         total_length = 0
         for file_id, eachdoc in enumerate(gene_retrieve_results['doc_list']):
-            if eachdoc["subtitle"]:
+            if eachdoc['subtitle']:
                 current_fragment = (
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
+                    f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                    f"{eachdoc['subtitle']}\n{eachdoc['content']} "
                     f'[document {file_id+1} end]')
             else:
                 current_fragment = (
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["content"]} [document {file_id+1} end]')
+                    f"[document {file_id+1} begin] {eachdoc['title']}\n"
+                    f"{eachdoc['content']} [document {file_id+1} end]")
             if total_length + len(current_fragment) <= max_tokens:
                 retrieve_results.append(current_fragment)
                 total_length += len(current_fragment)
@@ -1247,7 +1246,7 @@ async def async_gene_function(
             server_id=task_id,
             server_status='finished',
             server_file_path='',
-            tool_result=json.dumps(phyto_response),
+            tool_result=dumps(phyto_response),
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries)
@@ -2859,7 +2858,6 @@ async def generate_gene_summary(
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
     need_insight: bool = dgc.NEED_INSIGHT,
-    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2909,163 +2907,178 @@ async def generate_gene_summary(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    out_path = f'{deepgenome_out}/{gene_id}'
-
+    out_path = Path(f'{deepgenome_out}/{gene_id}')
     if task:
-        with open(result_template) as fi:
+        with open(result_template, 'r', encoding='utf-8') as fi:
             gene_results = fi.read()
-        
-        gene_results = gene_results.replace("[Gene Name]", gene_id)
+        gene_results = gene_results.replace('[Gene Name]', gene_id)
         try:
-            for out_file in os.listdir(out_path):
-                if out_file.endswith('nwk') or out_file.endswith('newick'):
-                    tree_file = out_file
-            plot_evolution_tree(tree_file=f"{out_path}/{tree_file}", 
-                                out_file=f"{out_path}/{gene_id}_tree.png",
-                                gene_id=gene_id)
-            tree_img_path = f"./{gene_id}/{gene_id}_tree.png"
-            gene_results = gene_results.replace("TREE_IMG", tree_img_path)
-            tree_summary = f"{out_path}/{gene_id}_tree.summary"
-            with open(tree_summary) as summary_file:
+            for out_file in out_path.iterdir():
+                if out_file.name.endswith(('nwk', 'newick')):
+                    plot_evolution_tree(
+                        tree_file=str(out_file),
+                        out_file=str(out_path / f'{gene_id}_tree.png'),
+                        gene_id=gene_id,
+                    )
+            tree_img_path = f'{gene_id}/{gene_id}_tree.png'
+            gene_results = gene_results.replace('TREE_IMG', tree_img_path)
+            with open(out_path / f'{gene_id}_tree.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[TREE]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Phylogenetic Tree](TREE_IMG)", "")
-            gene_results = gene_results.replace("[TREE]", "None Results")
+                gene_results = gene_results.replace('[TREE]', summary)
+        except Exception:
+            gene_results = gene_results.replace(
+                '![Phylogenetic Tree](TREE_IMG)', '')
+            gene_results = gene_results.replace('[TREE]', 'None Results')
         try:
-            for out_file in os.listdir(out_path):
-                if "domain" in out_file and "summary" not in out_file:
-                    domain_file = out_file
-            domain2markdown(domain_file=f"{out_path}/{domain_file}", out_file=f"{out_path}/{gene_id}_domain.md")
-            with open(f"{out_path}/{gene_id}_domain.md") as domain_f:
+            for out_file in out_path.iterdir():
+                if ('domain' in out_file.name and
+                        'summary' not in out_file.name):
+                    domain2markdown(
+                        domain_file=str(out_file),
+                        out_file=str(out_path / f'{gene_id}_domain.md'),
+                    )
+            with open(out_path / f'{gene_id}_domain.md',
+                      'r', encoding='utf-8') as domain_f:
                 domain = domain_f.read()
-            gene_results = gene_results.replace("[markdown table]", domain)
-            domain_summary = f"{out_path}/{gene_id}_domain.summary"
-            with open(domain_summary) as summary_file:
+                gene_results = gene_results.replace('[markdown table]', domain)
+            with open(out_path / f'{gene_id}_domain.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[DOMAIN]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("[markdown table]", "")
-            gene_results = gene_results.replace("[DOMAIN]", "None Results")
+                gene_results = gene_results.replace('[DOMAIN]', summary)
+        except Exception:
+            gene_results = gene_results.replace('[markdown table]', '')
+            gene_results = gene_results.replace('[DOMAIN]', 'None Results')
         try:
-            tissue_img = glob.glob(f"{out_path}/*tissues.png", recursive=True)[0]
-            target_file = tissue_img.split('/')[-1]
-            tissue_img = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("TISSUE_IMG", tissue_img)
-            tissues_summary = f"{out_path}/{gene_id}_tissues.summary"
-            with open(tissues_summary) as summary_file:
+            target_file = next(out_path.rglob('*tissues.png')).name
+            tissue_img = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('TISSUE_IMG', tissue_img)
+            with open(out_path / f'{gene_id}_tissues.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[TISSUE]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Tissue Expression](TISSUE_IMG)", "")
-            gene_results = gene_results.replace("[TISSUE]", "None Results")
+                gene_results = gene_results.replace('[TISSUE]', summary)
+        except Exception:
+            gene_results = gene_results.replace(
+                '![Tissue Expression](TISSUE_IMG)', '')
+            gene_results = gene_results.replace('[TISSUE]', 'None Results')
         try:
-            cultivar_img = glob.glob(f"{out_path}/*cultivars.png", recursive=True)[0]
-            target_file = cultivar_img.split('/')[-1]
-            cultivar_img = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("CULTIVAR_IMG", cultivar_img)
-            cultivars_summary = f"{out_path}/{gene_id}_cultivars.summary"
-            with open(cultivars_summary) as summary_file:
+            target_file = next(out_path.rglob('*cultivars.png')).name
+            cultivar_img = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('CULTIVAR_IMG', cultivar_img)
+            with open(out_path / f'{gene_id}_cultivars.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[CULTIVAR]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Cultivar Expression](CULTIVAR_IMG)", "")
-            gene_results = gene_results.replace("[CULTIVAR]", "None Results")
+                gene_results = gene_results.replace('[CULTIVAR]', summary)
+        except Exception:
+            gene_results = gene_results.replace(
+                '![Cultivar Expression](CULTIVAR_IMG)', '')
+            gene_results = gene_results.replace('[CULTIVAR]', 'None Results')
         try:
-            genotype_img = glob.glob(f"{out_path}/*genotypes.png", recursive=True)[0]
-            target_file = genotype_img.split('/')[-1]
-            genotype_img = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("MUTANT_IMG", genotype_img)
-            genotypes_summary = f"{out_path}/{gene_id}_genotypes.summary"
-            with open(genotypes_summary) as summary_file:
+            target_file = next(out_path.rglob('*genotypes.png')).name
+            genotype_img = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('MUTANT_IMG', genotype_img)
+            with open(out_path / f'{gene_id}_genotypes.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[MUTANT]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Mutant Expression](MUTANT_IMG)", "")
-            gene_results = gene_results.replace("[MUTANT]", "None Results")
+                gene_results = gene_results.replace('[MUTANT]', summary)
+        except Exception:
+            gene_results = gene_results.replace(
+                '![Mutant Expression](MUTANT_IMG)', '')
+            gene_results = gene_results.replace('[MUTANT]', 'None Results')
         try:
-            treatment_img = glob.glob(f"{out_path}/*treatments.png", recursive=True)[0]
-            target_file = treatment_img.split('/')[-1]
-            treatment_img = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("TREATMENT_IMG", treatment_img)
-            treatments_summary = f"{out_path}/{gene_id}_treatments.summary"
-            with open(treatments_summary) as summary_file:
+            target_file = next(out_path.rglob('*treatments.png')).name
+            treatment_img = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('TREATMENT_IMG', treatment_img)
+            with open(out_path / f'{gene_id}_treatments.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[TREATMENT]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Treatment Expression](TREATMENT_IMG)", "")
-            gene_results = gene_results.replace("[TREATMENT]", "None Results")
+                gene_results = gene_results.replace('[TREATMENT]', summary)
+        except Exception:
+            gene_results = gene_results.replace(
+                '![Treatment Expression](TREATMENT_IMG)', '')
+            gene_results = gene_results.replace('[TREATMENT]', 'None Results')
         try:
-            sc_umap = glob.glob(f"{out_path}/*_umap.png", recursive=True)[0]
-            target_file = sc_umap.split('/')[-1]
-            sc_umap = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("UMAP_IMG", sc_umap)
-            sc_violin = glob.glob(f"{out_path}/*_violin_plot.png", recursive=True)[0]
-            target_file = sc_violin.split('/')[-1]
-            sc_violin = f"./{gene_id}/{target_file}"
-            gene_results = gene_results.replace("VIOLIN_IMG", sc_violin)
-            sc_summary = f"{out_path}/{gene_id}_single_cell.summary"
-            with open(sc_summary) as summary_file:
+            target_file = next(out_path.rglob('*_umap.png')).name
+            sc_umap = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('UMAP_IMG', sc_umap)
+            target_file = next(out_path.rglob('*_violin_plot.png')).name
+            sc_violin = f'{gene_id}/{target_file}'
+            gene_results = gene_results.replace('VIOLIN_IMG', sc_violin)
+            with open(out_path / f'{gene_id}_single_cell.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[SINGLE_CELL]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![UMAP Plot](UMAP_IMG)", "")
-            gene_results = gene_results.replace("![Violin Plot](VIOLIN_IMG)", "")
-            gene_results = gene_results.replace("[SINGLE_CELL]", "None Results")
+                gene_results = gene_results.replace('[SINGLE_CELL]', summary)
+        except Exception:
+            gene_results = gene_results.replace('![UMAP Plot](UMAP_IMG)', '')
+            gene_results = gene_results.replace(
+                '![Violin Plot](VIOLIN_IMG)', '')
+            gene_results = gene_results.replace(
+                '[SINGLE_CELL]', 'None Results')
 
-        protein_structure_files = glob.glob(f"{out_path}/*_seed_101_sample_0.cif", recursive=True)
+        protein_structure_files = list(out_path.glob(
+            '*_seed_101_sample_0.cif'))
         if len(protein_structure_files) == 0:
-            gene_results = gene_results.replace("![3D Structure](STRUCTURE_IMG)", "")
-            gene_results = gene_results.replace("[STRUCTURE]", "None Results")
+            gene_results = gene_results.replace(
+                '![3D Structure](STRUCTURE_IMG)', '')
+            gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
         else:
-            # Note: 修改结构总结的脚本！！！
-            for structure_file in protein_structure_files:
-                target_file = structure_file.split('/')[-1]
-                structure_file = f"./{gene_id}/{target_file}"
-                gene_results = gene_results.replace("STRUCTURE_IMG", structure_file)
-                gene_results = gene_results.replace("**Interpretation:**\\n[STRUCTURE]", "![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]")
-            gene_results = gene_results.replace("![3D Structure](STRUCTURE_IMG)\\n**Interpretation:**\\n[STRUCTURE]", "**Interpretation:**\\n[STRUCTURE]")
-            structure_summary = f"{out_path}/{gene_id}_structure.summary"
-            with open(structure_summary) as summary_file:
+            for structure_path in protein_structure_files:
+                structure_file = f'{gene_id}/{structure_path.name}'
+                gene_results = gene_results.replace(
+                    'STRUCTURE_IMG', structure_file)
+                gene_results = gene_results.replace(
+                    '**Interpretation:**\\n[STRUCTURE]',
+                    '![3D Structure](STRUCTURE_IMG)\\n'
+                    '**Interpretation:**\\n[STRUCTURE]')
+            gene_results = gene_results.replace(
+                '![3D Structure](STRUCTURE_IMG)\\n'
+                '**Interpretation:**\\n[STRUCTURE]',
+                '**Interpretation:**\\n[STRUCTURE]')
+            with open(out_path / f'{gene_id}_structure.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[STRUCTURE]", summary)
-        epic_summary = ""
+                gene_results = gene_results.replace('[STRUCTURE]', summary)
+        epic_summary = ''
         try:
-            smep_summary = f"{out_path}/{gene_id}_smep.summary"
-            with open(smep_summary) as summary_file:
+            with open(out_path / f'{gene_id}_smep.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            epic_summary += summary
-        except Exception as e:
-            epic_summary += ""
+                epic_summary += summary
+        except Exception:
+            epic_summary += ''
         try:
-            smoc_summary = f"{out_path}/{gene_id}_smoc.summary"
-            with open(smoc_summary) as summary_file:
+            with open(out_path / f'{gene_id}_smoc.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            epic_summary += summary
-        except Exception as e:
-            epic_summary += ""
-        gene_results = gene_results.replace("[EPIC]", epic_summary)
-        # motif
+                epic_summary += summary
+        except Exception:
+            epic_summary += ''
+        gene_results = gene_results.replace('[EPIC]', epic_summary)
         try:
-            motif_results_file = f"{out_path}/meme.txt"
-            plot_motif(motif_results_file, out_path)
-            gene_results = gene_results.replace("MOTIF1_IMG", f"./{gene_id}/motif_1_logo.png")
-            gene_results = gene_results.replace("MOTIF2_IMG", f"./{gene_id}/motif_2_logo.png")
-            gene_results = gene_results.replace("MOTIF3_IMG", f"./{gene_id}/motif_3_logo.png")
-            gene_results = gene_results.replace("MOTIF4_IMG", f"./{gene_id}/motif_4_logo.png")
-            gene_results = gene_results.replace("MOTIF5_IMG", f"./{gene_id}/motif_5_logo.png")
-            with open(f"{out_path}/{gene_id}_motif.summary") as summary_file:
+            plot_motif(str(out_path / 'meme.txt'), str(out_path))
+            gene_results = gene_results.replace(
+                'MOTIF1_IMG', f'{gene_id}/motif_1_logo.png')
+            gene_results = gene_results.replace(
+                'MOTIF2_IMG', f'{gene_id}/motif_2_logo.png')
+            gene_results = gene_results.replace(
+                'MOTIF3_IMG', f'{gene_id}/motif_3_logo.png')
+            gene_results = gene_results.replace(
+                'MOTIF4_IMG', f'{gene_id}/motif_4_logo.png')
+            gene_results = gene_results.replace(
+                'MOTIF5_IMG', f'{gene_id}/motif_5_logo.png')
+            with open(out_path / f'{gene_id}_motif.summary',
+                      'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-            gene_results = gene_results.replace("[MOTIF]", summary)
-        except Exception as e:
-            gene_results = gene_results.replace("![Motif 1](MOTIF1_IMG)", "")
-            gene_results = gene_results.replace("![Motif 2](MOTIF2_IMG)", "")
-            gene_results = gene_results.replace("![Motif 3](MOTIF3_IMG)", "")
-            gene_results = gene_results.replace("![Motif 4](MOTIF4_IMG)", "")
-            gene_results = gene_results.replace("![Motif 5](MOTIF5_IMG)", "")
-            gene_results = gene_results.replace("[MOTIF]", "None Results")
-
-        with open(f"{deepgenome_out}/{gene_id}_results.md", "w") as fo:
+                gene_results = gene_results.replace('[MOTIF]', summary)
+        except Exception:
+            gene_results = gene_results.replace('![Motif 1](MOTIF1_IMG)', '')
+            gene_results = gene_results.replace('![Motif 2](MOTIF2_IMG)', '')
+            gene_results = gene_results.replace('![Motif 3](MOTIF3_IMG)', '')
+            gene_results = gene_results.replace('![Motif 4](MOTIF4_IMG)', '')
+            gene_results = gene_results.replace('![Motif 5](MOTIF5_IMG)', '')
+            gene_results = gene_results.replace('[MOTIF]', 'None Results')
+        with open(f'{deepgenome_out}/{gene_id}_results.md',
+                  'w', encoding='utf-8') as fo:
             fo.write(gene_results)
 
 
@@ -3156,7 +3169,7 @@ async def generate_analysis_results(
             poll_interval=randint(300, 600),
             max_poll=max_poll,
             )
-        obs_output_path = task_dict['output_dir'].split("/obs/phytomni/")[-1]
+        obs_output_path = task_dict['output_dir'].split('/obs/phytomni/')[-1]
         deque(download_obs_out(
             task_dir=gene_id,
             obs_output_path=obs_output_path,
