@@ -8,11 +8,11 @@ import json
 import re
 import os
 from collections import deque
+from random import randint
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
-import random
 import logomaker
 import pandas as pd
 from Bio import Phylo
@@ -1381,7 +1381,7 @@ async def async_gene_function(
 
 
 async def get_interaction_gene_list(
-    gene_id,
+    gene_id: str,
     database_url: str = dgc.DATABASE_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
     subject_id: str = dgc.SUBJECT_ID,
@@ -2847,12 +2847,12 @@ async def gene_analysis(
 
 
 async def generate_gene_summary(
-    species: str, 
-    gene_id: str, 
+    species: str,
+    gene_id: str,
     epic_type: str = dgc.EPIC_TYPE,
-    user_id: str = dgc.USER_ID, 
-    batch: bool = dgc.BATCH, 
-    deepgenome_out: str = dgc.DEEPGENOME_OUT, 
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    deepgenome_out: str = dgc.DEEPGENOME_OUT,
     result_template: str = dgc.TEMPLATE,
     database_url: str = dgc.DATABASE_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
@@ -2879,40 +2879,37 @@ async def generate_gene_summary(
     max_retries: int = dgc.MAX_RETRIES,
     max_poll: float = dgc.MAX_POLL,
 ):
-    '''
-    main function
-    To generate markdown results
-    '''
-    task = await generate_analysis_results(species=species, 
-                                           gene_id=gene_id, 
-                                           epic_type=epic_type, 
-                                           user_id=user_id, 
-                                           batch=batch, 
-                                           database_url=database_url, 
-                                           workspace_id=workspace_id, 
-                                           subject_id=subject_id, 
-                                           dialog_id=dialog_id, 
-                                           need_insight=need_insight, 
-                                           simplify_response=simplify_response, 
-                                           prompt_file=prompt_file, 
-                                           deepgenome_data=deepgenome_data,
-                                           output_dir=output_dir, 
-                                           model_url=model_url, 
-                                           model_name=model_name, 
-                                           coder_api_key=coder_api_key, 
-                                           access_key_id=access_key_id, 
-                                           secret_access_key=secret_access_key, 
-                                           obs_server=obs_server, 
-                                           bucket_name=bucket_name, 
-                                           analysis_url=analysis_url, 
-                                           region=region, 
-                                           resource_dict=resource_dict, 
-                                           app_id_dict=app_id_dict, 
-                                           timeout=timeout, 
-                                           retriable_codes=retriable_codes, 
-                                           max_retries=max_retries, 
-                                           max_poll=max_poll)
-    out_path = f"{deepgenome_out}/{gene_id}"
+    task = await generate_analysis_results(
+        species=species,
+        gene_id=gene_id,
+        epic_type=epic_type,
+        user_id=user_id,
+        batch=batch,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    out_path = f'{deepgenome_out}/{gene_id}'
 
     if task:
         with open(result_template) as fi:
@@ -3103,10 +3100,9 @@ async def generate_analysis_results(
     timeout: float = dgc.TIMEOUT,
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
-    poll_interval: float = dgc.POLL_INTERVAL,
     max_poll: float = dgc.MAX_POLL,
 ) -> str:
-    target_map = {
+    TARGET_MAP = {
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
         'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
@@ -3157,7 +3153,7 @@ async def generate_analysis_results(
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
-            poll_interval=random.randint(300, 900),
+            poll_interval=randint(300, 600),
             max_poll=max_poll,
             )
         obs_output_path = task_dict['output_dir'].split("/obs/phytomni/")[-1]
@@ -3168,7 +3164,7 @@ async def generate_analysis_results(
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=obs_server,
-            target_file_feature=target_map[task_name],
+            target_file_feature=TARGET_MAP[task_name],
             bucket_name=bucket_name,
             marker=marker,
             max_keys=max_keys,
@@ -3190,114 +3186,70 @@ def find_species_code(species: str):
     return None
 
 
-def plot_evolution_tree(tree_file: str, 
-                        out_file: str, 
-                        gene_id: str):
-    
-    tree = Phylo.read(tree_file, "newick")
-
+def plot_evolution_tree(tree_file: str, out_file: str, gene_id: str):
+    tree = Phylo.read(tree_file, 'newick')
     plt.figure(figsize=(8, 8), dpi=300)
-    # Initialize circos sector with tree size
-    circos = Circos(sectors={"Tree": tree.count_terminals()})
+    circos = Circos(sectors={'Tree': tree.count_terminals()})
     sector = circos.sectors[0]
-
-    # Plot tree
     track = sector.add_track((30, 100))
-
-    track.tree(tree, 
-            format='newick', 
-            outer=True, 
-            # align_leaf_label=False, 
-            ignore_branch_length=True, 
-            leaf_label_size=10, 
-            leaf_label_rmargin=1.0)
-
-    fig = circos.plotfig()
-    plt.title(f"Phylogenetic Tree for {gene_id}", size=16, x=0.5, y=1.2)
+    track.tree(tree,
+               format='newick',
+               outer=True,
+               ignore_branch_length=True,
+               leaf_label_size=10,
+               leaf_label_rmargin=1.0)
+    _ = circos.plotfig()
+    plt.title(f'Phylogenetic Tree for {gene_id}', size=16, x=0.5, y=1.2)
     plt.tight_layout()
     plt.savefig(out_file, dpi=300, bbox_inches='tight')
 
 
-def domain2markdown(domain_file: str, 
-                    out_file: str):
-    with open(domain_file, 'r') as f:
-        lines = [line for line in f if not line.startswith('#') and line.strip()]
-
-    data = []
-    for line in lines:
-        parts = re.split(r'\s+', line.strip())
-        # select main information
-        target_name = parts[0]
-        target_accession = parts[1]
-        tlen = parts[2]
-        query_name = parts[3]
-        query_accession = parts[4]
-        qlen = parts[5]
-        full_evalue = parts[6]
-        full_score = parts[7]
-        full_bias = parts[8]
-        domain_num = parts[9]
-        domain_total = parts[10]
-        domain_cevalue = parts[11]
-        domain_ievalue = parts[12]
-        domain_score = parts[13]
-        domain_bias = parts[14]
-        hmm_from = parts[15]
-        hmm_to = parts[16]
-        ali_from = parts[17]
-        ali_to = parts[18]
-        env_from = parts[19]
-        env_to = parts[20]
-        acc = parts[21]
-        description = ' '.join(parts[22:]) if len(parts) > 22 else ''
-        
-        data.append([
-            target_name, target_accession, tlen, query_name, query_accession, qlen,
-            full_evalue, full_score, full_bias, domain_num, domain_total,
-            domain_cevalue, domain_ievalue, domain_score, domain_bias,
-            hmm_from, hmm_to, ali_from, ali_to, env_from, env_to, acc, description
-        ])
-
-    # columns name
-    columns = [
-        'target_name', 'target_accession', 'tlen', 'query_name', 'query_accession', 'qlen',
-        'full_evalue', 'full_score', 'full_bias', 'domain_num', 'domain_total',
-        'domain_cevalue', 'domain_ievalue', 'domain_score', 'domain_bias',
-        'hmm_from', 'hmm_to', 'ali_from', 'ali_to', 'env_from', 'env_to', 'acc', 'description'
+def domain2markdown(domain_file: str, out_file: str):
+    FIELD_NAMES = [
+        'target_name', 'target_accession', 'tlen', 'query_name',
+        'query_accession', 'qlen', 'full_evalue', 'full_score', 'full_bias',
+        'domain_num', 'domain_total', 'domain_cevalue', 'domain_ievalue',
+        'domain_score', 'domain_bias', 'hmm_from', 'hmm_to', 'ali_from',
+        'ali_to', 'env_from', 'env_to', 'acc', 'description',
     ]
 
+    def parse_line(line: str) -> list:
+        parts = re.split(r'\s+', line.strip())
+        row = parts[:22]
+        description = ' '.join(parts[22:]) if len(parts) > 22 else ''
+        row.append(description)
+        return row
+
+    with open(domain_file, 'r', encoding='utf-8') as f:
+        valid_lines = [line for line in f
+                       if not line.startswith('#') and line.strip()]
+    data = [parse_line(line) for line in valid_lines]
+    columns = FIELD_NAMES + ['description']
     df = pd.DataFrame(data, columns=columns)
-    markdown_table = df.to_markdown(index=False)
-    with open(out_file, "w") as f:
-        f.write(markdown_table)
+    with open(out_file, 'w', encoding='utf-8') as f:
+        f.write(df.to_markdown(index=False))
 
 
-def plot_motif(meme_results_file: str, 
-               output_dir: str):
-    with open(meme_results_file) as meme_in:
+def plot_motif(meme_results_file: str, output_dir: str):
+    with open(meme_results_file, 'r', encoding='utf-8') as meme_in:
         meme_results = meme_in.read()
-    # match meme result
-    pattern = r"letter-probability matrix:.*?\n((?:\s*[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\n)+)"
+    pattern = (r'letter-probability matrix:.*?\n'
+               r'((?:\s*[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\n)+)')
     matches = re.findall(pattern, meme_results, re.DOTALL)
     motif_matrices = []
     motif_index = 1
     for matrix_str in matches:
         matrix = []
         for line in matrix_str.strip().split('\n'):
-            # 提取每行的四个概率值
-            probabilities = re.findall(r"[\d.]+", line)
+            probabilities = re.findall(r'[\d.]+', line)
             if len(probabilities) == 4:
-                # 将字符串转换为浮点数，并保留小数点后6位
-                matrix.append([float(f"{float(p):.6f}") for p in probabilities])
-        # plot motif logo
+                matrix.append([float(f'{float(p):.6f}')
+                               for p in probabilities])
         motif_matrices.append(matrix)
-        # Create PWM DataFrame
         df = pd.DataFrame(matrix, columns=['A', 'C', 'G', 'T'])
         plt.figure(figsize=(10, 1))
-        logo = logomaker.Logo(df, color_scheme='classic')
-        plt.ylabel("Probability")
-        plt.title("Motif Logo")
+        _ = logomaker.Logo(df, color_scheme='classic')
+        plt.ylabel('Probability')
+        plt.title('Motif Logo')
         plt.savefig(f'{output_dir}/motif_{motif_index}_logo.png', dpi=300)
         motif_index += 1
-    
-
