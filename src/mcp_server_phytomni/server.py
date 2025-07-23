@@ -494,7 +494,7 @@ async def serve() -> None:
                     goal_description=args.goal_description,
                     data_list=args.data_list,
                     user_id=analystconfig.USER_ID,
-                    is_create_dir=analystconfig.CREATE_DIR, 
+                    is_create_dir=analystconfig.CREATE_DIR,
                     output_dir=analystconfig.OUTPUT_DIR,
                     repo_id_dict=analystconfig.REPO_ID_DICT,
                     page_num=analystconfig.PAGE_NUM,
