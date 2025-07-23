@@ -53,6 +53,8 @@ sc = SensitiveConfig().load()
 async def submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = True, 
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
@@ -121,6 +123,17 @@ async def submit(
         McpError: If the task submission fails after all retries.
         OSError: If uploading the data information to OBS fails.
     """
+    if not user_id:
+        user_id = uuid1()
+    if is_create_dir:
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='analysis_agents_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta += '\nlast step, compress the output folder into a zip file '
     meta += '(zip -r $output_dir.zip $output_dir).'
     data = {
