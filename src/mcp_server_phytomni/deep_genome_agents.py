@@ -1458,6 +1458,8 @@ async def evolution_analysis(
     evo_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1525,6 +1527,8 @@ async def protein_structure_analysis(
     af3_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1592,6 +1596,8 @@ async def promoter_analysis(
     promoter_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1660,6 +1666,8 @@ async def gene_expression_tissues(
     tissues_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1728,6 +1736,8 @@ async def gene_expression_cultivars(
     cultivars_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1796,6 +1806,8 @@ async def gene_expression_genotypes(
     genotypes_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1864,6 +1876,8 @@ async def gene_expression_treatments(
     treatments_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1930,6 +1944,8 @@ async def single_cell_analysis(
     single_cell_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2018,6 +2034,8 @@ async def ppi_analysis(
     ppi_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2086,6 +2104,8 @@ async def smep_analysis(
     smep_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2152,6 +2172,8 @@ async def smoc_analysis(
     smoc_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2174,6 +2196,49 @@ async def smoc_analysis(
         max_poll=max_poll,
     )
     return {'smoc_task': smoc_task}
+
+
+async def haplotypes_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    if not batch:
+        if not user_id:
+            user_id = uuid1()
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='haplotypes_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
+    pass
 
 
 async def gene_expression_analysis(
@@ -2913,31 +2978,18 @@ async def generate_gene_summary(
             gene_results = fi.read()
         gene_results = gene_results.replace('[Gene Name]', gene_id)
         try:
-            for out_file in out_path.iterdir():
-                if out_file.name.endswith(('nwk', 'newick')):
-                    plot_evolution_tree(
-                        tree_file=str(out_file),
-                        out_file=str(out_path / f'{gene_id}_tree.png'),
-                        gene_id=gene_id,
-                    )
-            tree_img_path = f'{gene_id}/{gene_id}_tree.png'
+            target_file = next(out_path.rglob('*tree.png')).name
+            tree_img_path = f'{gene_id}/{target_file}'
             gene_results = gene_results.replace('TREE_IMG', tree_img_path)
             with open(out_path / f'{gene_id}_tree.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[TREE]', summary)
-        except (FileNotFoundError, OSError, IOError):
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Phylogenetic Tree](TREE_IMG)', '')
             gene_results = gene_results.replace('[TREE]', 'None Results')
         try:
-            for out_file in out_path.iterdir():
-                if ('domain' in out_file.name and
-                        'summary' not in out_file.name):
-                    domain2markdown(
-                        domain_file=str(out_file),
-                        out_file=str(out_path / f'{gene_id}_domain.md'),
-                    )
             with open(out_path / f'{gene_id}_domain.md',
                       'r', encoding='utf-8') as domain_f:
                 domain = domain_f.read()
@@ -3017,29 +3069,33 @@ async def generate_gene_summary(
             gene_results = gene_results.replace(
                 '[SINGLE_CELL]', 'None Results')
 
-        protein_structure_files = list(out_path.glob(
-            '*_seed_101_sample_0.cif'))
-        if len(protein_structure_files) == 0:
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)', '')
+        try:
+            protein_structure_files = list(out_path.glob(
+                '*_seed_101_sample_0.cif'))
+            if len(protein_structure_files) == 0:
+                gene_results = gene_results.replace(
+                    '![3D Structure](STRUCTURE_IMG)', '')
+                gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+            else:
+                for structure_path in protein_structure_files:
+                    structure_file = f'{gene_id}/{structure_path.name}'
+                    gene_results = gene_results.replace(
+                        'STRUCTURE_IMG', structure_file)
+                    gene_results = gene_results.replace(
+                        '**Interpretation:**\n[STRUCTURE]',
+                        '![3D Structure](STRUCTURE_IMG)\n'
+                        '**Interpretation:**\n[STRUCTURE]')
+                gene_results = gene_results.replace(
+                    '![3D Structure](STRUCTURE_IMG)\n'
+                    '**Interpretation:**\n[STRUCTURE]',
+                    '**Interpretation:**\n[STRUCTURE]')
+                with open(out_path / f'{gene_id}_structure.summary',
+                        'r', encoding='utf-8') as summary_file:
+                    summary = summary_file.read()
+                    gene_results = gene_results.replace('[STRUCTURE]', summary)
+        except (FileNotFoundError, OSError, IOError):
+            gene_results = gene_results.replace('![3D Structure](STRUCTURE_IMG)', '')
             gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
-        else:
-            for structure_path in protein_structure_files:
-                structure_file = f'{gene_id}/{structure_path.name}'
-                gene_results = gene_results.replace(
-                    'STRUCTURE_IMG', structure_file)
-                gene_results = gene_results.replace(
-                    '**Interpretation:**\\n[STRUCTURE]',
-                    '![3D Structure](STRUCTURE_IMG)\\n'
-                    '**Interpretation:**\\n[STRUCTURE]')
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)\\n'
-                '**Interpretation:**\\n[STRUCTURE]',
-                '**Interpretation:**\\n[STRUCTURE]')
-            with open(out_path / f'{gene_id}_structure.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[STRUCTURE]', summary)
 
         epic_summary = ''
         try:
@@ -3059,27 +3115,28 @@ async def generate_gene_summary(
         gene_results = gene_results.replace('[EPIC]', epic_summary)
 
         try:
-            plot_motif(str(out_path / 'meme.txt'), str(out_path))
-            gene_results = gene_results.replace(
-                'MOTIF1_IMG', f'{gene_id}/motif_1_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF2_IMG', f'{gene_id}/motif_2_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF3_IMG', f'{gene_id}/motif_3_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF4_IMG', f'{gene_id}/motif_4_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF5_IMG', f'{gene_id}/motif_5_logo.png')
-            with open(out_path / f'{gene_id}_motif.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[MOTIF]', summary)
+            motif_file_num = len(list(out_path.glob('*_logo.png')))
+            if motif_file_num == 0:
+                gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
+                gene_results = gene_results.replace('[MOTIF]', 'None Results')
+            else:
+                for index in range(motif_file_num):
+                    motif_file = f'{gene_id}/motif_{index+1}_logo.png'
+                    gene_results = gene_results.replace('MOTIF_IMG', motif_file)
+                    gene_results = gene_results.replace(
+                        '**Interpretation:**\n[MOTIF]', 
+                        '![Motif](MOTIF_IMG)\n'
+                        '**Interpretation:**\n[MOTIF]')
+                gene_results = gene_results.replace(
+                    '![Motif](MOTIF_IMG)\n'
+                    '**Interpretation:**\n[MOTIF]',
+                    '**Interpretation:**\n[MOTIF]')
+                with open(out_path / f'{gene_id}_motif.summary',
+                        'r', encoding='utf-8') as summary_file:
+                    summary = summary_file.read()
+                    gene_results = gene_results.replace('[MOTIF]', summary)
         except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('![Motif 1](MOTIF1_IMG)', '')
-            gene_results = gene_results.replace('![Motif 2](MOTIF2_IMG)', '')
-            gene_results = gene_results.replace('![Motif 3](MOTIF3_IMG)', '')
-            gene_results = gene_results.replace('![Motif 4](MOTIF4_IMG)', '')
-            gene_results = gene_results.replace('![Motif 5](MOTIF5_IMG)', '')
+            gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
             gene_results = gene_results.replace('[MOTIF]', 'None Results')
         with open(f'{deepgenome_out}/{gene_id}_results.md',
                   'w', encoding='utf-8') as fo:
@@ -3122,9 +3179,9 @@ async def generate_analysis_results(
     TARGET_MAP = {
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
-        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
-        'protein_structure_task': ['.cif', '.json', '.summary'],
-        'promoter_task': ['meme.txt', '.summary'],
+        'evolution_task': ['.md', '.png', '.summary'],
+        'protein_structure_task': ['sample_0.cif', 'sample_0.json', '.summary'],
+        'promoter_task': ['.png', '.summary'],
         'single_cell_task': ['.png', '.summary'],
         'tissues_task': ['.png', '.summary'],
         'cultivars_task': ['.png', '.summary'],
@@ -3201,72 +3258,3 @@ def find_species_code(species: str):
         if species.lower() in description.lower():
             return species_code
     return None
-
-
-def plot_evolution_tree(tree_file: str, out_file: str, gene_id: str):
-    tree = Phylo.read(tree_file, 'newick')
-    plt.figure(figsize=(8, 8), dpi=300)
-    circos = Circos(sectors={'Tree': tree.count_terminals()})
-    sector = circos.sectors[0]
-    track = sector.add_track((30, 100))
-    track.tree(tree,
-               format='newick',
-               outer=True,
-               ignore_branch_length=True,
-               leaf_label_size=10,
-               leaf_label_rmargin=1.0)
-    _ = circos.plotfig()
-    plt.title(f'Phylogenetic Tree for {gene_id}', size=16, x=0.5, y=1.2)
-    plt.tight_layout()
-    plt.savefig(out_file, dpi=300, bbox_inches='tight')
-
-
-def domain2markdown(domain_file: str, out_file: str):
-    FIELD_NAMES = [
-        'target_name', 'target_accession', 'tlen', 'query_name',
-        'query_accession', 'qlen', 'full_evalue', 'full_score', 'full_bias',
-        'domain_num', 'domain_total', 'domain_cevalue', 'domain_ievalue',
-        'domain_score', 'domain_bias', 'hmm_from', 'hmm_to', 'ali_from',
-        'ali_to', 'env_from', 'env_to', 'acc', 'description',
-    ]
-
-    def parse_line(line: str) -> list:
-        parts = re.split(r'\s+', line.strip())
-        row = parts[:22]
-        description = ' '.join(parts[22:]) if len(parts) > 22 else ''
-        row.append(description)
-        return row
-
-    with open(domain_file, 'r', encoding='utf-8') as f:
-        valid_lines = [line for line in f
-                       if not line.startswith('#') and line.strip()]
-    data = [parse_line(line) for line in valid_lines]
-    columns = FIELD_NAMES + ['description']
-    df = pd.DataFrame(data, columns=columns)
-    with open(out_file, 'w', encoding='utf-8') as f:
-        f.write(df.to_markdown(index=False))
-
-
-def plot_motif(meme_results_file: str, output_dir: str):
-    with open(meme_results_file, 'r', encoding='utf-8') as meme_in:
-        meme_results = meme_in.read()
-    pattern = (r'letter-probability matrix:.*?\n'
-               r'((?:\s*[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s*\n)+)')
-    matches = re.findall(pattern, meme_results, re.DOTALL)
-    motif_matrices = []
-    motif_index = 1
-    for matrix_str in matches:
-        matrix = []
-        for line in matrix_str.strip().split('\n'):
-            probabilities = re.findall(r'[\d.]+', line)
-            if len(probabilities) == 4:
-                matrix.append([float(f'{float(p):.6f}')
-                               for p in probabilities])
-        motif_matrices.append(matrix)
-        df = pd.DataFrame(matrix, columns=['A', 'C', 'G', 'T'])
-        plt.figure(figsize=(10, 1))
-        _ = Logo(df, color_scheme='classic')
-        plt.ylabel('Probability')
-        plt.title('Motif Logo')
-        plt.savefig(f'{output_dir}/motif_{motif_index}_logo.png', dpi=300)
-        motif_index += 1

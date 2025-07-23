@@ -671,30 +671,46 @@ user:
     the traits of {{to_id}}'
   evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2: \
     \ You need to install diamond software using conda;\nstep1, Find Gene's Protein \
-    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find \
-    \ top40 sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install \
-    \ diamond -c bioconda);\nstep3, Extract the sequence ids from the blast result \
-    \ using awk;\nstep4, Extract the matched sequences from the database using seqkit\
-    \ (conda install seqkit -c bioconda);\nstep5, Append protein sequences of unknown \
-    \ function to the end of the matched sequences file;\nstep6, Multiple sequence alignment\
-    \  using clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the \
-    \ phylogenetic tree using fasttree(conda install fasttree -c bioconda);\nstep8, \
-    \ Summary the tree results using summary_tree.py scripts;\nstep9, Searching for \
-    \ conserved domains of protein using hmmscan;\nstep10, Summary the protein domain \
-    \ results using summary_domain.py scripts.\n<summary example>\n    Tool_Usage:\n\
-    \         usage: summary_domain.py [-h] [--input INPUT] [--gene_id GENE_ID] \
-    \ [--out_dir OUT_DIR]\n\n        options:\n        -h, --help         show this \
-    \ help message and exit\n        --input INPUT      the domain file you want to \
-    \ summary(the tsv format)\n        --gene_id GENE_ID  the summary gene_id\n\
-    \         --out_dir OUT_DIR  output_folder\n    Tool_Example:\n        \
-    \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_domain.py --input $output_dir/$domain_file --gene_id $gene_id --out_dir $out_dir\n\
-    \     \n    Tool_Usage:\n        usage: summary_tree.py [-h] [--input INPUT] \
-    \ [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help\
-    \          show this help message and exit\n        --input INPUT      the tree file\
-    \  you want to summary(the nwk format)\n        --gene_id GENE_ID  the summary gene_id\n\
-    \         --out_dir OUT_DIR  output_folder\n    Tool_Example:\n        conda activate af3 &&\
-    \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find top40\
+    \  sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install diamond \
+    \ -c bioconda);\nstep3, Extract the sequence ids from the blast result using awk;\n\
+    \ step4, Extract the matched sequences from the database using seqkit(conda install \
+    \ seqkit -c bioconda);\nstep5, Append protein sequences of unknown function to the \
+    \ end of the matched sequences file;\nstep6, Multiple sequence alignment using \
+    \ clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the phylogenetic\
+    \  tree using fasttree(conda install fasttree -c bioconda);\nstep8, Plot the phylogenetic\
+    \  tree using plot_tree.py;\nstep9, Summary the tree results using summary_tree.py \
+    \ scripts;\nstep10, Searching for conserved domains of protein using hmmscan;\nstep11,\
+    \  Change domain results to markdown format using domain2markdown.py;\nstep12, Summary\
+    \  the protein domain results using summary_domain.py scripts.\n<change example>\n\
+    \     Tool_Usage:\n        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE]\
+    \  [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help\
+    \             show this help message and exit\n        --domain_file DOMAIN_FILE\n\
+    \                                 the domain file for hmmer softwore\n        --output_dir\
+    \  OUTPUT_DIR\n                                the output folder\n        --gene_id GENE_ID\
+    \      the tree for gene id\n    Tool_Example:\n        conda activate af3 && \
+    \ python domain2markdown.py --input $output_dir/$domain_file --out_dir $out_dir\
+    \  --gene_id $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n\
+    \         usage: plot_tree.py [-h] [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]\
+    \  [--gene_id GENE_ID]\n\n        options:\n        -h, --help\
+    \             show this help message and exit\n        --tree_file TREE_FILE\n\
+    \                                 the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
+    \                                 the output folder\n        --gene_id GENE_ID\
+    \      the tree for gene id\n    Tool_Example:\n        conda activate af3 &&\
+    \  pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \  python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id $gene_id\n\
+    \ </plot example>\n<summary example>\n    Tool_Usage:\n        usage: summary_domain.py\
+    \  [-h] [--input INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n\
+    \         -h, --help         show this help message and exit\n        --input INPUT\
+    \       the domain file you want to summary(the tsv format)\n        --gene_id GENE_ID\
+    \   the summary gene_id\n        --out_dir OUT_DIR  output_folder\n    Tool_Example:\n\
+    \         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \  python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id --out_dir $out_dir\n\
+    \     \n    Tool_Usage:\n        usage: summary_tree.py [-h] [--input INPUT] [--gene_id GENE_ID]\
+    \  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help         show this help message and exit\n\
+    \         --input INPUT      the tree file you want to summary(the nwk format)\n\
+    \         --gene_id GENE_ID  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n\
+    \     Tool_Example:\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \  python summary_tree.py --input $output_dir/$tree_file --gene_id $gene_id \
     \ --out_dir $out_dir\n</summary example>"
   deepgo2_analysis_meta: "Note1, You need to use deepgo2 environment to predict protein\
@@ -745,22 +761,31 @@ user:
     \  Protein Sturctre using protenix. (conda activate af3)\nstep4, Summary the protein\
     \  sturcture results using summary_structure.py"
   promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you \
-    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence using\
-    \  grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter sequence\
-    \  in rice; \nstep3, Extract the gene promoter sequence ids from the blastn result \
-    \ using awk; \nstep4, Extract the matched gene promoter sequences from the promoter \
-    \ database file using seqkit; \nstep5, Append the gene promoter sequence we analyzed \
-    \ to the end of the matched sequences file; \nstep6, Analysis the conserved motif \
-    \ in the gene promoter sequences using meme(conda install meme -c bioconda);\nstep7,\
-    \  Summart meme results using summary_motif.py\n<summary example>\n    Tool_Usage:\n\
-    \         usage: summary_motif.py [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID]\
-    \  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help            show this \
-    \ help message and exit\n        --input_path INPUT_PATH\n                                \
-    \ the out file path for meme software generate.\n        --gene_id GENE_ID     \
-    \ the summary gene_id\n        --out_dir OUT_DIR     output_folder\n    Tool_Example:\n\
-    \         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id \
-    \ --out_dir $out_dir\n</summary example>"
+    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence \
+    \ using grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter\
+    \  sequence in rice; \nstep3, Extract the gene promoter sequence ids from the \
+    \ blastn result using awk; \nstep4, Extract the matched gene promoter sequences\
+    \  from the promoter database file using seqkit; \nstep5, Append the gene promoter\
+    \  sequence we analyzed to the end of the matched sequences file; \nstep6, Analysis\
+    \  the conserved motif in the gene promoter sequences using meme(conda install \
+    \ meme -c bioconda);\nstep7, Plot the motif logo figure using plot_motif.py;\n\
+    \ step8, Summart meme results using summary_motif.py\n<plot example>\n    Tool_Usage:\n\
+    \         usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir OUTPUT_DIR]\n\
+    \ \n        options:\n        -h, --help            show this help message and exit\n\
+    \         --meme_file MEME_FILE\n                                the motif result \
+    \ file for meme software\n        --output_dir OUTPUT_DIR\n\
+    \                                 the output folder\n    Tool_Example:\n        \
+    \ conda activate af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \  python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir $output_dir\
+    \ \n</plot example>\n<summary example>\n    Tool_Usage:\n        usage: summary_motif.py\
+    \  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n\
+    \         options:\n        -h, --help            show this help message and exit\n\
+    \         --input_path INPUT_PATH\n                                the out file \
+    \ path for meme software generate.\n        --gene_id GENE_ID     the summary gene_id\n\
+    \         --out_dir OUT_DIR     output_folder\n    Tool_Example:\n        \
+    \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \  python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id\
+    \  --out_dir $out_dir\n</summary example>"
   protein_design_analysis_meta: "Note1: You don't need to build nr database index;\
     \ \nNote2: You need to install diamond software using conda(conda install diamond);\
     \ \nNote3: You need to install cd-hit software using conda(conda install cd-hit);\
@@ -990,7 +1015,19 @@ user:
     \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\
     \ \n</summary example>"
-  gene_network_analysis_meta: ""
+  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nStep1, Construct\
+    \  gene regulatory network using the script construct_gene_network.py\n<Usage>\n\
+    \     Tool Usage:\n        usage: construct_network.py [-h] [--network NETWORK]\
+    \  [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file TO_FILE] \
+    \ [--output_dir OUTPUT_DIR]\n\n        options:\n        -h, --help            \
+    \ show this help message and exit\n        --network NETWORK     The network file\n\
+    \         --network_class NETWORK_CLASS\n                                \
+    \ The network node class file\n        --to_id TO_ID         the to_id you want to get\n\
+    \         --to_file TO_FILE     the to annotation file\n        --output_dir OUTPUT_DIR\n\
+    \                                 the output folder\n    Tool Usage Example:\n\
+    \         conda activate af3 && python construct_network.py --network $network_file\
+    \  --network_class $network_class_file --to_id $to_id --to_file $to_file \
+    \ --output_dir $output_dir\n</Usage>"
   gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
     Please provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\

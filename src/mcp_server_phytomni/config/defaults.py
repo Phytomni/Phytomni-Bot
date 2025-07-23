@@ -211,6 +211,7 @@ class AnalystConfig(KnowledgeConfig):
         'large': '31b31aac-5e08-11f0-bbb4-fa163e7f72d1'})
     EXECUTE_CODE: bool = Field(True)
     USER_ID: str = Field('')
+    CREATE_DIR: bool = Field(True)
     DOWNLOAD_PATH: str = Field(str(DOWNLOAD_PATH))
     DOWNLOAD_MARKER: Optional[str] = Field(None)
     DOWNLOAD_MAX_KEYS: int = Field(1000)
@@ -266,3 +267,11 @@ class InSilicoResearchConfig(AnalystConfig):
 
     Inherits settings from `AnalystConfig`.
     """
+
+
+class GeneNetworkConfig(AnalystConfig):
+    """Configuration settings specific to gene network tasks.
+
+    Inherits settings from `AnalystConfig`.
+    """
+    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))

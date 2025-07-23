@@ -53,6 +53,8 @@ sc = SensitiveConfig().load()
 async def submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
@@ -121,6 +123,17 @@ async def submit(
         McpError: If the task submission fails after all retries.
         OSError: If uploading the data information to OBS fails.
     """
+    if not user_id:
+        user_id = uuid1()
+    if is_create_dir:
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='analysis_agents_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
     meta += '\nlast step, compress the output folder into a zip file '
     meta += '(zip -r $output_dir.zip $output_dir).'
     data = {
@@ -471,6 +484,8 @@ async def task_log(task_id: str,
 async def plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -583,6 +598,8 @@ async def plan_submit(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'],
         execute_code=execute_code,
@@ -609,6 +626,8 @@ async def plan_submit(
 async def retrieve_plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -785,6 +804,8 @@ async def retrieve_plan_submit(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=meta,
         execute_code=execute_code,
@@ -882,6 +903,8 @@ async def wait_for_completion(
 async def submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
@@ -950,6 +973,8 @@ async def submit_wait(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=meta,
         execute_code=execute_code,
@@ -986,6 +1011,8 @@ async def submit_wait(
 async def plan_submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -1079,6 +1106,8 @@ async def plan_submit_wait(
     task_dict = await plan_submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         prompt_file=prompt_file,
         prompt_path=prompt_path,
@@ -1128,6 +1157,8 @@ async def plan_submit_wait(
 async def retrieve_plan_submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -1248,6 +1279,8 @@ async def retrieve_plan_submit_wait(
     task_dict = await retrieve_plan_submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         retrieve_url=retrieve_url,
         repo_id_dict=repo_id_dict,
