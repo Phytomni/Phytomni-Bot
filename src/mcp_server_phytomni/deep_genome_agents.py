@@ -3,7 +3,6 @@
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
-import re
 from collections import deque
 from json import dumps
 from pathlib import Path
@@ -12,11 +11,6 @@ from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid1
 
-import pandas as pd
-from Bio import Phylo
-from logomaker import Logo
-from matplotlib import pyplot as plt
-from pycirclize import Circos
 from mcp.shared.exceptions import McpError
 
 from .analyst_agents import create_output_dir, download_obs_out, get_data_list
@@ -1458,8 +1452,8 @@ async def evolution_analysis(
     evo_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1527,8 +1521,8 @@ async def protein_structure_analysis(
     af3_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1596,8 +1590,8 @@ async def promoter_analysis(
     promoter_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1666,8 +1660,8 @@ async def gene_expression_tissues(
     tissues_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1736,8 +1730,8 @@ async def gene_expression_cultivars(
     cultivars_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1806,8 +1800,8 @@ async def gene_expression_genotypes(
     genotypes_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1876,8 +1870,8 @@ async def gene_expression_treatments(
     treatments_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1944,8 +1938,8 @@ async def single_cell_analysis(
     single_cell_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2034,8 +2028,8 @@ async def ppi_analysis(
     ppi_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2104,8 +2098,8 @@ async def smep_analysis(
     smep_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2172,8 +2166,8 @@ async def smoc_analysis(
     smoc_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
-        user_id=user_id, 
-        is_create_dir=False, 
+        user_id=user_id,
+        is_create_dir=False,
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -3075,7 +3069,8 @@ async def generate_gene_summary(
             if len(protein_structure_files) == 0:
                 gene_results = gene_results.replace(
                     '![3D Structure](STRUCTURE_IMG)', '')
-                gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+                gene_results = gene_results.replace(
+                    '[STRUCTURE]', 'None Results')
             else:
                 for structure_path in protein_structure_files:
                     structure_file = f'{gene_id}/{structure_path.name}'
@@ -3090,11 +3085,12 @@ async def generate_gene_summary(
                     '**Interpretation:**\n[STRUCTURE]',
                     '**Interpretation:**\n[STRUCTURE]')
                 with open(out_path / f'{gene_id}_structure.summary',
-                        'r', encoding='utf-8') as summary_file:
+                          'r', encoding='utf-8') as summary_file:
                     summary = summary_file.read()
                     gene_results = gene_results.replace('[STRUCTURE]', summary)
         except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('![3D Structure](STRUCTURE_IMG)', '')
+            gene_results = gene_results.replace(
+                '![3D Structure](STRUCTURE_IMG)', '')
             gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
 
         epic_summary = ''
@@ -3122,9 +3118,10 @@ async def generate_gene_summary(
             else:
                 for index in range(motif_file_num):
                     motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-                    gene_results = gene_results.replace('MOTIF_IMG', motif_file)
                     gene_results = gene_results.replace(
-                        '**Interpretation:**\n[MOTIF]', 
+                        'MOTIF_IMG', motif_file)
+                    gene_results = gene_results.replace(
+                        '**Interpretation:**\n[MOTIF]',
                         '![Motif](MOTIF_IMG)\n'
                         '**Interpretation:**\n[MOTIF]')
                 gene_results = gene_results.replace(
@@ -3132,7 +3129,7 @@ async def generate_gene_summary(
                     '**Interpretation:**\n[MOTIF]',
                     '**Interpretation:**\n[MOTIF]')
                 with open(out_path / f'{gene_id}_motif.summary',
-                        'r', encoding='utf-8') as summary_file:
+                          'r', encoding='utf-8') as summary_file:
                     summary = summary_file.read()
                     gene_results = gene_results.replace('[MOTIF]', summary)
         except (FileNotFoundError, OSError, IOError):
@@ -3180,7 +3177,8 @@ async def generate_analysis_results(
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
         'evolution_task': ['.md', '.png', '.summary'],
-        'protein_structure_task': ['sample_0.cif', 'sample_0.json', '.summary'],
+        'protein_structure_task':
+            ['sample_0.cif', 'sample_0.json', '.summary'],
         'promoter_task': ['.png', '.summary'],
         'single_cell_task': ['.png', '.summary'],
         'tissues_task': ['.png', '.summary'],
