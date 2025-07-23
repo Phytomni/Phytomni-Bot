@@ -1266,7 +1266,7 @@
         "coffea canephora": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/": "65 species database for blastn index, index_name: promoter, if you want to use nt database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/promoter paramter",
-            "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Coffea canephora, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa > $out_file\"""/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
+            "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Coffea canephora, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
             "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
