@@ -1458,6 +1458,8 @@ async def evolution_analysis(
     evo_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1525,6 +1527,8 @@ async def protein_structure_analysis(
     af3_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1592,6 +1596,8 @@ async def promoter_analysis(
     promoter_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1660,6 +1666,8 @@ async def gene_expression_tissues(
     tissues_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1728,6 +1736,8 @@ async def gene_expression_cultivars(
     cultivars_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1796,6 +1806,8 @@ async def gene_expression_genotypes(
     genotypes_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1864,6 +1876,8 @@ async def gene_expression_treatments(
     treatments_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -1930,6 +1944,8 @@ async def single_cell_analysis(
     single_cell_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2018,6 +2034,8 @@ async def ppi_analysis(
     ppi_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2086,6 +2104,8 @@ async def smep_analysis(
     smep_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2152,6 +2172,8 @@ async def smoc_analysis(
     smoc_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
@@ -2174,6 +2196,49 @@ async def smoc_analysis(
         max_poll=max_poll,
     )
     return {'smoc_task': smoc_task}
+
+
+async def haplotypes_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    if not batch:
+        if not user_id:
+            user_id = uuid1()
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='haplotypes_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
+    pass
 
 
 async def gene_expression_analysis(
