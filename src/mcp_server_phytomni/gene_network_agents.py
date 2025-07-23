@@ -62,6 +62,8 @@ async def network_analysis(
     gene_network_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=False, 
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
