@@ -31,17 +31,13 @@
 ## IV. Promoter Analysis
 ### 4.1 Motif Analysis
 #### Identified Motifs
-![Motif 1](MOTIF1_IMG)
-![Motif 2](MOTIF2_IMG)
-![Motif 3](MOTIF3_IMG)
-![Motif 4](MOTIF4_IMG)
-![Motif 5](MOTIF5_IMG)
+![Motif](MOTIF_IMG)
 **Interpretation:**
 [MOTIF]
 ### 4.2 Epigenetic Modifications
 **Analysis:**
 [EPIC]
-## V. Protein Analysiså
+## V. Protein Analysis
 ### 5.1 Protein Domains
 [markdown table]
 
