@@ -54,7 +54,7 @@ async def submit(
     goal_description: str,
     data_list: Dict[str, str],
     user_id: str = ac.USER_ID, 
-    is_create_dir: bool = True, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
@@ -484,6 +484,8 @@ async def task_log(task_id: str,
 async def plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -596,6 +598,8 @@ async def plan_submit(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=phyto_response['choices'][0]['message']['content'],
         execute_code=execute_code,
@@ -622,6 +626,8 @@ async def plan_submit(
 async def retrieve_plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -798,6 +804,8 @@ async def retrieve_plan_submit(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=meta,
         execute_code=execute_code,
@@ -895,6 +903,8 @@ async def wait_for_completion(
 async def submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = '',
     execute_code: bool = ac.EXECUTE_CODE,
@@ -963,6 +973,8 @@ async def submit_wait(
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         meta=meta,
         execute_code=execute_code,
@@ -999,6 +1011,8 @@ async def submit_wait(
 async def plan_submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     prompt_file: str = ac.PROMPT_FILE,
     prompt_path: str = ac.PROMPT_PATH,
@@ -1092,6 +1106,8 @@ async def plan_submit_wait(
     task_dict = await plan_submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         prompt_file=prompt_file,
         prompt_path=prompt_path,
@@ -1141,6 +1157,8 @@ async def plan_submit_wait(
 async def retrieve_plan_submit_wait(
     goal_description: str,
     data_list: Dict[str, str],
+    user_id: str = ac.USER_ID, 
+    is_create_dir: bool = ac.CREATE_DIR, 
     output_dir: str = ac.OUTPUT_DIR,
     retrieve_url: str = ac.RETRIEVE_URL,
     repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
@@ -1261,6 +1279,8 @@ async def retrieve_plan_submit_wait(
     task_dict = await retrieve_plan_submit(
         goal_description=goal_description,
         data_list=data_list,
+        user_id=user_id, 
+        is_create_dir=is_create_dir, 
         output_dir=output_dir,
         retrieve_url=retrieve_url,
         repo_id_dict=repo_id_dict,
