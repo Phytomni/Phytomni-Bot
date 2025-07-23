@@ -2913,31 +2913,18 @@ async def generate_gene_summary(
             gene_results = fi.read()
         gene_results = gene_results.replace('[Gene Name]', gene_id)
         try:
-            for out_file in out_path.iterdir():
-                if out_file.name.endswith(('nwk', 'newick')):
-                    plot_evolution_tree(
-                        tree_file=str(out_file),
-                        out_file=str(out_path / f'{gene_id}_tree.png'),
-                        gene_id=gene_id,
-                    )
-            tree_img_path = f'{gene_id}/{gene_id}_tree.png'
+            target_file = next(out_path.rglob('*tree.png')).name
+            tree_img_path = f'{gene_id}/{target_file}'
             gene_results = gene_results.replace('TREE_IMG', tree_img_path)
             with open(out_path / f'{gene_id}_tree.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
                 gene_results = gene_results.replace('[TREE]', summary)
-        except (FileNotFoundError, OSError, IOError):
+        except (StopIteration, FileNotFoundError, OSError, IOError):
             gene_results = gene_results.replace(
                 '![Phylogenetic Tree](TREE_IMG)', '')
             gene_results = gene_results.replace('[TREE]', 'None Results')
         try:
-            for out_file in out_path.iterdir():
-                if ('domain' in out_file.name and
-                        'summary' not in out_file.name):
-                    domain2markdown(
-                        domain_file=str(out_file),
-                        out_file=str(out_path / f'{gene_id}_domain.md'),
-                    )
             with open(out_path / f'{gene_id}_domain.md',
                       'r', encoding='utf-8') as domain_f:
                 domain = domain_f.read()
@@ -3017,29 +3004,33 @@ async def generate_gene_summary(
             gene_results = gene_results.replace(
                 '[SINGLE_CELL]', 'None Results')
 
-        protein_structure_files = list(out_path.glob(
-            '*_seed_101_sample_0.cif'))
-        if len(protein_structure_files) == 0:
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)', '')
+        try:
+            protein_structure_files = list(out_path.glob(
+                '*_seed_101_sample_0.cif'))
+            if len(protein_structure_files) == 0:
+                gene_results = gene_results.replace(
+                    '![3D Structure](STRUCTURE_IMG)', '')
+                gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+            else:
+                for structure_path in protein_structure_files:
+                    structure_file = f'{gene_id}/{structure_path.name}'
+                    gene_results = gene_results.replace(
+                        'STRUCTURE_IMG', structure_file)
+                    gene_results = gene_results.replace(
+                        '**Interpretation:**\n[STRUCTURE]',
+                        '![3D Structure](STRUCTURE_IMG)\n'
+                        '**Interpretation:**\n[STRUCTURE]')
+                gene_results = gene_results.replace(
+                    '![3D Structure](STRUCTURE_IMG)\n'
+                    '**Interpretation:**\n[STRUCTURE]',
+                    '**Interpretation:**\n[STRUCTURE]')
+                with open(out_path / f'{gene_id}_structure.summary',
+                        'r', encoding='utf-8') as summary_file:
+                    summary = summary_file.read()
+                    gene_results = gene_results.replace('[STRUCTURE]', summary)
+        except (FileNotFoundError, OSError, IOError):
+            gene_results = gene_results.replace('![3D Structure](STRUCTURE_IMG)', '')
             gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
-        else:
-            for structure_path in protein_structure_files:
-                structure_file = f'{gene_id}/{structure_path.name}'
-                gene_results = gene_results.replace(
-                    'STRUCTURE_IMG', structure_file)
-                gene_results = gene_results.replace(
-                    '**Interpretation:**\\n[STRUCTURE]',
-                    '![3D Structure](STRUCTURE_IMG)\\n'
-                    '**Interpretation:**\\n[STRUCTURE]')
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)\\n'
-                '**Interpretation:**\\n[STRUCTURE]',
-                '**Interpretation:**\\n[STRUCTURE]')
-            with open(out_path / f'{gene_id}_structure.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[STRUCTURE]', summary)
 
         epic_summary = ''
         try:
@@ -3059,27 +3050,28 @@ async def generate_gene_summary(
         gene_results = gene_results.replace('[EPIC]', epic_summary)
 
         try:
-            plot_motif(str(out_path / 'meme.txt'), str(out_path))
-            gene_results = gene_results.replace(
-                'MOTIF1_IMG', f'{gene_id}/motif_1_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF2_IMG', f'{gene_id}/motif_2_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF3_IMG', f'{gene_id}/motif_3_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF4_IMG', f'{gene_id}/motif_4_logo.png')
-            gene_results = gene_results.replace(
-                'MOTIF5_IMG', f'{gene_id}/motif_5_logo.png')
-            with open(out_path / f'{gene_id}_motif.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[MOTIF]', summary)
+            motif_file_num = len(list(out_path.glob('*_logo.png')))
+            if motif_file_num == 0:
+                gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
+                gene_results = gene_results.replace('[MOTIF]', 'None Results')
+            else:
+                for index in range(motif_file_num):
+                    motif_file = f'{gene_id}/motif_{index+1}_logo.png'
+                    gene_results = gene_results.replace('MOTIF_IMG', motif_file)
+                    gene_results = gene_results.replace(
+                        '**Interpretation:**\n[MOTIF]', 
+                        '![Motif](MOTIF_IMG)\n'
+                        '**Interpretation:**\n[MOTIF]')
+                gene_results = gene_results.replace(
+                    '![Motif](MOTIF_IMG)\n'
+                    '**Interpretation:**\n[MOTIF]',
+                    '**Interpretation:**\n[MOTIF]')
+                with open(out_path / f'{gene_id}_motif.summary',
+                        'r', encoding='utf-8') as summary_file:
+                    summary = summary_file.read()
+                    gene_results = gene_results.replace('[MOTIF]', summary)
         except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('![Motif 1](MOTIF1_IMG)', '')
-            gene_results = gene_results.replace('![Motif 2](MOTIF2_IMG)', '')
-            gene_results = gene_results.replace('![Motif 3](MOTIF3_IMG)', '')
-            gene_results = gene_results.replace('![Motif 4](MOTIF4_IMG)', '')
-            gene_results = gene_results.replace('![Motif 5](MOTIF5_IMG)', '')
+            gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
             gene_results = gene_results.replace('[MOTIF]', 'None Results')
         with open(f'{deepgenome_out}/{gene_id}_results.md',
                   'w', encoding='utf-8') as fo:
@@ -3122,9 +3114,9 @@ async def generate_analysis_results(
     TARGET_MAP = {
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
-        'evolution_task': ['.txt', 'domain', '.nwk', '.newick', '.summary'],
-        'protein_structure_task': ['.cif', '.json', '.summary'],
-        'promoter_task': ['meme.txt', '.summary'],
+        'evolution_task': ['.md', '.png', '.summary'],
+        'protein_structure_task': ['sample_0.cif', 'sample_0.json', '.summary'],
+        'promoter_task': ['.png', '.summary'],
         'single_cell_task': ['.png', '.summary'],
         'tissues_task': ['.png', '.summary'],
         'cultivars_task': ['.png', '.summary'],
