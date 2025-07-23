@@ -487,3 +487,16 @@ async def rerank(user_query: str,
         for doc in rank_docs
         if doc['score'] >= score_threshold
     ]
+
+
+def response_to_string(phyto_response: dict):
+    content = phyto_response['choices'][0]['message']['content']
+    doc_list = phyto_response['choices'][0]['message']['doc_list']
+    doc_string = ''
+    for doc_id, doc in enumerate(doc_list):
+        title = doc['title']
+        if title[-3:] in ('pdf', 'PDF'):
+            doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n'
+        else:
+            doc_string += f'[{doc_id+1}] ' + title + '\n'
+    return content + '\n**Reference:**\n' + doc_string
