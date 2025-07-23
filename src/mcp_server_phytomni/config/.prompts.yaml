@@ -1015,7 +1015,19 @@ user:
     \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\
     \ \n</summary example>"
-  gene_network_analysis_meta: ""
+  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nStep1, Construct\
+    \  gene regulatory network using the script construct_gene_network.py\n<Usage>\n\
+    \     Tool Usage:\n        usage: construct_network.py [-h] [--network NETWORK]\
+    \  [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file TO_FILE] \
+    \ [--output_dir OUTPUT_DIR]\n\n        options:\n        -h, --help            \
+    \ show this help message and exit\n        --network NETWORK     The network file\n\
+    \         --network_class NETWORK_CLASS\n                                \
+    \ The network node class file\n        --to_id TO_ID         the to_id you want to get\n\
+    \         --to_file TO_FILE     the to annotation file\n        --output_dir OUTPUT_DIR\n\
+    \                                 the output folder\n    Tool Usage Example:\n\
+    \         conda activate af3 && python construct_network.py --network $network_file\
+    \  --network_class $network_class_file --to_id $to_id --to_file $to_file \
+    \ --output_dir $output_dir\n</Usage>"
   gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
     Please provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
