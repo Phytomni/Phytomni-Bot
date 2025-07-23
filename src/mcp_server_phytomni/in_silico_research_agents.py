@@ -86,6 +86,8 @@ async def extract_goals(
 async def in_silico_research(
     user_query: str,
     data_list: Dict[str, str],
+    user_id: str = isrc.USER_ID,
+    is_create_dir: bool = isrc.CREATE_DIR,
     output_dir: str = isrc.OUTPUT_DIR,
     repo_id_dict: Optional[Dict[str, int]] = isrc.REPO_ID_DICT,
     page_num: int = isrc.PAGE_NUM,
@@ -137,6 +139,8 @@ async def in_silico_research(
         retrieve_plan_submit(
             goal_description=goal_meta['goal'],
             data_list=data_list,
+            user_id=user_id,
+            is_create_dir=is_create_dir,
             output_dir=output_dir,
             repo_id_dict=repo_id_dict,
             page_num=page_num,
