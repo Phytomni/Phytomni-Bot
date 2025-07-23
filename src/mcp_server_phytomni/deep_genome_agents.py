@@ -1000,54 +1000,6 @@ async def async_gene_function(
                 internal `SPECIES_CODE_MAP` when preparing data for
                 `gene_retrieve` or the final prompt.
         """
-        if use_analyst_agent:
-            user_id = uuid1()
-            output_dir = create_output_dir(
-                user_id=user_id,
-                task=gene_id,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
-            )
-            species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
-                ')').lower()
-            analysis_task = analysis_module(
-                species=species_str,
-                gene_id=gene_id,
-                user_id=user_id,
-                batch=batch,
-                epic_type=epic_type,
-                database_url=database_url,
-                workspace_id=workspace_id,
-                subject_id=subject_id,
-                dialog_id=dialog_id,
-                need_insight=need_insight,
-                simplify_response=simplify_response,
-                prompt_file=prompt_file,
-                deepgenome_data=deepgenome_data,
-                output_dir=output_dir,
-                model_url=model_url,
-                model_name=model_name,
-                coder_api_key=coder_api_key,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
-                analysis_url=analysis_url,
-                region=region,
-                resource_dict=resource_dict,
-                app_id_dict=app_id_dict,
-                timeout=timeout,
-                retriable_codes=retriable_codes,
-                max_retries=max_retries,
-                max_poll=max_poll,
-            )
-            if not direct_return:
-                analysis_task_str = dumps(analysis_task)
-                manager.update_task(task_id, 'running',
-                                    analysis_task_str, output_dir)
-
         species_gene_list = [(species_code, gene_id)]
         if use_data_agent:
             gene_network_results = await gene_network(
@@ -1230,6 +1182,57 @@ async def async_gene_function(
                 retriable_codes=retriable_codes,
                 max_retries=max_retries,
             )
+
+        if use_analyst_agent:
+            user_id = uuid1()
+            output_dir = create_output_dir(
+                user_id=user_id,
+                task=gene_id,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+            )
+            species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
+                ')').lower()
+            analysis_task = analysis_module(
+                species=species_str,
+                gene_id=gene_id,
+                user_id=user_id,
+                batch=batch,
+                epic_type=epic_type,
+                database_url=database_url,
+                workspace_id=workspace_id,
+                subject_id=subject_id,
+                dialog_id=dialog_id,
+                need_insight=need_insight,
+                simplify_response=simplify_response,
+                prompt_file=prompt_file,
+                deepgenome_data=deepgenome_data,
+                output_dir=output_dir,
+                model_url=model_url,
+                model_name=model_name,
+                coder_api_key=coder_api_key,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+                analysis_url=analysis_url,
+                region=region,
+                resource_dict=resource_dict,
+                app_id_dict=app_id_dict,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                max_poll=max_poll,
+            )
+            if not direct_return:
+                analysis_task_str = dumps(analysis_task)
+                manager.update_task(task_id, 'running',
+                                    analysis_task_str, output_dir)
+        
+        
+        
         if direct_return:
             phyto_response['choices'][0]['message'].update(
                 {'doc_list': gene_retrieve_results['doc_list'],
@@ -2393,7 +2396,7 @@ async def epic_analysis(
     return {**smep_task, **smoc_task}
 
 
-async def gene_analysis(
+async def submit_gene_analysis(
     species: str,
     gene_id: str,
     epic_type: str = dgc.EPIC_TYPE,
@@ -2588,268 +2591,18 @@ async def gene_analysis(
             **single_cell_exp_task, **structure_task}
 
 
-async def generate_gene_summary(
-    species: str,
+async def summarize_gene_analysis(
     gene_id: str,
-    epic_type: str = dgc.EPIC_TYPE,
-    user_id: str = dgc.USER_ID,
-    batch: bool = dgc.BATCH,
+    gene_task: dict,
     deepgenome_out: str = dgc.DEEPGENOME_OUT,
     result_template: str = dgc.TEMPLATE,
-    database_url: str = dgc.DATABASE_URL,
-    workspace_id: str = dgc.WORKSPACE_ID,
-    subject_id: str = dgc.SUBJECT_ID,
-    dialog_id: str = dgc.DIALOG_ID,
-    need_insight: bool = dgc.NEED_INSIGHT,
-    prompt_file: str = dgc.PROMPT_FILE,
-    deepgenome_data: str = dgc.DEEPGENOME_DATA,
-    output_dir: str = dgc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME,
     analysis_url: str = dgc.ANALYSIS_URL,
     region: str = dgc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
-    app_id_dict: Dict[str, str] = dgc.APP_ID,
-    timeout: float = dgc.TIMEOUT,
-    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
-    max_retries: int = dgc.MAX_RETRIES,
-    max_poll: float = dgc.MAX_POLL,
-):
-    task = await generate_analysis_results(
-        species=species,
-        gene_id=gene_id,
-        epic_type=epic_type,
-        user_id=user_id,
-        batch=batch,
-        database_url=database_url,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    if task:
-        out_path = Path(f'{deepgenome_out}/{gene_id}')
-        with open(result_template, 'r', encoding='utf-8') as fi:
-            gene_results = fi.read()
-        gene_results = gene_results.replace('[Gene Name]', gene_id)
-        try:
-            target_file = next(out_path.rglob('*tree.png')).name
-            tree_img_path = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('TREE_IMG', tree_img_path)
-            with open(out_path / f'{gene_id}_tree.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[TREE]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![Phylogenetic Tree](TREE_IMG)', '')
-            gene_results = gene_results.replace('[TREE]', 'None Results')
-        try:
-            with open(out_path / f'{gene_id}_domain.md',
-                      'r', encoding='utf-8') as domain_f:
-                domain = domain_f.read()
-                gene_results = gene_results.replace('[markdown table]', domain)
-            with open(out_path / f'{gene_id}_domain.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[DOMAIN]', summary)
-        except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('[markdown table]', '')
-            gene_results = gene_results.replace('[DOMAIN]', 'None Results')
-
-        try:
-            target_file = next(out_path.rglob('*tissues.png')).name
-            tissue_img = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('TISSUE_IMG', tissue_img)
-            with open(out_path / f'{gene_id}_tissues.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[TISSUE]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![Tissue Expression](TISSUE_IMG)', '')
-            gene_results = gene_results.replace('[TISSUE]', 'None Results')
-        try:
-            target_file = next(out_path.rglob('*cultivars.png')).name
-            cultivar_img = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('CULTIVAR_IMG', cultivar_img)
-            with open(out_path / f'{gene_id}_cultivars.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[CULTIVAR]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![Cultivar Expression](CULTIVAR_IMG)', '')
-            gene_results = gene_results.replace('[CULTIVAR]', 'None Results')
-        try:
-            target_file = next(out_path.rglob('*genotypes.png')).name
-            genotype_img = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('MUTANT_IMG', genotype_img)
-            with open(out_path / f'{gene_id}_genotypes.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[MUTANT]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![Mutant Expression](MUTANT_IMG)', '')
-            gene_results = gene_results.replace('[MUTANT]', 'None Results')
-        try:
-            target_file = next(out_path.rglob('*treatments.png')).name
-            treatment_img = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('TREATMENT_IMG', treatment_img)
-            with open(out_path / f'{gene_id}_treatments.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[TREATMENT]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![Treatment Expression](TREATMENT_IMG)', '')
-            gene_results = gene_results.replace('[TREATMENT]', 'None Results')
-
-        try:
-            target_file = next(out_path.rglob('*_umap.png')).name
-            sc_umap = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('UMAP_IMG', sc_umap)
-            target_file = next(out_path.rglob('*_violin_plot.png')).name
-            sc_violin = f'{gene_id}/{target_file}'
-            gene_results = gene_results.replace('VIOLIN_IMG', sc_violin)
-            with open(out_path / f'{gene_id}_single_cell.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results = gene_results.replace('[SINGLE_CELL]', summary)
-        except (StopIteration, FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('![UMAP Plot](UMAP_IMG)', '')
-            gene_results = gene_results.replace(
-                '![Violin Plot](VIOLIN_IMG)', '')
-            gene_results = gene_results.replace(
-                '[SINGLE_CELL]', 'None Results')
-
-        try:
-            protein_structure_files = list(out_path.glob(
-                '*_seed_101_sample_0.cif'))
-            if len(protein_structure_files) == 0:
-                gene_results = gene_results.replace(
-                    '![3D Structure](STRUCTURE_IMG)', '')
-                gene_results = gene_results.replace(
-                    '[STRUCTURE]', 'None Results')
-            else:
-                for structure_path in protein_structure_files:
-                    structure_file = f'{gene_id}/{structure_path.name}'
-                    gene_results = gene_results.replace(
-                        'STRUCTURE_IMG', structure_file)
-                    gene_results = gene_results.replace(
-                        '**Interpretation:**\n[STRUCTURE]',
-                        '![3D Structure](STRUCTURE_IMG)\n'
-                        '**Interpretation:**\n[STRUCTURE]')
-                gene_results = gene_results.replace(
-                    '![3D Structure](STRUCTURE_IMG)\n'
-                    '**Interpretation:**\n[STRUCTURE]',
-                    '**Interpretation:**\n[STRUCTURE]')
-                with open(out_path / f'{gene_id}_structure.summary',
-                          'r', encoding='utf-8') as summary_file:
-                    summary = summary_file.read()
-                    gene_results = gene_results.replace('[STRUCTURE]', summary)
-        except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)', '')
-            gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
-
-        epic_summary = ''
-        try:
-            with open(out_path / f'{gene_id}_smep.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                epic_summary += summary
-        except (FileNotFoundError, OSError, IOError):
-            epic_summary += ''
-        try:
-            with open(out_path / f'{gene_id}_smoc.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                epic_summary += summary
-        except (FileNotFoundError, OSError, IOError):
-            epic_summary += ''
-        gene_results = gene_results.replace('[EPIC]', epic_summary)
-
-        try:
-            motif_file_num = len(list(out_path.glob('*_logo.png')))
-            if motif_file_num == 0:
-                gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
-                gene_results = gene_results.replace('[MOTIF]', 'None Results')
-            else:
-                for index in range(motif_file_num):
-                    motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-                    gene_results = gene_results.replace(
-                        'MOTIF_IMG', motif_file)
-                    gene_results = gene_results.replace(
-                        '**Interpretation:**\n[MOTIF]',
-                        '![Motif](MOTIF_IMG)\n'
-                        '**Interpretation:**\n[MOTIF]')
-                gene_results = gene_results.replace(
-                    '![Motif](MOTIF_IMG)\n'
-                    '**Interpretation:**\n[MOTIF]',
-                    '**Interpretation:**\n[MOTIF]')
-                with open(out_path / f'{gene_id}_motif.summary',
-                          'r', encoding='utf-8') as summary_file:
-                    summary = summary_file.read()
-                    gene_results = gene_results.replace('[MOTIF]', summary)
-        except (FileNotFoundError, OSError, IOError):
-            gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
-            gene_results = gene_results.replace('[MOTIF]', 'None Results')
-        with open(f'{deepgenome_out}/{gene_id}_results.md',
-                  'w', encoding='utf-8') as fo:
-            fo.write(gene_results)
-
-
-async def generate_analysis_results(
-    species: str,
-    gene_id: str,
-    epic_type: str = dgc.EPIC_TYPE,
-    user_id: str = dgc.USER_ID,
-    batch: bool = dgc.BATCH,
-    database_url: str = dgc.DATABASE_URL,
-    workspace_id: str = dgc.WORKSPACE_ID,
-    subject_id: str = dgc.SUBJECT_ID,
-    dialog_id: str = dgc.DIALOG_ID,
-    need_insight: bool = dgc.NEED_INSIGHT,
-    prompt_file: str = dgc.PROMPT_FILE,
-    deepgenome_data: str = dgc.DEEPGENOME_DATA,
-    output_dir: str = dgc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME,
-    analysis_url: str = dgc.ANALYSIS_URL,
-    region: str = dgc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
-    app_id_dict: Dict[str, str] = dgc.APP_ID,
     download_path: str = dgc.DOWNLOAD_PATH,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
     marker: Optional[str] = dgc.DOWNLOAD_MARKER,
     max_keys: int = dgc.DOWNLOAD_MAX_KEYS,
     timeout: float = dgc.TIMEOUT,
@@ -2857,7 +2610,7 @@ async def generate_analysis_results(
     max_retries: int = dgc.MAX_RETRIES,
     max_poll: float = dgc.MAX_POLL,
 ) -> str:
-    TARGET_MAP = {
+    target_map = {
         'smep_task': ['.out', '.summary'],
         'smoc_task': ['.csv', '.summary'],
         'evolution_task': ['.md', '.png', '.summary'],
@@ -2870,36 +2623,6 @@ async def generate_analysis_results(
         'genotypes_task': ['.png', '.summary'],
         'treatments_task': ['.png', '.summary'],
     }
-    gene_task = await gene_analysis(
-        species=species,
-        gene_id=gene_id,
-        epic_type=epic_type,
-        user_id=user_id,
-        batch=batch,
-        database_url=database_url,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
 
     async def wait_and_download(task_name: str, task_dict: str) -> str:
         _ = await wait_for_completion(
@@ -2920,7 +2643,7 @@ async def generate_analysis_results(
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=obs_server,
-            target_file_feature=TARGET_MAP[task_name],
+            target_file_feature=target_map[task_name],
             bucket_name=bucket_name,
             marker=marker,
             max_keys=max_keys,
@@ -2932,7 +2655,173 @@ async def generate_analysis_results(
         wait_and_download(task_name, task_dict)
         for task_name, task_dict in gene_task.items()
     ])
-    return 'All Job Finish.'
+
+    out_path = Path(f'{deepgenome_out}/{gene_id}')
+    with open(result_template, 'r', encoding='utf-8') as fi:
+        gene_results = fi.read()
+    gene_results = gene_results.replace('[Gene Name]', gene_id)
+    try:
+        target_file = next(out_path.rglob('*tree.png')).name
+        tree_img_path = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('TREE_IMG', tree_img_path)
+        with open(out_path / f'{gene_id}_tree.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[TREE]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![Phylogenetic Tree](TREE_IMG)', '')
+        gene_results = gene_results.replace('[TREE]', 'None Results')
+    try:
+        with open(out_path / f'{gene_id}_domain.md',
+                  'r', encoding='utf-8') as domain_f:
+            domain = domain_f.read()
+            gene_results = gene_results.replace('[markdown table]', domain)
+        with open(out_path / f'{gene_id}_domain.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[DOMAIN]', summary)
+    except (FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace('[markdown table]', '')
+        gene_results = gene_results.replace('[DOMAIN]', 'None Results')
+
+    try:
+        target_file = next(out_path.rglob('*tissues.png')).name
+        tissue_img = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('TISSUE_IMG', tissue_img)
+        with open(out_path / f'{gene_id}_tissues.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[TISSUE]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![Tissue Expression](TISSUE_IMG)', '')
+        gene_results = gene_results.replace('[TISSUE]', 'None Results')
+    try:
+        target_file = next(out_path.rglob('*cultivars.png')).name
+        cultivar_img = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('CULTIVAR_IMG', cultivar_img)
+        with open(out_path / f'{gene_id}_cultivars.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[CULTIVAR]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![Cultivar Expression](CULTIVAR_IMG)', '')
+        gene_results = gene_results.replace('[CULTIVAR]', 'None Results')
+    try:
+        target_file = next(out_path.rglob('*genotypes.png')).name
+        genotype_img = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('MUTANT_IMG', genotype_img)
+        with open(out_path / f'{gene_id}_genotypes.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[MUTANT]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![Mutant Expression](MUTANT_IMG)', '')
+        gene_results = gene_results.replace('[MUTANT]', 'None Results')
+    try:
+        target_file = next(out_path.rglob('*treatments.png')).name
+        treatment_img = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('TREATMENT_IMG', treatment_img)
+        with open(out_path / f'{gene_id}_treatments.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[TREATMENT]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![Treatment Expression](TREATMENT_IMG)', '')
+        gene_results = gene_results.replace('[TREATMENT]', 'None Results')
+
+    try:
+        target_file = next(out_path.rglob('*_umap.png')).name
+        sc_umap = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('UMAP_IMG', sc_umap)
+        target_file = next(out_path.rglob('*_violin_plot.png')).name
+        sc_violin = f'{gene_id}/{target_file}'
+        gene_results = gene_results.replace('VIOLIN_IMG', sc_violin)
+        with open(out_path / f'{gene_id}_single_cell.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results = gene_results.replace('[SINGLE_CELL]', summary)
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace('![UMAP Plot](UMAP_IMG)', '')
+        gene_results = gene_results.replace('![Violin Plot](VIOLIN_IMG)', '')
+        gene_results = gene_results.replace('[SINGLE_CELL]', 'None Results')
+
+    try:
+        protein_structure_files = list(out_path.glob(
+            '*_seed_101_sample_0.cif'))
+        if len(protein_structure_files) == 0:
+            gene_results = gene_results.replace(
+                '![3D Structure](STRUCTURE_IMG)', '')
+            gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+        else:
+            for structure_path in protein_structure_files:
+                structure_file = f'{gene_id}/{structure_path.name}'
+                gene_results = gene_results.replace(
+                    'STRUCTURE_IMG', structure_file)
+                gene_results = gene_results.replace(
+                    '**Interpretation:**\n[STRUCTURE]',
+                    '![3D Structure](STRUCTURE_IMG)\n'
+                    '**Interpretation:**\n[STRUCTURE]')
+            gene_results = gene_results.replace(
+                '![3D Structure](STRUCTURE_IMG)\n'
+                '**Interpretation:**\n[STRUCTURE]',
+                '**Interpretation:**\n[STRUCTURE]')
+            with open(out_path / f'{gene_id}_structure.summary',
+                      'r', encoding='utf-8') as summary_file:
+                summary = summary_file.read()
+                gene_results = gene_results.replace('[STRUCTURE]', summary)
+    except (FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace(
+            '![3D Structure](STRUCTURE_IMG)', '')
+        gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+
+    epic_summary = ''
+    try:
+        with open(out_path / f'{gene_id}_smep.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            epic_summary += summary
+    except (FileNotFoundError, OSError, IOError):
+        epic_summary += ''
+    try:
+        with open(out_path / f'{gene_id}_smoc.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            epic_summary += summary
+    except (FileNotFoundError, OSError, IOError):
+        epic_summary += ''
+    gene_results = gene_results.replace('[EPIC]', epic_summary)
+
+    try:
+        motif_file_num = len(list(out_path.glob('*_logo.png')))
+        if motif_file_num == 0:
+            gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
+            gene_results = gene_results.replace('[MOTIF]', 'None Results')
+        else:
+            for index in range(motif_file_num):
+                motif_file = f'{gene_id}/motif_{index+1}_logo.png'
+                gene_results = gene_results.replace('MOTIF_IMG', motif_file)
+                gene_results = gene_results.replace(
+                    '**Interpretation:**\n[MOTIF]',
+                    '![Motif](MOTIF_IMG)\n**Interpretation:**\n[MOTIF]')
+            gene_results = gene_results.replace(
+                '![Motif](MOTIF_IMG)\n**Interpretation:**\n[MOTIF]',
+                '**Interpretation:**\n[MOTIF]')
+            with open(out_path / f'{gene_id}_motif.summary',
+                      'r', encoding='utf-8') as summary_file:
+                summary = summary_file.read()
+                gene_results = gene_results.replace('[MOTIF]', summary)
+    except (FileNotFoundError, OSError, IOError):
+        gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
+        gene_results = gene_results.replace('[MOTIF]', 'None Results')
+    with open(f'{deepgenome_out}/{gene_id}_results.md',
+              'w', encoding='utf-8') as fo:
+        fo.write(gene_results)
+    return f'{deepgenome_out}/{gene_id}_results.md'
 
 
 def find_species_code(species: str):
