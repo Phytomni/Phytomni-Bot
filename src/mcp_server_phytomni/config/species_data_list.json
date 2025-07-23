@@ -6,7 +6,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_sativa/Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa": "All protein sequences for Oryza Sativa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_sativa.IRGSP-1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "actinidia chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -14,7 +16,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/actinidia_chinensis/Actinidia_chinensis.Red5_PS1_1.69.0.pep.AllProtein.fa": "All protein sequences for Actinidia chinensis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Actinidia_chinensis.Red5_PS1_1.69.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "aegilops tauschii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -22,7 +26,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/aegilops_tauschii/Aegilops_tauschii.Aet_v4.0.pep.AllProtein.fa": "All protein sequences for Aegilops tauschii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Aegilops_tauschii.Aet_v4.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "amborella trichopoda": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -30,7 +36,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/amborella_trichopoda/Amborella_trichopoda.AMTR1.0.pep.AllProtein.fa": "All protein sequences for Amborella trichopoda, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Amborella_trichopoda.AMTR1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "ananas comosus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -38,7 +46,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/ananas_comosus/Ananas_comosus.F153.pep.AllProtein.fa": "All protein sequences for Ananas comosus, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Ananas_comosus.F153.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "arabidopsis lyrata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -46,7 +56,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/arabidopsis_lyrata/Arabidopsis_lyrata.v.1.0.pep.AllProtein.fa": "All protein sequences for Arabidopsis lyrata, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Arabidopsis_lyrata.v.1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "asparagus officinalis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -54,7 +66,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/asparagus_officinalis/Asparagus_officinalis.Aspof.V1.pep.AllProtein.fa": "All protein sequences for Asparagus officinalis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Asparagus_officinalis.Aspof.V1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "beta vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -62,7 +76,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/beta_vulgaris/Beta_vulgaris.RefBeet-1.2.2.pep.AllProtein.fa": "All protein sequences for Beta vulgaris, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Beta_vulgaris.RefBeet-1.2.2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "brachypodium distachyon": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -70,7 +86,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/brachypodium_distachyon/Brachypodium_distachyon.Brachypodium_distachyon_v3.0.pep.AllProtein.fa": "All protein sequences for Brachypodium distachyon, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brachypodium_distachyon.Brachypodium_distachyon_v3.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "brassica napus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -78,7 +96,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_napus/Brassica_napus.AST_PRJEB5043_v1.pep.AllProtein.fa": "All protein sequences for Brassica napus, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_napus.AST_PRJEB5043_v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "brassica oleracea": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -86,7 +106,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_oleracea/Brassica_oleracea.BOL.pep.AllProtein.fa": "All protein sequences for Brassica oleracea, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_oleracea.BOL.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "brassica rapa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -94,7 +116,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_rapa/Brassica_rapa.Brapa_1.0.pep.AllProtein.fa": "All protein sequences for Brassica rapa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_rapa.Brapa_1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "capsicum annuum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -102,7 +126,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/capsicum_annuum/Capsicum_annuum.ASM51225v2.pep.AllProtein.fa": "All protein sequences for Capsicum annuum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Capsicum_annuum.ASM51225v2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "chara braunii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -110,7 +136,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/chara_braunii/Chara_braunii.Cbr_1.0.pep.AllProtein.fa": "All protein sequences for Chara braunii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chara_braunii.Cbr_1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "chenopodium quinoa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -118,7 +146,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/chenopodium_quinoa/Chenopodium_quinoa.ASM168347v1.pep.AllProtein.fa": "All protein sequences for Chenopodium quinoa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chenopodium_quinoa.ASM168347v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "chlamydomonas reinhardtii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -126,7 +156,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/chlamydomonas_reinhardtii/Chlamydomonas_reinhardtii.Chlamydomonas_reinhardtii_v5.5.pep.AllProtein.fa": "All protein sequences for Chlamydomonas reinhardtii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chlamydomonas_reinhardtii.Chlamydomonas_reinhardtii_v5.5.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "citrullus lanatus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -134,7 +166,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/citrullus_lanatus/Citrullus_lanatus.Cla97_v1.pep.AllProtein.fa": "All protein sequences for Citrullus lanatus, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Citrullus_lanatus.Cla97_v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "citrus clementina": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -142,7 +176,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/citrus_clementina/Citrus_clementina.Citrus_clementina_v1.0.pep.AllProtein.fa": "All protein sequences for Citrus clementina, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Citrus_clementina.Citrus_clementina_v1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "coffea canephora": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -150,7 +186,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.pep.AllProtein.fa": "All protein sequences for Coffea canephora, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "corylus avellana": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -158,7 +196,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/corylus_avellana/Corylus_avellana.CavTom2PMs-1.0.pep.AllProtein.fa": "All protein sequences for Corylus avellana, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Corylus_avellana.CavTom2PMs-1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "cucumis melo": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -166,7 +206,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/cucumis_melo/Cucumis_melo.Melonv4.pep.AllProtein.fa": "All protein sequences for Cucumis melo, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Cucumis_melo.Melonv4.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "cucumis sativus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -174,7 +216,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/cucumis_sativus/Cucumis_sativus.ASM407v2.pep.AllProtein.fa": "All protein sequences for Cucumis sativus, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Cucumis_sativus.ASM407v2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "daucus carota": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -182,7 +226,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/daucus_carota/Daucus_carota.ASM162521v1.pep.AllProtein.fa": "All protein sequences for Daucus carota, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Daucus_carota.ASM162521v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "digitaria exilis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -190,7 +236,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/digitaria_exilis/Digitaria_exilis.Fonio_CM05836.pep.AllProtein.fa": "All protein sequences for Digitaria exilis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Digitaria_exilis.Fonio_CM05836.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "eragrostis curvula": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -198,7 +246,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/eragrostis_curvula/Eragrostis_curvula.CERZOS_E.curvula1.0.pep.AllProtein.fa": "All protein sequences for Eragrostis curvula, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eragrostis_curvula.CERZOS_E.curvula1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "eucalyptus grandis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -206,7 +256,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/eucalyptus_grandis/Eucalyptus_grandis.Egrandis1_0.pep.AllProtein.fa": "All protein sequences for Eucalyptus grandis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eucalyptus_grandis.Egrandis1_0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "eutrema salsugineum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -214,7 +266,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/eutrema_salsugineum/Eutrema_salsugineum.Eutsalg1_0.pep.AllProtein.fa": "All protein sequences for Eutrema salsugineum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eutrema_salsugineum.Eutsalg1_0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -227,7 +281,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/gossypium_raimondii/Gossypium_raimondii.Graimondii2_0_v6.pep.AllProtein.fa": "All protein sequences for Gossypium raimondii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Gossypium_raimondii.Graimondii2_0_v6.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "helianthus annuus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -235,7 +291,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/helianthus_annuus/Helianthus_annuus.HanXRQr2.0-SUNRISE.pep.AllProtein.fa": "All protein sequences for Helianthus annuus, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Helianthus_annuus.HanXRQr2.0-SUNRISE.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "hordeum vulgare": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -243,7 +301,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/hordeum_vulgare/Hordeum_vulgare.MorexV3_pseudomolecules_assembly.pep.AllProtein.fa": "All protein sequences for Hordeum vulgare, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Hordeum_vulgare.MorexV3_pseudomolecules_assembly.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "lactuca sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -251,7 +311,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/lactuca_sativa/Lactuca_sativa.Lsat_Salinas_v7.pep.AllProtein.fa": "All protein sequences for Lactuca sativa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Lactuca_sativa.Lsat_Salinas_v7.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "lolium perenne": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -259,7 +321,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/lolium_perenne/Lolium_perenne.MPB_Lper_Kyuss_1697.pep.AllProtein.fa": "All protein sequences for Lolium perenne, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Lolium_perenne.MPB_Lper_Kyuss_1697.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "manihot esculenta": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -267,7 +331,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/manihot_esculenta/Manihot_esculenta.Manihot_esculenta_v6.pep.AllProtein.fa": "All protein sequences for Manihot esculenta, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Manihot_esculenta.Manihot_esculenta_v6.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "marchantia polymorpha": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -275,7 +341,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/marchantia_polymorpha/Marchantia_polymorpha.Marchanta_polymorpha_v1.pep.AllProtein.fa": "All protein sequences for Marchantia polymorpha, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Marchantia_polymorpha.Marchanta_polymorpha_v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "medicago truncatula": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -283,7 +351,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/medicago_truncatula/Medicago_truncatula.MedtrA17_4.0.pep.AllProtein.fa": "All protein sequences for Medicago truncatula, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Medicago_truncatula.MedtrA17_4.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "musa acuminata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -291,7 +361,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/musa_acuminata/Musa_acuminata.Musa_acuminata_v2.pep.AllProtein.fa": "All protein sequences for Musa acuminata, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Musa_acuminata.Musa_acuminata_v2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "olea europaea": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -299,7 +371,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/olea_europaea/Olea_europaea.OLEA9.pep.AllProtein.fa": "All protein sequences for Olea europaea, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Olea_europaea.OLEA9.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "oryza brachyantha": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -307,7 +381,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_brachyantha/Oryza_brachyantha.Oryza_brachyantha.v1.4b.pep.AllProtein.fa": "All protein sequences for Oryza brachyantha, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_brachyantha.Oryza_brachyantha.v1.4b.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "panicum hallii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -315,7 +391,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/panicum_hallii/Panicum_hallii.PhalliiHAL_v2.1.pep.AllProtein.fa": "All protein sequences for Panicum hallii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Panicum_hallii.PhalliiHAL_v2.1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "papaver somniferum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -323,7 +401,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/papaver_somniferum/Papaver_somniferum.ASM357369v1.pep.AllProtein.fa": "All protein sequences for Papaver somniferum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Papaver_somniferum.ASM357369v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "phaseolus vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -331,7 +411,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/phaseolus_vulgaris/Phaseolus_vulgaris.PhaVulg1_0.pep.AllProtein.fa": "All protein sequences for Phaseolus vulgaris, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Phaseolus_vulgaris.PhaVulg1_0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "physcomitrium patens": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -339,7 +421,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/physcomitrium_patens/Physcomitrium_patens.Phypa_V3.pep.AllProtein.fa": "All protein sequences for Physcomitrium patens, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Physcomitrium_patens.Phypa_V3.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "pisum sativum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -347,7 +431,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/pisum_sativum/Pisum_sativum.Pisum_sativum_v1a.pep.AllProtein.fa": "All protein sequences for Pisum sativum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Pisum_sativum.Pisum_sativum_v1a.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "populus trichocarpa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -355,7 +441,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/populus_trichocarpa/Populus_trichocarpa.Pop_tri_v4.pep.AllProtein.fa": "All protein sequences for Populus trichocarpa, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Populus_trichocarpa.Pop_tri_v4.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "prunus persica": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -363,7 +451,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/prunus_persica/Prunus_persica.Prunus_persica_NCBIv2.pep.AllProtein.fa": "All protein sequences for Prunus persica, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Prunus_persica.Prunus_persica_NCBIv2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "quercus lobata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -371,7 +461,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/quercus_lobata/Quercus_lobata.ValleyOak3.0.pep.AllProtein.fa": "All protein sequences for Quercus lobata, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Quercus_lobata.ValleyOak3.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "rosa chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -379,7 +471,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/rosa_chinensis/Rosa_chinensis.RchiOBHm-V2.pep.AllProtein.fa": "All protein sequences for Rosa chinensis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Rosa_chinensis.RchiOBHm-V2.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "saccharum spontaneum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -387,7 +481,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/saccharum_spontaneum/Saccharum_spontaneum.Sspon.HiC_chr_asm.pep.AllProtein.fa": "All protein sequences for Saccharum spontaneum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Saccharum_spontaneum.Sspon.HiC_chr_asm.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "secale cereale": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -395,7 +491,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/secale_cereale/Secale_cereale.Rye_Lo7_2018_v1p1p1.pep.AllProtein.fa": "All protein sequences for Secale cereale, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Secale_cereale.Rye_Lo7_2018_v1p1p1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "selaginella moellendorffii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -403,7 +501,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/selaginella_moellendorffii/Selaginella_moellendorffii.v1.0.pep.AllProtein.fa": "All protein sequences for Selaginella moellendorffii, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Selaginella_moellendorffii.v1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "setaria italica": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -411,7 +511,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/setaria_italica/Setaria_italica.Setaria_italica_v2.0.pep.AllProtein.fa": "All protein sequences for Setaria italica, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Setaria_italica.Setaria_italica_v2.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "setaria viridis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -419,7 +521,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/setaria_viridis/Setaria_viridis.Setaria_viridis_v2.0.pep.AllProtein.fa": "All protein sequences for Setaria viridis, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Setaria_viridis.Setaria_viridis_v2.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "solanum lycopersicum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -427,7 +531,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/solanum_lycopersicum/Solanum_lycopersicum.SL3.0.pep.AllProtein.fa": "All protein sequences for Solanum lycopersicum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Solanum_lycopersicum.SL3.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "solanum tuberosum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -435,7 +541,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/solanum_tuberosum/Solanum_tuberosum.SolTub_3.0.pep.AllProtein.fa": "All protein sequences for Solanum tuberosum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Solanum_tuberosum.SolTub_3.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "sorghum bicolor": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -443,7 +551,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/sorghum_bicolor/Sorghum_bicolor.Sorghum_bicolor_NCBIv3.pep.AllProtein.fa": "All protein sequences for Sorghum bicolor, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Sorghum_bicolor.Sorghum_bicolor_NCBIv3.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "theobroma cacao": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -451,7 +561,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/theobroma_cacao/Theobroma_cacao.Theobroma_cacao_20110822.pep.AllProtein.fa": "All protein sequences for Theobroma cacao, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Theobroma_cacao.Theobroma_cacao_20110822.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "trifolium pratense": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -459,7 +571,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/trifolium_pratense/Trifolium_pratense.Trpr.pep.AllProtein.fa": "All protein sequences for Trifolium pratense, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Trifolium_pratense.Trpr.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "triticum dicoccoides": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -467,7 +581,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_dicoccoides/Triticum_dicoccoides.WEWSeq_v.1.0.pep.AllProtein.fa": "All protein sequences for Triticum dicoccoides, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_dicoccoides.WEWSeq_v.1.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "triticum turgidum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -475,7 +591,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_turgidum/Triticum_turgidum.Svevo.v1.pep.AllProtein.fa": "All protein sequences for Triticum turgidum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_turgidum.Svevo.v1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "vitis vinifera": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -483,7 +601,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/vitis_vinifera/Vitis_vinifera.PN40024.v4.pep.AllProtein.fa": "All protein sequences for Vitis vinifera, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Vitis_vinifera.PN40024.v4.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "arabidopsis thaliana": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -491,7 +611,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.pep.AllProtein.fa": "All protein sequences for Arabidopsis thaliana, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Arabidopsis_thaliana.TAIR10.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "glycine max": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -499,7 +621,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/glycine_max/Glycine_max.Glycine_max_v2.1.pep.AllProtein.fa": "All protein sequences for Glycine max, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Glycine_max.Glycine_max_v2.1.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "triticum aestivum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -507,7 +631,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_aestivum/Triticum_aestivum.IWGSC.pep.AllProtein.fa": "All protein sequences for Triticum aestivum, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_aestivum.IWGSC.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         },
         "zea mays": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -515,7 +641,9 @@
             "/obs/phytomni/agent_data/raw_data/01.database/nr/nr.fasta": "NR Database, you need to get protein sequence in this file.",
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa": "All protein sequences for Zea mays, you can use gene_id to find a specific protein sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.pep.AllProtein.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
+            "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
         }
     },
     "deepgo2_analysis": {
@@ -979,7 +1107,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_sativa/Oryza_sativa.IRGSP-1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Oryza Sativa, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_sativa.IRGSP-1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "actinidia chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -987,7 +1116,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/actinidia_chinensis/Actinidia_chinensis.Red5_PS1_1.69.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Actinidia chinensis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Actinidia_chinensis.Red5_PS1_1.69.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "aegilops tauschii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -995,7 +1125,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/aegilops_tauschii/Aegilops_tauschii.Aet_v4.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Aegilops tauschii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Aegilops_tauschii.Aet_v4.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "amborella trichopoda": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1003,7 +1134,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/amborella_trichopoda/Amborella_trichopoda.AMTR1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Amborella trichopoda, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Amborella_trichopoda.AMTR1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "ananas comosus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1011,7 +1143,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/ananas_comosus/Ananas_comosus.F153.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Ananas comosus, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Ananas_comosus.F153.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "arabidopsis lyrata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1019,7 +1152,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/arabidopsis_lyrata/Arabidopsis_lyrata.v.1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Arabidopsis lyrata, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Arabidopsis_lyrata.v.1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "asparagus officinalis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1027,7 +1161,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/asparagus_officinalis/Asparagus_officinalis.Aspof.V1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Asparagus officinalis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Asparagus_officinalis.Aspof.V1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "beta vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1035,7 +1170,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/beta_vulgaris/Beta_vulgaris.RefBeet-1.2.2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Beta vulgaris, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Beta_vulgaris.RefBeet-1.2.2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "brachypodium distachyon": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1043,7 +1179,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/brachypodium_distachyon/Brachypodium_distachyon.Brachypodium_distachyon_v3.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Brachypodium distachyon, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brachypodium_distachyon.Brachypodium_distachyon_v3.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "brassica napus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1051,7 +1188,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_napus/Brassica_napus.AST_PRJEB5043_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Brassica napus, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_napus.AST_PRJEB5043_v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "brassica oleracea": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1059,7 +1197,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_oleracea/Brassica_oleracea.BOL.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Brassica oleracea, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_oleracea.BOL.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "brassica rapa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1067,7 +1206,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/brassica_rapa/Brassica_rapa.Brapa_1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Brassica rapa, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Brassica_rapa.Brapa_1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "capsicum annuum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1075,7 +1215,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/capsicum_annuum/Capsicum_annuum.ASM51225v2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Capsicum annuum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Capsicum_annuum.ASM51225v2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "chara braunii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1083,7 +1224,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/chara_braunii/Chara_braunii.Cbr_1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Chara braunii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chara_braunii.Cbr_1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "chenopodium quinoa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1091,7 +1233,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/chenopodium_quinoa/Chenopodium_quinoa.ASM168347v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Chenopodium quinoa, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chenopodium_quinoa.ASM168347v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "chlamydomonas reinhardtii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1099,7 +1242,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/chlamydomonas_reinhardtii/Chlamydomonas_reinhardtii.Chlamydomonas_reinhardtii_v5.5.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Chlamydomonas reinhardtii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Chlamydomonas_reinhardtii.Chlamydomonas_reinhardtii_v5.5.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "citrullus lanatus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1107,7 +1251,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/citrullus_lanatus/Citrullus_lanatus.Cla97_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Citrullus lanatus, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Citrullus_lanatus.Cla97_v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "citrus clementina": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1115,12 +1260,16 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/citrus_clementina/Citrus_clementina.Citrus_clementina_v1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Citrus clementina, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Citrus_clementina.Citrus_clementina_v1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "coffea canephora": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/": "65 species database for blastn index, index_name: promoter, if you want to use nt database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/promoter/promoter_index/promoter paramter",
-            "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Coffea canephora, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa > $out_file\""
+            "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Coffea canephora, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa > $out_file\"""/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "corylus avellana": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1128,7 +1277,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/corylus_avellana/Corylus_avellana.CavTom2PMs-1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Corylus avellana, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Corylus_avellana.CavTom2PMs-1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "cucumis melo": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1136,7 +1286,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/cucumis_melo/Cucumis_melo.Melonv4.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Cucumis melo, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Cucumis_melo.Melonv4.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "cucumis sativus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1144,7 +1295,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/cucumis_sativus/Cucumis_sativus.ASM407v2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Cucumis sativus, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Cucumis_sativus.ASM407v2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "daucus carota": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1152,7 +1304,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/daucus_carota/Daucus_carota.ASM162521v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Daucus carota, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Daucus_carota.ASM162521v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "digitaria exilis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1160,7 +1313,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/digitaria_exilis/Digitaria_exilis.Fonio_CM05836.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Digitaria exilis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Digitaria_exilis.Fonio_CM05836.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "eragrostis curvula": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1168,7 +1322,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/eragrostis_curvula/Eragrostis_curvula.CERZOS_E.curvula1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Eragrostis curvula, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eragrostis_curvula.CERZOS_E.curvula1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "eucalyptus grandis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1176,7 +1331,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/eucalyptus_grandis/Eucalyptus_grandis.Egrandis1_0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Eucalyptus grandis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eucalyptus_grandis.Egrandis1_0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "eutrema salsugineum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1184,7 +1340,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/eutrema_salsugineum/Eutrema_salsugineum.Eutsalg1_0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Eutrema salsugineum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Eutrema_salsugineum.Eutsalg1_0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1196,7 +1353,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/gossypium_raimondii/Gossypium_raimondii.Graimondii2_0_v6.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Gossypium raimondii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Gossypium_raimondii.Graimondii2_0_v6.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "helianthus annuus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1204,7 +1362,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/helianthus_annuus/Helianthus_annuus.HanXRQr2.0-SUNRISE.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Helianthus annuus, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Helianthus_annuus.HanXRQr2.0-SUNRISE.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "hordeum vulgare": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1212,7 +1371,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/hordeum_vulgare/Hordeum_vulgare.MorexV3_pseudomolecules_assembly.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Hordeum vulgare, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Hordeum_vulgare.MorexV3_pseudomolecules_assembly.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "lactuca sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1220,7 +1380,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/lactuca_sativa/Lactuca_sativa.Lsat_Salinas_v7.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Lactuca sativa, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Lactuca_sativa.Lsat_Salinas_v7.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "lolium perenne": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1228,7 +1389,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/lolium_perenne/Lolium_perenne.MPB_Lper_Kyuss_1697.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Lolium perenne, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Lolium_perenne.MPB_Lper_Kyuss_1697.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "manihot esculenta": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1236,7 +1398,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/manihot_esculenta/Manihot_esculenta.Manihot_esculenta_v6.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Manihot esculenta, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Manihot_esculenta.Manihot_esculenta_v6.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "marchantia polymorpha": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1244,7 +1407,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/marchantia_polymorpha/Marchantia_polymorpha.Marchanta_polymorpha_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Marchantia polymorpha, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Marchantia_polymorpha.Marchanta_polymorpha_v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "medicago truncatula": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1252,7 +1416,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/medicago_truncatula/Medicago_truncatula.MedtrA17_4.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Medicago truncatula, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Medicago_truncatula.MedtrA17_4.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "musa acuminata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1260,7 +1425,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/musa_acuminata/Musa_acuminata.Musa_acuminata_v2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Musa acuminata, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Musa_acuminata.Musa_acuminata_v2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "olea europaea": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1268,7 +1434,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/olea_europaea/Olea_europaea.OLEA9.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Olea europaea, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Olea_europaea.OLEA9.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "oryza brachyantha": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1276,7 +1443,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/oryza_brachyantha/Oryza_brachyantha.Oryza_brachyantha.v1.4b.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Oryza brachyantha, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Oryza_brachyantha.Oryza_brachyantha.v1.4b.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "panicum hallii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1284,7 +1452,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/panicum_hallii/Panicum_hallii.PhalliiHAL_v2.1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Panicum hallii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Panicum_hallii.PhalliiHAL_v2.1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "papaver somniferum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1292,7 +1461,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/papaver_somniferum/Papaver_somniferum.ASM357369v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Papaver somniferum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Papaver_somniferum.ASM357369v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "phaseolus vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1300,7 +1470,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/phaseolus_vulgaris/Phaseolus_vulgaris.PhaVulg1_0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Phaseolus vulgaris, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Phaseolus_vulgaris.PhaVulg1_0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "physcomitrium patens": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1308,7 +1479,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/physcomitrium_patens/Physcomitrium_patens.Phypa_V3.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Physcomitrium patens, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Physcomitrium_patens.Phypa_V3.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "pisum sativum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1316,7 +1488,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/pisum_sativum/Pisum_sativum.Pisum_sativum_v1a.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Pisum sativum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Pisum_sativum.Pisum_sativum_v1a.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "populus trichocarpa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1324,7 +1497,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/populus_trichocarpa/Populus_trichocarpa.Pop_tri_v4.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Populus trichocarpa, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Populus_trichocarpa.Pop_tri_v4.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "prunus persica": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1332,7 +1506,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/prunus_persica/Prunus_persica.Prunus_persica_NCBIv2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Prunus persica, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Prunus_persica.Prunus_persica_NCBIv2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "quercus lobata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1340,7 +1515,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/quercus_lobata/Quercus_lobata.ValleyOak3.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Quercus lobata, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Quercus_lobata.ValleyOak3.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "rosa chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1348,7 +1524,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/rosa_chinensis/Rosa_chinensis.RchiOBHm-V2.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Rosa chinensis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Rosa_chinensis.RchiOBHm-V2.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "saccharum spontaneum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1356,7 +1533,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/saccharum_spontaneum/Saccharum_spontaneum.Sspon.HiC_chr_asm.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Saccharum spontaneum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Saccharum_spontaneum.Sspon.HiC_chr_asm.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "secale cereale": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1364,7 +1542,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/secale_cereale/Secale_cereale.Rye_Lo7_2018_v1p1p1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Secale cereale, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Secale_cereale.Rye_Lo7_2018_v1p1p1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "selaginella moellendorffii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1372,7 +1551,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/selaginella_moellendorffii/Selaginella_moellendorffii.v1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Selaginella moellendorffii, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Selaginella_moellendorffii.v1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "setaria italica": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1380,7 +1560,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/setaria_italica/Setaria_italica.Setaria_italica_v2.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Setaria italica, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Setaria_italica.Setaria_italica_v2.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "setaria viridis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1388,7 +1569,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/setaria_viridis/Setaria_viridis.Setaria_viridis_v2.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Setaria viridis, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Setaria_viridis.Setaria_viridis_v2.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "solanum lycopersicum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1396,7 +1578,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/solanum_lycopersicum/Solanum_lycopersicum.SL3.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Solanum lycopersicum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Solanum_lycopersicum.SL3.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "solanum tuberosum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1404,7 +1587,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/solanum_tuberosum/Solanum_tuberosum.SolTub_3.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Solanum tuberosum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Solanum_tuberosum.SolTub_3.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "sorghum bicolor": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1412,7 +1596,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/sorghum_bicolor/Sorghum_bicolor.Sorghum_bicolor_NCBIv3.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Sorghum bicolor, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Sorghum_bicolor.Sorghum_bicolor_NCBIv3.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "theobroma cacao": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1420,7 +1605,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/theobroma_cacao/Theobroma_cacao.Theobroma_cacao_20110822.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Theobroma cacao, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Theobroma_cacao.Theobroma_cacao_20110822.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "trifolium pratense": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1428,7 +1614,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/trifolium_pratense/Trifolium_pratense.Trpr.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Trifolium pratense, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Trifolium_pratense.Trpr.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "triticum dicoccoides": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1436,7 +1623,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_dicoccoides/Triticum_dicoccoides.WEWSeq_v.1.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Triticum dicoccoides, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_dicoccoides.WEWSeq_v.1.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "triticum turgidum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1444,7 +1632,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_turgidum/Triticum_turgidum.Svevo.v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Triticum turgidum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_turgidum.Svevo.v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "vitis vinifera": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1452,7 +1641,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/vitis_vinifera/Vitis_vinifera.PN40024.v4.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Vitis vinifera, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Vitis_vinifera.PN40024.v4.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "arabidopsis thaliana": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1460,7 +1650,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Arabidopsis thaliana, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Arabidopsis_thaliana.TAIR10.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "glycine max": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1468,7 +1659,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/glycine_max/Glycine_max.Glycine_max_v2.1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Glycine max, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Glycine_max.Glycine_max_v2.1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "triticum aestivum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1476,7 +1668,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/triticum_aestivum/Triticum_aestivum.IWGSC.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Triticum aestivum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_aestivum.IWGSC.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         },
         "zea mays": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1484,7 +1677,8 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Zea mays, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Zea_mays.Zm-B73-REFERENCE-NAM-5.0.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results"
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
         }
     },
     "protein_design_analysis": {
