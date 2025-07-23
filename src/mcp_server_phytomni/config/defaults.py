@@ -266,3 +266,11 @@ class InSilicoResearchConfig(AnalystConfig):
 
     Inherits settings from `AnalystConfig`.
     """
+
+
+class GeneNetworkConfig(AnalystConfig):
+    """Configuration settings specific to gene network tasks.
+
+    Inherits settings from `AnalystConfig`.
+    """
+    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
