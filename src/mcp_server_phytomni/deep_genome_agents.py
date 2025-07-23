@@ -19,7 +19,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
-from .knowledge_agents import multi_retrieve
+from .knowledge_agents import multi_retrieve, response_to_string
 from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
 
@@ -646,7 +646,6 @@ async def async_gene_function(
     subject_id: str = dgc.SUBJECT_ID,
     dialog_id: str = dgc.DIALOG_ID,
     need_insight: bool = dgc.NEED_INSIGHT,
-    simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -684,6 +683,11 @@ async def async_gene_function(
     temperature: float = dgc.TEMPERATURE,
     top_p: float = dgc.TOP_P,
     user: str = dgc.USER,
+    deepgenome_out: str = dgc.DEEPGENOME_OUT,
+    result_template: str = dgc.TEMPLATE,
+    download_path: str = dgc.DOWNLOAD_PATH,
+    marker: Optional[str] = dgc.DOWNLOAD_MARKER,
+    max_keys: int = dgc.DOWNLOAD_MAX_KEYS,
     timeout: float = dgc.TIMEOUT,
     retriable_codes: List[int] = dgc.RETRIABLE_CODES,
     max_retries: int = dgc.MAX_RETRIES,
@@ -810,19 +814,19 @@ async def async_gene_function(
             `SPECIES_CODE_MAP` when preparing data for `gene_retrieve` or the
             final prompt.
     """
-    if not direct_return:
-        manager = _get_manager()
-        task_id = manager.create_task()
-        _ = await create_task(
-            url=create_task_url,
-            server_id=task_id,
-            server_status='running',
-            tool_name='DeepGenomeAgent',
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries)
+    manager = _get_manager()
+    server_task_id = manager.create_task()
+    _ = await create_task(
+        url=create_task_url,
+        server_id=server_task_id,
+        server_status='running',
+        tool_name='DeepGenomeAgent',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries)
 
     async def gene_function(
+        server_task_id: str,
         species_code: str,
         gene_id: str,
         user_id: str = dgc.USER_ID,
@@ -833,7 +837,6 @@ async def async_gene_function(
         subject_id: str = dgc.SUBJECT_ID,
         dialog_id: str = dgc.DIALOG_ID,
         need_insight: bool = dgc.NEED_INSIGHT,
-        simplify_response: bool = dgc.SIMPLIFY_RESPONSE,
         prompt_file: str = dgc.PROMPT_FILE,
         deepgenome_data: str = dgc.DEEPGENOME_DATA,
         output_dir: str = dgc.OUTPUT_DIR,
@@ -871,6 +874,11 @@ async def async_gene_function(
         temperature: float = dgc.TEMPERATURE,
         top_p: float = dgc.TOP_P,
         user: str = dgc.USER,
+        deepgenome_out: str = dgc.DEEPGENOME_OUT,
+        result_template: str = dgc.TEMPLATE,
+        download_path: str = dgc.DOWNLOAD_PATH,
+        marker: Optional[str] = dgc.DOWNLOAD_MARKER,
+        max_keys: int = dgc.DOWNLOAD_MAX_KEYS,
         timeout: float = dgc.TIMEOUT,
         retriable_codes: List[int] = dgc.RETRIABLE_CODES,
         max_retries: int = dgc.MAX_RETRIES,
@@ -1000,6 +1008,57 @@ async def async_gene_function(
                 internal `SPECIES_CODE_MAP` when preparing data for
                 `gene_retrieve` or the final prompt.
         """
+        if use_analyst_agent:
+            if direct_return:
+                raise ValueError(
+                    'When use_analyst_agent is True, direct_return cannot be '
+                    'True, because the analyst agent is time-consuming and '
+                    'cannot return directly.')
+            user_id = uuid1()
+            output_dir = create_output_dir(
+                user_id=user_id,
+                task=gene_id,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+            )
+            species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
+                ')').lower()
+            gene_task = await submit_gene_analysis(
+                species=species_str,
+                gene_id=gene_id,
+                epic_type=epic_type,
+                user_id=user_id,
+                batch=batch,
+                database_url=database_url,
+                workspace_id=workspace_id,
+                subject_id=subject_id,
+                dialog_id=dialog_id,
+                need_insight=need_insight,
+                prompt_file=prompt_file,
+                deepgenome_data=deepgenome_data,
+                output_dir=output_dir,
+                model_url=model_url,
+                model_name=model_name,
+                coder_api_key=coder_api_key,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+                analysis_url=analysis_url,
+                region=region,
+                resource_dict=resource_dict,
+                app_id_dict=app_id_dict,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+                max_poll=max_poll,
+            )
+            gene_task_str = dumps(gene_task)
+            manager.update_task(server_task_id, 'running',
+                                gene_task_str, output_dir)
+
         species_gene_list = [(species_code, gene_id)]
         if use_data_agent:
             gene_network_results = await gene_network(
@@ -1182,77 +1241,74 @@ async def async_gene_function(
                 retriable_codes=retriable_codes,
                 max_retries=max_retries,
             )
+        phyto_response['choices'][0]['message'].update(
+                {'doc_list': gene_retrieve_results['doc_list'],
+                 'total': 10000})
+        phyto_str = response_to_string(phyto_response)
 
         if use_analyst_agent:
-            user_id = uuid1()
-            output_dir = create_output_dir(
-                user_id=user_id,
-                task=gene_id,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
-            )
-            species_str = SPECIES_CODE_MAP[species_code].split('(')[1].strip(
-                ')').lower()
-            analysis_task = analysis_module(
-                species=species_str,
+            server_file_path = await summarize_gene_analysis(
                 gene_id=gene_id,
-                user_id=user_id,
-                batch=batch,
-                epic_type=epic_type,
-                database_url=database_url,
-                workspace_id=workspace_id,
-                subject_id=subject_id,
-                dialog_id=dialog_id,
-                need_insight=need_insight,
-                simplify_response=simplify_response,
-                prompt_file=prompt_file,
-                deepgenome_data=deepgenome_data,
-                output_dir=output_dir,
-                model_url=model_url,
-                model_name=model_name,
-                coder_api_key=coder_api_key,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
+                gene_task=gene_task,
+                deepgenome_out=deepgenome_out,
+                result_template=result_template,
                 analysis_url=analysis_url,
                 region=region,
-                resource_dict=resource_dict,
-                app_id_dict=app_id_dict,
+                download_path=download_path,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+                marker=marker,
+                max_keys=max_keys,
                 timeout=timeout,
                 retriable_codes=retriable_codes,
                 max_retries=max_retries,
                 max_poll=max_poll,
             )
-            if not direct_return:
-                analysis_task_str = dumps(analysis_task)
-                manager.update_task(task_id, 'running',
-                                    analysis_task_str, output_dir)
-        
-        
-        
-        if direct_return:
-            phyto_response['choices'][0]['message'].update(
-                {'doc_list': gene_retrieve_results['doc_list'],
-                 'total': 10000})
+            prepend_to_file(
+                server_file_path,
+                f'# In-depth Gene Characterization of {gene_id}\n'
+                f'{phyto_str}\n')
+            with open(server_file_path, 'r', encoding='utf-8') as f:
+                phyto_response['choices'][0]['message'].update(
+                    {'content': f.read()})
+
+            _ = await update_task(
+                url=update_task_url,
+                server_id=server_task_id,
+                server_status='finished',
+                server_file_path=server_file_path,
+                tool_result=dumps(phyto_response),
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries)
+            manager.update_task(server_task_id, 'finished',
+                                gene_task_str, output_dir)
+        elif direct_return:
             return phyto_response
-        _ = await update_task(
-            url=update_task_url,
-            server_id=task_id,
-            server_status='finished',
-            server_file_path='',
-            tool_result=dumps(phyto_response),
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries)
-        if use_analyst_agent:
-            manager.update_task(task_id, 'finished',
-                                analysis_task_str, output_dir)
+        else:
+            deepgenome_path = Path(deepgenome_out)
+            if not deepgenome_path.is_dir():
+                deepgenome_path.mkdir(parents=True)
+            server_file_path = str(deepgenome_path / f'{gene_id}_results.md')
+            with open(server_file_path, 'w', encoding='utf-8') as f:
+                f.write(f'# In-depth Gene Characterization of {gene_id}\n'
+                        + phyto_str)
+            _ = await update_task(
+                url=update_task_url,
+                server_id=server_task_id,
+                server_status='finished',
+                server_file_path=server_file_path,
+                tool_result=dumps(phyto_response),
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries)
+            manager.update_task(server_task_id, 'finished', '', '')
 
     def run_async():
         asyncio.run(gene_function(
+            server_task_id=server_task_id,
             species_code=species_code,
             gene_id=gene_id,
             user_id=user_id,
@@ -1263,7 +1319,6 @@ async def async_gene_function(
             subject_id=subject_id,
             dialog_id=dialog_id,
             need_insight=need_insight,
-            simplify_response=simplify_response,
             prompt_file=prompt_file,
             deepgenome_data=deepgenome_data,
             output_dir=output_dir,
@@ -1301,6 +1356,11 @@ async def async_gene_function(
             temperature=temperature,
             top_p=top_p,
             user=user,
+            deepgenome_out=deepgenome_out,
+            result_template=result_template,
+            download_path=download_path,
+            marker=marker,
+            max_keys=max_keys,
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
@@ -1313,6 +1373,7 @@ async def async_gene_function(
 
     if direct_return:
         return await gene_function(
+            server_task_id=server_task_id,
             species_code=species_code,
             gene_id=gene_id,
             user_id=user_id,
@@ -1323,7 +1384,6 @@ async def async_gene_function(
             subject_id=subject_id,
             dialog_id=dialog_id,
             need_insight=need_insight,
-            simplify_response=simplify_response,
             prompt_file=prompt_file,
             deepgenome_data=deepgenome_data,
             output_dir=output_dir,
@@ -1361,6 +1421,11 @@ async def async_gene_function(
             temperature=temperature,
             top_p=top_p,
             user=user,
+            deepgenome_out=deepgenome_out,
+            result_template=result_template,
+            download_path=download_path,
+            marker=marker,
+            max_keys=max_keys,
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,
@@ -1373,7 +1438,7 @@ async def async_gene_function(
     thread = Thread(target=run_async)
     thread.daemon = True
     thread.start()
-    return task_id
+    return server_task_id
 
 
 async def get_interaction_gene_list(
@@ -2828,4 +2893,15 @@ def find_species_code(species: str):
     for species_code, description in SPECIES_CODE_MAP.items():
         if species.lower() in description.lower():
             return species_code
+    return None
+
+
+def prepend_to_file(filename, text):
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            original_content = f.read()
+    except FileNotFoundError:
+        original_content = ''
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(text + original_content)
     return None
