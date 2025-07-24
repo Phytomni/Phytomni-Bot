@@ -669,6 +669,7 @@ user:
     NIP.'
   gene_network_analysis: 'Please help me to analysis the hormone regulatory network in 
     the traits of {{to_id}}'
+  haplotypes_analysis: 'Please help me to analyze the haplotype of {{gene_id}} gene'
   evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2: \
     \ You need to install diamond software using conda;\nstep1, Find Gene's Protein \
     \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find top40\
@@ -1028,6 +1029,18 @@ user:
     \         conda activate af3 && python construct_network.py --network $network_file\
     \  --network_class $network_class_file --to_id $to_id --to_file $to_file \
     \ --output_dir $output_dir\n</Usage>"
+  haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate af3);\
+    \ \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
+    \  $output_dir)\nstep2, analysis the promoter haplotypes using plot_promoter_hap.sh\
+    \ (conda activate af3)\n<plot example>\n    Tool_Usage:\n        Usage: plot_promoter_hap.sh\
+    \  -i <gene_id> -o <output_directory> [-p python_script]\n\n        This script visualizes\
+    \  transcripts for a given gene.\n\n        Options:\n        -i GENE_ID        Gene ID path(e.g., /path/TP53)\n\
+    \         -o OUTPUT_DIR     Output directory for generated images\n        -p PYTHON_SCRIPT\
+    \   Path to Python visualization script (default: visualizaition_hap.py)\n        \
+    \ -h                Show this help message\n\n        Example:\n        \
+    \ plot_promoter_hap.sh -i /path/to/hap/Os01g0177400 -o /path/to/output -p /script_path\n\
+    \     Tool_Example:\n        conda activate af3 && sh plot_promoter_hap.sh -i $promoter_path\
+    \  -o $output_dir -p $script_path\n</plot example>"
   gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
     Please provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
