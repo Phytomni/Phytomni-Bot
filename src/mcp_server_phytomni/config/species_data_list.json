@@ -2873,5 +2873,13 @@
             "/obs/phytomni/agent_data/raw_data/08.network_data/oryza_sativa/hormone_gene_network.txt": "Hormone regulatory networks", 
             "/obs/phytomni/agent_data/raw_data/08.network_data/oryza_sativa/hormone_gene_network_class.txt": "Hormone regulatory network node hormone type class"
         }
+    }, 
+    "haplotypes_analysis": {
+        "oryza sativa": {
+            "/obs/phytomni/agent_data/raw_data/07.haplotypes/07.haplotypes/oryza_sative/cds_haplotypes/gene_id": "Haplotypes in the cds region of the rice gene", 
+            "/obs/phytomni/agent_data/raw_data/07.haplotypes/07.haplotypes/oryza_sative/promoter_haplotypes/gene_id": "Haplotypes in the promoter region of the rice gene", 
+            "/obs/phytomni/agent_data/scripts/visualizaition_hap.py": "A script to plot promoter haplotype information.", 
+            "/obs/phytomni/agent_data/scripts/plot_promoter_hap.sh": "A bash script to plot all promoter transcript haplotype information."
+        }
     }
 }
