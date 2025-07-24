@@ -253,7 +253,10 @@ async def download_obs_list(
 def convert_single_file(server_file: str) -> str:
     md_instance = MarkItDown(
         docintel_endpoint='<document_intelligence_endpoint>')
-    return md_instance.convert(server_file)
+    result = md_instance.convert(server_file)
+    server_path = Path(server_file)
+    server_path.unlink()
+    return result
 
 
 def convert_multi_files(
