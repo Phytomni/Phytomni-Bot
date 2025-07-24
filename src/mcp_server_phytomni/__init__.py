@@ -12,11 +12,11 @@ from .knowledge_agents import multi_retrieve, multi_retrieve_generate
 from .knowledge_agents import response_to_string
 from .review_agents import deep_research
 from .task_manager import create_task, TaskManager, update_task
-from .utils import get_prompt, get_token, split_list
+from .utils import download_list_convert, get_prompt, get_token, split_list
 
 __all__ = ['config', 'create_output_dir', 'create_task', 'deep_research',
-           'gene_function', 'get_data_list', 'get_prompt', 'get_token',
-           'in_silico_research', 'multi_retrieve', 'multi_retrieve_generate',
-           'nl2sql', 'phyto_chat', 'response_to_string',
-           'retrieve_plan_submit', 'rewrite_nl2sql', 'split_list',
-           'TaskManager', 'update_task', 'wait_for_completion']
+           'download_list_convert', 'gene_function', 'get_data_list',
+           'get_prompt', 'get_token', 'in_silico_research', 'multi_retrieve',
+           'multi_retrieve_generate', 'nl2sql', 'phyto_chat',
+           'response_to_string', 'retrieve_plan_submit', 'rewrite_nl2sql',
+           'split_list', 'TaskManager', 'update_task', 'wait_for_completion']

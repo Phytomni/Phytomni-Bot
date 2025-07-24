@@ -13,6 +13,7 @@ PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
 DOWNLOAD_PATH = PARENT_PATH / '.out'
+TEMP_PATH = PARENT_PATH / '.temp'
 DEEPGENOME_GENE_TEMPLATE = PARENT_PATH / 'gene_function_result.md'
 
 
@@ -45,8 +46,12 @@ class ServerConfig(BaseSettings):
         MAX_POLL (float): Maximum duration in seconds for polling the status
             of long-running tasks.
     """
+    MAX_TOKENS: int = Field(MAX_TOKENS)
+
     PROMPT_FILE: str = Field(str(PROMPT_PATH))
     PROMPT_PATH: str = Field('system/ai4ps')
+
+    TEMP_DIR: str = Field(str(TEMP_PATH))
     TIMEOUT: float = Field(600)
     RETRIABLE_CODES: List[int] = Field([429, 500, 502, 503, 504])
     MAX_RETRIES: int = Field(5)
@@ -123,7 +128,6 @@ class ChatConfig(ServerConfig):
     USER: str = Field('test')
     TEMPERATURE: float = Field(0.3)
     TOP_P: float = Field(1)
-    MAX_TOKENS: int = Field(MAX_TOKENS)
     PRESENCE_PENALTY: float = Field(0)
     FREQUENCY_PENALTY: float = Field(0)
     N: int = Field(1)

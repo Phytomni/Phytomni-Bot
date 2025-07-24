@@ -19,7 +19,7 @@ from openai import AsyncOpenAI
 
 from .config.defaults import ChatConfig
 from .config.settings import SensitiveConfig
-from .utils import get_prompt
+from .utils import download_list_convert, get_prompt
 
 cc = ChatConfig()
 sc = SensitiveConfig().load()
@@ -27,6 +27,7 @@ sc = SensitiveConfig().load()
 
 async def phyto_chat(
     user_query: str,
+    obs_file_list: List[str] = [],
     prompt_file: str = cc.PROMPT_FILE,
     prompt_path: str = cc.PROMPT_PATH,
     api_key: str = sc.API_KEY.get_secret_value(),
@@ -41,9 +42,19 @@ async def phyto_chat(
     temperature: float = cc.TEMPERATURE,
     top_p: float = cc.TOP_P,
     user: str = cc.USER,
+    server_dir: str = cc.TEMP_DIR,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = cc.OBS_SERVER,
+    bucket_name: str = cc.BUCKET_NAME,
+    part_size: int = cc.PART_SIZT,
+    task_num: int = cc.TASK_NUM,
     timeout: float = cc.TIMEOUT,
     retriable_codes: List[int] = cc.RETRIABLE_CODES,
     max_retries: int = cc.MAX_RETRIES,
+    max_concurrency: int = cc.MAX_CONCURRENCY,
+    max_workers: int = cc.MAX_WORKERS,
+    max_tokens: int = cc.MAX_TOKENS,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Generate text using a Phyto model.
@@ -79,6 +90,35 @@ async def phyto_chat(
     Raises:
         McpError: If the API call fails after all retry attempts.
     """
+    if obs_file_list:
+        upload_str_list = download_list_convert(
+            obs_file_list=obs_file_list,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            max_workers=max_workers,
+        )
+        upload_results = []
+        total_length = 0
+        for i, doc in enumerate(upload_str_list):
+            fragment = (f'[user upload file {i+1} begin]\n'
+                        f'{doc}\n[user upload file {i+1} end]')
+            if total_length + len(fragment) <= max_tokens:
+                upload_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        upload_context = '\n\n'.join(upload_results)
+        user_query = (
+            'Based on the following files uploaded by the user:\n'
+            f'{upload_context}\n'
+            f"Please answer the user's questions:\n{user_query}")
     messages = [
         {
             'role': 'system',
