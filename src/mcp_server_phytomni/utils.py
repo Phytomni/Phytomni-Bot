@@ -2,11 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+import asyncio
 from json import dumps
 from math import ceil
 from pathlib import Path
 from re import sub
-import time
 from traceback import format_exc
 from typing import Dict, Optional
 from yaml import safe_load
@@ -171,7 +171,7 @@ def get_prompt(template_file: str,
     return render_template(template, parameters)
 
 
-def download_obs_file(
+async def download_obs_file(
     obs_file: str,
     server_dir: str,
     access_key_id: str = senc.AccessKeyID.get_secret_value(),
@@ -188,15 +188,19 @@ def download_obs_file(
     obs_client = ObsClient(access_key_id=access_key_id,
                            secret_access_key=secret_access_key,
                            server=obs_server)
+    loop = asyncio.get_event_loop()
     for attempt in range(max_retries + 1):
         try:
-            download_response = obs_client.downloadFile(
-                bucketName=bucket_name,
-                objectKey=obs_file,
-                downloadFile=server_file,
-                partSize=part_size,
-                taskNum=task_num,
-                enableCheckpoint=True,
+            download_response = await loop.run_in_executor(
+                None,
+                lambda: obs_client.downloadFile(
+                    bucketName=bucket_name,
+                    objectKey=obs_file,
+                    downloadFile=server_file,
+                    partSize=part_size,
+                    taskNum=task_num,
+                    enableCheckpoint=True,
+                ),
             )
             if download_response.status < 300:
                 return server_file
@@ -206,7 +210,7 @@ def download_obs_file(
                           f'errorMessage: {download_response.errorMessage}')
         except Exception as exc:
             if attempt < max_retries:
-                time.sleep(1.5 ** attempt)
+                await asyncio.sleep(1.5 ** attempt)
                 continue
             raise OSError(f'Download File Failed\n{format_exc()}') from exc
 
