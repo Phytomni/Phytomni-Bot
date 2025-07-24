@@ -48,8 +48,9 @@ class ServerConfig(BaseSettings):
     PROMPT_FILE: str = Field(str(PROMPT_PATH))
     PROMPT_PATH: str = Field('system/ai4ps')
     TIMEOUT: float = Field(600)
-    RETRIABLE_CODES: List[int] = [429, 500, 502, 503, 504]
-    MAX_RETRIES: int = 5
+    RETRIABLE_CODES: List[int] = Field([429, 500, 502, 503, 504])
+    MAX_RETRIES: int = Field(5)
+    MAX_CONCURRENCY: int = Field(4)
 
     TOKEN_URL: str = Field(
         'https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens')
@@ -248,7 +249,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
     DEEPGENOME_OUT: str = Field(str(DOWNLOAD_PATH))
     TEMPLATE: str = Field(str(DEEPGENOME_GENE_TEMPLATE))
-    MAX_CONCURRENCY: int = Field(8)
     CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
                                  'create_task')
     UPDATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
