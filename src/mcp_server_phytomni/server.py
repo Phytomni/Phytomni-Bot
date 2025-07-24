@@ -5,7 +5,7 @@
 import asyncio
 from enum import Enum
 from json import dumps
-from typing import Annotated, Dict
+from typing import Annotated, Dict, List
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -32,6 +32,26 @@ class ChatAgent(BaseModel):
         str,
         Field(
             description="The user's query string for generating text.",
+        ),
+    ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
         ),
     ]
 
@@ -91,7 +111,7 @@ class AnalystAgent(BaseModel):
                 },
                 "x-java-default": "new HashMap<>()",
                 "x-csharp-default": "new Dictionary<string, string>()",
-            }
+            },
         ),
     ]
 
@@ -376,6 +396,7 @@ async def serve() -> None:
                 sensitiveconfig = SensitiveConfig().load()
                 response = await phyto_chat(
                     user_query=args.user_query,
+                    obs_file_list=args.obs_file_list,
                     prompt_file=chatconfig.PROMPT_FILE,
                     prompt_path=chatconfig.PROMPT_PATH,
                     api_key=sensitiveconfig.API_KEY.get_secret_value(),
@@ -390,9 +411,21 @@ async def serve() -> None:
                     temperature=chatconfig.TEMPERATURE,
                     top_p=chatconfig.TOP_P,
                     user=chatconfig.USER,
+                    server_dir=chatconfig.TEMP_DIR,
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=chatconfig.OBS_SERVER,
+                    bucket_name=chatconfig.BUCKET_NAME,
+                    part_size=chatconfig.PART_SIZT,
+                    task_num=chatconfig.TASK_NUM,
                     timeout=chatconfig.TIMEOUT,
                     retriable_codes=chatconfig.RETRIABLE_CODES,
                     max_retries=chatconfig.MAX_RETRIES,
+                    max_concurrency=chatconfig.MAX_CONCURRENCY,
+                    max_workers=chatconfig.MAX_WORKERS,
+                    max_tokens=chatconfig.MAX_TOKENS,
                 )
                 return [TextContent(
                     type='text',
