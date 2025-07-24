@@ -23,7 +23,6 @@ from .config.settings import SensitiveConfig
 
 serc = ServerConfig()
 senc = SensitiveConfig().load()
-md_instance = None
 
 
 async def get_token(timeout: float = serc.TIMEOUT,
@@ -251,23 +250,60 @@ async def download_obs_list(
     return await asyncio.gather(*tasks)
 
 
-def files_to_string(
+def convert_single_file(server_file: str) -> str:
+    md_instance = MarkItDown(
+        docintel_endpoint='<document_intelligence_endpoint>')
+    return md_instance.convert(server_file)
+
+
+def convert_multi_files(
     server_file_list: List[str],
     max_workers: int = serc.MAX_WORKERS,
 ) -> List[str]:
-
-    def init_worker():
-        global md_instance
-        md_instance = MarkItDown(
-            docintel_endpoint='<document_intelligence_endpoint>')
-
-    def convert_single_file(server_file: str) -> str:
-        return md_instance.convert(server_file)
-
-    with ProcessPoolExecutor(max_workers=max_workers,
-                             initializer=init_worker) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(convert_single_file, server_file_list))
     return results
+
+
+async def download_list_convert(
+    obs_file_list: List[str],
+    server_dir: str,
+    access_key_id: str = senc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
+    obs_server: str = serc.OBS_SERVER,
+    bucket_name: str = serc.BUCKET_NAME,
+    part_size: int = serc.PART_SIZT,
+    task_num: int = serc.TASK_NUM,
+    max_retries: int = serc.MAX_RETRIES,
+    max_concurrency: int = serc.MAX_CONCURRENCY,
+    max_workers: int = serc.MAX_WORKERS,
+) -> List[str]:
+    semaphore = asyncio.Semaphore(max_concurrency)
+    executor = ProcessPoolExecutor(max_workers=max_workers)
+
+    async def download_and_convert(obs_file: str) -> str:
+        async with semaphore:
+            server_file = await download_obs_file(
+                obs_file=obs_file,
+                server_dir=server_dir,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+                part_size=part_size,
+                task_num=task_num,
+                max_retries=max_retries,
+            )
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(executor, convert_single_file,
+                                                server_file)
+            return result
+
+    try:
+        tasks = [download_and_convert(obs_file) for obs_file in obs_file_list]
+        return await asyncio.gather(*tasks)
+    finally:
+        executor.shutdown(wait=True)
 
 
 def split_list(lst, max_size: int = 128):
