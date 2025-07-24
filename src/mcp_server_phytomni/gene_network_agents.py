@@ -1,14 +1,14 @@
-import asyncio
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Author: maoyc_0316@163.com
+#         xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 from uuid import uuid1
-from typing import Any, List, Literal, Dict, Optional, Union
+from typing import List, Dict
 
-from .analyst_agents import submit
-from .analyst_agents import create_output_dir, download_obs_out, get_data_list
-from pathlib import Path
-
+from .analyst_agents import create_output_dir, get_data_list, submit
 from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig
-
 from .utils import get_prompt
 
 gnc = GeneNetworkConfig()
@@ -50,7 +50,7 @@ async def network_analysis(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    
+
     goal_description = get_prompt(
         prompt_file, 'user/gene_network_analysis',
         {'to_id': to_id})
@@ -86,4 +86,3 @@ async def network_analysis(
         max_poll=max_poll,
     )
     return {'network_task': gene_network_task}
-
