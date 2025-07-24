@@ -78,6 +78,11 @@ class ServerConfig(BaseSettings):
     WORKSPACE_ID: str = Field('6e939452a68f487f873c457f1953cf55')
     SUBJECT_ID: str = Field('f6798956-2ce3-45a3-8dd1-cac242287531')
 
+    OBS_SERVER: str = Field('https://obs.cn-east-3.myhuaweicloud.com')
+    BUCKET_NAME: str = Field('phytomni')
+    PART_SIZT: int = Field(16777216)
+    TASK_NUM: int = Field(8)
+
     POLL_INTERVAL: float = Field(300)
     MAX_POLL: float = Field(86400)
 
@@ -196,8 +201,6 @@ class AnalystConfig(KnowledgeConfig):
         APP_ID: app id in difference compute resource
         RESOURCE: cpu and memory information in difference compute resource.
     """
-    OBS_SERVER: str = Field('https://obs.cn-east-3.myhuaweicloud.com')
-    BUCKET_NAME: str = Field('phytomni')
     OUTPUT_DIR: str = Field('/obs/phytomni/agent_data/test/')
     COMPUTE_RESOURCE: Literal['small', 'medium', 'large'] = Field('small')
     TASK_NAME: str = Field('analyst-agents-task')

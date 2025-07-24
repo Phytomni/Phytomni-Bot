@@ -6,22 +6,25 @@ from json import dumps
 from math import ceil
 from pathlib import Path
 from re import sub
+import time
+from traceback import format_exc
 from typing import Dict, Optional
 from yaml import safe_load
 
 from httpx import AsyncClient, HTTPError, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
+from obs import ObsClient
 
 from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
 
-serverconfig = ServerConfig()
-sensitiveconfig = SensitiveConfig().load()
+serc = ServerConfig()
+senc = SensitiveConfig().load()
 
 
-async def get_token(timeout: float = serverconfig.TIMEOUT,
-                    region: str = serverconfig.REGION) -> str:
+async def get_token(timeout: float = serc.TIMEOUT,
+                    region: str = serc.REGION) -> str:
     """Obtain X-Subject-Token for API authentication.
 
     Args:
@@ -40,34 +43,34 @@ async def get_token(timeout: float = serverconfig.TIMEOUT,
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        password = sensitiveconfig.USER_PASSWORD.get_secret_value()
+        password = senc.USER_PASSWORD.get_secret_value()
         data = {
-            "auth": {
-                "identity": {
-                    "methods": ["password"],
-                    "password": {
-                        "user": {
-                            "name": sensitiveconfig.USER_NAME,
-                            "password": password,
-                            "domain": {"name": sensitiveconfig.DOMAIN_NAME},
+            'auth': {
+                'identity': {
+                    'methods': ['password'],
+                    'password': {
+                        'user': {
+                            'name': senc.USER_NAME,
+                            'password': password,
+                            'domain': {'name': senc.DOMAIN_NAME},
                         },
                     },
                 },
-                "scope": {"project": {"name": region}},
+                'scope': {'project': {'name': region}},
             },
         }
         try:
             response = await client.post(
-                serverconfig.TOKEN_URL,
-                headers={"Content-Type": "application/json"},
+                serc.TOKEN_URL,
+                headers={'Content-Type': 'application/json'},
                 data=dumps(data),
                 timeout=timeout)
             response.raise_for_status()
-            return response.headers["X-Subject-Token"]
+            return response.headers['X-Subject-Token']
         except HTTPError as e:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
-                message=f"Failed to get token: {str(e)}")) from e
+                message=f'Failed to get token: {str(e)}')) from e
 
 
 def load_template(template_file: str,
@@ -92,7 +95,7 @@ def load_template(template_file: str,
     """
     template_file = Path(template_file)
     if not template_file.is_file():
-        raise FileNotFoundError(f"Template file not found: {template_file}")
+        raise FileNotFoundError(f'Template file not found: {template_file}')
     with open(template_file, 'r', encoding='utf-8') as f:
         data = safe_load(f)
     if template_str:
@@ -108,7 +111,7 @@ def load_template(template_file: str,
             return next(iter(data.values()))
         else:
             raise ValueError(
-                "Must specify template_str for multi-level templates")
+                'Must specify template_str for multi-level templates')
 
 
 def render_template(template: str,
@@ -135,7 +138,7 @@ def render_template(template: str,
     def replacer(match):
         param_name = match.group(1).strip()
         if param_name not in parameters:
-            raise ValueError(f"Missing parameter: {param_name}")
+            raise ValueError(f'Missing parameter: {param_name}')
         return str(parameters[param_name])
 
     return sub(pattern, replacer, template)
@@ -166,6 +169,46 @@ def get_prompt(template_file: str,
         parameters = {}
     template = load_template(template_file, template_str)
     return render_template(template, parameters)
+
+
+def download_obs_file(
+    obs_file: str,
+    server_dir: str,
+    access_key_id: str = senc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
+    obs_server: str = serc.OBS_SERVER,
+    bucket_name: str = serc.BUCKET_NAME,
+    part_size: int = serc.PART_SIZT,
+    task_num: int = serc.TASK_NUM,
+    max_retries: int = serc.MAX_RETRIES,
+) -> str:
+    server_path = Path(server_dir)
+    server_path.mkdir(parents=True, exist_ok=True)
+    server_file = str(server_path / Path(obs_file).name)
+    obs_client = ObsClient(access_key_id=access_key_id,
+                           secret_access_key=secret_access_key,
+                           server=obs_server)
+    for attempt in range(max_retries + 1):
+        try:
+            download_response = obs_client.downloadFile(
+                bucketName=bucket_name,
+                objectKey=obs_file,
+                downloadFile=server_file,
+                partSize=part_size,
+                taskNum=task_num,
+                enableCheckpoint=True,
+            )
+            if download_response.status < 300:
+                return server_file
+            raise OSError(f'Download File Failed\n'
+                          f'requestId: {download_response.requestId}\n'
+                          f'errorCode: {download_response.errorCode}\n'
+                          f'errorMessage: {download_response.errorMessage}')
+        except Exception as exc:
+            if attempt < max_retries:
+                time.sleep(1.5 ** attempt)
+                continue
+            raise OSError(f'Download File Failed\n{format_exc()}') from exc
 
 
 def split_list(lst, max_size: int = 128):
