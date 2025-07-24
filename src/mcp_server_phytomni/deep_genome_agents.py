@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
 from collections import deque
-from json import dumps
+from json import dumps, loads
 from pathlib import Path
 from random import randint
 from threading import Thread
@@ -2175,11 +2175,6 @@ async def haplotypes_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
-    database_url: str = dgc.DATABASE_URL,
-    workspace_id: str = dgc.WORKSPACE_ID,
-    subject_id: str = dgc.SUBJECT_ID,
-    dialog_id: str = dgc.DIALOG_ID,
-    need_insight: bool = dgc.NEED_INSIGHT,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2199,6 +2194,10 @@ async def haplotypes_analysis(
     max_retries: int = dgc.MAX_RETRIES,
     max_poll: float = dgc.MAX_POLL,
 ) -> dict:
+    goal_description = get_prompt(prompt_file, 'user/haplotypes_analysis',
+                                  {'gene_id': gene_id})
+    data_list = get_data_list(deepgenome_data, 'haplotypes_analysis', species)
+    data_list = loads(dumps(data_list).replace("gene_id", gene_id))
     if not batch:
         if not user_id:
             user_id = uuid1()
@@ -2210,7 +2209,34 @@ async def haplotypes_analysis(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    pass
+    meta = get_prompt(prompt_file, 'user/haplotypes_analysis_meta')
+    haplotypes_task = await submit(
+        goal_description=goal_description,
+        data_list=data_list,
+        user_id=user_id,
+        is_create_dir=False,
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-haplotypes-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='small',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'haplotypes_task': haplotypes_task}
 
 
 async def gene_expression_analysis(
