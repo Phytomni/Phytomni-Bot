@@ -27,7 +27,6 @@ async def extract_goals(
     n: int = isrc.N,
     presence_penalty: float = isrc.PRESENCE_PENALTY,
     reasoning_effort: str = isrc.REASONING_EFFORT,
-    # response_format: Dict[str, Union[str, Dict]] = isrc.RESPONSE_FORMAT,
     stream: bool = isrc.STREAM,
     temperature: float = isrc.TEMPERATURE,
     top_p: float = isrc.TOP_P,
@@ -51,24 +50,38 @@ async def extract_goals(
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
         response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "type": "array",
-                "description": "A list of research objectives derived from the paper. Each objective is a dictionary containing a consolidated goal and its supporting context.",
-                "items": {
-                    "type": "object",
-                    "description": "Represents a single, end-to-end research objective.",
-                    "properties": {
-                        "goal": {
-                            "type": "string",
-                            "description": "A comprehensive, single-string summary of the entire workflow required to reproduce a key finding or figure, detailing all major steps from data acquisition to final analysis."
+            'type': 'json_schema',
+            'json_schema': {
+                'type': 'array',
+                'description':
+                    'A list of research objectives derived from the paper. '
+                    'Each objective is a dictionary containing a consolidated '
+                    'goal and its supporting context.',
+                'items': {
+                    'type': 'object',
+                    'description':
+                        'Represents a single, end-to-end research objective.',
+                    'properties': {
+                        'goal': {
+                            'type': 'string',
+                            'description':
+                                'A comprehensive, single-string summary of '
+                                'the entire workflow required to reproduce a '
+                                'key finding or figure, detailing all major '
+                                'steps from data acquisition to final '
+                                'analysis.',
                         },
-                        "context": {
-                            "type": "string",
-                            "description": "Aggregated text snippets from the original paper (e.g., Methods, Results, Figure Legends) that provide the necessary details, parameters, and evidence for executing the specified goal."
+                        'context': {
+                            'type': 'string',
+                            'description':
+                                'Aggregated text snippets from the original '
+                                'paper (e.g., Methods, Results, Figure '
+                                'Legends) that provide the necessary details, '
+                                'parameters, and evidence for executing the '
+                                'specified goal.',
                         }
                     },
-                    "required": ["goal", "context"]
+                    'required': ['goal', 'context']
                 }
             }
         },
