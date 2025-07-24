@@ -212,3 +212,6 @@ __marimo__/
 
 # Gemini CLI
 package-lock.json
+
+# Results
+.out
