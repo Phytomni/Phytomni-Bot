@@ -8,7 +8,7 @@ from math import ceil
 from pathlib import Path
 from re import sub
 from traceback import format_exc
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from yaml import safe_load
 
 from httpx import AsyncClient, HTTPError, Timeout
@@ -213,6 +213,39 @@ async def download_obs_file(
                 await asyncio.sleep(1.5 ** attempt)
                 continue
             raise OSError(f'Download File Failed\n{format_exc()}') from exc
+
+
+async def download_obs_list(
+    obs_file_list: List[str],
+    server_dir: str,
+    access_key_id: str = senc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
+    obs_server: str = serc.OBS_SERVER,
+    bucket_name: str = serc.BUCKET_NAME,
+    part_size: int = serc.PART_SIZT,
+    task_num: int = serc.TASK_NUM,
+    max_retries: int = serc.MAX_RETRIES,
+    max_concurrency: int = serc.MAX_CONCURRENCY,
+) -> List[str]:
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def download_with_semaphore(obs_file: str) -> str:
+        async with semaphore:
+            return await download_obs_file(
+                obs_file=obs_file,
+                server_dir=server_dir,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=obs_server,
+                bucket_name=bucket_name,
+                part_size=part_size,
+                task_num=task_num,
+                max_retries=max_retries,
+                )
+
+    tasks = [download_with_semaphore(obs_file)
+             for obs_file in obs_file_list]
+    return await asyncio.gather(*tasks)
 
 
 def split_list(lst, max_size: int = 128):
