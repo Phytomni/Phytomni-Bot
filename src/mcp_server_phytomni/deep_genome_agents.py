@@ -1,3 +1,4 @@
+# Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: maoyc_0316@163.com
 #         xieshang (xieshang0608@gmail.com)
@@ -633,7 +634,7 @@ async def gene_retrieve(
         return await get_gene_retrieve()
 
 
-async def async_gene_function(
+async def gene_function(
     species_code: str,
     gene_id: str,
     user_id: str = dgc.USER_ID,
@@ -1045,7 +1046,7 @@ async def async_gene_function(
     thread = Thread(target=thread_target)
     thread.daemon = True
     thread.start()
-    return server_task_id
+    return {'task_id': server_task_id}
 
 
 async def get_interaction_gene_list(
@@ -1804,7 +1805,7 @@ async def haplotypes_analysis(
     goal_description = get_prompt(prompt_file, 'user/haplotypes_analysis',
                                   {'gene_id': gene_id})
     data_list = get_data_list(deepgenome_data, 'haplotypes_analysis', species)
-    data_list = loads(dumps(data_list).replace("gene_id", gene_id))
+    data_list = loads(dumps(data_list).replace('gene_id', gene_id))
     if not batch:
         if not user_id:
             user_id = uuid1()
