@@ -499,4 +499,4 @@ def response_to_string(phyto_response: dict):
             doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n'
         else:
             doc_string += f'[{doc_id+1}] ' + title + '\n'
-    return content + '\n**Reference:**\n' + doc_string
+    return content + '\n\n**Reference:**\n' + doc_string
