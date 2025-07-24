@@ -3,6 +3,7 @@
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from json import dumps
 from math import ceil
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Dict, List, Optional
 from yaml import safe_load
 
 from httpx import AsyncClient, HTTPError, Timeout
+from markitdown import MarkItDown
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import ObsClient
@@ -21,6 +23,7 @@ from .config.settings import SensitiveConfig
 
 serc = ServerConfig()
 senc = SensitiveConfig().load()
+md_instance = None
 
 
 async def get_token(timeout: float = serc.TIMEOUT,
@@ -246,6 +249,25 @@ async def download_obs_list(
     tasks = [download_with_semaphore(obs_file)
              for obs_file in obs_file_list]
     return await asyncio.gather(*tasks)
+
+
+def files_to_string(
+    server_file_list: List[str],
+    max_workers: int = serc.MAX_WORKERS,
+) -> List[str]:
+
+    def init_worker():
+        global md_instance
+        md_instance = MarkItDown(
+            docintel_endpoint='<document_intelligence_endpoint>')
+
+    def convert_single_file(server_file: str) -> str:
+        return md_instance.convert(server_file)
+
+    with ProcessPoolExecutor(max_workers=max_workers,
+                             initializer=init_worker) as executor:
+        results = list(executor.map(convert_single_file, server_file_list))
+    return results
 
 
 def split_list(lst, max_size: int = 128):

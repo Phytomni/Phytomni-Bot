@@ -51,6 +51,7 @@ class ServerConfig(BaseSettings):
     RETRIABLE_CODES: List[int] = Field([429, 500, 502, 503, 504])
     MAX_RETRIES: int = Field(5)
     MAX_CONCURRENCY: int = Field(4)
+    MAX_WORKERS: int = Field(4)
 
     TOKEN_URL: str = Field(
         'https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens')
