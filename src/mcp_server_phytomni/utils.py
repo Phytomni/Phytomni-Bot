@@ -280,9 +280,12 @@ async def download_list_convert(
     max_retries: int = serc.MAX_RETRIES,
     max_concurrency: int = serc.MAX_CONCURRENCY,
     max_workers: int = serc.MAX_WORKERS,
+    executor: Optional[ProcessPoolExecutor] = None,
 ) -> List[str]:
     semaphore = asyncio.Semaphore(max_concurrency)
-    executor = ProcessPoolExecutor(max_workers=max_workers)
+    should_shutdown = executor is None
+    if should_shutdown:
+        executor = ProcessPoolExecutor(max_workers=max_workers)
 
     async def download_and_convert(obs_file: str) -> str:
         async with semaphore:
@@ -306,7 +309,8 @@ async def download_list_convert(
         tasks = [download_and_convert(obs_file) for obs_file in obs_file_list]
         return await asyncio.gather(*tasks)
     finally:
-        executor.shutdown(wait=True)
+        if should_shutdown and executor is not None:
+            executor.shutdown(wait=True)
 
 
 def split_list(lst, max_size: int = 128):
