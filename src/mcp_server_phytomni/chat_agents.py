@@ -91,7 +91,7 @@ async def phyto_chat(
         McpError: If the API call fails after all retry attempts.
     """
     if obs_file_list:
-        upload_str_list = download_list_convert(
+        upload_str_list = await download_list_convert(
             obs_file_list=obs_file_list,
             server_dir=server_dir,
             access_key_id=access_key_id,
