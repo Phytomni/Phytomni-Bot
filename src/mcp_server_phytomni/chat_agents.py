@@ -172,22 +172,22 @@ async def phyto_chat(
                         'stop_reason': None,
                     }]})
                     return chat_completions
-                else:
-                    chat_completions = await client.chat.completions.create(
-                        messages=messages,
-                        model=model,
-                        frequency_penalty=frequency_penalty,
-                        n=n,
-                        presence_penalty=presence_penalty,
-                        reasoning_effort=reasoning_effort,
-                        response_format=response_format,
-                        stream=stream,
-                        temperature=temperature,
-                        top_p=top_p,
-                        user=user,
-                        timeout=timeout,
-                    )
-                    return chat_completions.model_dump()
+
+                chat_completions = await client.chat.completions.create(
+                    messages=messages,
+                    model=model,
+                    frequency_penalty=frequency_penalty,
+                    n=n,
+                    presence_penalty=presence_penalty,
+                    reasoning_effort=reasoning_effort,
+                    response_format=response_format,
+                    stream=stream,
+                    temperature=temperature,
+                    top_p=top_p,
+                    user=user,
+                    timeout=timeout,
+                )
+                return chat_completions.model_dump()
 
             except HTTPStatusError as e:
                 if (
