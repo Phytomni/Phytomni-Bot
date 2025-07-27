@@ -15,7 +15,8 @@ Key functionalities include:
 - Performing a comprehensive gene function analysis by orchestrating the
   above operations and using a large language model to generate a summary.
 - Submitting and monitoring various types of specialized gene analysis tasks
-  (e.g., evolution analysis, protein structure prediction, expression analysis).
+  (e.g., evolution analysis, protein structure prediction,
+   expression analysis).
 - Downloading and summarizing results from completed analysis tasks.
 """
 import asyncio
@@ -144,21 +145,19 @@ async def gene_network(species_code: str,
         gene_id: The identifier of the primary gene for which to find
             orthologs, paralogs, and interactions.
         workspace_id: Identifier for the workspace containing the data, passed
-            to the `nl2sql` function. Defaults to `WORKSPACE_ID`.
+            to the `nl2sql` function.
         subject_id: Identifier for the specific database subject or schema to
             query against, passed to the `nl2sql` function.
-            Defaults to `SUBJECT_ID`.
         dialog_id: Identifier for the current dialog or conversation session,
-            passed to the `nl2sql` function. Defaults to `''`.
+            passed to the `nl2sql` function.
         need_insight: Flag indicating whether to generate insights based on the
             query results, passed to the `nl2sql` function.
-            Defaults to `NEED_INSIGHT`.
         timeout: Request timeout in seconds for the underlying `nl2sql` API
-            calls. Defaults to `TIMEOUT`.
+            calls.
         retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying `nl2sql` API calls. Defaults to `RETRIABLE_CODES`.
+            for underlying `nl2sql` API calls.
         max_retries: Maximum number of retry attempts for underlying `nl2sql`
-            API calls. Defaults to `MAX_RETRIES`.
+            API calls.
 
     Returns:
         Tuple[List[Tuple[str, str]], List[Tuple[str, str]],
@@ -253,24 +252,22 @@ async def gene_symbol(species_code: str,
         gene_id: The identifier of the gene for which symbols are being
             retrieved.
         workspace_id: Identifier for the workspace containing the data, passed
-            to the `nl2sql` function. Defaults to `WORKSPACE_ID`.
+            to the `nl2sql` function.
         subject_id: Identifier for the specific database subject or schema to
             query against, passed to the `nl2sql` function.
-            Defaults to `SUBJECT_ID`.
         dialog_id: Identifier for the current dialog or conversation session,
-            passed to the `nl2sql` function. Defaults to an empty string.
+            passed to the `nl2sql` function.
         need_insight: Flag indicating whether to generate insights based on the
             query results, passed to the `nl2sql` function.
-            Defaults to `NEED_INSIGHT`.
         timeout: Request timeout in seconds for the underlying `nl2sql` API
-            calls. Defaults to `TIMEOUT`.
+            calls.
         retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying `nl2sql` API calls. Defaults to `RETRIABLE_CODES`.
+            for underlying `nl2sql` API calls.
         max_retries: Maximum number of retry attempts for underlying `nl2sql`
-            API calls. Defaults to `MAX_RETRIES`.
+            API calls.
         semaphore: An optional `asyncio.Semaphore` instance to limit the
             concurrency of `nl2sql` calls if this function is called
-            multiple times concurrently. Defaults to `None`.
+            multiple times concurrently.
 
     Returns:
         A list of gene symbols associated with the given `gene_id` and
@@ -347,24 +344,22 @@ async def gene_annotation(species_code: str,
         gene_id: The identifier of the gene for which annotations are being
             retrieved.
         workspace_id: Identifier for the workspace containing the data, passed
-            to the `nl2sql` function. Defaults to `WORKSPACE_ID`.
+            to the `nl2sql` function.
         subject_id: Identifier for the specific database subject or schema to
             query against, passed to the `nl2sql` function.
-            Defaults to `SUBJECT_ID`.
         dialog_id: Identifier for the current dialog or conversation session,
-            passed to the `nl2sql` function. Defaults to an empty string.
+            passed to the `nl2sql` function.
         need_insight: Flag indicating whether to generate insights based on the
             query results, passed to the `nl2sql` function.
-            Defaults to `NEED_INSIGHT`.
         timeout: Request timeout in seconds for the underlying `nl2sql` API
-            calls. Defaults to `TIMEOUT`.
+            calls.
         retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying `nl2sql` API calls. Defaults to `RETRIABLE_CODES`.
+            for underlying `nl2sql` API calls.
         max_retries: Maximum number of retry attempts for underlying `nl2sql`
-            API calls. Defaults to `MAX_RETRIES`.
+            API calls.
         semaphore: An optional `asyncio.Semaphore` instance to limit the
             concurrency of `nl2sql` calls if this function is called
-            multiple times concurrently. Defaults to `None`.
+            multiple times concurrently.
 
     Returns:
         A dictionary containing various annotations for the specified gene.
@@ -453,7 +448,7 @@ def network_to_string(gene_network_list: list,
         network_type (str): The type of the network (e.g., "Orthologous",
                             "Paralogous"). This is used in the output string.
         top_n (int, optional): The number of top enriched terms to include in
-                               the summary. Defaults to 10.
+                               the summary.
 
     Returns:
         str: A formatted string containing the gene network information, or a
@@ -562,34 +557,34 @@ async def gene_retrieve(
             Note: This list is temporarily extended internally to include a
             newline-separated string of all its original elements for an
             additional combined query.
+        retrieve_url: The URL of the retrieval service.
         repo_id_dict: A dictionary mapping repository IDs (str) to their
             respective page sizes (int) for document retrieval, passed to
-            `multi_retrieve`. Defaults to `REPO_ID_DICT`.
+            `multi_retrieve`.
         page_num: Pagination page number for retrieval results from each
-            repository, passed to `multi_retrieve`. Defaults to `PAGE_NUM`.
+            repository, passed to `multi_retrieve`.
         filter_string: Optional filter criteria string for metadata filtering
             during document retrieval, passed to `multi_retrieve`.
-            Defaults to `FILTER_STRING`.
         extra_repo_ids: Optional list of additional repository IDs to include
             in the document retrieval, passed to `multi_retrieve`.
-            Defaults to `EXTRA_REPO_IDS`.
         score_threshold: Minimum relevance score threshold applied during
             document retrieval by `multi_retrieve`.
-            Defaults to `SCORE_THRESHOLD`.
         top_n: The number of top-scoring documents to retrieve from each
             individual `multi_retrieve` call, and also the number of
             top-scoring documents to return in the final merged and sorted
-            list. Defaults to `TOP_N`.
+            list.
         timeout: Request timeout in seconds for the underlying `multi_retrieve`
-            API calls. Defaults to `TIMEOUT`.
+            API calls.
+        rerank_url: The URL of the reranking service.
+        rerank_batch_size: The batch size for reranking operations, if
+            reranking is applied to retrieved documents.
         retriable_codes: List of HTTP status codes that will trigger a retry
             for underlying `multi_retrieve` API calls.
-            Defaults to `RETRIABLE_CODES`.
         max_retries: Maximum number of retry attempts for underlying
-            `multi_retrieve` API calls. Defaults to `MAX_RETRIES`.
+            `multi_retrieve` API calls.
         semaphore: An optional `asyncio.Semaphore` instance to limit the
             concurrency of `multi_retrieve` calls if this function is called
-            multiple times concurrently. Defaults to `None`.
+            multiple times concurrently.
 
     Returns:
         A dictionary containing the retrieval results. If `gene_symbol_list`
@@ -740,68 +735,64 @@ async def gene_function(
     Args:
         species_code: The species code for the primary gene of interest.
         gene_id: The identifier of the primary gene of interest.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to `BATCH`.
-        epic_type: The type of EPIC analysis to perform. Defaults to `EPIC_TYPE`.
+        epic_type: The type of EPIC analysis to perform.
         create_task_url: The URL for creating a task on the server.
-            Defaults to `CREATE_TASK_URL`.
         update_task_url: The URL for updating a task on the server.
-            Defaults to `UPDATE_TASK_URL`.
-        database_url: The URL for the database service. Defaults to `DATABASE_URL`.
-        workspace_id: The workspace identifier. Defaults to `WORKSPACE_ID`.
-        subject_id: The database subject identifier. Defaults to `SUBJECT_ID`.
-        dialog_id: The dialog identifier. Defaults to `DIALOG_ID`.
+        database_url: The URL for the database service.
+        workspace_id: The workspace identifier.
+        subject_id: The database subject identifier.
+        dialog_id: The dialog identifier.
         need_insight: Flag indicating whether insights should be generated.
-            Defaults to `NEED_INSIGHT`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        retrieve_url: The URL for the retrieval service. Defaults to `RETRIEVE_URL`.
-        repo_id_dict: A dictionary of repository identifiers. Defaults to `REPO_ID_DICT`.
-        page_num: The page number for retrieval. Defaults to `PAGE_NUM`.
-        filter_string: A string to filter retrieval results. Defaults to `FILTER_STRING`.
-        extra_repo_ids: A list of extra repository identifiers. Defaults to `EXTRA_REPO_IDS`.
-        rerank_url: The URL for the rerank service. Defaults to `RERANK_URL`.
-        rerank_batch_size: The batch size for reranking. Defaults to `RERANK_BATCH_SIZE`.
-        score_threshold: The minimum score threshold for retrieval. Defaults to `SCORE_THRESHOLD`.
-        top_n: The number of top results to return. Defaults to `TOP_N`.
-        prompt_path: The path to the prompt. Defaults to `PROMPT_PATH`.
-        api_key: The API key for the language model. Defaults to `API_KEY`.
-        base_url: The base URL for the language model. Defaults to `BASE_URL`.
-        frequency_penalty: The frequency penalty for the language model. Defaults to `FREQUENCY_PENALTY`.
-        max_tokens: The maximum number of tokens to generate. Defaults to `MAX_TOKENS`.
-        n: The number of completions to generate. Defaults to `N`.
-        presence_penalty: The presence penalty for the language model. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: The reasoning effort for the language model. Defaults to `REASONING_EFFORT`.
-        response_format: The format for the language model response. Defaults to `RESPONSE_FORMAT`.
-        stream: Flag indicating whether to stream the response. Defaults to `STREAM`.
-        temperature: The temperature for the language model. Defaults to `TEMPERATURE`.
-        top_p: The top_p value for the language model. Defaults to `TOP_P`.
-        user: The user for the language model. Defaults to `USER`.
-        deepgenome_out: The output directory for deep genome results. Defaults to `DEEPGENOME_OUT`.
-        result_template: The path to the result template. Defaults to `TEMPLATE`.
-        download_path: The path to download files. Defaults to `DOWNLOAD_PATH`.
-        marker: The marker for downloading files. Defaults to `DOWNLOAD_MARKER`.
-        max_keys: The maximum number of keys to download. Defaults to `DOWNLOAD_MAX_KEYS`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_concurrency: Maximum number of concurrent operations. Defaults to `MAX_CONCURRENCY`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
-        use_data_agent: Flag indicating whether to use the data agent. Defaults to True.
-        use_analyst_agent: Flag indicating whether to use the analyst agent. Defaults to True.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        retrieve_url: The URL for the retrieval service.
+        repo_id_dict: A dictionary of repository identifiers.
+        page_num: The page number for retrieval.
+        filter_string: A string to filter retrieval results.
+        extra_repo_ids: A list of extra repository identifiers.
+        rerank_url: The URL for the rerank service.
+        rerank_batch_size: The batch size for reranking.
+        score_threshold: The minimum score threshold for retrieval.
+        top_n: The number of top results to return.
+        prompt_path: The path to the prompt.
+        api_key: The API key for the language model.
+        base_url: The base URL for the language model.
+        frequency_penalty: The frequency penalty for the language model.
+        max_tokens: The maximum number of tokens to generate.
+        n: The number of completions to generate.
+        presence_penalty: The presence penalty for the language model.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The format for the language model response.
+        stream: Flag indicating whether to stream the response.
+        temperature: The temperature for the language model.
+        top_p: The top_p value for the language model.
+        user: The user for the language model.
+        deepgenome_out: The output directory for deep genome results.
+        result_template: The path to the result template.
+        download_path: The path to download files.
+        marker: The marker for downloading files.
+        max_keys: The maximum number of keys to download.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_concurrency: Maximum number of concurrent operations.
+        max_poll: Maximum duration in seconds to monitor the task.
+        use_data_agent: Flag indicating whether to use the data agent.
+        use_analyst_agent: Flag indicating whether to use the analyst agent.
         direct_return: If True, awaits the full pipeline and returns the
             result dictionary. If False, starts the pipeline in a background
             thread and immediately returns a server_task_id string.
@@ -1144,17 +1135,15 @@ async def get_interaction_gene_list(
 
     Args:
         gene_id: The identifier of the gene for which to find interactors.
-        database_url: The URL for the database service. Defaults to `DATABASE_URL`.
-        workspace_id: The workspace identifier. Defaults to `WORKSPACE_ID`.
-        subject_id: The database subject identifier. Defaults to `SUBJECT_ID`.
-        dialog_id: The dialog identifier. Defaults to `DIALOG_ID`.
+        database_url: The URL for the database service.
+        workspace_id: The workspace identifier.
+        subject_id: The database subject identifier.
+        dialog_id: The dialog identifier.
         need_insight: Flag indicating whether insights should be generated.
-            Defaults to `NEED_INSIGHT`.
         simplify_response: Flag indicating whether to simplify the response.
-            Defaults to `SIMPLIFY_RESPONSE`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
 
     Returns:
         A list of gene IDs that interact with the given gene.
@@ -1216,30 +1205,30 @@ async def evolution_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the evolutionary analysis.
+        A dictionary containing the task information for the evolutionary
+        analysis.
     """
     goal_description = get_prompt(prompt_file, 'user/evolution_analysis',
                                   {'gene_id': gene_id})
@@ -1319,30 +1308,30 @@ async def protein_structure_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the protein structure analysis.
+        A dictionary containing the task information for the protein structure
+        analysis.
     """
     goal_description = get_prompt(prompt_file, 'user/structure_analysis',
                                   {'gene_id': gene_id})
@@ -1422,27 +1411,26 @@ async def promoter_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
         A dictionary containing the task information for the promoter analysis.
@@ -1520,35 +1508,36 @@ async def gene_expression_tissues(
 
     This function submits a task to perform a gene expression analysis across
     different tissues for the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the tissue expression analysis.
+        A dictionary containing the task information for the tissue expression
+        analysis.
     """
     goal_description = get_prompt(
         prompt_file, 'user/gene_expression_analysis/tissue',
@@ -1624,35 +1613,36 @@ async def gene_expression_cultivars(
 
     This function submits a task to perform a gene expression analysis across
     different cultivars for the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the cultivar expression analysis.
+        A dictionary containing the task information for the cultivar
+        expression analysis.
     """
     goal_description = get_prompt(
         prompt_file, 'user/gene_expression_analysis/cultivar',
@@ -1728,35 +1718,36 @@ async def gene_expression_genotypes(
 
     This function submits a task to perform a gene expression analysis across
     different genotypes for the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the genotype expression analysis.
+        A dictionary containing the task information for the genotype
+        expression analysis.
     """
     goal_description = get_prompt(
         prompt_file, 'user/gene_expression_analysis/genotype',
@@ -1832,35 +1823,36 @@ async def gene_expression_treatments(
 
     This function submits a task to perform a gene expression analysis across
     different treatments for the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the treatment expression analysis.
+        A dictionary containing the task information for the treatment
+        expression analysis.
     """
     goal_description = get_prompt(
         prompt_file, 'user/gene_expression_analysis/treatment',
@@ -1941,30 +1933,30 @@ async def single_cell_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the single-cell analysis.
+        A dictionary containing the task information for the single-cell
+        analysis.
     """
     goal_description = get_prompt(prompt_file, 'user/single_cell_analysis',
                                   {'gene_id': gene_id})
@@ -2037,35 +2029,35 @@ async def smep_analysis(
 ) -> dict:
     """Perform an SMEP analysis of a gene.
 
-    This function submits a task to perform an SMEP (Single-Molecule Epigenomics
-    Profiling) analysis of the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    This function submits a task to perform an SMEP (Single-Molecule
+    Epigenomics Profiling) analysis of the given gene. It constructs a goal
+    description and data list, and then calls the `submit` function to
+    initiate the analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        epic_type: The type of EPIC analysis to perform. Defaults to `EPIC_TYPE`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        epic_type: The type of EPIC analysis to perform.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
         A dictionary containing the task information for the SMEP analysis.
@@ -2143,32 +2135,32 @@ async def smoc_analysis(
 
     This function submits a task to perform an SMOC (Single-Molecule Omics
     Clustering) analysis of the given gene. It constructs a goal description
-    and data list, and then calls the `submit` function to initiate the analysis.
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to False.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
         A dictionary containing the task information for the SMOC analysis.
@@ -2250,30 +2242,30 @@ async def haplotypes_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to `BATCH`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for the haplotype analysis.
+        A dictionary containing the task information for the haplotype
+        analysis.
     """
     goal_description = get_prompt(prompt_file, 'user/haplotypes_analysis',
                                   {'gene_id': gene_id})
@@ -2359,36 +2351,35 @@ async def gene_expression_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to `BATCH`.
-        database_url: The URL for the database service. Defaults to `DATABASE_URL`.
-        workspace_id: The workspace identifier. Defaults to `WORKSPACE_ID`.
-        subject_id: The database subject identifier. Defaults to `SUBJECT_ID`.
-        dialog_id: The dialog identifier. Defaults to `DIALOG_ID`.
+        database_url: The URL for the database service.
+        workspace_id: The workspace identifier.
+        subject_id: The database subject identifier.
+        dialog_id: The dialog identifier.
         need_insight: Flag indicating whether insights should be generated.
-            Defaults to `NEED_INSIGHT`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for all expression analyses.
+        A dictionary containing the task information for all expression
+        analyses.
     """
     response = await nl2sql(
         f'List all the columns whose gene_id_1 is {gene_id} and '
@@ -2555,31 +2546,31 @@ async def epic_analysis(
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to `BATCH`.
-        epic_type: The type of EPIC analysis to perform. Defaults to `EPIC_TYPE`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        epic_type: The type of EPIC analysis to perform.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for both SMEP and SMOC analyses.
+        A dictionary containing the task information for both SMEP and SMOC
+        analyses.
     """
     if not batch:
         if not user_id:
@@ -2679,42 +2670,42 @@ async def submit_gene_analysis(
     This function orchestrates a complete gene analysis pipeline, including
     evolutionary analysis, promoter analysis, EPIC analysis, gene expression
     analysis, single-cell analysis, and protein structure analysis. It calls
-    the respective analysis functions and returns the combined task information.
+    the respective analysis functions and returns the combined task
+    information.
 
     Args:
         species: The species of the gene.
         gene_id: The identifier of the gene to analyze.
-        epic_type: The type of EPIC analysis to perform. Defaults to `EPIC_TYPE`.
-        user_id: The user identifier for this task. Defaults to `USER_ID`.
+        epic_type: The type of EPIC analysis to perform.
+        user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
-            Defaults to `BATCH`.
-        database_url: The URL for the database service. Defaults to `DATABASE_URL`.
-        workspace_id: The workspace identifier. Defaults to `WORKSPACE_ID`.
-        subject_id: The database subject identifier. Defaults to `SUBJECT_ID`.
-        dialog_id: The dialog identifier. Defaults to `DIALOG_ID`.
+        database_url: The URL for the database service.
+        workspace_id: The workspace identifier.
+        subject_id: The database subject identifier.
+        dialog_id: The dialog identifier.
         need_insight: Flag indicating whether insights should be generated.
-            Defaults to `NEED_INSIGHT`.
-        prompt_file: The path to the prompt file. Defaults to `PROMPT_FILE`.
-        deepgenome_data: The path to the deep genome data. Defaults to `DEEPGENOME_DATA`.
-        output_dir: The directory to store output files. Defaults to `OUTPUT_DIR`.
-        model_url: The URL for the model service. Defaults to `CODER_URL`.
-        model_name: The name of the model. Defaults to `CODER_MODEL`.
-        coder_api_key: The API key for the coder service. Defaults to `CODER_API_KEY`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        resource_dict: A dictionary of resource configurations. Defaults to `RESOURCE`.
-        app_id_dict: A dictionary of application identifiers. Defaults to `APP_ID`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
-        A dictionary containing the task information for all analyses in the pipeline.
+        A dictionary containing the task information for all analyses in the
+        pipeline.
     """
     if not batch:
         if not user_id:
@@ -2908,22 +2899,23 @@ async def summarize_gene_analysis(
 
     Args:
         gene_id: The identifier of the gene analyzed.
-        gene_task: A dictionary containing the task information for all analyses.
-        deepgenome_out: The output directory for deep genome results. Defaults to `DEEPGENOME_OUT`.
-        result_template: The path to the result template. Defaults to `TEMPLATE`.
-        analysis_url: The URL for the analysis service. Defaults to `ANALYSIS_URL`.
-        region: The region for the analysis service. Defaults to `ANALYSIS_REGION`.
-        download_path: The path to download files. Defaults to `DOWNLOAD_PATH`.
-        access_key_id: The access key identifier for OBS. Defaults to `AccessKeyID`.
-        secret_access_key: The secret access key for OBS. Defaults to `SecretAccessKey`.
-        obs_server: The OBS server URL. Defaults to `OBS_SERVER`.
-        bucket_name: The OBS bucket name. Defaults to `BUCKET_NAME`.
-        marker: The marker for downloading files. Defaults to `DOWNLOAD_MARKER`.
-        max_keys: The maximum number of keys to download. Defaults to `DOWNLOAD_MAX_KEYS`.
-        timeout: Request timeout in seconds. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that trigger a retry. Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts. Defaults to `MAX_RETRIES`.
-        max_poll: Maximum duration in seconds to monitor the task. Defaults to `MAX_POLL`.
+        gene_task: A dictionary containing the task information for all
+            analyses.
+        deepgenome_out: The output directory for deep genome results.
+        result_template: The path to the result template.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        download_path: The path to download files.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        marker: The marker for downloading files.
+        max_keys: The maximum number of keys to download.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
 
     Returns:
         The path to the generated summary report file.
