@@ -2,6 +2,20 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""A collection of utility functions for shared services.
+
+This module provides a variety of helper functions that support other modules
+within the application. These utilities include functionalities such as:
+- Authenticating and retrieving API tokens.
+- Loading and rendering text-based templates from YAML files.
+- Asynchronously downloading files from an Object Storage Service (OBS) with
+  concurrency control and retry mechanisms.
+- Converting various file formats to Markdown.
+- Orchestrating complex asynchronous workflows that involve downloading and
+  processing multiple files.
+- Splitting lists into smaller chunks for batch processing.
+"""
+
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from json import dumps
@@ -27,21 +41,24 @@ senc = SensitiveConfig().load()
 
 async def get_token(timeout: float = serc.TIMEOUT,
                     region: str = serc.REGION) -> str:
-    """Obtain X-Subject-Token for API authentication.
+    """Obtain an X-Subject-Token for API authentication.
+
+    This function authenticates with the IAM service using credentials from
+    the application's settings and retrieves a temporary token for authorizing
+    subsequent API requests.
 
     Args:
-        timeout: Total request timeout (5s minimum connection timeout)
-            - Controls both connection and response phases
+        timeout: The total request timeout in seconds. This controls both the
+            connection and response phases.
+        region: The geographical region for the authentication scope.
 
     Returns:
-        X-Subject-Token string for authorization headers
-        - Token validity period determined by IAM service
+        A string containing the X-Subject-Token for use in authorization
+        headers. The token's validity period is determined by the IAM service.
 
     Raises:
-        McpError: With error code and message when:
-            - Network connectivity issues
-            - Invalid credentials
-            - IAM service unavailability
+        McpError: If the token request fails due to network issues, invalid
+            credentials, or IAM service unavailability.
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -78,22 +95,26 @@ async def get_token(timeout: float = serc.TIMEOUT,
 def load_template(template_file: str,
                   template_str: Optional[str] = None,
                   ) -> str:
-    """Load template structure from YAML file with optional path navigation.
+    """Load a template string from a YAML file.
+
+    This function reads a YAML file and extracts a specific template string.
+    It supports navigating nested structures within the YAML file using a
+    slash-separated path.
 
     Args:
-        template_file: Path to YAML template file
-            - Must be valid file path with read permissions
-        template_str: Nested template path using '/' separators
-            - e.g. "prompts/analysis" for multi-level YAML
-            - Required when template has hierarchical structure
+        template_file: The path to the YAML template file. Must be a valid
+            file path with read permissions.
+        template_str: A nested path (e.g., "prompts/analysis") to locate the
+            template within the YAML file. Required for hierarchical files.
 
     Returns:
-        Final template string from specified location in YAML
+        The final template string from the specified location in the YAML.
 
     Raises:
-        FileNotFoundError: If template_file path is invalid
-        KeyError: When template_str path doesn't exist in YAML
-        ValueError: For ambiguous templates without template_str
+        FileNotFoundError: If the `template_file` path is invalid.
+        KeyError: If the `template_str` path does not exist in the YAML.
+        ValueError: If the YAML is multi-level and `template_str` is not
+            provided.
     """
     template_file = Path(template_file)
     if not template_file.is_file():
@@ -119,19 +140,23 @@ def load_template(template_file: str,
 def render_template(template: str,
                     parameters: Optional[Dict[str, str]] = None
                     ) -> str:
-    """Replace placeholders in template with actual parameters.
+    """Replace placeholders in a template string with provided values.
+
+    This function finds all placeholders in the format `{{parameter}}` within
+    the template string and substitutes them with corresponding values from the
+    `parameters` dictionary.
 
     Args:
-        template: String containing {{parameter}} placeholders
-        parameters: Key-value pairs for placeholder substitution
-            - Keys must match placeholder names
-            - Values will be stringified during replacement
+        template: The template string containing placeholders.
+        parameters: A dictionary where keys match placeholder names and values
+            are the substitution content. Values will be stringified.
 
     Returns:
-        Fully rendered template with substituted values
+        The fully rendered template with all placeholders replaced.
 
     Raises:
-        ValueError: When placeholder lacks matching parameter
+        ValueError: If a placeholder in the template does not have a
+            corresponding key in the `parameters` dictionary.
     """
     if parameters is None:
         parameters = {}
@@ -150,22 +175,23 @@ def get_prompt(template_file: str,
                template_str: Optional[str] = None,
                parameters: Optional[Dict[str, str]] = None,
                ) -> str:
-    """Generate ready-to-use prompt from template components.
+    """Generate a complete prompt from a template file and parameters.
 
-    Combines template loading and rendering in one workflow:
-    1. Load base template from YAML file
-    2. Apply parameter substitutions
+    This function combines `load_template` and `render_template` into a single
+    workflow. It first loads a template from a YAML file and then populates it
+    with the provided parameters.
 
     Args:
-        template_file: See load_template()
-        template_str: See load_template()
-        parameters: See render_template()
+        template_file: The path to the YAML template file.
+        template_str: The nested path to the specific template within the file.
+        parameters: A dictionary of key-value pairs for placeholder
+            substitution.
 
     Returns:
-        Final prompt ready for LLM input
+        The final, rendered prompt string ready for use.
 
     Raises:
-        Exceptions from both load_template and render_template
+        Exceptions from both `load_template` and `render_template`.
     """
     if parameters is None:
         parameters = {}
@@ -184,9 +210,42 @@ async def download_obs_file(
     task_num: int = serc.TASK_NUM,
     max_retries: int = serc.MAX_RETRIES,
 ) -> str:
+    """Download a single file from Object Storage Service (OBS).
+
+    This function downloads a file from a specified OBS bucket to a local
+    directory. It includes a retry mechanism with exponential backoff for
+    transient errors.
+
+    Args:
+        obs_file: The object key (path) of the file in the OBS bucket.
+        server_dir: The local directory where the file will be downloaded.
+        access_key_id: The access key ID for OBS authentication.
+        secret_access_key: The secret access key for OBS authentication.
+        obs_server: The server endpoint for the OBS.
+        bucket_name: The name of the OBS bucket.
+        part_size: The size of each part for multipart downloads.
+        task_num: The number of concurrent tasks for multipart downloads.
+        max_retries: The maximum number of retry attempts for a failed
+            download.
+
+    Returns:
+        The local path to the downloaded file.
+
+    Raises:
+        OSError: If the file download fails after all retry attempts.
+    """
     server_path = Path(server_dir)
     server_path.mkdir(parents=True, exist_ok=True)
     server_file = str(server_path / Path(obs_file).name)
+
+    object_key = obs_file
+    if object_key.startswith(f'/{bucket_name}/'):
+        object_key = object_key[len(f'/{bucket_name}/'):]
+    elif object_key.startswith(f'/obs/{bucket_name}/'):
+        object_key = object_key[len(f'/obs/{bucket_name}/'):]
+    elif object_key.startswith('/'):
+        object_key = object_key[1:]
+
     obs_client = ObsClient(access_key_id=access_key_id,
                            secret_access_key=secret_access_key,
                            server=obs_server)
@@ -197,7 +256,7 @@ async def download_obs_file(
                 None,
                 lambda: obs_client.downloadFile(
                     bucketName=bucket_name,
-                    objectKey=obs_file,
+                    objectKey=object_key,
                     downloadFile=server_file,
                     partSize=part_size,
                     taskNum=task_num,
@@ -229,6 +288,27 @@ async def download_obs_list(
     max_retries: int = serc.MAX_RETRIES,
     max_concurrency: int = serc.MAX_CONCURRENCY,
 ) -> List[str]:
+    """Download multiple files from OBS concurrently.
+
+    This function uses an `asyncio.Semaphore` to limit the number of
+    concurrent downloads, improving performance and avoiding rate limits.
+
+    Args:
+        obs_file_list: A list of object keys (paths) for the files to be
+            downloaded from OBS.
+        server_dir: The local directory where the files will be downloaded.
+        access_key_id: The access key ID for OBS authentication.
+        secret_access_key: The secret access key for OBS authentication.
+        obs_server: The server endpoint for the OBS.
+        bucket_name: The name of the OBS bucket.
+        part_size: The size of each part for multipart downloads.
+        task_num: The number of concurrent tasks for multipart downloads.
+        max_retries: The maximum number of retries for each failed download.
+        max_concurrency: The maximum number of files to download in parallel.
+
+    Returns:
+        A list of local paths to the downloaded files.
+    """
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def download_with_semaphore(obs_file: str) -> str:
@@ -251,6 +331,17 @@ async def download_obs_list(
 
 
 def convert_single_file(server_file: str) -> str:
+    """Convert a single file to Markdown format.
+
+    This function uses the `MarkItDown` library to convert a file (e.g., PDF,
+    DOCX) into Markdown text. The original file is deleted after conversion.
+
+    Args:
+        server_file: The local path to the file to be converted.
+
+    Returns:
+        A string containing the Markdown content of the converted file.
+    """
     md_instance = MarkItDown(
         docintel_endpoint='<document_intelligence_endpoint>')
     result = md_instance.convert(server_file)
@@ -263,6 +354,20 @@ def convert_multi_files(
     server_file_list: List[str],
     max_workers: int = serc.MAX_WORKERS,
 ) -> List[str]:
+    """Convert multiple files to Markdown in parallel.
+
+    This function uses a `ProcessPoolExecutor` to convert a list of files to
+    Markdown format concurrently, leveraging multiple CPU cores.
+
+    Args:
+        server_file_list: A list of local file paths to be converted.
+        max_workers: The maximum number of worker processes to use for the
+            conversion.
+
+    Returns:
+        A list of strings, where each string is the Markdown content of a
+        converted file.
+    """
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(convert_single_file, server_file_list))
     return results
@@ -282,6 +387,31 @@ async def download_list_convert(
     max_workers: int = serc.MAX_WORKERS,
     executor: Optional[ProcessPoolExecutor] = None,
 ) -> List[str]:
+    """Download, and convert multiple files from OBS in a parallel pipeline.
+
+    This function orchestrates a workflow where files are downloaded from OBS
+    concurrently and then converted to Markdown in a parallel process pool.
+    It is designed for efficient batch processing of documents.
+
+    Args:
+        obs_file_list: A list of object keys for the files in OBS.
+        server_dir: The local directory for temporary file storage.
+        access_key_id: The access key ID for OBS authentication.
+        secret_access_key: The secret access key for OBS authentication.
+        obs_server: The server endpoint for the OBS.
+        bucket_name: The name of the OBS bucket.
+        part_size: The size of each part for multipart downloads.
+        task_num: The number of concurrent tasks for multipart downloads.
+        max_retries: The maximum number of retries for each failed operation.
+        max_concurrency: The maximum number of files to download in parallel.
+        max_workers: The maximum number of processes for file conversion.
+        executor: An optional existing `ProcessPoolExecutor` to reuse for
+            conversions. If None, a new one is created and managed.
+
+    Returns:
+        A list of strings, each containing the Markdown content of a
+        processed file.
+    """
     semaphore = asyncio.Semaphore(max_concurrency)
     should_shutdown = executor is None
     if should_shutdown:
@@ -313,21 +443,19 @@ async def download_list_convert(
             executor.shutdown(wait=True)
 
 
-def split_list(lst, max_size: int = 128):
-    """Splits a list into chunks of at most `max_size` elements each.
+def split_list(lst: List, max_size: int = 128) -> List[List]:
+    """Split a list into evenly sized chunks.
 
-    The chunks are made as close in size as possible. The function divides
-    the list into `ceil(len(lst) / max_size)` chunks and distributes the
-    elements from the original list among them. If the input list is empty,
-    an empty list of chunks is returned.
+    This function divides a list into a specified number of chunks, making
+    their sizes as close as possible. This is useful for batch processing.
 
     Args:
-        lst (list): The list to be split.
-        max_size (int): The maximum size for any chunk. Defaults to `128`.
+        lst: The list to be split.
+        max_size: The maximum size for any chunk.
 
     Returns:
-        list: A list of lists, where each inner list is a chunk of the
-        original list. Returns an empty list if the input list is empty.
+        A list of lists, where each inner list is a chunk of the original.
+        Returns an empty list if the input is empty.
     """
     n = len(lst)
     if n == 0:
