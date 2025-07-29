@@ -347,7 +347,7 @@ def convert_single_file(server_file: str) -> str:
     result = md_instance.convert(server_file)
     server_path = Path(server_file)
     server_path.unlink()
-    return result
+    return result.text_content
 
 
 def convert_multi_files(
