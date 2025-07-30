@@ -758,25 +758,20 @@ async def retrieve_plan_submit(
     )
     retrieve_results = []
     total_length = 0
-    for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
-        if eachdoc['subtitle']:
-            current_fragment = (
-                f"[document {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['subtitle']}\n{eachdoc['content']} "
-                f'[document {file_id+1} end]')
-        else:
-            current_fragment = (
-                f"[document {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['content']} [document {file_id+1} end]")
-        if total_length + len(current_fragment) <= max_tokens:
-            retrieve_results.append(current_fragment)
-            total_length += len(current_fragment)
+    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+        header = f"[document {i+1} begin] {doc['title']}"
+        body = (f"{doc['subtitle']}\n{doc['content']}"
+                if doc.get('subtitle') else doc.get('content', ''))
+        fragment = f'{header}\n{body} [document {i+1} end]'
+        if total_length + len(fragment) <= max_tokens:
+            retrieve_results.append(fragment)
+            total_length += len(fragment)
         else:
             break
-    retrieve_results = '\n\n'.join(retrieve_results)
+    retrieve_context = '\n\n'.join(retrieve_results)
     user_query = get_prompt(
         prompt_file, 'user/analysis_retrieve',
-        {'retrieve_results': retrieve_results, 'user_query': goal_description})
+        {'retrieve_results': retrieve_context, 'user_query': goal_description})
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,

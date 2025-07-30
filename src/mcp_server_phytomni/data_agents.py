@@ -154,6 +154,7 @@ async def rewrite_nl2sql(
     timeout: float = dc.TIMEOUT,
     retriable_codes: List[int] = dc.RETRIABLE_CODES,
     max_retries: int = dc.MAX_RETRIES,
+    max_tokens: int = dc.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Rewrite a natural language query and then execute it via NL2SQL.
 
@@ -244,19 +245,20 @@ async def rewrite_nl2sql(
         max_retries=max_retries,
     )
     retrieve_results = []
-    for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
-        if eachdoc['subtitle']:
-            retrieve_results.append(
-                f"[scenario {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['subtitle']}\n{eachdoc['content']} "
-                f'[scenario {file_id+1} end]')
+    total_length = 0
+    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+        header = f"[scenario {i+1} begin] {doc['title']}"
+        body = (f"{doc['subtitle']}\n{doc['content']}"
+                if doc.get('subtitle') else doc.get('content', ''))
+        fragment = f'{header}\n{body} [scenario {i+1} end]'
+        if total_length + len(fragment) <= max_tokens:
+            retrieve_results.append(fragment)
+            total_length += len(fragment)
         else:
-            retrieve_results.append(
-                f"[scenario {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['content']} [scenario {file_id+1} end]")
-    retrieve_results = '\n\n'.join(retrieve_results)
+            break
+    retrieve_context = '\n\n'.join(retrieve_results)
     user_query = get_prompt(prompt_file, 'user/database',
-                            {'scenario_prompts': retrieve_results,
+                            {'scenario_prompts': retrieve_context,
                              'user_query': user_query})
     phyto_response = await phyto_chat(
         user_query=user_query,
