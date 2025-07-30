@@ -19,7 +19,7 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
 from .config.settings import SensitiveConfig
-from .utils import get_prompt, split_list
+from .utils import download_list_convert, get_prompt, split_list
 
 kc = KnowledgeConfig()
 sc = SensitiveConfig().load()
@@ -271,15 +271,26 @@ async def multi_retrieve_generate(
     temperature: float = kc.TEMPERATURE,
     top_p: float = kc.TOP_P,
     user: str = kc.USER,
+    obs_file_list: List[str] = [],
+    server_dir: str = kc.TEMP_DIR,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = kc.OBS_SERVER,
+    bucket_name: str = kc.BUCKET_NAME,
+    part_size: int = kc.PART_SIZT,
+    task_num: int = kc.TASK_NUM,
+    max_concurrency: int = kc.MAX_CONCURRENCY,
+    max_workers: int = kc.MAX_WORKERS,
     timeout: float = kc.TIMEOUT,
     retriable_codes: List[int] = kc.RETRIABLE_CODES,
     max_retries: int = kc.MAX_RETRIES,
 ) -> Dict[str, Any]:
-    """Perform retrieval-augmented generation (RAG).
+    """Perform retrieval-augmented generation (RAG) with optional file context.
 
     This function first retrieves relevant documents using `multi_retrieve`,
     then uses the retrieved documents to augment a prompt for a language
-    model to generate a response.
+    model to generate a response. Optionally processes user-uploaded files
+    from OBS to provide additional context for the query.
 
     Args:
         user_query: The user's natural language query.
@@ -310,19 +321,59 @@ async def multi_retrieve_generate(
         temperature: The temperature for the language model.
         top_p: The top_p for the language model.
         user: The user ID for the language model.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
+        access_key_id: Access key ID for OBS authentication.
+        secret_access_key: Secret access key for OBS authentication.
+        obs_server: Server endpoint URL for the Object Storage Service.
+        bucket_name: Name of the OBS bucket containing the files.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
         timeout: The timeout for each API call in seconds.
         retriable_codes: A list of HTTP status codes that trigger a retry.
         max_retries: The maximum number of retries for failed requests.
 
     Returns:
         A dictionary containing the generated response from the language model,
-        augmented with the retrieved documents.
+        augmented with the retrieved documents and file context.
 
     Raises:
         McpError: If either the retrieval or generation step fails.
     """
     if not repo_id_dict:
         repo_id_dict = kc.REPO_ID_DICT
+    if obs_file_list:
+        upload_str_list = await download_list_convert(
+            obs_file_list=obs_file_list,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            max_workers=max_workers,
+        )
+        upload_results = []
+        total_length = 0
+        for i, doc in enumerate(upload_str_list):
+            fragment = (f'[user upload file {i+1} begin]\n'
+                        f'{doc}\n[user upload file {i+1} end]')
+            if total_length + len(fragment) <= max_tokens:
+                upload_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        upload_context = '\n\n'.join(upload_results)
+
     retrieve_response = await multi_retrieve(
         user_query=user_query,
         retrieve_url=retrieve_url,
@@ -357,9 +408,15 @@ async def multi_retrieve_generate(
         else:
             break
     retrieve_results = '\n\n'.join(retrieve_results)
-    user_query = get_prompt(
-        prompt_file, 'user/retrieval',
-        {'retrieve_results': retrieve_results, 'user_query': user_query})
+    if obs_file_list:
+        user_query = get_prompt(
+            prompt_file, 'user/retrieval_file',
+            {'retrieve_results': retrieve_results,
+             'upload_context': upload_context, 'user_query': user_query})
+    else:
+        user_query = get_prompt(
+            prompt_file, 'user/retrieval',
+            {'retrieve_results': retrieve_results, 'user_query': user_query})
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,

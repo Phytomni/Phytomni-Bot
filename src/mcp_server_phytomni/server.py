@@ -130,6 +130,26 @@ class KnowledgeAgent(BaseModel):
                         "and generating text."
         ),
     ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
+        ),
+    ]
 
 
 class DataAgent(BaseModel):
@@ -592,6 +612,18 @@ async def serve() -> None:
                     temperature=knowledgeconfig.TEMPERATURE,
                     top_p=knowledgeconfig.TOP_P,
                     user=knowledgeconfig.USER,
+                    obs_file_list=args.obs_file_list,
+                    server_dir=knowledgeconfig.TEMP_DIR,
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=knowledgeconfig.OBS_SERVER,
+                    bucket_name=knowledgeconfig.BUCKET_NAME,
+                    part_size=knowledgeconfig.PART_SIZT,
+                    task_num=knowledgeconfig.TASK_NUM,
+                    max_concurrency=knowledgeconfig.MAX_CONCURRENCY,
+                    max_workers=knowledgeconfig.MAX_WORKERS,
                     timeout=knowledgeconfig.TIMEOUT,
                     retriable_codes=knowledgeconfig.RETRIABLE_CODES,
                     max_retries=knowledgeconfig.MAX_RETRIES,

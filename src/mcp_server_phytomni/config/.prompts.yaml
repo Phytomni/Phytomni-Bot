@@ -92,6 +92,62 @@ user:
     # The user''s message is:
 
     {{user_query}}'
+  retrieval_file: '# The following contents are the search results related to the user''s
+    message:
+
+    {{retrieve_results}}
+
+
+    In the search results I provide to you, each result is formatted as [document
+    X begin]...[document X end], where X represents the numerical index of each article.
+    Please cite the context at the end of the relevant sentence when appropriate.
+    Use the document format [document:X] in the corresponding part of your answer.
+    If a sentence is derived from multiple contexts, list all relevant document numbers,
+    such as [document:3][document:5]. Be sure not to cluster all documents at the
+    end; instead, include them in the corresponding parts of the answer.
+
+    When responding, please keep the following points in mind:
+
+    - Not all content in the search results is closely related to the user''s question.
+    You need to evaluate and filter the search results based on the question.
+
+    - For listing-type questions (e.g., listing all homologous genes), try to limit
+    the answer to 10 key points and inform the user that they can refer to the search
+    sources for complete information. Prioritize providing the most complete and relevant
+    items in the list. Avoid mentioning content not provided in the search results
+    unless necessary.
+
+    - For creative tasks (e.g., writing an essay), ensure that references are cited
+    within the body of the text, such as [document:3][document:5], rather than only
+    at the end of the text. You need to interpret and summarize the user''s requirements,
+    choose an appropriate format, fully utilize the search results, extract key information,
+    and generate an answer that is insightful, creative, and professional. Extend
+    the length of your response as much as possible, addressing each point in detail
+    and from multiple perspectives, ensuring the content is rich and thorough.
+
+    - If the response is lengthy, structure it well and summarize it in paragraphs.
+    If a point-by-point format is needed, try to limit it to 5 points and merge related
+    content.
+
+    - For objective Q&A, if the answer is very brief, you may add one or two related
+    sentences to enrich the content.
+
+    - Choose an appropriate and visually appealing format for your response based
+    on the user''s requirements and the content of the answer, ensuring strong readability.
+
+    - Your answer should synthesize information from multiple relevant webpages and
+    avoid repeatedly citing the same webpage.
+
+    - Unless the user requests otherwise, your response should be in the same language
+    as the user''s question.
+
+    # Based on the following files uploaded by the user:
+
+    {{upload_context}}
+
+    # The user''s message is:
+
+    {{user_query}}'
   database: "你是专业的问题改写者，能将用户的问题准确地改写成一个更明确的指明数据表的列名的问题。数据表对应着用户提问的不同场景，每种场景包含一个数据库表以及使用该表回答的示例。你将根据这些信息对用户问题进行改写。\n\
     \n# 要求：\n1. 使用英文回答\n2. 不要输出无法回答，如果无法回答就输出原问题\n3. 改写的问题中必须指明查询的列名且给出的列名必须在当前场景下给定的表结构中，禁止给出不存在的列或者给出的列在不同的表中\n\
     4. 只需要输出改写后的问题(不包含'改写后的问题'这几个字)，不要输出额外信息\n\n# 通用改写规则\n以下信息对问题改写非常有帮助:\n1. 注意数据库表中给出的示例值以及说明，它可以帮助你判断问题中是否涉及到该列。例如问题中问到TPR6，你可能从表中的示例值或者背景知识判断它大概率是一个gene\
