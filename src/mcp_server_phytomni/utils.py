@@ -239,10 +239,12 @@ async def download_obs_file(
     server_file = str(server_path / Path(obs_file).name)
 
     object_key = obs_file
-    if object_key.startswith(f'/{bucket_name}/'):
-        object_key = object_key[len(f'/{bucket_name}/'):]
+    if object_key.startswith(f'obs://{bucket_name}/'):
+        object_key = object_key[len(f'obs://{bucket_name}/'):]
     elif object_key.startswith(f'/obs/{bucket_name}/'):
         object_key = object_key[len(f'/obs/{bucket_name}/'):]
+    elif object_key.startswith(f'/{bucket_name}/'):
+        object_key = object_key[len(f'/{bucket_name}/'):]
     elif object_key.startswith('/'):
         object_key = object_key[1:]
 
