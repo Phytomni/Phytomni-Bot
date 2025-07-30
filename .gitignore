@@ -210,6 +210,9 @@ __marimo__/
 # SQLite
 .db
 
+# Claude Code
+CLAUDE.md
+
 # Gemini CLI
 package-lock.json
 
