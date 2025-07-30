@@ -57,38 +57,84 @@ async def phyto_chat(
     max_tokens: int = cc.MAX_TOKENS,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
-    """Generate text using a Phyto model.
+    """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
-    generated text. It supports various model parameters and includes a retry
-    mechanism with exponential backoff for transient errors.
+    generated text. It supports various model parameters, optional file uploads
+    from OBS, and includes a retry mechanism with exponential backoff for
+    transient errors. Files are downloaded, converted to markdown, and
+    integrated into the user query as context.
 
     Args:
-        user_query: The user's natural language query.
-        prompt_file: The path to the prompt template file.
-        prompt_path: The path to the specific prompt within the template file.
-        api_key: The API key for the Phyto model.
-        base_url: The base URL for the Phyto API service.
-        model: The ID of the model to use.
-        frequency_penalty: The frequency penalty for the model.
-        n: The number of chat completion choices to generate.
-        presence_penalty: The presence penalty for the model.
-        reasoning_effort: The reasoning effort for the model.
-        response_format: The desired response format from the model.
-        stream: Whether to stream the response from the model.
-        temperature: The temperature for the model.
-        top_p: The top_p for the model.
-        user: The user ID for the model.
-        timeout: The timeout for each API call in seconds.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retries for failed requests.
-        semaphore: An optional semaphore to limit concurrency.
+        user_query: The user's natural language query or instruction.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        prompt_file: Path to the YAML template file containing system prompts.
+        prompt_path: Nested path within the template file to locate the
+            specific system prompt (e.g., "system/ai4ps").
+        api_key: API key for authenticating with the language model service.
+        base_url: Base URL endpoint for the language model API service.
+        model: Identifier of the specific language model to use for generation.
+        frequency_penalty: Penalty applied to new tokens based on their
+            frequency in the text so far, discouraging repetition of exact
+            words/phrases. Values range from -2.0 to 2.0.
+        n: Number of completion choices to generate for each input.
+        presence_penalty: Penalty applied to new tokens based on their
+            presence in the text so far, discouraging repetition of concepts.
+            Values range from -2.0 to 2.0.
+        reasoning_effort: Level of reasoning effort for the language model.
+            Typically 'low', 'medium', or 'high'.
+        response_format: Desired response format from the language model.
+            For example, {'type': 'json_object'} to request JSON response.
+        stream: Flag to enable or disable streaming of responses from the
+            language model. If True, responses are sent as a series of events.
+        temperature: Sampling temperature for language model responses
+            (controls randomness). Higher values mean more random responses.
+        top_p: Nucleus sampling parameter for language model responses
+            (controls diversity). Considers tokens with cumulative probability
+            mass up to top_p.
+        user: User identifier for API interactions, particularly for chat or
+            language model services.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
+        access_key_id: Access key ID for OBS authentication.
+        secret_access_key: Secret access key for OBS authentication.
+        obs_server: Server endpoint URL for the Object Storage Service.
+        bucket_name: Name of the OBS bucket containing the files.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        timeout: General request timeout in seconds for API calls.
+        retriable_codes: List of HTTP status codes that trigger retries
+            for API calls.
+        max_retries: Maximum number of retry attempts for API calls.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
+        max_tokens: Maximum number of tokens to generate in language model
+            responses.
+        semaphore: Optional asyncio.Semaphore to limit concurrent execution
+            of this function. Useful for controlling resource usage.
 
     Returns:
-        A dictionary containing the API response from the Phyto model.
+        A dictionary containing the complete API response from the language
+        model, including generated text, usage statistics, and metadata.
 
     Raises:
-        McpError: If the API call fails after all retry attempts.
+        McpError: If the API call fails after all retry attempts, or if
+            file download/conversion operations fail.
+
+    Examples:
+        Basic text generation:
+            >>> result = await phyto_chat("What is photosynthesis?")
+            >>> print(result['choices'][0]['message']['content'])
+
+        With file context:
+            >>> files = ["/obs/bucket/research_paper.pdf"]
+            >>> result = await phyto_chat(
+            ...     "Summarize this paper",
+            ...     obs_file_list=files
+            ... )
     """
     if obs_file_list:
         upload_str_list = await download_list_convert(

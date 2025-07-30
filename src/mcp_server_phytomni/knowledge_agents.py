@@ -489,7 +489,43 @@ async def rerank(user_query: str,
     ]
 
 
-def response_to_string(phyto_response: dict):
+def response_to_string(phyto_response: dict) -> str:
+    """Convert a RAG response to a formatted string with references.
+
+    This function extracts the generated content and document list from a
+    retrieval-augmented generation response and formats it as a readable
+    string with numbered references.
+
+    Args:
+        phyto_response: A dictionary containing the response from a RAG
+            operation. Expected to have the structure returned by
+            `multi_retrieve_generate`, with 'choices' containing message
+            content and doc_list.
+
+    Returns:
+        A formatted string containing the generated content followed by
+        a numbered reference list of the source documents.
+
+    Examples:
+        >>> response = {
+        ...     'choices': [{
+        ...         'message': {
+        ...             'content': 'Photosynthesis is...',
+        ...             'doc_list': [
+        ...                 {'title': 'Plant Biology.pdf'},
+        ...                 {'title': 'Botany Research'}
+        ...             ]
+        ...         }
+        ...     }]
+        ... }
+        >>> result = response_to_string(response)
+        >>> print(result)
+        Photosynthesis is...
+
+        **Reference:**
+        [1] Plant Biology
+        [2] Botany Research
+    """
     content = phyto_response['choices'][0]['message']['content']
     doc_list = phyto_response['choices'][0]['message']['doc_list']
     doc_string = ''

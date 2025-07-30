@@ -113,6 +113,21 @@ _manager_cache = {}
 
 
 def _get_manager():
+    """Get or create a singleton TaskManager instance.
+
+    This function implements a simple caching mechanism to ensure only one
+    TaskManager instance exists throughout the application lifecycle. It uses
+    a module-level cache dictionary to store and retrieve the manager instance.
+
+    Returns:
+        TaskManager: A singleton instance of the TaskManager class used for
+        tracking and managing analysis task lifecycles.
+
+    Examples:
+        >>> manager = _get_manager()
+        >>> task_id = manager.create_task()
+        >>> manager.update_task(task_id, 'running', 'data', '/output/path')
+    """
     if 'instance' not in _manager_cache:
         _manager_cache['instance'] = TaskManager()
     return _manager_cache['instance']
@@ -3137,14 +3152,32 @@ async def summarize_gene_analysis(
 def find_species_code(species: str):
     """Find the species code for a given species name.
 
-    This function searches the SPECIES_CODE_MAP to find the species code
-    corresponding to the provided species name.
+    This function searches the SPECIES_CODE_MAP dictionary to find the species
+    code corresponding to the provided species name. It performs a
+    case-insensitive substring match to locate the appropriate species code.
 
     Args:
-        species: The name of the species.
+        species: The name of the species to search for (e.g., 'rice',
+            'arabidopsis', 'Oryza sativa'). The search is case-insensitive and
+            supports partial matches.
 
     Returns:
-        The species code if found, otherwise None.
+        str or None: The three-letter species code if a match is found
+        (e.g., 'osa' for rice, 'ath' for arabidopsis), otherwise None if
+        no matching species is found in the mapping.
+
+    Examples:
+        >>> find_species_code('rice')
+        'osa'
+        >>> find_species_code('Arabidopsis thaliana')
+        'ath'
+        >>> find_species_code('unknown_species')
+        None
+
+    Note:
+        The function uses the global SPECIES_CODE_MAP constant which contains
+        mappings from species codes to full species names with common names
+        in parentheses.
     """
     for species_code, description in SPECIES_CODE_MAP.items():
         if species.lower() in description.lower():
@@ -3156,11 +3189,35 @@ def prepend_to_file(filename, text):
     """Prepend text to the beginning of a file.
 
     This function reads the existing content of a file, then writes the
-    provided text followed by the original content back to the file.
+    provided text followed by the original content back to the file. If the
+    file doesn't exist, it creates a new file with only the prepended text.
 
     Args:
-        filename: The name of the file to prepend to.
-        text: The text to prepend to the file.
+        filename: The path to the file to prepend to. Can be a relative or
+            absolute path.
+        text: The text content to prepend to the beginning of the file.
+            Should include any necessary newlines.
+
+    Returns:
+        None: This function doesn't return a value.
+
+    Raises:
+        OSError: If there are permissions issues or other I/O errors during
+            file operations.
+        UnicodeDecodeError: If the existing file contains invalid UTF-8
+            encoding.
+
+    Examples:
+        Adding a header to an existing file:
+            >>> prepend_to_file('report.md', '# Analysis Report\\n\\n')
+
+        Creating a new file with initial content:
+            >>> prepend_to_file('new_file.txt', 'Initial content\\n')
+
+    Note:
+        This function reads the entire file content into memory, which may not
+        be suitable for very large files. The function uses UTF-8 encoding
+        for both reading and writing operations.
     """
     try:
         with open(filename, 'r', encoding='utf-8') as f:

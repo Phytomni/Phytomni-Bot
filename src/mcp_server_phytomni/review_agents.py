@@ -3,6 +3,14 @@
 # Author: lihu (lihu0628@qq.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""This module provides functions for conducting deep research and generating
+comprehensive literature reviews.
+
+It includes functions that leverage retrieval-augmented generation (RAG) to
+expand user queries into multiple research dimensions, retrieve relevant
+documents for each dimension, and synthesize the findings into a cohesive
+research report.
+"""
 from asyncio import gather
 from json import loads
 from typing import Any, Dict, List, Optional, Union
@@ -50,103 +58,100 @@ async def deep_research(
     """Performs an in-depth research process based on a user query.
 
     This function orchestrates a multi-step process:
-    1.  It first uses a large language model (`phyto_chat`) to expand the
-        `user_query` into several distinct research dimensions.
-    2.  For each identified research dimension, it retrieves relevant documents
-        using `multi_retrieve`.
-    3.  The retrieved documents for each dimension are formatted and then used
-        as context (knowledge) along with the dimensions themselves to generate
-        a comprehensive research report via another `phyto_chat` call.
-    4.  The final report is augmented with a flat list of all retrieved
-        documents.
+    1. It first uses a large language model (phyto_chat) to expand the
+       user_query into several distinct research dimensions.
+    2. For each identified research dimension, it retrieves relevant documents
+       using multi_retrieve.
+    3. The retrieved documents for each dimension are formatted and then used
+       as context (knowledge) along with the dimensions themselves to generate
+       a comprehensive research report via another phyto_chat call.
+    4. The final report is augmented with a flat list of all retrieved
+       documents.
 
     Args:
         user_query: The initial query from the user to conduct deep research
             on.
-        prompt_file: Path to the prompt template file used by `phyto_chat` for
-            generating research dimensions and the final report.
-            Defaults to `PROMPT_FILE`.
-        prompt_path: Path or key within the `prompt_file` to retrieve specific
-            prompts for `phyto_chat`. Defaults to `PROMPT_PATH`.
-        api_key: API key for authentication with the Phyto model.
-            Defaults to `API_KEY`.
-        base_url: Base URL of the Phyto API service (`phyto_chat`).
-            Defaults to `BASE_URL`.
-        model: Identifier of the Phyto model to use via `phyto_chat`.
-            Defaults to `MODEL_ID`.
-        frequency_penalty: Penalty for token repetition (-2.0 to 2.0) for
-            `phyto_chat`. Defaults to `FREQUENCY_PENALTY`.
-        n: Number of choices to generate by `phyto_chat` for query expansion
-            and report generation. Defaults to `N`.
-        presence_penalty: Penalty for new tokens (-2.0 to 2.0) for
-            `phyto_chat`. Defaults to `PRESENCE_PENALTY`.
-        reasoning_effort: Specifies the reasoning effort for `phyto_chat`.
-            Defaults to `REASONING_EFFORT`.
-        response_format: Specifies the desired output format for `phyto_chat`.
-            Defaults to `RESPONSE_FORMAT`.
-        stream: Enable real-time token streaming output for `phyto_chat`.
-            Defaults to `STREAM`.
-        temperature: Controls randomness (0.0-1.0) for `phyto_chat`.
-            Defaults to `TEMPERATURE`.
-        top_p: Nucleus sampling threshold (0.0-1.0) for `phyto_chat`.
-            Defaults to `TOP_P`.
-        user: Unique session identifier for the end-user,
-            passed to `phyto_chat`. Defaults to `USER`.
-        repo_id_dict: A dictionary mapping repository IDs (str) to their
-            respective page sizes (int) for document retrieval, passed to
-            `multi_retrieve`. Defaults to `REPO_ID_DICT`.
-        page_num: Pagination page number for retrieval results from each
-            repository, passed to `multi_retrieve`. Defaults to `PAGE_NUM`.
+        prompt_file: Path to the YAML template file containing system prompts.
+        prompt_path: Nested path within the template file to locate the
+            specific system prompt (e.g., "system/ai4ps").
+        api_key: API key for authenticating with the language model service.
+        base_url: Base URL endpoint for the language model API service.
+        model: Identifier of the specific language model to use for generation.
+        frequency_penalty: Penalty applied to new tokens based on their
+            frequency in the text so far, discouraging repetition of exact
+            words/phrases. Values range from -2.0 to 2.0.
+        n: Number of completion choices to generate for each input.
+        presence_penalty: Penalty applied to new tokens based on their
+            presence in the text so far, discouraging repetition of concepts.
+            Values range from -2.0 to 2.0.
+        reasoning_effort: Level of reasoning effort for the language model.
+            Typically 'low', 'medium', or 'high'.
+        response_format: Desired response format from the language model.
+            For example, {'type': 'json_object'} to request JSON response.
+        stream: Flag to enable or disable streaming of responses from the
+            language model. If True, responses are sent as a series of events.
+        temperature: Sampling temperature for language model responses
+            (controls randomness). Higher values mean more random responses.
+        top_p: Nucleus sampling parameter for language model responses
+            (controls diversity). Considers tokens with cumulative probability
+            mass up to top_p.
+        user: User identifier for API interactions, particularly for chat or
+            language model services.
+        retrieve_url: URL for the document retrieval service.
+        repo_id_dict: Dictionary mapping repository IDs to associated integer
+            values (e.g., page sizes or token limits).
+        page_num: Page number for paginated results from retrieval services.
         filter_string: Optional filter criteria string for metadata filtering
-            during document retrieval, passed to `multi_retrieve`.
-            Defaults to `FILTER_STRING`.
-        scope: Scope for document retrieval by `multi_retrieve` (e.g., 'title',
-            'content', 'both'), applied for each research dimension.
-            Defaults to `SCOPE`.
+            during retrieval.
+        scope: Scope of search for retrieval operations. 'both' searches
+            documents and keywords, 'doc' searches only documents, 'keyword'
+            searches only keywords.
         extra_repo_ids: Optional list of additional repository IDs to include
-            in document retrieval, passed to `multi_retrieve`.
-            Defaults to `EXTRA_REPO_IDS`.
-        score_threshold: Minimum relevance score threshold applied during
-            document retrieval by `multi_retrieve` for each dimension.
-            Defaults to `SCORE_THRESHOLD`.
-        top_n: The number of top-scoring documents to retrieve by
-            `multi_retrieve` for each identified research dimension.
-            Defaults to `TOP_N`.
-        timeout: Request timeout in seconds for the underlying `phyto_chat` and
-            `multi_retrieve` API calls. Defaults to `TIMEOUT`.
-        retriable_codes: List of HTTP status codes that will trigger a retry
-            for underlying `phyto_chat` and `multi_retrieve` API calls.
-            Defaults to `RETRIABLE_CODES`.
-        max_retries: Maximum number of retry attempts for underlying
-            `phyto_chat` and `multi_retrieve` API calls.
-            Defaults to `MAX_RETRIES`.
+            in retrieval.
+        rerank_url: URL for the document reranking service.
+        rerank_batch_size: Batch size for reranking operations, if reranking
+            is applied to retrieved documents.
+        score_threshold: Minimum relevance score threshold for retrieved items.
+            Results below this threshold are typically discarded.
+        top_n: Number of top-scoring results to retrieve or consider.
+        timeout: General request timeout in seconds for API calls.
+        retriable_codes: List of HTTP status codes that trigger retries for
+            API calls.
+        max_retries: Maximum number of retry attempts for API calls.
 
     Returns:
         A dictionary containing the generated research report and supporting
-        documents. Specifically, it is the response from the final `phyto_chat`
+        documents. Specifically, it is the response from the final phyto_chat
         call, augmented with:
         - "doc_list" (List[Dict]): A flat list containing all document
-          dictionaries retrieved by `multi_retrieve` across all research
-          dimensions. The order is based on the processing order of
-          dimensions and then the order within each dimension's retrieval
-          results.
-        - "total" (int): A hardcoded integer value of `10000`.
+          dictionaries retrieved by multi_retrieve across all research
+          dimensions.
+        - "total" (int): A hardcoded integer value of 10000.
         The main content of the report is typically found within
-        `response['choices'][0]['message']['content']`.
+        response['choices'][0]['message']['content'].
 
     Raises:
-        McpError: If any of the underlying `phyto_chat` or `multi_retrieve`
+        McpError: If any of the underlying phyto_chat or multi_retrieve
             calls fail after all retry attempts.
-        JSONDecodeError: If the first `phyto_chat` response (for query
+        JSONDecodeError: If the first phyto_chat response (for query
             expansion) is not valid JSON or does not conform to the expected
             structure for extracting research dimensions.
-        KeyError: If expected keys (e.g., 'choices', 'message', 'content',
-            'doc_list', 'Research_dimensions') are missing from intermediate
-            API responses or data structures.
-        TypeError: If an operation is attempted on an object of an
-            inappropriate type, for example, if a `multi_retrieve` call
-            returns an exception that is not handled before attempting to
-            access its `['doc_list']` attribute.
+        KeyError: If expected keys are missing from intermediate API responses
+            or data structures.
+
+    Examples:
+        Basic deep research:
+            >>> result = await deep_research(
+            ...     "photosynthesis mechanisms in C4 plants"
+            ... )
+            >>> print(result['choices'][0]['message']['content'])
+
+        Custom parameters:
+            >>> result = await deep_research(
+            ...     "CRISPR applications in plant breeding",
+            ...     top_n=20,
+            ...     temperature=0.2
+            ... )
     """
     query_response = await phyto_chat(
         user_query=get_prompt(prompt_file,
