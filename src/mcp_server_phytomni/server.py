@@ -611,6 +611,15 @@ async def serve() -> None:
                 sensitiveconfig = SensitiveConfig().load()
                 response = await rewrite_nl2sql(
                     user_query=args.user_query,
+                    retrieve_url=dataconfig.RETRIEVE_URL,
+                    data_repo_id=dataconfig.DATA_REPO_ID,
+                    page_num=dataconfig.PAGE_NUM,
+                    page_size=dataconfig.DATA_PAGE_SIZE,
+                    filter_string=dataconfig.FILTER_STRING,
+                    scope=dataconfig.SCOPE,
+                    rerank_url=dataconfig.RERANK_URL,
+                    rerank_batch_size=dataconfig.RERANK_BATCH_SIZE,
+                    score_threshold=dataconfig.SCORE_THRESHOLD,
                     prompt_file=dataconfig.PROMPT_FILE,
                     prompt_path=dataconfig.PROMPT_PATH,
                     api_key=sensitiveconfig.API_KEY.get_secret_value(),

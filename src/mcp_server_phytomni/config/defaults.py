@@ -171,10 +171,10 @@ class KnowledgeConfig(ChatConfig):
     RERANK_BATCH_SIZE: int = Field(128)
 
 
-class DataConfig(ChatConfig):
+class DataConfig(KnowledgeConfig):
     """Configuration settings for database query operations.
 
-    Inherits settings from `ChatConfig`.
+    Inherits settings from `KnowledgeConfig`.
 
     Attributes:
         NEED_INSIGHT (bool): Flag indicating whether to generate insights from
@@ -182,10 +182,16 @@ class DataConfig(ChatConfig):
         SIMPLIFY_RESPONSE (bool): Flag indicating whether to simplify the
             structure of database query responses.
         DIALOG_ID (str): Conversation ID for multi-turn context.
+        DATA_REPO_ID (str): The ID of the primary knowledge repository to
+            search for Data-Agent RAG functionality.
+        DATA_PAGE_SIZE (int): Number of items per page for paginated results
+            from retrieval services specific to Data-Agent operations.
     """
     NEED_INSIGHT: bool = Field(False)
     SIMPLIFY_RESPONSE: bool = Field(True)
     DIALOG_ID: str = Field('')
+    DATA_REPO_ID: str = Field('daadf7eb-aee7-4a71-a9cc-2884cf3811d2')
+    DATA_PAGE_SIZE: int = Field(3)
 
 
 class AnalystConfig(KnowledgeConfig):
