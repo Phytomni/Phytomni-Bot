@@ -199,6 +199,26 @@ class AnalystAgent(BaseModel):
             },
         ),
     ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
+        ),
+    ]
 
 
 class DeepGenomeAgent(BaseModel):
@@ -696,11 +716,14 @@ async def serve() -> None:
                     user_id=analystconfig.USER_ID,
                     is_create_dir=analystconfig.CREATE_DIR,
                     output_dir=analystconfig.OUTPUT_DIR,
+                    retrieve_url=analystconfig.RETRIEVE_URL,
                     repo_id_dict=analystconfig.REPO_ID_DICT,
                     page_num=analystconfig.PAGE_NUM,
                     filter_string=analystconfig.FILTER_STRING,
                     scope=analystconfig.SCOPE,
                     extra_repo_ids=analystconfig.EXTRA_REPO_IDS,
+                    rerank_url=analystconfig.RERANK_URL,
+                    rerank_batch_size=analystconfig.RERANK_BATCH_SIZE,
                     score_threshold=analystconfig.SCORE_THRESHOLD,
                     top_n=analystconfig.TOP_N,
                     prompt_file=analystconfig.PROMPT_FILE,
@@ -718,7 +741,30 @@ async def serve() -> None:
                     temperature=analystconfig.TEMPERATURE,
                     top_p=analystconfig.TOP_P,
                     user=analystconfig.USER,
+                    obs_file_list=args.obs_file_list,
+                    server_dir=analystconfig.TEMP_DIR,
                     execute_code=analystconfig.EXECUTE_CODE,
+                    model_url=sensitiveconfig.CODER_URL,
+                    model_name=sensitiveconfig.CODER_MODEL,
+                    coder_api_key=(
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=analystconfig.OBS_SERVER,
+                    bucket_name=analystconfig.BUCKET_NAME,
+                    part_size=analystconfig.PART_SIZT,
+                    task_num=analystconfig.TASK_NUM,
+                    max_concurrency=analystconfig.MAX_CONCURRENCY,
+                    max_workers=analystconfig.MAX_WORKERS,
+                    analysis_url=analystconfig.ANALYSIS_URL,
+                    region=analystconfig.ANALYSIS_REGION,
+                    task_name=analystconfig.TASK_NAME + '-retrieve-plan',
+                    resource_dict=analystconfig.RESOURCE,
+                    app_id_dict=analystconfig.APP_ID,
+                    compute_resource=analystconfig.COMPUTE_RESOURCE,
+                    meta_meta=None,
                     timeout=analystconfig.TIMEOUT,
                     retriable_codes=analystconfig.RETRIABLE_CODES,
                     max_retries=analystconfig.MAX_RETRIES,
