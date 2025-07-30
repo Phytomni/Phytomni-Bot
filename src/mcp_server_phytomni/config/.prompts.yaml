@@ -1016,19 +1016,29 @@ user:
     \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\
     \ \n</summary example>"
-  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nStep1, Construct\
-    \  gene regulatory network using the script construct_gene_network.py\n<Usage>\n\
-    \     Tool Usage:\n        usage: construct_network.py [-h] [--network NETWORK]\
-    \  [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file TO_FILE] \
-    \ [--output_dir OUTPUT_DIR]\n\n        options:\n        -h, --help            \
-    \ show this help message and exit\n        --network NETWORK     The network file\n\
-    \         --network_class NETWORK_CLASS\n                                \
+  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nstep1, Construct \
+    \ gene regulatory network using the script construct_gene_network.py(using af3 environment);\
+    \ \nstep2, plot gene_network using network_plot.R script(using Renv environment).\n<construct usage>\
+    \ \n     Tool Usage:\n        usage: construct_network.py [-h] [--network NETWORK]  \
+    \ [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file TO_FILE]  [--output_dir OUTPUT_DIR]\n\n\
+    \         options:\n        -h, --help             show this help message and exit\n        --network NETWORK\
+    \      The network file\n         --network_class NETWORK_CLASS\n                                 \
     \ The network node class file\n        --to_id TO_ID         the to_id you want to get\n\
-    \         --to_file TO_FILE     the to annotation file\n        --output_dir OUTPUT_DIR\n\
-    \                                 the output folder\n    Tool Usage Example:\n\
-    \         conda activate af3 && python construct_network.py --network $network_file\
-    \  --network_class $network_class_file --to_id $to_id --to_file $to_file \
-    \ --output_dir $output_dir\n</Usage>"
+    \          --to_file TO_FILE     the to annotation file\n        --output_dir OUTPUT_DIR\n\
+    \                                  the output folder\n    Tool Usage Example:\n        \
+    \ conda activate af3 && python construct_network.py --network $network_file  \
+    \ --network_class $network_class_file --to_id $to_id --to_file $to_file  --output_dir $output_dir\n\
+    \     Note:\n        1. Here the Node class file for the next visualization is generated with \
+    \ the name of $to_id_network_class.txt in the $output_dir;\n        2. The ':' in to_id will be\
+    \  replace '_' in the output file name\n           example:\n             if the to_id is \
+    \ TO:0000207, and the output node class file is TO_0000207_network_class.txt\n</construct usage>\
+    \ \n<plot usage>\n    Tool Usage:\n        Rscript network_plot.R <node_call_file> <out_dir> <TO_id> <use_sub_sample>\
+    \ \n\n        options:\n            node_call_file: Node classification file path(tsv format)\n\
+    \             out_dir: output folder\n            TO_id: plant traits to id\n            \
+    \ use_sub_sample: whether or not side sampling is used(TRUE/FALSE)\n    Tool Usage Example:\n\
+    \         conda activate Renv && Rscript network_plot.R $node_class_file_out_in_step1 \
+    \ $output_dir $to_id $use_sub_sample[TRUE or FALSE]\n    Note: The recommended use_sub_sample\
+    \  parameter is TRUE\n</plot usage>"
   haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate af3);\
     \ \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
     \  $output_dir)\nstep2, analysis the promoter haplotypes using plot_promoter_hap.sh\
