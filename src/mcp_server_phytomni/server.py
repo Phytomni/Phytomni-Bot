@@ -2,6 +2,71 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""Phytomni MCP Server - Main server implementation for plant science research
+    platform.
+
+This module implements the Model Context Protocol (MCP) server that provides
+specialized AI agents for comprehensive plant science research and
+bioinformatics analysis. The server orchestrates multiple domain-specific
+agents, each designed to handle particular aspects of biological research
+workflows.
+
+Server Architecture:
+    The server exposes eight specialized agent tools through the MCP interface:
+    
+    - ChatAgent: Core conversational interface with document processing
+        capabilities
+    - KnowledgeAgent: Literature retrieval and RAG-based research synthesis
+    - DataAgent: Natural language to SQL query translation for biological
+        databases
+    - AnalystAgent: Automated bioinformatics workflow execution and management
+    - ReviewAgent: Comprehensive multi-dimensional literature research
+    - DeepGenomeAgent: Advanced gene function analysis with multi-omics
+        integration
+    - InSilicoResearchAgent: Scientific methodology extraction and reproduction
+    - DigitalDesignAgent: Protein structure analysis and design workflows
+    - GeneNetworkAgent: Gene interaction and regulatory network analysis
+
+Key Features:
+    - JSON schema validation for all tool parameters using Pydantic models
+    - Comprehensive error handling with MCP-compliant error responses
+    - Automatic configuration loading from environment variables and config
+        files
+    - Secure credential management through the SensitiveConfig system
+    - Resource isolation and cleanup for concurrent agent execution
+    - Standard I/O protocol implementation for cross-platform MCP client
+        compatibility
+
+The server maintains strict separation between agent execution contexts and
+implements automatic resource cleanup to ensure reliable operation in
+production environments. Each agent inherits from hierarchical configuration
+classes that provide consistent default parameters while allowing specialized
+customization.
+
+Usage:
+    The server is typically launched as a standalone process:
+
+    ```bash
+    python -m mcp_server_phytomni.server
+    ```
+
+    Or integrated programmatically:
+
+    ```python
+    import asyncio
+    from mcp_server_phytomni.server import serve
+
+    asyncio.run(serve())
+    ```
+
+Authors:
+    xieshang (xieshang0608@gmail.com)
+    guxiaofeng (guxiaofeng@caas.cn)
+
+Copyright:
+    Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
+    2024-2025. All rights reserved.
+"""
 import asyncio
 from enum import Enum
 from json import dumps
@@ -317,29 +382,89 @@ class PhytomniAgents(str, Enum):
 
 
 async def serve() -> None:
-    """Initialize and run the Phytomni service endpoint.
+    """Initialize and run the Phytomni MCP service endpoint.
 
-    Orchestrates the service lifecycle including:
-    - Tool registration with JSON schema validation
-    - Request routing to appropriate agent handlers
-    - Error handling and protocol compliance
+    This function orchestrates the complete service lifecycle for the Phytomni
+    Model Context Protocol (MCP) server, providing specialized AI agents for
+    plant science research and bioinformatics analysis. The server manages
+    multiple agent types with domain-specific capabilities and handles all
+    aspects of request processing, validation, and response generation.
 
-    Exposes two primary endpoints:
-        1. /list_tools: Returns registered agent metadata
-        2. /call_tool: Executes agent-specific operations
+    The service exposes the following specialized agents:
+    - ChatAgent: Core language model interface for Q&A and document processing
+    - KnowledgeAgent: Literature synthesis with RAG (Retrieval-Augmented
+        Generation)
+    - DataAgent: Structured database queries using natural language to SQL
+    - AnalystAgent: Automated bioinformatics workflow execution
+    - ReviewAgent: Comprehensive research investigation and report generation
+    - DeepGenomeAgent: Multi-omics gene function analysis with experimental
+        data
+    - InSilicoResearchAgent: Scientific paper methodology decomposition
 
-    The server implements standard I/O protocols via stdio_server for
-    cross-platform compatibility. Service configuration is managed through
-    Server initialization options.
+    Service Architecture:
+    - Tool registration with JSON schema validation for type safety
+    - Request routing to appropriate agent handlers based on tool name
+    - Comprehensive error handling with MCP-compliant error responses
+    - Automatic resource cleanup and memory management
+    - Standard I/O protocol implementation for cross-platform compatibility
+
+    Primary Endpoints:
+        /list_tools: Returns metadata for all registered agents including:
+            - Agent names and descriptions
+            - Input parameter schemas
+            - Capability specifications
+        /call_tool: Executes agent-specific operations with:
+            - Parameter validation against schemas
+            - Agent-specific configuration loading
+            - Response formatting and error handling
+
+    Args:
+        None: This function takes no parameters and uses configuration
+        from environment variables and default configuration classes.
+
+    Returns:
+        None: This function runs indefinitely until interrupted, serving
+        requests through the stdio interface.
 
     Raises:
-        McpError: Wrapped exceptions for all operational failures including:
-            - Invalid parameter schemas (INVALID_PARAMS)
-            - Agent execution timeouts
-            - Infrastructure connectivity issues
+        McpError: Wrapped exceptions for operational failures including:
+            - INVALID_PARAMS: Invalid parameter schemas or missing required
+                fields
+            - INTERNAL_ERROR: Agent execution failures, timeouts, or
+                infrastructure issues
+        ValueError: If agent parameters fail Pydantic model validation
+        ConnectionError: If underlying services (databases, APIs) are
+            unavailable
+        TimeoutError: If agent operations exceed configured timeout limits
 
-    Maintains strict isolation between agent execution contexts and implements
-    automatic resource cleanup through context managers.
+    Examples:
+        Running the server:
+            >>> import asyncio
+            >>> asyncio.run(serve())
+
+        The server can be integrated with MCP clients:
+            ```python
+            # Client connection example
+            from mcp import ClientSession
+
+            async with ClientSession() as session:
+                tools = await session.list_tools()
+                result = await session.call_tool(
+                    "ChatAgent",
+                    {"user_query": "What is photosynthesis?",
+                    "obs_file_list": []}
+                )
+            ```
+
+    Note:
+        The server maintains strict isolation between agent execution contexts
+        and implements automatic resource cleanup through context managers.
+        All agents are configured through their respective configuration
+        classes which load settings from environment variables and
+        configuration files.
+
+        The server implements graceful shutdown handling and ensures all
+        ongoing operations complete before termination.
     """
     server = Server("Phytomni-Server")
 

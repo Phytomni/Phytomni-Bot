@@ -2,6 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""This module provides functions for conducting in silico research based on
+scientific literature.
+
+It includes functions that extract research goals from scientific papers and
+execute comprehensive computational research workflows to reproduce findings
+or explore related hypotheses.
+"""
 from asyncio import gather
 from json import loads
 from typing import Dict, List, Optional, Union
@@ -35,6 +42,65 @@ async def extract_goals(
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
     max_retries: int = isrc.MAX_RETRIES
 ) -> List[Dict[str, str]]:
+    """Extract research goals and context from scientific paper text.
+
+    This function analyzes scientific paper content using a language model to
+    identify specific research objectives that can be reproduced
+    computationally. Each extracted goal includes the complete workflow
+    description and supporting contextual information from the original paper.
+
+    Args:
+        user_query: The scientific paper text or content to analyze for
+            extracting research goals.
+        prompt_file: Path to the YAML template file containing system prompts.
+        prompt_path: Nested path within the template file to locate the
+            specific system prompt (e.g., "system/ai4ps").
+        api_key: API key for authenticating with the language model service.
+        base_url: Base URL endpoint for the language model API service.
+        model: Identifier of the specific language model to use for generation.
+        frequency_penalty: Penalty applied to new tokens based on their
+            frequency in the text so far, discouraging repetition of exact
+            words/phrases. Values range from -2.0 to 2.0.
+        n: Number of completion choices to generate for each input.
+        presence_penalty: Penalty applied to new tokens based on their
+            presence in the text so far, discouraging repetition of concepts.
+            Values range from -2.0 to 2.0.
+        reasoning_effort: Level of reasoning effort for the language model.
+            Typically 'low', 'medium', or 'high'.
+        stream: Flag to enable or disable streaming of responses from the
+            language model. If True, responses are sent as a series of events.
+        temperature: Sampling temperature for language model responses
+            (controls randomness). Higher values mean more random responses.
+        top_p: Nucleus sampling parameter for language model responses
+            (controls diversity). Considers tokens with cumulative probability
+            mass up to top_p.
+        user: User identifier for API interactions, particularly for chat or
+            language model services.
+        timeout: General request timeout in seconds for API calls.
+        retriable_codes: List of HTTP status codes that trigger retries for
+            API calls.
+        max_retries: Maximum number of retry attempts for API calls.
+
+    Returns:
+        A list of dictionaries, each containing:
+        - 'goal': A comprehensive workflow description for reproducing a
+          key finding or figure from the paper
+        - 'context': Supporting text snippets from the original paper
+          providing necessary details and parameters
+
+    Raises:
+        McpError: If the language model API call fails after all retry
+            attempts.
+        JSONDecodeError: If the response cannot be parsed as valid JSON.
+
+    Examples:
+        Extract goals from a paper:
+            >>> paper_text = "This study investigated CRISPR-Cas9..."
+            >>> goals = await extract_goals(paper_text)
+            >>> for goal in goals:
+            ...     print(f"Goal: {goal['goal']}")
+            ...     print(f"Context: {goal['context']}")
+    """
     user_query = get_prompt(
         prompt_file, 'user/in_silico_research_goals',
         {'paper_text': user_query})
@@ -129,6 +195,107 @@ async def in_silico_research(
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
     max_retries: int = isrc.MAX_RETRIES,
 ) -> List:
+    """Conduct comprehensive in silico research based on scientific literature.
+
+    This function orchestrates a complete computational research workflow:
+    1. Extracts research goals from the provided scientific paper text
+    2. For each goal, executes a retrieve-plan-submit workflow that includes:
+       - Document retrieval for relevant knowledge
+       - Analysis plan generation
+       - Computational task submission and execution
+    3. Returns results from all concurrent research workflows
+
+    Args:
+        user_query: The scientific paper text or content to analyze and
+            reproduce computationally.
+        data_list: Dictionary mapping data identifiers to their descriptions
+            or file paths, providing the computational resources needed for
+            the research workflows.
+        user_id: Identifier for the user submitting the research tasks.
+        is_create_dir: Flag indicating whether to create output directories
+            for storing analysis results.
+        output_dir: Output directory path for storing results of analysis
+            or operations (e.g., an OBS path).
+        repo_id_dict: Dictionary mapping repository IDs to associated integer
+            values (e.g., page sizes or token limits).
+        page_num: Page number for paginated results from retrieval services.
+        filter_string: Optional filter criteria string for metadata filtering
+            during retrieval.
+        scope: Scope of search for retrieval operations. 'both' searches
+            documents and keywords, 'doc' searches only documents, 'keyword'
+            searches only keywords.
+        extra_repo_ids: Optional list of additional repository IDs to include
+            in retrieval.
+        score_threshold: Minimum relevance score threshold for retrieved items.
+            Results below this threshold are typically discarded.
+        top_n: Number of top-scoring results to retrieve or consider.
+        prompt_file: Path to the YAML template file containing system prompts.
+        prompt_path: Nested path within the template file to locate the
+            specific system prompt (e.g., "system/ai4ps").
+        api_key: API key for authenticating with the language model service.
+        base_url: Base URL endpoint for the language model API service.
+        model: Identifier of the specific language model to use for generation.
+        frequency_penalty: Penalty applied to new tokens based on their
+            frequency in the text so far, discouraging repetition of exact
+            words/phrases. Values range from -2.0 to 2.0.
+        max_tokens: Maximum number of tokens to generate in language model
+            responses.
+        n: Number of completion choices to generate for each input.
+        presence_penalty: Penalty applied to new tokens based on their
+            presence in the text so far, discouraging repetition of concepts.
+            Values range from -2.0 to 2.0.
+        reasoning_effort: Level of reasoning effort for the language model.
+            Typically 'low', 'medium', or 'high'.
+        response_format: Desired response format from the language model.
+            For example, {'type': 'json_object'} to request JSON response.
+        stream: Flag to enable or disable streaming of responses from the
+            language model. If True, responses are sent as a series of events.
+        temperature: Sampling temperature for language model responses
+            (controls randomness). Higher values mean more random responses.
+        top_p: Nucleus sampling parameter for language model responses
+            (controls diversity). Considers tokens with cumulative probability
+            mass up to top_p.
+        user: User identifier for API interactions, particularly for chat or
+            language model services.
+        execute_code: Flag indicating whether code execution is permitted
+            during an analysis operation.
+        timeout: General request timeout in seconds for API calls.
+        retriable_codes: List of HTTP status codes that trigger retries for
+            API calls.
+        max_retries: Maximum number of retry attempts for API calls.
+
+    Returns:
+        A list containing the results from all executed research workflows.
+        Each element corresponds to a research goal extracted from the input
+        paper, containing the complete analysis results from the
+        retrieve-plan-submit process.
+
+    Raises:
+        McpError: If any of the underlying API calls fail after all retry
+            attempts.
+        Exception: Various exceptions may be returned as list elements if
+            individual research workflows fail during execution.
+
+    Examples:
+        Conduct research on a paper:
+            >>> data_sources = {
+            ...     "gene_expression": "/path/to/expression_data.csv",
+            ...     "genome_annotation": "/path/to/annotation.gtf"
+            ... }
+            >>> paper_text = "This study analyzed gene expression..."
+            >>> results = await in_silico_research(paper_text, data_sources)
+            >>> for i, result in enumerate(results):
+            ...     print(f"Research goal {i+1} result: {result}")
+
+        Custom configuration:
+            >>> results = await in_silico_research(
+            ...     paper_text,
+            ...     data_sources,
+            ...     output_dir="/custom/output/path/",
+            ...     execute_code=True,
+            ...     top_n=15
+            ... )
+    """
     goal_list = await extract_goals(
         user_query=user_query,
         prompt_file=prompt_file,

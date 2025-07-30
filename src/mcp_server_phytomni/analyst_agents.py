@@ -1480,6 +1480,58 @@ def create_output_dir(
     obs_server: str = ac.OBS_SERVER,
     bucket_name: str = ac.BUCKET_NAME,
 ) -> str:
+    """Create a unique output directory for analysis tasks in Object Storage
+        Service.
+
+    This function generates a timestamped, user-specific directory structure
+    in OBS for storing analysis results. The directory path includes user ID,
+    task type, timestamp, and a unique identifier to prevent conflicts.
+
+    Args:
+        user_id: Unique identifier for the user requesting the analysis.
+        task: Name or type of the analysis task (e.g., 'network_task',
+            'evolution_task').
+        access_key_id: Access key identifier for Object Storage Service (OBS)
+            authentication, required for directory creation operations.
+        secret_access_key: Secret access key for OBS authentication, paired
+            with access_key_id for secure storage operations.
+        obs_server: Base URL endpoint for the Object Storage Service where
+            the directory will be created.
+        bucket_name: Name of the OBS bucket where the output directory
+            will be created.
+
+    Returns:
+        The full OBS path to the created output directory in the format:
+        '/obs/{bucket_name}/agent_data/user_data/'
+        '{user_id}/output/{task}_{timestamp}_{uuid}/'
+
+    Raises:
+        OSError: If the directory creation fails due to OBS connectivity
+            issues, authentication problems, or insufficient permissions.
+
+    Examples:
+        Basic usage:
+            >>> output_path = create_output_dir(
+            ...     user_id='user123',
+            ...     task='gene_analysis'
+            ... )
+            >>> print(output_path)
+            '/obs/phytomni/agent_data/user_data/'
+            'user123/output/gene_analysis_1640995200_abc123/'
+
+        Custom configuration:
+            >>> output_path = create_output_dir(
+            ...     user_id='researcher001',
+            ...     task='network_analysis',
+            ...     bucket_name='custom_bucket'
+            ... )
+
+    Note:
+        The generated directory path includes a timestamp and UUID to ensure
+        uniqueness across multiple analysis runs. The directory is created
+        as an empty placeholder in OBS and can be used immediately for
+        storing analysis results.
+    """
     obs_client = ObsClient(access_key_id=access_key_id,
                            secret_access_key=secret_access_key,
                            server=obs_server)
@@ -1511,6 +1563,70 @@ def download_obs_out(
     max_keys: int = ac.DOWNLOAD_MAX_KEYS,
     if_download_all: bool = ac.IF_DOWNLOAD_ALL,
 ):
+    """Download analysis results from Object Storage Service to local
+        filesystem.
+
+    This generator function downloads files from an OBS path to a local
+    directory, with options for selective downloading based on file extensions
+    or patterns. It supports pagination for large directories and provides
+    progress feedback through yielded status messages.
+
+    Args:
+        task_dir: Local directory name where files will be downloaded, created
+            under the download_path.
+        obs_output_path: Source path in OBS containing the files to download
+            (without bucket name prefix).
+        download_path: Local filesystem path where the task directory will
+            be created for storing downloaded files.
+        access_key_id: Access key identifier for Object Storage Service (OBS)
+            authentication, required for file download operations.
+        secret_access_key: Secret access key for OBS authentication, paired
+            with access_key_id for secure storage operations.
+        obs_server: Base URL endpoint for the Object Storage Service where
+            files are stored.
+        target_file_feature: List of file extensions or suffixes to download
+            (e.g., ['.png', '.pdf', '.csv']). Used when if_download_all is
+            False.
+        bucket_name: Name of the OBS bucket containing the source files.
+        marker: Optional marker for pagination, specifying where to start
+            listing objects in large directories.
+        max_keys: Maximum number of objects to list per request, used for
+            pagination control.
+        if_download_all: Flag indicating whether to download all files (True)
+            or only files matching target_file_feature patterns (False).
+
+    Yields:
+        str: Status messages for each file download attempt, indicating success
+        or failure for individual files (e.g., "file.png download succeed").
+
+    Raises:
+        OSError: If OBS listing operations fail, directory creation fails,
+            or file download operations encounter errors.
+
+    Examples:
+        Download specific file types:
+            >>> for status in download_obs_out(
+            ...     task_dir='analysis_001',
+            ...     obs_output_path='results/gene_analysis/',
+            ...     target_file_feature=['.png', '.csv'],
+            ...     if_download_all=False
+            ... ):
+            ...     print(status)
+
+        Download all files:
+            >>> for status in download_obs_out(
+            ...     task_dir='complete_results',
+            ...     obs_output_path='analysis/output/',
+            ...     if_download_all=True
+            ... ):
+            ...     print(status)
+
+    Note:
+        This function creates the local directory structure automatically.
+        Downloads are performed with conditional headers to avoid unnecessary
+        transfers. Large directories are handled through pagination to manage
+        memory usage efficiently.
+    """
     output_path = Path(f'{download_path}/{task_dir}')
     output_path.mkdir(parents=True, exist_ok=True)
     headers = GetObjectHeader()
