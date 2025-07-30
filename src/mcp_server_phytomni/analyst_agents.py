@@ -44,7 +44,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve
-from .utils import get_prompt, get_token
+from .utils import download_list_convert, get_prompt, get_token
 
 ac = AnalystConfig()
 sc = SensitiveConfig().load()
@@ -654,6 +654,8 @@ async def retrieve_plan_submit(
     temperature: float = ac.TEMPERATURE,
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
+    obs_file_list: List[str] = [],
+    server_dir: str = ac.TEMP_DIR,
     execute_code: bool = ac.EXECUTE_CODE,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
@@ -662,6 +664,10 @@ async def retrieve_plan_submit(
     secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
     obs_server: str = ac.OBS_SERVER,
     bucket_name: str = ac.BUCKET_NAME,
+    part_size: int = ac.PART_SIZT,
+    task_num: int = ac.TASK_NUM,
+    max_concurrency: int = ac.MAX_CONCURRENCY,
+    max_workers: int = ac.MAX_WORKERS,
     analysis_url: str = ac.ANALYSIS_URL,
     region: str = ac.ANALYSIS_REGION,
     task_name: str = ac.TASK_NAME + '-retrieve-plan',
@@ -680,7 +686,8 @@ async def retrieve_plan_submit(
 
     This function first retrieves relevant documents, uses them to augment the
     goal description, generates a plan with a language model, and then submits
-    this plan for execution.
+    this plan for execution. Optionally processes user-uploaded files from OBS
+    to provide additional context for the analysis.
 
     Args:
         goal_description: A natural language description of the analysis goals.
@@ -712,6 +719,10 @@ async def retrieve_plan_submit(
         temperature: The randomness control for generation.
         top_p: The nucleus sampling threshold.
         user: A unique session identifier for the user.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
         execute_code: A boolean flag to enable or disable automated code
             execution within the workflow.
         model_url: The URL of the coding model service.
@@ -721,6 +732,12 @@ async def retrieve_plan_submit(
         secret_access_key: The secret access key for OBS.
         obs_server: The server endpoint for OBS.
         bucket_name: The name of the OBS bucket.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
         analysis_url: The URL for the analysis submission API.
         region: The geographical region of the analysis service.
         task_name: The name of the task.
@@ -740,6 +757,31 @@ async def retrieve_plan_submit(
     """
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
+    total_length = 0
+    if obs_file_list:
+        upload_str_list = await download_list_convert(
+            obs_file_list=obs_file_list,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            max_workers=max_workers,
+        )
+        upload_results = []
+        for i, doc in enumerate(upload_str_list):
+            fragment = (f'[user upload file {i+1} begin]\n'
+                        f'{doc}\n[user upload file {i+1} end]')
+            if total_length + len(fragment) <= max_tokens:
+                upload_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        upload_context = '\n\n'.join(upload_results)
     retrieve_response = await multi_retrieve(
         user_query=goal_description,
         retrieve_url=retrieve_url,
@@ -757,7 +799,6 @@ async def retrieve_plan_submit(
         max_retries=max_retries,
     )
     retrieve_results = []
-    total_length = 0
     for i, doc in enumerate(retrieve_response.get('doc_list', [])):
         header = f"[document {i+1} begin] {doc['title']}"
         body = (f"{doc['subtitle']}\n{doc['content']}"
@@ -769,9 +810,16 @@ async def retrieve_plan_submit(
         else:
             break
     retrieve_context = '\n\n'.join(retrieve_results)
-    user_query = get_prompt(
-        prompt_file, 'user/analysis_retrieve',
-        {'retrieve_results': retrieve_context, 'user_query': goal_description})
+    if obs_file_list:
+        user_query = get_prompt(
+            prompt_file, 'user/analysis_retrieve_file',
+            {'retrieve_results': retrieve_context,
+             'upload_context': upload_context, 'user_query': goal_description})
+    else:
+        user_query = get_prompt(
+            prompt_file, 'user/analysis_retrieve',
+            {'retrieve_results': retrieve_context,
+             'user_query': goal_description})
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,

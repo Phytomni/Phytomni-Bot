@@ -278,6 +278,21 @@ user:
     \ this format:\n<pipeline_steps>\nStep1, ...; \nStep2, ...; \n...\n</pipeline_steps>\n\
     \nDo NOT include any conclusion statements.\nNow generate the analysis pipeline\
     \ based strictly on the provided problem and references."
+  analysis_retrieve_file: "You are a bioinformatics pipeline architect. When I provide\
+    \ an analysis question, files uploaded by the user and reference materials, create a step-by-step computational\
+    \ workflow following these guidelines:\n\n<question>\n{{user_query}}\n</question>\n\n<upload_context>\n{{upload_context}}\n</upload_context>\n\
+    \n<reference>\n{{retrieve_results}}\n</reference>\n\n1. Analyze the problem statement\
+    \ to identify key biological questions and data types\n2. Extract relevant methodology\
+    \ from reference materials\n3. Structure the pipeline as sequential steps with\
+    \ technical specifications:\n- Each step begins with \"StepX: [Action Verb]...\"\
+    \ \n- Specify tool name (version if available) in parentheses\n- Include input/output\
+    \ formats and critical parameters\n- Maintain logical flow between steps\n\n4.\
+    \ Format requirements:\n- Use semicolons (;) between steps\n- No markdown formatting\n\
+    - Omit introductory/concluding sentences\n- Wrap final answer in <pipeline_steps>\
+    \ tags\n\nOutput ONLY the analysis pipeline within <pipeline_steps> tags using\
+    \ this format:\n<pipeline_steps>\nStep1, ...; \nStep2, ...; \n...\n</pipeline_steps>\n\
+    \nDo NOT include any conclusion statements.\nNow generate the analysis pipeline\
+    \ based strictly on the provided problem and references."
   gene_function: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\nPlease\
     \ provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections. Ensure all information is\
