@@ -348,6 +348,7 @@ async def multi_retrieve_generate(
     """
     if not repo_id_dict:
         repo_id_dict = kc.REPO_ID_DICT
+    total_length = 0
     if obs_file_list:
         upload_str_list = await download_list_convert(
             obs_file_list=obs_file_list,
@@ -363,7 +364,6 @@ async def multi_retrieve_generate(
             max_workers=max_workers,
         )
         upload_results = []
-        total_length = 0
         for i, doc in enumerate(upload_str_list):
             fragment = (f'[user upload file {i+1} begin]\n'
                         f'{doc}\n[user upload file {i+1} end]')
@@ -391,32 +391,26 @@ async def multi_retrieve_generate(
         max_retries=max_retries,
     )
     retrieve_results = []
-    total_length = 0
-    for file_id, eachdoc in enumerate(retrieve_response['doc_list']):
-        if eachdoc['subtitle']:
-            current_fragment = (
-                f"[document {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['subtitle']}\n{eachdoc['content']} "
-                f'[document {file_id+1} end]')
-        else:
-            current_fragment = (
-                f"[document {file_id+1} begin] {eachdoc['title']}\n"
-                f"{eachdoc['content']} [document {file_id+1} end]")
-        if total_length + len(current_fragment) <= max_tokens:
-            retrieve_results.append(current_fragment)
-            total_length += len(current_fragment)
+    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+        header = f"[document {i+1} begin] {doc['title']}"
+        body = (f"{doc['subtitle']}\n{doc['content']}"
+                if doc.get('subtitle') else doc.get('content', ''))
+        fragment = f'{header}\n{body} [document {i+1} end]'
+        if total_length + len(fragment) <= max_tokens:
+            retrieve_results.append(fragment)
+            total_length += len(fragment)
         else:
             break
-    retrieve_results = '\n\n'.join(retrieve_results)
+    retrieve_context = '\n\n'.join(retrieve_results)
     if obs_file_list:
         user_query = get_prompt(
             prompt_file, 'user/retrieval_file',
-            {'retrieve_results': retrieve_results,
+            {'retrieve_results': retrieve_context,
              'upload_context': upload_context, 'user_query': user_query})
     else:
         user_query = get_prompt(
             prompt_file, 'user/retrieval',
-            {'retrieve_results': retrieve_results, 'user_query': user_query})
+            {'retrieve_results': retrieve_context, 'user_query': user_query})
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,

@@ -54,6 +54,7 @@ async def deep_research(
     timeout: float = rc.TIMEOUT,
     retriable_codes: List[int] = rc.RETRIABLE_CODES,
     max_retries: int = rc.MAX_RETRIES,
+    max_tokens: int = rc.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Performs an in-depth research process based on a user query.
 
@@ -220,19 +221,20 @@ async def deep_research(
     dimensions_retrieval = []
     all_doc_list = []
     file_id = 0
+    total_length = 0
     for dimension_result in results:
         retrieve_results = []
-        for eachdoc in dimension_result['doc_list']:
-            all_doc_list.append(eachdoc)
-            if eachdoc["subtitle"]:
-                retrieve_results.append(
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["subtitle"]}\n{eachdoc["content"]} '
-                    f'[document {file_id+1} end]')
+        for doc in dimension_result.get('doc_list', []):
+            all_doc_list.append(doc)
+            header = f"[document {file_id+1} begin] {doc['title']}"
+            body = (f"{doc['subtitle']}\n{doc['content']}"
+                    if doc.get('subtitle') else doc.get('content', ''))
+            fragment = f'{header}\n{body} [document {file_id+1} end]'
+            if total_length + len(fragment) <= max_tokens:
+                retrieve_results.append(fragment)
+                total_length += len(fragment)
             else:
-                retrieve_results.append(
-                    f'[document {file_id+1} begin] {eachdoc["title"]}\n'
-                    f'{eachdoc["content"]} [document {file_id+1} end]')
+                break
             file_id += 1
         dimensions_retrieval.append('\n\n'.join(retrieve_results))
     prompt_parameters = {

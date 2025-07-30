@@ -13,7 +13,7 @@ workflows.
 
 Server Architecture:
     The server exposes eight specialized agent tools through the MCP interface:
-    
+
     - ChatAgent: Core conversational interface with document processing
         capabilities
     - KnowledgeAgent: Literature retrieval and RAG-based research synthesis
@@ -675,6 +675,7 @@ async def serve() -> None:
                     timeout=dataconfig.TIMEOUT,
                     retriable_codes=dataconfig.RETRIABLE_CODES,
                     max_retries=dataconfig.MAX_RETRIES,
+                    max_tokens=dataconfig.MAX_TOKENS,
                 )
                 return [TextContent(
                     type='text',
@@ -764,6 +765,7 @@ async def serve() -> None:
                     timeout=reviewconfig.TIMEOUT,
                     retriable_codes=reviewconfig.RETRIABLE_CODES,
                     max_retries=reviewconfig.MAX_RETRIES,
+                    max_tokens=reviewconfig.MAX_TOKENS,
                 )
                 return [TextContent(
                     type='text',
