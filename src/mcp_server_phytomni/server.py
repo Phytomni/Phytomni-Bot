@@ -312,6 +312,26 @@ class ReviewAgent(BaseModel):
                         "for which a detailed review is required."
         ),
     ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
+        ),
+    ]
 
 
 class InSilicoResearchAgent(BaseModel):
@@ -347,6 +367,26 @@ class InSilicoResearchAgent(BaseModel):
                 "x-java-default": "new HashMap<>()",
                 "x-csharp-default": "new Dictionary<string, string>()",
             }
+        ),
+    ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
         ),
     ]
 
@@ -808,6 +848,18 @@ async def serve() -> None:
                     rerank_batch_size=reviewconfig.RERANK_BATCH_SIZE,
                     score_threshold=reviewconfig.SCORE_THRESHOLD,
                     top_n=reviewconfig.TOP_N,
+                    obs_file_list=args.obs_file_list,
+                    server_dir=reviewconfig.TEMP_DIR,
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=reviewconfig.OBS_SERVER,
+                    bucket_name=reviewconfig.BUCKET_NAME,
+                    part_size=reviewconfig.PART_SIZT,
+                    task_num=reviewconfig.TASK_NUM,
+                    max_concurrency=reviewconfig.MAX_CONCURRENCY,
+                    max_workers=reviewconfig.MAX_WORKERS,
                     timeout=reviewconfig.TIMEOUT,
                     retriable_codes=reviewconfig.RETRIABLE_CODES,
                     max_retries=reviewconfig.MAX_RETRIES,
@@ -929,7 +981,19 @@ async def serve() -> None:
                     temperature=insilicoresearchconfig.TEMPERATURE,
                     top_p=insilicoresearchconfig.TOP_P,
                     user=insilicoresearchconfig.USER,
+                    obs_file_list=args.obs_file_list,
+                    server_dir=insilicoresearchconfig.TEMP_DIR,
                     execute_code=insilicoresearchconfig.EXECUTE_CODE,
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=insilicoresearchconfig.OBS_SERVER,
+                    bucket_name=insilicoresearchconfig.BUCKET_NAME,
+                    part_size=insilicoresearchconfig.PART_SIZT,
+                    task_num=insilicoresearchconfig.TASK_NUM,
+                    max_concurrency=insilicoresearchconfig.MAX_CONCURRENCY,
+                    max_workers=insilicoresearchconfig.MAX_WORKERS,
                     timeout=insilicoresearchconfig.TIMEOUT,
                     retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
                     max_retries=insilicoresearchconfig.MAX_RETRIES,

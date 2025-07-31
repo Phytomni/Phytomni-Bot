@@ -17,7 +17,7 @@ from .analyst_agents import retrieve_plan_submit
 from .chat_agents import phyto_chat
 from .config.defaults import InSilicoResearchConfig
 from .config.settings import SensitiveConfig
-from .utils import get_prompt
+from .utils import download_list_convert, get_prompt
 
 isrc = InSilicoResearchConfig()
 sc = SensitiveConfig()
@@ -38,9 +38,20 @@ async def extract_goals(
     temperature: float = isrc.TEMPERATURE,
     top_p: float = isrc.TOP_P,
     user: str = isrc.USER,
+    obs_file_list: List[str] = [],
+    server_dir: str = isrc.TEMP_DIR,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = isrc.OBS_SERVER,
+    bucket_name: str = isrc.BUCKET_NAME,
+    part_size: int = isrc.PART_SIZT,
+    task_num: int = isrc.TASK_NUM,
+    max_concurrency: int = isrc.MAX_CONCURRENCY,
+    max_workers: int = isrc.MAX_WORKERS,
     timeout: float = isrc.TIMEOUT,
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
-    max_retries: int = isrc.MAX_RETRIES
+    max_retries: int = isrc.MAX_RETRIES,
+    max_tokens: int = isrc.MAX_TOKENS
 ) -> List[Dict[str, str]]:
     """Extract research goals and context from scientific paper text.
 
@@ -76,10 +87,26 @@ async def extract_goals(
             mass up to top_p.
         user: User identifier for API interactions, particularly for chat or
             language model services.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
+        access_key_id: Access key ID for OBS authentication.
+        secret_access_key: Secret access key for OBS authentication.
+        obs_server: Server endpoint URL for the Object Storage Service.
+        bucket_name: Name of the OBS bucket containing the files.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
         timeout: General request timeout in seconds for API calls.
         retriable_codes: List of HTTP status codes that trigger retries for
             API calls.
         max_retries: Maximum number of retry attempts for API calls.
+        max_tokens: Maximum number of tokens to generate in language model
+            responses.
 
     Returns:
         A list of dictionaries, each containing:
@@ -101,9 +128,39 @@ async def extract_goals(
             ...     print(f"Goal: {goal['goal']}")
             ...     print(f"Context: {goal['context']}")
     """
-    user_query = get_prompt(
-        prompt_file, 'user/in_silico_research_goals',
-        {'paper_text': user_query})
+    total_length = 0
+    if obs_file_list:
+        upload_str_list = await download_list_convert(
+            obs_file_list=obs_file_list,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            max_workers=max_workers,
+        )
+        upload_results = []
+        for i, doc in enumerate(upload_str_list):
+            fragment = (f'[user upload file {i+1} begin]\n'
+                        f'{doc}\n[user upload file {i+1} end]')
+            if total_length + len(fragment) <= max_tokens:
+                upload_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        upload_context = '\n\n'.join(upload_results)
+        user_query = get_prompt(
+            prompt_file, 'user/in_silico_research_goals_file',
+            {'upload_context': upload_context, 'paper_text': user_query})
+    else:
+        user_query = get_prompt(
+            prompt_file, 'user/in_silico_research_goals',
+            {'paper_text': user_query})
+
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,
@@ -190,7 +247,17 @@ async def in_silico_research(
     temperature: float = isrc.TEMPERATURE,
     top_p: float = isrc.TOP_P,
     user: str = isrc.USER,
+    obs_file_list: List[str] = [],
+    server_dir: str = isrc.TEMP_DIR,
     execute_code: bool = isrc.EXECUTE_CODE,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = isrc.OBS_SERVER,
+    bucket_name: str = isrc.BUCKET_NAME,
+    part_size: int = isrc.PART_SIZT,
+    task_num: int = isrc.TASK_NUM,
+    max_concurrency: int = isrc.MAX_CONCURRENCY,
+    max_workers: int = isrc.MAX_WORKERS,
     timeout: float = isrc.TIMEOUT,
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
     max_retries: int = isrc.MAX_RETRIES,
@@ -259,6 +326,20 @@ async def in_silico_research(
             language model services.
         execute_code: Flag indicating whether code execution is permitted
             during an analysis operation.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
+        access_key_id: Access key ID for OBS authentication.
+        secret_access_key: Secret access key for OBS authentication.
+        obs_server: Server endpoint URL for the Object Storage Service.
+        bucket_name: Name of the OBS bucket containing the files.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
         timeout: General request timeout in seconds for API calls.
         retriable_codes: List of HTTP status codes that trigger retries for
             API calls.
@@ -311,6 +392,16 @@ async def in_silico_research(
         temperature=temperature,
         top_p=top_p,
         user=user,
+        obs_file_list=obs_file_list,
+        server_dir=server_dir,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        part_size=part_size,
+        task_num=task_num,
+        max_concurrency=max_concurrency,
+        max_workers=max_workers,
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries
