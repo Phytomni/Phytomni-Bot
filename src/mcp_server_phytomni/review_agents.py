@@ -19,7 +19,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import ReviewConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve
-from .utils import get_prompt
+from .utils import download_list_convert, get_prompt
 
 rc = ReviewConfig()
 sc = SensitiveConfig().load()
@@ -51,6 +51,16 @@ async def deep_research(
     rerank_batch_size: int = rc.RERANK_BATCH_SIZE,
     score_threshold: float = rc.SCORE_THRESHOLD,
     top_n: int = rc.TOP_N,
+    obs_file_list: List[str] = [],
+    server_dir: str = rc.TEMP_DIR,
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = rc.OBS_SERVER,
+    bucket_name: str = rc.BUCKET_NAME,
+    part_size: int = rc.PART_SIZT,
+    task_num: int = rc.TASK_NUM,
+    max_concurrency: int = rc.MAX_CONCURRENCY,
+    max_workers: int = rc.MAX_WORKERS,
     timeout: float = rc.TIMEOUT,
     retriable_codes: List[int] = rc.RETRIABLE_CODES,
     max_retries: int = rc.MAX_RETRIES,
@@ -115,10 +125,26 @@ async def deep_research(
         score_threshold: Minimum relevance score threshold for retrieved items.
             Results below this threshold are typically discarded.
         top_n: Number of top-scoring results to retrieve or consider.
+        obs_file_list: List of OBS object keys (file paths) to download and
+            include as context in the query. Files are converted to markdown.
+        server_dir: Local directory path for temporary file storage during
+            file downloads and processing.
+        access_key_id: Access key ID for OBS authentication.
+        secret_access_key: Secret access key for OBS authentication.
+        obs_server: Server endpoint URL for the Object Storage Service.
+        bucket_name: Name of the OBS bucket containing the files.
+        part_size: Size of each part for multipart downloads from OBS.
+        task_num: Number of concurrent tasks for multipart downloads from OBS.
+        max_concurrency: Maximum number of files to download from OBS
+            concurrently.
+        max_workers: Maximum number of worker processes to use for file
+            conversion operations.
         timeout: General request timeout in seconds for API calls.
         retriable_codes: List of HTTP status codes that trigger retries for
             API calls.
         max_retries: Maximum number of retry attempts for API calls.
+        max_tokens: Maximum number of tokens to generate in language model
+            responses.
 
     Returns:
         A dictionary containing the generated research report and supporting
@@ -154,10 +180,41 @@ async def deep_research(
             ...     temperature=0.2
             ... )
     """
-    query_response = await phyto_chat(
-        user_query=get_prompt(prompt_file,
+    total_length = 0
+    if obs_file_list:
+        upload_str_list = await download_list_convert(
+            obs_file_list=obs_file_list,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+            max_concurrency=max_concurrency,
+            max_workers=max_workers,
+        )
+        upload_results = []
+        for i, doc in enumerate(upload_str_list):
+            fragment = (f'[user upload file {i+1} begin]\n'
+                        f'{doc}\n[user upload file {i+1} end]')
+            if total_length + len(fragment) <= max_tokens:
+                upload_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        upload_context = '\n\n'.join(upload_results)
+        user_query = get_prompt(
+            prompt_file, 'user/deep_research_query_file',
+            {'upload_context': upload_context, 'user_query': user_query})
+    else:
+        user_query = get_prompt(prompt_file,
                               'user/deep_research_query',
-                              {'user_query': user_query}),
+                              {'user_query': user_query})
+    
+    query_response = await phyto_chat(
+        user_query=user_query,
         prompt_file=prompt_file,
         prompt_path=prompt_path,
         api_key=api_key,
