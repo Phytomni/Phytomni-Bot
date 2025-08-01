@@ -14,7 +14,6 @@ PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
 DOWNLOAD_PATH = PARENT_PATH / '.out'
 TEMP_PATH = PARENT_PATH / '.temp'
-DEEPGENOME_GENE_TEMPLATE = PARENT_PATH / 'gene_function_result.md'
 
 
 class ServerConfig(BaseSettings):
@@ -259,7 +258,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     """
     DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
     DEEPGENOME_OUT: str = Field(str(DOWNLOAD_PATH))
-    TEMPLATE: str = Field(str(DEEPGENOME_GENE_TEMPLATE))
     CREATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
                                  'create_task')
     UPDATE_TASK_URL: str = Field('http://1.95.48.200:8082/v1/nky/server/'
