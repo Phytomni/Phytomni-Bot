@@ -435,6 +435,140 @@ async def multi_retrieve_generate(
     return phyto_response
 
 
+async def retrieve_generate(
+    user_query: str,
+    retrieve_url: str = kc.RETRIEVE_URL,
+    repo_id: str = kc.REPO_ID,
+    page_num: int = kc.PAGE_NUM,
+    page_size: int = kc.PAGE_SIZE,
+    filter_string: Optional[str] = kc.FILTER_STRING,
+    scope: str = kc.SCOPE,
+    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
+    rerank_url: str = kc.RERANK_URL,
+    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
+    score_threshold: float = kc.SCORE_THRESHOLD,
+    prompt_file: str = kc.PROMPT_FILE,
+    prompt_path: str = kc.PROMPT_PATH,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = kc.FREQUENCY_PENALTY,
+    max_tokens: int = kc.MAX_TOKENS,
+    n: int = kc.N,
+    presence_penalty: float = kc.PRESENCE_PENALTY,
+    reasoning_effort: str = kc.REASONING_EFFORT,
+    response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
+    stream: bool = kc.STREAM,
+    temperature: float = kc.TEMPERATURE,
+    top_p: float = kc.TOP_P,
+    user: str = kc.USER,
+    timeout: float = kc.TIMEOUT,
+    retriable_codes: List[int] = kc.RETRIABLE_CODES,
+    max_retries: int = kc.MAX_RETRIES,
+) -> Dict[str, Any]:
+    """Perform retrieval-augmented generation (RAG) with single repository.
+
+    This function first retrieves relevant documents using `retrieve`,
+    then uses the retrieved documents to augment a prompt for a language
+    model to generate a response. Optionally processes user-uploaded files
+    from OBS to provide additional context for the query.
+
+    Args:
+        user_query: The user's natural language query.
+        retrieve_url: The URL of the retrieval service.
+        repo_id: The ID of the knowledge repository to search.
+        page_num: The page number for pagination of retrieval results.
+        page_size: The number of documents to retrieve per page.
+        filter_string: An optional string for metadata filtering.
+        scope: The search scope, which can be 'doc', 'keyword', or 'both'.
+        extra_repo_ids: An optional list of additional repository IDs to
+                        include in the search.
+        rerank_url: The URL of the reranking service.
+        rerank_batch_size: The batch size for reranking documents.
+        score_threshold: The minimum relevance score to include documents in
+                         the final result.
+        prompt_file: The path to the prompt template file.
+        prompt_path: The path to the specific prompt within the template file.
+        api_key: The API key for the language model.
+        base_url: The base URL for the language model service.
+        model: The ID of the language model to use.
+        frequency_penalty: The frequency penalty for the language model.
+        max_tokens: The maximum number of tokens to generate.
+        n: The number of chat completion choices to generate.
+        presence_penalty: The presence penalty for the language model.
+        reasoning_effort: The reasoning effort for the language model.
+        response_format: The desired response format from the language model.
+        stream: Whether to stream the response from the language model.
+        temperature: The temperature for the language model.
+        top_p: The top_p for the language model.
+        user: The user ID for the language model.
+        timeout: The timeout for each API call in seconds.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retries for failed requests.
+
+    Returns:
+        A dictionary containing the generated response from the language model,
+        augmented with the retrieved documents and file context.
+
+    Raises:
+        McpError: If either the retrieval or generation step fails.
+    """
+    retrieve_response = await retrieve(
+        user_query=user_query,
+        retrieve_url=retrieve_url,
+        repo_id=repo_id,
+        page_num=page_num,
+        page_size=page_size,
+        filter_string=filter_string,
+        scope=scope,
+        extra_repo_ids=extra_repo_ids,
+        rerank_url=rerank_url,
+        rerank_batch_size=rerank_batch_size,
+        score_threshold=score_threshold,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    retrieve_results = []
+    total_length = 0
+    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+        header = f"[document {i+1} begin] {doc['title']}"
+        body = (f"{doc['subtitle']}\\n{doc['content']}"
+                if doc.get('subtitle') else doc.get('content', ''))
+        fragment = f'{header}\\n{body} [document {i+1} end]'
+        if total_length + len(fragment) <= max_tokens:
+            retrieve_results.append(fragment)
+            total_length += len(fragment)
+        else:
+            break
+    retrieve_context = '\\n\\n'.join(retrieve_results)
+    user_query = get_prompt(
+        prompt_file, 'user/retrieval',
+        {'retrieve_results': retrieve_context, 'user_query': user_query})
+    phyto_response = await phyto_chat(
+        user_query=user_query,
+        prompt_file=prompt_file,
+        prompt_path=prompt_path,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        frequency_penalty=frequency_penalty,
+        n=n,
+        presence_penalty=presence_penalty,
+        reasoning_effort=reasoning_effort,
+        response_format=response_format,
+        stream=stream,
+        temperature=temperature,
+        top_p=top_p,
+        user=user,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    phyto_response['choices'][0]['message'].update(retrieve_response)
+    return phyto_response
+
+
 async def rerank(user_query: str,
                  doc_list: List[Dict[str, Any]],
                  rerank_url: str = kc.RERANK_URL,
