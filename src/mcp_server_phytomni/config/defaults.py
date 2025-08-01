@@ -14,7 +14,6 @@ PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
 DOWNLOAD_PATH = PARENT_PATH / '.out'
 TEMP_PATH = PARENT_PATH / '.temp'
-DEEPGENOME_GENE_TEMPLATE = PARENT_PATH / 'gene_function_result.md'
 
 
 class ServerConfig(BaseSettings):
