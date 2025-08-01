@@ -2891,7 +2891,7 @@ async def summarize_gene_analysis(
     gene_id: str,
     gene_task: dict,
     deepgenome_out: str = dgc.DEEPGENOME_OUT,
-    result_template: str = dgc.TEMPLATE,
+    prompt_file: str = dgc.PROMPT_FILE,
     analysis_url: str = dgc.ANALYSIS_URL,
     region: str = dgc.ANALYSIS_REGION,
     download_path: str = dgc.DOWNLOAD_PATH,
@@ -2982,127 +2982,110 @@ async def summarize_gene_analysis(
     ])
 
     out_path = Path(f'{deepgenome_out}/{gene_id}')
-    with open(result_template, 'r', encoding='utf-8') as fi:
-        gene_results = fi.read()
-    gene_results = gene_results.replace('[Gene Name]', gene_id)
+    gene_results_data = {'gene_name': gene_id}
     try:
         target_file = next(out_path.rglob('*tree.png')).name
         tree_img_path = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('TREE_IMG', tree_img_path)
+        gene_results_data['tree_path'] = tree_img_path
         with open(out_path / f'{gene_id}_tree.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[TREE]', summary)
+            gene_results_data['tree_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![Phylogenetic Tree](TREE_IMG)', '')
-        gene_results = gene_results.replace('[TREE]', 'None Results')
+        gene_results_data['tree_path'] = ''
+        gene_results_data['tree_interpretation'] = 'None Results'
     try:
         with open(out_path / f'{gene_id}_domain.md',
                   'r', encoding='utf-8') as domain_f:
             domain = domain_f.read()
-            gene_results = gene_results.replace('[markdown table]', domain)
+            gene_results_data['domain_table'] = domain
         with open(out_path / f'{gene_id}_domain.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[DOMAIN]', summary)
+            gene_results_data['domain_interpretation'] = summary
     except (FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace('[markdown table]', '')
-        gene_results = gene_results.replace('[DOMAIN]', 'None Results')
+        gene_results_data['domain_table'] = ''
+        gene_results_data['domain_interpretation'] = 'None Results'
 
     try:
         target_file = next(out_path.rglob('*tissues.png')).name
         tissue_img = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('TISSUE_IMG', tissue_img)
+        gene_results_data['tissue_path'] = tissue_img
         with open(out_path / f'{gene_id}_tissues.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[TISSUE]', summary)
+            gene_results_data['tissue_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![Tissue Expression](TISSUE_IMG)', '')
-        gene_results = gene_results.replace('[TISSUE]', 'None Results')
+        gene_results_data['tissue_path'] = ''
+        gene_results_data['tissue_interpretation'] = 'None Results'
     try:
         target_file = next(out_path.rglob('*cultivars.png')).name
         cultivar_img = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('CULTIVAR_IMG', cultivar_img)
+        gene_results_data['cultivar_path'] = cultivar_img
         with open(out_path / f'{gene_id}_cultivars.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[CULTIVAR]', summary)
+            gene_results_data['cultivar_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![Cultivar Expression](CULTIVAR_IMG)', '')
-        gene_results = gene_results.replace('[CULTIVAR]', 'None Results')
+        gene_results_data['cultivar_path'] = ''
+        gene_results_data['cultivar_interpretation'] = 'None Results'
     try:
         target_file = next(out_path.rglob('*genotypes.png')).name
         genotype_img = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('MUTANT_IMG', genotype_img)
+        gene_results_data['mutant_path'] = genotype_img
         with open(out_path / f'{gene_id}_genotypes.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[MUTANT]', summary)
+            gene_results_data['mutant_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![Mutant Expression](MUTANT_IMG)', '')
-        gene_results = gene_results.replace('[MUTANT]', 'None Results')
+        gene_results_data['mutant_path'] = ''
+        gene_results_data['mutant_interpretation'] = 'None Results'
     try:
         target_file = next(out_path.rglob('*treatments.png')).name
         treatment_img = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('TREATMENT_IMG', treatment_img)
+        gene_results_data['treatment_path'] = treatment_img
         with open(out_path / f'{gene_id}_treatments.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[TREATMENT]', summary)
+            gene_results_data['treatment_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![Treatment Expression](TREATMENT_IMG)', '')
-        gene_results = gene_results.replace('[TREATMENT]', 'None Results')
+        gene_results_data['treatment_path'] = ''
+        gene_results_data['treatment_interpretation'] = 'None Results'
 
     try:
         target_file = next(out_path.rglob('*_umap.png')).name
         sc_umap = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('UMAP_IMG', sc_umap)
+        gene_results_data['umap_path'] = sc_umap
         target_file = next(out_path.rglob('*_violin_plot.png')).name
         sc_violin = f'{gene_id}/{target_file}'
-        gene_results = gene_results.replace('VIOLIN_IMG', sc_violin)
+        gene_results_data['violin_path'] = sc_violin
         with open(out_path / f'{gene_id}_single_cell.summary',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
-            gene_results = gene_results.replace('[SINGLE_CELL]', summary)
+            gene_results_data['single_cell_interpretation'] = summary
     except (StopIteration, FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace('![UMAP Plot](UMAP_IMG)', '')
-        gene_results = gene_results.replace('![Violin Plot](VIOLIN_IMG)', '')
-        gene_results = gene_results.replace('[SINGLE_CELL]', 'None Results')
+        gene_results_data['umap_path'] = ''
+        gene_results_data['violin_path'] = ''
+        gene_results_data['single_cell_interpretation'] = 'None Results'
 
     try:
         protein_structure_files = list(out_path.glob(
             '*_seed_101_sample_0.cif'))
         if len(protein_structure_files) == 0:
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)', '')
-            gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+            gene_results_data['protein_structures'] = ''
+            gene_results_data['structure_interpretation'] = 'None Results'
         else:
+            gene_results_data['protein_structures'] = ''
             for structure_path in protein_structure_files:
                 structure_file = f'{gene_id}/{structure_path.name}'
-                gene_results = gene_results.replace(
-                    'STRUCTURE_IMG', structure_file)
-                gene_results = gene_results.replace(
-                    '**Interpretation:**\n[STRUCTURE]',
-                    '![3D Structure](STRUCTURE_IMG)\n'
-                    '**Interpretation:**\n[STRUCTURE]')
-            gene_results = gene_results.replace(
-                '![3D Structure](STRUCTURE_IMG)\n'
-                '**Interpretation:**\n[STRUCTURE]',
-                '**Interpretation:**\n[STRUCTURE]')
+                gene_results_data['protein_structures'] += f'![3D Structure]({structure_file})\n'
             with open(out_path / f'{gene_id}_structure.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-                gene_results = gene_results.replace('[STRUCTURE]', summary)
+                gene_results_data['structure_interpretation'] = summary
     except (FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace(
-            '![3D Structure](STRUCTURE_IMG)', '')
-        gene_results = gene_results.replace('[STRUCTURE]', 'None Results')
+        gene_results_data['protein_structures'] = ''
+        gene_results_data['structure_interpretation'] = 'None Results'
 
     epic_summary = ''
     try:
@@ -3119,30 +3102,38 @@ async def summarize_gene_analysis(
             epic_summary += summary
     except (FileNotFoundError, OSError, IOError):
         epic_summary += ''
-    gene_results = gene_results.replace('[EPIC]', epic_summary)
+    gene_results_data['epic_interpretation'] = epic_summary
 
     try:
         motif_file_num = len(list(out_path.glob('*_logo.png')))
         if motif_file_num == 0:
-            gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
-            gene_results = gene_results.replace('[MOTIF]', 'None Results')
+            gene_results_data['motif_images'] = ''
+            gene_results_data['motif_interpretation'] = 'None Results'
         else:
+            gene_results_data['motif_images'] = ''
             for index in range(motif_file_num):
                 motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-                gene_results = gene_results.replace('MOTIF_IMG', motif_file)
-                gene_results = gene_results.replace(
-                    '**Interpretation:**\n[MOTIF]',
-                    '![Motif](MOTIF_IMG)\n**Interpretation:**\n[MOTIF]')
-            gene_results = gene_results.replace(
-                '![Motif](MOTIF_IMG)\n**Interpretation:**\n[MOTIF]',
-                '**Interpretation:**\n[MOTIF]')
+                gene_results_data['motif_images'] += f'![Motif]({motif_file})\n'
             with open(out_path / f'{gene_id}_motif.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
-                gene_results = gene_results.replace('[MOTIF]', summary)
+                gene_results_data['motif_interpretation'] = summary
     except (FileNotFoundError, OSError, IOError):
-        gene_results = gene_results.replace('![Motif](MOTIF_IMG)', '')
-        gene_results = gene_results.replace('[MOTIF]', 'None Results')
+        gene_results_data['motif_images'] = ''
+        gene_results_data['motif_interpretation'] = 'None Results'
+    gene_results = get_prompt(prompt_file, 'template/gene_function_result', gene_results_data)
+    obj_replace_dict = {
+        'tree_path': '![Phylogenetic Tree]()', 
+        'tissue_path': '![Tissue Expression]()', 
+        'cultivar_path': '![Cultivar Expression]()', 
+        'mutant_path': '![Mutant Expression]()', 
+        'treatment_path': '![Treatment Expression]()', 
+        'umap_path': '![UMAP Plot]()', 
+        'violin_path': '![Violin Plot]()', 
+    }
+    for obj_key, replace_content in obj_replace_dict.items():
+        if gene_results_data[obj_key] == '':
+            gene_results = gene_results.replace(replace_content, '')
     with open(f'{deepgenome_out}/{gene_id}_results.md',
               'w', encoding='utf-8') as fo:
         fo.write(gene_results)
