@@ -932,7 +932,6 @@ async def serve() -> None:
                     top_p=deepgenomeconfig.TOP_P,
                     user=deepgenomeconfig.USER,
                     deepgenome_out=deepgenomeconfig.DEEPGENOME_OUT,
-                    result_template=deepgenomeconfig.TEMPLATE,
                     download_path=deepgenomeconfig.DOWNLOAD_PATH,
                     marker=deepgenomeconfig.DOWNLOAD_MARKER,
                     max_keys=deepgenomeconfig.DOWNLOAD_MAX_KEYS,

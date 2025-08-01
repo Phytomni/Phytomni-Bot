@@ -710,7 +710,6 @@ async def gene_function(
     top_p: float = dgc.TOP_P,
     user: str = dgc.USER,
     deepgenome_out: str = dgc.DEEPGENOME_OUT,
-    result_template: str = dgc.TEMPLATE,
     download_path: str = dgc.DOWNLOAD_PATH,
     marker: Optional[str] = dgc.DOWNLOAD_MARKER,
     max_keys: int = dgc.DOWNLOAD_MAX_KEYS,
@@ -797,7 +796,6 @@ async def gene_function(
         top_p: The top_p value for the language model.
         user: The user for the language model.
         deepgenome_out: The output directory for deep genome results.
-        result_template: The path to the result template.
         download_path: The path to download files.
         marker: The marker for downloading files.
         max_keys: The maximum number of keys to download.
@@ -1050,7 +1048,6 @@ async def gene_function(
                 gene_id=gene_id,
                 gene_task=gene_task,
                 deepgenome_out=deepgenome_out,
-                result_template=result_template,
                 analysis_url=analysis_url,
                 region=region,
                 download_path=download_path,
@@ -2917,7 +2914,6 @@ async def summarize_gene_analysis(
         gene_task: A dictionary containing the task information for all
             analyses.
         deepgenome_out: The output directory for deep genome results.
-        result_template: The path to the result template.
         analysis_url: The URL for the analysis service.
         region: The region for the analysis service.
         download_path: The path to download files.
@@ -3078,7 +3074,8 @@ async def summarize_gene_analysis(
             gene_results_data['protein_structures'] = ''
             for structure_path in protein_structure_files:
                 structure_file = f'{gene_id}/{structure_path.name}'
-                gene_results_data['protein_structures'] += f'![3D Structure]({structure_file})\n'
+                gene_results_data['protein_structures'] += (
+                    f'![3D Structure]({structure_file})\n')
             with open(out_path / f'{gene_id}_structure.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
@@ -3113,7 +3110,8 @@ async def summarize_gene_analysis(
             gene_results_data['motif_images'] = ''
             for index in range(motif_file_num):
                 motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-                gene_results_data['motif_images'] += f'![Motif]({motif_file})\n'
+                gene_results_data['motif_images'] += (
+                    f'![Motif]({motif_file})\n')
             with open(out_path / f'{gene_id}_motif.summary',
                       'r', encoding='utf-8') as summary_file:
                 summary = summary_file.read()
@@ -3121,15 +3119,16 @@ async def summarize_gene_analysis(
     except (FileNotFoundError, OSError, IOError):
         gene_results_data['motif_images'] = ''
         gene_results_data['motif_interpretation'] = 'None Results'
-    gene_results = get_prompt(prompt_file, 'template/gene_function_result', gene_results_data)
+    gene_results = get_prompt(prompt_file, 'template/gene_function_result',
+                              gene_results_data)
     obj_replace_dict = {
-        'tree_path': '![Phylogenetic Tree]()', 
-        'tissue_path': '![Tissue Expression]()', 
-        'cultivar_path': '![Cultivar Expression]()', 
-        'mutant_path': '![Mutant Expression]()', 
-        'treatment_path': '![Treatment Expression]()', 
-        'umap_path': '![UMAP Plot]()', 
-        'violin_path': '![Violin Plot]()', 
+        'tree_path': '![Phylogenetic Tree]()',
+        'tissue_path': '![Tissue Expression]()',
+        'cultivar_path': '![Cultivar Expression]()',
+        'mutant_path': '![Mutant Expression]()',
+        'treatment_path': '![Treatment Expression]()',
+        'umap_path': '![UMAP Plot]()',
+        'violin_path': '![Violin Plot]()',
     }
     for obj_key, replace_content in obj_replace_dict.items():
         if gene_results_data[obj_key] == '':
