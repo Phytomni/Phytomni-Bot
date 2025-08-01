@@ -210,9 +210,9 @@ async def deep_research(
             {'upload_context': upload_context, 'user_query': user_query})
     else:
         user_query = get_prompt(prompt_file,
-                              'user/deep_research_query',
-                              {'user_query': user_query})
-    
+                                'user/deep_research_query',
+                                {'user_query': user_query})
+
     query_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,
