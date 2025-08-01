@@ -38,6 +38,20 @@ system:
     1. Domestication studies
 
     2. Applications (e.g., stress resistance)'
+template:
+  gene_function_result: "# Comprehensive Analysis Report of {{gene_name}}\n## I. Phylogenetic\
+    \ Analysis\n### Phylogenetic Tree\n![Phylogenetic Tree]({{tree_path}})\n**Interpretation:**\n{{tree_interpretation}}\n##\
+    \ II. Bulk RNA Expression Analysis\n### 2.1 Tissue-Specific Expression\n![Tissue\
+    \ Expression]({{tissue_path}})\n**Interpretation:**\n{{tissue_interpretation}}\n### 2.2 Cultivar-Specific Expression\
+    \ \n![Cultivar Expression]({{cultivar_path}})\n**Interpretation:**\n{{cultivar_interpretation}}\n### 2.3 Mutant-Specific\
+    \ Expression\n![Mutant Expression]({{mutant_path}})\n**Interpretation:**\n{{mutant_interpretation}}\n### 2.4\
+    \ Treatment-Specific Expression\n![Treatment Expression]({{treatment_path}})\n**Interpretation:**\n{{treatment_interpretation}}\n## III.\
+    \ Cell-Type Specific Expression\n### UMAP Visualization\n![UMAP Plot]({{umap_path}})\n### Violin\
+    \ Plot\n![Violin Plot]({{violin_path}})\n**Interpretation:**\n{{single_cell_interpretation}}\n## IV. Promoter\
+    \ Analysis\n### 4.1 Motif Analysis\n#### Identified Motifs\n{{motif_images}}\n**Interpretation:**\n{{motif_interpretation}}\n###\
+    \ 4.2 Epigenetic Modifications\n**Analysis:**\n{{epic_interpretation}}\n## V. Protein Analysis\n### 5.1 Protein\
+    \ Domains\n{{domain_table}}\n\n**Interpretation:**\n{{domain_interpretation}}\n### 5.2 Protein 3D Structure\n\
+    \ {{protein_structures}}\n**Interpretation:**\n{{structure_interpretation}}"
 user:
   retrieval: '# The following contents are the search results related to the user''s
     message:
