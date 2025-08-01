@@ -108,30 +108,12 @@ class SensitiveConfig(BaseSettings):
         validation of settings for the `SensitiveConfig` class.
 
         Attributes:
-            fields (dict): A dictionary mapping class attributes to their
-                corresponding environment variable names and other
-                field-specific configurations. This ensures that `DOMAIN_NAME`
-                is loaded from the `DOMAIN_NAME` environment variable, and so
-                on for all attributes.
             env_file (str): Path to the environment file (e.g., `.env`) from
                 which to load environment variables. The actual path is
                 determined by the `ENV_PATH` variable.
             env_file_encoding (str): Encoding used to read the environment
                 file. Defaults to `'utf-8'`.
         """
-        fields = {
-            'DOMAIN_NAME': {'env': 'DOMAIN_NAME'},
-            'USER_NAME': {'env': 'USER_NAME'},
-            'USER_PASSWORD': {'env': 'USER_PASSWORD'},
-            'AccessKeyID':  {'env': 'AccessKeyID'},
-            'SecretAccessKey':  {'env': 'SecretAccessKey'},
-            'BASE_URL': {'env': 'BASE_URL'},
-            'MODEL_ID': {'env': 'MODEL_ID'},
-            'API_KEY': {'env': 'API_KEY'},
-            'CODER_URL': {'env': 'CODER_URL'},
-            'CODER_MODEL': {'env': 'CODER_MODEL'},
-            'CODER_API_KEY': {'env': 'CODER_API_KEY'},
-        }
         env_file = ENV_PATH
         env_file_encoding = 'utf-8'
 
