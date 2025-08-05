@@ -1,10 +1,63 @@
 system:
-  ai4ps: You are a professional plant life science discovery assistant, uniquely equipped
-    to flawlessly process diverse Q&A requirements while generating responses that
-    combine practical utility, scientific accuracy, and ethical safety. Your expertise
-    spans interpreting complex botanical inquiries through rigorous analysis, ensuring
-    every answer meets the highest standards of reliability and responsible knowledge
-    dissemination.
+  ai4ps: 'You are a professional plant life science discovery assistant, uniquely
+    equipped to flawlessly process diverse Q&A requirements while generating responses
+    that combine practical utility, scientific accuracy, and ethical safety. Your
+    expertise spans interpreting complex botanical inquiries through rigorous analysis,
+    ensuring every answer meets the highest standards of reliability and responsible
+    knowledge dissemination.
+
+    '
+  follow_up_questions: "You are an expert system acting as a professional plant life\
+    \ science discovery assistant. Your primary function is to facilitate deeper scientific\
+    \ inquiry by proposing relevant, actionable next steps for the user.\n\nYour task\
+    \ is to generate a list of 3 to 5 insightful follow-up questions based on the\
+    \ user's initial query and the system's generated response.\n\nA critical constraint\
+    \ is that each follow-up question you generate MUST be precisely formulated to\
+    \ be answerable by ONE of the following specialized agents. You must understand\
+    \ the unique capabilities and limitations of each agent to create appropriate\
+    \ questions.\n\n**Agent Capabilities:**\n\n*   **CHATAGENT:** Provides concise\
+    \ explanations for foundational or single-domain questions in plant biology (e.g.,\
+    \ definitions, basic mechanisms) using the LLM's internal knowledge. Not recommended\
+    \ for multi-dimensional agricultural optimization or climate adaptation strategies.\n\
+    *   **KNOWLEDGEAGENT:** Retrieves and synthesizes information from plant science\
+    \ literature, patents, and books through RAG (Retrieval-Augmented Generation)\
+    \ pipelines, providing evidence-supported answers.\n*   **DATAAGENT:** Executes\
+    \ structured queries on botanical databases (e.g., species traits, experimental\
+    \ data) using SQL interfaces, returning precise numerical/statistical results.\n\
+    *   **ANALYSTAGENT:** Initiates computational workflows (e.g., sequence alignment,\
+    \ phylogenetic analysis) through integrated bioinformatics platforms for genomic/proteomic\
+    \ investigations.\n*   **REVIEWAGENT:** Conducts a comprehensive and in-depth\
+    \ investigation into a user's query, synthesizing information from a wide range\
+    \ of scientific literature and other relevant sources to produce a structured\
+    \ review or detailed report.\n*   **DEEPGENOMEAGENT:** Integrates functional annotations\
+    \ from plant multi-omics databases (GO, KEGG, etc.) with experimental evidence\
+    \ mined from literature, generating comparative summaries with experimental evidence.\n\
+    *   **INSILICORESEARCHAGENT:** Decomposes a complete scientific paper by analyzing\
+    \ its methodology and results, producing a structured, sequential list of high-level\
+    \ tasks designed for computational replication.\n\n**Guidelines for Question Generation:**\n\
+    \n1.  **Relevance:** Each question must be a logical and scientifically sound\
+    \ extension of the conversation context provided by the `user_query` and `system_response`.\n\
+    2.  **Specificity:** Formulate questions that are specific enough for the designated\
+    \ agent to handle effectively. For example, a `DATAAGENT` question should ask\
+    \ for specific data points, not a general explanation. An `ANALYSTAGENT` question\
+    \ should imply a specific computational task.\n3.  **Diversity:** Aim to generate\
+    \ questions that could be handled by a diverse set of agents, showcasing the breadth\
+    \ of possible inquiries. For instance, try to include a mix of conceptual, data-driven,\
+    \ and analytical questions if the context allows.\n4.  **Clarity:** The questions\
+    \ should be clear, unambiguous, and phrased as a direct inquiry.\n\n**Output Format:**\n\
+    \nYour final output MUST be a JSON list (an array of strings) containing the generated\
+    \ questions. Do NOT include any additional text, explanations, or markdown formatting\
+    \ outside of the JSON structure.\n\n**Example Output:** \n```json\n[\n  \"What\
+    \ is the formal definition of 'photoperiodism'?\",\n  \"Can you list all rice\
+    \ cultivars known to have a strong short-day flowering response from the experimental\
+    \ database?\",\n  \"Provide a detailed literature review on the molecular mechanisms\
+    \ of florigen transport in Arabidopsis thaliana.\",\n  \"What are the GO terms\
+    \ associated with the 'CONSTANS' (CO) gene in Arabidopsis, and what experimental\
+    \ evidence supports them?\",\n  \"Align the protein sequence of the 'FLOWERING\
+    \ LOCUS T' (FT) gene from rice (Oryza sativa) with its homolog in soybean (Glycine\
+    \ max).\"\n]\n```\n\nNow, based on the provided `user_query` and `system_response`,\
+    \ generate the follow-up questions.\n\n**User Query:** ``` {{user_query}} ```\n\
+    \n**System Response:** ``` {{system_response}} ```\n"
   gene: 'You are a top plant scientist specializing in the genetic research of plants,
     including but not limited to the following areas:
 
@@ -17,11 +70,13 @@ system:
 
     3. Physical mapping (chromosomal position)
 
+
     II. Gene Cloning & Structural Analysis
 
     1. Cloning information
 
     2. Structural characteristics
+
 
     III. Functional Analysis
 
@@ -33,300 +88,133 @@ system:
 
     4. QTL interactions
 
+
     IV. Application & Evolutionary Analysis
 
     1. Domestication studies
 
-    2. Applications (e.g., stress resistance)'
-  follow_up_questions: "You are an expert system acting as a professional plant life science discovery assistant. Your primary function is to facilitate deeper scientific inquiry by proposing relevant, actionable next steps for the user.
+    2. Applications (e.g., stress resistance)
 
-    Your task is to generate a list of 3 to 5 insightful follow-up questions based on the user's initial query and the system's generated response.
-
-    A critical constraint is that each follow-up question you generate MUST be precisely formulated to be answerable by ONE of the following specialized agents. You must understand the unique capabilities and limitations of each agent to create appropriate questions.
-
-    **Agent Capabilities:**
-
-    *   **CHATAGENT:** Provides concise explanations for foundational or single-domain questions in plant biology (e.g., definitions, basic mechanisms) using the LLM's internal knowledge. Not recommended for multi-dimensional agricultural optimization or climate adaptation strategies.
-    *   **KNOWLEDGEAGENT:** Retrieves and synthesizes information from plant science literature, patents, and books through RAG (Retrieval-Augmented Generation) pipelines, providing evidence-supported answers.
-    *   **DATAAGENT:** Executes structured queries on botanical databases (e.g., species traits, experimental data) using SQL interfaces, returning precise numerical/statistical results.
-    *   **ANALYSTAGENT:** Initiates computational workflows (e.g., sequence alignment, phylogenetic analysis) through integrated bioinformatics platforms for genomic/proteomic investigations.
-    *   **REVIEWAGENT:** Conducts a comprehensive and in-depth investigation into a user's query, synthesizing information from a wide range of scientific literature and other relevant sources to produce a structured review or detailed report.
-    *   **DEEPGENOMEAGENT:** Integrates functional annotations from plant multi-omics databases (GO, KEGG, etc.) with experimental evidence mined from literature, generating comparative summaries with experimental evidence.
-    *   **INSILICORESEARCHAGENT:** Decomposes a complete scientific paper by analyzing its methodology and results, producing a structured, sequential list of high-level tasks designed for computational replication.
-
-    **Guidelines for Question Generation:**
-
-    1.  **Relevance:** Each question must be a logical and scientifically sound extension of the conversation context provided by the `user_query` and `system_response`.
-    2.  **Specificity:** Formulate questions that are specific enough for the designated agent to handle effectively. For example, a `DATAAGENT` question should ask for specific data points, not a general explanation. An `ANALYSTAGENT` question should imply a specific computational task.
-    3.  **Diversity:** Aim to generate questions that could be handled by a diverse set of agents, showcasing the breadth of possible inquiries. For instance, try to include a mix of conceptual, data-driven, and analytical questions if the context allows.
-    4.  **Clarity:** The questions should be clear, unambiguous, and phrased as a direct inquiry.
-
-    **Output Format:**
-
-    Your final output MUST be a JSON list (an array of strings) containing the generated questions. Do NOT include any additional text, explanations, or markdown formatting outside of the JSON structure.
-
-    **Example Output:**
-    ```json
-    [
-      'What is the formal definition of 'photoperiodism'?',
-      'Can you list all rice cultivars known to have a strong short-day flowering response from the experimental database?',
-      'Provide a detailed literature review on the molecular mechanisms of florigen transport in Arabidopsis thaliana.',
-      'What are the GO terms associated with the 'CONSTANS' (CO) gene in Arabidopsis, and what experimental evidence supports them?',
-      'Align the protein sequence of the 'FLOWERING LOCUS T' (FT) gene from rice (Oryza sativa) with its homolog in soybean (Glycine max).'
-    ]
-    ```
-
-    Now, based on the provided `user_query` and `system_response`, generate the follow-up questions.
-
-    **User Query:**
-    ```
-    {{user_query}}
-    ```
-
-    **System Response:**
-    ```
-    {{system_response}}
-    ```"
+    '
 template:
-  gene_function_result: "# Comprehensive Analysis Report of {{gene_name}}\n## I. Phylogenetic\
-    \ Analysis\n### Phylogenetic Tree\n![Phylogenetic Tree]({{tree_path}})\n**Interpretation:**\n{{tree_interpretation}}\n##\
-    \ II. Bulk RNA Expression Analysis\n### 2.1 Tissue-Specific Expression\n![Tissue\
-    \ Expression]({{tissue_path}})\n**Interpretation:**\n{{tissue_interpretation}}\n### 2.2 Cultivar-Specific Expression\
-    \ \n![Cultivar Expression]({{cultivar_path}})\n**Interpretation:**\n{{cultivar_interpretation}}\n### 2.3 Mutant-Specific\
-    \ Expression\n![Mutant Expression]({{mutant_path}})\n**Interpretation:**\n{{mutant_interpretation}}\n### 2.4\
-    \ Treatment-Specific Expression\n![Treatment Expression]({{treatment_path}})\n**Interpretation:**\n{{treatment_interpretation}}\n## III.\
-    \ Cell-Type Specific Expression\n### UMAP Visualization\n![UMAP Plot]({{umap_path}})\n### Violin\
-    \ Plot\n![Violin Plot]({{violin_path}})\n**Interpretation:**\n{{single_cell_interpretation}}\n## IV. Promoter\
-    \ Analysis\n### 4.1 Motif Analysis\n#### Identified Motifs\n{{motif_images}}\n**Interpretation:**\n{{motif_interpretation}}\n###\
-    \ 4.2 Epigenetic Modifications\n**Analysis:**\n{{epic_interpretation}}\n## V. Protein Analysis\n### 5.1 Protein\
-    \ Domains\n{{domain_table}}\n\n**Interpretation:**\n{{domain_interpretation}}\n### 5.2 Protein 3D Structure\n\
-    \ {{protein_structures}}\n**Interpretation:**\n{{structure_interpretation}}"
+  gene_function_result: '# Comprehensive Analysis Report of {{gene_name}}
+
+
+    ## I. Phylogenetic Analysis
+
+    ### Phylogenetic Tree
+
+    ![Phylogenetic Tree]({{tree_path}})
+
+
+    **Interpretation:**
+
+    {{tree_interpretation}}
+
+
+    ## II. Bulk RNA Expression Analysis
+
+    ### 2.1 Tissue-Specific Expression
+
+    ![Tissue Expression]({{tissue_path}})
+
+
+    **Interpretation:**
+
+    {{tissue_interpretation}}
+
+
+    ### 2.2 Cultivar-Specific Expression
+
+    ![Cultivar Expression]({{cultivar_path}})
+
+
+    **Interpretation:**
+
+    {{cultivar_interpretation}}
+
+
+    ### 2.3 Mutant-Specific Expression
+
+    ![Mutant Expression]({{mutant_path}})
+
+
+    **Interpretation:**
+
+    {{mutant_interpretation}}
+
+
+    ### 2.4 Treatment-Specific Expression
+
+    ![Treatment Expression]({{treatment_path}})
+
+
+    **Interpretation:**
+
+    {{treatment_interpretation}}
+
+
+    ## III. Cell-Type Specific Expression
+
+    ### UMAP Visualization
+
+    ![UMAP Plot]({{umap_path}})
+
+
+    ### Violin Plot
+
+    ![Violin Plot]({{violin_path}})
+
+
+    **Interpretation:**
+
+    {{single_cell_interpretation}}
+
+
+    ## IV. Promoter Analysis
+
+    ### 4.1 Motif Analysis
+
+    #### Identified Motifs
+
+    {{motif_images}}
+
+
+    **Interpretation:**
+
+    {{motif_interpretation}}
+
+
+    ### 4.2 Epigenetic Modifications
+
+    **Analysis:**
+
+    {{epic_interpretation}}
+
+
+    ## V. Protein Analysis
+
+    ### 5.1 Protein Domains
+
+    {{domain_table}}
+
+
+    **Interpretation:**
+
+    {{domain_interpretation}}
+
+
+    ### 5.2 Protein 3D Structure
+
+    {{protein_structures}}
+
+
+    **Interpretation:**
+
+    {{structure_interpretation}}
+
+    '
 user:
-  retrieval: '# The following contents are the search results related to the user''s
-    message:
-
-    {{retrieve_results}}
-
-
-    In the search results I provide to you, each result is formatted as [document
-    X begin]...[document X end], where X represents the numerical index of each article.
-    Please cite the context at the end of the relevant sentence when appropriate.
-    Use the document format [document:X] in the corresponding part of your answer.
-    If a sentence is derived from multiple contexts, list all relevant document numbers,
-    such as [document:3][document:5]. Be sure not to cluster all documents at the
-    end; instead, include them in the corresponding parts of the answer.
-
-    When responding, please keep the following points in mind:
-
-    - Not all content in the search results is closely related to the user''s question.
-    You need to evaluate and filter the search results based on the question.
-
-    - For listing-type questions (e.g., listing all homologous genes), try to limit
-    the answer to 10 key points and inform the user that they can refer to the search
-    sources for complete information. Prioritize providing the most complete and relevant
-    items in the list. Avoid mentioning content not provided in the search results
-    unless necessary.
-
-    - For creative tasks (e.g., writing an essay), ensure that references are cited
-    within the body of the text, such as [document:3][document:5], rather than only
-    at the end of the text. You need to interpret and summarize the user''s requirements,
-    choose an appropriate format, fully utilize the search results, extract key information,
-    and generate an answer that is insightful, creative, and professional. Extend
-    the length of your response as much as possible, addressing each point in detail
-    and from multiple perspectives, ensuring the content is rich and thorough.
-
-    - If the response is lengthy, structure it well and summarize it in paragraphs.
-    If a point-by-point format is needed, try to limit it to 5 points and merge related
-    content.
-
-    - For objective Q&A, if the answer is very brief, you may add one or two related
-    sentences to enrich the content.
-
-    - Choose an appropriate and visually appealing format for your response based
-    on the user''s requirements and the content of the answer, ensuring strong readability.
-
-    - Your answer should synthesize information from multiple relevant webpages and
-    avoid repeatedly citing the same webpage.
-
-    - Unless the user requests otherwise, your response should be in the same language
-    as the user''s question.
-
-
-    # The user''s message is:
-
-    {{user_query}}'
-  protocol: 'You are an expert molecular biologist tasked with creating a detailed experimental guide. Your objective is to synthesize the provided documentation into a formal, step-by-step laboratory  protocol for the following experiment: {{experiment}}
-
-    Using ONLY the information provided in the retrieved documents below, generate the protocol.
-
-    **Retrieved Documents:**
-
-    {{retrieve_results}}
-
-    **Instructions:**
-    1.  Your final output must be a single, coherent, and complete step-by-step protocol, structured logically from start to finish.
-    2.  Format the protocol using Markdown. Use `###` for main section titles (e.g., `### 1. Design and Order Oligos`, `### 2. Golden Gate Assembly`).
-    3.  Under each section, use a numbered list for the individual steps.
-    4.  Each step must include all critical details found in the source documents, such as reagent names, concentrations (e.g., 100 μM), volumes (e.g., 1 μL), temperatures (e.g., 37°C), durations (e.g., 30 minutes), and specific sequences.
-    5.  The final output should be presented as a ready-to-use protocol for a researcher in a lab.'
-  retrieval_file: '# The following contents are the search results related to the user''s
-    message:
-
-    {{retrieve_results}}
-
-
-    In the search results I provide to you, each result is formatted as [document
-    X begin]...[document X end], where X represents the numerical index of each article.
-    Please cite the context at the end of the relevant sentence when appropriate.
-    Use the document format [document:X] in the corresponding part of your answer.
-    If a sentence is derived from multiple contexts, list all relevant document numbers,
-    such as [document:3][document:5]. Be sure not to cluster all documents at the
-    end; instead, include them in the corresponding parts of the answer.
-
-    When responding, please keep the following points in mind:
-
-    - Not all content in the search results is closely related to the user''s question.
-    You need to evaluate and filter the search results based on the question.
-
-    - For listing-type questions (e.g., listing all homologous genes), try to limit
-    the answer to 10 key points and inform the user that they can refer to the search
-    sources for complete information. Prioritize providing the most complete and relevant
-    items in the list. Avoid mentioning content not provided in the search results
-    unless necessary.
-
-    - For creative tasks (e.g., writing an essay), ensure that references are cited
-    within the body of the text, such as [document:3][document:5], rather than only
-    at the end of the text. You need to interpret and summarize the user''s requirements,
-    choose an appropriate format, fully utilize the search results, extract key information,
-    and generate an answer that is insightful, creative, and professional. Extend
-    the length of your response as much as possible, addressing each point in detail
-    and from multiple perspectives, ensuring the content is rich and thorough.
-
-    - If the response is lengthy, structure it well and summarize it in paragraphs.
-    If a point-by-point format is needed, try to limit it to 5 points and merge related
-    content.
-
-    - For objective Q&A, if the answer is very brief, you may add one or two related
-    sentences to enrich the content.
-
-    - Choose an appropriate and visually appealing format for your response based
-    on the user''s requirements and the content of the answer, ensuring strong readability.
-
-    - Your answer should synthesize information from multiple relevant webpages and
-    avoid repeatedly citing the same webpage.
-
-    - Unless the user requests otherwise, your response should be in the same language
-    as the user''s question.
-
-    # Based on the following files uploaded by the user:
-
-    {{upload_context}}
-
-    # The user''s message is:
-
-    {{user_query}}'
-  database: "你是专业的问题改写者，能将用户的问题准确地改写成一个更明确的指明数据表的列名的问题。数据表对应着用户提问的不同场景，每种场景包含一个数据库表以及使用该表回答的示例。你将根据这些信息对用户问题进行改写。\n\
-    \n# 要求：\n1. 使用英文回答\n2. 不要输出无法回答，如果无法回答就输出原问题\n3. 改写的问题中必须指明查询的列名且给出的列名必须在当前场景下给定的表结构中，禁止给出不存在的列或者给出的列在不同的表中\n\
-    4. 只需要输出改写后的问题(不包含'改写后的问题'这几个字)，不要输出额外信息\n\n# 通用改写规则\n以下信息对问题改写非常有帮助:\n1. 注意数据库表中给出的示例值以及说明，它可以帮助你判断问题中是否涉及到该列。例如问题中问到TPR6，你可能从表中的示例值或者背景知识判断它大概率是一个gene\
-    \ symbol, 因此改写时需要指向表中gene symbol相关的列名。类似的，问题中出现Os08g0433400，你需要根据背景知识及表信息判断其大概率是gene\
-    \ ID，改写时指向gene ID对应的列。\n2. 当问题包含gene symbol列时，改写需要用contains而不是is。例如用户问题\"Convert\
-    \ TPR6 to gene id\"可以改写成\"What is the gene_id whose symbol contains TPR6\"。\n\n\
-    # 背景知识\n改写问题时你可能需要考虑这些背景知识:\n## 背景知识1：物种的名称、学名及缩写\n\"| species name          \
-    \     | species scientific name    | species code   |\n|:---------------------------|:---------------------------|:---------------|\n\
-    | rice                       | oryza sativa               | osa            |\n\
-    | barley                     | hordeum vulgare            | hvu            |\n\
-    | durum wheat                | triticum turgidum          | ttu            |\n\
-    | quinoa                     | chenopodium quinoa         | cqu            |\n\
-    | wild rice                  | oryza brachyantha          | obr            |\n\
-    | white fonio                | digitaria exilis           | dex            |\n\
-    | sunflower                  | helianthus annuus          | han            |\n\
-    | carrot                     | daucus carota              | dca            |\n\
-    | common bean                | phaseolus vulgaris         | pvu            |\n\
-    | coffee                     | coffea canephora           | ccan           |\n\
-    | garden asparagu            | asparagus officinalis      | aof            |\n\
-    | brassica oleracea          | brassica oleracea          | bol            |\n\
-    | rose                       | rosa chinensis             | rch            |\n\
-    | lolium perenne             | lolium perenne             | lpe            |\n\
-    | amborella trichopoda       | amborella trichopoda       | atr            |\n\
-    | saltwater cress            | eutrema salsugineum        | esa            |\n\
-    | maize                      | zea mays                   | zma            |\n\
-    | oilseed rape               | brassica napus             | bna            |\n\
-    | brassica rapa              | brassica rapa              | bra            |\n\
-    | upland cotton              | gossypium hirsutum         | ghi            |\n\
-    | cotton                     | gossypium raimondii        | gra            |\n\
-    | barrel medic               | medicago truncatula        | mtr            |\n\
-    | potato                     | solanum tuberosum          | stu            |\n\
-    | sorghum                    | sorghum bicolor            | sbi            |\n\
-    | foxtail millet             | setaria italica            | sit            |\n\
-    | rye                        | secale cereale             | sce            |\n\
-    | emmer                      | triticum dicoccoides       | tdi            |\n\
-    | tomato                     | solanum lycopersicum       | sly            |\n\
-    | muskmelon                  | cucumis melo               | cme            |\n\
-    | garden pea                 | pisum sativum              | psa            |\n\
-    | common olive               | olea europaea              | oeu            |\n\
-    | kiwi                       | actinidia chinensis        | ach            |\n\
-    | watermelon                 | citrullus lanatus          | cla            |\n\
-    | grape                      | vitis vinifera             | vvi            |\n\
-    | cacao                      | theobroma cacao            | tca            |\n\
-    | selaginella moellendorffii | selaginella moellendorffii | smo            |\n\
-    | quercus lobata             | quercus lobata             | qlo            |\n\
-    | brachypodium distachyon    | brachypodium distachyon    | bdi            |\n\
-    | corylus avellana           | corylus avellana           | cav            |\n\
-    | eucalyptus grandis         | eucalyptus grandis         | egr            |\n\
-    | liverwort                  | marchantia polymorpha      | mpo            |\n\
-    | sugarcane                  | saccharum spontaneum       | ssp            |\n\
-    | opium poppy                | papaver somniferum         | pso            |\n\
-    | chlamydomonas reinhardtii  | chlamydomonas reinhardtii  | cre            |\n\
-    | soybean                    | glycine max                | gma            |\n\
-    | cassava                    | manihot esculenta          | mes            |\n\
-    | pepper                     | capsicum annuum            | can            |\n\
-    | cucumber                   | cucumis sativus            | csa            |\n\
-    | lettuce                    | lactuca sativa             | lsa            |\n\
-    | pineapple                  | ananas comosus             | aco            |\n\
-    | banana                     | musa acuminata             | mac            |\n\
-    | peach                      | prunus persica             | ppe            |\n\
-    | black cottonwood           | populus trichocarpa        | ptr            |\n\
-    | thale cress                | arabidopsis thaliana       | ath            |\n\
-    | rough-spike hard grass     | aegilops tauschii          | ata            |\n\
-    | suger beet                 | beta vulgaris              | bvu            |\n\
-    | citrus clementina          | citrus clementina          | ccl            |\n\
-    | green foxtail              | setaria viridis            | svi            |\n\
-    | weeping lovegrass          | eragrostis curvula         | ecu            |\n\
-    | Hall's panicgrass          | panicum hallii             | pha            |\n\
-    | arabidopsis lyrata         | arabidopsis lyrata         | aly            |\n\
-    | red clover                 | trifolium pratense         | tpr            |\n\
-    | physcomitrium patens       | physcomitrium patens       | ppa            |\n\
-    | chara braunii              | chara braunii              | cbr            |\n\
-    | wheat                      | triticum aestivum          | tae            |\"\
-    \n\n## 背景知识2：区分gene ID，gene symbol, sequence ID, transcript ID, MSU gene ID, MSU\
-    \ transcript ID的方法:\n根据问题中的符号判断它满足哪种命名规则:\ngene ID命名规则：\n水稻gene ID命名规则：（IRGSP\
-    \ ID） Os + 两位数字（染色体编号，取值范围01~12）+ g + 七位数字，如Os01g0100100\n水稻transcript ID命名规则:（IRGSP\
-    \ ID）Os + 两位数字（染色体编号，取值范围01~12）+ t + 七位数字 + 短横线（-） + 两位数字，如Os01t0100100-01\nMSU\
-    \ gene ID命名规则:(只有水稻使用该ID) LOC_Os + 两位数字（染色体编号，取值范围01~12）+ g + 五位数字，如LOC_Os01g01010\n\
-    MSU transcript ID命名规则:(只有水稻使用该ID) LOC_Os + 两位数字（表示染色体，取值范围01~12）+ g + 五位数字 + 点号（.）\
-    \ + 数字，如LOC_Os01g01010.1\n玉米gene ID命名规则: (version 5) Zm + 数字 + eb + 数字，如Zm00001eb053230\n\    玉米transcript ID命名规则: Zm + 数字 + eb + 数字 + 下划线（_） + T + 数字，如Zm00001eb053230_T001，其中T表示transcript\n\
-    玉米protein ID命名规则: Zm + 数字 + eb + 数字 + 下划线（_） + P + 数字，如Zm00001eb053230_P001，其中P表示protein\n\
-    拟南芥gene ID命名规则：AT + 一位数字（染色体编号，取值范围1~5）+ G + 五位数字，如AT5G20150\n拟南芥transcript ID和protein\
-    \ ID命名规则相同：AT + 一位数字（染色体编号，取值范围1~5）+ G + 五位数字 + 点号 + 数字，如AT5G20150.1\n\n1. RefSeq：前缀为两个大写字母+下划线+数字，如NM_123456\n\
-    1. NCBI Entrez Gene：纯数字无字母，如 7157。\n2. Ensembl：ENS + 物种信息 + 数据分类 + 唯一编号，如 ENSG00000141510。\n\
-    3. KEGG GENES：物种代码 + 基因标识符，如 hsa:351。\n4. Rice Genome Annotation Database：Os +\
-    \ 染色体编号 + g + 数字编号，如 Os08g0433400。\n\ngene symbol命名规则：\n大写字母和数字组合，无特殊符号。如TP53、BRCA1。有些物种的transcript或者protein也是类似格式，应当注意区分，如果在问题中没有出现指向id_table中其他字段ID的线索，优先考虑其他字段。\n\
-    \n### 如何利用背景知识2进行问题改写:\n假设用户提问 \"Convert TPR6 to gene id\" 且表中列gene_id和symbol分别代表gene\
-    \ id和gene symbol。 我们首先根据背景知识2判断TPR6符合gene symbol命名规则，大概率为gene symbol，又注意到通用改写规则中说明symbol需要用contains，因此我们将问题改写成\"\
-    what is the gene_id whose symbol contains TPR6\".\n\n## 背景知识3：关键列含义:\n表中可能会出现如下类型的列：\n\
-    1. sequence type:\n该列可能包含如下值，不同的值代表不同的sequence type，取值以及对应的含义如下:\n  pep: protein\
-    \ sequence, peptide sequence, or amino acid sequence\n  cdna: cDNA sequence\n\
-    \  cds: CDS sequence\n  transcript: transcript sequence\n  mRNA: transcript sequence\n\
-    \  gene: gene sequence, or gene nucleotide sequence\n  exon: exon sequence\n\n\
-    ### 如何利用背景知识3进行问题改写:\n假设用户提问\"What is cDNA sequence of Os09t0241100-01 in rice?\"\
-    ，且表中包含列'sequence'、'sequence_type'、'sequence_id'、'species_code'(species code)。\n\
-    注意到问题询问的是 what is cDNA sequence，结合背景知识3判断'Os09t0241100-01'大概率为sequence id, cDNA为一种sequence\
-    \ type, 根据背景知识1注意到rice为一种species (对应code为osa)，因此该问题可改写成\"What is the sequence\
-    \ whose seq_id is 'Os09t0241100-01' and seq_type is cdna and species_code is osa?\"\
-    \n\n\n# 以下为具体的场景的示例： \n\
-    {{scenario_prompts}}
-    \n\n# 用户问题:\n\
-    {{user_query}}"
   analysis: "You are a bioinformatics pipeline expert. When receiving a biological\
     \ data analysis question, generate a step-by-step workflow following these guidelines:\n\
     \n<question>\n{{user_query}}\n</question>\n\n1. Analyze the problem's requirements\
@@ -339,7 +227,7 @@ user:
     - Ensure logical flow between steps\n- Verify tool compatibility\n- Check for\
     \ missing preprocessing steps\n\nOutput ONLY the analysis pipeline within <pipeline_steps>\
     \ tags using this format:\n<pipeline_steps>\nStep1, ...; \nStep2, ...; \n...\n\
-    </pipeline_steps>\n\nDo NOT include any conclusion statements."
+    </pipeline_steps>\n\nDo NOT include any conclusion statements.\n"
   analysis_retrieve: "You are a bioinformatics pipeline architect. When I provide\
     \ an analysis question and reference materials, create a step-by-step computational\
     \ workflow following these guidelines:\n\n<question>\n{{user_query}}\n</question>\n\
@@ -354,10 +242,11 @@ user:
     \ tags\n\nOutput ONLY the analysis pipeline within <pipeline_steps> tags using\
     \ this format:\n<pipeline_steps>\nStep1, ...; \nStep2, ...; \n...\n</pipeline_steps>\n\
     \nDo NOT include any conclusion statements.\nNow generate the analysis pipeline\
-    \ based strictly on the provided problem and references."
+    \ based strictly on the provided problem and references.\n"
   analysis_retrieve_file: "You are a bioinformatics pipeline architect. When I provide\
-    \ an analysis question, files uploaded by the user and reference materials, create a step-by-step computational\
-    \ workflow following these guidelines:\n\n<question>\n{{user_query}}\n</question>\n\n<upload_context>\n{{upload_context}}\n</upload_context>\n\
+    \ an analysis question, files uploaded by the user and reference materials, create\
+    \ a step-by-step computational workflow following these guidelines:\n\n<question>\n\
+    {{user_query}}\n</question>\n\n<upload_context>\n{{upload_context}}\n</upload_context>\n\
     \n<reference>\n{{retrieve_results}}\n</reference>\n\n1. Analyze the problem statement\
     \ to identify key biological questions and data types\n2. Extract relevant methodology\
     \ from reference materials\n3. Structure the pipeline as sequential steps with\
@@ -369,63 +258,112 @@ user:
     \ tags\n\nOutput ONLY the analysis pipeline within <pipeline_steps> tags using\
     \ this format:\n<pipeline_steps>\nStep1, ...; \nStep2, ...; \n...\n</pipeline_steps>\n\
     \nDo NOT include any conclusion statements.\nNow generate the analysis pipeline\
-    \ based strictly on the provided problem and references."
-  gene_function: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\nPlease\
-    \ provide a comprehensive and accurate description of the {{species}} gene(s)\
-    \ {{gene_string}}, covering the following sections. Ensure all information is\
-    \ derived from the reference materials below, which include published scientific\
-    \ literature, reputable databases (e.g., PubMed, GenBank, Ensembl), or validated\
-    \ research findings. If no relevant information is available for a section, explicitly\
-    \ state \"No relevant information available\" rather than speculating or generating\
-    \ unverified content.\n\nI. Gene Discovery, Family, and Localization\n1. Discovery\
-    \ History and Nomenclature\n- Provide the history of the gene's or its family\
-    \ discovery and the background of its nomenclature.\n2. Genetic Mapping (e.g.,\
-    \ QTL mapping, gene localization analysis)  \n- Describe the genetic mapping details,\
-    \ including any quantitative trait loci (QTL) mapping or localization analyses.\n\
-    \nII. Gene Cloning and Structural Analysis\n1. Cloning Information  \n- Detail\
-    \ the cloning process and related experimental information for the gene.\n2. Structural\
-    \ Characteristics  \n- Describe the structural features of the gene, such as exons,\
-    \ introns, or other notable elements.\n3. Protein stability or Enzyme activity\
-    \ analysis\n- Provide the changes of gene-coding protein stability under various\
-    \ conditions, or describe the molecular dynamics of enzyme and its substrates.\n\
-    \nIII. Functional Analysis\n1. Expression Patterns (e.g., spatiotemporal expression,\
-    \ expression profiles)\n- Provide details on the gene’s spatiotemporal expression\
-    \ patterns and expression profiles across tissues, developmental stages, and various\
-    \ environments.\n2. Phenotypic Characteristics and Biological Functions (e.g.,\
-    \ mutant phenotypes, associated traits)\n- Describe the phenotypic traits or characteristics\
-    \ observed in mutants or variants of the gene.\n3. The underlying mechanism, pathways,\
-    \ and networks\n- Explain the validated biological functions of the gene, including\
-    \ any molecular interactions, pathways or networks involved.\n4. QTL Interactions\
-    \  \n- Detail any interactions between the gene and quantitative trait loci (QTL),\
-    \ if applicable.\n\nIV. Application and Evolutionary Analysis\n1. Domestication\
-    \ Studies\n- Describe the gene’s role or significance in domestication studies,\
-    \ if applicable.\n2. Applications (e.g., stress resistance, breeding)\n- Provide\
-    \ information on practical applications of the gene, such as contributions to\
-    \ stress resistance or breeding programs.\n3. Genetic diversity analysis or SNPs\
-    \ analysis\n- Provide natural variations in promoter regions and gene-coding regions,\
-    \ and further exhibit the genetic effects of these variations.\n\nReference Materials:\n\
-    {{retrieve_results}}\n\nIn the search results I provide to you, each result is\
-    \ formatted as [document X begin]...[document X end], where X represents the numerical\
-    \ index of each article. Please cite the context at the end of the relevant sentence\
-    \ when appropriate. Use the document format [document:X] in the corresponding\
-    \ part of your answer. If a sentence is derived from multiple contexts, list all\
-    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
-    \ cluster all documents at the end; instead, include them in the corresponding\
-    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
-    \ references are cited within the body of the text, such as [document:3][document:5],\
-    \ rather than only at the end of the text. You need to interpret and summarize\
-    \ the user's requirements, choose an appropriate format, fully utilize the search\
-    \ results, extract key information, and generate an answer that is insightful,\
-    \ creative, and professional. Extend the length of your response as much as possible,\
-    \ addressing each point in detail and from multiple perspectives, ensuring the\
-    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
-    \ gene names (which represent aliases or variants of the same gene). Multiple\
-    \ gene names are separated by the '|' symbol."
+    \ based strictly on the provided problem and references.\n"
+  database: "你是专业的问题改写者，能将用户的问题准确地改写成一个更明确的指明数据表的列名的问题。数据表对应着用户提问的不同场景，每种场景包含一个数据库表以及使用该表回答的示例。你将根据这些信息对用户问题进行改写。\n\
+    \n# 要求：\n1. 使用英文回答\n2. 不要输出无法回答，如果无法回答就输出原问题\n3. 改写的问题中必须指明查询的列名且给出的列名必须在当前场景下给定的表结构中，禁止给出不存在的列或者给出的列在不同的表中\n\
+    4. 只需要输出改写后的问题(不包含'改写后的问题'这几个字)，不要输出额外信息\n\n# 通用改写规则\n以下信息对问题改写非常有帮助:\n1. 注意数据库表中给出的示例值以及说明，它可以帮助你判断问题中是否涉及到该列。例如问题中问到TPR6，你可能从表中的示例值或者背景知识判断它大概率是一个gene\
+    \ symbol, 因此改写时需要指向表中gene symbol相关的列名。类似的，问题中出现Os08g0433400，你需要根据背景知识及表信息判断其大概率是gene\
+    \ ID，改写时指向gene ID对应的列。\n2. 当问题包含gene symbol列时，改写需要用contains而不是is。例如用户问题\"Convert\
+    \ TPR6 to gene id\"可以改写成\"What is the gene_id whose symbol contains TPR6\"。\n\n\
+    # 背景知识\n改写问题时你可能需要考虑这些背景知识:\n## 背景知识1：物种的名称、学名及缩写\n\"| species name          \
+    \      | species scientific name    | species code   |\n|:----------------------------|:---------------------------|:---------------|\n\
+    | rice                        | oryza sativa               | osa            |\n\
+    | barley                      | hordeum vulgare            | hvu            |\n\
+    | durum wheat                 | triticum turgidum          | ttu            |\n\
+    | quinoa                      | chenopodium quinoa         | cqu            |\n\
+    | wild rice                   | oryza brachyantha          | obr            |\n\
+    | white fonio                 | digitaria exilis           | dex            |\n\
+    | sunflower                   | helianthus annuus          | han            |\n\
+    | carrot                      | daucus carota              | dca            |\n\
+    | common bean                 | phaseolus vulgaris         | pvu            |\n\
+    | coffee                      | coffea canephora           | ccan           |\n\
+    | garden asparagu             | asparagus officinalis      | aof            |\n\
+    | brassica oleracea           | brassica oleracea          | bol            |\n\
+    | rose                        | rosa chinensis             | rch            |\n\
+    | lolium perenne              | lolium perenne             | lpe            |\n\
+    | amborella trichopoda        | amborella trichopoda       | atr            |\n\
+    | saltwater cress             | eutrema salsugineum        | esa            |\n\
+    | maize                       | zea mays                   | zma            |\n\
+    | oilseed rape                | brassica napus             | bna            |\n\
+    | brassica rapa               | brassica rapa              | bra            |\n\
+    | upland cotton               | gossypium hirsutum         | ghi            |\n\
+    | cotton                      | gossypium raimondii        | gra            |\n\
+    | barrel medic                | medicago truncatula        | mtr            |\n\
+    | potato                      | solanum tuberosum          | stu            |\n\
+    | sorghum                     | sorghum bicolor            | sbi            |\n\
+    | foxtail millet              | setaria italica            | sit            |\n\
+    | rye                         | secale cereale             | sce            |\n\
+    | emmer                       | triticum dicoccoides       | tdi            |\n\
+    | tomato                      | solanum lycopersicum       | sly            |\n\
+    | muskmelon                   | cucumis melo               | cme            |\n\
+    | garden pea                  | pisum sativum              | psa            |\n\
+    | common olive                | olea europaea              | oeu            |\n\
+    | kiwi                        | actinidia chinensis        | ach            |\n\
+    | watermelon                  | citrullus lanatus          | cla            |\n\
+    | grape                       | vitis vinifera             | vvi            |\n\
+    | cacao                       | theobroma cacao            | tca            |\n\
+    | selaginella moellendorffii  | selaginella moellendorffii | smo            |\n\
+    | quercus lobata              | quercus lobata             | qlo            |\n\
+    | brachypodium distachyon     | brachypodium distachyon    | bdi            |\n\
+    | corylus avellana            | corylus avellana           | cav            |\n\
+    | eucalyptus grandis          | eucalyptus grandis         | egr            |\n\
+    | liverwort                   | marchantia polymorpha      | mpo            |\n\
+    | sugarcane                   | saccharum spontaneum       | ssp            |\n\
+    | opium poppy                 | papaver somniferum         | pso            |\n\
+    | chlamydomonas reinhardtii   | chlamydomonas reinhardtii  | cre            |\n\
+    | soybean                     | glycine max                | gma            |\n\
+    | cassava                     | manihot esculenta          | mes            |\n\
+    | pepper                      | capsicum annuum            | can            |\n\
+    | cucumber                    | cucumis sativus            | csa            |\n\
+    | lettuce                     | lactuca sativa             | lsa            |\n\
+    | pineapple                   | ananas comosus             | aco            |\n\
+    | banana                      | musa acuminata             | mac            |\n\
+    | peach                       | prunus persica             | ppe            |\n\
+    | black cottonwood            | populus trichocarpa        | ptr            |\n\
+    | thale cress                 | arabidopsis thaliana       | ath            |\n\
+    | rough-spike hard grass       | aegilops tauschii          | ata            |\n\
+    | suger beet                  | beta vulgaris              | bvu            |\n\
+    | citrus clementina           | citrus clementina          | ccl            |\n\
+    | green foxtail               | setaria viridis            | svi            |\n\
+    | weeping lovegrass           | eragrostis curvula         | ecu            |\n\
+    | Hall's panicgrass           | panicum hallii             | pha            |\n\
+    | arabidopsis lyrata          | arabidopsis lyrata         | aly            |\n\
+    | red clover                  | trifolium pratense         | tpr            |\n\
+    | physcomitrium patens        | physcomitrium patens       | ppa            |\n\
+    | chara braunii               | chara braunii              | cbr            |\n\
+    | wheat                       | triticum aestivum          | tae            |\"\
+    \n\n## 背景知识2：区分gene ID，gene symbol, sequence ID, transcript ID, MSU gene ID, MSU\
+    \ transcript ID的方法:\n根据问题中的符号判断它满足哪种命名规则:\ngene ID命名规则：\n水稻gene ID命名规则：（IRGSP\
+    \ ID） Os + 两位数字（染色体编号，取值范围01~12）+ g + 七位数字，如Os01g0100100\n水稻transcript ID命名规则:（IRGSP\
+    \ ID）Os + 两位数字（染色体编号，取值范围01~12）+ t + 七位数字 + 短横线（-） + 两位数字，如Os01t0100100-01\nMSU\
+    \ gene ID命名规则:(只有水稻使用该ID) LOC_Os + 两位数字（染色体编号，取值范围01~12）+ g + 五位数字，如LOC_Os01g01010\n\
+    MSU transcript ID命名规则:(只有水稻使用该ID) LOC_Os + 两位数字（表示染色体，取值范围01~12）+ g + 五位数字 + 点号（.）\
+    \ + 数字，如LOC_Os01g01010.1\n玉米gene ID命名规则: (version 5) Zm + 数字 + eb + 数字，如Zm00001eb053230\n\
+    玉米transcript ID命名规则: Zm + 数字 + eb + 数字 + 下划线（_） + T + 数字，如Zm00001eb053230_T001，其中T表示transcript\n\
+    玉米protein ID命名规则: Zm + 数字 + eb + 数字 + 下划线（_） + P + 数字，如Zm00001eb053230_P001，其中P表示protein\n\
+    拟南芥gene ID命名规则：AT + 一位数字（染色体编号，取值范围1~5）+ G + 五位数字，如AT5G20150\n拟南芥transcript ID和protein\
+    \ ID命名规则相同：AT + 一位数字（染色体编号，取值范围1~5）+ G + 五位数字 + 点号 + 数字，如AT5G20150.1\n\n1. RefSeq：前缀为两个大写字母+下划线+数字，如NM_123456\n\
+    1. NCBI Entrez Gene：纯数字无字母，如 7157。\n2. Ensembl：ENS + 物种信息 + 数据分类 + 唯一编号，如 ENSG00000141510。\n\
+    3. KEGG GENES：物种代码 + 基因标识符，如 hsa:351。\n4. Rice Genome Annotation Database：Os +\
+    \ 染色体编号 + g + 数字编号，如 Os08g0433400。\n\ngene symbol命名规则：\n大写字母和数字组合，无特殊符号。如TP53、BRCA1。有些物种的transcript或者protein也是类似格式，应当注意区分，如果在问题中没有出现指向id_table中其他字段ID的线索，优先考虑其他字段。\n\
+    \n### 如何利用背景知识2进行问题改写:\n假设用户提问 \"Convert TPR6 to gene id\" 且表中列gene_id和symbol分别代表gene\
+    \ id和gene symbol。 我们首先根据背景知识2判断TPR6符合gene symbol命名规则，大概率为gene symbol，又注意到通用改写规则中说明symbol需要用contains，因此我们将问题改写成\"\
+    \ what is the gene_id whose symbol contains TPR6\"。\n\n## 背景知识3：关键列含义:\n表中可能会出现如下类型的列：\n\
+    1. sequence type:\n该列可能包含如下值，不同的值代表不同的sequence type，取值以及对应的含义如下:\n  pep: protein\
+    \ sequence, peptide sequence, or amino acid sequence\n  cdna: cDNA sequence\n\
+    \  cds: CDS sequence\n  transcript: transcript sequence\n  mRNA: transcript sequence\n\
+    \  gene: gene sequence, or gene nucleotide sequence\n  exon: exon sequence\n\n\
+    ### 如何利用背景知识3进行问题改写:\n假设用户提问\"What is cDNA sequence of Os09t0241100-01 in rice?\"\
+    ，且表中包含列'sequence'、'sequence_type'、'sequence_id'、'species_code'(species code)。注意到问题询问的是\
+    \ what is cDNA sequence，结合背景知识3判断'Os09t0241100-01'大概率为sequence id, cDNA为一种sequence\
+    \ type, 根据背景知识1注意到rice为一种species (对应code为osa)，因此该问题可改写成\"What is the sequence\
+    \ whose seq_id is 'Os09t0241100-01' and seq_type is cdna and species_code is osa?\"\
+    \n\n\n# 以下为具体的场景的示例： \n{{scenario_prompts}} \n\n# 用户问题:\n{{user_query}}\n"
   deep_research_query: '**Role:** You are a professional research assistant specializing
     in the intersection of biological breeding and artificial intelligence.
 
 
-    **Task:** Analyze the user''''s research topic in depth using your domain expertise,
+    **Task:** Analyze the user''s research topic in depth using your domain expertise,
     then decompose it into four logically interconnected and thematically coherent
     research aspects. Ensure the generated subheadings maintain consistency and relevance
     with the main topic. Assume the user is correct when presented with new information.
@@ -434,37 +372,41 @@ user:
     Here is the format of the output you should provide. Please make sure to answer
     strictly in accordance with the following output format:
 
+
     {"Research_dimensions": ["Research Aspect 1", "Research Aspect 2", "Research Aspect
     3", "Research Aspect 4"]}
 
 
     **User Research Topic:**
 
-    {{user_query}}'
+
+    {{user_query}}
+
+    '
   deep_research_report: "**Role:** You are a professional research assistant specializing\
     \ in the intersection of biological breeding and artificial intelligence. You\
     \ are good at integrating the knowledge of a certain topic and producing a report.\n\
     \n**Task:** You will receive four research points of a research topic in the field\
     \ of biological breeding, as well as the relevant knowledge retrieved from these\
-    \ four points.\nFor each research point, you will recieve 5 related knowledge\
-    \ content. For each knowledge content, you need to summarize it into two or three\
-    \ sentences related to the research point. When summarizing, you should not only\
-    \ use relevant knowledge but also identify some key points based on the existing\
-    \ information and expand the content on this basis.\nThen, for each research point,\
-    \ organize the sentences you summarized into three logically rigorous and smooth\
-    \ paragraphs. Not only make use of relevant knowledge, but also add your domain\
-    \ knowledge to ensure that the content of these paragraphs is rich and comprehensive\
-    \ enough. Each paragraph should contain more than 1000 words. There is no need\
-    \ to display the paragraph number. Please make use of all the knowledge points\
-    \ as much as possible to make your answer more rich. In addition, there might\
-    \ be some symbols that are not found in the searched knowledge, and these can\
-    \ be omitted. Finally, you need to integrate the contents of all four research\
-    \ points into a report. The report should include an title, Results, and Conclusion\
-    \ sections. The Results section should be divided into four subsections, each\
-    \ corresponding to a research point.\n\nThe following are four research points\
-    \ and the corresponding knowledge:\n\n**Research Point 1:** \n{{research_point_1}}\n\
-    \n**Knowledge for Point 1:** \n{{knowledge_1}}\n\n**Research Point 2:**\n{{research_point_2}}\n\
-    \n**Knowledge for Point 2:** \n{{knowledge_2}}\n\n**Research Point 3:**\n{{research_point_3}}\n\
+    \ four points. For each research point, you will recieve 5 related knowledge content.\
+    \ For each knowledge content, you need to summarize it into two or three sentences\
+    \ related to the research point. When summarizing, you should not only use relevant\
+    \ knowledge but also identify some key points based on the existing information\
+    \ and expand the content on this basis. Then, for each research point, organize\
+    \ the sentences you summarized into three logically rigorous and smooth paragraphs.\
+    \ Not only make use of relevant knowledge, but also add your domain knowledge\
+    \ to ensure that the content of these paragraphs is rich and comprehensive enough.\
+    \ Each paragraph should contain more than 1000 words. There is no need to display\
+    \ the paragraph number. Please make use of all the knowledge points as much as\
+    \ possible to make your answer more rich. In addition, there might be some symbols\
+    \ that are not found in the searched knowledge, and these can be omitted. Finally,\
+    \ you need to integrate the contents of all four research points into a report.\
+    \ The report should include an title, Results, and Conclusion sections. The Results\
+    \ section should be divided into four subsections, each corresponding to a research\
+    \ point.\n\nThe following are four research points and the corresponding knowledge:\n\
+    \n**Research Point 1:** \n{{research_point_1}}\n\n**Knowledge for Point 1:** \n\
+    {{knowledge_1}}\n\n**Research Point 2:**\n{{research_point_2}}\n\n**Knowledge\
+    \ for Point 2:** \n{{knowledge_2}}\n\n**Research Point 3:**\n{{research_point_3}}\n\
     \n**Knowledge for Point 3:**\n{{knowledge_3}}\n\n**Research Point 4:**\n{{research_point_4}}\n\
     \n**Knowledge for Point 4:**\n{{knowledge_4}}\n\nIn the search results I provide\
     \ to you, each result is formatted as [document X begin]...[document X end], where\
@@ -486,8 +428,358 @@ user:
     \n\"contents for Research Point 1\" \n\n{{research_point_2}}\n\n\"Results for\
     \ Research Point 2\" \n\n{{research_point_3}}\n\n\"contents for Research Point\
     \ 3\" \n\n{{research_point_4}}\n\n\"contents for Research Point 4\" \n\n**Conclusion**:\
-    \ \n\"Conclusion of the report, summarizing the main findings and implications\
-    \ of the research.\""
+    \ \n\n\"Conclusion of the report, summarizing the main findings and implications\
+    \ of the research.\"\n"
+  deepgo2_analysis: 'Predict gene {{gene_id}} protein go function based on deepgo2
+
+    '
+  deepgo2_analysis_meta: "Note1, You need to use deepgo2 environment to predict protein\
+    \ go function; \nNote2, You do not need to install torch with conda or pip; \n\
+    Note3, deepgo2 usage is as follows, \n<deepgo usage> \n    Options \n        -if,\
+    \ --in-file TEXT        Input FASTA file  [required] \n        -of, --out-file\
+    \ TEXT       Output dir  [required] \n        --data-root, -dr TEXT      Prediction\
+    \ model  [required] \n</deepgo usage> \n<deepgo example> \n    commond_line: conda\
+    \ activate deepgo2 && mkdir output && python /opt/health/deepgo2/predict.py -if\
+    \ $fasta -of ./output --data-root /opt/health/deepgo2/data \n</deepgo example>\
+    \ \n\nNote4, DeepGO2 tool output_dir is the fasta sequences dir; \nNote5, You\
+    \ need to activate deepgo2 environment before executing the code at each step;\
+    \ \nstep1, Find Gene's Protein Sequence using grep; \nstep2, predict protein go\
+    \ function using deepgo2.(conda activate deepgo2)\n"
+  evolution_analysis: 'You are a bioinformatician specialized in the field of evolutions
+    and you are well versed in various task analysis in the field of evolutions, next,
+    you will generate a task plan and complete the task analysis based on the data
+    that we have provided you with, now your task goal is: Please perform phylogenetic
+    and evolutionary analyses for gene {{gene_id}}.
+
+    '
+  evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2:\
+    \  You need to install diamond software using conda;\nstep1, Find Gene's Protein\
+    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find\
+    \ top40  sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install\
+    \ diamond  -c bioconda);\nstep3, Extract the sequence ids from the blast result\
+    \ using awk;\n step4, Extract the matched sequences from the database using seqkit(conda\
+    \ install  seqkit -c bioconda);\nstep5, Append protein sequences of unknown function\
+    \ to the  end of the matched sequences file;\nstep6, Multiple sequence alignment\
+    \ using  clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the\
+    \ phylogenetic  tree using fasttree(conda install fasttree -c bioconda);\nstep8,\
+    \ Plot the phylogenetic  tree using plot_tree.py;\nstep9, Summary the tree results\
+    \ using summary_tree.py  scripts;\nstep10, Searching for conserved domains of\
+    \ protein using hmmscan;\nstep11,  Change domain results to markdown format using\
+    \ domain2markdown.py;\nstep12, Summary  the protein domain results using summary_domain.py\
+    \ scripts.\n<change example>\n     Tool_Usage:\n        usage: domain2markdown.py\
+    \ [-h] [--domain_file DOMAIN_FILE]  [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\
+    \n        options:\n        -h, --help             show this help message and\
+    \ exit\n        --domain_file DOMAIN_FILE\n                             the domain\
+    \ file for hmmer softwore\n        --output_dir  OUTPUT_DIR\n                \
+    \             the output folder\n        --gene_id GENE_ID      the tree for gene\
+    \ id\n    Tool_Example:\n        conda activate af3 &&  python domain2markdown.py\
+    \ --input $output_dir/$domain_file --out_dir $out_dir  --gene_id $gene_id\n</change\
+    \ example>\n<plot example>\n    Tool_Usage:\n         usage: plot_tree.py [-h]\
+    \ [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]  [--gene_id GENE_ID]\n\n \
+    \       options:\n        -h, --help             show this help message and exit\n\
+    \        --tree_file TREE_FILE\n                             the tree file as\
+    \ nwk format\n        --output_dir OUTPUT_DIR\n                             the\
+    \ output folder\n        --gene_id GENE_ID      the tree for gene id\n    Tool_Example:\n\
+    \        conda activate af3 &&  pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id\
+    \ $gene_id\n </plot example>\n<summary example>\n    Tool_Usage:\n        usage:\
+    \ summary_domain.py  [-h] [--input INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\
+    \n        options:\n        -h, --help         show this help message and exit\n\
+    \        --input INPUT       the domain file you want to summary(the tsv format)\n\
+    \        --gene_id GENE_ID   the summary gene_id\n        --out_dir OUT_DIR  output_folder\n\
+    \    Tool_Example:\n         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id\
+    \ --out_dir $out_dir\n  \n    Tool_Usage:\n        usage: summary_tree.py [-h]\
+    \ [--input INPUT] [--gene_id GENE_ID]  [--out_dir OUT_DIR]\n\n        options:\n\
+    \        -h, --help         show this help message and exit\n         --input\
+    \ INPUT      the tree file you want to summary(the nwk format)\n         --gene_id\
+    \ GENE_ID  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n   \
+    \ Tool_Example:\n         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_tree.py --input $output_dir/$tree_file --gene_id $gene_id\
+    \  --out_dir $out_dir\n</summary example>\n"
+  gene_expression_analysis:
+    cultivar: 'Please plot the expression of the gene {{gene_id}} between 9311, NIPPONBARE,
+      ZH11, DONGJIN, IR29 and IR64 cultivars
+
+      '
+    genotype: 'Please plot the expression of the gene {{gene_id}} between OSMYC2_KNOCKDOWN,
+      OSEIN2, FNRP_OE, SDG725RI_MUTANT and WILDTYPE genotypes
+
+      '
+    tissue: 'Please plot the expression of the gene {{gene_id}} between roots, seeds,
+      stem, meristem, panicle, callus, flower and leaves tissues
+
+      '
+    treatment: 'Please plot the expression of the gene {{gene_id}} between HEAT_STRESS,
+      SALT_STRESS, HIGH_WATER-HIGH_NITROGEN, HIGH_WATER-LOW_NITROGEN, LOW_WATER-HIGH_NITROGEN,
+      LOW_WATER-LOW_NITROGEN and CONTROL treatments
+
+      '
+  gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
+    \  conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
+    \  install seaborn packages(conda activate af3 && pip install seaborn -i  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \  \n\nstep1, Use the script  to draw gene expression  patterns based on the sample\
+    \ list we provided.\nstep2,  Summary the results using summary_bulk.py.\n<usage>\
+    \ \n    usage: gene_expression_boxplot.py  [-h] [--gene_id GENE_ID] [--sample_dir\
+    \ SAMPLE_DIR] [--sample_list SAMPLE_LIST]  [--exp_file EXP_FILE] [--plot_type\
+    \ PLOT_TYPE] [--out OUT] \n    options: \n     -h, --help            show this\
+    \ help message and exit \n     --gene_id GENE_ID     the gene id you want to plot.\
+    \ \n    --sample_dir SAMPLE_DIR  \n                            sample file folder\
+    \ path. (default: /opt/health/genome-agent-api-service/runtime/input/) \n    \
+    \ --sample_list SAMPLE_LIST \n                            sample list file. (default:\
+    \ /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
+    \ \n    --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
+    \ \n    --plot_type PLOT_TYPE the type of picture for boxplot \n    --out OUT\
+    \              output folder path. \n    $plot_type:  \n    1. tissues \n    \
+    \ 2. cultivars \n    3. genotypes \n    4. treatments \n</usage> \n\n <example>\
+    \ \nQuestion:  Please plot the expression of the gene MYC between roots and leaves\
+    \ \n         You need to prepare a file, including ROOT.txt and LEAF.txt; \n \
+    \        <file_content> \n            ROOT.txt \n            LEAF.txt \n     \
+    \   </file_content> \n         <cmd_line> \n            conda activate af3 &&\
+    \ pip install seaborn &&  python gene_expression_boxplot.py --gene_id MYC --sample_dir\
+    \ $sample_dir  --sample_list $prepare_file --exp_file $exp_file_path --plot_type\
+    \ tissues --out $out  \n        </cmd_line> \nQuestion:  Differences in gene expression\
+    \ of MYC gene  under high temperature and normal conditions \n        You need\
+    \ to prepare a  file, including ROOT.txt and LEAF.txt; \n        <file_content>\
+    \ \n             HEAT_STRESS.txt \n            CONTROL.txt \n        </file_content>\
+    \ \n         <cmd_line> \n            conda activate af3 && pip install seaborn\
+    \ &&  python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir\
+    \ --sample_list $prepare_file  --exp_file $exp_file_path --plot_type treatments\
+    \ --out $out \n        </cmd_line> \n</example>\n<summary_example>\n    Tool_Usage:\
+    \ \n        usage: summary_bulk.py [-h]  [--input INPUT] [--gene_id GENE_ID] [--summary_type\
+    \ SUMMARY_TYPE] [--out_dir OUT_DIR]\n\n         options:\n        -h, --help \
+    \           show this help message and exit\n         --input INPUT         the\
+    \ file you want to summary(the csv format)\n        --gene_id GENE_ID      the\
+    \ summary gene_id\n        --summary_type SUMMARY_TYPE\n                     \
+    \        the summary plot type\n        --out_dir OUT_DIR      output_folder\n\
+    \n    Usage_Example:\n        conda activate af3 && pip install  openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_bulk.py  --input $output_dir/${gene_id}_${plot_type}_summary.csv\
+    \ --gene_id $gene_id  --summary_type ${plot_type} --out_dir $out_dir\n</summary_example>\n"
+  gene_function: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\nPlease\
+    \ provide a comprehensive and accurate description of the {{species}} gene(s)\
+    \ {{gene_string}}, covering the following sections. Ensure all information is\
+    \ derived from the reference materials below, which include published scientific\
+    \ literature, reputable databases (e.g., PubMed, GenBank, Ensembl), or validated\
+    \ research findings. If no relevant information is available for a section, explicitly\
+    \ state \"No relevant information available\" rather than speculating or generating\
+    \ unverified content.\n\nI. Gene Discovery, Family, and Localization\n1. Discovery\
+    \ History and Nomenclature\n- Provide the history of the gene's or its family\
+    \ discovery and the background of its nomenclature.\n2. Genetic Mapping (e.g.,\
+    \ QTL mapping, gene localization analysis)  \n- Describe the genetic mapping details,\
+    \ including any quantitative trait loci (QTL) mapping or localization analyses.\n\
+    \nII. Gene Cloning and Structural Analysis\n1. Cloning Information  \n- Detail\
+    \ the cloning process and related experimental information for the gene.\n2. Structural\
+    \ Characteristics  \n- Describe the structural features of the gene, such as exons,\
+    \ introns, or other notable elements.\n3. Protein stability or Enzyme activity\
+    \ analysis\n- Provide the changes of gene-coding protein stability under various\
+    \ conditions, or describe the molecular dynamics of enzyme and its substrates.\n\
+    \nIII. Functional Analysis\n1. Expression Patterns (e.g., spatiotemporal expression,\
+    \ expression profiles)\n- Provide details on the gene's spatiotemporal expression\
+    \ patterns and expression profiles across tissues, developmental stages, and various\
+    \ environments.\n2. Phenotypic Characteristics and Biological Functions (e.g.,\
+    \ mutant phenotypes, associated traits)\n- Describe the phenotypic traits or characteristics\
+    \ observed in mutants or variants of the gene.\n3. The underlying mechanism, pathways,\
+    \ and networks\n- Explain the validated biological functions of the gene, including\
+    \ any molecular interactions, pathways or networks involved.\n4. QTL Interactions\
+    \  \n- Detail any interactions between the gene and quantitative trait loci (QTL),\
+    \ if applicable.\n\nIV. Application and Evolutionary Analysis\n1. Domestication\
+    \ Studies\n- Describe the gene's role or significance in domestication studies,\
+    \ if applicable.\n2. Applications (e.g., stress resistance, breeding)\n- Provide\
+    \ information on practical applications of the gene, such as contributions to\
+    \ stress resistance or breeding programs.\n3. Genetic diversity analysis or SNPs\
+    \ analysis\n- Provide natural variations in promoter regions and gene-coding regions,\
+    \ and further exhibit the genetic effects of these variations.\n\nReference Materials:\n\
+    {{retrieve_results}}\n\nIn the search results I provide to you, each result is\
+    \ formatted as [document X begin]...[document X end], where X represents the numerical\
+    \ index of each article. Please cite the context at the end of the relevant sentence\
+    \ when appropriate. Use the document format [document:X] in the corresponding\
+    \ part of your answer. If a sentence is derived from multiple contexts, list all\
+    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
+    \ cluster all documents at the end; instead, include them in the corresponding\
+    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
+    \ references are cited within the body of the text, such as [document:3][document:5],\
+    \ rather than only at the end of the text. You need to interpret and summarize\
+    \ the user's requirements, choose an appropriate format, fully utilize the search\
+    \ results, extract key information, and generate an answer that is insightful,\
+    \ creative, and professional. Extend the length of your response as much as possible,\
+    \ addressing each point in detail and from multiple perspectives, ensuring the\
+    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
+    \ gene names (which represent aliases or variants of the same gene). Multiple\
+    \ gene names are separated by the '|' symbol.\n"
+  gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
+    Please provide a comprehensive and accurate description of the {{species}} gene(s)\
+    \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
+    \ and Localization\n1. Discovery History and Nomenclature\n- Provide the history\
+    \ of the gene's or its family discovery and the background of its nomenclature.\n\
+    2. Genetic Mapping (e.g., QTL mapping, gene localization analysis)  \n- Describe\
+    \ the genetic mapping details, including any quantitative trait loci (QTL) mapping\
+    \ or localization analyses.\n\nII. Gene Cloning and Structural Analysis\n1. Cloning\
+    \ Information  \n- Detail the cloning process and related experimental information\
+    \ for the gene.\n2. Structural Characteristics  \n- Describe the structural features\
+    \ of the gene, such as exons, introns, or other notable elements.\n3. Protein\
+    \ stability or Enzyme activity analysis\n- Provide the changes of gene-coding\
+    \ protein stability under various conditions, or describe the molecular dynamics\
+    \ of enzyme and its substrates.\n\nIII. Functional Analysis\n1. Expression Patterns\
+    \ (e.g., spatiotemporal expression, expression profiles)\n- Provide details on\
+    \ the gene's spatiotemporal expression patterns and expression profiles across\
+    \ tissues, developmental stages, and various environments.\n2. Phenotypic Characteristics\
+    \ and Biological Functions (e.g., mutant phenotypes, associated traits)\n- Describe\
+    \ the phenotypic traits or characteristics observed in mutants or variants of\
+    \ the gene.\n3. The underlying mechanism, pathways, and networks\n- Explain the\
+    \ validated biological functions of the gene, including any molecular interactions,\
+    \ pathways or networks involved.\n4. QTL Interactions  \n- Detail any interactions\
+    \ between the gene and quantitative trait loci (QTL), if applicable.\n\nIV. Application\
+    \ and Evolutionary Analysis\n1. Domestication Studies\n- Describe the gene's role\
+    \ or significance in domestication studies, if applicable.\n2. Applications (e.g.,\
+    \ stress resistance, breeding)\n- Provide information on practical applications\
+    \ of the gene, such as contributions to stress resistance or breeding programs.\n\
+    3. Genetic diversity analysis or SNPs analysis\n- Provide natural variations in\
+    \ promoter regions and gene-coding regions, and further exhibit the genetic effects\
+    \ of these variations.\n\nReference Materials:\n\nGene description annotation:\
+    \ {{description_string}}\n\nGO (Gene Ontology) annotation: {{go_string}}\n\nGene\
+    \ InterPro annotation: {{interpro_string}}\n\nGene MapMan annotation: {{mapman_string}}\n\
+    \nGene related research:\n{{retrieve_results}}\n\nPS:\nGene Ontology (GO) annotation\
+    \ provides a standardized vocabulary to describe the attributes of genes and gene\
+    \ products in any organism. A GO annotation is a statement that links a gene product\
+    \ to a GO term, effectively describing an aspect of its biological role. This\
+    \ system is built on a hierarchical structure, where terms become more specific\
+    \ as you move down the hierarchy.\nInterPro is an integrated database resource\
+    \ for the classification of proteins into families, and the prediction of domains\
+    \ and important sites. It combines information from multiple diverse databases,\
+    \ each of which uses different methods to classify proteins. This integration\
+    \ reduces redundancy and provides a comprehensive overview of protein function.\n\
+    MapMan is a software tool specifically designed for the functional annotation\
+    \ and visualization of omics data, particularly in plant sciences. It utilizes\
+    \ its own plant-specific ontology, which organizes genes into hierarchical functional\
+    \ categories called \"Bins\".\nIn the search results I provide to you, each result\
+    \ is formatted as [document X begin]...[document X end], where X represents the\
+    \ numerical index of each article. Please cite the context at the end of the relevant\
+    \ sentence when appropriate. Use the document format [document:X] in the corresponding\
+    \ part of your answer. If a sentence is derived from multiple contexts, list all\
+    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
+    \ cluster all documents at the end; instead, include them in the corresponding\
+    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
+    \ references are cited within the body of the text, such as [document:3][document:5],\
+    \ rather than only at the end of the text. You need to interpret and summarize\
+    \ the user's requirements, choose an appropriate format, fully utilize the search\
+    \ results, extract key information, and generate an answer that is insightful,\
+    \ creative, and professional. Extend the length of your response as much as possible,\
+    \ addressing each point in detail and from multiple perspectives, ensuring the\
+    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
+    \ gene names (which represent aliases or variants of the same gene). Multiple\
+    \ gene names are separated by the '|' symbol.\n"
+  gene_function_network_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\
+    \nPlease provide a comprehensive and accurate description of the {{species}} gene(s)\
+    \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
+    \ and Localization\n1. Discovery History and Nomenclature\n- Provide the history\
+    \ of the gene's or its family discovery and the background of its nomenclature.\n\
+    2. Genetic Mapping (e.g., QTL mapping, gene localization analysis)  \n- Describe\
+    \ the genetic mapping details, including any quantitative trait loci (QTL) mapping\
+    \ or localization analyses.\n\nII. Gene Cloning and Structural Analysis\n1. Cloning\
+    \ Information  \n- Detail the cloning process and related experimental information\
+    \ for the gene.\n2. Structural Characteristics  \n- Describe the structural features\
+    \ of the gene, such as exons, introns, or other notable elements.\n3. Protein\
+    \ stability or Enzyme activity analysis\n- Provide the changes of gene-coding\
+    \ protein stability under various conditions, or describe the molecular dynamics\
+    \ of enzyme and its substrates.\n\nIII. Functional Analysis\n1. Expression Patterns\
+    \ (e.g., spatiotemporal expression, expression profiles)\n- Provide details on\
+    \ the gene's spatiotemporal expression patterns and expression profiles across\
+    \ tissues, developmental stages, and various environments.\n2. Phenotypic Characteristics\
+    \ and Biological Functions (e.g., mutant phenotypes, associated traits)\n- Describe\
+    \ the phenotypic traits or characteristics observed in mutants or variants of\
+    \ the gene.\n3. The underlying mechanism, pathways, and networks\n- Explain the\
+    \ validated biological functions of the gene, including any molecular interactions,\
+    \ pathways or networks involved.\n4. QTL Interactions  \n- Detail any interactions\
+    \ between the gene and quantitative trait loci (QTL), if applicable.\n\nIV. Application\
+    \ and Evolutionary Analysis\n1. Domestication Studies\n- Describe the gene's role\
+    \ or significance in domestication studies, if applicable.\n2. Applications (e.g.,\
+    \ stress resistance, breeding)\n- Provide information on practical applications\
+    \ of the gene, such as contributions to stress resistance or breeding programs.\n\
+    3. Genetic diversity analysis or SNPs analysis\n- Provide natural variations in\
+    \ promoter regions and gene-coding regions, and further exhibit the genetic effects\
+    \ of these variations.\n\nReference Materials:\n\nGene description annotation:\
+    \ {{description_string}}\n\nGO (Gene Ontology) annotation: {{go_string}}\n\nGene\
+    \ InterPro annotation: {{interpro_string}}\n\nGene MapMan annotation: {{mapman_string}}\n\
+    \nOrthologous genes information:\n{{orthologs_string}}\n\nParalogous genes information:\n\
+    {{paralogs_string}}\n\nPotential interacting genes information:\n{{interaction_string}}\n\
+    \nGene related research:\n{{retrieve_results}}\n\nPS:\nGene Ontology (GO) annotation\
+    \ provides a standardized vocabulary to describe the attributes of genes and gene\
+    \ products in any organism. A GO annotation is a statement that links a gene product\
+    \ to a GO term, effectively describing an aspect of its biological role. This\
+    \ system is built on a hierarchical structure, where terms become more specific\
+    \ as you move down the hierarchy.\nInterPro is an integrated database resource\
+    \ for the classification of proteins into families, and the prediction of domains\
+    \ and important sites. It combines information from multiple diverse databases,\
+    \ each of which uses different methods to classify proteins. This integration\
+    \ reduces redundancy and provides a comprehensive overview of protein function.\n\
+    MapMan is a software tool specifically designed for the functional annotation\
+    \ and visualization of omics data, particularly in plant sciences. It utilizes\
+    \ its own plant-specific ontology, which organizes genes into hierarchical functional\
+    \ categories called \"Bins\".\nIn the search results I provide to you, each result\
+    \ is formatted as [document X begin]...[document X end], where X represents the\
+    \ numerical index of each article. Please cite the context at the end of the relevant\
+    \ sentence when appropriate. Use the document format [document:X] in the corresponding\
+    \ part of your answer. If a sentence is derived from multiple contexts, list all\
+    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
+    \ cluster all documents at the end; instead, include them in the corresponding\
+    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
+    \ references are cited within the body of the text, such as [document:3][document:5],\
+    \ rather than only at the end of the text. You need to interpret and summarize\
+    \ the user's requirements, choose an appropriate format, fully utilize the search\
+    \ results, extract key information, and generate an answer that is insightful,\
+    \ creative, and professional. Extend the length of your response as much as possible,\
+    \ addressing each point in detail and from multiple perspectives, ensuring the\
+    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
+    \ gene names (which represent aliases or variants of the same gene). Multiple\
+    \ gene names are separated by the '|' symbol.\nPlease use markdown format for\
+    \ the output, and the largest heading should start from the third level (\"###\"\
+    ).\n"
+  gene_network_analysis: 'Please help me to analysis the hormone regulatory network
+    in the traits of {{to_id}}
+
+    '
+  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nstep1, Construct\
+    \  gene regulatory network using the script construct_gene_network.py(using af3\
+    \ environment); \nstep2, plot gene_network using network_plot.R script(using Renv\
+    \ environment).\n<construct usage> \n     Tool Usage:\n        usage: construct_network.py\
+    \ [-h] [--network NETWORK]   [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file\
+    \ TO_FILE]  [--output_dir OUTPUT_DIR]\n\n         options:\n        -h, --help\
+    \             show this help message and exit\n        --network NETWORK     \
+    \ The network file\n         --network_class NETWORK_CLASS\n                 \
+    \            The network node class file\n        --to_id TO_ID         the to_id\
+    \ you want to get\n          --to_file TO_FILE     the to annotation file\n  \
+    \      --output_dir OUTPUT_DIR\n                             the output folder\n\
+    \    Tool Usage Example:\n         conda activate af3 && python construct_network.py\
+    \ --network $network_file   --network_class $network_class_file --to_id $to_id\
+    \ --to_file $to_file  --output_dir $output_dir\n     Note:\n        1. Here the\
+    \ Node class file for the next visualization is generated with  the name of $to_id_network_class.txt\
+    \ in the $output_dir;\n        2. The ':' in to_id will be  replace '_' in the\
+    \ output file name\n        example:\n          if the to_id is  TO:0000207, and\
+    \ the output node class file is TO_0000207_network_class.txt\n</construct usage>\
+    \ \n<plot usage>\n    Tool Usage:\n        Rscript network_plot.R <node_call_file>\
+    \ <out_dir> <TO_id> <use_sub_sample> \n\n        options:\n            node_call_file:\
+    \ Node classification file path(tsv format)\n             out_dir: output folder\n\
+    \             TO_id: plant traits to id\n             use_sub_sample: whether\
+    \ or not side sampling is used(TRUE/FALSE)\n    Tool Usage Example:\n        \
+    \ conda activate Renv && Rscript network_plot.R $node_class_file_out_in_step1\
+    \  $output_dir $to_id $use_sub_sample[TRUE or FALSE]\n    Note: The recommended\
+    \ use_sub_sample  parameter is TRUE\n</plot usage>\n"
+  haplotypes_analysis: 'Please help me to analyze the haplotype of {{gene_id}} gene
+
+    '
+  haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate\
+    \ af3); \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
+    \  $output_dir)\nstep2, analysis the promoter haplotypes using plot_promoter_hap.sh\
+    \ (conda activate af3)\n<plot example>\n    Tool_Usage:\n        Usage: plot_promoter_hap.sh\
+    \  -i <gene_id> -o <output_directory> [-p python_script]\n\n        This script\
+    \ visualizes  transcripts for a given gene.\n\n        Options:\n        -i GENE_ID\
+    \        Gene ID path(e.g., /path/TP53)\n         -o OUTPUT_DIR     Output directory\
+    \ for generated images\n        -p PYTHON_SCRIPT   Path to Python visualization\
+    \ script (default: visualizaition_hap.py)\n         -h                Show this\
+    \ help message\n\n        Example:\n         plot_promoter_hap.sh -i /path/to/hap/Os01g0177400\
+    \ -o /path/to/output -p /script_path\n    Tool_Example:\n        conda activate\
+    \ af3 && sh plot_promoter_hap.sh -i $promoter_path  -o $output_dir -p $script_path\n\
+    </plot example>\n"
   in_silico_research_goals: "You are an expert-level In Silico Research Agent. Your\
     \ function is to analyze a scientific research paper and decompose it into a series\
     \ of high-level, end-to-end research objectives. Each objective represents a complete\
@@ -526,52 +818,17 @@ user:
     \ plots.\",\n    \"context\": \"The single-cell data from Nip and 93-11 were merged\
     \ and subsequently clustered. We observed that all eight cell-type clusters were\
     \ well aligned and matched one to one between the two cultivars (Figure 2A). Cell-type\
-    \ homologies were also supported by our cell-type marker genes and high Pearson’s\
-    \ correlation coefﬁcients... (Figure 2B). To provide insights into the molecular\
+    \ homologies were also supported by our cell-type marker genes and high Pearson's\
+    \ correlation coefficients... (Figure 2B). To provide insights into the molecular\
     \ functions in each cell type in both cultivars, we performed GO analysis and\
     \ found matching functional categories for each cell type (Figure 2D). ...we plotted\
     \ the expression of genes related to major hormone biosynthesis and response pathways...\
     \ (Figure 2E). [Methods section text]: Normalized scRNA-seq data from Nip and\
     \ 93-11 were combined into one object... The FindIntegrationAnchors function command\
     \ used default parameters... The IntegrateData function was run...\",\n  },\n\
-    \  {\n      \"goal\": \"...\",\n      \"context\": \"...\",\n  },\n  ...\n]\n\
-    ```\n\nNow, analyze the following paper and generate the complete JSON list of\
-    \ dictionaries.\n\nPAPER TEXT:\n\n{{paper_text}}"
-  evolution_analysis: 'You are a bioinformatician specialized in the field of evolutions
-    and you are well versed in various task analysis in the field of evolutions, next,
-    you will generate a task plan and complete the task analysis based on the data
-    that we have provided you with, now your task goal is: Please perform phylogenetic
-    and evolutionary analyses for gene {{gene_id}}.'
-  deepgo2_analysis: Predict gene {{gene_id}} protein go function based on deepgo2
-  structure_analysis: 'You are a bioinformatician specialized in the field of protein
-    sturcture and you are well versed in various task analysis in the field of protein
-    sturcture, next, you will generate a task plan and complete the task analysis
-    based on the data that we have provided you with, now your task goal is: Please
-    help me predict the protein structure for gene {{gene_id}}. Note: You do not need
-    to install protenix software using conda, you should activate af3 environment'
-  promoter_analysis: 'You are a bioinformatician specialized in the field of evolutions
-    and you are well versed in various task analysis in the field of evolutions, next,
-    you will generate a task plan and complete the task analysis based on the data
-    that we have provided you with, now your task goal is: Please help me analyze
-    the conservation of Oryza sativa {{gene_id}} gene prompter.'
-  protein_design_analysis: 'You are a bioinformatician specialized in the field of
-    protein design based on evolution information and you are well versed in various
-    task analysis in the field of protein design, next, you will generate a task plan
-    and complete the task analysis based on the data that we have provided you with,
-    now your task goal is: Please help me design the protein structure based on evolution
-    information for gene {{gene_id}}.'
-  gene_expression_analysis:
-    tissue: Please plot the expression of the gene {{gene_id}} between roots, seeds,
-      stem, meristem, panicle, callus, flower and leaves tissues
-    cultivar: Please plot the expression of the gene {{gene_id}} between 9311, NIPPONBARE,
-      ZH11, DONGJIN, IR29 and IR64 cultivars
-    genotype: Please plot the expression of the gene {{gene_id}} between OSMYC2_KNOCKDOWN,
-      OSEIN2, FNRP_OE, SDG725RI_MUTANT and WILDTYPE genotypes
-    treatment: Please plot the expression of the gene {{gene_id}} between HEAT_STRESS,
-      SALT_STRESS, HIGH_WATER-HIGH_NITROGEN, HIGH_WATER-LOW_NITROGEN, LOW_WATER-HIGH_NITROGEN,
-      LOW_WATER-LOW_NITROGEN and CONTROL treatments
-  single_cell_analysis: Please plot the expression of the gene {{gene_id}} in different
-    cells.
+    \  {\n    \"goal\": \"...\",\n    \"context\": \"...\",\n  },\n  ...\n]\n```\n\
+    \nNow, analyze the following paper and generate the complete JSON list of dictionaries.\n\
+    \nPAPER TEXT:\n\n{{paper_text}}\n"
   ppi_analysis: 'You are a bioinformatician specialized in the field of protein sturcture
     and you are well versed in various task analysis in the field of structure prediction
     of protein complexes, next, you will generate a task plan and complete the task
@@ -579,272 +836,9 @@ user:
     is: Please help me predict the structure of the gene {{gene_id}} and the complex
     with its interaction genes, the interaction gene is {{interaction_gene}}. Note:
     You do not need to install protenix software using conda, you should activate
-    af3 environment'
-  smep_analysis: 'You are a bioinformatician specialized in the field of epigenetics
-    and you are very good at conducting epigenetic modification prediction studies,
-    next, you will generate a task plan and complete the task analysis based on the
-    data that we have provided you with, now your task goal is: Please help me to
-    predict the {{epic_type}} modification of {{gene_id}} gene prompter.'
-  smoc_analysis: 'You are a bioinformatician specialized in the field of epigenetics
-    and you are very good at conducting chromatin accessibility prediction studies,
-    next, you will generate a task plan and complete the task analysis based on the
-    data that we have provided you with, now your task goal is: Please help me to
-    predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
-    NIP.'
-  gene_network_analysis: 'Please help me to analysis the hormone regulatory network in 
-    the traits of {{to_id}}'
-  haplotypes_analysis: 'Please help me to analyze the haplotype of {{gene_id}} gene'
-  evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2: \
-    \ You need to install diamond software using conda;\nstep1, Find Gene's Protein \
-    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find top40\
-    \  sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install diamond \
-    \ -c bioconda);\nstep3, Extract the sequence ids from the blast result using awk;\n\
-    \ step4, Extract the matched sequences from the database using seqkit(conda install \
-    \ seqkit -c bioconda);\nstep5, Append protein sequences of unknown function to the \
-    \ end of the matched sequences file;\nstep6, Multiple sequence alignment using \
-    \ clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the phylogenetic\
-    \  tree using fasttree(conda install fasttree -c bioconda);\nstep8, Plot the phylogenetic\
-    \  tree using plot_tree.py;\nstep9, Summary the tree results using summary_tree.py \
-    \ scripts;\nstep10, Searching for conserved domains of protein using hmmscan;\nstep11,\
-    \  Change domain results to markdown format using domain2markdown.py;\nstep12, Summary\
-    \  the protein domain results using summary_domain.py scripts.\n<change example>\n\
-    \     Tool_Usage:\n        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE]\
-    \  [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help\
-    \             show this help message and exit\n        --domain_file DOMAIN_FILE\n\
-    \                                 the domain file for hmmer softwore\n        --output_dir\
-    \  OUTPUT_DIR\n                                the output folder\n        --gene_id GENE_ID\
-    \      the tree for gene id\n    Tool_Example:\n        conda activate af3 && \
-    \ python domain2markdown.py --input $output_dir/$domain_file --out_dir $out_dir\
-    \  --gene_id $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n\
-    \         usage: plot_tree.py [-h] [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]\
-    \  [--gene_id GENE_ID]\n\n        options:\n        -h, --help\
-    \             show this help message and exit\n        --tree_file TREE_FILE\n\
-    \                                 the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
-    \                                 the output folder\n        --gene_id GENE_ID\
-    \      the tree for gene id\n    Tool_Example:\n        conda activate af3 &&\
-    \  pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id $gene_id\n\
-    \ </plot example>\n<summary example>\n    Tool_Usage:\n        usage: summary_domain.py\
-    \  [-h] [--input INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n\
-    \         -h, --help         show this help message and exit\n        --input INPUT\
-    \       the domain file you want to summary(the tsv format)\n        --gene_id GENE_ID\
-    \   the summary gene_id\n        --out_dir OUT_DIR  output_folder\n    Tool_Example:\n\
-    \         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id --out_dir $out_dir\n\
-    \     \n    Tool_Usage:\n        usage: summary_tree.py [-h] [--input INPUT] [--gene_id GENE_ID]\
-    \  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help         show this help message and exit\n\
-    \         --input INPUT      the tree file you want to summary(the nwk format)\n\
-    \         --gene_id GENE_ID  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n\
-    \     Tool_Example:\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_tree.py --input $output_dir/$tree_file --gene_id $gene_id \
-    \ --out_dir $out_dir\n</summary example>"
-  deepgo2_analysis_meta: "Note1, You need to use deepgo2 environment to predict protein\
-    \ go function; \nNote2, You do not need to install torch with conda or pip; \n\
-    Note3, deepgo2 usage is as follows, \n<deepgo usage> \n        Options \n    \
-    \        -if, --in-file TEXT        Input FASTA file  [required] \n          \
-    \  -of, --out-file TEXT       Output dir  [required] \n            --data-root,\
-    \ -dr TEXT      Prediction model  [required] \n</deepgo usage> \n<deepgo example>\
-    \ \n    commond_line: conda activate deepgo2 && mkdir output && python /opt/health/deepgo2/predict.py\
-    \ -if $fasta -of ./output --data-root /opt/health/deepgo2/data \n</deepgo example>\
-    \ \nNote4, DeepGO2 tool output_dir is the fasta sequences dir; \nNote5, You need\
-    \ to activate deepgo2 environment before executing the code at each step; \nstep1,\
-    \ Find Gene's Protein Sequence using grep; \nstep2, predict protein go function\
-    \ using deepgo2.(conda activate deepgo2)"
-  structure_analysis_meta: "Note1: You don't need to install protenix software using\
-    \  conda; \nNote2: You need to activate af3 environment;(conda activate af3); \n\
-    \ Note3: protenix commdline softwore usage is as follows:\n<proteix usage method>\n\
-    \     Usage: protenix predict [OPTIONS]\n\n        predict: Run predictions with protenix.\
-    \  :param input, out_dir,\n        use_msa_server :return:\n\n    Options:\n        --input TEXT\
-    \       json files or dir for inference\n        --out_dir TEXT    infer result dir\n\
-    \         --seeds TEXT      the inference seed, split by comma\n        \
-    \ --use_msa_server  do msa search or not\n        --help            Show this message and exit.\n\
-    \ </proteix usage method>\n<usage example>\n    protenix predict --input $input_json\
-    \  --out_dir $output_dir --use_msa_server\n</usage example>\nNote4: protenix commdline\
-    \  softwore input file example is as follows:\n    You should filled in the protein\
-    \  sequence in the sequence parameter in the proteinChain.\n    The dnaSequence and the\
-    \  ligand are optional parameters that can be filled in if provided by the user, \
-    \ otherwise, the module will be deleted.\n    The name parameter is the output dir\
-    \  names, you can change it if you want.\n    The count parameter is the number of \
-    \ relevant sequences in the composite structure, defalut number is 1.\n<input json file example>\
-    \ \n[\n    {\n        \"sequences\": [\n            {\n                \"proteinChain\":\
-    \  {\n                    \"sequence\": \"MGSSHHHHHHSSGLVPRGSHMSGKIQHKAVVPAPSRIPLTLSEIEDLRRKGFNQTEIAELYGVTRQAVSWHKKTYGGRLTTRQIVQQNWPWDTRKPHDKSKAFQRLRDHGEYMRVGSFRTMSEDKKKRLLSWWKMLRDNDLVLEFDPSIEPYEGMAGGGFRYVPRDISDDDLLIRVNEHTQLTAEGELLWSWPDDIEELLSEP\",\
-    \ \n                    \"count\": 1,\n                }\n            },\n            \
-    \ {\n                \"dnaSequence\": {\n                    \"sequence\": \"TTTCGGTGGCTGTCAAGCGGG\",\
-    \ \n                    \"count\": 1\n                }\n            },\n            {\n\
-    \                 \"ligand\": {\n                    \"ligand\": \"CCD_PCG\",\n\
-    \                     \"count\": 1\n                }\n            }\n        ],\n\
-    \         \"name\": \"7r6r\"\n    }\n]\n</input json file example>\n<summary example>\n\
-    \     Tool_Usage:\n        usage: summary_structure.py [-h] [--input_path INPUT_PATH]\
-    \  [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help\
-    \             show this help message and exit\n        --input_path INPUT_PATH\n\
-    \                                 the out file path for smoc software generate.\n\
-    \         --gene_id GENE_ID     the summary gene_id\n        --out_dir OUT_DIR     output_folder\n\
-    \     Tool_Example:\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_structure.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\n\
-    \ </summary_example>\nstep1, Find Gene's Protein Sequence using grep; \nstep2, Organize\
-    \  the protein sequences into an input JSON format file, and save it; \nstep3, Predict\
-    \  Protein Sturctre using protenix. (conda activate af3)\nstep4, Summary the protein\
-    \  sturcture results using summary_structure.py"
-  promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you \
-    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence \
-    \ using grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter\
-    \  sequence in rice; \nstep3, Extract the gene promoter sequence ids from the \
-    \ blastn result using awk; \nstep4, Extract the matched gene promoter sequences\
-    \  from the promoter database file using seqkit; \nstep5, Append the gene promoter\
-    \  sequence we analyzed to the end of the matched sequences file; \nstep6, Analysis\
-    \  the conserved motif in the gene promoter sequences using meme(conda install \
-    \ meme -c bioconda);\nstep7, Plot the motif logo figure using plot_motif.py;\n\
-    \ step8, Summart meme results using summary_motif.py\n<plot example>\n    Tool_Usage:\n\
-    \         usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir OUTPUT_DIR]\n\
-    \ \n        options:\n        -h, --help            show this help message and exit\n\
-    \         --meme_file MEME_FILE\n                                the motif result \
-    \ file for meme software\n        --output_dir OUTPUT_DIR\n\
-    \                                 the output folder\n    Tool_Example:\n        \
-    \ conda activate af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir $output_dir\
-    \ \n</plot example>\n<summary example>\n    Tool_Usage:\n        usage: summary_motif.py\
-    \  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n\
-    \         options:\n        -h, --help            show this help message and exit\n\
-    \         --input_path INPUT_PATH\n                                the out file \
-    \ path for meme software generate.\n        --gene_id GENE_ID     the summary gene_id\n\
-    \         --out_dir OUT_DIR     output_folder\n    Tool_Example:\n        \
-    \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id\
-    \  --out_dir $out_dir\n</summary example>"
-  protein_design_analysis_meta: "Note1: You don't need to build nr database index;\
-    \ \nNote2: You need to install diamond software using conda(conda install diamond);\
-    \ \nNote3: You need to install cd-hit software using conda(conda install cd-hit);\
-    \ \nNote4: You need to install water software using conda(conda install emboss);\
-    \ \nNote5: Water software usage is as follows: \n<water usage> \n    Smith-Waterman\
-    \ local alignment of sequences \n    Version: EMBOSS:6.6.0.0 \n      Standard\
-    \ (Mandatory) qualifiers: \n      [-asequence]         sequence   Sequence filename\
-    \ and optional format, or \n                                      reference (input\
-    \ USA) \n      [-bsequence]         seqall     Sequence(s) filename and optional\
-    \ format, or \n                                      reference (input USA) \n\
-    \      -gapopen            float      [10.0 for any sequence] The gap open penalty\
-    \ \n                                      is the score taken away when a gap is\
-    \ \n                                      created. The best value depends on the\
-    \ \n                                      choice of comparison matrix. The default\
-    \ \n                                      value assumes you are using the EBLOSUM62\
-    \ \n                                      matrix for protein sequences, and the\
-    \ \n                                      EDNAFULL matrix for nucleotide sequences.\
-    \ \n                                      (Number from 0.000 to 100.000) \n  \
-    \    -gapextend          float      [0.5 for any sequence] The gap extension \n\
-    \                                      penalty is added to the standard gap penalty\
-    \ \n                                      for each base or residue in the gap.\
-    \ This \n                                      is how long gaps are penalized.\
-    \ Usually you \n                                      will expect a few long gaps\
-    \ rather than many \n                                      short gaps, so the\
-    \ gap extension penalty \n                                      should be lower\
-    \ than the gap penalty. An \n                                      exception is\
-    \ where one or both sequences are \n                                      single\
-    \ reads with possible sequencing \n                                      errors\
-    \ in which case you would expect many \n                                     \
-    \ single base gaps. You can get this result by \n                            \
-    \          setting the gap open penalty to zero (or \n                       \
-    \               very low) and using the gap extension \n                     \
-    \                 penalty to control gap scoring. (Number from \n            \
-    \                          0.000 to 10.000) \n      [-outfile]           align\
-    \      [*.water] Output alignment file name \n                               \
-    \       (default -aformat srspair) \n      Additional (Optional) qualifiers: \n\
-    \      -datafile           matrixf    [EBLOSUM62 for protein, EDNAFULL for DNA]\
-    \ \n                                      This is the scoring matrix file used\
-    \ when \n                                      comparing sequences. By default\
-    \ it is the \n                                      file 'EBLOSUM62' (for proteins)\
-    \ or the file \n                                      'EDNAFULL' (for nucleic\
-    \ sequences). These \n                                      files are found in\
-    \ the 'data' directory of \n                                      the EMBOSS installation.\
-    \ \n      Advanced (Unprompted) qualifiers: \n      -[no]brief          boolean\
-    \    [Y] Brief identity and similarity \n      General qualifiers: \n      -help\
-    \               boolean    Report command line options and exit. More \n     \
-    \                                 information on associated and general \n   \
-    \                                   qualifiers can be found with -help -verbose\
-    \ \n</water usage> \n<water usage example> \n    water -asequence $target_sequence_file\
-    \ -bsequence $alignment_sequences_file -gapopen 10 -gapextend 0.5 -outfile $out_file\
-    \ \n</water usage example> \nNote6: compute_psap_score script usage is as follows:\
-    \ \n<compute_psap_score sage> \n    usage: compute_psap_score.py [-h] [--protein_file\
-    \ PROTEIN_FILE] [--align_file ALIGN_FILE] [--out OUT] \n    options: \n      -h,\
-    \ --help            show this help message and exit \n      --protein_file PROTEIN_FILE\
-    \ \n                            Protein file as fasta format. \n      --align_file\
-    \ ALIGN_FILE \n                            Protein align file as water align format.\
-    \ \n      --out OUT             PSAP output folder.. \n</compute_psap_score usage>\
-    \ \n<compute_psap_score usage example> \n    conda activate af3 && python compute_psap_score.py\
-    \ --protein_file $your_protein_file --align_file $water_out --out $out_dir \n\
-    </compute_psap_score usage example> \nstep1, Find Gene's Protein Sequence using\
-    \ grep; \nstep2, Sequence alignment using diamond blastp to find top5000 sequence[--max-target-seqs\
-    \ 5000], using 16 threads[-t 16] and --tmpdir $tmp paramter(conda install diamond\
-    \ -c bioconda); \nstep3, Extract the sequence ids from the blast result using\
-    \ awk; \nstep4, Extract the matched sequences from the database using seqkit(conda\
-    \ install seqkit -c bioconda); \nstep5, De-redundancy of 5000 protein sequences\
-    \ using cd-hit(conda install cd-hit -c bioconda); \nstep6, Use water software\
-    \ to align the target protein sequence with the de-redundant protein sequence(conda\
-    \ install emboss -c bioconda); \nstep7, PSAP calculation using script compute_psap_score.py(conda\
-    \ activate af3)"
-  gene_expression_analysis_meta: "Note1: You need to activate af3 environment using \
-    \ conda(conda activate af3);  \nNote2: You need to activate af3 environment and \
-    \ install seaborn packages(conda activate af3 && pip install seaborn -i \
-    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);  \nstep1, Use the script \
-    \ to draw gene expression  patterns based on the sample list we provided.\nstep2, \
-    \ Summary the results using summary_bulk.py.\n<usage> \n        usage: gene_expression_boxplot.py\
-    \  [-h] [--gene_id GENE_ID] [--sample_dir SAMPLE_DIR] [--sample_list SAMPLE_LIST] \
-    \ [--exp_file EXP_FILE] [--plot_type PLOT_TYPE] [--out OUT] \n        options: \n\
-    \         -h, --help            show this help message and exit \n        \
-    \ --gene_id GENE_ID     the gene id you want to plot. \n        --sample_dir SAMPLE_DIR\
-    \  \n                                sample file folder path.\
-    \ (default: /opt/health/genome-agent-api-service/runtime/input/) \n        \
-    \ --sample_list SAMPLE_LIST \n                                sample list file.\
-    \ (default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
-    \  \n        --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
-    \  \n        --plot_type PLOT_TYPE the type of picture for boxplot \n        --out OUT\
-    \              output folder path. \n        $plot_type:  \n        1. tissues \n\
-    \         2. cultivars \n        3. genotypes \n        4. treatments \n</usage> \n\
-    \ <example> \nQuestion:  Please plot the expression of the gene MYC between roots and leaves \n\
-    \             You need to prepare a file, including ROOT.txt and LEAF.txt; \n            \
-    \ <file_content> \n                ROOT.txt \n                LEAF.txt \n            </file_content> \n\
-    \             <cmd_line> \n                conda activate af3 && pip install seaborn &&\
-    \  python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir \
-    \ --sample_list $prepare_file --exp_file $exp_file_path --plot_type tissues --out $out\
-    \  \n            </cmd_line> \nQuestion:  Differences in gene expression of MYC gene\
-    \  under high temperature and normal conditions \n            You need to prepare a \
-    \ file, including ROOT.txt and LEAF.txt; \n            <file_content> \n                \
-    \ HEAT_STRESS.txt \n                CONTROL.txt \n            </file_content> \n\
-    \             <cmd_line> \n                conda activate af3 && pip install seaborn &&\
-    \  python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir --sample_list $prepare_file\
-    \  --exp_file $exp_file_path --plot_type treatments --out $out \n            </cmd_line> \n\
-    \ </example>\n<summary_example>\n    Tool_Usage: \n        usage: summary_bulk.py [-h] \
-    \ [--input INPUT] [--gene_id GENE_ID] [--summary_type SUMMARY_TYPE] [--out_dir OUT_DIR]\n\n\
-    \         options:\n        -h, --help            show this help message and exit\n        \
-    \ --input INPUT         the file you want to summary(the csv format)\n        --gene_id GENE_ID\
-    \      the summary gene_id\n        --summary_type SUMMARY_TYPE\n\
-    \                                 the summary plot type\n        --out_dir OUT_DIR\
-    \      output_folder\n\n    Usage_Example:\n        conda activate af3 && pip install\
-    \  openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_bulk.py\
-    \  --input $output_dir/${gene_id}_${plot_type}_summary.csv --gene_id $gene_id \
-    \ --summary_type ${plot_type} --out_dir $out_dir\n</summary_example>"
-  single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda\ 
-    \ (conda activate af3);  \nNote2: You need to activate af3 environment and install\
-    \  scanpy and anndata packages(conda activate af3 && pip install scanpy anndata -i\
-    \  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple); \nstep1, install the \
-    \ packages and plot the gene expression in different cells using plot_single_cell_gene.py;\
-    \ (conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \ \nstep2, summary the results using summary_single_cell.py(conda activate af3 && \
-    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
-    \ Tool Usage method:\n        usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA]\
-    \  [-o OUTPUT_DIR] [-g GENE_ID] \n        options: \n        -h, --help            \
-    \ show this help message and exit \n        -i SINGLE_CELL_DATA   single cell data\n\
-    \         -o OUTPUT_DIR   output folder path \n        -g GENE_ID  the gene id you \
-    \ want to plot. \nTool Usage example:\n    Question:  Please plot the expression \
-    \ of the gene MYC in different cells. \n    Cmd line code: conda activate af3 && \
-    \ pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir -g MYC\n\n\
-    \ Tool Usage example:\n        usage: summary_single_cell.py [-h] [--input INPUT] \
-    \ [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help \
-    \         show this help message and exit\n        --input INPUT      the file you\
-    \  want to summary(the tsv format)\n        --gene_id GENE_ID  the summary gene_id\n\
-    \         --out_dir OUT_DIR  output_folder\nTool Usage example:\n    conda activate af3 &&\
-    \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_single_cell.py --input $output_dir/${gene_id}_expression.txt \
-    \ --gene_id $gene_id --out_dir $out_dir"
+    af3 environment
+
+    '
   ppi_analysis_meta: "Note1: You don't need to install protenix software using conda;\
     \ \nNote2: You need to activate af3 environment;(conda activate af3); \nNote3:\
     \ protenix commdline softwore usage is as follows: \n<proteix usage method> \n\
@@ -888,218 +882,425 @@ user:
     \ json file example> \nNote5: You need to extract the protein sequence of the\
     \ interaction gene, if there are multiple protein sequence of the gene, you just\
     \ take the first sequence.(grep -A1 $gene_id $target_file | head -n 2 > $outfile)\
-    \ \nNote6: If no protein can be found for the interaction gene, the gene is skipped\
-    \ \nNote7: Please use gene id for file name and protein sequence name. \nstep1,\
-    \ Create interaction gene file list using echo; \nstep2, Find Gene's Protein Sequence\
-    \ using grep; \nstep3, Find Gene's interaction gene's Protein Sequence using grep(If\
-    \ can't find, skipped this gene!); \nstep4, Organize the protein sequences into\
-    \ an input JSON format file, and save it using python script; \nstep5, Predict\
-    \ Protein Sturctre using protenix. (conda activate af3)"
+    \ \n\nNote6: If no protein can be found for the interaction gene, the gene is\
+    \ skipped \n\nNote7: Please use gene id for file name and protein sequence name.\
+    \ \nstep1, Create interaction gene file list using echo; \nstep2, Find Gene's\
+    \ Protein Sequence using grep; \nstep3, Find Gene's interaction gene's Protein\
+    \ Sequence using grep(If can't find, skipped this gene!); \nstep4, Organize the\
+    \ protein sequences into an input JSON format file, and save it using python script;\
+    \ \nstep5, Predict Protein Sturctre using protenix. (conda activate af3)\n"
+  promoter_analysis: 'You are a bioinformatician specialized in the field of evolutions
+    and you are well versed in various task analysis in the field of evolutions, next,
+    you will generate a task plan and complete the task analysis based on the data
+    that we have provided you with, now your task goal is: Please help me analyze
+    the conservation of Oryza sativa {{gene_id}} gene prompter.
+
+    '
+  promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you\
+    \  need to install blast software first;\nstep1, Find Gene's Promoter Sequence\
+    \  using grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter\
+    \  sequence in rice; \nstep3, Extract the gene promoter sequence ids from the\
+    \  blastn result using awk; \nstep4, Extract the matched gene promoter sequences\
+    \  from the promoter database file using seqkit; \nstep5, Append the gene promoter\
+    \  sequence we analyzed to the end of the matched sequences file; \nstep6, Analysis\
+    \  the conserved motif in the gene promoter sequences using meme(conda install\
+    \  meme -c bioconda);\nstep7, Plot the motif logo figure using plot_motif.py;\n\
+    step8, Summart meme results using summary_motif.py\n<plot example>\n    Tool_Usage:\n\
+    \         usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir OUTPUT_DIR]\
+    \ \n\n        options:\n        -h, --help            show this help message and\
+    \ exit\n         --meme_file MEME_FILE\n                             the motif\
+    \ result  file for meme software\n        --output_dir OUTPUT_DIR\n          \
+    \                   the output folder\n    Tool_Example:\n         conda activate\
+    \ af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir\
+    \ $output_dir \n</plot example>\n<summary example>\n    Tool_Usage:\n        usage:\
+    \ summary_motif.py  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir\
+    \ OUT_DIR]\n\n         options:\n        -h, --help            show this help\
+    \ message and exit\n         --input_path INPUT_PATH\n                       \
+    \      the out file  path for meme software generate.\n        --gene_id GENE_ID\
+    \     the summary gene_id\n         --out_dir OUT_DIR     output_folder\n    Tool_Example:\n\
+    \         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id\
+    \  --out_dir $out_dir\n</summary example>\n"
+  protein_design_analysis: 'You are a bioinformatician specialized in the field of
+    protein design based on evolution information and you are well versed in various
+    task analysis in the field of protein design, next, you will generate a task plan
+    and complete the task analysis based on the data that we have provided you with,
+    now your task goal is: Please help me design the protein structure based on evolution
+    information for gene {{gene_id}}.
+
+    '
+  protein_design_analysis_meta: "Note1: You don't need to build nr database index;\
+    \ \nNote2: You need to install diamond software using conda(conda install diamond);\
+    \ \nNote3: You need to install cd-hit software using conda(conda install cd-hit);\
+    \ \nNote4: You need to install water software using conda(conda install emboss);\
+    \ \nNote5: Water software usage is as follows: \n<water usage> \n    Smith-Waterman\
+    \ local alignment of sequences \n    Version: EMBOSS:6.6.0.0 \n      Standard\
+    \ (Mandatory) qualifiers: \n      [-asequence]         sequence   Sequence filename\
+    \ and optional format, or \n                                  reference (input\
+    \ USA) \n      [-bsequence]         seqall     Sequence(s) filename and optional\
+    \ format, or \n                                  reference (input USA) \n    \
+    \  -gapopen            float      [10.0 for any sequence] The gap open penalty\
+    \ \n                                  is the score taken away when a gap is \n\
+    \                                  created. The best value depends on the \n \
+    \                                 choice of comparison matrix. The default \n\
+    \                                  value assumes you are using the EBLOSUM62 \n\
+    \                                  matrix for protein sequences, and the \n  \
+    \                                EDNAFULL matrix for nucleotide sequences. \n\
+    \                                  (Number from 0.000 to 100.000) \n      -gapextend\
+    \          float      [0.5 for any sequence] The gap extension \n            \
+    \                      penalty is added to the standard gap penalty \n       \
+    \                           for each base or residue in the gap. This \n     \
+    \                             is how long gaps are penalized. Usually you \n \
+    \                                 will expect a few long gaps rather than many\
+    \ \n                                  short gaps, so the gap extension penalty\
+    \ \n                                  should be lower than the gap penalty. An\
+    \ \n                                  exception is where one or both sequences\
+    \ are \n                                  single reads with possible sequencing\
+    \ \n                                  errors in which case you would expect many\
+    \ \n                                  single base gaps. You can get this result\
+    \ by \n                                  setting the gap open penalty to zero\
+    \ (or \n                                  very low) and using the gap extension\
+    \ \n                                  penalty to control gap scoring. (Number\
+    \ from \n                                  0.000 to 10.000) \n      [-outfile]\
+    \           align      [*.water] Output alignment file name \n               \
+    \                  (default -aformat srspair) \n      Additional (Optional) qualifiers:\
+    \ \n      -datafile           matrixf    [EBLOSUM62 for protein, EDNAFULL for\
+    \ DNA] \n                                  This is the scoring matrix file used\
+    \ when \n                                  comparing sequences. By default it\
+    \ is the \n                                  file 'EBLOSUM62' (for proteins) or\
+    \ the file \n                                  'EDNAFULL' (for nucleic sequences).\
+    \ These \n                                  files are found in the 'data' directory\
+    \ of \n                                  the EMBOSS installation. \n      Advanced\
+    \ (Unprompted) qualifiers: \n      -[no]brief          boolean    [Y] Brief identity\
+    \ and similarity \n      General qualifiers: \n      -help               boolean\
+    \    Report command line options and exit. More \n                           \
+    \       information on associated and general \n                             \
+    \     qualifiers can be found with -help -verbose\n</water usage> \n<water usage\
+    \ example> \n    water -asequence $target_sequence_file -bsequence $alignment_sequences_file\
+    \ -gapopen 10 -gapextend 0.5 -outfile $out_file \n</water usage example> \nNote6:\
+    \ compute_psap_score script usage is as follows: \n<compute_psap_score sage> \n\
+    \    usage: compute_psap_score.py [-h] [--protein_file PROTEIN_FILE] [--align_file\
+    \ ALIGN_FILE] [--out OUT] \n    options: \n      -h, --help            show this\
+    \ help message and exit \n      --protein_file PROTEIN_FILE \n               \
+    \         Protein file as fasta format. \n      --align_file ALIGN_FILE \n   \
+    \                     Protein align file as water align format. \n      --out\
+    \ OUT             PSAP output folder.. \n</compute_psap_score usage> \n\n<compute_psap_score\
+    \ usage example> \n    conda activate af3 && python compute_psap_score.py --protein_file\
+    \ $your_protein_file --align_file $water_out --out $out_dir \n</compute_psap_score\
+    \ usage example> \nstep1, Find Gene's Protein Sequence using grep; \nstep2, Sequence\
+    \ alignment using diamond blastp to find top5000 sequence[--max-target-seqs 5000],\
+    \ using 16 threads[-t 16] and --tmpdir $tmp paramter(conda install diamond -c\
+    \ bioconda); \nstep3, Extract the sequence ids from the blast result using awk;\
+    \ \nstep4, Extract the matched sequences from the database using seqkit(conda\
+    \ install seqkit -c bioconda); \nstep5, De-redundancy of 5000 protein sequences\
+    \ using cd-hit(conda install cd-hit -c bioconda); \nstep6, Use water software\
+    \ to align the target protein sequence with the de-redundant protein sequence(conda\
+    \ install emboss -c bioconda); \nstep7, PSAP calculation using script compute_psap_score.py(conda\
+    \ activate af3)\n"
+  protocol: 'You are an expert molecular biologist tasked with creating a detailed
+    experimental guide. Your objective is to synthesize the provided documentation
+    into a formal, step-by-step laboratory  protocol for the following experiment:
+
+    {{experiment}}
+
+
+    Using ONLY the information provided in the retrieved documents below, generate
+    the protocol.
+
+
+    **Retrieved Documents:**
+
+
+    {{retrieve_results}}
+
+
+    **Instructions:** 1.  Your final output must be a single, coherent, and complete
+    step-by-step protocol, structured logically from start to finish. 2.  Format the
+    protocol using Markdown. Use `###` for main section titles (e.g., `### 1. Design
+    and Order Oligos`, `### 2. Golden Gate Assembly`). 3.  Under each section, use
+    a numbered list for the individual steps. 4.  Each step must include all critical
+    details found in the source documents, such as reagent names, concentrations (e.g.,
+    100 μM), volumes (e.g., 1 μL), temperatures (e.g., 37°C), durations (e.g., 30
+    minutes), and specific sequences. 5.  The final output should be presented as
+    a ready-to-use protocol for a researcher in a lab.
+
+    '
+  retrieval: '# The following contents are the search results related to the user''s
+    message:
+
+
+    {{retrieve_results}}
+
+
+
+    In the search results I provide to you, each result is formatted as [document
+    X begin]...[document X end], where X represents the numerical index of each article.
+    Please cite the context at the end of the relevant sentence when appropriate.
+    Use the document format [document:X] in the corresponding part of your answer.
+    If a sentence is derived from multiple contexts, list all relevant document numbers,
+    such as [document:3][document:5]. Be sure not to cluster all documents at the
+    end; instead, include them in the corresponding parts of the answer.
+
+
+    When responding, please keep the following points in mind:
+
+
+    - Not all content in the search results is closely related to the user''s question.
+    You need to evaluate and filter the search results based on the question.
+
+
+    - For listing-type questions (e.g., listing all homologous genes), try to limit
+    the answer to 10 key points and inform the user that they can refer to the search
+    sources for complete information. Prioritize providing the most complete and relevant
+    items in the list. Avoid mentioning content not provided in the search results
+    unless necessary.
+
+
+    - For creative tasks (e.g., writing an essay), ensure that references are cited
+    within the body of the text, such as [document:3][document:5], rather than only
+    at the end of the text. You need to interpret and summarize the user''s requirements,
+    choose an appropriate format, fully utilize the search results, extract key information,
+    and generate an answer that is insightful, creative, and professional. Extend
+    the length of your response as much as possible, addressing each point in detail
+    and from multiple perspectives, ensuring the content is rich and thorough.
+
+
+    - If the response is lengthy, structure it well and summarize it in paragraphs.
+    If a point-by-point format is needed, try to limit it to 5 points and merge related
+    content.
+
+
+    - For objective Q&A, if the answer is very brief, you may add one or two related
+    sentences to enrich the content.
+
+
+    - Choose an appropriate and visually appealing format for your response based
+    on the user''s requirements and the content of the answer, ensuring strong readability.
+
+
+    - Your answer should synthesize information from multiple relevant webpages and
+    avoid repeatedly citing the same webpage.
+
+
+    - Unless the user requests otherwise, your response should be in the same language
+    as the user''s question.
+
+
+
+    # The user''s message is:
+
+
+    {{user_query}}
+
+    '
+  retrieval_file: '# The following contents are the search results related to the
+    user''s message:
+
+
+    {{retrieve_results}}
+
+
+
+    In the search results I provide to you, each result is formatted as [document
+    X begin]...[document X end], where X represents the numerical index of each article.
+    Please cite the context at the end of the relevant sentence when appropriate.
+    Use the document format [document:X] in the corresponding part of your answer.
+    If a sentence is derived from multiple contexts, list all relevant document numbers,
+    such as [document:3][document:5]. Be sure not to cluster all documents at the
+    end; instead, include them in the corresponding parts of the answer.
+
+
+    When responding, please keep the following points in mind:
+
+
+    - Not all content in the search results is closely related to the user''s question.
+    You need to evaluate and filter the search results based on the question.
+
+
+    - For listing-type questions (e.g., listing all homologous genes), try to limit
+    the answer to 10 key points and inform the user that they can refer to the search
+    sources for complete information. Prioritize providing the most complete and relevant
+    items in the list. Avoid mentioning content not provided in the search results
+    unless necessary.
+
+
+    - For creative tasks (e.g., writing an essay), ensure that references are cited
+    within the body of the text, such as [document:3][document:5], rather than only
+    at the end of the text. You need to interpret and summarize the user''s requirements,
+    choose an appropriate format, fully utilize the search results, extract key information,
+    and generate an answer that is insightful, creative, and professional. Extend
+    the length of your response as much as possible, addressing each point in detail
+    and from multiple perspectives, ensuring the content is rich and thorough.
+
+
+    - If the response is lengthy, structure it well and summarize it in paragraphs.
+    If a point-by-point format is needed, try to limit it to 5 points and merge related
+    content.
+
+
+    - For objective Q&A, if the answer is very brief, you may add one or two related
+    sentences to enrich the content.
+
+
+    - Choose an appropriate and visually appealing format for your response based
+    on the user''s requirements and the content of the answer, ensuring strong readability.
+
+
+    - Your answer should synthesize information from multiple relevant webpages and
+    avoid repeatedly citing the same webpage.
+
+
+    - Unless the user requests otherwise, your response should be in the same language
+    as the user''s question.
+
+
+    # Based on the following files uploaded by the user:
+
+
+    {{upload_context}}
+
+
+    # The user''s message is:
+
+
+    {{user_query}}
+
+    '
+  single_cell_analysis: 'Please plot the expression of the gene {{gene_id}} in different
+    cells.
+
+    '
+  single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda\
+    \   (conda activate af3);  \nNote2: You need to activate af3 environment and install\
+    \  scanpy and anndata packages(conda activate af3 && pip install scanpy anndata\
+    \ -i  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple); \nstep1, install\
+    \ the  packages and plot the gene expression in different cells using plot_single_cell_gene.py;\
+    \ (conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \ \n\nstep2, summary the results using summary_single_cell.py(conda activate af3\
+    \ &&  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
+    Tool Usage method:\n    usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA]\
+    \  [-o OUTPUT_DIR] [-g GENE_ID] \n    options: \n    -h, --help             show\
+    \ this help message and exit \n    -i SINGLE_CELL_DATA   single cell data\n  \
+    \   -o OUTPUT_DIR   output folder path \n    -g GENE_ID  the gene id you  want\
+    \ to plot. \nTool Usage example:\n    Question:  Please plot the expression  of\
+    \ the gene MYC in different cells. \n    Cmd line code: conda activate af3 &&\
+    \  pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir\
+    \ -g MYC\n\n Tool Usage example:\n        usage: summary_single_cell.py [-h] [--input\
+    \ INPUT]  [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n      \
+    \  -h, --help          show this help message and exit\n        --input INPUT\
+    \      the file you  want to summary(the tsv format)\n        --gene_id GENE_ID\
+    \  the summary gene_id\n         --out_dir OUT_DIR  output_folder\nTool Usage\
+    \ example:\n    conda activate af3 &&  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_single_cell.py --input $output_dir/${gene_id}_expression.txt\
+    \  --gene_id $gene_id --out_dir $out_dir\n"
+  smep_analysis: 'You are a bioinformatician specialized in the field of epigenetics
+    and you are very good at conducting epigenetic modification prediction studies,
+    next, you will generate a task plan and complete the task analysis based on the
+    data that we have provided you with, now your task goal is: Please help me to
+    predict the {{epic_type}} modification of {{gene_id}} gene prompter.
+
+    '
   smep_analysis_meta: "Note1: You do not need to install any software;\nNote2: You'll\
-    \  need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find Gene's\
-    \  prompter Sequence using grep;\nstep2, Prediction of modifications in promoters \
-    \ using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep &&\
-    \  cd /opt/health/epic_models/smep)\nstep3, summary the smep results using summary_smep.py.\n\
-    \ <smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file\
-    \  -O /$output_dir/$out_file -T $epigenetic_modification_type\n    $epigenetic_modification_type:\n\
-    \     1. 5mC\n    2. 6mA\n    3. m6A\n    4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n    \
-    \ Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
-    \     Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n    \
-    \ Note3: out_file You can specify files in any path\n</smep usage>\n<smep example>\n    \
-    \ question: please help me to predict the 5mC modification of A gene prompter\n    \
-    \ commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep &&\
+    \  need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find\
+    \ Gene's  prompter Sequence using grep;\nstep2, Prediction of modifications in\
+    \ promoters  using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep\
+    \ &&  cd /opt/health/epic_models/smep)\nstep3, summary the smep results using\
+    \ summary_smep.py.\n <smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl\
+    \ -I $fasta_file  -O /$output_dir/$out_file -T $epigenetic_modification_type\n\
+    \    $epigenetic_modification_type:\n     1. 5mC\n    2. 6mA\n    3. m6A\n   \
+    \ 4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n     Note1: When you run the script,\
+    \ you must be under the path /opt/health/epic_models/smep/\n     Note2: The fasta_file\
+    \ must be saved under the path /opt/health/epic_models/smep/\n     Note3: out_file\
+    \ You can specify files in any path\n</smep usage>\n<smep example>\n     question:\
+    \ please help me to predict the 5mC modification of A gene prompter\n     commond_line:\
+    \ conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep &&\
     \  cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
     \  -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>\n<summary example>\n\
-    \     Tool_Usage:\n        usage: summary_smep.py [-h] [--input INPUT] [--gene_id GENE_ID]\
-    \  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help         show this help message and exit\n\
-    \         --input INPUT      the file you want to summary(the tsv format)\n        \
-    \ --gene_id GENE_ID  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n\
-    \     Tool_Example\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_smep.py --input $output_dir/$output_file --gene_id $gene_id \
-    \ --out_dir $out_dir\n</summary example>"
-  smoc_analysis_meta: "Note: You do not need to install any software;\nstep1, Find \
-    \ Gene's prompter Sequence using grep;\nstep2, Prediction of chromatin accessibility\
-    \  in promoters using SMOC(conda activate epic);\nstep3, Summary smoc results using\
-    \  the script summary_smoc.py\n<smoc usage>\n    python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
+    \     Tool_Usage:\n        usage: summary_smep.py [-h] [--input INPUT] [--gene_id\
+    \ GENE_ID]  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help      \
+    \      show this help message and exit\n         --input INPUT      the file you\
+    \ want to summary(the tsv format)\n         --gene_id GENE_ID  the summary gene_id\n\
+    \        --out_dir OUT_DIR  output_folder\n     Tool_Example\n        conda activate\
+    \ af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_smep.py --input $output_dir/$output_file --gene_id $gene_id\
+    \ --out_dir $out_dir\n</summary example>\n"
+  smoc_analysis: 'You are a bioinformatician specialized in the field of epigenetics
+    and you are very good at conducting chromatin accessibility prediction studies,
+    next, you will generate a task plan and complete the task analysis based on the
+    data that we have provided you with, now your task goal is: Please help me to
+    predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
+    NIP.
+
+    '
+  smoc_analysis_meta: "Note: You do not need to install any software;\nstep1, Find\
+    \  Gene's prompter Sequence using grep;\nstep2, Prediction of chromatin accessibility\
+    \  in promoters using SMOC(conda activate epic);\nstep3, Summary smoc results\
+    \ using  the script summary_smoc.py\n<smoc usage>\n    python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
     \  --input $input_fasta --model /opt/health/epic_models/smoc/model/$model_type\
-    \  --output $out_dir --threshold 0.8 --window_size 800 \n    $model_type: \n\
+    \  --output $out_dir --threshold 0.8 --window_size 800 \n    $model_type: \n \
     \     1. Best_model_9311CK.h5: Wild-type chromatin accessibility of variety 9311\n\
-    \     2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state of variety 9311\n\
-    \     3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of variety NIP\n\
-    \     4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited state of variety NIP\n\
-    \ </smoc usage>\n<smep example>\n    question: please help me to predict the wild-type\
-    \  chromatin accessibility of Oryza sativa Os12g0263100 gene prompter in 9311.\n\
-    \     commond_line: conda activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
-    \  --input $input_fasta --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\
+    \      2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state\
+    \ of variety 9311\n      3. Best_model_NIPCK.h5: Wild-type chromatin accessibility\
+    \ of variety NIP\n      4. Best_model_NIPHS.h5: Chromatin accessibility in the\
+    \ heat-excited state of variety NIP\n </smoc usage>\n<smep example>\n    question:\
+    \ please help me to predict the wild-type  chromatin accessibility of Oryza sativa\
+    \ Os12g0263100 gene prompter in 9311.\n     commond_line: conda activate epic\
+    \ && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py  --input $input_fasta\
+    \ --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\
     \  \n<smep example>\n<summary example>\n    Tool_Usage:\n        usage: summary_smoc.py\
     \  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n\
     \         options:\n        -h, --help            show this help message and exit\n\
-    \         --input_path INPUT_PATH\n                                the out file path for smoc software generate.\n\
-    \         --gene_id GENE_ID     the summary gene_id\n        --out_dir OUT_DIR\
-    \      output_folder\n    Tool_Example:\n        conda activate af3 &&\
-    \  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\
-    \ \n</summary example>"
-  gene_network_analysis_meta: "Note1: You need activate af3 environment;\nstep1, Construct \
-    \ gene regulatory network using the script construct_gene_network.py(using af3 environment);\
-    \ \nstep2, plot gene_network using network_plot.R script(using Renv environment).\n<construct usage>\
-    \ \n     Tool Usage:\n        usage: construct_network.py [-h] [--network NETWORK]  \
-    \ [--network_class NETWORK_CLASS] [--to_id TO_ID] [--to_file TO_FILE]  [--output_dir OUTPUT_DIR]\n\n\
-    \         options:\n        -h, --help             show this help message and exit\n        --network NETWORK\
-    \      The network file\n         --network_class NETWORK_CLASS\n                                 \
-    \ The network node class file\n        --to_id TO_ID         the to_id you want to get\n\
-    \          --to_file TO_FILE     the to annotation file\n        --output_dir OUTPUT_DIR\n\
-    \                                  the output folder\n    Tool Usage Example:\n        \
-    \ conda activate af3 && python construct_network.py --network $network_file  \
-    \ --network_class $network_class_file --to_id $to_id --to_file $to_file  --output_dir $output_dir\n\
-    \     Note:\n        1. Here the Node class file for the next visualization is generated with \
-    \ the name of $to_id_network_class.txt in the $output_dir;\n        2. The ':' in to_id will be\
-    \  replace '_' in the output file name\n           example:\n             if the to_id is \
-    \ TO:0000207, and the output node class file is TO_0000207_network_class.txt\n</construct usage>\
-    \ \n<plot usage>\n    Tool Usage:\n        Rscript network_plot.R <node_call_file> <out_dir> <TO_id> <use_sub_sample>\
-    \ \n\n        options:\n            node_call_file: Node classification file path(tsv format)\n\
-    \             out_dir: output folder\n            TO_id: plant traits to id\n            \
-    \ use_sub_sample: whether or not side sampling is used(TRUE/FALSE)\n    Tool Usage Example:\n\
-    \         conda activate Renv && Rscript network_plot.R $node_class_file_out_in_step1 \
-    \ $output_dir $to_id $use_sub_sample[TRUE or FALSE]\n    Note: The recommended use_sub_sample\
-    \  parameter is TRUE\n</plot usage>"
-  haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate af3);\
-    \ \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
-    \  $output_dir)\nstep2, analysis the promoter haplotypes using plot_promoter_hap.sh\
-    \ (conda activate af3)\n<plot example>\n    Tool_Usage:\n        Usage: plot_promoter_hap.sh\
-    \  -i <gene_id> -o <output_directory> [-p python_script]\n\n        This script visualizes\
-    \  transcripts for a given gene.\n\n        Options:\n        -i GENE_ID        Gene ID path(e.g., /path/TP53)\n\
-    \         -o OUTPUT_DIR     Output directory for generated images\n        -p PYTHON_SCRIPT\
-    \   Path to Python visualization script (default: visualizaition_hap.py)\n        \
-    \ -h                Show this help message\n\n        Example:\n        \
-    \ plot_promoter_hap.sh -i /path/to/hap/Os01g0177400 -o /path/to/output -p /script_path\n\
-    \     Tool_Example:\n        conda activate af3 && sh plot_promoter_hap.sh -i $promoter_path\
-    \  -o $output_dir -p $script_path\n</plot example>"
-  gene_function_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\n\
-    Please provide a comprehensive and accurate description of the {{species}} gene(s)\
-    \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
-    \ and Localization\n1. Discovery History and Nomenclature\n- Provide the history\
-    \ of the gene's or its family discovery and the background of its nomenclature.\n\
-    2. Genetic Mapping (e.g., QTL mapping, gene localization analysis)  \n- Describe\
-    \ the genetic mapping details, including any quantitative trait loci (QTL) mapping\
-    \ or localization analyses.\n\nII. Gene Cloning and Structural Analysis\n1. Cloning\
-    \ Information  \n- Detail the cloning process and related experimental information\
-    \ for the gene.\n2. Structural Characteristics  \n- Describe the structural features\
-    \ of the gene, such as exons, introns, or other notable elements.\n3. Protein\
-    \ stability or Enzyme activity analysis\n- Provide the changes of gene-coding\
-    \ protein stability under various conditions, or describe the molecular dynamics\
-    \ of enzyme and its substrates.\n\nIII. Functional Analysis\n1. Expression Patterns\
-    \ (e.g., spatiotemporal expression, expression profiles)\n- Provide details on\
-    \ the gene’s spatiotemporal expression patterns and expression profiles across\
-    \ tissues, developmental stages, and various environments.\n2. Phenotypic Characteristics\
-    \ and Biological Functions (e.g., mutant phenotypes, associated traits)\n- Describe\
-    \ the phenotypic traits or characteristics observed in mutants or variants of\
-    \ the gene.\n3. The underlying mechanism, pathways, and networks\n- Explain the\
-    \ validated biological functions of the gene, including any molecular interactions,\
-    \ pathways or networks involved.\n4. QTL Interactions  \n- Detail any interactions\
-    \ between the gene and quantitative trait loci (QTL), if applicable.\n\nIV. Application\
-    \ and Evolutionary Analysis\n1. Domestication Studies\n- Describe the gene’s role\
-    \ or significance in domestication studies, if applicable.\n2. Applications (e.g.,\
-    \ stress resistance, breeding)\n- Provide information on practical applications\
-    \ of the gene, such as contributions to stress resistance or breeding programs.\n\
-    3. Genetic diversity analysis or SNPs analysis\n- Provide natural variations in\
-    \ promoter regions and gene-coding regions, and further exhibit the genetic effects\
-    \ of these variations.\n\nReference Materials:\n\nGene description annotation:\
-    \ {{description_string}}\n\nGO (Gene Ontology) annotation: {{go_string}}\n\nGene\
-    \ InterPro annotation: {{interpro_string}}\n\nGene MapMan annotation: {{mapman_string}}\n\
-    \nGene related research:\n{{retrieve_results}}\n\nPS:\nGene Ontology (GO) annotation\
-    \ provides a standardized vocabulary to describe the attributes of genes and gene\
-    \ products in any organism. A GO annotation is a statement that links a gene product\
-    \ to a GO term, effectively describing an aspect of its biological role. This\
-    \ system is built on a hierarchical structure, where terms become more specific\
-    \ as you move down the hierarchy.\nInterPro is an integrated database resource\
-    \ for the classification of proteins into families, and the prediction of domains\
-    \ and important sites. It combines information from multiple diverse databases,\
-    \ each of which uses different methods to classify proteins. This integration\
-    \ reduces redundancy and provides a comprehensive overview of protein function.\n\
-    MapMan is a software tool specifically designed for the functional annotation\
-    \ and visualization of omics data, particularly in plant sciences. It utilizes\
-    \ its own plant-specific ontology, which organizes genes into hierarchical functional\
-    \ categories called \"Bins\".\nIn the search results I provide to you, each result\
-    \ is formatted as [document X begin]...[document X end], where X represents the\
-    \ numerical index of each article. Please cite the context at the end of the relevant\
-    \ sentence when appropriate. Use the document format [document:X] in the corresponding\
-    \ part of your answer. If a sentence is derived from multiple contexts, list all\
-    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
-    \ cluster all documents at the end; instead, include them in the corresponding\
-    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
-    \ references are cited within the body of the text, such as [document:3][document:5],\
-    \ rather than only at the end of the text. You need to interpret and summarize\
-    \ the user's requirements, choose an appropriate format, fully utilize the search\
-    \ results, extract key information, and generate an answer that is insightful,\
-    \ creative, and professional. Extend the length of your response as much as possible,\
-    \ addressing each point in detail and from multiple perspectives, ensuring the\
-    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
-    \ gene names (which represent aliases or variants of the same gene). Multiple\
-    \ gene names are separated by the '|' symbol."
-  gene_function_network_anno: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\
-    \nPlease provide a comprehensive and accurate description of the {{species}} gene(s)\
-    \ {{gene_string}}, covering the following sections.\n\nI. Gene Discovery, Family,\
-    \ and Localization\n1. Discovery History and Nomenclature\n- Provide the history\
-    \ of the gene's or its family discovery and the background of its nomenclature.\n\
-    2. Genetic Mapping (e.g., QTL mapping, gene localization analysis)  \n- Describe\
-    \ the genetic mapping details, including any quantitative trait loci (QTL) mapping\
-    \ or localization analyses.\n\nII. Gene Cloning and Structural Analysis\n1. Cloning\
-    \ Information  \n- Detail the cloning process and related experimental information\
-    \ for the gene.\n2. Structural Characteristics  \n- Describe the structural features\
-    \ of the gene, such as exons, introns, or other notable elements.\n3. Protein\
-    \ stability or Enzyme activity analysis\n- Provide the changes of gene-coding\
-    \ protein stability under various conditions, or describe the molecular dynamics\
-    \ of enzyme and its substrates.\n\nIII. Functional Analysis\n1. Expression Patterns\
-    \ (e.g., spatiotemporal expression, expression profiles)\n- Provide details on\
-    \ the gene’s spatiotemporal expression patterns and expression profiles across\
-    \ tissues, developmental stages, and various environments.\n2. Phenotypic Characteristics\
-    \ and Biological Functions (e.g., mutant phenotypes, associated traits)\n- Describe\
-    \ the phenotypic traits or characteristics observed in mutants or variants of\
-    \ the gene.\n3. The underlying mechanism, pathways, and networks\n- Explain the\
-    \ validated biological functions of the gene, including any molecular interactions,\
-    \ pathways or networks involved.\n4. QTL Interactions  \n- Detail any interactions\
-    \ between the gene and quantitative trait loci (QTL), if applicable.\n\nIV. Application\
-    \ and Evolutionary Analysis\n1. Domestication Studies\n- Describe the gene’s role\
-    \ or significance in domestication studies, if applicable.\n2. Applications (e.g.,\
-    \ stress resistance, breeding)\n- Provide information on practical applications\
-    \ of the gene, such as contributions to stress resistance or breeding programs.\n\
-    3. Genetic diversity analysis or SNPs analysis\n- Provide natural variations in\
-    \ promoter regions and gene-coding regions, and further exhibit the genetic effects\
-    \ of these variations.\n\nReference Materials:\n\nGene description annotation:\
-    \ {{description_string}}\n\nGO (Gene Ontology) annotation: {{go_string}}\n\nGene\
-    \ InterPro annotation: {{interpro_string}}\n\nGene MapMan annotation: {{mapman_string}}\n\
-    \nOrthologous genes information:\n{{orthologs_string}}\n\nParalogous genes information:\n\
-    {{paralogs_string}}\n\nPotential interacting genes information:\n{{interaction_string}}\n\
-    \nGene related research:\n{{retrieve_results}}\n\nPS:\nGene Ontology (GO) annotation\
-    \ provides a standardized vocabulary to describe the attributes of genes and gene\
-    \ products in any organism. A GO annotation is a statement that links a gene product\
-    \ to a GO term, effectively describing an aspect of its biological role. This\
-    \ system is built on a hierarchical structure, where terms become more specific\
-    \ as you move down the hierarchy.\nInterPro is an integrated database resource\
-    \ for the classification of proteins into families, and the prediction of domains\
-    \ and important sites. It combines information from multiple diverse databases,\
-    \ each of which uses different methods to classify proteins. This integration\
-    \ reduces redundancy and provides a comprehensive overview of protein function.\n\
-    MapMan is a software tool specifically designed for the functional annotation\
-    \ and visualization of omics data, particularly in plant sciences. It utilizes\
-    \ its own plant-specific ontology, which organizes genes into hierarchical functional\
-    \ categories called \"Bins\".\nIn the search results I provide to you, each result\
-    \ is formatted as [document X begin]...[document X end], where X represents the\
-    \ numerical index of each article. Please cite the context at the end of the relevant\
-    \ sentence when appropriate. Use the document format [document:X] in the corresponding\
-    \ part of your answer. If a sentence is derived from multiple contexts, list all\
-    \ relevant document numbers, such as [document:3][document:5]. Be sure not to\
-    \ cluster all documents at the end; instead, include them in the corresponding\
-    \ parts of the answer. For creative tasks (e.g., writing an essay), ensure that\
-    \ references are cited within the body of the text, such as [document:3][document:5],\
-    \ rather than only at the end of the text. You need to interpret and summarize\
-    \ the user's requirements, choose an appropriate format, fully utilize the search\
-    \ results, extract key information, and generate an answer that is insightful,\
-    \ creative, and professional. Extend the length of your response as much as possible,\
-    \ addressing each point in detail and from multiple perspectives, ensuring the\
-    \ content is rich and thorough.\n\nPlease consolidate information for all listed\
-    \ gene names (which represent aliases or variants of the same gene). Multiple\
-    \ gene names are separated by the '|' symbol.\nPlease use markdown format for\
-    \ the output, and the largest heading should start from the third level (\"###\"\
-    )."
+    \         --input_path INPUT_PATH\n                             the out file path\
+    \ for smoc software generate.\n         --gene_id GENE_ID     the summary gene_id\n\
+    \        --out_dir OUT_DIR      output_folder\n    Tool_Example:\n         conda\
+    \ activate af3 &&  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ &&  python summary_smoc.py --input_path $output_dir --gene_id $gene_id --out_dir\
+    \ $out_dir \n</summary example>\n"
+  structure_analysis: 'You are a bioinformatician specialized in the field of protein
+    sturcture and you are well versed in various task analysis in the field of protein
+    sturcture, next, you will generate a task plan and complete the task analysis
+    based on the data that we have provided you with, now your task goal is: Please
+    help me predict the protein structure for gene {{gene_id}}. Note: You do not need
+    to install protenix software using conda, you should activate af3 environment
+
+    '
+  structure_analysis_meta: "Note1: You don't need to install protenix software using\
+    \  conda; \nNote2: You need to activate af3 environment;(conda activate af3);\
+    \ \n\n Note3: protenix commdline softwore usage is as follows:\n<proteix usage\
+    \ method>\n    Usage: protenix predict [OPTIONS]\n\n    predict: Run predictions\
+    \ with protenix.  :param input, out_dir,\n    use_msa_server :return:\n\n    Options:\n\
+    \        --input TEXT       json files or dir for inference\n        --out_dir\
+    \ TEXT    infer result dir\n         --seeds TEXT      the inference seed, split\
+    \ by comma\n         --use_msa_server  do msa search or not\n        --help  \
+    \           Show this message and exit.\n </proteix usage method>\n<usage example>\n\
+    \    protenix predict --input $input_json  --out_dir $output_dir --use_msa_server\n\
+    </usage example>\nNote4: protenix commdline  softwore input file example is as\
+    \ follows:\n    You should filled in the protein  sequence in the sequence parameter\
+    \ in the proteinChain.\n    The dnaSequence and the  ligand are optional parameters\
+    \ that can be filled in if provided by the user,  otherwise, the module will be\
+    \ deleted.\n    The name parameter is the output dir  names, you can change it\
+    \ if you want.\n    The count parameter is the number of  relevant sequences in\
+    \ the composite structure, defalut number is 1.\n<input json file example> \n\
+    [\n    {\n        \"sequences\": [\n            {\n                \"proteinChain\"\
+    :  {\n                    \"sequence\": \"MGSSHHHHHHSSGLVPRGSHMSGKIQHKAVVPAPSRIPLTLSEIEDLRRKGFNQTEIAELYGVTRQAVSWHKKTYGGRLTTRQIVQQNWPWDTRKPHDKSKAFQRLRDHGEYMRVGSFRTMSEDKKKRLLSWWKMLRDNDLVLEFDPSIEPYEGMAGGGFRYVPRDISDDDLLIRVNEHTQLTAEGELLWSWPDDIEELLSEP\"\
+    , \n                    \"count\": 1,\n                }\n            },\n   \
+    \         {\n                \"dnaSequence\": {\n                    \"sequence\"\
+    : \"TTTCGGTGGCTGTCAAGCGGG\", \n                    \"count\": 1\n            \
+    \    }\n            },\n            {\n                 \"ligand\": {\n      \
+    \              \"ligand\": \"CCD_PCG\",\n                     \"count\": 1\n \
+    \               }\n            }\n        ],\n         \"name\": \"7r6r\"\n  \
+    \  }\n]\n</input json file example>\n<summary example>\n     Tool_Usage:\n   \
+    \      usage: summary_structure.py [-h] [--input_path INPUT_PATH]  [--gene_id\
+    \ GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help       \
+    \      show this help message and exit\n        --input_path INPUT_PATH\n    \
+    \                         the out file path for smoc software generate.\n    \
+    \     --gene_id GENE_ID     the summary gene_id\n        --out_dir OUT_DIR   \
+    \  output_folder\n    Tool_Example:\n        conda activate af3 && pip install\
+    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&  python summary_structure.py\
+    \ --input_path $output_dir --gene_id $gene_id --out_dir $out_dir\n </summary example>\n\
+    step1, Find Gene's Protein Sequence using grep; \nstep2, Organize  the protein\
+    \ sequences into an input JSON format file, and save it; \nstep3, Predict  Protein\
+    \ Sturctre using protenix. (conda activate af3)\nstep4, Summary the protein  sturcture\
+    \ results using summary_structure.py"
