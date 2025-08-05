@@ -9,6 +9,7 @@ the retrieved knowledge.
 """
 import asyncio
 from random import uniform
+from json import loads
 from typing import List, Dict, Any, Optional, Union
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -403,16 +404,16 @@ async def multi_retrieve_generate(
             break
     retrieve_context = '\n\n'.join(retrieve_results)
     if obs_file_list:
-        user_query = get_prompt(
+        chat_query = get_prompt(
             prompt_file, 'user/retrieval_file',
             {'retrieve_results': retrieve_context,
              'upload_context': upload_context, 'user_query': user_query})
     else:
-        user_query = get_prompt(
+        chat_query = get_prompt(
             prompt_file, 'user/retrieval',
             {'retrieve_results': retrieve_context, 'user_query': user_query})
     phyto_response = await phyto_chat(
-        user_query=user_query,
+        user_query=chat_query,
         prompt_file=prompt_file,
         prompt_path=prompt_path,
         api_key=api_key,
@@ -432,6 +433,38 @@ async def multi_retrieve_generate(
         max_retries=max_retries,
     )
     phyto_response['choices'][0]['message'].update(retrieve_response)
+    follow_up_response = await phyto_chat(
+        user_query=get_prompt(
+            prompt_file, 'system/follow_up_questions',
+            {
+                'user_query': user_query,
+                'system_response':
+                    phyto_response['choices'][0]['message']['content']
+            }),
+        prompt_file=prompt_file,
+        prompt_path=prompt_path,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        frequency_penalty=frequency_penalty,
+        n=n,
+        presence_penalty=presence_penalty,
+        reasoning_effort=reasoning_effort,
+        response_format=response_format,
+        stream=stream,
+        temperature=temperature,
+        top_p=top_p,
+        user=user,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    follow_up_content = follow_up_response['choices'][0]['message']['content']
+    start_index = follow_up_content.find('[')
+    end_index = follow_up_content.rfind(']') + 1
+    json_part = follow_up_content[start_index:end_index]
+    follow_up_list = loads(json_part)
+    phyto_response['choices'][0]['message'].update(follow_up_list)
     return phyto_response
 
 
