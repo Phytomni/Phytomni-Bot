@@ -106,6 +106,20 @@ user:
     # The user''s message is:
 
     {{user_query}}'
+  protocol: 'You are an expert molecular biologist tasked with creating a detailed experimental guide. Your objective is to synthesize the provided documentation into a formal, step-by-step laboratory  protocol for the following experiment: {{experiment}}
+
+    Using ONLY the information provided in the retrieved documents below, generate the protocol.
+
+    **Retrieved Documents:**
+
+    {{retrieve_results}}
+
+    **Instructions:**
+    1.  Your final output must be a single, coherent, and complete step-by-step protocol, structured logically from start to finish.
+    2.  Format the protocol using Markdown. Use `###` for main section titles (e.g., `### 1. Design and Order Oligos`, `### 2. Golden Gate Assembly`).
+    3.  Under each section, use a numbered list for the individual steps.
+    4.  Each step must include all critical details found in the source documents, such as reagent names, concentrations (e.g., 100 μM), volumes (e.g., 1 μL), temperatures (e.g., 37°C), durations (e.g., 30 minutes), and specific sequences.
+    5.  The final output should be presented as a ready-to-use protocol for a researcher in a lab.'
   retrieval_file: '# The following contents are the search results related to the user''s
     message:
 
