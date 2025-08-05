@@ -247,6 +247,14 @@ class ReviewConfig(KnowledgeConfig):
     TOP_N: int = Field(int(_MAX_TOKENS/8192))
 
 
+class GeneNetworkConfig(AnalystConfig):
+    """Configuration settings specific to gene network tasks.
+
+    Inherits settings from `AnalystConfig`.
+    """
+    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))
+
+
 class DeepGenomeConfig(DataConfig, AnalystConfig):
     """Configuration settings specific to gene function analysis tasks.
 
@@ -264,6 +272,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
                                  'update_task')
     BATCH: bool = Field(True)
     EPIC_TYPE: str = Field('6mA')
+    PROTOCOL_REPO_ID: str = Field('44ad28b5-5c3b-4a02-8e8c-7fb4903424cb')
 
 
 class DigitalDesignConfig(AnalystConfig):
@@ -279,11 +288,3 @@ class InSilicoResearchConfig(AnalystConfig):
 
     Inherits settings from `AnalystConfig`.
     """
-
-
-class GeneNetworkConfig(AnalystConfig):
-    """Configuration settings specific to gene network tasks.
-
-    Inherits settings from `AnalystConfig`.
-    """
-    DEEPGENOME_DATA: str = Field(str(DEEPGENOME_DATA_PATH))

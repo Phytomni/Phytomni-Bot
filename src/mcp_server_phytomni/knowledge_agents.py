@@ -543,8 +543,8 @@ async def retrieve_generate(
             break
     retrieve_context = '\\n\\n'.join(retrieve_results)
     user_query = get_prompt(
-        prompt_file, 'user/retrieval',
-        {'retrieve_results': retrieve_context, 'user_query': user_query})
+        prompt_file, 'user/protocol',
+        {'retrieve_results': retrieve_context, 'experiment': user_query})
     phyto_response = await phyto_chat(
         user_query=user_query,
         prompt_file=prompt_file,
