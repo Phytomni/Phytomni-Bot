@@ -97,104 +97,132 @@ system:
 
     '
 template:
-  gene_function_result: '# Comprehensive Analysis Report of {{gene_name}}
+  gene_function_result: '## Comprehensive Functional Characterization of {{gene_name}}
 
 
-    ## I. Phylogenetic Analysis
+    ### I. Evolutionary Conservation Analysis
 
-    ### Phylogenetic Tree
+    #### 1.Phylogenetic Tree Reconstruction
 
     ![Phylogenetic Tree]({{tree_path}})
+
+    {{tree_legend}}
 
 
     **Interpretation:**
 
     {{tree_interpretation}}
 
+    {{tree_results}}
 
-    ## II. Bulk RNA Expression Analysis
+    ### II. Transcriptomic Profiling
 
-    ### 2.1 Tissue-Specific Expression
+    #### 1. Spatiotemporal Expression Patterns
 
     ![Tissue Expression]({{tissue_path}})
+
+    {{tissue_legend}}
 
 
     **Interpretation:**
 
     {{tissue_interpretation}}
 
+    {{tissue_results}}
 
-    ### 2.2 Cultivar-Specific Expression
+    #### 2. Cultivar-Specific Expression 
 
     ![Cultivar Expression]({{cultivar_path}})
+
+    {{cultivar_legend}}
 
 
     **Interpretation:**
 
     {{cultivar_interpretation}}
 
+    {{cultivar_results}}
 
-    ### 2.3 Mutant-Specific Expression
-
-    ![Mutant Expression]({{mutant_path}})
-
-
-    **Interpretation:**
-
-    {{mutant_interpretation}}
-
-
-    ### 2.4 Treatment-Specific Expression
+    #### 3. Stress Response Profiling
 
     ![Treatment Expression]({{treatment_path}})
+
+    {{treatment_legend}}
 
 
     **Interpretation:**
 
     {{treatment_interpretation}}
 
+    {{treatment_results}}
 
-    ## III. Cell-Type Specific Expression
+    ### III. Upstream or Downstream targets
 
-    ### UMAP Visualization
+    #### 1. Mutant-Specific Expression
+
+    ![Mutant Expression]({{mutant_path}})
+
+    {{mutant_legend}}
+
+
+    **Interpretation:**
+
+    {{mutant_interpretation}}
+
+    {{mutant_results}}
+
+    ### IV. Single-Cell Transcriptomic Atlas
+
+    #### 1. Cell Type-Specific Resolution
+
+    ##### UMAP Visualization
 
     ![UMAP Plot]({{umap_path}})
 
+    {{umap_legend}}
 
-    ### Violin Plot
+    ##### Violin Plot
 
     ![Violin Plot]({{violin_path}})
+
+    {{violin_legend}}
 
 
     **Interpretation:**
 
     {{single_cell_interpretation}}
 
+    {{single_cell_results}}
 
-    ## IV. Promoter Analysis
+    ### V. cis-Regulatory Landscape
 
-    ### 4.1 Motif Analysis
+    #### 1. Motif Analysis
 
-    #### Identified Motifs
+    ##### Identified Motifs
 
-    {{motif_images}}
+    ![Motif Image]({{motif_path}})
 
+    {{motif_legend}}
 
     **Interpretation:**
 
     {{motif_interpretation}}
 
+    {{motif_results}}
 
-    ### 4.2 Epigenetic Modifications
+    #### 2. Chromatin State Dynamics
 
-    **Analysis:**
+    **Epigenetic profiling:**
+
+    ![Epic Image]({{smep_path}})
+
+    {{smep_legend}}
 
     {{epic_interpretation}}
 
+    ### VI. Protein Characterization
 
-    ## V. Protein Analysis
-
-    ### 5.1 Protein Domains
+    #### 1. Domain Architecture Evolution
 
     {{domain_table}}
 
@@ -203,8 +231,7 @@ template:
 
     {{domain_interpretation}}
 
-
-    ### 5.2 Protein 3D Structure
+    #### 2. 3D Structure Prediction
 
     {{protein_structures}}
 
@@ -212,6 +239,7 @@ template:
     **Interpretation:**
 
     {{structure_interpretation}}
+
 
     '
 user:
@@ -521,21 +549,16 @@ user:
     \ && python generate_data_description.py --figure_file $output_dir/${gene_id}_tree.png\
     \ --annotation_file $output_dir/$tree_file --output_dir $output_dir\n</results_example>"
   gene_expression_analysis:
-    cultivar: 'Please plot the expression of the gene {{gene_id}} between 9311, NIPPONBARE,
-      ZH11, DONGJIN, IR29 and IR64 cultivars
+    cultivar: 'Please plot the expression of the gene {{gene_id}} based on the sample list file provided
 
       '
-    genotype: 'Please plot the expression of the gene {{gene_id}} between OSMYC2_KNOCKDOWN,
-      OSEIN2, FNRP_OE, SDG725RI_MUTANT and WILDTYPE genotypes
+    genotype: 'Please plot the expression of the gene {{gene_id}} based on the sample list file provided
 
       '
-    tissue: 'Please plot the expression of the gene {{gene_id}} between roots, seeds,
-      stem, meristem, panicle, callus, flower and leaves tissues
+    tissue: 'Please plot the expression of the gene {{gene_id}} based on the sample list file provided
 
       '
-    treatment: 'Please plot the expression of the gene {{gene_id}} between HEAT_STRESS,
-      SALT_STRESS, HIGH_WATER-HIGH_NITROGEN, HIGH_WATER-LOW_NITROGEN, LOW_WATER-HIGH_NITROGEN,
-      LOW_WATER-LOW_NITROGEN and CONTROL treatments
+    treatment: 'Please plot the expression of the gene {{gene_id}} based on the sample list file provided
 
       '
   gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
@@ -1365,7 +1388,7 @@ user:
     \        conda activate af3 && python plot_smep.py --promoter_file $promoter_fasta_file\
     \ --smep_file $smep_outfile --modify_type $modify_type --output_dir $output_dir\
     \ --gene_id $gene_id\n    Note: using this script, you will get a figure in $output_dir,\
-    \ the figure name is ${gene_id}_${modify_type}.png\n</plot example>\n<summary example>\n\
+    \ the figure name is ${gene_id}_${modify_type}_smep.png\n</plot example>\n<summary example>\n\
     \    Tool_Usage:\n        usage: summary_smep.py [-h] [--input INPUT] [--gene_id GENE_ID]\
     \ [--predict_type PREDICT_TYPE] [--out_dir OUT_DIR]\n\n        options:\n        -h,\
     \ --help            show this help message and exit\n        --input INPUT      \
