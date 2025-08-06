@@ -568,14 +568,14 @@ user:
     \ --figure_file $output_dir/${gene_id}_tree.png --annotation_file $output_dir/$tree_file\
     \ --output_dir $output_dir\n</results_example>"
   gene_expression_analysis:
-    cultivar: 'Please plot the expression of the gene {{gene_id}} based on the sample
-      list file provided'
-    genotype: 'Please plot the expression of the gene {{gene_id}} based on the sample
-      list file provided'
-    tissue: 'Please plot the expression of the gene {{gene_id}} based on the sample
-      list file provided'
-    treatment: 'Please plot the expression of the gene {{gene_id}} based on the sample
-      list file provided'
+    cultivar: Please plot the expression of the gene {{gene_id}} based on the sample
+      list file provided
+    genotype: Please plot the expression of the gene {{gene_id}} based on the sample
+      list file provided
+    tissue: Please plot the expression of the gene {{gene_id}} based on the sample
+      list file provided
+    treatment: Please plot the expression of the gene {{gene_id}} based on the sample
+      list file provided
   gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
     \ conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
     \ install seaborn packages(conda activate af3 && pip install seaborn -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
@@ -822,8 +822,8 @@ user:
     \ gene names are separated by the '|' symbol.\nPlease use markdown format for\
     \ the output, and the largest heading should start from the third level (\"###\"\
     ).\n"
-  gene_network_analysis: 'Please help me to analysis the hormone regulatory network
-    in the traits of {{to_id}}'
+  gene_network_analysis: Please help me to analysis the hormone regulatory network
+    in the traits of {{to_id}}
   gene_network_analysis_meta: "Note1: You need activate af3 environment;\nstep1, Construct\
     \  gene regulatory network using the script construct_gene_network.py(using af3\
     \ environment); \nstep2, plot gene_network using network_plot.R script(using Renv\
@@ -850,7 +850,7 @@ user:
     \ conda activate Renv && Rscript network_plot.R $node_class_file_out_in_step1\
     \  $output_dir $to_id $use_sub_sample[TRUE or FALSE]\n    Note: The recommended\
     \ use_sub_sample  parameter is TRUE\n</plot usage>\n"
-  haplotypes_analysis: 'Please help me to analyze the haplotype of {{gene_id}} gene'
+  haplotypes_analysis: Please help me to analyze the haplotype of {{gene_id}} gene
   haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate\
     \ af3); \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
     \  $output_dir)\nstep2, analysis the promoter haplotypes using plot_promoter_hap.sh\
@@ -1228,8 +1228,8 @@ user:
     # The user''s message is:
 
     {{user_query}}'
-  single_cell_analysis: 'Please plot the expression of the gene {{gene_id}} in different
-    cells.'
+  single_cell_analysis: Please plot the expression of the gene {{gene_id}} in different
+    cells.
   single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda(conda\
     \ activate af3);  \nNote2: You need to activate af3 environment and install scanpy\
     \ and anndata packages(conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
