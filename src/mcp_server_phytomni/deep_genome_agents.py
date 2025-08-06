@@ -3058,7 +3058,7 @@ async def summarize_gene_analysis(
         'evolution_task': ['.md', '.png', '.summary', '.legend', '.result'],
         'protein_structure_task':
             ['sample_0.cif', 'sample_0.json', '.summary'],
-        'promoter_task': ['all_motifs_logo.png', '.summary', '.legend', '.result'],
+        'promoter_task': ['motif_all_logo.png', '.summary', '.legend', '.result'],
         'single_cell_task': ['.png', '.summary', '.legend', '.result'],
         'tissues_task': ['.png', '.summary', '.legend', '.result'],
         'cultivars_task': ['.png', '.summary', '.legend', '.result'],
@@ -3140,9 +3140,12 @@ async def summarize_gene_analysis(
         target_file = next(out_path.rglob('*tissues.png')).name
         tissue_img = f'{gene_id}/{target_file}'
         gene_results_data['tissue_path'] = tissue_img
-        with open(out_path / f'{gene_id}_tissues.summary',
+        target_file = next(out_path.rglob('*tissues.summary')).name
+        print(target_file)
+        with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
+            print(summary)
             gene_results_data['tissue_interpretation'] = summary
         target_file = next(out_path.rglob('*tissues.legend')).name
         with open(out_path / f'{target_file}',
@@ -3163,7 +3166,8 @@ async def summarize_gene_analysis(
         target_file = next(out_path.rglob('*cultivars.png')).name
         cultivar_img = f'{gene_id}/{target_file}'
         gene_results_data['cultivar_path'] = cultivar_img
-        with open(out_path / f'{gene_id}_cultivars.summary',
+        target_file = next(out_path.rglob('*cultivars.summary')).name
+        with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['cultivar_interpretation'] = summary
@@ -3186,7 +3190,8 @@ async def summarize_gene_analysis(
         target_file = next(out_path.rglob('*genotypes.png')).name
         genotype_img = f'{gene_id}/{target_file}'
         gene_results_data['mutant_path'] = genotype_img
-        with open(out_path / f'{gene_id}_genotypes.summary',
+        target_file = next(out_path.rglob('*genotypes.summary')).name
+        with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['mutant_interpretation'] = summary
@@ -3209,7 +3214,8 @@ async def summarize_gene_analysis(
         target_file = next(out_path.rglob('*treatments.png')).name
         treatment_img = f'{gene_id}/{target_file}'
         gene_results_data['treatment_path'] = treatment_img
-        with open(out_path / f'{gene_id}_treatments.summary',
+        target_file = next(out_path.rglob('*treatments.summary')).name
+        with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['treatment_interpretation'] = summary
@@ -3319,30 +3325,19 @@ async def summarize_gene_analysis(
     gene_results_data['epic_interpretation'] = epic_summary
 
     try:
-        # motif_file_num = len(list(out_path.glob('*_logo.png')))
-        # if motif_file_num == 0:
-        #     gene_results_data['motif_images'] = ''
-        #     gene_results_data['motif_interpretation'] = 'None Results'
-        # else:
-        #     gene_results_data['motif_images'] = ''
-        #     for index in range(motif_file_num):
-        #         motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-        #         gene_results_data['motif_images'] += (
-        #             f'![Motif]({motif_file})\n')
-        
-        target_file = next(out_path.rglob('all_motifs_logo.png')).name
+        target_file = next(out_path.rglob('motif_all_logo.png')).name
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
         with open(out_path / f'{gene_id}_motif.summary',
                     'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['motif_interpretation'] = summary
-        target_file = next(out_path.rglob('all_motifs_logo.legend')).name
+        target_file = next(out_path.rglob('motif_all_logo.legend')).name
         with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as legend_file:
             legend = legend_file.read()
             gene_results_data['motif_legend'] = legend
-        target_file = next(out_path.rglob('all_motifs_logo.result')).name
+        target_file = next(out_path.rglob('motif_all_logo.result')).name
         with open(out_path / f'{target_file}',
                   'r', encoding='utf-8') as result_file:
             result = result_file.read()
@@ -3352,6 +3347,16 @@ async def summarize_gene_analysis(
         gene_results_data['motif_interpretation'] = 'None Results'
         gene_results_data['motif_legend'] = ''
         gene_results_data['motif_results'] = ''
+    figure_sort = ['tree_legend', 'tissue_legend', 'cultivar_legend', 
+                   'treatment_legend', 'mutant_legend', 'umap_legend',
+                   'violin_legend', 'motif_legend', 'smep_legend']
+    fig_index = 1
+    for fig_key in figure_sort:
+        if gene_results_data[fig_key] != '':
+            gene_results_data[fig_key] = gene_results_data[fig_key].replace(
+                'Figure 1', f'Figure {fig_index}'
+            )
+            fig_index += 1
     gene_results = get_prompt(prompt_file, 'template/gene_function_result',
                               gene_results_data)
     obj_replace_dict = {
