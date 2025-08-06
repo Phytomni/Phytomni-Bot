@@ -3053,17 +3053,17 @@ async def summarize_gene_analysis(
         The path to the generated summary report file.
     """
     target_map = {
-        'smep_task': ['.out', '.summary'],
+        'smep_task': ['.png', '.summary', '.legend', '.result'],
         'smoc_task': ['.csv', '.summary'],
-        'evolution_task': ['.md', '.png', '.summary'],
+        'evolution_task': ['.md', '.png', '.summary', '.legend', '.result'],
         'protein_structure_task':
             ['sample_0.cif', 'sample_0.json', '.summary'],
-        'promoter_task': ['.png', '.summary'],
-        'single_cell_task': ['.png', '.summary'],
-        'tissues_task': ['.png', '.summary'],
-        'cultivars_task': ['.png', '.summary'],
-        'genotypes_task': ['.png', '.summary'],
-        'treatments_task': ['.png', '.summary'],
+        'promoter_task': ['all_motifs_logo.png', '.summary', '.legend', '.result'],
+        'single_cell_task': ['.png', '.summary', '.legend', '.result'],
+        'tissues_task': ['.png', '.summary', '.legend', '.result'],
+        'cultivars_task': ['.png', '.summary', '.legend', '.result'],
+        'genotypes_task': ['.png', '.summary', '.legend', '.result'],
+        'treatments_task': ['.png', '.summary', '.legend', '.result'],
     }
 
     async def wait_and_download(task_name: str, task_dict: str) -> str:
@@ -3108,9 +3108,21 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['tree_interpretation'] = summary
+        target_file = next(out_path.rglob('*tree.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['tree_legend'] = legend
+        target_file = next(out_path.rglob('*tree.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['tree_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['tree_path'] = ''
         gene_results_data['tree_interpretation'] = 'None Results'
+        gene_results_data['tree_legend'] = ''
+        gene_results_data['tree_results'] = ''
     try:
         with open(out_path / f'{gene_id}_domain.md',
                   'r', encoding='utf-8') as domain_f:
@@ -3132,9 +3144,21 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['tissue_interpretation'] = summary
+        target_file = next(out_path.rglob('*tissues.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['tissue_legend'] = legend
+        target_file = next(out_path.rglob('*tissues.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['tissue_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['tissue_path'] = ''
         gene_results_data['tissue_interpretation'] = 'None Results'
+        gene_results_data['tissue_legend'] = ''
+        gene_results_data['tissue_results'] = ''
     try:
         target_file = next(out_path.rglob('*cultivars.png')).name
         cultivar_img = f'{gene_id}/{target_file}'
@@ -3143,9 +3167,21 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['cultivar_interpretation'] = summary
+        target_file = next(out_path.rglob('*cultivars.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['cultivar_legend'] = legend
+        target_file = next(out_path.rglob('*cultivars.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['cultivar_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['cultivar_path'] = ''
         gene_results_data['cultivar_interpretation'] = 'None Results'
+        gene_results_data['cultivar_legend'] = ''
+        gene_results_data['cultivar_results'] = ''
     try:
         target_file = next(out_path.rglob('*genotypes.png')).name
         genotype_img = f'{gene_id}/{target_file}'
@@ -3154,9 +3190,21 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['mutant_interpretation'] = summary
+        target_file = next(out_path.rglob('*genotypes.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['mutant_legend'] = legend
+        target_file = next(out_path.rglob('*genotypes.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['mutant_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['mutant_path'] = ''
         gene_results_data['mutant_interpretation'] = 'None Results'
+        gene_results_data['mutant_legend'] = ''
+        gene_results_data['mutant_results'] = ''
     try:
         target_file = next(out_path.rglob('*treatments.png')).name
         treatment_img = f'{gene_id}/{target_file}'
@@ -3165,9 +3213,21 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['treatment_interpretation'] = summary
+        target_file = next(out_path.rglob('*treatments.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['treatment_legend'] = legend
+        target_file = next(out_path.rglob('*treatments.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['treatment_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['treatment_path'] = ''
         gene_results_data['treatment_interpretation'] = 'None Results'
+        gene_results_data['treatment_legend'] = ''
+        gene_results_data['treatment_results'] = ''
 
     try:
         target_file = next(out_path.rglob('*_umap.png')).name
@@ -3180,10 +3240,28 @@ async def summarize_gene_analysis(
                   'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['single_cell_interpretation'] = summary
+        target_file = next(out_path.rglob('*_umap.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['umap_legend'] = legend
+        target_file = next(out_path.rglob('*_violin_plot.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['violin_legend'] = legend
+        target_file = next(out_path.rglob('*_violin_plot.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['single_cell_results'] = result
     except (StopIteration, FileNotFoundError, OSError, IOError):
         gene_results_data['umap_path'] = ''
         gene_results_data['violin_path'] = ''
         gene_results_data['single_cell_interpretation'] = 'None Results'
+        gene_results_data['umap_legend'] = ''
+        gene_results_data['violin_legend'] = ''
+        gene_results_data['single_cell_results'] = ''
 
     try:
         protein_structure_files = list(out_path.glob(
@@ -3220,26 +3298,60 @@ async def summarize_gene_analysis(
             epic_summary += summary
     except (FileNotFoundError, OSError, IOError):
         epic_summary += ''
+    try:
+        target_file = next(out_path.rglob('*smep.png')).name
+        epic_img = f'{gene_id}/{target_file}'
+        gene_results_data['smep_path'] = epic_img
+        target_file = next(out_path.rglob('*smep.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['smep_legend'] = legend
+        target_file = next(out_path.rglob('*smep.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            epic_summary += result
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results_data['smep_path'] = ''
+        epic_summary += ''
+        gene_results_data['smep_legend'] = ''
     gene_results_data['epic_interpretation'] = epic_summary
 
     try:
-        motif_file_num = len(list(out_path.glob('*_logo.png')))
-        if motif_file_num == 0:
-            gene_results_data['motif_images'] = ''
-            gene_results_data['motif_interpretation'] = 'None Results'
-        else:
-            gene_results_data['motif_images'] = ''
-            for index in range(motif_file_num):
-                motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-                gene_results_data['motif_images'] += (
-                    f'![Motif]({motif_file})\n')
-            with open(out_path / f'{gene_id}_motif.summary',
-                      'r', encoding='utf-8') as summary_file:
-                summary = summary_file.read()
-                gene_results_data['motif_interpretation'] = summary
+        # motif_file_num = len(list(out_path.glob('*_logo.png')))
+        # if motif_file_num == 0:
+        #     gene_results_data['motif_images'] = ''
+        #     gene_results_data['motif_interpretation'] = 'None Results'
+        # else:
+        #     gene_results_data['motif_images'] = ''
+        #     for index in range(motif_file_num):
+        #         motif_file = f'{gene_id}/motif_{index+1}_logo.png'
+        #         gene_results_data['motif_images'] += (
+        #             f'![Motif]({motif_file})\n')
+        
+        target_file = next(out_path.rglob('all_motifs_logo.png')).name
+        motif_img = f'{gene_id}/{target_file}'
+        gene_results_data['motif_path'] = motif_img
+        with open(out_path / f'{gene_id}_motif.summary',
+                    'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results_data['motif_interpretation'] = summary
+        target_file = next(out_path.rglob('all_motifs_logo.legend')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            gene_results_data['motif_legend'] = legend
+        target_file = next(out_path.rglob('all_motifs_logo.result')).name
+        with open(out_path / f'{target_file}',
+                  'r', encoding='utf-8') as result_file:
+            result = result_file.read()
+            gene_results_data['motif_results'] = result
     except (FileNotFoundError, OSError, IOError):
-        gene_results_data['motif_images'] = ''
+        gene_results_data['motif_path'] = ''
         gene_results_data['motif_interpretation'] = 'None Results'
+        gene_results_data['motif_legend'] = ''
+        gene_results_data['motif_results'] = ''
     gene_results = get_prompt(prompt_file, 'template/gene_function_result',
                               gene_results_data)
     obj_replace_dict = {
@@ -3250,6 +3362,8 @@ async def summarize_gene_analysis(
         'treatment_path': '![Treatment Expression]()',
         'umap_path': '![UMAP Plot]()',
         'violin_path': '![Violin Plot]()',
+        'smep_path': '![Epic Image]()', 
+        'motif_path': '![Motif Image]()'
     }
     for obj_key, replace_content in obj_replace_dict.items():
         if gene_results_data[obj_key] == '':
