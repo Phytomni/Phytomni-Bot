@@ -835,7 +835,7 @@ async def gene_function(
         nonlocal output_dir, user_id
 
         if use_analyst_agent:
-            user_id = uuid1()
+            user_id = str(uuid1())
             output_dir = create_output_dir(
                 user_id=user_id,
                 task=gene_id,
@@ -1248,7 +1248,7 @@ async def evolution_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='evolution_task',
@@ -1351,7 +1351,7 @@ async def protein_structure_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='protein_structure_task',
@@ -1453,7 +1453,7 @@ async def promoter_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='promoter_task',
@@ -1558,7 +1558,7 @@ async def gene_expression_tissues(
                               species)['tissues']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='tissues_task',
@@ -1663,7 +1663,7 @@ async def gene_expression_cultivars(
                               species)['cultivars']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='cultivars_task',
@@ -1768,7 +1768,7 @@ async def gene_expression_genotypes(
                               species)['genotypes']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='genotypes_task',
@@ -1873,7 +1873,7 @@ async def gene_expression_treatments(
                               species)['treatments']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='treatments_task',
@@ -1975,7 +1975,7 @@ async def single_cell_analysis(
     data_list = get_data_list(deepgenome_data, 'single_cell_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='single_cell_task',
@@ -2080,7 +2080,7 @@ async def smep_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='smep_task',
@@ -2182,7 +2182,7 @@ async def smoc_analysis(
     data_list = get_data_list(deepgenome_data, 'promoter_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='smoc_task',
@@ -2285,7 +2285,7 @@ async def haplotypes_analysis(
     data_list = loads(dumps(data_list).replace('gene_id', gene_id))
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='haplotypes_task',
@@ -2386,7 +2386,7 @@ async def enrichment_analysis(
     data_list = get_data_list(deepgenome_data, 'enrichment_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='enrichment_task',
@@ -2536,7 +2536,7 @@ async def gene_expression_analysis(
                 'treatments_task': None}
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='gene_expression_task',
@@ -2707,7 +2707,7 @@ async def epic_analysis(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='epic_task',
@@ -2842,7 +2842,7 @@ async def submit_gene_analysis(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='analysis_task',
@@ -3058,7 +3058,8 @@ async def summarize_gene_analysis(
         'evolution_task': ['.md', '.png', '.summary', '.legend', '.result'],
         'protein_structure_task':
             ['sample_0.cif', 'sample_0.json', '.summary'],
-        'promoter_task': ['all_motifs_logo.png', '.summary', '.legend', '.result'],
+        'promoter_task':
+            ['all_motifs_logo.png', '.summary', '.legend', '.result'],
         'single_cell_task': ['.png', '.summary', '.legend', '.result'],
         'tissues_task': ['.png', '.summary', '.legend', '.result'],
         'cultivars_task': ['.png', '.summary', '.legend', '.result'],
@@ -3329,12 +3330,11 @@ async def summarize_gene_analysis(
         #         motif_file = f'{gene_id}/motif_{index+1}_logo.png'
         #         gene_results_data['motif_images'] += (
         #             f'![Motif]({motif_file})\n')
-        
         target_file = next(out_path.rglob('all_motifs_logo.png')).name
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
         with open(out_path / f'{gene_id}_motif.summary',
-                    'r', encoding='utf-8') as summary_file:
+                  'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['motif_interpretation'] = summary
         target_file = next(out_path.rglob('all_motifs_logo.legend')).name
@@ -3362,7 +3362,7 @@ async def summarize_gene_analysis(
         'treatment_path': '![Treatment Expression]()',
         'umap_path': '![UMAP Plot]()',
         'violin_path': '![Violin Plot]()',
-        'smep_path': '![Epic Image]()', 
+        'smep_path': '![Epic Image]()',
         'motif_path': '![Motif Image]()'
     }
     for obj_key, replace_content in obj_replace_dict.items():
