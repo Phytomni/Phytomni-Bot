@@ -453,50 +453,73 @@ user:
 
     '
   evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2:\
-    \  You need to install diamond software using conda;\nstep1, Find Gene's Protein\
-    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find\
-    \ top40  sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install\
-    \ diamond  -c bioconda);\nstep3, Extract the sequence ids from the blast result\
-    \ using awk;\n step4, Extract the matched sequences from the database using seqkit(conda\
-    \ install  seqkit -c bioconda);\nstep5, Append protein sequences of unknown function\
-    \ to the  end of the matched sequences file;\nstep6, Multiple sequence alignment\
-    \ using  clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the\
-    \ phylogenetic  tree using fasttree(conda install fasttree -c bioconda);\nstep8,\
-    \ Plot the phylogenetic  tree using plot_tree.py;\nstep9, Summary the tree results\
-    \ using summary_tree.py  scripts;\nstep10, Searching for conserved domains of\
-    \ protein using hmmscan;\nstep11,  Change domain results to markdown format using\
-    \ domain2markdown.py;\nstep12, Summary  the protein domain results using summary_domain.py\
-    \ scripts.\n<change example>\n     Tool_Usage:\n        usage: domain2markdown.py\
-    \ [-h] [--domain_file DOMAIN_FILE]  [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\
-    \n        options:\n        -h, --help             show this help message and\
-    \ exit\n        --domain_file DOMAIN_FILE\n                             the domain\
-    \ file for hmmer softwore\n        --output_dir  OUTPUT_DIR\n                \
-    \             the output folder\n        --gene_id GENE_ID      the tree for gene\
-    \ id\n    Tool_Example:\n        conda activate af3 &&  python domain2markdown.py\
-    \ --input $output_dir/$domain_file --out_dir $out_dir  --gene_id $gene_id\n</change\
-    \ example>\n<plot example>\n    Tool_Usage:\n         usage: plot_tree.py [-h]\
-    \ [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]  [--gene_id GENE_ID]\n\n \
-    \       options:\n        -h, --help             show this help message and exit\n\
-    \        --tree_file TREE_FILE\n                             the tree file as\
-    \ nwk format\n        --output_dir OUTPUT_DIR\n                             the\
-    \ output folder\n        --gene_id GENE_ID      the tree for gene id\n    Tool_Example:\n\
-    \        conda activate af3 &&  pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id\
-    \ $gene_id\n </plot example>\n<summary example>\n    Tool_Usage:\n        usage:\
-    \ summary_domain.py  [-h] [--input INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\
-    \n        options:\n        -h, --help         show this help message and exit\n\
-    \        --input INPUT       the domain file you want to summary(the tsv format)\n\
-    \        --gene_id GENE_ID   the summary gene_id\n        --out_dir OUT_DIR  output_folder\n\
-    \    Tool_Example:\n         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id\
-    \ --out_dir $out_dir\n  \n    Tool_Usage:\n        usage: summary_tree.py [-h]\
-    \ [--input INPUT] [--gene_id GENE_ID]  [--out_dir OUT_DIR]\n\n        options:\n\
-    \        -h, --help         show this help message and exit\n         --input\
-    \ INPUT      the tree file you want to summary(the nwk format)\n         --gene_id\
-    \ GENE_ID  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n   \
-    \ Tool_Example:\n         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python summary_tree.py --input $output_dir/$tree_file --gene_id $gene_id\
-    \  --out_dir $out_dir\n</summary example>\n"
+    \ You need to install diamond software using conda;\nstep1, Find Gene's Protein Sequence\
+    \ using grep;\nstep2, Sequence alignment using diamond blastp to find top40 sequence,\
+    \ using -t 16 paramter and --tmpdir $tmp paramter(conda install diamond -c bioconda);\nstep3,\
+    \ Extract the sequence ids from the blast result using awk;\nstep4, Extract the matched\
+    \ sequences from the database using seqkit(conda install seqkit -c bioconda);\nstep5,\
+    \ Append protein sequences of unknown function to the end of the matched sequences\
+    \ file;\nstep6, Multiple sequence alignment using clustalw2(conda install clustalw\
+    \ -c bioconda);\nstep7, Constructing the phylogenetic tree using fasttree(conda install\
+    \ fasttree -c bioconda);\nstep8, Plot the phylogenetic tree using plot_tree.py;\nstep9,\
+    \ Summary the tree results using summary_tree.py scripts;\nstep10, Generate the tree figure\
+    \ legend using generate_figure_legend.py;\nstep11, Generate the tree data results using\
+    \ generate_data_description.py;\nstep12, Searching for conserved domains of protein using\
+    \ hmmscan;\nstep13, Change domain results to markdown format using domain2markdown.py;\nstep14,\
+    \ Summary the protein domain results using summary_domain.py scripts.\n<change example>\n\
+    \    Tool_Usage:\n        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE]\
+    \ [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help\
+    \            show this help message and exit\n        --domain_file DOMAIN_FILE\n\
+    \                                the domain file for hmmer softwore\n        --output_dir\
+    \ OUTPUT_DIR\n                                the output folder\n        --gene_id GENE_ID\
+    \     the tree for gene id\n    Tool_Example:\n        conda activate af3 && python\
+    \ domain2markdown.py --input $output_dir/$domain_file --out_dir $out_dir --gene_id\
+    \ $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n        usage: plot_tree.py\
+    \ [-h] [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n       \
+    \ options:\n        -h, --help            show this help message and exit\n       \
+    \ --tree_file TREE_FILE\n                                the tree file as nwk format\n\
+    \        --output_dir OUTPUT_DIR\n                                the output folder\n\
+    \        --gene_id GENE_ID     the tree for gene id\n    Tool_Example:\n        conda\
+    \ activate af3 && pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id\
+    \ $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png figure,\
+    \ and you will using this figure to generate figure legend.\n</plot example>\n<summary\
+    \ example>\n    Tool_Usage:\n        usage: summary_domain.py [-h] [--input INPUT]\
+    \ [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help\
+    \         show this help message and exit\n        --input INPUT      the domain\
+    \ file you want to summary(the tsv format)\n        --gene_id GENE_ID  the summary\
+    \ gene_id\n        --out_dir OUT_DIR  output_folder\n    Tool_Example:\n       \
+    \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_motif.py --input $output_dir/$domain_file --gene_id $gene_id\
+    \ --out_dir $out_dir\n    \n    Tool_Usage:\n        usage: summary_tree.py [-h]\
+    \ [--input INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n\
+    \        -h, --help         show this help message and exit\n        --input INPUT\
+    \      the tree file you want to summary(the nwk format)\n        --gene_id GENE_ID\
+    \  the summary gene_id\n        --out_dir OUT_DIR  output_folder\n    Tool_Example:\n\
+    \        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_tree.py --input $output_dir/$tree_file --gene_id $gene_id --out_dir\
+    \ $out_dir\n</summary example>\n<legend_example>\n    Tool_Usage:\n        Tool\
+    \ Usage method:\n                usage: generate_figure_legend.py [-h] [--figure_file\
+    \ FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir OUTPUT_DIR]\n\n\
+    \                options:\n                -h, --help            show this help\
+    \ message and exit\n                --figure_file FIGURE_FILE\n                \
+    \                        the figure file you want to summary.\n               \
+    \ --annotation_file ANNOTATION_FILE\n                                       \
+    \ the annotation file with the figure data.\n                --output_dir\
+    \ OUTPUT_DIR\n                                        the output folder\n\
+    \    Tool Usage example:\n        conda activate af3 && python generate_figure_legend.py\
+    \ --figure_file $output_dir/${gene_id}_tree.png --annotation_file $output_dir/$tree_file\
+    \ --output_dir $output_dir\n</legend_example>\n<results_example>\n    Tool_Usage:\n\
+    \        Tool Usage method:\n                usage: generate_data_description.py [-h]\
+    \ [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir OUTPUT_DIR]\n\n\
+    \                options:\n                -h, --help            show this help message\
+    \ and exit\n                --figure_file FIGURE_FILE\n                                \
+    \        the figure file you want to summary.\n                --annotation_file\
+    \ ANNOTATION_FILE\n                                        the annotation file with\
+    \ the figure data.\n                --output_dir OUTPUT_DIR\n                        \
+    \                the output folder\n    Tool Usage example:\n        conda activate af3\
+    \ && python generate_data_description.py --figure_file $output_dir/${gene_id}_tree.png\
+    \ --annotation_file $output_dir/$tree_file --output_dir $output_dir\n</results_example>"
   gene_expression_analysis:
     cultivar: 'Please plot the expression of the gene {{gene_id}} between 9311, NIPPONBARE,
       ZH11, DONGJIN, IR29 and IR64 cultivars
@@ -516,45 +539,71 @@ user:
 
       '
   gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
-    \  conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
-    \  install seaborn packages(conda activate af3 && pip install seaborn -i  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \  \n\nstep1, Use the script  to draw gene expression  patterns based on the sample\
-    \ list we provided.\nstep2,  Summary the results using summary_bulk.py.\n<usage>\
-    \ \n    usage: gene_expression_boxplot.py  [-h] [--gene_id GENE_ID] [--sample_dir\
-    \ SAMPLE_DIR] [--sample_list SAMPLE_LIST]  [--exp_file EXP_FILE] [--plot_type\
-    \ PLOT_TYPE] [--out OUT] \n    options: \n     -h, --help            show this\
-    \ help message and exit \n     --gene_id GENE_ID     the gene id you want to plot.\
-    \ \n    --sample_dir SAMPLE_DIR  \n                            sample file folder\
-    \ path. (default: /opt/health/genome-agent-api-service/runtime/input/) \n    \
-    \ --sample_list SAMPLE_LIST \n                            sample list file. (default:\
-    \ /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
-    \ \n    --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
-    \ \n    --plot_type PLOT_TYPE the type of picture for boxplot \n    --out OUT\
-    \              output folder path. \n    $plot_type:  \n    1. tissues \n    \
-    \ 2. cultivars \n    3. genotypes \n    4. treatments \n</usage> \n\n <example>\
-    \ \nQuestion:  Please plot the expression of the gene MYC between roots and leaves\
-    \ \n         You need to prepare a file, including ROOT.txt and LEAF.txt; \n \
-    \        <file_content> \n            ROOT.txt \n            LEAF.txt \n     \
-    \   </file_content> \n         <cmd_line> \n            conda activate af3 &&\
-    \ pip install seaborn &&  python gene_expression_boxplot.py --gene_id MYC --sample_dir\
-    \ $sample_dir  --sample_list $prepare_file --exp_file $exp_file_path --plot_type\
-    \ tissues --out $out  \n        </cmd_line> \nQuestion:  Differences in gene expression\
-    \ of MYC gene  under high temperature and normal conditions \n        You need\
-    \ to prepare a  file, including ROOT.txt and LEAF.txt; \n        <file_content>\
-    \ \n             HEAT_STRESS.txt \n            CONTROL.txt \n        </file_content>\
-    \ \n         <cmd_line> \n            conda activate af3 && pip install seaborn\
-    \ &&  python gene_expression_boxplot.py --gene_id MYC --sample_dir $sample_dir\
-    \ --sample_list $prepare_file  --exp_file $exp_file_path --plot_type treatments\
-    \ --out $out \n        </cmd_line> \n</example>\n<summary_example>\n    Tool_Usage:\
-    \ \n        usage: summary_bulk.py [-h]  [--input INPUT] [--gene_id GENE_ID] [--summary_type\
-    \ SUMMARY_TYPE] [--out_dir OUT_DIR]\n\n         options:\n        -h, --help \
-    \           show this help message and exit\n         --input INPUT         the\
-    \ file you want to summary(the csv format)\n        --gene_id GENE_ID      the\
-    \ summary gene_id\n        --summary_type SUMMARY_TYPE\n                     \
-    \        the summary plot type\n        --out_dir OUT_DIR      output_folder\n\
-    \n    Usage_Example:\n        conda activate af3 && pip install  openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ && python summary_bulk.py  --input $output_dir/${gene_id}_${plot_type}_summary.csv\
-    \ --gene_id $gene_id  --summary_type ${plot_type} --out_dir $out_dir\n</summary_example>\n"
+    \ conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
+    \ install seaborn packages(conda activate af3 && pip install seaborn -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);  \nstep1, Use the script\
+    \ to draw gene expression  patterns based on the sample list we provided.\nstep2,\
+    \ Summary the results using summary_bulk.py.\nstep3, Generate the figure legend\
+    \ using generate_figure_legend.py.\nstep4, Generate the data results using\
+    \ generate_data_description.py.\n<usage> \n        usage: gene_expression_boxplot.py\
+    \ [-h] [--gene_id GENE_ID] [--sample_dir SAMPLE_DIR] [--sample_list SAMPLE_LIST]\
+    \ [--exp_file EXP_FILE] [--plot_type PLOT_TYPE] [--out OUT] \n        options: \n\
+    \        -h, --help            show this help message and exit \n        --gene_id\
+    \ GENE_ID     the gene id you want to plot. \n        --sample_dir SAMPLE_DIR \n\
+    \                                sample file folder path.(default: /opt/health/genome-agent-api-service/runtime/input/)\
+    \ \n        --sample_list SAMPLE_LIST \n                                sample list\
+    \ file.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
+    \ \n        --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
+    \ \n        --plot_type PLOT_TYPE the type of picture for boxplot \n        --out OUT\
+    \             output folder path. \n        $plot_type:  \n        1. tissues \n\
+    \        2. cultivars \n        3. genotypes \n        4. treatments \n</usage>\
+    \ \n<example> \nQuestion:  Please plot the expression of the gene MYC between roots\
+    \ and leaves \n            You need to prepare a file, including ROOT.txt and LEAF.txt;\
+    \ \n            <file_content> \n                ROOT.txt \n                LEAF.txt \n\
+    \            </file_content> \n            <cmd_line> \n                conda\
+    \ activate af3 && pip install seaborn && python gene_expression_boxplot.py --gene_id\
+    \ MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file $exp_file_path\
+    \ --plot_type tissues --out $out \n            </cmd_line> \nQuestion:  Differences\
+    \ in gene expression of MYC gene under high temperature and normal conditions \n\
+    \            You need to prepare a file, including ROOT.txt and LEAF.txt; \n\
+    \            <file_content> \n                HEAT_STRESS.txt \n               \
+    \ CONTROL.txt \n            </file_content> \n            <cmd_line> \n        \
+    \        conda activate af3 && pip install seaborn && python gene_expression_boxplot.py\
+    \ --gene_id MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file $exp_file_path\
+    \ --plot_type treatments --out $out \n            </cmd_line>\nNote: using this\
+    \ script, you will get the *_${plot_type}.png figure, and you need using this figure\
+    \ to generate the figure legend.\n</example>\n<summary_example>\n    Tool_Usage: \n\
+    \        usage: summary_bulk.py [-h] [--input INPUT] [--gene_id GENE_ID] [--summary_type\
+    \ SUMMARY_TYPE] [--out_dir OUT_DIR]\n\n        options:\n        -h, --help      \
+    \      show this help message and exit\n        --input INPUT         the file you\
+    \ want to summary(the csv format)\n        --gene_id GENE_ID     the summary gene_id\n\
+    \        --summary_type SUMMARY_TYPE\n                                the summary\
+    \ plot type\n        --out_dir OUT_DIR     output_folder\n\n    Usage_Example:\n \
+    \       conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_bulk.py --input $output_dir/${gene_id}_${plot_type}_summary.csv\
+    \ --gene_id $gene_id --summary_type ${plot_type} --out_dir $out_dir\n</summary_example>\n<legend_example>\n\
+    \    Tool_Usage:\n        Tool Usage method:\n                usage: generate_figure_legend.py\
+    \ [-h] [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n                options:\n                -h, --help            show\
+    \ this help message and exit\n                --figure_file FIGURE_FILE\n         \
+    \                               the figure file you want to summary.\n            \
+    \    --annotation_file ANNOTATION_FILE\n                                        the\
+    \ annotation file with the figure data.\n                --output_dir OUTPUT_DIR\n\
+    \                                        the output folder\n    Tool Usage example:\n\
+    \        conda activate af3 && python generate_figure_legend.py --figure_file\
+    \ $output_dir/*_${plot_type}.png --annotation_file $output_dir/${gene_id}_${plot_type}_summary.csv\
+    \ --output_dir $output_dir\n</legend_example>\n<results_example>\n    Tool_Usage:\n\
+    \        Tool Usage method:\n                usage: generate_data_description.py\
+    \ [-h] [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n                options:\n                -h, --help           \
+    \ show this help message and exit\n                --figure_file FIGURE_FILE\n\
+    \                                        the figure file you want to summary.\n\
+    \                --annotation_file ANNOTATION_FILE\n                            \
+    \            the annotation file with the figure data.\n                --output_dir\
+    \ OUTPUT_DIR\n                                        the output folder\n    Tool\
+    \ Usage example:\n        conda activate af3 && python generate_data_description.py\
+    \ --figure_file $output_dir/*_${plot_type}.png --annotation_file $output_dir/${gene_id}_${plot_type}_summary.csv\
+    \ --output_dir $output_dir\n</results_example>"
   gene_function: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\nPlease\
     \ provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections. Ensure all information is\
@@ -933,31 +982,55 @@ user:
 
     '
   promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you\
-    \  need to install blast software first;\nstep1, Find Gene's Promoter Sequence\
-    \  using grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter\
-    \  sequence in rice; \nstep3, Extract the gene promoter sequence ids from the\
-    \  blastn result using awk; \nstep4, Extract the matched gene promoter sequences\
-    \  from the promoter database file using seqkit; \nstep5, Append the gene promoter\
-    \  sequence we analyzed to the end of the matched sequences file; \nstep6, Analysis\
-    \  the conserved motif in the gene promoter sequences using meme(conda install\
-    \  meme -c bioconda);\nstep7, Plot the motif logo figure using plot_motif.py;\n\
-    step8, Summart meme results using summary_motif.py\n<plot example>\n    Tool_Usage:\n\
-    \         usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir OUTPUT_DIR]\
-    \ \n\n        options:\n        -h, --help            show this help message and\
-    \ exit\n         --meme_file MEME_FILE\n                             the motif\
-    \ result  file for meme software\n        --output_dir OUTPUT_DIR\n          \
-    \                   the output folder\n    Tool_Example:\n         conda activate\
-    \ af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir\
-    \ $output_dir \n</plot example>\n<summary example>\n    Tool_Usage:\n        usage:\
-    \ summary_motif.py  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir\
-    \ OUT_DIR]\n\n         options:\n        -h, --help            show this help\
-    \ message and exit\n         --input_path INPUT_PATH\n                       \
-    \      the out file  path for meme software generate.\n        --gene_id GENE_ID\
-    \     the summary gene_id\n         --out_dir OUT_DIR     output_folder\n    Tool_Example:\n\
-    \         conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id\
-    \  --out_dir $out_dir\n</summary example>\n"
+    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence using\
+    \ grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter sequence\
+    \ in rice; \nstep3, Extract the gene promoter sequence ids from the blastn result\
+    \ using awk; \nstep4, Extract the matched gene promoter sequences from the promoter\
+    \ database file using seqkit; \nstep5, Append the gene promoter sequence we analyzed\
+    \ to the end of the matched sequences file; \nstep6, Analysis the conserved motif in\
+    \ the gene promoter sequences using meme(conda install meme -c bioconda);\nstep7, Plot\
+    \ the motif logo figure using plot_motif.py;\nstep8, Summart meme results using\
+    \ summary_motif.py;\nstep9, Generate the figure legend using generate_figure_legend.py;\nstep10,\
+    \ Generate the data results using generate_data_description.py;\n<plot example>\n\
+    \    Tool_Usage:\n        usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n        -h, --help            show this help\
+    \ message and exit\n        --meme_file MEME_FILE\n                            \
+    \    the motif result file for meme software\n        --output_dir OUTPUT_DIR\n\
+    \                                the output folder\n    Tool_Example:\n       \
+    \ conda activate af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir\
+    \ $output_dir\n    Note: using this script, you will get a figure motif_all_logo.png\
+    \ in $output_dir.\n</plot example>\n<summary example>\n    Tool_Usage:\n       \
+    \ usage: summary_motif.py [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID]\
+    \ [--out_dir OUT_DIR]\n\n        options:\n        -h, --help            show\
+    \ this help message and exit\n        --input_path INPUT_PATH\n               \
+    \                 the out file path for meme software generate.\n        --gene_id\
+    \ GENE_ID     the summary gene_id\n        --out_dir OUT_DIR     output_folder\n\
+    \    Tool_Example:\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_motif.py --input_path $meme_output_dir --gene_id $gene_id\
+    \ --out_dir $out_dir\n</summary example>\n<legend_example>\n    Tool_Usage:\n\
+    \        Tool Usage method:\n                usage: generate_figure_legend.py\
+    \ [-h] [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n                options:\n                -h, --help         \
+    \   show this help message and exit\n                --figure_file FIGURE_FILE\n\
+    \                                        the figure file you want to summary.\n\
+    \                --annotation_file ANNOTATION_FILE\n                           \
+    \             the annotation file with the figure data.\n                --output_dir\
+    \ OUTPUT_DIR\n                                        the output folder\n    Tool\
+    \ Usage example:\n        conda activate af3 && python generate_figure_legend.py\
+    \ --figure_file $output_dir/motif_all_logo.png --annotation_file $meme_output_dir/meme.txt\
+    \ --output_dir $output_dir\n</legend_example>\n<results_example>\n    Tool_Usage:\n\
+    \        Tool Usage method:\n                usage: generate_data_description.py\
+    \ [-h] [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n                options:\n                -h, --help         \
+    \   show this help message and exit\n                --figure_file FIGURE_FILE\n\
+    \                                        the figure file you want to summary.\n\
+    \                --annotation_file ANNOTATION_FILE\n                           \
+    \             the annotation file with the figure data.\n                --output_dir\
+    \ OUTPUT_DIR\n                                        the output folder\n    Tool\
+    \ Usage example:\n        conda activate af3 && python generate_data_description.py\
+    \ --figure_file $output_dir/motif_all_logo.png --annotation_file $meme_output_dir/meme.txt\
+    \ --output_dir $output_dir\n</results_example>"
   protein_design_analysis: 'You are a bioinformatician specialized in the field of
     protein design based on evolution information and you are well versed in various
     task analysis in the field of protein design, next, you will generate a task plan
@@ -1207,30 +1280,53 @@ user:
     cells.
 
     '
-  single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda\
-    \   (conda activate af3);  \nNote2: You need to activate af3 environment and install\
-    \  scanpy and anndata packages(conda activate af3 && pip install scanpy anndata\
-    \ -i  https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple); \nstep1, install\
-    \ the  packages and plot the gene expression in different cells using plot_single_cell_gene.py;\
-    \ (conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \ \n\nstep2, summary the results using summary_single_cell.py(conda activate af3\
-    \ &&  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
-    Tool Usage method:\n    usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA]\
-    \  [-o OUTPUT_DIR] [-g GENE_ID] \n    options: \n    -h, --help             show\
-    \ this help message and exit \n    -i SINGLE_CELL_DATA   single cell data\n  \
-    \   -o OUTPUT_DIR   output folder path \n    -g GENE_ID  the gene id you  want\
-    \ to plot. \nTool Usage example:\n    Question:  Please plot the expression  of\
-    \ the gene MYC in different cells. \n    Cmd line code: conda activate af3 &&\
-    \  pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir\
-    \ -g MYC\n\n Tool Usage example:\n        usage: summary_single_cell.py [-h] [--input\
-    \ INPUT]  [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n      \
-    \  -h, --help          show this help message and exit\n        --input INPUT\
-    \      the file you  want to summary(the tsv format)\n        --gene_id GENE_ID\
-    \  the summary gene_id\n         --out_dir OUT_DIR  output_folder\nTool Usage\
-    \ example:\n    conda activate af3 &&  pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python summary_single_cell.py --input $output_dir/${gene_id}_expression.txt\
-    \  --gene_id $gene_id --out_dir $out_dir\n"
+  single_cell_analysis_meta: "Note1: You need to activate af3 environment using conda(conda\
+    \ activate af3);  \nNote2: You need to activate af3 environment and install scanpy and\
+    \ anndata packages(conda activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \ \nstep1, install the packages and plot the gene expression in different tissues\
+    \ using plot_gene.py;(conda activate af3 && pip install scanpy anndata -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep2, summary the\
+    \ results using summary_single_cell.py(conda activate af3 && pip install openai\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep3, generate the\
+    \ figure legend using generate_figure_legend.py;\nstep4, generate the data results\
+    \ using generate_data_description.py\nTool Usage method:\n        usage: plot_single_cell_gene.py\
+    \ [-h] [-i SINGLE_CELL_DATA] [-o OUTPUT_DIR] [-g GENE_ID] \n        options: \n \
+    \       -h, --help            show this help message and exit \n        -i SINGLE_CELL_DATA\
+    \   single cell data\n        -o OUTPUT_DIR   output folder path \n        -g GENE_ID\
+    \  the gene id you want to plot. \nTool Usage example:\n    Question:  Please plot\
+    \ the expression of the gene MYC in different cells. \n    Cmd line code: conda\
+    \ activate af3 && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir -g\
+    \ MYC\nNote: Using this script will generate 2 figures, ${gene_id}_umap.png and\
+    \ ${gene_id}_violin_plot.png, and you need using this figures to genrate figure\
+    \ legend.\n\nTool Usage example:\n        usage: summary_single_cell.py [-h] [--input\
+    \ INPUT] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n        options:\n        -h,\
+    \ --help         show this help message and exit\n        --input INPUT      the\
+    \ file you want to summary(the tsv format)\n        --gene_id GENE_ID  the summary\
+    \ gene_id\n        --out_dir OUT_DIR  output_folder\nTool Usage example:\n    conda\
+    \ activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_single_cell.py --input $output_dir/${gene_id}_expression.txt\
+    \ --gene_id $gene_id --out_dir $out_dir\n\nTool Usage method:\n        usage:\
+    \ generate_figure_legend.py [-h] [--figure_file FIGURE_FILE] [--annotation_file\
+    \ ANNOTATION_FILE] [--output_dir OUTPUT_DIR]\n\n        options:\n        -h,\
+    \ --help            show this help message and exit\n        --figure_file FIGURE_FILE\n\
+    \                                the figure file you want to summary.\n       \
+    \ --annotation_file ANNOTATION_FILE\n                                the annotation\
+    \ file with the figure data.\n        --output_dir OUTPUT_DIR\n                 \
+    \               the output folder\nTool Usage example:\n    conda activate af3 &&\
+    \ python generate_figure_legend.py --figure_file $output_dir/${gene_id}_umap.png\
+    \ --annotation_file $output_dir/${gene_id}_expression.txt --output_dir $output_dir &&\n\
+    \    python generate_figure_legend.py --figure_file $output_dir/${gene_id}_violin_plot.png\
+    \ --annotation_file $output_dir/${gene_id}_expression.txt --output_dir $output_dir\n\nTool\
+    \ Usage example:\n    usage: generate_data_description.py [-h] [--figure_file FIGURE_FILE]\
+    \ [--annotation_file ANNOTATION_FILE] [--output_dir OUTPUT_DIR]\n\n    options:\n\
+    \    -h, --help            show this help message and exit\n    --figure_file FIGURE_FILE\n\
+    \                            the figure file you want to summary.\n    --annotation_file\
+    \ ANNOTATION_FILE\n                            the annotation file with the figure data.\n\
+    \    --output_dir OUTPUT_DIR\n                            the output folder\nTool\
+    \ Usage example:\n    conda activate af3 && python generate_data_description.py\
+    \ --figure_file $output_dir/${gene_id}_violin_plot.png --annotation_file\
+    \ $output_dir/${gene_id}_expression.txt --output_dir $output_dir"
   smep_analysis: 'You are a bioinformatician specialized in the field of epigenetics
     and you are very good at conducting epigenetic modification prediction studies,
     next, you will generate a task plan and complete the task analysis based on the
@@ -1239,29 +1335,71 @@ user:
 
     '
   smep_analysis_meta: "Note1: You do not need to install any software;\nNote2: You'll\
-    \  need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find\
-    \ Gene's  prompter Sequence using grep;\nstep2, Prediction of modifications in\
-    \ promoters  using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep\
-    \ &&  cd /opt/health/epic_models/smep)\nstep3, summary the smep results using\
-    \ summary_smep.py.\n <smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl\
-    \ -I $fasta_file  -O /$output_dir/$out_file -T $epigenetic_modification_type\n\
-    \    $epigenetic_modification_type:\n     1. 5mC\n    2. 6mA\n    3. m6A\n   \
-    \ 4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n     Note1: When you run the script,\
-    \ you must be under the path /opt/health/epic_models/smep/\n     Note2: The fasta_file\
-    \ must be saved under the path /opt/health/epic_models/smep/\n     Note3: out_file\
-    \ You can specify files in any path\n</smep usage>\n<smep example>\n     question:\
-    \ please help me to predict the 5mC modification of A gene prompter\n     commond_line:\
-    \ conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep &&\
-    \  cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
-    \  -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>\n<summary example>\n\
-    \     Tool_Usage:\n        usage: summary_smep.py [-h] [--input INPUT] [--gene_id\
-    \ GENE_ID]  [--out_dir OUT_DIR]\n\n        options:\n        -h, --help      \
-    \      show this help message and exit\n         --input INPUT      the file you\
-    \ want to summary(the tsv format)\n         --gene_id GENE_ID  the summary gene_id\n\
-    \        --out_dir OUT_DIR  output_folder\n     Tool_Example\n        conda activate\
-    \ af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ &&  python summary_smep.py --input $output_dir/$output_file --gene_id $gene_id\
-    \ --out_dir $out_dir\n</summary example>\n"
+    \ need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find Gene's\
+    \ prompter Sequence using grep;\nstep2, Prediction of modifications in promoters\
+    \ using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep\
+    \ && cd /opt/health/epic_models/smep);\nstep3, plot smep results figure using\
+    \ plot_smep.py script(conda activate af3);\nstep4, summary the smep results using\
+    \ summary_smep.py(conda activate af3);\nstep5, generate the figure legend using\
+    \ generate_figure_legend.py(conda activate af3);\nstep6, generate the data results\
+    \ using generate_data_description.py.(conda activate af3)\n<smep usage>\n    perl\
+    \ /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file -O /$output_dir/$out_file\
+    \ -T $epigenetic_modification_type\n    $epigenetic_modification_type:\n    1. 5mC\n\
+    \    2. 6mA\n    3. m6A\n    4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n    Note1:\
+    \ When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
+    \    Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n\
+    \    Note3: out_file You can specify files in any path\n</smep usage>\n<smep example>\n\
+    \    question: please help me to predict the 5mC modification of A gene prompter\n\
+    \    commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep\
+    \ && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
+    \ -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>\n<plot example>\n\
+    \    Tool_Usage:\n        usage: plot_smep.py [-h] [--promoter_file PROMOTER_FILE]\
+    \ [--smep_file SMEP_FILE] [--modify_type MODIFY_TYPE] [--output_dir OUTPUT_DIR]\
+    \ [--gene_id GENE_ID]\n\n        options:\n        -h, --help            show this\
+    \ help message and exit\n        --promoter_file PROMOTER_FILE\n                  \
+    \              the promoter fasta file\n        --smep_file SMEP_FILE\n           \
+    \                     the output file using smep software.\n        --modify_type\
+    \ MODIFY_TYPE\n                                the modify type predict using smep.\n\
+    \        --output_dir OUTPUT_DIR\n                                the output folder.\n\
+    \        --gene_id GENE_ID     the promoter gene_id.\n    Tool_Usage_Example:\n\
+    \        conda activate af3 && python plot_smep.py --promoter_file $promoter_fasta_file\
+    \ --smep_file $smep_outfile --modify_type $modify_type --output_dir $output_dir\
+    \ --gene_id $gene_id\n    Note: using this script, you will get a figure in $output_dir,\
+    \ the figure name is ${gene_id}_${modify_type}.png\n</plot example>\n<summary example>\n\
+    \    Tool_Usage:\n        usage: summary_smep.py [-h] [--input INPUT] [--gene_id GENE_ID]\
+    \ [--predict_type PREDICT_TYPE] [--out_dir OUT_DIR]\n\n        options:\n        -h,\
+    \ --help            show this help message and exit\n        --input INPUT      \
+    \   the file you want to summary(the tsv format)\n        --gene_id GENE_ID     the\
+    \ summary gene_id\n        --predict_type PREDICT_TYPE\n                         \
+    \       the predict epigenetic type\n        --out_dir OUT_DIR     output_folder\n\
+    \    Note:\n        predict_type: \n            1. 5mC\n            2. 6mA\n     \
+    \       3. m6A\n            4. H3K27me3\n            5. H3K4me3\n            6. H3K9ac\n\
+    \    Tool_Example\n        conda activate af3 && pip install openai -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_smep.py\
+    \ --input $output_dir/$output_file --gene_id $gene_id --predict_type $predict_type\
+    \ --out_dir $out_dir\n</summary example>\n<legend_example>\n    Tool_Usage:\n\
+    \        Tool Usage method:\n                usage: generate_figure_legend.py [-h]\
+    \ [--figure_file FIGURE_FILE] [--annotation_file ANNOTATION_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n                options:\n                -h, --help           \
+    \ show this help message and exit\n                --figure_file FIGURE_FILE\n\
+    \                                        the figure file you want to summary.\n\
+    \                --annotation_file ANNOTATION_FILE\n                            \
+    \            the annotation file with the figure data.\n                --output_dir\
+    \ OUTPUT_DIR\n                                        the output folder\n    Tool\
+    \ Usage example:\n        conda activate af3 && python generate_figure_legend.py\
+    \ --figure_file $output_dir/${gene_id}_${modify_type}.png --annotation_file\
+    \ $output_dir/$smep_output_file --output_dir $output_dir\n</legend_example>\n<results_example>\n\
+    \    Tool_Usage:\n        Tool Usage method:\n                usage:\
+    \ generate_data_description.py [-h] [--figure_file FIGURE_FILE] [--annotation_file\
+    \ ANNOTATION_FILE] [--output_dir OUTPUT_DIR]\n\n                options:\n      \
+    \          -h, --help            show this help message and exit\n              \
+    \  --figure_file FIGURE_FILE\n                                        the figure\
+    \ file you want to summary.\n                --annotation_file ANNOTATION_FILE\n\
+    \                                        the annotation file with the figure data.\n\
+    \                --output_dir OUTPUT_DIR\n                                      \
+    \  the output folder\n    Tool Usage example:\n        conda activate af3 && python\
+    \ generate_data_description.py --figure_file $output_dir/${gene_id}_${modify_type}.png\
+    \ --annotation_file $output_dir/$smep_output_file --output_dir $output_dir\n</results_example>"
   smoc_analysis: 'You are a bioinformatician specialized in the field of epigenetics
     and you are very good at conducting chromatin accessibility prediction studies,
     next, you will generate a task plan and complete the task analysis based on the
@@ -1280,12 +1418,12 @@ user:
     \      2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state\
     \ of variety 9311\n      3. Best_model_NIPCK.h5: Wild-type chromatin accessibility\
     \ of variety NIP\n      4. Best_model_NIPHS.h5: Chromatin accessibility in the\
-    \ heat-excited state of variety NIP\n </smoc usage>\n<smep example>\n    question:\
+    \ heat-excited state of variety NIP\n </smoc usage>\n<smoc example>\n    question:\
     \ please help me to predict the wild-type  chromatin accessibility of Oryza sativa\
     \ Os12g0263100 gene prompter in 9311.\n     commond_line: conda activate epic\
     \ && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py  --input $input_fasta\
     \ --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\
-    \  \n<smep example>\n<summary example>\n    Tool_Usage:\n        usage: summary_smoc.py\
+    \  \n</smoc example>\n<summary example>\n    Tool_Usage:\n        usage: summary_smoc.py\
     \  [-h] [--input_path INPUT_PATH] [--gene_id GENE_ID] [--out_dir OUT_DIR]\n\n\
     \         options:\n        -h, --help            show this help message and exit\n\
     \         --input_path INPUT_PATH\n                             the out file path\
