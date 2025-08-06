@@ -8,7 +8,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "actinidia chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -18,7 +20,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "aegilops tauschii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -28,7 +32,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "amborella trichopoda": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -38,7 +44,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "ananas comosus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -48,7 +56,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "arabidopsis lyrata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -58,7 +68,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "asparagus officinalis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -68,7 +80,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "beta vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -78,7 +92,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brachypodium distachyon": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -88,7 +104,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica napus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -98,7 +116,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica oleracea": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -108,7 +128,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica rapa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -118,7 +140,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "capsicum annuum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -128,7 +152,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chara braunii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -138,7 +164,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chenopodium quinoa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -148,7 +176,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chlamydomonas reinhardtii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -158,7 +188,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "citrullus lanatus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -168,7 +200,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "citrus clementina": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -178,7 +212,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "coffea canephora": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -188,7 +224,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "corylus avellana": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -198,7 +236,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "cucumis melo": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -208,7 +248,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "cucumis sativus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -218,7 +260,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "daucus carota": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -228,7 +272,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "digitaria exilis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -238,7 +284,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eragrostis curvula": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -248,7 +296,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eucalyptus grandis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -258,7 +308,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eutrema salsugineum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -268,7 +320,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -283,7 +337,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "helianthus annuus": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -293,7 +349,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "hordeum vulgare": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -303,7 +361,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "lactuca sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -313,7 +373,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "lolium perenne": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -323,7 +385,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "manihot esculenta": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -333,7 +397,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "marchantia polymorpha": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -343,7 +409,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "medicago truncatula": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -353,7 +421,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "musa acuminata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -363,7 +433,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "olea europaea": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -373,7 +445,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "oryza brachyantha": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -383,7 +457,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "panicum hallii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -393,7 +469,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "papaver somniferum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -403,7 +481,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "phaseolus vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -413,7 +493,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "physcomitrium patens": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -423,7 +505,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "pisum sativum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -433,7 +517,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "populus trichocarpa": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -443,7 +529,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "prunus persica": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -453,7 +541,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "quercus lobata": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -463,7 +553,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "rosa chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -473,7 +565,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "saccharum spontaneum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -483,7 +577,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "secale cereale": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -493,7 +589,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "selaginella moellendorffii": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -503,7 +601,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "setaria italica": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -513,7 +613,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "setaria viridis": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -523,7 +625,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "solanum lycopersicum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -533,7 +637,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "solanum tuberosum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -543,7 +649,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "sorghum bicolor": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -553,7 +661,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "theobroma cacao": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -563,7 +673,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "trifolium pratense": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -573,7 +685,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum dicoccoides": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -583,7 +697,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum turgidum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -593,7 +709,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "vitis vinifera": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -603,7 +721,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "arabidopsis thaliana": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -613,7 +733,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "glycine max": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -623,7 +745,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum aestivum": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -633,7 +757,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "zea mays": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
@@ -643,7 +769,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_domain.py": "A script to summary the protein domain results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_tree.py": "A script to summary the evolution tree results.", 
             "/obs/phytomni/agent_data/scripts/plot_tree.py": "A script to plot tree using nwk format file.", 
-            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format."
+            "/obs/phytomni/agent_data/scripts/domain2markdown.py": "A script to change domain result to markdown format.", 
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         }
     },
     "deepgo2_analysis": {
@@ -1108,7 +1236,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "actinidia chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1117,7 +1247,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "aegilops tauschii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1126,7 +1258,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "amborella trichopoda": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1135,7 +1269,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "ananas comosus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1144,7 +1280,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "arabidopsis lyrata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1153,7 +1291,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "asparagus officinalis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1162,7 +1302,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "beta vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1171,7 +1313,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brachypodium distachyon": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1180,7 +1324,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica napus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1189,7 +1335,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica oleracea": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1198,7 +1346,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "brassica rapa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1207,7 +1357,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "capsicum annuum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1216,7 +1368,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chara braunii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1225,7 +1379,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chenopodium quinoa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1234,7 +1390,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "chlamydomonas reinhardtii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1243,7 +1401,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "citrullus lanatus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1252,7 +1412,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "citrus clementina": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1261,7 +1423,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "coffea canephora": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1269,7 +1433,9 @@
             "/obs/phytomni/agent_data/raw_data/02.genome/coffea_canephora/Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Coffea canephora, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Coffea_canephora.AUK_PRJEB4211_v1.dna_sm.AllPrompter.upper.fa > $out_file\"", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "corylus avellana": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1278,7 +1444,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "cucumis melo": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1287,7 +1455,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "cucumis sativus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1296,7 +1466,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "daucus carota": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1305,7 +1477,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "digitaria exilis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1314,7 +1488,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eragrostis curvula": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1323,7 +1499,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eucalyptus grandis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1332,7 +1510,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "eutrema salsugineum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1341,7 +1521,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1354,7 +1536,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "helianthus annuus": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1363,7 +1547,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "hordeum vulgare": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1372,7 +1558,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "lactuca sativa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1381,7 +1569,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "lolium perenne": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1390,7 +1580,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "manihot esculenta": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1399,7 +1591,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "marchantia polymorpha": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1408,7 +1602,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "medicago truncatula": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1417,7 +1613,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "musa acuminata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1426,7 +1624,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "olea europaea": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1435,7 +1635,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "oryza brachyantha": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1444,7 +1646,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "panicum hallii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1453,7 +1657,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "papaver somniferum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1462,7 +1668,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "phaseolus vulgaris": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1471,7 +1679,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "physcomitrium patens": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1480,7 +1690,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "pisum sativum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1489,7 +1701,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "populus trichocarpa": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1498,7 +1712,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "prunus persica": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1507,7 +1723,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "quercus lobata": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1516,7 +1734,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "rosa chinensis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1525,7 +1745,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "saccharum spontaneum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1534,7 +1756,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "secale cereale": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1543,7 +1767,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "selaginella moellendorffii": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1552,7 +1778,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "setaria italica": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1561,7 +1789,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "setaria viridis": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1570,7 +1800,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "solanum lycopersicum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1579,7 +1811,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "solanum tuberosum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1588,7 +1822,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "sorghum bicolor": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1597,7 +1833,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "theobroma cacao": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1606,7 +1844,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "trifolium pratense": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1615,7 +1855,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum dicoccoides": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1624,7 +1866,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum turgidum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1633,7 +1877,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "vitis vinifera": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1642,7 +1888,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "arabidopsis thaliana": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1651,7 +1899,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "glycine max": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1660,7 +1910,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum aestivum": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1669,7 +1921,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "zea mays": {
             "/obs/phytomni/agent_data/raw_data/01.database/promoter/65_species_promoters.fa": "All promoter database in 65 species.",
@@ -1678,7 +1932,9 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_motif.py": "A script to summary meme results.", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smep.py": "A script to summary smep results", 
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_smoc.py": "A script to summary smoc results", 
-            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt"
+            "/obs/phytomni/agent_data/scripts/plot_motif.py": "A script to plot logo motif using meme.txt",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         }
     },
     "protein_design_analysis": {
@@ -2079,28 +2335,36 @@
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/tissues_sample.txt": "Tissue sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/cultivars_sample.txt": "Cultivar sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/genotypes_sample.txt": "Genotype sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/oryza_stivas/treatments_sample.txt": "Treatment sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/oryza_sativa/rice.csv": "Gene Expression Matrix in Rice",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             }
         },
         "actinidia chinensis": {
@@ -2469,28 +2733,36 @@
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/tissues_sample.txt": "Tissue sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/cultivars_sample.txt": "Cultivar sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/genotypes_sample.txt": "Genotype sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/arabidopsis_thaliana/treatments_sample.txt": "Treatment sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/arabidopsis_thaliana/tair.csv": "Gene Expression Matrix in arabidopsis thaliana",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             }
         },
         "glycine max": {
@@ -2499,28 +2771,36 @@
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/tissues_sample.txt": "Tissue sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/cultivars_sample.txt": "Cultivar sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/genotypes_sample.txt": "Genotype sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/glycine_max/treatments_sample.txt": "Treatment sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/glycine_max/soybean.csv": "Gene Expression Matrix in soybean",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             }
         },
         "triticum aestivum": {
@@ -2529,28 +2809,36 @@
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/tissues_sample.txt": "Tissue sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/cultivars_sample.txt": "Cultivar sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/genotypes_sample.txt": "Genotype sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/triticum_aestivum/treatments_sample.txt": "Treatment sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/triticum_aestivum/wheat.csv": "Gene Expression Matrix in wheat",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             }
         },
         "zea mays": {
@@ -2559,28 +2847,36 @@
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/tissues/": "Tissue sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/tissues_sample.txt": "Tissue sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "cultivars": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different cultivars, You need to create a list of cultivars file based on the cultivars users expect to see.", 
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/cultivars/": "Cultivar sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/cultivars_sample.txt": "Cultivar sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "genotypes": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different genotypes, You need to create a list of genotypes file based on the genotypes users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/genotypes/": "Genotype sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/genotypes_sample.txt": "Genotype sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             },
             "treatments": {
                 "/obs/phytomni/agent_data/scripts/gene_expression_boxplot.py": "A script for plotting gene expression in different treatments, You need to create a list of treatments file based on the treatments users expect to see.",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/sample_class/treatments/": "Treatment sample files Path",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/sample_information/zea_mays/treatments_sample.txt": "Treatment sample list file",
                 "/obs/phytomni/agent_data/raw_data/05.transcript/zea_mays/maize.csv": "Gene Expression Matrix in maize",
-                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results."
+                "/obs/phytomni/agent_data/scripts/summary_scripts/summary_bulk.py": "A script to summary gene expression results.",
+                "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+                "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
             }
         }
     },
@@ -2783,7 +3079,9 @@
         "oryza sativa": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_rice.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/rice_scRNA_omics.h5ad": "Single Cell Gene Expression Matrix in Rice.", 
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results.",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "actinidia chinensis": {},
         "aegilops tauschii": {},
@@ -2848,22 +3146,30 @@
         "arabidopsis thaliana": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/CNP0002614_snRNA_ano_merge_harmony.h5ad": "Single Cell Gene Expression Matrix in arabidopsis thaliana.",
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results.",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "glycine max": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/GSE270392_snRNA_ano_merge_harmony_RENAME.h5ad": "Single Cell Gene Expression Matrix in glycine max.",
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results.",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "triticum aestivum": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/wheat_snRNA_ano_merge_harmony.h5ad": "Single Cell Gene Expression Matrix in wheat.",
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results.",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         },
         "zea mays": {
             "/obs/phytomni/agent_data/scripts/plot_single_cell_gene.py": "A script for plotting single cell gene expression in different cells.", 
             "/obs/phytomni/agent_data/raw_data/06.single_cell/maize_merge_snRNA_ano_merge_harmonyh5Seurat.h5ad": "Single Cell Gene Expression Matrix in maize.",
-            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results."
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_single_cell.py": "A script to summary single cell analysis results.",
+            "/obs/phytomni/agent_data/scripts/generate_figure_legend.py": "A script to generate figure legend.",
+            "/obs/phytomni/agent_data/scripts/generate_data_description.py": "A script to generate figure summary results."
         }
     }, 
     "gene_network_analysis": {
@@ -2881,6 +3187,13 @@
             "/obs/phytomni/agent_data/raw_data/07.haplotypes/07.haplotypes/oryza_sative/promoter_haplotypes/gene_id": "Haplotypes in the promoter region of the rice gene", 
             "/obs/phytomni/agent_data/scripts/visualizaition_hap.py": "A script to plot promoter haplotype information.", 
             "/obs/phytomni/agent_data/scripts/plot_promoter_hap.sh": "A bash script to plot all promoter transcript haplotype information."
+        }
+    },
+    "enrichment_analysis": {
+        "oryza sativa": {
+            "/obs/phytomni/agent_data/raw_data/09.enrichment_data/go.osa.csv.gz": "Rice go annotated background gene set.", 
+            "/obs/phytomni/agent_data/raw_data/09.enrichment_data/mapman.osa.csv.gz": "Rice mapman annotated background gene set.", 
+            "/obs/phytomni/agent_data/scripts/enrichment_analysis.R": "A script to perform enrichment analysis."
         }
     }
 }
