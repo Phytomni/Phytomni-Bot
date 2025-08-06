@@ -780,6 +780,42 @@ user:
     \ -o /path/to/output -p /script_path\n    Tool_Example:\n        conda activate\
     \ af3 && sh plot_promoter_hap.sh -i $promoter_path  -o $output_dir -p $script_path\n\
     </plot example>\n"
+  enrichment_analysis: 'Please help me to perform gene enrichment analysis based on the 
+    list of genes I have provided.
+    
+    '
+  enrichment_analysis_meta: "Note1: you need to using Renv environment;\nNote2: you\
+    \ don't need to gunzip the backgroud gene set;\nStep1, using enrichment_analysis.R\
+    \ to perform the gene enrichment analysis;(conda activate Renv)\n<usage_example>\n\
+    \    Tool_Usage:\n        Gene Functional Enrichment Analysis Tool\n\n        Usage:\n\
+    \        Rscript enrichment_analysis.R [parameters] --go_file_path <GO file>\
+    \ --mapman_file_path <MapMan file> \n                                    --target_genes_file\
+    \ <target genes file> --out_dir <output directory>\n\n        Required parameters:\n\
+    \        --go_file_path        Path to GO annotation file (CSV.GZ format)\n      \
+    \  --mapman_file_path    Path to MapMan/KEGG annotation file (CSV.GZ format)\n    \
+    \    --target_genes_file   Path to target genes file (must contain gene_id column,\
+    \ degree recommended)\n        --out_dir             Output directory path (all results\
+    \ will be saved here)\n\n        Optional parameters:\n        --top_genes        \
+    \   Top N highly connected genes to use (default: 20)\n        --pvalue_cutoff    \
+    \   Significance p-value threshold (default: 0.05)\n        --qvalue_cutoff     \
+    \  Adjusted q-value threshold (default: 0.1)\n        --min_gene_count      Minimum\
+    \ gene count threshold (default: 2)\n        --help                Show this help\
+    \ message\n\n        Output files:\n        - GO_enrichment_results.csv: GO enrichment\
+    \ results\n        - MapMan_enrichment_results.csv: MapMan/KEGG enrichment results\n\
+    \        - enrichment_plot.png: Visualization of enrichment results\n        -\
+    \ enrichment_plot.pdf: PDF version of visualization\n        - enrichment_analysis.log:\
+    \ Analysis log file\n\n        Input file requirements:\n        1. GO annotation\
+    \ file: Standard GO annotation format with 9 columns\n        2. MapMan/KEGG\
+    \ annotation file: Standard MapMan format with 5 columns\n        3. Target genes\
+    \ file: Must contain 'gene_id' column, 'degree' recommended for filtering\n\n\
+    \        Example:\n        Rscript enrichment_analysis.R \\\n            --go_file_path\
+    \ /data/go_annotation.csv \\\n            --mapman_file_path /data/mapman_annotation.csv\
+    \ \\\n            --target_genes_file /data/target_genes.txt \\\n            --out_dir\
+    \ ./results \\\n            --top_genes 30 \\\n            --pvalue_cutoff 0.01\n\n\
+    \        Version: 1.1.0\n        Support: dongwei\n    Tool_Usage_Example:\n     \
+    \   conda activate R_env && Rscript enrichment_analysis.R --go_file_path $go_file\
+    \ --mapman_file_path $mapman_file --target_genes_file $analysis_gene_list --out_dir\
+    \ $output_dir --top_genes $top_num_gene --pvalue_cutoff 0.01\n</usage_example>"
   in_silico_research_goals: "You are an expert-level In Silico Research Agent. Your\
     \ function is to analyze a scientific research paper and decompose it into a series\
     \ of high-level, end-to-end research objectives. Each objective represents a complete\
