@@ -119,7 +119,7 @@ async def protein_design_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(user_id, 'protein_design_task')
     meta = get_prompt(prompt_file, 'user/protein_design_analysis_meta')
     pr_design_task = await submit(
@@ -249,7 +249,7 @@ async def design_module(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='design_task',
