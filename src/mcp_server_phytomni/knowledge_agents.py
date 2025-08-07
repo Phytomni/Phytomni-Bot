@@ -464,7 +464,8 @@ async def multi_retrieve_generate(
     end_index = follow_up_content.rfind(']') + 1
     json_part = follow_up_content[start_index:end_index]
     follow_up_list = loads(json_part)
-    phyto_response['choices'][0]['message'].update(follow_up_list)
+    phyto_response['choices'][0]['message'].update(
+        {'follow_up_questions': follow_up_list})
     return phyto_response
 
 
