@@ -266,7 +266,7 @@ async def multi_retrieve_generate(
     max_tokens: int = kc.MAX_TOKENS,
     n: int = kc.N,
     presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: str = kc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
     stream: bool = kc.STREAM,
     temperature: float = kc.TEMPERATURE,
@@ -490,7 +490,7 @@ async def retrieve_generate(
     max_tokens: int = kc.MAX_TOKENS,
     n: int = kc.N,
     presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: str = kc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
     stream: bool = kc.STREAM,
     temperature: float = kc.TEMPERATURE,
@@ -741,7 +741,7 @@ def response_to_string(phyto_response: dict) -> str:
         >>> print(result)
         Photosynthesis is...
 
-        **Reference:**
+        ## Reference:
         [1] Plant Biology
         [2] Botany Research
     """
@@ -751,7 +751,7 @@ def response_to_string(phyto_response: dict) -> str:
     for doc_id, doc in enumerate(doc_list):
         title = doc['title']
         if title[-3:] in ('pdf', 'PDF'):
-            doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n'
+            doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n\n'
         else:
-            doc_string += f'[{doc_id+1}] ' + title + '\n'
-    return content + '\n\n**Reference:**\n' + doc_string
+            doc_string += f'[{doc_id+1}] ' + title + '\n\n'
+    return content + '\n\n## Reference:\n\n' + doc_string

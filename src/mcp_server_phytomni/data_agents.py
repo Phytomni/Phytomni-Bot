@@ -139,7 +139,7 @@ async def rewrite_nl2sql(
     frequency_penalty: float = dc.FREQUENCY_PENALTY,
     n: int = dc.N,
     presence_penalty: float = dc.PRESENCE_PENALTY,
-    reasoning_effort: str = dc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = dc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = dc.RESPONSE_FORMAT,
     stream: bool = dc.STREAM,
     temperature: float = dc.TEMPERATURE,

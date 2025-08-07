@@ -21,7 +21,7 @@ Key functionalities include:
 """
 import asyncio
 from collections import deque
-from json import dumps, loads, dump
+from json import dumps, loads
 from pathlib import Path
 from random import randint
 from threading import Thread
@@ -30,7 +30,8 @@ from uuid import uuid1
 
 from mcp.shared.exceptions import McpError
 
-from .analyst_agents import create_output_dir, upload_analyst_agents_data, download_obs_out, get_data_list
+from .analyst_agents import create_output_dir, download_obs_out
+from .analyst_agents import upload_analyst_agents_data, get_data_list
 from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
@@ -703,7 +704,7 @@ async def gene_function(
     max_tokens: int = dgc.MAX_TOKENS,
     n: int = dgc.N,
     presence_penalty: float = dgc.PRESENCE_PENALTY,
-    reasoning_effort: str = dgc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = dgc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = dgc.RESPONSE_FORMAT,
     stream: bool = dgc.STREAM,
     temperature: float = dgc.TEMPERATURE,
@@ -1064,8 +1065,7 @@ async def gene_function(
             )
             prepend_to_file(
                 server_file_path,
-                f'# In-depth Gene Characterization of {gene_id}\n'
-                f'{phyto_str}\n')
+                f'## Gene Profiles\n\n{phyto_str}\n')
             with open(server_file_path, 'r', encoding='utf-8') as f:
                 phyto_response['choices'][0]['message']['content'] = f.read()
 
@@ -1086,8 +1086,7 @@ async def gene_function(
             deepgenome_path.mkdir(parents=True, exist_ok=True)
             server_file_path = str(deepgenome_path / f'{gene_id}_results.md')
             with open(server_file_path, 'w', encoding='utf-8') as f:
-                f.write(f'# In-depth Gene Characterization of {gene_id}\n'
-                        + phyto_str)
+                f.write('## Gene Profiles\n\n' + phyto_str)
 
             await update_task(
                 url=update_task_url,
@@ -3091,7 +3090,7 @@ async def summarize_gene_analysis(
             marker=marker,
             max_keys=max_keys,
             if_download_all=False,
-        ), maxlen=0)
+            ), maxlen=0)
         return f'{task_name} results download succeed.'
 
     _ = await asyncio.gather(*[

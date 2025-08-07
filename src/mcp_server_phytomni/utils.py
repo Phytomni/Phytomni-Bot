@@ -15,7 +15,6 @@ within the application. These utilities include functionalities such as:
   processing multiple files.
 - Splitting lists into smaller chunks for batch processing.
 """
-
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from json import dumps
@@ -24,13 +23,14 @@ from pathlib import Path
 from re import sub
 from traceback import format_exc
 from typing import Dict, List, Optional
-from yaml import safe_load
+from uuid import uuid1
 
 from httpx import AsyncClient, HTTPError, Timeout
 from markitdown import MarkItDown
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import ObsClient
+from yaml import safe_load
 
 from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
@@ -234,7 +234,8 @@ async def download_obs_file(
     Raises:
         OSError: If the file download fails after all retry attempts.
     """
-    server_path = Path(server_dir)
+    user_name = obs_file.split('/')[-2]
+    server_path = Path(server_dir) / user_name / str(uuid1())
     server_path.mkdir(parents=True, exist_ok=True)
     server_file = str(server_path / Path(obs_file).name)
 

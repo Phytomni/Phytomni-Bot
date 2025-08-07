@@ -35,7 +35,7 @@ async def deep_research(
     frequency_penalty: float = rc.FREQUENCY_PENALTY,
     n: int = rc.N,
     presence_penalty: float = rc.PRESENCE_PENALTY,
-    reasoning_effort: str = rc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = rc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = rc.RESPONSE_FORMAT,
     stream: bool = rc.STREAM,
     temperature: float = rc.TEMPERATURE,
