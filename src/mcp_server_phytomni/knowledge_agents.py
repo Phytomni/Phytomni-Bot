@@ -488,7 +488,7 @@ async def multi_retrieve_generate(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    follow_up_content = ""
+    follow_up_content = ''
     if (follow_up_response and 'choices' in follow_up_response and
             len(follow_up_response['choices']) > 0 and
             'message' in follow_up_response['choices'][0] and
@@ -820,7 +820,7 @@ def response_to_string(phyto_response: dict) -> str:
         [1] Plant Biology
         [2] Botany Research
     """
-    content = ""
+    content = ''
     doc_list = []
 
     if (phyto_response and 'choices' in phyto_response and
