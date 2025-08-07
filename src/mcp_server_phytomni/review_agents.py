@@ -316,6 +316,7 @@ async def deep_research(
         f'knowledge_{dimension_id+1}': retrieval
         for dimension_id, retrieval in enumerate(dimensions_retrieval)
     })
+    prompt_parameters.update({'user_query': original_user_query})
     report_response = await phyto_chat(
         user_query=get_prompt(prompt_file,
                               'user/deep_research_report',
