@@ -36,7 +36,7 @@ async def phyto_chat(
     frequency_penalty: float = cc.FREQUENCY_PENALTY,
     n: int = cc.N,
     presence_penalty: float = cc.PRESENCE_PENALTY,
-    reasoning_effort: str = cc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = cc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = cc.RESPONSE_FORMAT,
     stream: bool = cc.STREAM,
     temperature: float = cc.TEMPERATURE,
@@ -56,7 +56,7 @@ async def phyto_chat(
     max_workers: int = cc.MAX_WORKERS,
     max_tokens: int = cc.MAX_TOKENS,
     semaphore: Optional[asyncio.Semaphore] = None,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
@@ -178,30 +178,41 @@ async def phyto_chat(
     if 'reasoner' not in model:
         reasoning_effort = None
 
-    async def make_phyto_chat() -> Dict[str, Any]:
+    async def make_phyto_chat() -> Optional[Dict[str, Any]]:
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         for attempt in range(max_retries + 1):
             try:
+                common_params = {
+                    'messages': messages,
+                    'model': model,
+                    'frequency_penalty': frequency_penalty,
+                    'n': n,
+                    'presence_penalty': presence_penalty,
+                    'response_format': response_format,
+                    'stream': stream,
+                    'temperature': temperature,
+                    'top_p': top_p,
+                    'user': user,
+                    'timeout': timeout,
+                }
+
+                if 'reasoner' in model and reasoning_effort is not None:
+                    common_params['reasoning_effort'] = reasoning_effort
+
                 if stream:
                     stream_completions = await client.chat.completions.create(
-                        messages=messages,
-                        model=model,
-                        frequency_penalty=frequency_penalty,
-                        n=n,
-                        presence_penalty=presence_penalty,
-                        reasoning_effort=reasoning_effort,
-                        response_format=response_format,
-                        stream=stream,
-                        temperature=temperature,
-                        top_p=top_p,
-                        user=user,
-                        timeout=timeout,
-                    )
+                        **common_params)
                     full_content = ''
+                    chunk = None
                     async for chunk in stream_completions:
                         if chunk.choices and chunk.choices[0].delta.content:
                             content_piece = chunk.choices[0].delta.content
                             full_content += content_piece
+                    if chunk is None:
+                        raise McpError(ErrorData(
+                            code=INTERNAL_ERROR,
+                            message='No response received from model',
+                        ))
                     chat_completions = chunk.model_dump()
                     chat_completions.update({'choices': [{
                         'finish_reason': 'stop',
@@ -220,19 +231,7 @@ async def phyto_chat(
                     return chat_completions
 
                 chat_completions = await client.chat.completions.create(
-                    messages=messages,
-                    model=model,
-                    frequency_penalty=frequency_penalty,
-                    n=n,
-                    presence_penalty=presence_penalty,
-                    reasoning_effort=reasoning_effort,
-                    response_format=response_format,
-                    stream=stream,
-                    temperature=temperature,
-                    top_p=top_p,
-                    user=user,
-                    timeout=timeout,
-                )
+                    **common_params)
                 return chat_completions.model_dump()
 
             except HTTPStatusError as e:
