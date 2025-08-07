@@ -83,7 +83,7 @@ from .config.defaults import AnalystConfig, ChatConfig, DataConfig
 from .config.defaults import DeepGenomeConfig, InSilicoResearchConfig
 from .config.defaults import KnowledgeConfig, ReviewConfig
 from .config.settings import SensitiveConfig
-from .chat_agents import phyto_chat
+from .chat_agents import phyto_chat_with_follow
 from .data_agents import rewrite_nl2sql
 from .deep_genome_agents import gene_function
 from .in_silico_research_agents import in_silico_research
@@ -599,7 +599,7 @@ async def serve() -> None:
                         code=INVALID_PARAMS, message=str(e))) from e
                 chatconfig = ChatConfig()
                 sensitiveconfig = SensitiveConfig().load()
-                response = await phyto_chat(
+                response = await phyto_chat_with_follow(
                     user_query=args.user_query,
                     obs_file_list=args.obs_file_list,
                     prompt_file=chatconfig.PROMPT_FILE,
