@@ -180,6 +180,7 @@ async def deep_research(
             ...     temperature=0.2
             ... )
     """
+    original_user_query = user_query
     total_length = 0
     if obs_file_list:
         upload_str_list = await download_list_convert(
@@ -250,6 +251,16 @@ async def deep_research(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+
+    if (not query_response or
+            'choices' not in query_response or
+            not query_response['choices'] or
+            not query_response['choices'][0] or
+            'message' not in query_response['choices'][0] or
+            not query_response['choices'][0]['message'] or
+            'content' not in query_response['choices'][0]['message']):
+        raise ValueError("Invalid response structure from phyto_chat")
+
     dimensions_str = query_response['choices'][0]['message']['content']
     start_index = dimensions_str.find('{')
     end_index = dimensions_str.rfind('}') + 1
@@ -281,6 +292,10 @@ async def deep_research(
     total_length = 0
     for dimension_result in results:
         retrieve_results = []
+        if isinstance(dimension_result, BaseException):
+            dimensions_retrieval.append('')
+            continue
+
         for doc in dimension_result.get('doc_list', []):
             all_doc_list.append(doc)
             header = f"[document {file_id+1} begin] {doc['title']}"
@@ -323,6 +338,68 @@ async def deep_research(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+
+    if (report_response and
+            'choices' in report_response and
+            report_response['choices'] and
+            report_response['choices'][0] and
+            'message' in report_response['choices'][0] and
+            report_response['choices'][0]['message']):
+        report_response['choices'][0]['message'].update(
+            {'doc_list': all_doc_list, 'total': 10000})
+        if 'content' in report_response['choices'][0]['message']:
+            system_response_content = (
+                report_response['choices'][0]['message']['content'])
+        else:
+            raise ValueError(
+                'Invalid response structure for follow-up questions generation')
+    else:
+        raise ValueError(
+            'Invalid response structure from phyto_chat in report generation')
+
+    follow_up_response = await phyto_chat(
+        user_query=get_prompt(
+            prompt_file, 'system/follow_up_questions',
+            {
+                'user_query': original_user_query,
+                'system_response': system_response_content
+            }),
+        prompt_file=prompt_file,
+        prompt_path=prompt_path,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        frequency_penalty=frequency_penalty,
+        n=n,
+        presence_penalty=presence_penalty,
+        reasoning_effort=reasoning_effort,
+        response_format=response_format,
+        stream=stream,
+        temperature=temperature,
+        top_p=top_p,
+        user=user,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    follow_up_content = ''
+    if (follow_up_response and 'choices' in follow_up_response and
+            len(follow_up_response['choices']) > 0 and
+            'message' in follow_up_response['choices'][0] and
+            follow_up_response['choices'][0]['message'] is not None and
+            'content' in follow_up_response['choices'][0]['message']):
+        follow_up_content = (
+            follow_up_response['choices'][0]['message']['content'])
+    follow_up_list = []
+    if follow_up_content:
+        start_index = follow_up_content.find('[')
+        end_index = follow_up_content.rfind(']') + 1
+        if start_index != -1 and end_index > start_index:
+            try:
+                json_part = follow_up_content[start_index:end_index]
+                follow_up_list = loads(json_part)
+            except (ValueError, TypeError):
+                follow_up_list = []
     report_response['choices'][0]['message'].update(
-        {'doc_list': all_doc_list, 'total': 10000})
+        {'follow_up_questions': follow_up_list})
     return report_response
