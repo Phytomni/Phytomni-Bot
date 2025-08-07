@@ -39,7 +39,7 @@ async def nl2sql(message_content: str,
                  timeout: float = dc.TIMEOUT,
                  retriable_codes: List[int] = dc.RETRIABLE_CODES,
                  max_retries: int = dc.MAX_RETRIES,
-                 ) -> List[Dict[str, Any]]:
+                 ) -> Optional[List[Dict[str, Any]]]:
     """Convert a natural language query to SQL and execute it.
 
     This function sends a natural language message to a service that
@@ -155,7 +155,7 @@ async def rewrite_nl2sql(
     retriable_codes: List[int] = dc.RETRIABLE_CODES,
     max_retries: int = dc.MAX_RETRIES,
     max_tokens: int = dc.MAX_TOKENS,
-) -> Dict[str, Any]:
+) -> Optional[List[Dict[str, Any]]]:
     """Rewrite a natural language query and then execute it via NL2SQL.
 
     This function first performs RAG retrieval to enhance the query with
@@ -221,7 +221,8 @@ async def rewrite_nl2sql(
         max_retries: Maximum number of retry attempts for API calls.
 
     Returns:
-        A dictionary representing the JSON response from the `nl2sql` service.
+        A list of dictionaries representing the JSON response from the
+        NL2SQL service, or None if the request failed.
 
     Raises:
         McpError: If either the RAG retrieval, query rewriting, or the NL2SQL
@@ -280,6 +281,14 @@ async def rewrite_nl2sql(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+
+    if (not phyto_response or 'choices' not in phyto_response or
+            not phyto_response['choices']):
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR,
+            message='Failed to get response from phyto_chat service'
+        ))
+
     response = await nl2sql(
         message_content=phyto_response['choices'][0]['message']['content'],
         database_url=database_url,
