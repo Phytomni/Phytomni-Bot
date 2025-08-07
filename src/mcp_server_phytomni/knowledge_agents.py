@@ -755,8 +755,12 @@ async def rerank(user_query: str,
             results = await asyncio.gather(*tasks, return_exceptions=True)
             all_results = []
             for result in results:
-                if (result is not None and
-                        not isinstance(result, BaseException)):
+                if isinstance(result, Exception):
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Reranking failed: {str(result)}',
+                    )) from result
+                if result is not None:
                     try:
                         if hasattr(result, '__iter__'):
                             all_results.extend(result)
