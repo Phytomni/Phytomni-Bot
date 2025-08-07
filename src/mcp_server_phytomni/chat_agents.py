@@ -207,7 +207,7 @@ async def phyto_chat_with_follow(
         semaphore=semaphore,
     )
 
-    follow_up_content = ""
+    follow_up_content = ''
     if (follow_up_response and 'choices' in follow_up_response and
             len(follow_up_response['choices']) > 0 and
             'message' in follow_up_response['choices'][0] and
