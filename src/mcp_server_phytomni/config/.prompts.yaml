@@ -944,80 +944,80 @@ user:
     \ annotation data, and the content of each research article.\n- Step 2: Information\
     \ Mapping and Synthesis: Meticulously analyze the scientific literature and annotation\
     \ data from the input. Map every extracted fact, figure, and data point to the\
-    \ appropriate section of the report structure (e.g., QTL data, expression data,\
-    \ SNPs). Consolidate findings from different documents and across all gene aliases.\n\
-    - Step 3: Structured Content Generation: Draft the report section by section.\
-    \ For each statement, write a clear, concise sentence and append the correct `[document:X]`\
-    \ citation(s). Gather data points designated for tables and construct the Markdown\
-    \ tables as you build the relevant sections.\n- Step 4: Final Review and Formatting:\
-    \ Conduct a final review of the entire report to ensure strict adherence to all\
-    \ rules and formatting constraints. Verify the heading levels (`###`), citation\
-    \ style, table usage, and professional tone, ensuring a polished and accurate\
-    \ final product.\n- Expected result: A detailed, well-organized, and accurately\
-    \ cited Markdown report about the gene of interest, following the specified multi-level\
-    \ structure and using tables to present complex data for enhanced clarity.\n\n\
-    ## OutputFormat\n\n1. Output format type:\n   - format: Markdown\n   - structure:\
-    \ A multi-level report starting with `###` headings. The report is divided into\
-    \ four main sections (I, II, III, IV), each containing numbered sub-sections as\
-    \ specified.\n   - style: Formal, academic, descriptive, and objective.\n   -\
-    \ special_requirements: Must use inline citations `[document:X]`. Must consolidate\
-    \ information for all gene aliases. The entire output must be a single, continuous\
-    \ Markdown document.\n\n2. Format specifications:\n   - indentation: Use standard\
-    \ Markdown indentation for lists and other nested elements where necessary.\n\
-    \   - sections: Strictly follow the prescribed structure: `### Gene Discovery,\
-    \ Family, and Localization`, `#### 1. Discovery History and Nomenclature`, etc.\n\
-    \   - highlighting: Use bold for table headers to improve readability and structure.\n\
-    \n3. Validation rules:\n   - validation: The output must contain all required\
-    \ sections and their respective sub-sections. All tables specified in the instructions\
-    \ must be present if the data is available. Citations must be in the `[document:X]`\
-    \ format and placed inline.\n   - constraints: The highest-level heading must\
-    \ be `###`. The response must not contain any text before the first heading.\n\
-    \   - error_handling: If information for a specific subsection is not available\
-    \ in the provided context, the output must explicitly state, \"Information not\
-    \ available in the provided context.\" for that subsection.\n\n4. Example descriptions:\n\
-    \   1. Example 1:\n      - Title: Ideal Gene Report (Comprehensive Data)\n   \
-    \   - Format type: Markdown\n      - Description: This example demonstrates the\
-    \ ideal output when ample data is available, showcasing filled sections, multiple\
-    \ Markdown tables, and correct inline citations.\n      - Example content: |\n\
-    \          ### Functional Analysis\n          #### 1. Expression Patterns\n  \
-    \        The *GeneX* gene exhibits tissue-specific expression, with the highest\
-    \ levels observed in young leaves and roots [document:2]. Expression is significantly\
-    \ upregulated in response to drought stress, peaking at 6 hours post-treatment\
-    \ [document:4].\n\n          **Table: Expression Profile of *GeneX***\n      \
-    \    | Tissue/Condition | Relative Expression Level | Source |\n          | :---\
-    \ | :--- | :--- |\n          | Young Leaf | 15.2 ± 1.8 | [document:2] |\n    \
-    \      | Mature Leaf | 8.1 ± 0.9 | [document:2] |\n          | Root | 12.5 ± 2.1\
-    \ | [document:2] |\n          | Stem | 3.4 ± 0.5 | [document:2] |\n          |\
-    \ Drought (6h) | 45.7 ± 5.3 | [document:4] |\n          | Control (6h) | 14.9\
-    \ ± 1.5 | [document:4] |\n\n          #### 2. Phenotypic Characteristics and Biological\
-    \ Functions\n          Mutants lacking *GeneX* (`genex-1`) show increased sensitivity\
-    \ to osmotic stress and reduced root growth [document:1][document:3]. Overexpression\
-    \ lines, conversely, display enhanced drought tolerance and a more robust root\
-    \ system compared to the wild type [document:5].\n\n          **Table: Phenotypic\
-    \ Comparison**\n          | Line | Root Length (cm) | Survival Rate (Drought)\
-    \ | Source |\n          | :--- | :--- | :--- | :--- |\n          | Wild Type |\
-    \ 10.3 ± 0.8 | 45% | [document:5] |\n          | `genex-1` | 6.1 ± 0.5 | 12% |\
-    \ [document:3] |\n          | *GeneX*-OE | 14.5 ± 1.1 | 88% | [document:5] |\n\
-    \n   2. Example 2:\n      - Title: Gene Report (Sparse Data)\n      - Format type:\
-    \ Markdown \n      - Description: This example demonstrates how to handle cases\
-    \ where information for certain sections is missing from the provided context,\
+    \ appropriate section of the report structure (e.g., QTL data to 1.2., expression\
+    \ data to 3.1., SNPs to 4.3.). Consolidate findings from different documents and\
+    \ across all gene aliases.\n- Step 3: Structured Content Generation: Draft the\
+    \ report section by section. For each statement, write a clear, concise sentence\
+    \ and append the correct `[document:X]` citation(s). Gather data points designated\
+    \ for tables and construct the Markdown tables as you build the relevant sections.\n\
+    - Step 4: Final Review and Formatting: Conduct a final review of the entire report\
+    \ to ensure strict adherence to all rules and formatting constraints. Verify the\
+    \ heading levels (`###`), citation style, table usage, and professional tone,\
+    \ ensuring a polished and accurate final product.\n- Expected result: A detailed,\
+    \ well-organized, and accurately cited Markdown report about the gene of interest,\
+    \ following the specified multi-level structure and using tables to present complex\
+    \ data for enhanced clarity.\n\n## OutputFormat\n\n1. Output format type:\n  \
+    \ - format: Markdown\n   - structure: A multi-level report starting with `###`\
+    \ headings. The report is divided into four main sections (1., 2., 3., 4.), each\
+    \ containing numbered sub-sections as specified.\n   - style: Formal, academic,\
+    \ descriptive, and objective.\n   - special_requirements: Must use inline citations\
+    \ `[document:X]`. Must consolidate information for all gene aliases. The entire\
+    \ output must be a single, continuous Markdown document.\n\n2. Format specifications:\n\
+    \   - indentation: Use standard Markdown indentation for lists and other nested\
+    \ elements where necessary.\n   - sections: Strictly follow the prescribed structure:\
+    \ `### 1. Gene Discovery, Family, and Localization`, `#### 1.1. Discovery History\
+    \ and Nomenclature`, etc.\n   - highlighting: Use bold for table headers to improve\
+    \ readability and structure.\n\n3. Validation rules:\n   - validation: The output\
+    \ must contain all required sections (1-4) and their respective sub-sections.\
+    \ All tables specified in the instructions must be present if the data is available.\
+    \ Citations must be in the `[document:X]` format and placed inline.\n   - constraints:\
+    \ The highest-level heading must be `###`. The response must not contain any text\
+    \ before the first heading.\n   - error_handling: If information for a specific\
+    \ subsection is not available in the provided context, the output must explicitly\
+    \ state, \"Information not available in the provided context.\" for that subsection.\n\
+    \n4. Example descriptions:\n   1. Example 1:\n      - Title: Ideal Gene Report\
+    \ (Comprehensive Data)\n      - Format type: Markdown\n      - Description: This\
+    \ example demonstrates the ideal output when ample data is available, showcasing\
+    \ filled sections, multiple Markdown tables, and correct inline citations.\n \
+    \     - Example content: |\n          ### 3. Functional Analysis\n          ####\
+    \ 3.1. Expression Patterns\n          The *GeneX* gene exhibits tissue-specific\
+    \ expression, with the highest levels observed in young leaves and roots [document:2].\
+    \ Expression is significantly upregulated in response to drought stress, peaking\
+    \ at 6 hours post-treatment [document:4].\n\n          **Table: Expression Profile\
+    \ of *GeneX***\n          | Tissue/Condition | Relative Expression Level | Source\
+    \ |\n          | :--- | :--- | :--- |\n          | Young Leaf | 15.2 ± 1.8 | [document:2]\
+    \ |\n          | Mature Leaf | 8.1 ± 0.9 | [document:2] |\n          | Root |\
+    \ 12.5 ± 2.1 | [document:2] |\n          | Stem | 3.4 ± 0.5 | [document:2] |\n\
+    \          | Drought (6h) | 45.7 ± 5.3 | [document:4] |\n          | Control (6h)\
+    \ | 14.9 ± 1.5 | [document:4] |\n\n          #### 3.2. Phenotypic Characteristics\
+    \ and Biological Functions\n          Mutants lacking *GeneX* (`genex-1`) show\
+    \ increased sensitivity to osmotic stress and reduced root growth [document:1][document:3].\
+    \ Overexpression lines, conversely, display enhanced drought tolerance and a more\
+    \ robust root system compared to the wild type [document:5].\n\n          **Table:\
+    \ Phenotypic Comparison**\n          | Line | Root Length (cm) | Survival Rate\
+    \ (Drought) | Source |\n          | :--- | :--- | :--- | :--- |\n          | Wild\
+    \ Type | 10.3 ± 0.8 | 45% | [document:5] |\n          | `genex-1` | 6.1 ± 0.5\
+    \ | 12% | [document:3] |\n          | *GeneX*-OE | 14.5 ± 1.1 | 88% | [document:5]\
+    \ |\n\n   2. Example 2:\n      - Title: Gene Report (Sparse Data)\n      - Format\
+    \ type: Markdown \n      - Description: This example demonstrates how to handle\
+    \ cases where information for certain sections is missing from the provided context,\
     \ while correctly formatting the available data.\n      - Example content: |\n\
-    \          ### Gene Discovery, Family, and Localization\n          #### 1. Discovery\
-    \ History and Nomenclature\n          The *GeneY* gene was first identified as\
-    \ part of a screen for salt-tolerant mutants [document:1]. It was named *GeneY*\
+    \          ### 1. Gene Discovery, Family, and Localization\n          #### 1.1.\
+    \ Discovery History and Nomenclature\n          The *GeneY* gene was first identified\
+    \ as part of a screen for salt-tolerant mutants [document:1]. It was named *GeneY*\
     \ due to its yellow-seed phenotype in the recessive state [document:1].\n\n  \
-    \        #### 2. Genetic Mapping\n          Information not available in the provided\
-    \ context.\n\n          ### Gene Cloning and Structural Analysis\n          ####\
-    \ 1. Cloning Information\n          The full-length cDNA of *GeneY* was isolated\
-    \ from a leaf library using RACE-PCR [document:1].\n\n          #### 2. Structural\
-    \ Characteristics\n          The gene consists of three exons and two introns\
-    \ [document:1].\n\n          **Table: Structural Features of *GeneY***\n     \
-    \     | Feature | Start | End | Length (bp) |\n          | :--- | :--- | :---\
-    \ | :--- |\n          | Exon 1 | 1 | 250 | 250 |\n          | Intron 1 | 251 |\
-    \ 400 | 150 |\n          | Exon 2 | 401 | 600 | 200 |\n          | Intron 2 |\
-    \ 601 | 750 | 150 |\n          | Exon 3 | 751 | 1000 | 250 |\n\n          ####\
-    \ 3. Protein stability or Enzyme activity analysis\n          Information not\
-    \ available in the provided context.\n\n## Input Data\n*This section centralizes\
+    \        #### 1.2. Genetic Mapping\n          Information not available in the\
+    \ provided context.\n\n          ### 2. Gene Cloning and Structural Analysis\n\
+    \          #### 2.1. Cloning Information\n          The full-length cDNA of *GeneY*\
+    \ was isolated from a leaf library using RACE-PCR [document:1].\n\n          ####\
+    \ 2.2. Structural Characteristics\n          The gene consists of three exons\
+    \ and two introns [document:1].\n\n          **Table: Structural Features of *GeneY***\n\
+    \          | Feature | Start | End | Length (bp) |\n          | :--- | :--- |\
+    \ :--- | :--- |\n          | Exon 1 | 1 | 250 | 250 |\n          | Intron 1 |\
+    \ 251 | 400 | 150 |\n          | Exon 2 | 401 | 600 | 200 |\n          | Intron\
+    \ 2 | 601 | 750 | 150 |\n          | Exon 3 | 751 | 1000 | 250 |\n\n         \
+    \ #### 2.3. Protein stability or Enzyme activity analysis\n          Information\
+    \ not available in the provided context.\n\n## Input Data\n*This section centralizes\
     \ all variables for data injection. All substitutions should be made here.*\n\n\
     #### 1. Core Information\n- **Species**: `{{species}}`\n- **Gene Aliases**: `{{gene_string}}`\n\
     \n#### 2. Annotation Data\n- **GO Annotations**: `{{go_string}}`\n- **InterPro\
