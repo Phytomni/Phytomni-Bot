@@ -169,7 +169,7 @@ async def update_task(url,
                       server_status: str,
                       server_file_path: str,
                       tool_result: str,
-                      timeout: int = 60,
+                      timeout: float = 60,
                       retriable_codes: List[int] = [429, 500, 502, 503, 504],
                       max_retries: int = 5):
     """Updates a task on a remote server.
