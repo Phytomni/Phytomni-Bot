@@ -38,6 +38,7 @@ from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
 from .knowledge_agents import multi_retrieve, response_to_string
+from .knowledge_agents import retrieve_generate
 from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
 
@@ -979,6 +980,8 @@ async def gene_function(
                 break
         retrieve_context = '\n\n'.join(retrieve_results)
 
+        gene_string = '|'.join(species_gene_symbol_dict.get(
+            (species_code, gene_id), []))
         if use_data_agent:
             orthologs_string = network_to_string(
                 gene_orthologs_list, species_gene_symbol_dict,
@@ -992,8 +995,7 @@ async def gene_function(
             gene_anno = species_gene_anno_dict.get((species_code, gene_id), {})
             prompt_vars = {
                 'species': SPECIES_CODE_MAP[species_code],
-                'gene_string': '|'.join(species_gene_symbol_dict.get(
-                    (species_code, gene_id), [])),
+                'gene_string': gene_string,
                 'retrieve_results': retrieve_context,
                 'description_string': gene_anno.get('description', ''),
                 'go_string': '; '.join(
@@ -1011,8 +1013,7 @@ async def gene_function(
         else:
             prompt_vars = {
                 'species': SPECIES_CODE_MAP[species_code],
-                'gene_string': '|'.join(species_gene_symbol_dict.get(
-                    (species_code, gene_id), [])),
+                'gene_string': gene_string,
                 'retrieve_results': retrieve_context,
             }
             user_query = get_prompt(
@@ -1042,7 +1043,7 @@ async def gene_function(
             'doc_list': gene_retrieve_results.get('doc_list', []),
             'total': 10000
         })
-        phyto_str = response_to_string(phyto_response)
+        part1_str = phyto_response['choices'][0]['message']['content']
 
         if use_analyst_agent:
             server_file_path = await summarize_gene_analysis(
@@ -1065,9 +1066,227 @@ async def gene_function(
             )
             prepend_to_file(
                 server_file_path,
-                f'## Gene Profiles\n\n{phyto_str}\n')
-            with open(server_file_path, 'r', encoding='utf-8') as f:
-                phyto_response['choices'][0]['message']['content'] = f.read()
+                f'## Gene Profiles\n\n{part1_str}\n')
+            with open(server_file_path, 'r', encoding='utf-8') as open_md:
+                part12_str = open_md.read()
+            phyto_response['choices'][0]['message']['content'] = part12_str
+
+            experiment_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_experiment',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part12_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            function_experiment = experiment_response[
+                'choices'][0]['message']['content']
+            start_index = function_experiment.find('[')
+            end_index = function_experiment.rfind(']') + 1
+            json_part = function_experiment[start_index:end_index]
+            experiment_list = loads(json_part)
+            protocol_sections = []
+            for ei, experiment in enumerate(experiment_list):
+                protocol_response = await retrieve_generate(
+                    user_query=experiment,
+                    retrieve_url=retrieve_url,
+                    repo_id='44ad28b5-5c3b-4a02-8e8c-7fb4903424cb',
+                    page_num=page_num,
+                    page_size=top_n,
+                    filter_string=filter_string,
+                    scope='both',
+                    extra_repo_ids=extra_repo_ids,
+                    rerank_url=rerank_url,
+                    rerank_batch_size=rerank_batch_size,
+                    score_threshold=score_threshold,
+                    prompt_file=prompt_file,
+                    prompt_path=prompt_path,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    frequency_penalty=frequency_penalty,
+                    max_tokens=max_tokens,
+                    n=n,
+                    presence_penalty=presence_penalty,
+                    reasoning_effort=reasoning_effort,
+                    response_format=response_format,
+                    stream=stream,
+                    temperature=temperature,
+                    top_p=top_p,
+                    user=user,
+                    timeout=timeout,
+                    retriable_codes=retriable_codes,
+                    max_retries=max_retries,
+                )
+                protocol_content = protocol_response[
+                    'choices'][0]['message']['content']
+                protocol_sections.append(
+                    f'## {ei+1}. Step-by-Step {experiment} Protocol\n\n'
+                    f'{protocol_content}\n')
+            experiments_file = server_file_path[:-3]+'-experiments.md'
+            experiments_str = ''
+            with open(experiments_file, 'w', encoding='utf-8') as open_md:
+                open_md.write('## Recommended experiments\n\n')
+                for protocol in protocol_sections:
+                    experiments_str += protocol
+                    open_md.write(protocol)
+
+            protocol_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_protocol',
+                    {
+                        'analysis_sections': part12_str,
+                        'protocol_sections': experiments_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+
+            experiments_name = Path(experiments_file).name
+            part123_str = (
+                f'{part12_str}\n\n## Recommended experiments\n\n' +
+                protocol_response['choices'][0]['message']['content'] +
+                f'\n\n[Protocol Details](./{experiments_name}.md)\n\n')
+            phyto_response['choices'][0]['message']['content'] = part123_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
+
+            introduction_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_introduction',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part123_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part0123_str = (
+                f'# Deep Genome Analysis of {gene_id}\n\n' +
+                introduction_response['choices'][0]['message']['content'] +
+                '\n\n' + part123_str)
+            phyto_response['choices'][0]['message']['content'] = part0123_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
+
+            discussion_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_discussion',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part0123_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part01234_str = (
+                part0123_str + '\n\n## Disscussion\n\n' +
+                discussion_response['choices'][0]['message']['content'])
+            phyto_response['choices'][0]['message']['content'] = part01234_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
+
+            summary_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_summary',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part01234_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part012345_str = (
+                part01234_str + '\n\n## Conclusion and Future Outlook\n\n' +
+                summary_response['choices'][0]['message']['content']+'\n\n')
+            phyto_response['choices'][0]['message']['content'] = part012345_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
 
             await update_task(
                 url=update_task_url,
@@ -1085,8 +1304,111 @@ async def gene_function(
             deepgenome_path = Path(deepgenome_out)
             deepgenome_path.mkdir(parents=True, exist_ok=True)
             server_file_path = str(deepgenome_path / f'{gene_id}_results.md')
-            with open(server_file_path, 'w', encoding='utf-8') as f:
-                f.write('## Gene Profiles\n\n' + phyto_str)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write('## Gene Profiles\n\n' + part1_str)
+
+            introduction_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_introduction',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part1_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part01_str = (
+                f'# Deep Genome Analysis of {gene_id}\n\n' +
+                introduction_response['choices'][0]['message']['content'] +
+                '\n\n' + part1_str)
+            phyto_response['choices'][0]['message']['content'] = part01_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
+
+            discussion_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_discussion',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part01_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part014_str = (
+                part01_str + '\n\n## Disscussion\n\n' +
+                discussion_response['choices'][0]['message']['content'])
+            phyto_response['choices'][0]['message']['content'] = part014_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
+
+            summary_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file,
+                    'user/gene_function_summary',
+                    {
+                        'gene_string': gene_string,
+                        'species_string': SPECIES_CODE_MAP[species_code],
+                        'content': part014_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream, temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            part0145_str = (
+                part014_str + '\n\n## Conclusion and Future Outlook\n\n' +
+                summary_response['choices'][0]['message']['content']+'\n\n')
+            phyto_response['choices'][0]['message']['content'] = part0145_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
 
             await update_task(
                 url=update_task_url,
@@ -3319,16 +3641,6 @@ async def summarize_gene_analysis(
     gene_results_data['epic_interpretation'] = epic_summary
 
     try:
-        # motif_file_num = len(list(out_path.glob('*_logo.png')))
-        # if motif_file_num == 0:
-        #     gene_results_data['motif_images'] = ''
-        #     gene_results_data['motif_interpretation'] = 'None Results'
-        # else:
-        #     gene_results_data['motif_images'] = ''
-        #     for index in range(motif_file_num):
-        #         motif_file = f'{gene_id}/motif_{index+1}_logo.png'
-        #         gene_results_data['motif_images'] += (
-        #             f'![Motif]({motif_file})\n')
         target_file = next(out_path.rglob('all_motifs_logo.png')).name
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
