@@ -289,8 +289,9 @@ async def deep_research(
     dimensions_retrieval = []
     all_doc_list = []
     file_id = 0
-    total_length = 0
-    for dimension_result in results:
+    upload_length = total_length
+    dimension_length = (max_tokens - upload_length) / 4
+    for di, dimension_result in enumerate(results):
         retrieve_results = []
         if isinstance(dimension_result, BaseException):
             dimensions_retrieval.append('')
@@ -302,7 +303,8 @@ async def deep_research(
             body = (f"{doc['subtitle']}\n{doc['content']}"
                     if doc.get('subtitle') else doc.get('content', ''))
             fragment = f'{header}\n{body} [document {file_id+1} end]'
-            if total_length + len(fragment) <= max_tokens:
+            if total_length + len(fragment) <= (
+                    upload_length + dimension_length * (di + 1)):
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:

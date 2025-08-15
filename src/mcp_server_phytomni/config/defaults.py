@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-_MAX_TOKENS = 131072
+_MAX_TOKENS = 16384
 PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
@@ -75,15 +75,15 @@ class ServerConfig(BaseSettings):
 
     REPO_ID: str = Field('a34b2477-a4b1-4a30-8726-77bbf66ca048')
     REPO_ID_DICT: Dict[str, int] = Field({
-        'a34b2477-a4b1-4a30-8726-77bbf66ca048': int(_MAX_TOKENS/1024),
-        'ec3be998-43a8-483e-a2d8-029c9161431b': int(_MAX_TOKENS/1024),
-        'd38a792f-58a3-4aff-b521-f04dc6bd06b3': int(_MAX_TOKENS/1024),
-        'c6aa6922-15ec-44bb-bfaa-3bc85ed4d1a2': int(_MAX_TOKENS/1024),
-        '708b0cf8-fa4d-4ad0-885f-ca3bf4565cda': int(_MAX_TOKENS/1024),
-        '7f747eb7-223c-42fa-9cae-431a0bb1a999': int(_MAX_TOKENS/1024),
-        '44ad28b5-5c3b-4a02-8e8c-7fb4903424cb': int(_MAX_TOKENS/1024),
-        '8d7ff2ab-91dd-4d8a-a07d-93729e8c05aa': int(_MAX_TOKENS/1024),
-        '7ee75b57-bf09-4124-9e3a-ddb2070ccb2c': int(_MAX_TOKENS/1024),
+        'a34b2477-a4b1-4a30-8726-77bbf66ca048': int(_MAX_TOKENS/512),
+        'ec3be998-43a8-483e-a2d8-029c9161431b': int(_MAX_TOKENS/512),
+        'd38a792f-58a3-4aff-b521-f04dc6bd06b3': int(_MAX_TOKENS/512),
+        'c6aa6922-15ec-44bb-bfaa-3bc85ed4d1a2': int(_MAX_TOKENS/512),
+        '708b0cf8-fa4d-4ad0-885f-ca3bf4565cda': int(_MAX_TOKENS/512),
+        '7f747eb7-223c-42fa-9cae-431a0bb1a999': int(_MAX_TOKENS/512),
+        '44ad28b5-5c3b-4a02-8e8c-7fb4903424cb': int(_MAX_TOKENS/512),
+        '8d7ff2ab-91dd-4d8a-a07d-93729e8c05aa': int(_MAX_TOKENS/512),
+        '7ee75b57-bf09-4124-9e3a-ddb2070ccb2c': int(_MAX_TOKENS/512),
     })
 
     WORKSPACE_ID: str = Field('6e939452a68f487f873c457f1953cf55')
@@ -166,8 +166,8 @@ class KnowledgeConfig(ChatConfig):
             reranking is applied to retrieved documents.
     """
     PAGE_NUM: int = Field(1)
-    PAGE_SIZE: int = Field(int(_MAX_TOKENS/1024))
-    TOP_N: int = Field(int(_MAX_TOKENS/1024))
+    PAGE_SIZE: int = Field(int(_MAX_TOKENS/512))
+    TOP_N: int = Field(int(_MAX_TOKENS/512))
     FILTER_STRING: Optional[str] = Field(None)
     SCOPE: Literal['both', 'doc', 'keyword'] = Field('both')
     EXTRA_REPO_IDS: Optional[List[str]] = Field(None)
@@ -249,7 +249,7 @@ class ReviewConfig(KnowledgeConfig):
         TOP_N (int): Number of top-scoring results to retrieve or consider
             specifically for review purposes.
     """
-    TOP_N: int = Field(int(_MAX_TOKENS/8192))
+    TOP_N: int = Field(int(_MAX_TOKENS/4096))
 
 
 class GeneNetworkConfig(AnalystConfig):
