@@ -126,10 +126,24 @@ async def retrieve(user_query: str,
             tasks = [make_retrieve_request(client, scope)
                      for scope in ['doc', 'keyword']]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            doc_list = [doc for each_result in results for doc in each_result]
+            doc_list = []
+            for each_result in results:
+                if isinstance(each_result, Exception):
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Retrieval failed: {str(each_result)}',
+                    )) from each_result
+                if each_result is not None and isinstance(each_result, list):
+                    doc_list.extend(each_result)
         else:
             raise ValueError("Invalid scope value. Must be 'doc', 'keyword',"
                              " or 'both'.")
+
+    if doc_list is None:
+        doc_list = []
+    elif not isinstance(doc_list, list):
+        doc_list = list(doc_list)
+
     return {'doc_list': await rerank(
                 user_query=user_query,
                 doc_list=doc_list,
@@ -232,7 +246,8 @@ async def multi_retrieve(
                 'doc_list': sorted_docs,
                 'total': 10000,
             }
-        except Exception as e:
+        except (ValueError, TypeError, HTTPStatusError, ConnectError,
+                TimeoutException) as e:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
                 message=f'Multi-retrieve operation failed: {str(e)}',
@@ -266,7 +281,7 @@ async def multi_retrieve_generate(
     max_tokens: int = kc.MAX_TOKENS,
     n: int = kc.N,
     presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: str = kc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
     stream: bool = kc.STREAM,
     temperature: float = kc.TEMPERATURE,
@@ -350,6 +365,7 @@ async def multi_retrieve_generate(
     if not repo_id_dict:
         repo_id_dict = kc.REPO_ID_DICT
     total_length = 0
+    upload_context = ''
     if obs_file_list:
         upload_str_list = await download_list_convert(
             obs_file_list=obs_file_list,
@@ -432,7 +448,20 @@ async def multi_retrieve_generate(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    phyto_response['choices'][0]['message'].update(retrieve_response)
+    if (phyto_response and 'choices' in phyto_response and
+            len(phyto_response['choices']) > 0):
+        if ('message' in phyto_response['choices'][0] and
+                phyto_response['choices'][0]['message'] is not None):
+            phyto_response['choices'][0]['message'].update(retrieve_response)
+        else:
+            phyto_response['choices'][0]['message'] = retrieve_response
+    else:
+        if phyto_response is None:
+            phyto_response = {'choices': [{'message': retrieve_response}]}
+        elif 'choices' not in phyto_response:
+            phyto_response['choices'] = [{'message': retrieve_response}]
+        elif len(phyto_response['choices']) == 0:
+            phyto_response['choices'].append({'message': retrieve_response})
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
             prompt_file, 'system/follow_up_questions',
@@ -459,12 +488,30 @@ async def multi_retrieve_generate(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    follow_up_content = follow_up_response['choices'][0]['message']['content']
-    start_index = follow_up_content.find('[')
-    end_index = follow_up_content.rfind(']') + 1
-    json_part = follow_up_content[start_index:end_index]
-    follow_up_list = loads(json_part)
-    phyto_response['choices'][0]['message'].update(follow_up_list)
+    follow_up_content = ''
+    if (follow_up_response and 'choices' in follow_up_response and
+            len(follow_up_response['choices']) > 0 and
+            'message' in follow_up_response['choices'][0] and
+            follow_up_response['choices'][0]['message'] is not None and
+            'content' in follow_up_response['choices'][0]['message']):
+        follow_up_content = (
+            follow_up_response['choices'][0]['message']['content'])
+    follow_up_list = []
+    if follow_up_content:
+        start_index = follow_up_content.find('[')
+        end_index = follow_up_content.rfind(']') + 1
+        if start_index != -1 and end_index > start_index:
+            try:
+                json_part = follow_up_content[start_index:end_index]
+                follow_up_list = loads(json_part)
+            except (ValueError, TypeError):
+                follow_up_list = []
+    if (phyto_response and 'choices' in phyto_response and
+            len(phyto_response['choices']) > 0 and
+            'message' in phyto_response['choices'][0] and
+            phyto_response['choices'][0]['message'] is not None):
+        phyto_response['choices'][0]['message'].update(
+            {'follow_up_questions': follow_up_list})
     return phyto_response
 
 
@@ -489,7 +536,7 @@ async def retrieve_generate(
     max_tokens: int = kc.MAX_TOKENS,
     n: int = kc.N,
     presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: str = kc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
     stream: bool = kc.STREAM,
     temperature: float = kc.TEMPERATURE,
@@ -598,7 +645,20 @@ async def retrieve_generate(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    phyto_response['choices'][0]['message'].update(retrieve_response)
+    if (phyto_response and 'choices' in phyto_response and
+            len(phyto_response['choices']) > 0):
+        if ('message' in phyto_response['choices'][0] and
+                phyto_response['choices'][0]['message'] is not None):
+            phyto_response['choices'][0]['message'].update(retrieve_response)
+        else:
+            phyto_response['choices'][0]['message'] = retrieve_response
+    else:
+        if phyto_response is None:
+            phyto_response = {'choices': [{'message': retrieve_response}]}
+        elif 'choices' not in phyto_response:
+            phyto_response['choices'] = [{'message': retrieve_response}]
+        elif len(phyto_response['choices']) == 0:
+            phyto_response['choices'].append({'message': retrieve_response})
     return phyto_response
 
 
@@ -695,11 +755,27 @@ async def rerank(user_query: str,
             results = await asyncio.gather(*tasks, return_exceptions=True)
             all_results = []
             for result in results:
-                all_results.extend(result)
+                if isinstance(result, Exception):
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Reranking failed: {str(result)}',
+                    )) from result
+                if result is not None:
+                    try:
+                        if hasattr(result, '__iter__'):
+                            all_results.extend(result)
+                    except TypeError:
+                        continue
             rank_docs = sorted(
                 all_results, key=lambda x: x['score'], reverse=True)[:top_n]
         else:
             rank_docs = await make_rerank_request(client, docs)
+
+    if rank_docs is None:
+        rank_docs = []
+    elif not isinstance(rank_docs, list):
+        rank_docs = list(rank_docs)
+
     return [
         {**id_doc_dict[doc['id']].copy(), 'score': doc['score']}
         for doc in rank_docs
@@ -740,17 +816,27 @@ def response_to_string(phyto_response: dict) -> str:
         >>> print(result)
         Photosynthesis is...
 
-        **Reference:**
+        ## Reference:
         [1] Plant Biology
         [2] Botany Research
     """
-    content = phyto_response['choices'][0]['message']['content']
-    doc_list = phyto_response['choices'][0]['message']['doc_list']
+    content = ''
+    doc_list = []
+
+    if (phyto_response and 'choices' in phyto_response and
+            len(phyto_response['choices']) > 0):
+        choice = phyto_response['choices'][0]
+        if 'message' in choice and choice['message'] is not None:
+            message = choice['message']
+            content = message.get('content', '')
+            doc_list = message.get('doc_list', [])
+
     doc_string = ''
     for doc_id, doc in enumerate(doc_list):
-        title = doc['title']
-        if title[-3:] in ('pdf', 'PDF'):
-            doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n'
-        else:
-            doc_string += f'[{doc_id+1}] ' + title + '\n'
-    return content + '\n\n**Reference:**\n' + doc_string
+        title = doc.get('title', '') if doc is not None else ''
+        if title:
+            if title[-3:] in ('pdf', 'PDF'):
+                doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n\n'
+            else:
+                doc_string += f'[{doc_id+1}] ' + title + '\n\n'
+    return content + '\n\n## Reference:\n\n' + doc_string

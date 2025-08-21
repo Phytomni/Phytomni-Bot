@@ -124,7 +124,7 @@ async def submit(
         OSError: If uploading the data information to OBS fails.
     """
     if not user_id:
-        user_id = uuid1()
+        user_id = str(uuid1())
     if is_create_dir:
         output_dir = create_output_dir(
             user_id=user_id,
@@ -495,7 +495,7 @@ async def plan_submit(
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: str = ac.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
     stream: bool = ac.STREAM,
     temperature: float = ac.TEMPERATURE,
@@ -648,7 +648,7 @@ async def retrieve_plan_submit(
     max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: str = ac.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
     stream: bool = ac.STREAM,
     temperature: float = ac.TEMPERATURE,
@@ -1065,7 +1065,7 @@ async def plan_submit_wait(
     frequency_penalty: float = ac.FREQUENCY_PENALTY,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: str = ac.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
     stream: bool = ac.STREAM,
     temperature: float = ac.TEMPERATURE,
@@ -1222,7 +1222,7 @@ async def retrieve_plan_submit_wait(
     max_tokens: int = ac.MAX_TOKENS,
     n: int = ac.N,
     presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: str = ac.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
     stream: bool = ac.STREAM,
     temperature: float = ac.TEMPERATURE,

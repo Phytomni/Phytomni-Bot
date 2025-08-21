@@ -21,7 +21,7 @@ Key functionalities include:
 """
 import asyncio
 from collections import deque
-from json import dumps, loads, dump
+from json import dumps, loads
 from pathlib import Path
 from random import randint
 from threading import Thread
@@ -30,7 +30,8 @@ from uuid import uuid1
 
 from mcp.shared.exceptions import McpError
 
-from .analyst_agents import create_output_dir, upload_analyst_agents_data, download_obs_out, get_data_list
+from .analyst_agents import create_output_dir, download_obs_out
+from .analyst_agents import upload_analyst_agents_data, get_data_list
 from .analyst_agents import submit, wait_for_completion
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
@@ -703,7 +704,7 @@ async def gene_function(
     max_tokens: int = dgc.MAX_TOKENS,
     n: int = dgc.N,
     presence_penalty: float = dgc.PRESENCE_PENALTY,
-    reasoning_effort: str = dgc.REASONING_EFFORT,
+    reasoning_effort: Optional[str] = dgc.REASONING_EFFORT,
     response_format: Dict[str, Union[str, Dict]] = dgc.RESPONSE_FORMAT,
     stream: bool = dgc.STREAM,
     temperature: float = dgc.TEMPERATURE,
@@ -835,7 +836,7 @@ async def gene_function(
         nonlocal output_dir, user_id
 
         if use_analyst_agent:
-            user_id = uuid1()
+            user_id = str(uuid1())
             output_dir = create_output_dir(
                 user_id=user_id,
                 task=gene_id,
@@ -1064,8 +1065,7 @@ async def gene_function(
             )
             prepend_to_file(
                 server_file_path,
-                f'# In-depth Gene Characterization of {gene_id}\n'
-                f'{phyto_str}\n')
+                f'## Gene Profiles\n\n{phyto_str}\n')
             with open(server_file_path, 'r', encoding='utf-8') as f:
                 phyto_response['choices'][0]['message']['content'] = f.read()
 
@@ -1086,8 +1086,7 @@ async def gene_function(
             deepgenome_path.mkdir(parents=True, exist_ok=True)
             server_file_path = str(deepgenome_path / f'{gene_id}_results.md')
             with open(server_file_path, 'w', encoding='utf-8') as f:
-                f.write(f'# In-depth Gene Characterization of {gene_id}\n'
-                        + phyto_str)
+                f.write('## Gene Profiles\n\n' + phyto_str)
 
             await update_task(
                 url=update_task_url,
@@ -1248,7 +1247,7 @@ async def evolution_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='evolution_task',
@@ -1351,7 +1350,7 @@ async def protein_structure_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='protein_structure_task',
@@ -1453,7 +1452,7 @@ async def promoter_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='promoter_task',
@@ -1558,7 +1557,7 @@ async def gene_expression_tissues(
                               species)['tissues']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='tissues_task',
@@ -1663,7 +1662,7 @@ async def gene_expression_cultivars(
                               species)['cultivars']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='cultivars_task',
@@ -1768,7 +1767,7 @@ async def gene_expression_genotypes(
                               species)['genotypes']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='genotypes_task',
@@ -1873,7 +1872,7 @@ async def gene_expression_treatments(
                               species)['treatments']
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='treatments_task',
@@ -1975,7 +1974,7 @@ async def single_cell_analysis(
     data_list = get_data_list(deepgenome_data, 'single_cell_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='single_cell_task',
@@ -2080,7 +2079,7 @@ async def smep_analysis(
                               species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='smep_task',
@@ -2182,7 +2181,7 @@ async def smoc_analysis(
     data_list = get_data_list(deepgenome_data, 'promoter_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='smoc_task',
@@ -2285,7 +2284,7 @@ async def haplotypes_analysis(
     data_list = loads(dumps(data_list).replace('gene_id', gene_id))
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='haplotypes_task',
@@ -2386,7 +2385,7 @@ async def enrichment_analysis(
     data_list = get_data_list(deepgenome_data, 'enrichment_analysis', species)
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='enrichment_task',
@@ -2536,7 +2535,7 @@ async def gene_expression_analysis(
                 'treatments_task': None}
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='gene_expression_task',
@@ -2707,7 +2706,7 @@ async def epic_analysis(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='epic_task',
@@ -2842,7 +2841,7 @@ async def submit_gene_analysis(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='analysis_task',
@@ -2851,79 +2850,79 @@ async def submit_gene_analysis(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    evo_task = await evolution_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    promoter_task = await promoter_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    epic_task = await epic_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        epic_type=epic_type,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
+    # evo_task = await evolution_analysis(
+    #     species=species,
+    #     gene_id=gene_id,
+    #     user_id=user_id,
+    #     batch=batch,
+    #     prompt_file=prompt_file,
+    #     deepgenome_data=deepgenome_data,
+    #     output_dir=output_dir,
+    #     model_url=model_url,
+    #     model_name=model_name,
+    #     coder_api_key=coder_api_key,
+    #     access_key_id=access_key_id,
+    #     secret_access_key=secret_access_key,
+    #     obs_server=obs_server,
+    #     bucket_name=bucket_name,
+    #     analysis_url=analysis_url,
+    #     region=region,
+    #     resource_dict=resource_dict,
+    #     app_id_dict=app_id_dict,
+    #     timeout=timeout,
+    #     retriable_codes=retriable_codes,
+    #     max_retries=max_retries,
+    #     max_poll=max_poll,
+    # )
+    # promoter_task = await promoter_analysis(
+    #     species=species,
+    #     gene_id=gene_id,
+    #     user_id=user_id,
+    #     batch=batch,
+    #     prompt_file=prompt_file,
+    #     deepgenome_data=deepgenome_data,
+    #     output_dir=output_dir,
+    #     model_url=model_url,
+    #     model_name=model_name,
+    #     coder_api_key=coder_api_key,
+    #     access_key_id=access_key_id,
+    #     secret_access_key=secret_access_key,
+    #     obs_server=obs_server,
+    #     bucket_name=bucket_name,
+    #     analysis_url=analysis_url,
+    #     region=region,
+    #     resource_dict=resource_dict,
+    #     app_id_dict=app_id_dict,
+    #     timeout=timeout,
+    #     retriable_codes=retriable_codes,
+    #     max_retries=max_retries,
+    #     max_poll=max_poll,
+    # )
+    # epic_task = await epic_analysis(
+    #     species=species,
+    #     gene_id=gene_id,
+    #     user_id=user_id,
+    #     batch=batch,
+    #     epic_type=epic_type,
+    #     prompt_file=prompt_file,
+    #     deepgenome_data=deepgenome_data,
+    #     output_dir=output_dir,
+    #     model_url=model_url,
+    #     model_name=model_name,
+    #     coder_api_key=coder_api_key,
+    #     access_key_id=access_key_id,
+    #     secret_access_key=secret_access_key,
+    #     obs_server=obs_server,
+    #     bucket_name=bucket_name,
+    #     analysis_url=analysis_url,
+    #     region=region,
+    #     resource_dict=resource_dict,
+    #     app_id_dict=app_id_dict,
+    #     timeout=timeout,
+    #     retriable_codes=retriable_codes,
+    #     max_retries=max_retries,
+    #     max_poll=max_poll,
+    # )
     gene_exp_task = await gene_expression_analysis(
         species=species,
         gene_id=gene_id,
@@ -2953,56 +2952,57 @@ async def submit_gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    single_cell_exp_task = await single_cell_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    structure_task = await protein_structure_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    return {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-            **single_cell_exp_task, **structure_task}
+    # single_cell_exp_task = await single_cell_analysis(
+    #     species=species,
+    #     gene_id=gene_id,
+    #     user_id=user_id,
+    #     batch=batch,
+    #     prompt_file=prompt_file,
+    #     deepgenome_data=deepgenome_data,
+    #     output_dir=output_dir,
+    #     model_url=model_url,
+    #     model_name=model_name,
+    #     coder_api_key=coder_api_key,
+    #     access_key_id=access_key_id,
+    #     secret_access_key=secret_access_key,
+    #     obs_server=obs_server,
+    #     bucket_name=bucket_name,
+    #     analysis_url=analysis_url,
+    #     region=region,
+    #     resource_dict=resource_dict,
+    #     app_id_dict=app_id_dict,
+    #     timeout=timeout,
+    #     retriable_codes=retriable_codes,
+    #     max_retries=max_retries,
+    #     max_poll=max_poll,
+    # )
+    # structure_task = await protein_structure_analysis(
+    #     species=species,
+    #     gene_id=gene_id,
+    #     user_id=user_id,
+    #     batch=batch,
+    #     prompt_file=prompt_file,
+    #     deepgenome_data=deepgenome_data,
+    #     output_dir=output_dir,
+    #     model_url=model_url,
+    #     model_name=model_name,
+    #     coder_api_key=coder_api_key,
+    #     access_key_id=access_key_id,
+    #     secret_access_key=secret_access_key,
+    #     obs_server=obs_server,
+    #     bucket_name=bucket_name,
+    #     analysis_url=analysis_url,
+    #     region=region,
+    #     resource_dict=resource_dict,
+    #     app_id_dict=app_id_dict,
+    #     timeout=timeout,
+    #     retriable_codes=retriable_codes,
+    #     max_retries=max_retries,
+    #     max_poll=max_poll,
+    # )
+    # return {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
+    #         **single_cell_exp_task, **structure_task}
+    return {**gene_exp_task}
 
 
 async def summarize_gene_analysis(
@@ -3058,7 +3058,8 @@ async def summarize_gene_analysis(
         'evolution_task': ['.md', '.png', '.summary', '.legend', '.result'],
         'protein_structure_task':
             ['sample_0.cif', 'sample_0.json', '.summary'],
-        'promoter_task': ['motif_all_logo.png', '.summary', '.legend', '.result'],
+        'promoter_task':
+            ['motif_all_logo.png', '.summary', '.legend', '.result'],
         'single_cell_task': ['.png', '.summary', '.legend', '.result'],
         'tissues_task': ['.png', '.summary', '.legend', '.result'],
         'cultivars_task': ['.png', '.summary', '.legend', '.result'],
@@ -3090,7 +3091,7 @@ async def summarize_gene_analysis(
             marker=marker,
             max_keys=max_keys,
             if_download_all=False,
-        ), maxlen=0)
+            ), maxlen=0)
         return f'{task_name} results download succeed.'
 
     _ = await asyncio.gather(*[
@@ -3329,7 +3330,7 @@ async def summarize_gene_analysis(
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
         with open(out_path / f'{gene_id}_motif.summary',
-                    'r', encoding='utf-8') as summary_file:
+                  'r', encoding='utf-8') as summary_file:
             summary = summary_file.read()
             gene_results_data['motif_interpretation'] = summary
         target_file = next(out_path.rglob('motif_all_logo.legend')).name
@@ -3367,7 +3368,7 @@ async def summarize_gene_analysis(
         'treatment_path': '![Treatment Expression]()',
         'umap_path': '![UMAP Plot]()',
         'violin_path': '![Violin Plot]()',
-        'smep_path': '![Epic Image]()', 
+        'smep_path': '![Epic Image]()',
         'motif_path': '![Motif Image]()'
     }
     for obj_key, replace_content in obj_replace_dict.items():
