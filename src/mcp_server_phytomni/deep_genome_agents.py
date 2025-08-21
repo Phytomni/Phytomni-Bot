@@ -43,71 +43,71 @@ from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
 
 SPECIES_CODE_MAP = {
-    'osa': 'rice (Oryza sativa)',
-    'hvu': 'barley (Hordeum vulgare)',
-    'ttu': 'durum (Triticum turgidum)',
-    'cqu': 'quinoa (Chenopodium quinoa)',
-    'obr': 'wild (Oryza brachyantha)',
-    'dex': 'white (Digitaria exilis)',
-    'han': 'sunflower (Helianthus annuus)',
-    'dca': 'carrot (Daucus carota)',
-    'pvu': 'common (Phaseolus vulgaris)',
-    'ccan': 'coffee (Coffea canephora)',
-    'aof': 'garden (Asparagus officinalis)',
-    'bol': 'Brassica oleracea',
-    'rch': 'rose (Rosa chinensis)',
-    'lpe': 'Lolium perenne',
-    'atr': 'Amborella trichopoda',
-    'esa': 'saltwater (Eutrema salsugineum)',
-    'zma': 'maize (Zea mays)',
-    'bna': 'oilseed (Brassica napus)',
-    'bra': 'Brassica rapa',
-    'ghi': 'upland (Gossypium hirsutum)',
-    'gra': 'cotton (Gossypium raimondii)',
-    'mtr': 'barrel (Medicago truncatula)',
-    'stu': 'potato (Solanum tuberosum)',
-    'sbi': 'sorghum (Sorghum bicolor)',
-    'sit': 'foxtail (Setaria italica)',
-    'sce': 'rye (Secale cereale)',
-    'tdi': 'emmer (Triticum dicoccoides)',
-    'sly': 'tomato (Solanum lycopersicum)',
-    'cme': 'muskmelon (Cucumis melo)',
-    'psa': 'garden (Pisum sativum)',
-    'oeu': 'common (Olea europaea)',
     'ach': 'kiwi (Actinidia chinensis)',
-    'cla': 'watermelon (Citrullus lanatus)',
-    'vvi': 'grape (Vitis vinifera)',
-    'tca': 'cacao (Theobroma cacao)',
-    'smo': 'Selaginella moellendorffii',
-    'qlo': 'Quercus lobata',
-    'bdi': 'Brachypodium distachyon',
-    'cav': 'Corylus avellana',
-    'egr': 'Eucalyptus grandis',
-    'mpo': 'liverwort (Marchantia polymorpha)',
-    'ssp': 'sugarcane (Saccharum spontaneum)',
-    'pso': 'opium (Papaver somniferum)',
-    'cre': 'Chlamydomonas reinhardtii',
-    'gma': 'soybean (Glycine max)',
-    'mes': 'cassava (Manihot esculenta)',
-    'can': 'pepper (Capsicum annuum)',
-    'csa': 'cucumber (Cucumis sativus)',
-    'lsa': 'lettuce (Lactuca sativa)',
     'aco': 'pineapple (Ananas comosus)',
-    'mac': 'banana (Musa acuminata)',
-    'ppe': 'peach (Prunus persica)',
-    'ptr': 'black (Populus trichocarpa)',
-    'ath': 'thale (Arabidopsis thaliana)',
-    'ata': 'rough-spike (Aegilops tauschii)',
-    'bvu': 'suger (Beta vulgaris)',
-    'ccl': 'citrus (Citrus clementina)',
-    'svi': 'green (Setaria viridis)',
-    'ecu': 'weeping (Eragrostis curvula)',
-    'pha': "Hall's (Panicum hallii)",
     'aly': 'Arabidopsis lyrata',
-    'tpr': 'red (Trifolium pratense)',
-    'ppa': 'Physcomitrium patens',
+    'aof': 'garden (Asparagus officinalis)',
+    'ata': 'rough-spike (Aegilops tauschii)',
+    'ath': 'thale (Arabidopsis thaliana)',
+    'atr': 'Amborella trichopoda',
+    'bdi': 'Brachypodium distachyon',
+    'bna': 'oilseed (Brassica napus)',
+    'bol': 'Brassica oleracea',
+    'bra': 'Brassica rapa',
+    'bvu': 'suger (Beta vulgaris)',
+    'can': 'pepper (Capsicum annuum)',
+    'cav': 'Corylus avellana',
     'cbr': 'Chara braunii',
+    'ccan': 'coffee (Coffea canephora)',
+    'ccl': 'citrus (Citrus clementina)',
+    'cla': 'watermelon (Citrullus lanatus)',
+    'cme': 'muskmelon (Cucumis melo)',
+    'cqu': 'quinoa (Chenopodium quinoa)',
+    'cre': 'Chlamydomonas reinhardtii',
+    'csa': 'cucumber (Cucumis sativus)',
+    'dca': 'carrot (Daucus carota)',
+    'dex': 'white (Digitaria exilis)',
+    'ecu': 'weeping (Eragrostis curvula)',
+    'egr': 'Eucalyptus grandis',
+    'esa': 'saltwater (Eutrema salsugineum)',
+    'ghi': 'upland (Gossypium hirsutum)',
+    'gma': 'soybean (Glycine max)',
+    'gra': 'cotton (Gossypium raimondii)',
+    'han': 'sunflower (Helianthus annuus)',
+    'hvu': 'barley (Hordeum vulgare)',
+    'lpe': 'Lolium perenne',
+    'lsa': 'lettuce (Lactuca sativa)',
+    'mac': 'banana (Musa acuminata)',
+    'mes': 'cassava (Manihot esculenta)',
+    'mpo': 'liverwort (Marchantia polymorpha)',
+    'mtr': 'barrel (Medicago truncatula)',
+    'obr': 'wild (Oryza brachyantha)',
+    'oeu': 'common (Olea europaea)',
+    'osa': 'rice (Oryza sativa)',
+    'pha': "Hall's (Panicum hallii)",
+    'ppa': 'Physcomitrium patens',
+    'ppe': 'peach (Prunus persica)',
+    'psa': 'garden (Pisum sativum)',
+    'pso': 'opium (Papaver somniferum)',
+    'ptr': 'black (Populus trichocarpa)',
+    'pvu': 'common (Phaseolus vulgaris)',
+    'qlo': 'Quercus lobata',
+    'rch': 'rose (Rosa chinensis)',
+    'sbi': 'sorghum (Sorghum bicolor)',
+    'sce': 'rye (Secale cereale)',
+    'sit': 'foxtail (Setaria italica)',
+    'sly': 'tomato (Solanum lycopersicum)',
+    'smo': 'Selaginella moellendorffii',
+    'ssp': 'sugarcane (Saccharum spontaneum)',
+    'stu': 'potato (Solanum tuberosum)',
+    'svi': 'green (Setaria viridis)',
     'tae': 'wheat (Triticum aestivum)',
+    'tca': 'cacao (Theobroma cacao)',
+    'tdi': 'emmer (Triticum dicoccoides)',
+    'tpr': 'red (Trifolium pratense)',
+    'ttu': 'durum (Triticum turgidum)',
+    'vvi': 'grape (Vitis vinifera)',
+    'zma': 'maize (Zea mays)',
 }
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
@@ -970,7 +970,9 @@ async def gene_function(
         total_length = 0
         for i, doc in enumerate(gene_retrieve_results.get('doc_list', [])):
             header = f"[document {i+1} begin] {doc['title']}"
-            body = (f"{doc['subtitle']}\n{doc['content']}"
+            content_field = (doc.get('big_content') if 'big_content' in doc
+                             else doc.get('content', ''))
+            body = (f"{doc['subtitle']}\n{content_field}"
                     if doc.get('subtitle') else doc.get('content', ''))
             fragment = f'{header}\n{body} [document {i+1} end]'
             if total_length + len(fragment) <= max_tokens:
@@ -1064,12 +1066,13 @@ async def gene_function(
                 max_retries=max_retries,
                 max_poll=max_poll,
             )
-            prepend_to_file(
-                server_file_path,
-                f'## Gene Profiles\n\n{part1_str}\n')
             with open(server_file_path, 'r', encoding='utf-8') as open_md:
-                part12_str = open_md.read()
+                part2_str = open_md.read()
+            part12_str = f'## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n'
             phyto_response['choices'][0]['message']['content'] = part12_str
+            phyto_str = response_to_string(phyto_response)
+            with open(server_file_path, 'w', encoding='utf-8') as open_md:
+                open_md.write(phyto_str)
 
             experiment_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1282,7 +1285,7 @@ async def gene_function(
             )
             part012345_str = (
                 part01234_str + '\n\n## Conclusion and Future Outlook\n\n' +
-                summary_response['choices'][0]['message']['content']+'\n\n')
+                summary_response['choices'][0]['message']['content'] + '\n\n')
             phyto_response['choices'][0]['message']['content'] = part012345_str
             phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
@@ -3718,48 +3721,4 @@ def find_species_code(species: str):
     for species_code, description in SPECIES_CODE_MAP.items():
         if species.lower() in description.lower():
             return species_code
-    return None
-
-
-def prepend_to_file(filename, text):
-    """Prepend text to the beginning of a file.
-
-    This function reads the existing content of a file, then writes the
-    provided text followed by the original content back to the file. If the
-    file doesn't exist, it creates a new file with only the prepended text.
-
-    Args:
-        filename: The path to the file to prepend to. Can be a relative or
-            absolute path.
-        text: The text content to prepend to the beginning of the file.
-            Should include any necessary newlines.
-
-    Returns:
-        None: This function doesn't return a value.
-
-    Raises:
-        OSError: If there are permissions issues or other I/O errors during
-            file operations.
-        UnicodeDecodeError: If the existing file contains invalid UTF-8
-            encoding.
-
-    Examples:
-        Adding a header to an existing file:
-            >>> prepend_to_file('report.md', '# Analysis Report\\n\\n')
-
-        Creating a new file with initial content:
-            >>> prepend_to_file('new_file.txt', 'Initial content\\n')
-
-    Note:
-        This function reads the entire file content into memory, which may not
-        be suitable for very large files. The function uses UTF-8 encoding
-        for both reading and writing operations.
-    """
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            original_content = f.read()
-    except FileNotFoundError:
-        original_content = ''
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(text + original_content)
     return None

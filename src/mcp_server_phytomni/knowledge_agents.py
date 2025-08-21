@@ -410,7 +410,9 @@ async def multi_retrieve_generate(
     retrieve_results = []
     for i, doc in enumerate(retrieve_response.get('doc_list', [])):
         header = f"[document {i+1} begin] {doc['title']}"
-        body = (f"{doc['subtitle']}\n{doc['content']}"
+        content_field = (doc.get('big_content') if 'big_content' in doc
+                         else doc.get('content', ''))
+        body = (f"{doc['subtitle']}\n{content_field}"
                 if doc.get('subtitle') else doc.get('content', ''))
         fragment = f'{header}\n{body} [document {i+1} end]'
         if total_length + len(fragment) <= max_tokens:
@@ -613,7 +615,9 @@ async def retrieve_generate(
     total_length = 0
     for i, doc in enumerate(retrieve_response.get('doc_list', [])):
         header = f"[document {i+1} begin] {doc['title']}"
-        body = (f"{doc['subtitle']}\\n{doc['content']}"
+        content_field = (doc.get('big_content') if 'big_content' in doc
+                         else doc.get('content', ''))
+        body = (f"{doc['subtitle']}\\n{content_field}"
                 if doc.get('subtitle') else doc.get('content', ''))
         fragment = f'{header}\\n{body} [document {i+1} end]'
         if total_length + len(fragment) <= max_tokens:
@@ -740,12 +744,20 @@ async def rerank(user_query: str,
     docs, id_doc_dict = [], {}
     for doc in doc_list:
         if doc['chunk_id'] not in id_doc_dict:
-            docs.append({
-                'id': doc['chunk_id'],
-                'title': doc['title'],
-                'content': doc['content'],
-            })
-            id_doc_dict.update({doc['chunk_id']: doc})
+            if 'big_content' in doc:
+                docs.append({
+                    'id': doc['chunk_id'],
+                    'title': doc['title'],
+                    'content': doc['big_content'],
+                })
+                id_doc_dict.update({doc['chunk_id']: doc})
+            elif 'content' in doc:
+                docs.append({
+                    'id': doc['chunk_id'],
+                    'title': doc['title'],
+                    'content': doc['content'],
+                })
+                id_doc_dict.update({doc['chunk_id']: doc})
 
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:

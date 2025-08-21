@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-_MAX_TOKENS = 16384
+_MAX_TOKENS = 131072
 PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 DEEPGENOME_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
@@ -249,7 +249,7 @@ class ReviewConfig(KnowledgeConfig):
         TOP_N (int): Number of top-scoring results to retrieve or consider
             specifically for review purposes.
     """
-    TOP_N: int = Field(int(_MAX_TOKENS/4096))
+    TOP_N: int = Field(int(_MAX_TOKENS/2048))
 
 
 class GeneNetworkConfig(AnalystConfig):
