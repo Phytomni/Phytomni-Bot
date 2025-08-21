@@ -175,7 +175,7 @@ async def network_analysis(
     """
     if not batch:
         if not user_id:
-            user_id = uuid1()
+            user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
             task='network_task',
