@@ -1113,7 +1113,7 @@ async def gene_function(
                     retrieve_url=retrieve_url,
                     repo_id='44ad28b5-5c3b-4a02-8e8c-7fb4903424cb',
                     page_num=page_num,
-                    page_size=top_n,
+                    page_size=128,
                     filter_string=filter_string,
                     scope='both',
                     extra_repo_ids=extra_repo_ids,
