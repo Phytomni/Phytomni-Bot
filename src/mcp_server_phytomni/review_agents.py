@@ -300,7 +300,9 @@ async def deep_research(
         for doc in dimension_result.get('doc_list', []):
             all_doc_list.append(doc)
             header = f"[document {file_id+1} begin] {doc['title']}"
-            body = (f"{doc['subtitle']}\n{doc['content']}"
+            content_field = (doc.get('big_content') if 'big_content' in doc
+                             else doc.get('content', ''))
+            body = (f"{doc['subtitle']}\n{content_field}"
                     if doc.get('subtitle') else doc.get('content', ''))
             fragment = f'{header}\n{body} [document {file_id+1} end]'
             if total_length + len(fragment) <= (

@@ -249,7 +249,9 @@ async def rewrite_nl2sql(
     total_length = 0
     for i, doc in enumerate(retrieve_response.get('doc_list', [])):
         header = f"[scenario {i+1} begin] {doc['title']}"
-        body = (f"{doc['subtitle']}\n{doc['content']}"
+        content_field = (doc.get('big_content') if 'big_content' in doc
+                         else doc.get('content', ''))
+        body = (f"{doc['subtitle']}\n{content_field}"
                 if doc.get('subtitle') else doc.get('content', ''))
         fragment = f'{header}\n{body} [scenario {i+1} end]'
         if total_length + len(fragment) <= max_tokens:
