@@ -37,8 +37,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .data_agents import nl2sql
-from .knowledge_agents import multi_retrieve, response_to_string
-from .knowledge_agents import retrieve_generate
+from .knowledge_agents import multi_retrieve, retrieve_generate
 from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt
 
@@ -1070,9 +1069,8 @@ async def gene_function(
                 part2_str = open_md.read()
             part12_str = f'## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n'
             phyto_response['choices'][0]['message']['content'] = part12_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part12_str)
 
             experiment_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1182,11 +1180,10 @@ async def gene_function(
             part123_str = (
                 f'{part12_str}\n\n## Recommended experiments\n\n' +
                 protocol_response['choices'][0]['message']['content'] +
-                f'\n\n[Protocol Details](./{experiments_name}.md)\n\n')
+                f'\n\n[Protocol Details](./{experiments_name})\n\n')
             phyto_response['choices'][0]['message']['content'] = part123_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part123_str)
 
             introduction_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1219,9 +1216,8 @@ async def gene_function(
                 introduction_response['choices'][0]['message']['content'] +
                 '\n\n' + part123_str)
             phyto_response['choices'][0]['message']['content'] = part0123_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part0123_str)
 
             discussion_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1253,9 +1249,8 @@ async def gene_function(
                 part0123_str + '\n\n## Disscussion\n\n' +
                 discussion_response['choices'][0]['message']['content'])
             phyto_response['choices'][0]['message']['content'] = part01234_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part01234_str)
 
             summary_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1287,9 +1282,58 @@ async def gene_function(
                 part01234_str + '\n\n## Conclusion and Future Outlook\n\n' +
                 summary_response['choices'][0]['message']['content'] + '\n\n')
             phyto_response['choices'][0]['message']['content'] = part012345_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part012345_str)
+
+            follow_up_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file, 'system/follow_up_questions',
+                    {
+                        'user_query': user_query,
+                        'system_response': part012345_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream,
+                temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            follow_up_content = ''
+            if (follow_up_response and 'choices' in follow_up_response and
+                    len(follow_up_response['choices']) > 0 and
+                    'message' in follow_up_response['choices'][0] and
+                    follow_up_response['choices'][0]['message'] is not None and
+                    'content' in follow_up_response['choices'][0]['message']):
+                follow_up_content = (
+                    follow_up_response['choices'][0]['message']['content'])
+            follow_up_list = []
+            if follow_up_content:
+                start_index = follow_up_content.find('[')
+                end_index = follow_up_content.rfind(']') + 1
+                if start_index != -1 and end_index > start_index:
+                    try:
+                        json_part = follow_up_content[start_index:end_index]
+                        follow_up_list = loads(json_part)
+                    except (ValueError, TypeError):
+                        follow_up_list = []
+            if (phyto_response and 'choices' in phyto_response and
+                    len(phyto_response['choices']) > 0 and
+                    'message' in phyto_response['choices'][0] and
+                    phyto_response['choices'][0]['message'] is not None):
+                phyto_response['choices'][0]['message'].update(
+                    {'follow_up_questions': follow_up_list})
 
             await update_task(
                 url=update_task_url,
@@ -1341,9 +1385,8 @@ async def gene_function(
                 introduction_response['choices'][0]['message']['content'] +
                 '\n\n' + part1_str)
             phyto_response['choices'][0]['message']['content'] = part01_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part01_str)
 
             discussion_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1375,9 +1418,8 @@ async def gene_function(
                 part01_str + '\n\n## Disscussion\n\n' +
                 discussion_response['choices'][0]['message']['content'])
             phyto_response['choices'][0]['message']['content'] = part014_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part014_str)
 
             summary_response = await phyto_chat(
                 user_query=get_prompt(
@@ -1409,9 +1451,58 @@ async def gene_function(
                 part014_str + '\n\n## Conclusion and Future Outlook\n\n' +
                 summary_response['choices'][0]['message']['content']+'\n\n')
             phyto_response['choices'][0]['message']['content'] = part0145_str
-            phyto_str = response_to_string(phyto_response)
             with open(server_file_path, 'w', encoding='utf-8') as open_md:
-                open_md.write(phyto_str)
+                open_md.write(part0145_str)
+
+            follow_up_response = await phyto_chat(
+                user_query=get_prompt(
+                    prompt_file, 'system/follow_up_questions',
+                    {
+                        'user_query': user_query,
+                        'system_response': part0145_str,
+                    }),
+                prompt_file=prompt_file,
+                prompt_path=prompt_path,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                response_format=response_format,
+                stream=stream,
+                temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+            follow_up_content = ''
+            if (follow_up_response and 'choices' in follow_up_response and
+                    len(follow_up_response['choices']) > 0 and
+                    'message' in follow_up_response['choices'][0] and
+                    follow_up_response['choices'][0]['message'] is not None and
+                    'content' in follow_up_response['choices'][0]['message']):
+                follow_up_content = (
+                    follow_up_response['choices'][0]['message']['content'])
+            follow_up_list = []
+            if follow_up_content:
+                start_index = follow_up_content.find('[')
+                end_index = follow_up_content.rfind(']') + 1
+                if start_index != -1 and end_index > start_index:
+                    try:
+                        json_part = follow_up_content[start_index:end_index]
+                        follow_up_list = loads(json_part)
+                    except (ValueError, TypeError):
+                        follow_up_list = []
+            if (phyto_response and 'choices' in phyto_response and
+                    len(phyto_response['choices']) > 0 and
+                    'message' in phyto_response['choices'][0] and
+                    phyto_response['choices'][0]['message'] is not None):
+                phyto_response['choices'][0]['message'].update(
+                    {'follow_up_questions': follow_up_list})
 
             await update_task(
                 url=update_task_url,
