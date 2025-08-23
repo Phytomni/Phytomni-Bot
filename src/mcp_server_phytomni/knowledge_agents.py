@@ -793,3 +793,62 @@ async def rerank(user_query: str,
         for doc in rank_docs
         if doc['score'] >= score_threshold
     ]
+
+
+def response_to_string(phyto_response: dict) -> str:
+    """Convert a RAG response to a formatted string with references.
+
+    This function extracts the generated content and document list from a
+    retrieval-augmented generation response and formats it as a readable
+    string with numbered references.
+
+    Args:
+        phyto_response: A dictionary containing the response from a RAG
+            operation. Expected to have the structure returned by
+            `multi_retrieve_generate`, with 'choices' containing message
+            content and doc_list.
+
+    Returns:
+        A formatted string containing the generated content followed by
+        a numbered reference list of the source documents.
+
+    Examples:
+        >>> response = {
+        ...     'choices': [{
+        ...         'message': {
+        ...             'content': 'Photosynthesis is...',
+        ...             'doc_list': [
+        ...                 {'title': 'Plant Biology.pdf'},
+        ...                 {'title': 'Botany Research'}
+        ...             ]
+        ...         }
+        ...     }]
+        ... }
+        >>> result = response_to_string(response)
+        >>> print(result)
+        Photosynthesis is...
+
+        ## Reference:
+        [1] Plant Biology
+        [2] Botany Research
+    """
+    content = ''
+    doc_list = []
+
+    if (phyto_response and 'choices' in phyto_response and
+            len(phyto_response['choices']) > 0):
+        choice = phyto_response['choices'][0]
+        if 'message' in choice and choice['message'] is not None:
+            message = choice['message']
+            content = message.get('content', '')
+            doc_list = message.get('doc_list', [])
+
+    doc_string = ''
+    for doc_id, doc in enumerate(doc_list):
+        title = doc.get('title', '') if doc is not None else ''
+        if title:
+            if title[-3:] in ('pdf', 'PDF'):
+                doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n\n'
+            else:
+                doc_string += f'[{doc_id+1}] ' + title + '\n\n'
+    return content + '\n\n## Reference:\n\n' + doc_string
