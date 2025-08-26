@@ -264,6 +264,11 @@ async def submit(
                     message=f'Network error: {str(e)}',
                 )) from e
 
+    raise McpError(ErrorData(
+        code=INTERNAL_ERROR,
+        message='Failed to submit task after all retries'
+    ))
+
 
 async def task_delete(task_id: str,
                       analysis_url: str = ac.ANALYSIS_URL,
@@ -335,6 +340,11 @@ async def task_delete(task_id: str,
                     message=f'Network error: {str(e)}',
                 )) from e
 
+    raise McpError(ErrorData(
+        code=INTERNAL_ERROR,
+        message='Failed to delete task after all retries'
+    ))
+
 
 async def task_status(task_id: str,
                       analysis_url: str = ac.ANALYSIS_URL,
@@ -405,6 +415,11 @@ async def task_status(task_id: str,
                     code=INTERNAL_ERROR,
                     message=f'Network error: {str(e)}',
                 )) from e
+
+    raise McpError(ErrorData(
+        code=INTERNAL_ERROR,
+        message='Failed to check task status after all retries'
+    ))
 
 
 async def task_log(task_id: str,
@@ -479,6 +494,11 @@ async def task_log(task_id: str,
                     code=INTERNAL_ERROR,
                     message=f'Network error: {str(e)}',
                 )) from e
+
+    raise McpError(ErrorData(
+        code=INTERNAL_ERROR,
+        message='Failed to check task log after all retries'
+    ))
 
 
 async def plan_submit(
@@ -595,13 +615,26 @@ async def plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    content = None
+    if (phyto_response and
+            phyto_response.get('choices') and
+            len(phyto_response['choices']) > 0 and
+            phyto_response['choices'][0].get('message') and
+            phyto_response['choices'][0]['message'].get('content')):
+        content = phyto_response['choices'][0]['message']['content']
+    if not content:
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR,
+            message='Failed to generate plan: '
+                    'Invalid response from language model',
+        ))
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
         user_id=user_id,
         is_create_dir=is_create_dir,
         output_dir=output_dir,
-        meta=phyto_response['choices'][0]['message']['content'],
+        meta=content,
         execute_code=execute_code,
         model_url=model_url,
         model_name=model_name,
@@ -758,6 +791,7 @@ async def retrieve_plan_submit(
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
     total_length = 0
+    upload_context = ''
     if obs_file_list:
         upload_str_list = await download_list_convert(
             obs_file_list=obs_file_list,
@@ -842,10 +876,20 @@ async def retrieve_plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    meta = (
-        phyto_response['choices'][0]['message']['content'] + meta_meta
-        if meta_meta else phyto_response['choices'][0]['message']['content']
-    )
+    content = None
+    if (phyto_response and
+            phyto_response.get('choices') and
+            len(phyto_response['choices']) > 0 and
+            phyto_response['choices'][0].get('message') and
+            phyto_response['choices'][0]['message'].get('content')):
+        content = phyto_response['choices'][0]['message']['content']
+    if not content:
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR,
+            message='Failed to generate plan: '
+                    'Invalid response from language model'
+        ))
+    meta = content + meta_meta if meta_meta else content
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -1426,11 +1470,15 @@ def upload_analyst_agents_data(
             file_path=object_file,
             metadata={'meta1': 'value1', 'meta2': 'value2'},
             headers=headers)
-        if response.status < 300:
+        status_code = getattr(response, 'status', None)
+        if status_code is not None and status_code < 300:
             return f'{bucket_name}:/{object_key}'
-        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
-                      f'errorCode: {response.errorCode}\n'
-                      f'errorMessage: {response.errorMessage}')
+        raise OSError(
+            "Put File Failed\n"
+            f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
+            f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
+            f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
+        )
     except Exception as exc:
         raise OSError(f'Put File Failed\n{format_exc()}') from exc
 
@@ -1468,15 +1516,23 @@ def delete_analyst_agents_data(
     try:
         object_key = analyst_agents_datapath
         response = obsclient.deleteObject(bucket_name, object_key)
-        if response.status < 300:
-            return (f'Delete Object Succeeded\n'
-                    f'requestId: {response.requestId}\n'
-                    f'deleteMarker: {response.body.deleteMarker}\n'
-                    f'versionId: {response.body.versionId}')
-        raise OSError(f'Delete Object Failed\n'
-                      f'requestId: {response.requestId}\n'
-                      f'errorCode: {response.errorCode}\n'
-                      f'errorMessage: {response.errorMessage}')
+        status_code = getattr(response, 'status', None)
+        if status_code is not None and status_code < 300:
+            delete_marker = getattr(response, 'body', {}).get(
+                'deleteMarker', 'unknown')
+            version_id = getattr(response, 'body', {}).get(
+                'versionId', 'unknown')
+            return (
+                'Delete Object Succeeded\n'
+                f'requestId: {getattr(response, 'requestId', 'unknown')}\n'
+                f'deleteMarker: {delete_marker}\nversionId: {version_id}'
+            )
+        raise OSError(
+            'Delete Object Failed\n'
+            f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
+            f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
+            f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
+        )
     except Exception as exc:
         raise OSError(f'Delete Object Failed\n{format_exc()}') from exc
 
@@ -1586,11 +1642,15 @@ def create_output_dir(
         response = obs_client.putContent(bucketName=bucket_name,
                                          objectKey=output_dir,
                                          content=None)
-        if response.status < 300:
+        status_code = getattr(response, 'status', None)
+        if status_code is not None and status_code < 300:
             return f'/obs/{bucket_name}/{output_dir}'
-        raise OSError(f'Put File Failed\nrequestId: {response.requestId}\n'
-                      f'errorCode: {response.errorCode}\n'
-                      f'errorMessage: {response.errorMessage}')
+        raise OSError(
+            f'Put File Failed\n'
+            f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
+            f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
+            f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
+        )
     except Exception as exc:
         raise OSError(f'Put File Failed\n{format_exc()}') from exc
 
@@ -1686,38 +1746,49 @@ def download_obs_out(
                                                    marker=marker,
                                                    max_keys=max_keys,
                                                    encoding_type='url')
-            if file_response.status < 300:
-                for content in file_response.body.contents:
-                    obj_file = content.key
-                    if obj_file.endswith('/'):
-                        continue
-                    output_file = obj_file.split('/')[-1]
-                    if not if_download_all and not any(
-                        output_file.endswith(suffix)
-                        for suffix in target_file_feature
-                    ):
-                        continue
-                    full_path = str(output_path / output_file)
-                    download_response = obs_client.getObject(
-                        bucketName=bucket_name,
-                        objectKey=obj_file,
-                        downloadPath=full_path,
-                        headers=headers,
-                    )
-                    if download_response.status > 300:
-                        yield f'{output_file} download failed.'
-                        continue
-                    else:
+            file_status = getattr(file_response, 'status', None)
+            if file_status is not None and file_status < 300:
+                file_body = getattr(file_response, 'body', None)
+                if file_body and hasattr(file_body, 'contents'):
+                    for content in file_body.contents:
+                        obj_file = content.key
+                        if obj_file.endswith('/'):
+                            continue
+                        output_file = obj_file.split('/')[-1]
+                        if not if_download_all and not any(
+                            output_file.endswith(suffix)
+                            for suffix in target_file_feature
+                        ):
+                            continue
+                        full_path = str(output_path / output_file)
+                        download_response = obs_client.getObject(
+                            bucketName=bucket_name,
+                            objectKey=obj_file,
+                            downloadPath=full_path,
+                            headers=headers,
+                        )
+                        download_status = getattr(
+                            download_response, 'status', None)
+                        if (download_status is not None and
+                                download_status > 300):
+                            yield f'{output_file} download failed.'
+                            continue
                         yield f'{output_file} download succeed.'
                         continue
-                if file_response.body.is_truncated is True:
-                    marker = file_response.body.next_marker
+                if (file_body and hasattr(file_body, 'is_truncated') and
+                        file_body.is_truncated is True):
+                    marker = getattr(file_body, 'next_marker', None)
                 else:
                     break
             else:
-                raise OSError(f'Get File List Failed\n'
-                              f'requestId: {file_response.requestId}\n'
-                              f'errorCode: {file_response.errorCode}\n'
-                              f'errorMessage: {file_response.errorMessage}')
+                raise OSError(
+                    'Get File List Failed\n'
+                    f'requestId: {getattr(
+                        file_response, 'requestId', 'unknown')}\n'
+                    f'errorCode: {getattr(
+                        file_response, 'errorCode', 'unknown')}\n'
+                    f'errorMessage: {getattr(
+                        file_response, 'errorMessage', 'unknown')}'
+                )
     except Exception as exc:
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
