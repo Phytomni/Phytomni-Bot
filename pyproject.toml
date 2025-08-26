@@ -21,10 +21,14 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "black>=25.1.0",
+    "flake8>=7.3.0",
     "ipykernel>=6.30.0",
+    "mypy>=1.17.1",
     "pylint>=3.3.7",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.0.0",
+    "ruff>=0.12.10",
 ]
 
 [build-system]

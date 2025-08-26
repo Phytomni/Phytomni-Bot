@@ -77,6 +77,19 @@ async def submit(
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
     max_poll: float = ac.MAX_POLL,
+    enable_auto_select: bool = True,
+    prompt_file: str = ac.PROMPT_FILE,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    n: int = ac.N,
+    presence_penalty: float = ac.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+    stream: bool = ac.STREAM,
+    temperature: float = ac.TEMPERATURE,
+    top_p: float = ac.TOP_P,
+    user: str = ac.USER,
 ) -> Dict[str, str]:
     """
     Submits an analysis task to the Bioinformatics Agents platform.
@@ -114,6 +127,22 @@ async def submit(
         retriable_codes: A list of HTTP status codes that trigger a retry.
         max_retries: The maximum number of retry attempts for a failed request.
         max_poll: The maximum total duration in seconds to monitor the task.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
+        prompt_file: The path to the prompt template file for data selection.
+        api_key: The API key for the language model used for data selection.
+        base_url: The base URL of the language model API for data selection.
+        model: The identifier of the language model for data selection.
+        frequency_penalty: The penalty for token repetition for data selection.
+        n: The number of choices to generate for data selection.
+        presence_penalty: The penalty for new tokens for data selection.
+        reasoning_effort: The reasoning effort for the language model.
+        stream: A flag to enable real-time token streaming for data selection.
+        temperature: The randomness control for generation for data selection.
+        top_p: The nucleus sampling threshold for data selection.
+        user: A unique session identifier for the user for data selection.
 
     Returns:
         A dictionary containing the submission response, which includes the
@@ -134,13 +163,41 @@ async def submit(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    meta += '\nnext step, summarize each of the generated result files '
-    meta += '(including images, result files, etc.) into a json file '
-    meta += '(named `result_files.json`) and save it, with the key of the '
-    meta += 'file being the absolute path of the generated result and the '
-    meta += 'value being a detailed description of the file.\nlast step, '
-    meta += 'compress the output folder into a zip file '
-    meta += '(zip -r $output_dir.zip $output_dir).'
+    meta += ('\nnext step, summarize each of the generated result files '
+             '(including images, result files, etc.) into a json file (named '
+             '`result_files.json`) and save it, with the key of the file '
+             'being the absolute path of the generated result and the value '
+             'being a detailed description of the file.\nlast step, compress '
+             'the output folder into a zip file (zip -r $output_dir.zip '
+             '$output_dir).')
+
+    if enable_auto_select:
+        try:
+            data_list = await auto_select(
+                goal_description=goal_description,
+                data_list=data_list,
+                prompt_file=prompt_file,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                frequency_penalty=frequency_penalty,
+                n=n,
+                presence_penalty=presence_penalty,
+                reasoning_effort=reasoning_effort,
+                stream=stream,
+                temperature=temperature,
+                top_p=top_p,
+                user=user,
+                timeout=timeout,
+                retriable_codes=retriable_codes,
+                max_retries=max_retries,
+            )
+        except Exception as exc:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f'Auto-select data failed: {str(exc)}'
+            )) from exc
+
     data = {
         'goal_description': goal_description,
         'data_list': data_list,
@@ -1797,3 +1854,129 @@ def download_obs_out(
                 )
     except Exception as exc:
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
+
+
+async def auto_select(
+    goal_description: str,
+    data_list: Dict[str, str],
+    pre_prepared_data_path: str = ac.PRE_PREPARED_DATA_PATH,
+    prompt_file: str = ac.PROMPT_FILE,
+    prompt_path: str = ac.PROMPT_PATH,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    n: int = ac.N,
+    presence_penalty: float = ac.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+    stream: bool = ac.STREAM,
+    temperature: float = ac.TEMPERATURE,
+    top_p: float = ac.TOP_P,
+    user: str = ac.USER,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> Dict[str, str]:
+    """
+    Automatically selects relevant data from pre-configured database.
+
+    This function uses a language model to intelligently select relevant data
+    files from the species database based on the research goal. It
+    automatically determines the appropriate analysis type and species, then
+    merges the selected  data with user-provided data and returns the combined
+    dataset.
+
+    Args:
+        goal_description: A natural language description of the analysis goals.
+        data_list: A dictionary of user-provided input data sources, where keys
+            are identifiers and values are their descriptions or paths.
+        prompt_file: The path to the prompt template file.
+        api_key: The API key for the language model.
+        base_url: The base URL of the language model API.
+        model: The identifier of the language model.
+        frequency_penalty: The penalty for token repetition.
+        n: The number of choices to generate.
+        presence_penalty: The penalty for new tokens.
+        reasoning_effort: The reasoning effort for the language model.
+        stream: A flag to enable real-time token streaming.
+        temperature: The randomness control for generation.
+        top_p: The nucleus sampling threshold.
+        user: A unique session identifier for the user.
+        timeout: The total request timeout in seconds for API calls.
+        retriable_codes: A list of HTTP status codes that trigger a retry.
+        max_retries: The maximum number of retry attempts for a failed request.
+
+    Returns:
+        A dictionary containing the merged data list with both user-provided
+        and AI-selected data.
+
+    Raises:
+        McpError: If data selection fails.
+        ValueError: If the language model response cannot be parsed.
+        OSError: If file operations fail.
+    """
+    try:
+        with open(pre_prepared_data_path, 'r', encoding='utf-8') as f:
+            species_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR,
+            message='Failed to load species data list'
+        )) from exc
+    user_data_summary = json.dumps(data_list)
+    selection_prompt = get_prompt(
+        prompt_file, 'user/data_selection',
+        {
+            'goal_description': goal_description,
+            'user_data_list': user_data_summary,
+            'available_data_list': json.dumps(species_data)
+        }
+    )
+    try:
+        selection_response = await phyto_chat(
+            user_query=selection_prompt,
+            prompt_file=prompt_file,
+            prompt_path=prompt_path,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            frequency_penalty=frequency_penalty,
+            n=n,
+            presence_penalty=presence_penalty,
+            reasoning_effort=reasoning_effort,
+            response_format={'type': 'json_schema'},
+            stream=stream,
+            temperature=temperature,
+            top_p=top_p,
+            user=user,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+        )
+    except Exception as exc:
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR,
+            message='Failed to get data selection '
+                    f'from language model: {str(exc)}'
+        )) from exc
+
+    selected_data = {}
+    if (selection_response and
+            selection_response.get('choices') and
+            len(selection_response['choices']) > 0 and
+            selection_response['choices'][0].get('message') and
+            selection_response['choices'][0]['message'].get('content')):
+        try:
+            content = selection_response['choices'][0]['message']['content']
+            parsed_response = json.loads(content)
+            if 'selected_data' in parsed_response:
+                selected_data = parsed_response['selected_data']
+            else:
+                selected_data = parsed_response
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f'Failed to parse data selection response: {str(exc)}'
+            )) from exc
+
+    return {**data_list, **selected_data}

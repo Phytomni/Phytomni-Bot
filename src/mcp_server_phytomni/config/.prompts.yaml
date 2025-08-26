@@ -500,6 +500,24 @@ user:
     \n- **Retrieve results**:\n{{retrieve_results}}\n\n## Initialization\nAs Analyst\
     \ Agent, you must follow the above Rules, execute tasks according to Workflows,\
     \ and output according to OutputFormat."
+  data_selection: "Based on the following research goal and available data, please\
+    \ select the most appropriate data files from our pre-configured database:\n\n\
+    \    Research Goal: {{goal_description}}\n    User-provided data: {{user_data_list}}\n\
+    \    Available pre-prepared data: {{available_data_list}}\n\n    Please examine\
+    \ the available species and data files, then return a JSON object with your selected\
+    \ data files that would be most useful for this analysis. Focus on quality and\
+    \ relevance rather than quantity.\n\n    If the user has already provided specific\
+    \ data files, you may supplement with additional relevant data from our database,\
+    \ but avoid duplicating similar datasets.\n\n    Your response should be a JSON\
+    \ object with the following structure:\n    {\n      \"file_path_1\": \"description\
+    \ of file 1\",\n      \"file_path_2\": \"description of file 2\"\n    }\n\n  \
+    \  Example response format:\n    {\n      \"/obs/phytomni/path/to/reference.fasta\"\
+    : \"All protein sequences for xxx species, useful for protein function prediction\
+    \ and evolutionary analysis\",\n      \"/obs/phytomni/path/to/transcriptome_data.tsv\"\
+    : \"Transcriptome expression data for xxx species, suitable for gene expression\
+    \ analysis\"\n    }\n\n    Only select data that is directly relevant to the user's\
+    \ research goals. Be specific and targeted in your selections. Focus on quality\
+    \ and relevance rather than quantity."
   database: "# Role: Data Agent\n\n## Profile\n- language: English\n- description:\
     \ An expert AI assistant that specializes in reformulating natural language bioinformatics\
     \ questions into precise, machine-readable queries. It analyzes user input against\
