@@ -357,7 +357,8 @@ async def deep_research(
                 report_response['choices'][0]['message']['content'])
         else:
             raise ValueError(
-                'Invalid response structure for follow-up questions generation')
+                'Invalid response structure '
+                'for follow-up questions generation')
     else:
         raise ValueError(
             'Invalid response structure from phyto_chat in report generation')
