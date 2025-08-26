@@ -134,7 +134,12 @@ async def submit(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    meta += '\nlast step, compress the output folder into a zip file '
+    meta += '\nnext step, summarize each of the generated result files '
+    meta += '(including images, result files, etc.) into a json file '
+    meta += '(named `result_files.json`) and save it, with the key of the '
+    meta += 'file being the absolute path of the generated result and the '
+    meta += 'value being a detailed description of the file.\nlast step, '
+    meta += 'compress the output folder into a zip file '
     meta += '(zip -r $output_dir.zip $output_dir).'
     data = {
         'goal_description': goal_description,
