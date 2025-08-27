@@ -93,148 +93,112 @@ system:
 
     2. Applications (e.g., stress resistance)'
 template:
-  gene_function_result: '## Comprehensive Functional Characterization of {{gene_name}}
+  gene_function_result: '## Bioinformatic Analysis and Molecular Design
 
+    ### 1. Phylogenetic Analysis
 
-    ### I. Evolutionary Conservation Analysis
-
-    #### 1.Phylogenetic Tree Reconstruction
-
-    ![Phylogenetic Tree]({{tree_path}})
-
+    ![Tree Image]({{tree_path}})
     {{tree_legend}}
 
+    {{tree_summary}}
 
-    **Interpretation:**
+    ### 2. Transcriptomic Profiling
 
-    {{tree_interpretation}}
+    #### 2.1. Expression Profile in Different Tissues
 
-    {{tree_results}}
-
-    ### II. Transcriptomic Profiling
-
-    #### 1. Spatiotemporal Expression Patterns
-
-    ![Tissue Expression]({{tissue_path}})
-
+    ![Tissue Image]({{tissue_path}})
     {{tissue_legend}}
 
+    {{tissue_summary}}
 
-    **Interpretation:**
+    #### 2.2. Expression Profile across Different Cultivars
 
-    {{tissue_interpretation}}
-
-    {{tissue_results}}
-
-    #### 2. Cultivar-Specific Expression
-
-    ![Cultivar Expression]({{cultivar_path}})
-
+    ![Cultivar Image]({{cultivar_path}})
     {{cultivar_legend}}
 
+    {{cultivar_summary}}
 
-    **Interpretation:**
+    #### 2.3. Expression Profile under Different kinds of Stresses
 
-    {{cultivar_interpretation}}
-
-    {{cultivar_results}}
-
-    #### 3. Stress Response Profiling
-
-    ![Treatment Expression]({{treatment_path}})
-
+    ![Treatment Image]({{treatment_path}})
     {{treatment_legend}}
 
+    {{treatment_summary}}
 
-    **Interpretation:**
+    ### 3. The Genetic Relationship and its Counterparts 
 
-    {{treatment_interpretation}}
-
-    {{treatment_results}}
-
-    ### III. Upstream or Downstream targets
-
-    #### 1. Mutant-Specific Expression
-
-    ![Mutant Expression]({{mutant_path}})
-
+    ![Genotype Image]({{mutant_path}})
     {{mutant_legend}}
 
+    {{mutant_summary}}
 
-    **Interpretation:**
+    ### 4. Single-Cell Transcriptomic Atlas
 
-    {{mutant_interpretation}}
+    ![Single_cell Umap Image]({{umap_path}})
+    ![Single_cell Violin Image]({{violin_path}})
+    {{single_cell_legend}}
 
-    {{mutant_results}}
+    {{single_cell_summary}}
 
-    ### IV. Single-Cell Transcriptomic Atlas
+    ### 5. Haplotype analysis
 
-    #### 1. Cell Type-Specific Resolution
+    ![Haplotype Image]({{haplotype_path}})
+    {{haplotype_legend}}
 
-    ##### UMAP Visualization
+    {{haplotype_summary}}
 
-    ![UMAP Plot]({{umap_path}})
+    ### 6. cis-Regulatory Landscape
 
-    {{umap_legend}}
-
-    ##### Violin Plot
-
-    ![Violin Plot]({{violin_path}})
-
-    {{violin_legend}}
-
-
-    **Interpretation:**
-
-    {{single_cell_interpretation}}
-
-    {{single_cell_results}}
-
-    ### V. cis-Regulatory Landscape
-
-    #### 1. Motif Analysis
-
-    ##### Identified Motifs
+    #### 6.1. Motif Analysis
 
     ![Motif Image]({{motif_path}})
-
     {{motif_legend}}
 
-    **Interpretation:**
+    {{motif_summary}}
 
-    {{motif_interpretation}}
+    #### 6.2. Gene Epigenetic Predictions
 
-    {{motif_results}}
-
-    #### 2. Chromatin State Dynamics
-
-    **Epigenetic profiling:**
-
-    ![Epic Image]({{smep_path}})
-
+    ![SMEP Image]({{smep_path}})
     {{smep_legend}}
 
-    {{epic_interpretation}}
+    ![SMOC Image]({{smoc_path}})
+    {{smoc_legend}}
 
-    ### VI. Protein Characterization
+    {{smep_summary}}
 
-    #### 1. Domain Architecture Evolution
+    {{smoc_summary}}
 
+    ### 7. Protein Characterization
+
+    #### 7.1. Domain Architecture Evolution
     {{domain_table}}
 
+    {{domain_legend}}
 
-    **Interpretation:**
+    *This tabular output delineates the results of a sequence or profile homology search, comprising 23 columns that report both global and domain-specific alignment metrics. The initial six columns specify identifiers and lengths for the target (subject) sequence/profile (target_name, target_accession, tlen) and the query profile/sequence (query_name, accession, qlen). Subsequent columns provide statistical evaluations of the full match: full_evalue denotes the expectation value for the entire comparison, full_score represents the composition bias-corrected bit score, and full_bias quantifies the magnitude of this correction. Per-domain annotations include the domain index (domain_num), total domains detected (domain_total), reliability estimates (domain_cevalue reflecting permissive conditional E-value and domain_ievalue indicating stringent independent E-value), domain-specific bit score (domain_score), and its associated bias correction (domain_bias). Structural coordinates delineate the domain’s alignment to the query profile (hmm_from, hmm_to), the optimal (MEA) alignment to the target sequence (ali_from, ali_to), and the broader probabilistic envelope on the target (env_from, env_to). The mean posterior probability of residue alignment reliability (acc) and a free-text description of target complete the record, collectively enabling rigorous interpretation of domain architecture and evolutionary relationships.*
 
-    {{domain_interpretation}}
+    {{domain_summary}}
 
-    #### 2. 3D Structure Prediction
+    #### 7.2. 3D Structure Prediction
 
     {{protein_structures}}
 
+    ### 8. Artificial Intelligence Design
 
-    **Interpretation:**
+    #### 8.1. Promoter Design
 
-    {{structure_interpretation}}'
+    ![Promoter Design]({{promoter_path}})
+    {{promoter_legend}}
+
+    {{promoter_summary}}
+
+    #### 8.2. Protein Design
+
+    ![Protein Design]({{protein_path}})
+    {{protein_legend}}
+
+    {{protein_summary}}
+    '
 user:
   analysis: "You are a bioinformatics pipeline expert. When receiving a biological\
     \ data analysis question, generate a step-by-step workflow following these guidelines:\n\
@@ -2686,9 +2650,9 @@ user:
     \ Summary Results.\n    Tool Usage example:\n        conda activate af3 && pip install\
     \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
     \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_${modify_type}.png\
-    \ --summary_type smep_${modify_type} --annotation $output_dir/A_gene_prompter_5mC.out\
+    \ --summary_type ${modify_type}_smep --annotation $output_dir/A_gene_prompter_5mC.out\
     \ --is_png True --output_dir $out_dir\n        Note: this task summary_type must\
-    \ be smep_${modify_type} and is_png is True\n            modify_type: \n        \
+    \ be ${modify_type}_smep and is_png is True\n            modify_type: \n        \
     \        1. 5mC\n                2. 6mA\n                3. m6A\n               \
     \ 4. H3K27me3\n                5. H3K4me3\n                6. H3K9ac\n</summary\
     \ example>\n"
@@ -2698,7 +2662,7 @@ user:
     data that we have provided you with, now your task goal is: Please help me to
     predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
     NIP.'
-  smoc_analysis_meta: "Note: You do not need to install any software;\nstep1, Find Gene's\
+  smoc_analysis_meta: "Note: You don't need to install any software;\nstep1, Find Gene's\
     \ prompter Sequence using grep;\nstep2, Prediction of chromatin accessibility in\
     \ promoters using SMOC(conda activate epic);\nstep3, plot smoc results figure using\
     \ plot_smoc.py script(conda activate af3);\nstep4, summary the smoc results using\
@@ -2749,7 +2713,7 @@ user:
     based on the data that we have provided you with, now your task goal is: Please
     help me predict the protein structure for gene {{gene_id}}. Note: You do not need
     to install protenix software using conda, you should activate af3 environment'
-  structure_analysis_meta: "Note1: You don\'t need to install protenix software using conda;\
+  structure_analysis_meta: "Note1: You don't need to install protenix software using conda;\
     \ \nNote2: You need to activate af3 environment;(conda activate af3); \nNote3: protenix\
     \ commdline softwore usage is as follows:\n<proteix usage method>\n    Usage: protenix\
     \ predict [OPTIONS]\n\n        predict: Run predictions with protenix. :param input,\
@@ -2781,7 +2745,7 @@ user:
     \  Tool_Example:\n        conda activate af3 && conda install -c schrodinger pymol &&\
     \ pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
     \ python cif2structure_info.py --input_path $output_dir --output_dir\
-    \ $structure_information_dir\n</structure feature>\nstep1, Find Gene\'s Protein\
+    \ $structure_information_dir\n</structure feature>\nstep1, Find Gene's Protein\
     \ Sequence using grep;\nstep2, Organize the protein sequences into an input JSON format\
     \ file, and save it; \nstep3, Predict Protein Sturctre using protenix; (conda activate\
     \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
