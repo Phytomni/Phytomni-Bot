@@ -17,7 +17,6 @@ within the application. These utilities include functionalities such as:
 """
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
-from json import dumps
 from math import ceil
 from pathlib import Path
 from re import sub
@@ -82,7 +81,7 @@ async def get_token(timeout: float = serc.TIMEOUT,
             response = await client.post(
                 serc.TOKEN_URL,
                 headers={'Content-Type': 'application/json'},
-                data=dumps(data),
+                json=data,
                 timeout=timeout)
             response.raise_for_status()
             return response.headers['X-Subject-Token']
@@ -116,10 +115,10 @@ def load_template(template_file: str,
         ValueError: If the YAML is multi-level and `template_str` is not
             provided.
     """
-    template_file = Path(template_file)
-    if not template_file.is_file():
+    template_path = Path(template_file)
+    if not template_path.is_file():
         raise FileNotFoundError(f'Template file not found: {template_file}')
-    with open(template_file, 'r', encoding='utf-8') as f:
+    with open(template_path, 'r', encoding='utf-8') as f:
         data = safe_load(f)
     if template_str:
         current = data
@@ -277,6 +276,7 @@ async def download_obs_file(
                 await asyncio.sleep(1.5 ** attempt)
                 continue
             raise OSError(f'Download File Failed\n{format_exc()}') from exc
+    return server_file
 
 
 async def download_obs_list(
