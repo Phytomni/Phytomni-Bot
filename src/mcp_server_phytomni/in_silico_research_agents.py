@@ -13,6 +13,9 @@ from asyncio import gather
 from json import loads
 from typing import Dict, List, Optional, Union
 
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData, INTERNAL_ERROR
+
 from .analyst_agents import retrieve_plan_submit
 from .chat_agents import phyto_chat
 from .config.defaults import InSilicoResearchConfig
@@ -216,6 +219,13 @@ async def extract_goals(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    if phyto_response is None:
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message='Failed to get response from language model API'
+            )
+        )
     return loads(phyto_response['choices'][0]['message']['content'])
 
 
