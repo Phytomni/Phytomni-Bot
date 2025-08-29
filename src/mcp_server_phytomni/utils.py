@@ -23,6 +23,7 @@ from re import sub
 from traceback import format_exc
 from typing import Dict, List, Optional
 from uuid import uuid1
+from warnings import warn
 
 from httpx import AsyncClient, HTTPError, Timeout
 from markitdown import MarkItDown
@@ -143,7 +144,8 @@ def render_template(template: str,
 
     This function finds all placeholders in the format `{{parameter}}` within
     the template string and substitutes them with corresponding values from the
-    `parameters` dictionary.
+    `parameters` dictionary. If a placeholder does not have a corresponding key
+    in the `parameters` dictionary, it will be left as is with a warning.
 
     Args:
         template: The template string containing placeholders.
@@ -151,11 +153,8 @@ def render_template(template: str,
             are the substitution content. Values will be stringified.
 
     Returns:
-        The fully rendered template with all placeholders replaced.
-
-    Raises:
-        ValueError: If a placeholder in the template does not have a
-            corresponding key in the `parameters` dictionary.
+        The fully rendered template with all available placeholders replaced.
+        Missing parameters will remain as placeholders.
     """
     if parameters is None:
         parameters = {}
@@ -164,7 +163,8 @@ def render_template(template: str,
     def replacer(match):
         param_name = match.group(1).strip()
         if param_name not in parameters:
-            raise ValueError(f'Missing parameter: {param_name}')
+            warn(f"Missing parameter '{param_name}' in template")
+            return ''
         return str(parameters[param_name])
 
     return sub(pattern, replacer, template)
