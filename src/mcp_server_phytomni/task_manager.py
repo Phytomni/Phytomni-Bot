@@ -93,7 +93,7 @@ async def create_task(url,
                       server_id: str,
                       server_status: str,
                       tool_name: str,
-                      timeout: int = 60,
+                      timeout: float = 60,
                       retriable_codes: List[int] = [429, 500, 502, 503, 504],
                       max_retries: int = 5):
     """Creates a task on a remote server.
