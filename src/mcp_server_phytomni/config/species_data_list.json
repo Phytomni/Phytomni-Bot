@@ -201,6 +201,11 @@
             "/obs/phytomni/agent_data/scripts/enrichment_analysis.R": "A script to perform enrichment analysis."
         }
     },
+    "fst_analysis": {
+        "oryza sativa": {
+            "/obs/phytomni/agent_data/scripts/gene_fst_analysis.py": "Indica-Japonica differentiation analysis script."
+        }
+    },
     "evolution_analysis": {
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
