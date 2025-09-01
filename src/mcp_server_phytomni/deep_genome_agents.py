@@ -3523,6 +3523,61 @@ async def submit_gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
+    haplotypes_task = await haplotypes_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        enable_auto_select=enable_auto_select,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    fst_task = await fst_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        enable_auto_select=enable_auto_select,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
     promoter_task = await promoter_analysis(
         species=species,
         gene_id=gene_id,
@@ -3654,8 +3709,8 @@ async def submit_gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-            **single_cell_exp_task, **structure_task}
+    return {**evo_task, **haplotypes_task, **fst_task, **promoter_task, 
+        **epic_task, **gene_exp_task, **single_cell_exp_task, **structure_task}
 
 
 async def summarize_gene_analysis(
@@ -3713,6 +3768,8 @@ async def summarize_gene_analysis(
             ['sample_0.cif', '.summary', '.legend'],
         'promoter_task':
             ['motif_all_logo.png', '.summary', '.legend'],
+        'fst_task': ['.png'], 
+        'haplotypes_task': ['.png', '.summary', '.legend'],
         'single_cell_task': ['.png', '.summary', '.legend'],
         'tissues_task': ['.png', '.summary', '.legend'],
         'cultivars_task': ['.png', '.summary', '.legend'],
@@ -3901,6 +3958,32 @@ async def summarize_gene_analysis(
         gene_results_data['single_cell_legend'] = ''
 
     try:
+        target_file = next(out_path.rglob('*promoter_hap.png')).name
+        haplotype_img = f'{gene_id}/{target_file}'
+        gene_results_data['haplotype_path'] = haplotype_img
+        with open(out_path / f'{gene_id}_haplotype.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results_data['haplotype_summary'] = summary
+        with open(out_path / f'{gene_id}_haplotype.legend',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            legend = legend.replace('Figure 1', f'Figure {figure_index}')
+            gene_results_data['haplotype_legend'] = legend
+        figure_index += 1
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results_data['haplotype_path'] = ''
+        gene_results_data['haplotype_summary'] = 'None Results'
+        gene_results_data['haplotype_legend'] = ''
+    
+    try:
+        target_file = next(out_path.rglob('*_fst_japonica-indica.png')).name
+        fst_img = f'{gene_id}/{target_file}'
+        gene_results_data['fst_path'] = fst_img
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results_data['fst_path'] = ''
+
+    try:
         target_file = next(out_path.rglob('motif_all_logo.png')).name
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
@@ -4006,6 +4089,7 @@ async def summarize_gene_analysis(
         'umap_path': '![Single_cell Umap Image]()',
         'violin_path': '![Single_cell Violin Image]()',
         'haplotype_path': '![Haplotype Image]()', 
+        'fst_path': '![fst Image]()',
         'motif_path': '![Motif Image]()', 
         'smep_path': '![SMEP Image]()',
         'smoc_path': '![SMOC Image]()', 
