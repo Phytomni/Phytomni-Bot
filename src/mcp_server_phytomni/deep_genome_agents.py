@@ -665,6 +665,7 @@ async def gene_function(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     epic_type: str = dgc.EPIC_TYPE,
     create_task_url: str = dgc.CREATE_TASK_URL,
     update_task_url: str = dgc.UPDATE_TASK_URL,
@@ -752,6 +753,10 @@ async def gene_function(
         gene_id: The identifier of the primary gene of interest.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         epic_type: The type of EPIC analysis to perform.
         create_task_url: The URL for creating a task on the server.
         update_task_url: The URL for updating a task on the server.
@@ -853,6 +858,7 @@ async def gene_function(
                 epic_type=epic_type,
                 user_id=user_id,
                 batch=batch,
+                enable_auto_select=enable_auto_select,
                 database_url=database_url,
                 workspace_id=workspace_id,
                 subject_id=subject_id,
@@ -1604,6 +1610,7 @@ async def evolution_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -1634,6 +1641,10 @@ async def evolution_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -1681,6 +1692,7 @@ async def evolution_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -1707,6 +1719,7 @@ async def protein_structure_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -1737,6 +1750,10 @@ async def protein_structure_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -1784,6 +1801,7 @@ async def protein_structure_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -1810,6 +1828,7 @@ async def promoter_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -1840,6 +1859,10 @@ async def promoter_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -1886,6 +1909,7 @@ async def promoter_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -1912,6 +1936,7 @@ async def gene_expression_tissues(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -1943,6 +1968,10 @@ async def gene_expression_tissues(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -1991,6 +2020,7 @@ async def gene_expression_tissues(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2017,6 +2047,7 @@ async def gene_expression_cultivars(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2048,6 +2079,10 @@ async def gene_expression_cultivars(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2096,6 +2131,7 @@ async def gene_expression_cultivars(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2122,6 +2158,7 @@ async def gene_expression_genotypes(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2153,6 +2190,10 @@ async def gene_expression_genotypes(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2201,6 +2242,7 @@ async def gene_expression_genotypes(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2227,6 +2269,7 @@ async def gene_expression_treatments(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2258,6 +2301,10 @@ async def gene_expression_treatments(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2306,6 +2353,7 @@ async def gene_expression_treatments(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2332,6 +2380,7 @@ async def single_cell_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2362,6 +2411,10 @@ async def single_cell_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2408,6 +2461,7 @@ async def single_cell_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2434,6 +2488,7 @@ async def smep_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     epic_type: str = dgc.EPIC_TYPE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
@@ -2466,6 +2521,10 @@ async def smep_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         epic_type: The type of EPIC analysis to perform.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
@@ -2513,6 +2572,7 @@ async def smep_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2539,6 +2599,7 @@ async def smoc_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2570,6 +2631,10 @@ async def smoc_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2615,6 +2680,7 @@ async def smoc_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2641,6 +2707,7 @@ async def haplotypes_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2671,6 +2738,10 @@ async def haplotypes_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2718,6 +2789,7 @@ async def haplotypes_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2739,11 +2811,145 @@ async def haplotypes_analysis(
     return {'haplotypes_task': haplotypes_task}
 
 
+async def fst_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    """Perform a gene expression analysis across different treatments.
+
+    This function submits a task to perform a gene expression analysis across
+    different treatments for the given gene. It constructs a goal description
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
+
+    Args:
+        species: The species of the gene.
+        gene_id: The identifier of the gene to analyze.
+        user_id: The user identifier for this task.
+        batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
+
+    Returns:
+        A dictionary containing the task information for the treatment
+        expression analysis.
+    """
+    response = await nl2sql(
+        f'List all the columns whose gene_id_1 is {gene_id} and '
+        f'species_code_1 is {find_species_code(species)}?',
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=False,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    msu_id = next(item['cell_value'] for item in response['query_data'][1]
+                  if item['caption'] == 'msu_gene_id_1')
+    if not msu_id:
+        return {'fst_task': None}
+    goal_description = get_prompt(
+        prompt_file, 'user/fst_analysis', 
+        {'gene_id': gene_id, 'msu_id': msu_id})
+    goal_description += f'The mus id for this gene is {msu_id}'
+    data_list = get_data_list(deepgenome_data, 'fst_analysis', species)
+    if not batch:
+        if not user_id:
+            user_id = str(uuid1())
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='fst_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
+    meta = get_prompt(prompt_file, 'user/fst_analysis_meta')
+    fst_task = await submit(
+        goal_description=goal_description,
+        data_list=data_list,
+        user_id=user_id,
+        is_create_dir=False,
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        enable_auto_select=enable_auto_select,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-fst-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='small',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'fst_task': fst_task}
+
+
 async def enrichment_analysis(
     species: str,
     gene_list: List[str],
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
     output_dir: str = dgc.OUTPUT_DIR,
@@ -2774,6 +2980,10 @@ async def enrichment_analysis(
         gene_list: The identifier of the gene list to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
         output_dir: The directory to store output files.
@@ -2839,6 +3049,7 @@ async def enrichment_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -2865,6 +3076,7 @@ async def gene_expression_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     database_url: str = dgc.DATABASE_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
     subject_id: str = dgc.SUBJECT_ID,
@@ -2901,6 +3113,10 @@ async def gene_expression_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         database_url: The URL for the database service.
         workspace_id: The workspace identifier.
         subject_id: The database subject identifier.
@@ -2965,6 +3181,7 @@ async def gene_expression_analysis(
         gene_id=msu_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -2989,6 +3206,7 @@ async def gene_expression_analysis(
         gene_id=msu_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3013,6 +3231,7 @@ async def gene_expression_analysis(
         gene_id=msu_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3037,6 +3256,7 @@ async def gene_expression_analysis(
         gene_id=msu_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3065,6 +3285,7 @@ async def epic_analysis(
     gene_id: str,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     epic_type: str = dgc.EPIC_TYPE,
     prompt_file: str = dgc.PROMPT_FILE,
     deepgenome_data: str = dgc.DEEPGENOME_DATA,
@@ -3096,6 +3317,10 @@ async def epic_analysis(
         gene_id: The identifier of the gene to analyze.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         epic_type: The type of EPIC analysis to perform.
         prompt_file: The path to the prompt file.
         deepgenome_data: The path to the deep genome data.
@@ -3136,6 +3361,7 @@ async def epic_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         epic_type=epic_type,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
@@ -3161,6 +3387,7 @@ async def epic_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3189,6 +3416,7 @@ async def submit_gene_analysis(
     epic_type: str = dgc.EPIC_TYPE,
     user_id: str = dgc.USER_ID,
     batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
     database_url: str = dgc.DATABASE_URL,
     workspace_id: str = dgc.WORKSPACE_ID,
     subject_id: str = dgc.SUBJECT_ID,
@@ -3227,6 +3455,10 @@ async def submit_gene_analysis(
         epic_type: The type of EPIC analysis to perform.
         user_id: The user identifier for this task.
         batch: Flag indicating whether the operation is part of a batch.
+        enable_auto_select: A boolean flag to enable or disable automatic data
+            selection from the pre-configured database. When enabled, the
+            language model will automatically determine the appropriate
+            analysis type and species based on the research goal.
         database_url: The URL for the database service.
         workspace_id: The workspace identifier.
         subject_id: The database subject identifier.
@@ -3271,6 +3503,62 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    haplotypes_task = await haplotypes_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        enable_auto_select=enable_auto_select,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    fst_task = await fst_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        enable_auto_select=enable_auto_select,
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3295,6 +3583,7 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3319,6 +3608,7 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         epic_type=epic_type,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
@@ -3344,6 +3634,7 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         database_url=database_url,
         workspace_id=workspace_id,
         subject_id=subject_id,
@@ -3373,6 +3664,7 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3397,6 +3689,7 @@ async def submit_gene_analysis(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -3416,8 +3709,8 @@ async def submit_gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {**evo_task, **promoter_task, **epic_task, **gene_exp_task,
-            **single_cell_exp_task, **structure_task}
+    return {**evo_task, **haplotypes_task, **fst_task, **promoter_task, 
+        **epic_task, **gene_exp_task, **single_cell_exp_task, **structure_task}
 
 
 async def summarize_gene_analysis(
@@ -3475,6 +3768,8 @@ async def summarize_gene_analysis(
             ['sample_0.cif', '.summary', '.legend'],
         'promoter_task':
             ['motif_all_logo.png', '.summary', '.legend'],
+        'fst_task': ['.png'], 
+        'haplotypes_task': ['.png', '.summary', '.legend'],
         'single_cell_task': ['.png', '.summary', '.legend'],
         'tissues_task': ['.png', '.summary', '.legend'],
         'cultivars_task': ['.png', '.summary', '.legend'],
@@ -3663,6 +3958,32 @@ async def summarize_gene_analysis(
         gene_results_data['single_cell_legend'] = ''
 
     try:
+        target_file = next(out_path.rglob('*promoter_hap.png')).name
+        haplotype_img = f'{gene_id}/{target_file}'
+        gene_results_data['haplotype_path'] = haplotype_img
+        with open(out_path / f'{gene_id}_haplotype.summary',
+                  'r', encoding='utf-8') as summary_file:
+            summary = summary_file.read()
+            gene_results_data['haplotype_summary'] = summary
+        with open(out_path / f'{gene_id}_haplotype.legend',
+                  'r', encoding='utf-8') as legend_file:
+            legend = legend_file.read()
+            legend = legend.replace('Figure 1', f'Figure {figure_index}')
+            gene_results_data['haplotype_legend'] = legend
+        figure_index += 1
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results_data['haplotype_path'] = ''
+        gene_results_data['haplotype_summary'] = 'None Results'
+        gene_results_data['haplotype_legend'] = ''
+    
+    try:
+        target_file = next(out_path.rglob('*_fst_japonica-indica.png')).name
+        fst_img = f'{gene_id}/{target_file}'
+        gene_results_data['fst_path'] = fst_img
+    except (StopIteration, FileNotFoundError, OSError, IOError):
+        gene_results_data['fst_path'] = ''
+
+    try:
         target_file = next(out_path.rglob('motif_all_logo.png')).name
         motif_img = f'{gene_id}/{target_file}'
         gene_results_data['motif_path'] = motif_img
@@ -3768,6 +4089,7 @@ async def summarize_gene_analysis(
         'umap_path': '![Single_cell Umap Image]()',
         'violin_path': '![Single_cell Violin Image]()',
         'haplotype_path': '![Haplotype Image]()', 
+        'fst_path': '![fst Image]()',
         'motif_path': '![Motif Image]()', 
         'smep_path': '![SMEP Image]()',
         'smoc_path': '![SMOC Image]()', 

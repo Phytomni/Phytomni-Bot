@@ -147,6 +147,8 @@ template:
 
     {{haplotype_summary}}
 
+    ![fst Image]({{fst_path}})
+
     ### 6. cis-Regulatory Landscape
 
     #### 6.1. Motif Analysis
@@ -2037,6 +2039,19 @@ user:
     \ -o /path/to/output -p /script_path\n    Tool_Example:\n        conda activate\
     \ af3 && sh plot_promoter_hap.sh -i $promoter_path  -o $output_dir -p $script_path\n\
     </plot example>\n"
+  fst_analysis: Please help me analyze the differences in the {{gene_id}} gene between 
+    indica and japonica rice varieties.
+  fst_analysis_meta: "Note1: you need to using Renv environment;\nNote2: you need install\
+    \ vcftools in Renv environment(conda install vcftools);\nStep1, using gene_fst_analysis.py\
+    \ to analyze the differences the target gene between indica and japonica rice;(conda\
+    \ activate Renv && conda install vcftools)\n<usage_example>\n    Tool_Usage:\n      \
+    \  usage: gene_fst_analysis.py [-h] [--gene_id GENE_ID] [--msu_id MSU_ID] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this help\
+    \ message and exit\n            --gene_id GENE_ID     fst analysis gene id for rice.\n\
+    \            --msu_id MSU_ID       fst analysis msu gene id for rice.\n            --output_dir\
+    \ OUTPUT_DIR\n                                    The output dir.\n\n    Tool_Usage_Example:\n\
+    \        conda activate R_env && conda install vcftools && python gene_fst_analysis.py\
+    \ --gene_id $gene_id --msu_id $msu_id --output_dir $output_dir\n</usage_example>\n"
   in_silico_research_goals: "You are an expert-level In Silico Research Agent. Your\
     \ function is to analyze a scientific research paper and decompose it into a series\
     \ of high-level, end-to-end research objectives. Each objective represents a complete\
