@@ -147,6 +147,8 @@ template:
 
     {{haplotype_summary}}
 
+    ![fst Image]({{fst_path}})
+
     ### 6. cis-Regulatory Landscape
 
     #### 6.1. Motif Analysis
