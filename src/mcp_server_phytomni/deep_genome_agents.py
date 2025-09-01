@@ -2739,6 +2739,135 @@ async def haplotypes_analysis(
     return {'haplotypes_task': haplotypes_task}
 
 
+async def fst_analysis(
+    species: str,
+    gene_id: str,
+    user_id: str = dgc.USER_ID,
+    batch: bool = dgc.BATCH,
+    enable_auto_select: bool = False,
+    database_url: str = dgc.DATABASE_URL,
+    workspace_id: str = dgc.WORKSPACE_ID,
+    subject_id: str = dgc.SUBJECT_ID,
+    dialog_id: str = dgc.DIALOG_ID,
+    need_insight: bool = dgc.NEED_INSIGHT,
+    prompt_file: str = dgc.PROMPT_FILE,
+    deepgenome_data: str = dgc.DEEPGENOME_DATA,
+    output_dir: str = dgc.OUTPUT_DIR,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = dgc.OBS_SERVER,
+    bucket_name: str = dgc.BUCKET_NAME,
+    analysis_url: str = dgc.ANALYSIS_URL,
+    region: str = dgc.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
+    app_id_dict: Dict[str, str] = dgc.APP_ID,
+    timeout: float = dgc.TIMEOUT,
+    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
+    max_retries: int = dgc.MAX_RETRIES,
+    max_poll: float = dgc.MAX_POLL,
+) -> dict:
+    """Perform a gene expression analysis across different treatments.
+
+    This function submits a task to perform a gene expression analysis across
+    different treatments for the given gene. It constructs a goal description
+    and data list, and then calls the `submit` function to initiate the
+    analysis.
+
+    Args:
+        species: The species of the gene.
+        gene_id: The identifier of the gene to analyze.
+        user_id: The user identifier for this task.
+        batch: Flag indicating whether the operation is part of a batch.
+        prompt_file: The path to the prompt file.
+        deepgenome_data: The path to the deep genome data.
+        output_dir: The directory to store output files.
+        model_url: The URL for the model service.
+        model_name: The name of the model.
+        coder_api_key: The API key for the coder service.
+        access_key_id: The access key identifier for OBS.
+        secret_access_key: The secret access key for OBS.
+        obs_server: The OBS server URL.
+        bucket_name: The OBS bucket name.
+        analysis_url: The URL for the analysis service.
+        region: The region for the analysis service.
+        resource_dict: A dictionary of resource configurations.
+        app_id_dict: A dictionary of application identifiers.
+        timeout: Request timeout in seconds.
+        retriable_codes: List of HTTP status codes that trigger a retry.
+        max_retries: Maximum number of retry attempts.
+        max_poll: Maximum duration in seconds to monitor the task.
+
+    Returns:
+        A dictionary containing the task information for the treatment
+        expression analysis.
+    """
+    response = await nl2sql(
+        f'List all the columns whose gene_id_1 is {gene_id} and '
+        f'species_code_1 is {find_species_code(species)}?',
+        database_url=database_url,
+        workspace_id=workspace_id,
+        subject_id=subject_id,
+        dialog_id=dialog_id,
+        need_insight=need_insight,
+        simplify_response=False,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+    )
+    msu_id = next(item['cell_value'] for item in response['query_data'][1]
+                  if item['caption'] == 'msu_gene_id_1')
+    if not msu_id:
+        return {'fst_task': None}
+    goal_description = get_prompt(
+        prompt_file, 'user/fst_analysis', 
+        {'gene_id': gene_id, 'msu_id': msu_id})
+    goal_description += f'The mus id for this gene is {msu_id}'
+    data_list = get_data_list(deepgenome_data, 'fst_analysis', species)
+    if not batch:
+        if not user_id:
+            user_id = str(uuid1())
+        output_dir = create_output_dir(
+            user_id=user_id,
+            task='fst_task',
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+        )
+    meta = get_prompt(prompt_file, 'user/fst_analysis_meta')
+    fst_task = await submit(
+        goal_description=goal_description,
+        data_list=data_list,
+        user_id=user_id,
+        is_create_dir=False,∂
+        output_dir=output_dir,
+        meta=meta,
+        execute_code=True,
+        enable_auto_select=enable_auto_select,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name='deepgenome-agents-fst-task',
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource='small',
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+    return {'fst_task': fst_task}
+
+
 async def enrichment_analysis(
     species: str,
     gene_list: List[str],
