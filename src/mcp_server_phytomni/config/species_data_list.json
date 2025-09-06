@@ -3408,5 +3408,10 @@
         "zea_mays": {
             "/obs/phytomni/agent_data/raw_data/03.annotation/zea_mays/Zea_mays.Zm-B73-REFERENCE-NAM-5.0.60.gtf": "Genome gtf annotation file for zea_mays."
         }
+    },
+    "environment_analysis": {
+        "vci_analysis": {
+            "/obs/phytomni/agent_data/scripts/vci_analysis.py": "A script to perform vci analysis for each region."
+        }
     }
 }
