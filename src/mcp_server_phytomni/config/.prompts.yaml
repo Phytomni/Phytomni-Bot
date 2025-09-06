@@ -2783,3 +2783,39 @@ user:
     \ file, and save it; \nstep3, Predict Protein Sturctre using protenix; (conda activate\
     \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
     \ && conda install -c schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"
+  environment:
+    get_code_query: "<region>\n{{json_dict}}\n</region>\n<region></region>中是中国各省市县的名称及其代码信\
+      \ 息，最外层key对应中国不同的行政省，内\n部依次是市和县，其中，县对应的value包含三部分组成，分别为省、市、县的代\
+      \ 码，用|分割，接下\n来，我会给你一个相关问题，使用<query></query>包裹，问题中包含相应的省市县信息，如果存在，\
+      \ \n则返回对应的城市及其上级城市的代码，否则，返回空字符串即可，结果请用<result></result>\n形式返回。\n<example>\n\
+      \    query: 请帮我分析湖北鄂州的vci情况？\n    result: <result>420000|420700</result>\n    query:\
+      \ 请帮我分析鄂州市的vci情况？\n    result: <result>420000|420700</result>\n    query: 请帮我分析湖北的vci情况？\n\
+      \    result: <result>420000</result>\n    query: 请帮我分析深圳市光明区的vci情况？\n    result:\
+      \ <result>440000|440300|440311</result>\n</example>\n<query>\n{{query}}\n</query>"
+    vci_analysis: "Please help me to perform vci analysis, the province_code is {{province_code}},\
+      \ the city_code is {{city_code}}, the county_code is {{county_code}}."
+    vci_analysis_meta: "Note1: you need to using af3 environment (conda activate af3);\nNote2: you\
+      \ need install geopandas pyproj rioxarray and xarray packages (pip install pyproj==3.5.0\
+      \ xarray rioxarray geopandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep1,\
+      \ install python packages using pip in af3 environment; (conda activate af3)\nstep2, Analyze\
+      \ the NDVI and VCI indices for specific provinces, cities, and counties using vci_analysis.py.\
+      \ (conda activate af3)\n<Usage>\n    Tool_Usage:\n        usage: vci_analysis.py [-h]\
+      \ [--province_code PROVINCE_CODE] [--city_code CITY_CODE] [--county_code COUNTY_CODE] [--target_year\
+      \ TARGET_YEAR] [--target_month TARGET_MONTH] [--start_year START_YEAR]\n             \
+      \          [--output_dir OUTPUT_DIR]\n\n    options:\n        -h, --help           \
+      \ show this help message and exit\n\n        Location Parameters:\n        --province_code\
+      \ PROVINCE_CODE\n                                The province you wish to analyze. (in\
+      \ provice_code)\n        --city_code CITY_CODE\n                                The\
+      \ city you wish to analyze. (in city_code)\n        --county_code COUNTY_CODE\n    \
+      \                            The county you wish to analyze. (in county_code)\n\n  \
+      \  Time Parameters:\n        --target_year TARGET_YEAR\n                           \
+      \     Starting year of the analysis.\n        --target_month TARGET_MONTH\n        \
+      \                        Starting month of the analysis.\n        --start_year START_YEAR\n\
+      \                                Ending year of the analysis.\n\n    Output Parameters:\n\
+      \        --output_dir OUTPUT_DIR\n                                The output dir.\n    \n\
+      \    Tool_Usage_example:\n        conda activate af3 && python vci_analysis.py\
+      \ --province_code $province_code --city_code $city_code_if_provided --county_code\
+      \ $county_code_if_provided --target_year $target_year_if_provided --target_month\
+      \ $target_month_if_provided --start_year $start_year_if_provided --output_dir\
+      \ $output_dir\n</Usage>\n"
+
