@@ -12,6 +12,7 @@ _MAX_TOKENS = 131072
 PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 PRE_PREPARED_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
+PRE_PREPARED_REGION_PATH = PARENT_PATH / 'config/region_map.json'
 DOWNLOAD_PATH = PARENT_PATH / '.out'
 TEMP_PATH = PARENT_PATH / '.temp'
 
@@ -294,3 +295,12 @@ class InSilicoResearchConfig(AnalystConfig):
 
     Inherits settings from `AnalystConfig`.
     """
+
+
+class EnvironmentConfig(AnalystConfig):
+    """Configuration settings specific to digital design tasks.
+
+    Inherits settings from `AnalystConfig`.
+    """
+    ENVIRONMENT_DATA: str = Field(str(PRE_PREPARED_DATA_PATH))
+    REGION_CODE: str = Field(str(PRE_PREPARED_REGION_PATH))
