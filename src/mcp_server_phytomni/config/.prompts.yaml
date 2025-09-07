@@ -2793,7 +2793,7 @@ user:
       \    result: <result>420000</result>\n    query: 请帮我分析深圳市光明区的vci情况？\n    result:\
       \ <result>440000|440300|440311</result>\n</example>\n<query>\n{{query}}\n</query>"
     vci_analysis: "Please help me to perform vci analysis, the province_code is {{province_code}},\
-      \ the city_code is {{city_code}}, the county_code is {{county_code}}."
+      \ the city_code is {{city_code}}, the county_code is {{county_code}}, the target year is {{year}}"
     vci_analysis_meta: "Note1: you need to using af3 environment (conda activate af3);\nNote2: you\
       \ need install geopandas pyproj rioxarray and xarray packages (pip install pyproj==3.5.0\
       \ xarray rioxarray geopandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep1,\
@@ -2817,5 +2817,6 @@ user:
       \ --province_code $province_code --city_code $city_code_if_provided --county_code\
       \ $county_code_if_provided --target_year $target_year_if_provided --target_month\
       \ $target_month_if_provided --start_year $start_year_if_provided --output_dir\
-      \ $output_dir\n</Usage>\n"
+      \ $output_dir\n        Note: If the parameter is not provided, the corresponding\
+      \ parameter is not required.\n</Usage>\n"
 
