@@ -2783,6 +2783,46 @@ user:
     \ file, and save it; \nstep3, Predict Protein Sturctre using protenix; (conda activate\
     \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
     \ && conda install -c schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"
+  promoter_design: "Please help me to design {{gene_id}} promoter."
+  promoter_design_meta: "Note1: you need to using epic environment (conda activate epic);\nstep1, get the\
+    \ promoter sequence for the gene using grep;\nstep2, designing the gene promoter sequences;\nstep3,\
+    \ get the designed promoter sequences using get_promoter_design.py scripts; (conda activate epic)\nstep4,\
+    \ using smep to predict modifications for designed promoters; (conda activate epic)\nstep5, using\
+    \ smoc to predict chromatin accessibility for designed promoters. (conda activate epic)\n<get_promoter_design>\n\
+    \    Tool_Usage:\n        usage: get_promoter_design.py [-h] [--input_fasta INPUT_FASTA] [--gene_id GENE_ID]\
+    \ [--cape_file CAPE_FILE] [--output_dir OUTPUT_DIR] [--top TOP]\n\n        options:\n           \
+    \ -h, --help            show this help message and exit\n            --input_fasta INPUT_FASTA\n\
+    \                                    Wild-type promoter FASTA file。\n            --gene_id GENE_ID\
+    \     The gene id of promoter sequence.\n            --cape_file CAPE_FILE\n                    \
+    \                Promoter Site Mutation CAPE Score Results.\n            --output_dir OUTPUT_DIR\n\
+    \                                    The output dir.\n            --top TOP             Number\
+    \ of top output mutation sequences.\n\n    Tool_Usage_Example:\n        conda activate epic &&\
+    \ pip install pandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python\
+    \ get_promoter_design.py --input_fasta $wt_promoter_file --gene_id $gene_id --cape_file\
+    \ $promoter_design_result --output_dir $output_dir\n    Note:\n        Finnally, you will get\
+    \ $top files in $output_dir, file_name is ${gene_id}_mut_top1.fa - ${gene_id}_mut_top${top}.fa,\
+    \ and you will predict this design promoter file using smep and smoc;\n</get_promoter_design>\n<smep>\n\
+    \    Tool_Usage:\n        perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file\
+    \ -O /$output_dir/$out_file -T $epigenetic_modification_type\n        $epigenetic_modification_type:\n\
+    \            1. 5mC\n            2. 6mA\n            3. m6A\n            4. H3K27me3\n      \
+    \      5. H3K4me3\n            6. H3K9ac\n        Note1: When you run the script, you must be\
+    \ under the path /opt/health/epic_models/smep/\n        Note2: The fasta_file must be saved\
+    \ under the path /opt/health/epic_models/smep/\n        Note3: out_file You can specify files\
+    \ in any path\n\n    Tool_Usage_Example:\n        question: please help me to predict the 5mC\
+    \ modification of A gene prompter\n        commond_line: conda activate epic && cp A_gene_prompter.fa\
+    \ /opt/health/epic_models/smep && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl\
+    \ -I A_gene_prompter.fa -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n</smep>\n<smoc>\n   \
+    \ Tool_Usage:\n        python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input\
+    \ $input_fasta --model /opt/health/epic_models/smoc/model/$model_type --output $out_dir --threshold\
+    \ 0.8 --window_size 800 \n            $model_type: \n            1. Best_model_9311CK.h5: Wild-type\
+    \ chromatin accessibility of variety 9311\n            2. Best_model_9311HS.h5: Chromatin\
+    \ accessibility in the heat-excited state of variety 9311\n            3. Best_model_NIPCK.h5:\
+    \ Wild-type chromatin accessibility of variety NIP\n            4. Best_model_NIPHS.h5:\
+    \ Chromatin accessibility in the heat-excited state of variety NIP\n\n    Tool_Usage_Example:\n\
+    \        question: please help me to predict the wild-type chromatin accessibility of Oryza\
+    \ sativa Os12g0263100 gene prompter in 9311.\n        commond_line: conda activate epic &&\
+    \ python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta --model\
+    \ /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\n</smoc>\n"
   environment:
     get_code_query: "<region>\n{{json_dict}}\n</region>\n<region></region>中是中国各省市县的名称及其代码信\
       \ 息，最外层key对应中国不同的行政省，内\n部依次是市和县，其中，县对应的value包含三部分组成，分别为省、市、县的代\
