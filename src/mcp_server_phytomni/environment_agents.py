@@ -122,7 +122,7 @@ async def region_vci_analysis(
         task_name='environment-agents-vci-task',
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='medium',
+        compute_resource='large',
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
