@@ -2094,6 +2094,264 @@
             "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file."
         }
     },
+    "peomoter_design_analysis": {
+        "actinidia chinensis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "aegilops tauschii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "amborella trichopoda": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "ananas comosus": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "arabidopsis lyrata": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "arabidopsis thaliana": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "asparagus officinalis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "beta vulgaris": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "brachypodium distachyon": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "brassica napus": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "brassica oleracea": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "brassica rapa": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "capsicum annuum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "chara braunii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "chenopodium quinoa": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "chlamydomonas reinhardtii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "citrullus lanatus": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "citrus clementina": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "coffea canephora": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "corylus avellana": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "cucumis melo": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "cucumis sativus": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "daucus carota": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "digitaria exilis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "eragrostis curvula": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "eucalyptus grandis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "eutrema salsugineum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "glycine max": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "gossypium raimondii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "helianthus annuus": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "hordeum vulgare": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "lactuca sativa": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "lolium perenne": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "manihot esculenta": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "marchantia polymorpha": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "medicago truncatula": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "musa acuminata": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "olea europaea": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "oryza brachyantha": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "oryza sativa": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "panicum hallii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "papaver somniferum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "phaseolus vulgaris": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "physcomitrium patens": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "pisum sativum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "populus trichocarpa": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "prunus persica": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "quercus lobata": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "rosa chinensis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "saccharum spontaneum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "secale cereale": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "selaginella moellendorffii": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "setaria italica": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "setaria viridis": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "solanum lycopersicum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "solanum tuberosum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "sorghum bicolor": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "theobroma cacao": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "trifolium pratense": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "triticum aestivum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "triticum dicoccoides": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "triticum turgidum": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "vitis vinifera": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        },
+        "zea mays": {
+            "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file.", 
+            "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence."
+        }
+    },
     "protein_design_analysis": {
         "": {
             "/obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/": "NR Database for diamond index, index_name: nr, if you want to use nr database to sequence alignment, you need to -d /obs/phytomni/agent_data/raw_data/01.database/nr/diamond_index/nr paramter",
