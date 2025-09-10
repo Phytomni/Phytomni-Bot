@@ -1968,7 +1968,10 @@ async def auto_select(
             selection_response['choices'][0]['message'].get('content')):
         try:
             content = selection_response['choices'][0]['message']['content']
-            parsed_response = json.loads(content)
+            start_index = content.find('{')
+            end_index = content.rfind('}') + 1
+            json_part = content[start_index:end_index]
+            parsed_response = json.loads(json_part)
             if 'selected_data' in parsed_response:
                 selected_data = parsed_response['selected_data']
             else:
