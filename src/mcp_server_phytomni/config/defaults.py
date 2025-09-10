@@ -8,7 +8,7 @@ from typing import Dict, List, Literal, Optional, Union
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-_MAX_TOKENS = 131072
+_MAX_TOKENS = 65536
 PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / 'config/.prompts.yaml'
 PRE_PREPARED_DATA_PATH = PARENT_PATH / 'config/species_data_list.json'
