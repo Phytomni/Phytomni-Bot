@@ -2784,45 +2784,111 @@ user:
     \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
     \ && conda install -c schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"
   promoter_design: "Please help me to design {{gene_id}} promoter."
-  promoter_design_meta: "Note1: you need to using epic environment (conda activate epic);\nstep1, get the\
-    \ promoter sequence for the gene using grep;\nstep2, designing the gene promoter sequences;\nstep3,\
-    \ get the designed promoter sequences using get_promoter_design.py scripts; (conda activate epic)\nstep4,\
-    \ using smep to predict modifications for designed promoters; (conda activate epic)\nstep5, using\
-    \ smoc to predict chromatin accessibility for designed promoters. (conda activate epic)\n<get_promoter_design>\n\
-    \    Tool_Usage:\n        usage: get_promoter_design.py [-h] [--input_fasta INPUT_FASTA] [--gene_id GENE_ID]\
-    \ [--cape_file CAPE_FILE] [--output_dir OUTPUT_DIR] [--top TOP]\n\n        options:\n           \
-    \ -h, --help            show this help message and exit\n            --input_fasta INPUT_FASTA\n\
-    \                                    Wild-type promoter FASTA file。\n            --gene_id GENE_ID\
-    \     The gene id of promoter sequence.\n            --cape_file CAPE_FILE\n                    \
-    \                Promoter Site Mutation CAPE Score Results.\n            --output_dir OUTPUT_DIR\n\
-    \                                    The output dir.\n            --top TOP             Number\
-    \ of top output mutation sequences.\n\n    Tool_Usage_Example:\n        conda activate epic &&\
-    \ pip install pandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python\
-    \ get_promoter_design.py --input_fasta $wt_promoter_file --gene_id $gene_id --cape_file\
-    \ $promoter_design_result --output_dir $output_dir\n    Note:\n        Finnally, you will get\
-    \ $top files in $output_dir, file_name is ${gene_id}_mut_top1.fa - ${gene_id}_mut_top${top}.fa,\
-    \ and you will predict this design promoter file using smep and smoc;\n</get_promoter_design>\n<smep>\n\
-    \    Tool_Usage:\n        perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file\
-    \ -O /$output_dir/$out_file -T $epigenetic_modification_type\n        $epigenetic_modification_type:\n\
-    \            1. 5mC\n            2. 6mA\n            3. m6A\n            4. H3K27me3\n      \
-    \      5. H3K4me3\n            6. H3K9ac\n        Note1: When you run the script, you must be\
-    \ under the path /opt/health/epic_models/smep/\n        Note2: The fasta_file must be saved\
-    \ under the path /opt/health/epic_models/smep/\n        Note3: out_file You can specify files\
-    \ in any path\n\n    Tool_Usage_Example:\n        question: please help me to predict the 5mC\
-    \ modification of A gene prompter\n        commond_line: conda activate epic && cp A_gene_prompter.fa\
-    \ /opt/health/epic_models/smep && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl\
-    \ -I A_gene_prompter.fa -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n</smep>\n<smoc>\n   \
-    \ Tool_Usage:\n        python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input\
-    \ $input_fasta --model /opt/health/epic_models/smoc/model/$model_type --output $out_dir --threshold\
-    \ 0.8 --window_size 800 \n            $model_type: \n            1. Best_model_9311CK.h5: Wild-type\
-    \ chromatin accessibility of variety 9311\n            2. Best_model_9311HS.h5: Chromatin\
-    \ accessibility in the heat-excited state of variety 9311\n            3. Best_model_NIPCK.h5:\
-    \ Wild-type chromatin accessibility of variety NIP\n            4. Best_model_NIPHS.h5:\
-    \ Chromatin accessibility in the heat-excited state of variety NIP\n\n    Tool_Usage_Example:\n\
-    \        question: please help me to predict the wild-type chromatin accessibility of Oryza\
-    \ sativa Os12g0263100 gene prompter in 9311.\n        commond_line: conda activate epic &&\
-    \ python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta --model\
-    \ /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\n</smoc>\n"
+  promoter_design_meta: "Note1: you need to using epic environment (conda activate epic);\nstep1, get\
+    \ the promoter sequence for the gene using grep;\nstep2, designing the gene promoter sequences;\
+    \ (cp -r $design_result_dir $output_dir)\nstep3, get the designed promoter sequences using get_promoter_design.py\
+    \ scripts; (conda activate epic)\nstep4, using smep to predict modifications for designed promoters;\
+    \ (conda activate epic)\nstep5, using smoc to predict chromatin accessibility for designed promoters.\
+    \ (conda activate epic)\n<get_promoter_design>\n    Tool_Usage:\n        usage: get_promoter_design.py\
+    \ [-h] [--input_fasta INPUT_FASTA] [--gene_id GENE_ID] [--cape_file CAPE_FILE] [--output_dir OUTPUT_DIR]\
+    \ [--top TOP]\n\n        options:\n            -h, --help            show this help message and exit\n\
+    \            --input_fasta INPUT_FASTA\n                                    Wild-type promoter FASTA file.\
+    \ \n            --gene_id GENE_ID     The gene id of promoter sequence.\n            --cape_file CAPE_FILE\n\
+    \                                    Promoter Site Mutation CAPE Score Results.\n            --output_dir OUTPUT_DIR\n\
+    \                                    The output dir.\n            --top TOP             Number of top output\
+    \ mutation sequences.\n\n    Tool_Usage_Example:\n        conda activate epic && pip install pandas -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python get_promoter_design.py --input_fasta\
+    \ $wt_promoter_file --gene_id $gene_id --cape_file $output/$gene_id/aggregate.bedGraph --output_dir\
+    \ $output_dir\n    Note:\n        The output promoter design results are located in the copied folder\
+    \ under the filename aggregate.bedGraph.\n        Finnally, you will get $top files in $output_dir,\
+    \ file_name is ${gene_id}_mut_top1.fa - ${gene_id}_mut_top${top}.fa, and you will predict this design\
+    \ promoter file using smep and smoc;\n</get_promoter_design>\n<smep>\n    Tool_Usage:\n        perl\
+    \ /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file -O /$output_dir/$out_file -T\
+    \ $epigenetic_modification_type\n        $epigenetic_modification_type:\n            1. 5mC\n      \
+    \      2. 6mA\n            3. m6A\n            4. H3K27me3\n            5. H3K4me3\n            6. H3K9ac\n\
+    \        Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
+    \        Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n        Note3:\
+    \ out_file You can specify files in any path\n\n    Tool_Usage_Example:\n        question: please help\
+    \ me to predict the 5mC modification of A gene prompter\n        commond_line: conda activate epic &&\
+    \ cp A_gene_prompter.fa /opt/health/epic_models/smep && cd /opt/health/epic_models/smep && perl\
+    \ smep_prediction_py3.5.pl -I A_gene_prompter.fa -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n</smep>\n<smoc>\n\
+    \    Tool_Usage:\n        python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta\
+    \ --model /opt/health/epic_models/smoc/model/$model_type --output $out_dir --threshold 0.8 --window_size 800\
+    \ \n            $model_type: \n            1. Best_model_9311CK.h5: Wild-type chromatin accessibility\
+    \ of variety 9311\n            2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited\
+    \ state of variety 9311\n            3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of\
+    \ variety NIP\n            4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited state\
+    \ of variety NIP\n\n    Tool_Usage_Example:\n        question: please help me to predict the wild-type\
+    \ chromatin accessibility of Oryza sativa Os12g0263100 gene prompter in 9311.\n        commond_line:\
+    \ conda activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta\
+    \ --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\n</smoc>\n"
+  get_taxid_meta: "I will provide a domain-specific question related to bioinformatics evolutionary\
+    \ analysis in <User query></User query> target. \nBased on this question, please list the Latin\
+    \ names of the species required for alignment.\nNote1: If the user selects multiple species for\
+    \ comparison, all Latin names of the target species will be added to the list.\nNote2: If the\
+    \ user does not explicitly specify the target species, the target species list is ['All'].\nNote3:\
+    \ If the target species specified by the user is not a specific species, please list the Latin\
+    \ names of 3-5 species based on all your knowledge.\nNote4: The result should only return a\
+    \ dictionary; do not return any other content.\n<example_query1>\nPlease help me analyze the\
+    \ evolution of the mouse gene MYC in human-related genes.\n</example_query1>\n<example_result1>\
+    \ \n{'target_spa_list': ['Homo sapiens']}\n</example_result1>\n<example_query2>\nPlease help me\
+    \ analyze the evolution of the mouse gene MYC in human-related and maize genes.\n</example_query2>\
+    \ \n<example_result2>\n{'target_spa_list': ['Homo sapiens', 'Zea mays']}\n</example_result2>\
+    \ \n<example_query3>\nPlease help me analyze the evolution of the mouse gene MYC\n</example_query3>\
+    \ \n<example_result3>\n{'target_spa_list': ['All']}\n</example_result3>\n<User query>\
+    \ \n{{user_query}}\n</User query>"
+  evolution_agents_analysis: 'You are a bioinformatician specialized in the field of evolutions
+    and you are well versed in various task analysis in the field of evolutions, next,
+    you will generate a task plan and complete the task analysis based on the data
+    that we have provided you with, now your task goal is: Please perform phylogenetic
+    and evolutionary analyses for gene {{gene_id}}, the target taxid is {{target_taxid}}'
+  evolution_agents_meta: "Note1: You don't need to build nr database index;\nNote2: You need to install\
+    \ diamond software using conda;\nNote3: if target taxid is All, the taxonlist parameter for diamond\
+    \ is not required.\nNote4: if target taxid is not All, the taxonlist parameter for diamond is a ','-separated\
+    \ list of taxids.\nstep1, Find Gene's Protein Sequence using grep;\nstep2, Sequence alignment using\
+    \ diamond blastp to find top40 sequence to target species if target taxid is not all, using -t 16\
+    \ paramter and --tmpdir $tmp paramter(conda install diamond -c bioconda);\nstep3, Extract the sequence\
+    \ ids from the blast result using awk;\nstep4, Extract the matched sequences from the database using\
+    \ seqkit(conda install seqkit -c bioconda);\nstep5, Append protein sequences of unknown function to the\
+    \ end of the matched sequences file;\nstep6, Multiple sequence alignment using clustalw2(conda install\
+    \ clustalw -c bioconda);\nstep7, Constructing the phylogenetic tree using fasttree(conda install fasttree\
+    \ -c bioconda);\nstep8, Plot the phylogenetic tree using plot_tree.py;\nstep9, Summary the tree result\
+    \ using summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \ \nstep12, Searching for conserved domains of protein using hmmscan;\nstep13, Change domain results to\
+    \ markdown format using domain2markdown.py;\nstep14, Summary the domain result using summary_all.py.\n<change\
+    \ example>\n    Tool_Usage:\n        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE] [--output_dir\
+    \ OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help            show this help\
+    \ message and exit\n        --domain_file DOMAIN_FILE\n                                the domain file\
+    \ for hmmer softwore\n        --output_dir OUTPUT_DIR\n                                the output\
+    \ folder\n        --gene_id GENE_ID     the tree for gene id\n    Tool_Example:\n        conda activate\
+    \ af3 && python domain2markdown.py --input $output_dir/$domain_file --out_dir $out_dir --gene_id\
+    \ $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n        usage: plot_tree.py [-h]\
+    \ [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n\
+    \        -h, --help            show this help message and exit\n        --tree_file TREE_FILE\n\
+    \                                the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
+    \                                the output folder\n        --gene_id GENE_ID     the tree for\
+    \ gene id\n    Tool_Example:\n        conda activate af3 && pip install pycirclize biopython -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python plot_tree.py --input $output_dir/$tree_file\
+    \ --out_dir $out_dir --gene_id $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png\
+    \ figure, and you will using this figure to generate the summary results.\n</plot example>\n<summary\
+    \ example>\n    Tool Usage:\n        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file\
+    \ SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this help message and exit\n\
+    \            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n\
+    \                                    The file requiring summarization.\n            --summary_type\
+    \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n            --annotation\
+    \ ANNOTATION\n                                    Data annotation file corresponding to the documents\
+    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document in PNG format\n\
+    \            --output_dir OUTPUT_DIR\n                                    Output Path for Summary\
+    \ Results.\n\n    Tool Usage example:\n        1. summary tree:\n            conda activate af3 &&\
+    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_tree.png --summary_type tree --annotation\
+    \ $output_dir/$tree_file --is_png True --output_dir $out_dir\n            Note: this task summary_type\
+    \ must be tree and is_png is True\n        1. summary domain:\n            conda activate af3 && pip\
+    \ install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/$domain_file --summary_type domain --is_png False\
+    \ --output_dir $out_dir\n            Note: this task summary_type must be domain, is_png is False\
+    \ and do not pass the annotation parameter.\n</summary example>"
   environment:
     get_code_query: "<region>\n{{json_dict}}\n</region>\n<region></region>中是中国各省市县的名称及其代码信\
       \ 息，最外层key对应中国不同的行政省，内\n部依次是市和县，其中，县对应的value包含三部分组成，分别为省、市、县的代\
