@@ -97,8 +97,7 @@ template:
 
     ### 1. Phylogenetic Analysis
 
-    ![Tree Image]({{tree_path}})
-    {{tree_legend}}
+    ![Tree Image]({{tree_path}}) {{tree_legend}}
 
     {{tree_summary}}
 
@@ -106,44 +105,38 @@ template:
 
     #### 2.1. Expression Profile in Different Tissues
 
-    ![Tissue Image]({{tissue_path}})
-    {{tissue_legend}}
+    ![Tissue Image]({{tissue_path}}) {{tissue_legend}}
 
     {{tissue_summary}}
 
     #### 2.2. Expression Profile across Different Cultivars
 
-    ![Cultivar Image]({{cultivar_path}})
-    {{cultivar_legend}}
+    ![Cultivar Image]({{cultivar_path}}) {{cultivar_legend}}
 
     {{cultivar_summary}}
 
     #### 2.3. Expression Profile under Different kinds of Stresses
 
-    ![Treatment Image]({{treatment_path}})
-    {{treatment_legend}}
+    ![Treatment Image]({{treatment_path}}) {{treatment_legend}}
 
     {{treatment_summary}}
 
-    ### 3. The Genetic Relationship and its Counterparts 
+    ### 3. The Genetic Relationship and its Counterparts
 
-    ![Genotype Image]({{mutant_path}})
-    {{mutant_legend}}
+    ![Genotype Image]({{mutant_path}}) {{mutant_legend}}
 
     {{mutant_summary}}
 
     ### 4. Single-Cell Transcriptomic Atlas
 
-    ![Single_cell Umap Image]({{umap_path}})
-    ![Single_cell Violin Image]({{violin_path}})
+    ![Single_cell Umap Image]({{umap_path}}) ![Single_cell Violin Image]({{violin_path}})
     {{single_cell_legend}}
 
     {{single_cell_summary}}
 
     ### 5. Haplotype analysis
 
-    ![Haplotype Image]({{haplotype_path}})
-    {{haplotype_legend}}
+    ![Haplotype Image]({{haplotype_path}}) {{haplotype_legend}}
 
     {{haplotype_summary}}
 
@@ -153,18 +146,15 @@ template:
 
     #### 6.1. Motif Analysis
 
-    ![Motif Image]({{motif_path}})
-    {{motif_legend}}
+    ![Motif Image]({{motif_path}}) {{motif_legend}}
 
     {{motif_summary}}
 
     #### 6.2. Gene Epigenetic Predictions
 
-    ![SMEP Image]({{smep_path}})
-    {{smep_legend}}
+    ![SMEP Image]({{smep_path}}) {{smep_legend}}
 
-    ![SMOC Image]({{smoc_path}})
-    {{smoc_legend}}
+    ![SMOC Image]({{smoc_path}}) {{smoc_legend}}
 
     {{smep_summary}}
 
@@ -172,12 +162,28 @@ template:
 
     ### 7. Protein Characterization
 
-    #### 7.1. Domain Architecture Evolution
-    {{domain_table}}
+    #### 7.1. Domain Architecture Evolution {{domain_table}}
 
     {{domain_legend}}
 
-    *This tabular output delineates the results of a sequence or profile homology search, comprising 23 columns that report both global and domain-specific alignment metrics. The initial six columns specify identifiers and lengths for the target (subject) sequence/profile (target_name, target_accession, tlen) and the query profile/sequence (query_name, accession, qlen). Subsequent columns provide statistical evaluations of the full match: full_evalue denotes the expectation value for the entire comparison, full_score represents the composition bias-corrected bit score, and full_bias quantifies the magnitude of this correction. Per-domain annotations include the domain index (domain_num), total domains detected (domain_total), reliability estimates (domain_cevalue reflecting permissive conditional E-value and domain_ievalue indicating stringent independent E-value), domain-specific bit score (domain_score), and its associated bias correction (domain_bias). Structural coordinates delineate the domain’s alignment to the query profile (hmm_from, hmm_to), the optimal (MEA) alignment to the target sequence (ali_from, ali_to), and the broader probabilistic envelope on the target (env_from, env_to). The mean posterior probability of residue alignment reliability (acc) and a free-text description of target complete the record, collectively enabling rigorous interpretation of domain architecture and evolutionary relationships.*
+    *This tabular output delineates the results of a sequence or profile homology
+    search, comprising 23 columns that report both global and domain-specific alignment
+    metrics. The initial six columns specify identifiers and lengths for the target
+    (subject) sequence/profile (target_name, target_accession, tlen) and the query
+    profile/sequence (query_name, accession, qlen). Subsequent columns provide statistical
+    evaluations of the full match: full_evalue denotes the expectation value for the
+    entire comparison, full_score represents the composition bias-corrected bit score,
+    and full_bias quantifies the magnitude of this correction. Per-domain annotations
+    include the domain index (domain_num), total domains detected (domain_total),
+    reliability estimates (domain_cevalue reflecting permissive conditional E-value
+    and domain_ievalue indicating stringent independent E-value), domain-specific
+    bit score (domain_score), and its associated bias correction (domain_bias). Structural
+    coordinates delineate the domain’s alignment to the query profile (hmm_from, hmm_to),
+    the optimal (MEA) alignment to the target sequence (ali_from, ali_to), and the
+    broader probabilistic envelope on the target (env_from, env_to). The mean posterior
+    probability of residue alignment reliability (acc) and a free-text description
+    of target complete the record, collectively enabling rigorous interpretation of
+    domain architecture and evolutionary relationships.*
 
     {{domain_summary}}
 
@@ -189,18 +195,15 @@ template:
 
     #### 8.1. Promoter Design
 
-    ![Promoter Design]({{promoter_path}})
-    {{promoter_legend}}
+    ![Promoter Design]({{promoter_path}}) {{promoter_legend}}
 
     {{promoter_summary}}
 
     #### 8.2. Protein Design
 
-    ![Protein Design]({{protein_path}})
-    {{protein_legend}}
+    ![Protein Design]({{protein_path}}) {{protein_legend}}
 
-    {{protein_summary}}
-    '
+    {{protein_summary}} '
 user:
   analysis: "You are a bioinformatics pipeline expert. When receiving a biological\
     \ data analysis question, generate a step-by-step workflow following these guidelines:\n\
@@ -979,6 +982,110 @@ user:
     \        conda activate R_env && Rscript enrichment_analysis.R --go_file_path\
     \ $go_file --mapman_file_path $mapman_file --target_genes_file $analysis_gene_list\
     \ --out_dir $output_dir --top_genes $top_num_gene --pvalue_cutoff 0.01\n</usage_example>"
+  environment:
+    get_code_query: "<region>\n{{json_dict}}\n</region>\n<region></region>中是中国各省市县的名称及其代码信\
+      \ 息，最外层key对应中国不同的行政省，内\n部依次是市和县，其中，县对应的value包含三部分组成，分别为省、市、县的代 码，用|分割，接下\n来，我会给你一个相关问题，使用<query></query>包裹，问题中包含相应的省市县信息，如果存在，\
+      \ \n则返回对应的城市及其上级城市的代码，否则，返回空字符串即可，结果请用<result></result>\n形式返回。\n<example>\n\
+      \    query: 请帮我分析湖北鄂州的vci情况？\n    result: <result>420000|420700</result>\n \
+      \   query: 请帮我分析鄂州市的vci情况？\n    result: <result>420000|420700</result>\n   \
+      \ query: 请帮我分析湖北的vci情况？\n    result: <result>420000</result>\n    query: 请帮我分析深圳市光明区的vci情况？\n\
+      \    result: <result>440000|440300|440311</result>\n</example>\n<query>\n{{query}}\n\
+      </query>"
+    vci_analysis: Please help me to perform vci analysis, the province_code is {{province_code}},
+      the city_code is {{city_code}}, the county_code is {{county_code}}, the target
+      year is {{year}}
+    vci_analysis_meta: "Note1: you need to using af3 environment (conda activate af3);\n\
+      Note2: you need install geopandas pyproj rioxarray and xarray packages (pip\
+      \ install pyproj==3.5.0 xarray rioxarray geopandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\n\
+      step1, install python packages using pip in af3 environment; (conda activate\
+      \ af3)\nstep2, Analyze the NDVI and VCI indices for specific provinces, cities,\
+      \ and counties using vci_analysis.py. (conda activate af3)\n<Usage>\n    Tool_Usage:\n\
+      \        usage: vci_analysis.py [-h] [--province_code PROVINCE_CODE] [--city_code\
+      \ CITY_CODE] [--county_code COUNTY_CODE] [--target_year TARGET_YEAR] [--target_month\
+      \ TARGET_MONTH] [--start_year START_YEAR]\n                       [--output_dir\
+      \ OUTPUT_DIR]\n\n    options:\n        -h, --help            show this help\
+      \ message and exit\n\n        Location Parameters:\n        --province_code\
+      \ PROVINCE_CODE\n                                The province you wish to analyze.\
+      \ (in provice_code)\n        --city_code CITY_CODE\n                       \
+      \         The city you wish to analyze. (in city_code)\n        --county_code\
+      \ COUNTY_CODE\n                                The county you wish to analyze.\
+      \ (in county_code)\n\n    Time Parameters:\n        --target_year TARGET_YEAR\n\
+      \                                Starting year of the analysis.\n        --target_month\
+      \ TARGET_MONTH\n                                Starting month of the analysis.\n\
+      \        --start_year START_YEAR\n                                Ending year\
+      \ of the analysis.\n\n    Output Parameters:\n        --output_dir OUTPUT_DIR\n\
+      \                                The output dir.\n    \n    Tool_Usage_example:\n\
+      \        conda activate af3 && python vci_analysis.py --province_code $province_code\
+      \ --city_code $city_code_if_provided --county_code $county_code_if_provided\
+      \ --target_year $target_year_if_provided --target_month $target_month_if_provided\
+      \ --start_year $start_year_if_provided --output_dir $output_dir\n        Note:\
+      \ If the parameter is not provided, the corresponding parameter is not required.\n\
+      </Usage>\n"
+  evolution_agents_analysis: 'You are a bioinformatician specialized in the field
+    of evolutions and you are well versed in various task analysis in the field of
+    evolutions, next, you will generate a task plan and complete the task analysis
+    based on the data that we have provided you with, now your task goal is: Please
+    perform phylogenetic and evolutionary analyses for gene {{gene_id}}, the target
+    taxid is {{target_taxid}}'
+  evolution_agents_meta: "Note1: You don't need to build nr database index;\nNote2:\
+    \ You need to install diamond software using conda;\nNote3: if target taxid is\
+    \ All, the taxonlist parameter for diamond is not required.\nNote4: if target\
+    \ taxid is not All, the taxonlist parameter for diamond is a ','-separated list\
+    \ of taxids.\nstep1, Find Gene's Protein Sequence using grep;\nstep2, Sequence\
+    \ alignment using diamond blastp to find top40 sequence to target species if target\
+    \ taxid is not all, using -t 16 paramter and --tmpdir $tmp paramter(conda install\
+    \ diamond -c bioconda);\nstep3, Extract the sequence ids from the blast result\
+    \ using awk;\nstep4, Extract the matched sequences from the database using seqkit(conda\
+    \ install seqkit -c bioconda);\nstep5, Append protein sequences of unknown function\
+    \ to the end of the matched sequences file;\nstep6, Multiple sequence alignment\
+    \ using clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the\
+    \ phylogenetic tree using fasttree(conda install fasttree -c bioconda);\nstep8,\
+    \ Plot the phylogenetic tree using plot_tree.py;\nstep9, Summary the tree result\
+    \ using summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
+    \ \nstep12, Searching for conserved domains of protein using hmmscan;\nstep13,\
+    \ Change domain results to markdown format using domain2markdown.py;\nstep14,\
+    \ Summary the domain result using summary_all.py.\n<change example>\n    Tool_Usage:\n\
+    \        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE] [--output_dir\
+    \ OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help    \
+    \        show this help message and exit\n        --domain_file DOMAIN_FILE\n\
+    \                                the domain file for hmmer softwore\n        --output_dir\
+    \ OUTPUT_DIR\n                                the output folder\n        --gene_id\
+    \ GENE_ID     the tree for gene id\n    Tool_Example:\n        conda activate\
+    \ af3 && python domain2markdown.py --input $output_dir/$domain_file --out_dir\
+    \ $out_dir --gene_id $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n\
+    \        usage: plot_tree.py [-h] [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]\
+    \ [--gene_id GENE_ID]\n\n        options:\n        -h, --help            show\
+    \ this help message and exit\n        --tree_file TREE_FILE\n                \
+    \                the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
+    \                                the output folder\n        --gene_id GENE_ID\
+    \     the tree for gene id\n    Tool_Example:\n        conda activate af3 && pip\
+    \ install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id\
+    \ $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png\
+    \ figure, and you will using this figure to generate the summary results.\n</plot\
+    \ example>\n<summary example>\n    Tool Usage:\n        usage: summary_all.py\
+    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
+    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n  \
+    \      options:\n            -h, --help            show this help message and\
+    \ exit\n            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file\
+    \ SUMMARY_FILE\n                                    The file requiring summarization.\n\
+    \            --summary_type SUMMARY_TYPE\n                                   \
+    \ Types of Summary Documents.\n            --annotation ANNOTATION\n         \
+    \                           Data annotation file corresponding to the documents\
+    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document\
+    \ in PNG format\n            --output_dir OUTPUT_DIR\n                       \
+    \             Output Path for Summary Results.\n\n    Tool Usage example:\n  \
+    \      1. summary tree:\n            conda activate af3 && pip install openai\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_tree.png --summary_type\
+    \ tree --annotation $output_dir/$tree_file --is_png True --output_dir $out_dir\n\
+    \            Note: this task summary_type must be tree and is_png is True\n  \
+    \      1. summary domain:\n            conda activate af3 && pip install openai\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/$domain_file --summary_type\
+    \ domain --is_png False --output_dir $out_dir\n            Note: this task summary_type\
+    \ must be domain, is_png is False and do not pass the annotation parameter.\n\
+    </summary example>"
   evolution_analysis: 'You are a bioinformatician specialized in the field of evolutions
     and you are well versed in various task analysis in the field of evolutions, next,
     you will generate a task plan and complete the task analysis based on the data
@@ -986,57 +1093,74 @@ user:
     and evolutionary analyses for gene {{gene_id}}.'
   evolution_analysis_meta: "Note1: You don't need to build nr database index;\nNote2:\
     \ You need to install diamond software using conda;\nstep1, Find Gene's Protein\
-    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find top40\
-    \ sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install diamond\
-    \ -c bioconda);\nstep3, Extract the sequence ids from the blast result using awk;\nstep4,\
-    \ Extract the matched sequences from the database using seqkit(conda install seqkit\
-    \ -c bioconda);\nstep5, Append protein sequences of unknown function to the end of\
-    \ the matched sequences file;\nstep6, Multiple sequence alignment using clustalw2(conda\
-    \ install clustalw -c bioconda);\nstep7, Constructing the phylogenetic tree using\
-    \ fasttree(conda install fasttree -c bioconda);\nstep8, Plot the phylogenetic tree\
-    \ using plot_tree.py;\nstep9, Summary the tree result using summary_all.py(conda\
-    \ activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep12,\
-    \ Searching for conserved domains of protein using hmmscan;\nstep13, Change domain\
-    \ results to markdown format using domain2markdown.py;\nstep14, Summary the domain\
-    \ result using summary_all.py.\n<change example>\n    Tool_Usage:\n        usage:\
-    \ domain2markdown.py [-h] [--domain_file DOMAIN_FILE] [--output_dir OUTPUT_DIR] [--gene_id\
-    \ GENE_ID]\n\n        options:\n        -h, --help            show this help message\
-    \ and exit\n        --domain_file DOMAIN_FILE\n                                the\
-    \ domain file for hmmer softwore\n        --output_dir OUTPUT_DIR\n               \
-    \                 the output folder\n        --gene_id GENE_ID     the tree for gene\
-    \ id\n    Tool_Example:\n        conda activate af3 && python domain2markdown.py\
-    \ --input $output_dir/$domain_file --out_dir $out_dir --gene_id $gene_id\n</change\
-    \ example>\n<plot example>\n    Tool_Usage:\n        usage: plot_tree.py [-h] [--tree_file\
-    \ TREE_FILE] [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n\
-    \        -h, --help            show this help message and exit\n        --tree_file\
-    \ TREE_FILE\n                                the tree file as nwk format\n      \
-    \  --output_dir OUTPUT_DIR\n                                the output folder\n \
-    \       --gene_id GENE_ID     the tree for gene id\n    Tool_Example:\n        conda\
-    \ activate af3 && pip install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ Sequence using grep;\nstep2, Sequence alignment using diamond blastp to find\
+    \ top40 sequence, using -t 16 paramter and --tmpdir $tmp paramter(conda install\
+    \ diamond -c bioconda);\nstep3, Extract the sequence ids from the blast result\
+    \ using awk;\nstep4, Extract the matched sequences from the database using seqkit(conda\
+    \ install seqkit -c bioconda);\nstep5, Append protein sequences of unknown function\
+    \ to the end of the matched sequences file;\nstep6, Multiple sequence alignment\
+    \ using clustalw2(conda install clustalw -c bioconda);\nstep7, Constructing the\
+    \ phylogenetic tree using fasttree(conda install fasttree -c bioconda);\nstep8,\
+    \ Plot the phylogenetic tree using plot_tree.py;\nstep9, Summary the tree result\
+    \ using summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\n\
+    step12, Searching for conserved domains of protein using hmmscan;\nstep13, Change\
+    \ domain results to markdown format using domain2markdown.py;\nstep14, Summary\
+    \ the domain result using summary_all.py.\n<change example>\n    Tool_Usage:\n\
+    \        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE] [--output_dir\
+    \ OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help    \
+    \        show this help message and exit\n        --domain_file DOMAIN_FILE\n\
+    \                                the domain file for hmmer softwore\n        --output_dir\
+    \ OUTPUT_DIR\n                                the output folder\n        --gene_id\
+    \ GENE_ID     the tree for gene id\n    Tool_Example:\n        conda activate\
+    \ af3 && python domain2markdown.py --input $output_dir/$domain_file --out_dir\
+    \ $out_dir --gene_id $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n\
+    \        usage: plot_tree.py [-h] [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR]\
+    \ [--gene_id GENE_ID]\n\n        options:\n        -h, --help            show\
+    \ this help message and exit\n        --tree_file TREE_FILE\n                \
+    \                the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
+    \                                the output folder\n        --gene_id GENE_ID\
+    \     the tree for gene id\n    Tool_Example:\n        conda activate af3 && pip\
+    \ install pycirclize biopython -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
     \ && python plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir --gene_id\
-    \ $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png figure,\
-    \ and you will using this figure to generate the summary results.\n</plot example>\n<summary example>\n\
-    \    Tool Usage example:\n        usage: summary_all.py [-h] [--gene_id GENE_ID]\
-    \ [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION]\
-    \ [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n        options:\n            -h, --help\
-    \            show this help message and exit\n            --gene_id GENE_ID    \
-    \ Summary Gene ID.\n            --summary_file SUMMARY_FILE\n                    \
-    \                The file requiring summarization.\n            --summary_type\
-    \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n \
-    \           --annotation ANNOTATION\n                                    Data annotation\
-    \ file corresponding to the documents requiring summarization.\n            --is_png\
-    \ IS_PNG       Is the summary document in PNG format\n            --output_dir\
-    \ OUTPUT_DIR\n                                    Output Path for Summary Results.\n\n\
-    \    Tool Usage example:\n        1. summary tree:\n            conda activate af3 &&\
-    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python\
-    \ summary_all.py --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_tree.png\
-    \ --summary_type tree --annotation $output_dir/$tree_file --is_png True --output_dir\
-    \ $out_dir\n            Note: this task summary_type must be tree and is_png is True\n\
-    \        1. summary domain:\n            conda activate af3 && pip install openai -i\
-    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py --gene_id\
-    \ ${gene_id} --summary_file $output_dir/$domain_file --summary_type domain --is_png\
-    \ False --output_dir $out_dir\n            Note: this task summary_type must be domain,\
-    \ is_png is False and do not pass the annotation parameter.\n</summary example>\n"
+    \ $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png\
+    \ figure, and you will using this figure to generate the summary results.\n</plot\
+    \ example>\n<summary example>\n    Tool Usage example:\n        usage: summary_all.py\
+    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
+    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n  \
+    \      options:\n            -h, --help            show this help message and\
+    \ exit\n            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file\
+    \ SUMMARY_FILE\n                                    The file requiring summarization.\n\
+    \            --summary_type SUMMARY_TYPE\n                                   \
+    \ Types of Summary Documents.\n            --annotation ANNOTATION\n         \
+    \                           Data annotation file corresponding to the documents\
+    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document\
+    \ in PNG format\n            --output_dir OUTPUT_DIR\n                       \
+    \             Output Path for Summary Results.\n\n    Tool Usage example:\n  \
+    \      1. summary tree:\n            conda activate af3 && pip install openai\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_tree.png --summary_type\
+    \ tree --annotation $output_dir/$tree_file --is_png True --output_dir $out_dir\n\
+    \            Note: this task summary_type must be tree and is_png is True\n  \
+    \      1. summary domain:\n            conda activate af3 && pip install openai\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --gene_id ${gene_id} --summary_file $output_dir/$domain_file --summary_type\
+    \ domain --is_png False --output_dir $out_dir\n            Note: this task summary_type\
+    \ must be domain, is_png is False and do not pass the annotation parameter.\n\
+    </summary example>\n"
+  fst_analysis: Please help me analyze the differences in the {{gene_id}} gene between
+    indica and japonica rice varieties.
+  fst_analysis_meta: "Note1: you need to using Renv environment;\nNote2: you need\
+    \ install vcftools in Renv environment(conda install vcftools);\nStep1, using\
+    \ gene_fst_analysis.py to analyze the differences the target gene between indica\
+    \ and japonica rice;(conda activate Renv && conda install vcftools)\n<usage_example>\n\
+    \    Tool_Usage:\n        usage: gene_fst_analysis.py [-h] [--gene_id GENE_ID]\
+    \ [--msu_id MSU_ID] [--output_dir OUTPUT_DIR]\n\n        options:\n          \
+    \  -h, --help            show this help message and exit\n            --gene_id\
+    \ GENE_ID     fst analysis gene id for rice.\n            --msu_id MSU_ID    \
+    \   fst analysis msu gene id for rice.\n            --output_dir OUTPUT_DIR\n\
+    \                                    The output dir.\n\n    Tool_Usage_Example:\n\
+    \        conda activate R_env && conda install vcftools && python gene_fst_analysis.py\
+    \ --gene_id $gene_id --msu_id $msu_id --output_dir $output_dir\n</usage_example>\n"
   gene_expression_analysis:
     cultivar: Please plot the expression of the gene {{gene_id}} based on the sample
       list file provided
@@ -1049,53 +1173,54 @@ user:
   gene_expression_analysis_meta: "Note1: You need to activate af3 environment using\
     \ conda(conda activate af3);  \nNote2: You need to activate af3 environment and\
     \ install seaborn packages(conda activate af3 && pip install seaborn -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \  \nstep1, Use the script to draw gene expression patterns based on the sample list\
-    \ we provided.\nstep2, Summary the results using summary_all.py.(conda activate af3\
-    \ && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n<usage>\
-    \ \n        usage: gene_expression_boxplot.py [-h] [--gene_id GENE_ID] [--sample_dir\
+    \  \nstep1, Use the script to draw gene expression patterns based on the sample\
+    \ list we provided.\nstep2, Summary the results using summary_all.py.(conda activate\
+    \ af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
+    <usage> \n        usage: gene_expression_boxplot.py [-h] [--gene_id GENE_ID] [--sample_dir\
     \ SAMPLE_DIR] [--sample_list SAMPLE_LIST] [--exp_file EXP_FILE] [--plot_type PLOT_TYPE]\
-    \ [--out OUT] \n        options: \n        -h, --help            show this help message\
-    \ and exit \n        --gene_id GENE_ID     the gene id you want to plot. \n       \
-    \ --sample_dir SAMPLE_DIR \n                                sample file folder path.(default:\
-    \ /opt/health/genome-agent-api-service/runtime/input/) \n        --sample_list SAMPLE_LIST\
-    \ \n                                sample list file.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
-    \ \n        --exp_file EXP_FILE   expression file path.(default:\
-    \ /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
-    \ \n        --plot_type PLOT_TYPE the type of picture for boxplot \n        --out OUT\
-    \             output folder path. \n        $plot_type:  \n        1. tissues \n \
-    \       2. cultivars \n        3. genotypes \n        4. treatments \n</usage>\
-    \ \n<example> \nQuestion:  Please plot the expression of the gene MYC between roots\
-    \ and leaves \n            You need to prepare a file, including ROOT.txt and LEAF.txt;\
-    \ \n            <file_content> \n                ROOT.txt \n                LEAF.txt\
-    \ \n            </file_content> \n            <cmd_line> \n                conda\
-    \ activate af3 && pip install seaborn && python gene_expression_boxplot.py --gene_id\
-    \ MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file $exp_file_path\
-    \ --plot_type tissues --out $out \n            </cmd_line> \nQuestion:  Differences\
-    \ in gene expression of MYC gene under high temperature and normal conditions \n\
-    \            You need to prepare a file, including ROOT.txt and LEAF.txt; \n    \
-    \        <file_content> \n                HEAT_STRESS.txt \n                CONTROL.txt\
-    \ \n            </file_content> \n            <cmd_line> \n                conda\
-    \ activate af3 && pip install seaborn && python gene_expression_boxplot.py --gene_id\
-    \ MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file $exp_file_path\
-    \ --plot_type treatments --out $out \n            </cmd_line>\nNote: using this script,\
-    \ you will get the *_${plot_type}.png figure and *_${plot_type}_summary.csv annotation\
-    \ file, and you need using this files to generate the summary result.\n</example>\n<summary_example>\n\
-    \    Tool Usage example:\n        usage: summary_all.py [-h] [--gene_id GENE_ID]\
-    \ [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION]\
-    \ [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n        options:\n            -h,\
-    \ --help            show this help message and exit\n            --gene_id GENE_ID\
-    \     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n                 \
-    \                   The file requiring summarization.\n            --summary_type\
-    \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n\
-    \            --annotation ANNOTATION\n                                    Data annotation\
-    \ file corresponding to the documents requiring summarization.\n            --is_png\
-    \ IS_PNG       Is the summary document in PNG format\n            --output_dir OUTPUT_DIR\n\
-    \                                    Output Path for Summary Results.\n    Tool Usage\
-    \ example:\n        conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ [--out OUT] \n        options: \n        -h, --help            show this help\
+    \ message and exit \n        --gene_id GENE_ID     the gene id you want to plot.\
+    \ \n        --sample_dir SAMPLE_DIR \n                                sample file\
+    \ folder path.(default: /opt/health/genome-agent-api-service/runtime/input/) \n\
+    \        --sample_list SAMPLE_LIST \n                                sample list\
+    \ file.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/scripts/scripts/default_sample_list.txt)\
+    \ \n        --exp_file EXP_FILE   expression file path.(default: /opt/health/work/genomeagent_project_test1/genomeagent_examples/raw_data/05.transcriptome/oryza_sativa/rice.csv)\
+    \ \n        --plot_type PLOT_TYPE the type of picture for boxplot \n        --out\
+    \ OUT             output folder path. \n        $plot_type:  \n        1. tissues\
+    \ \n        2. cultivars \n        3. genotypes \n        4. treatments \n</usage>\
+    \ \n<example> \nQuestion:  Please plot the expression of the gene MYC between\
+    \ roots and leaves \n            You need to prepare a file, including ROOT.txt\
+    \ and LEAF.txt; \n            <file_content> \n                ROOT.txt \n   \
+    \             LEAF.txt \n            </file_content> \n            <cmd_line>\
+    \ \n                conda activate af3 && pip install seaborn && python gene_expression_boxplot.py\
+    \ --gene_id MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file\
+    \ $exp_file_path --plot_type tissues --out $out \n            </cmd_line> \nQuestion:\
+    \  Differences in gene expression of MYC gene under high temperature and normal\
+    \ conditions \n            You need to prepare a file, including ROOT.txt and\
+    \ LEAF.txt; \n            <file_content> \n                HEAT_STRESS.txt \n\
+    \                CONTROL.txt \n            </file_content> \n            <cmd_line>\
+    \ \n                conda activate af3 && pip install seaborn && python gene_expression_boxplot.py\
+    \ --gene_id MYC --sample_dir $sample_dir --sample_list $prepare_file --exp_file\
+    \ $exp_file_path --plot_type treatments --out $out \n            </cmd_line>\n\
+    Note: using this script, you will get the *_${plot_type}.png figure and *_${plot_type}_summary.csv\
+    \ annotation file, and you need using this files to generate the summary result.\n\
+    </example>\n<summary_example>\n    Tool Usage example:\n        usage: summary_all.py\
+    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
+    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n  \
+    \      options:\n            -h, --help            show this help message and\
+    \ exit\n            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file\
+    \ SUMMARY_FILE\n                                    The file requiring summarization.\n\
+    \            --summary_type SUMMARY_TYPE\n                                   \
+    \ Types of Summary Documents.\n            --annotation ANNOTATION\n         \
+    \                           Data annotation file corresponding to the documents\
+    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document\
+    \ in PNG format\n            --output_dir OUTPUT_DIR\n                       \
+    \             Output Path for Summary Results.\n    Tool Usage example:\n    \
+    \    conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
     \ && python summary_all.py --gene_id ${gene_id} --summary_file $output_dir/*_${plot_type}.png\
-    \ --summary_type $plot_type --annotation $output_dir/*_${plot_type}_summary.csv --is_png\
-    \ True --output_dir $out_dir\n        Note: this task summary_type must be $plot_type\
-    \ and is_png is True\n"
+    \ --summary_type $plot_type --annotation $output_dir/*_${plot_type}_summary.csv\
+    \ --is_png True --output_dir $out_dir\n        Note: this task summary_type must\
+    \ be $plot_type and is_png is True\n"
   gene_function: "[Species Name: {{species}}\nGene Names: {{gene_string}}]\n\nPlease\
     \ provide a comprehensive and accurate description of the {{species}} gene(s)\
     \ {{gene_string}}, covering the following sections. Ensure all information is\
@@ -2025,6 +2150,23 @@ user:
     \ conda activate Renv && Rscript network_plot.R $node_class_file_out_in_step1\
     \  $output_dir $to_id $use_sub_sample[TRUE or FALSE]\n    Note: The recommended\
     \ use_sub_sample  parameter is TRUE\n</plot usage>\n"
+  get_taxid_meta: "I will provide a domain-specific question related to bioinformatics\
+    \ evolutionary analysis in <User query></User query> target. \nBased on this question,\
+    \ please list the Latin names of the species required for alignment.\nNote1: If\
+    \ the user selects multiple species for comparison, all Latin names of the target\
+    \ species will be added to the list.\nNote2: If the user does not explicitly specify\
+    \ the target species, the target species list is ['All'].\nNote3: If the target\
+    \ species specified by the user is not a specific species, please list the Latin\
+    \ names of 3-5 species based on all your knowledge.\nNote4: The result should\
+    \ only return a dictionary; do not return any other content.\n<example_query1>\n\
+    Please help me analyze the evolution of the mouse gene MYC in human-related genes.\n\
+    </example_query1>\n<example_result1> \n{'target_spa_list': ['Homo sapiens']}\n\
+    </example_result1>\n<example_query2>\nPlease help me analyze the evolution of\
+    \ the mouse gene MYC in human-related and maize genes.\n</example_query2> \n<example_result2>\n\
+    {'target_spa_list': ['Homo sapiens', 'Zea mays']}\n</example_result2> \n<example_query3>\n\
+    Please help me analyze the evolution of the mouse gene MYC\n</example_query3>\
+    \ \n<example_result3>\n{'target_spa_list': ['All']}\n</example_result3>\n<User\
+    \ query> \n{{user_query}}\n</User query>"
   haplotypes_analysis: Please help me to analyze the haplotype of {{gene_id}} gene
   haplotypes_analysis_meta: "Note1: you need to using af3 environment(conda activate\
     \ af3); \nstep1, analysis the cds haplotypes information using cp(cp $cds_haplotypes_path/*\
@@ -2039,68 +2181,167 @@ user:
     \ -o /path/to/output -p /script_path\n    Tool_Example:\n        conda activate\
     \ af3 && sh plot_promoter_hap.sh -i $promoter_path  -o $output_dir -p $script_path\n\
     </plot example>\n"
-  fst_analysis: Please help me analyze the differences in the {{gene_id}} gene between 
-    indica and japonica rice varieties.
-  fst_analysis_meta: "Note1: you need to using Renv environment;\nNote2: you need install\
-    \ vcftools in Renv environment(conda install vcftools);\nStep1, using gene_fst_analysis.py\
-    \ to analyze the differences the target gene between indica and japonica rice;(conda\
-    \ activate Renv && conda install vcftools)\n<usage_example>\n    Tool_Usage:\n      \
-    \  usage: gene_fst_analysis.py [-h] [--gene_id GENE_ID] [--msu_id MSU_ID] [--output_dir\
-    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this help\
-    \ message and exit\n            --gene_id GENE_ID     fst analysis gene id for rice.\n\
-    \            --msu_id MSU_ID       fst analysis msu gene id for rice.\n            --output_dir\
-    \ OUTPUT_DIR\n                                    The output dir.\n\n    Tool_Usage_Example:\n\
-    \        conda activate R_env && conda install vcftools && python gene_fst_analysis.py\
-    \ --gene_id $gene_id --msu_id $msu_id --output_dir $output_dir\n</usage_example>\n"
-  in_silico_research_goals: "You are an expert-level In Silico Research Agent. Your\
-    \ function is to analyze a scientific research paper and decompose it into a series\
-    \ of high-level, end-to-end research objectives. Each objective represents a complete\
-    \ analytical pipeline required to reproduce a key finding or a major figure from\
-    \ the paper.\n\n**INSTRUCTIONS:**\n1.  **Identify Major Objectives:** Read the\
-    \ entire paper. Identify the main analytical goals, which typically correspond\
-    \ to a major figure (e.g., Figure 1, Figure 2, Table 1, Table 2, Extended Data\
-    \ Fig. 1, Extended Data Fig. 2, Supplementary Fig. 1, Supplementary Fig. 2, ...)\
-    \ or a key conclusion described in the Results section (e.g., \"Comparison between\
-    \ two cultivars,\" \"Cross-species analysis\").\n2.  **Consolidate Workflow per\
-    \ Objective:** For each major objective you identify:\n    a.  **Trace All Steps:**\
-    \ Trace back and identify every associated step required to achieve this objective.\
-    \ This includes data acquisition (e.g., GEO accession), software environment setup\
-    \ (e.g., specific R packages and versions), data preprocessing (filtering, normalization),\
-    \ core computational analysis (PCA, clustering, differential expression), and\
-    \ final visualization or result generation.\n    b.  **Formulate the `goal`:**\
-    \ Synthesize the entire consolidated workflow into a single, comprehensive summary\
-    \ string. This string should describe the end-to-end task. Use imperative verbs\
-    \ and separate distinct steps with commas. Example: \"Replicate Figure 1, including\
+  in_silico_research_goals: "# Role: In Silico Research Agent\n\n## Profile\n- language:\
+    \ English\n- description: An expert AI designed to analyze scientific research\
+    \ papers, decompose them into a series of high-level, end-to-end research objectives,\
+    \ and extract the necessary context to computationally reproduce them. Each objective\
+    \ represents a complete analytical pipeline required to regenerate a key finding,\
+    \ figure, or table from the paper.\n- background: The AI is trained on a vast\
+    \ corpus of scientific literature, computational biology methods, and data analysis\
+    \ pipelines. It possesses a deep understanding of the canonical structure of research\
+    \ papers (Abstract, Introduction, Methods, Results, Discussion, Figures, Tables,\
+    \ Supplementary Information) and can expertly trace the connections between a\
+    \ final result and the methods used to generate it.\n- personality: Meticulous,\
+    \ analytical, systematic, and objective. It focuses on accurately deconstructing\
+    \ and representing the research workflow as described in the text, without introducing\
+    \ external interpretation or embellishment.\n- expertise: Computational biology,\
+    \ bioinformatics, data science, scientific literature analysis, and genomics/transcriptomics.\n\
+    - target_audience: Computational biologists, bioinformaticians, data scientists,\
+    \ and researchers aiming to reproduce, validate, or extend the analyses presented\
+    \ in a scientific paper.\n\n## Skills\n\n1. Scientific Paper Deconstruction\n\
+    \   - Objective Identification: Accurately identify all computational analysis\
+    \ goals. These goals typically correspond to figures (**\"Figure\"**, **\"Fig.\"\
+    **), **\"Extended Data Figures\"**, **\"Supplementary Figures\"**, tables (**\"\
+    Table\"**), and **\"Supplementary Tables\"**, as described in the source texts.\n\
+    \   - Workflow Tracing: Meticulously trace and map all associated steps required\
+    \ to achieve an objective by searching across all provided text sources (e.g.,\
+    \ `` `paper_text` ``, `` `supplementary_information` ``, `` `addendum` ``). This\
+    \ includes data acquisition, environment setup, preprocessing, core analysis,\
+    \ and final visualization.\n   - Goal Synthesis: Formulate a concise, comprehensive,\
+    \ and imperative summary string (`goal`) that describes the entire end-to-end\
+    \ task for a single objective, using a logical sequence of actions.\n   - Context\
+    \ Aggregation: Extract and concatenate all relevant text snippets (from Methods,\
+    \ Results, Figure/Table Legends, etc.) from all provided source texts that provide\
+    \ the necessary procedural details, parameters, and justifications for each step\
+    \ in a workflow.\n\n2. Information Structuring and Formatting\n   - Keyword Extraction:\
+    \ Identify and prioritize key terms such as software packages (e.g., Seurat),\
+    \ algorithms (e.g., UMAP), data accession numbers (e.g., GEO), and specific parameters\
+    \ mentioned in the text.\n   - Textual Coherence: Consolidate disparate but related\
+    \ text fragments from across all provided source documents into a single, coherent,\
+    \ and readable `context` block for each objective.\n   - JSON Formatting: Generate\
+    \ clean, valid, and well-structured JSON output that strictly adheres to the specified\
+    \ schema (a list of dictionaries with \"goal\" and \"context\" keys).\n   - Strict\
+    \ Adherence: Precisely follow all formatting, content, and structural rules defined\
+    \ in this prompt to ensure consistent and predictable output.\n\n## Rules\n\n\
+    1. Basic principles:\n   - Fidelity to Source: All extracted `context` must originate\
+    \ directly from the provided texts (`` `paper_text` ``, `` `supplementary_information`\
+    \ ``, `` `addendum` ``). Do not invent, infer, or paraphrase information not explicitly\
+    \ present in the sources.\n   - End-to-End Completeness: Each research objective\
+    \ must represent a complete analytical pipeline, from data source to final output\
+    \ (figure, table, or conclusion).\n   - Objectivity: Decompose the paper based\
+    \ on its explicit content. Do not inject external knowledge or critique the scientific\
+    \ validity of the described methods.\n   - Focus on Reproducibility: The primary\
+    \ aim is to structure the information in a way that directly facilitates the computational\
+    \ reproduction of the paper's results.\n   - **Blacklist Adherence**: Strictly\
+    \ exclude any figures or tables specified in the `` `blacklist` `` variable from\
+    \ the final output. These items should be completely ignored during objective\
+    \ identification.\n\n2. Behavioral guidelines:\n   - Systematic Analysis: Process\
+    \ the documents by first identifying all analytical outputs (figures and tables\
+    \ across all sources) and then tracing back through the Results and Methods sections\
+    \ to build the complete workflow.\n   - Imperative Language: Use clear, imperative\
+    \ verbs (e.g., \"Replicate,\" \"Perform,\" \"Analyze,\" \"Generate\") when formulating\
+    \ the `goal` string.\n   - Contextual Linkage: Ensure a direct and logical link\
+    \ between every step outlined in the `goal` string and the corresponding details\
+    \ provided in the `context` block.\n   - No Extraneous Output: Do not add any\
+    \ commentary, explanation, or conversational text. The output must only be the\
+    \ specified JSON.\n\n3. Constraints:\n   - Input Scope: The analysis is strictly\
+    \ limited to the text provided in the `` `paper_text` ``, `` `supplementary_information`\
+    \ ``, and `` `addendum` `` variables.\n   - Ignored Items: Any figure or table\
+    \ identifiers listed in the `` `blacklist` `` variable must be excluded from the\
+    \ analysis.\n   - Output Structure: The final output MUST be a valid JSON array\
+    \ of objects. Any other format is unacceptable.\n   - Object Schema: Each object\
+    \ within the JSON array must contain exactly two keys: `\"goal\"` and `\"context\"\
+    `. No more, no less.\n   - Data Types: The value for the `\"goal\"` key must be\
+    \ a string. The value for the `\"context\"` key must be a single, concatenated\
+    \ string.\n\n## Workflows\n\n- Goal: To transform raw scientific texts into a\
+    \ structured JSON list of reproducible research objectives.\n- Step 1: Ingestion\
+    \ and Objective Scoping:\n   - a. Receive the `` `paper_text` `` and any provided\
+    \ `` `supplementary_information` `` and `` `addendum` ``.\n   - b. Perform an\
+    \ initial scan across all provided texts, focusing on Results sections, figure/table\
+    \ captions, and titles.\n   - c. Identify **all** primary scientific outputs,\
+    \ including but not limited to: \"Figure\", \"Fig.\", \"Extended Data Figure\"\
+    , \"Supplementary Figure\", \"Table\", and \"Supplementary Table\".\n   - d. Consult\
+    \ the `` `blacklist` `` variable. Create a preliminary list of major objectives,\
+    \ excluding any items specified in the blacklist.\n- Step 2: Detailed Workflow\
+    \ Decomposition: For each identified objective:\n   - a. Trace & Map: Scour **all\
+    \ provided texts** (especially Methods, Results, and Figure/Table Legends) to\
+    \ find all related procedural steps, parameters, software, and data sources.\n\
+    \   - b. Synthesize Goal: Condense the mapped steps into a single, imperative\
+    \ `goal` string, listing the major actions in a logical sequence separated by\
+    \ commas.\n   - c. Aggregate Context: Copy and concatenate all relevant sentences\
+    \ and paragraphs describing the methodology into a single `context` string.\n\
+    - Step 3: JSON Assembly and Finalization:\n   - a. Construct Object: For each\
+    \ objective, create a JSON object with the synthesized `goal` and aggregated `context`.\n\
+    \   - b. Consolidate Array: Combine all JSON objects into a single JSON array.\n\
+    \   - c. Validate and Output: Ensure the final output is a valid JSON array and\
+    \ strictly adheres to all formatting rules before presenting it as the final result.\n\
+    - Expected result: A raw JSON formatted list where each element is a dictionary\
+    \ containing a `goal` string and a `context` string, representing one complete\
+    \ analytical pipeline from the paper.\n\n## OutputFormat\n\n1. Output format type:\n\
+    \   - format: `json`\n   - structure: A JSON array `[]` containing one or more\
+    \ JSON objects `{}`. Each object represents a single research objective.\n   -\
+    \ style: Cleanly formatted, indented JSON. The output must be raw JSON text, without\
+    \ any surrounding text, explanations, or code block fences.\n   - special_requirements:\
+    \ The final output must be parseable by a standard JSON parser.\n\n2. Format specifications:\n\
+    \   - indentation: Use 2 spaces for indentation within the JSON structure.\n \
+    \  - sections: Each object in the array must contain two and only two top-level\
+    \ keys: `\"goal\"` and `\"context\"`.\n   - highlighting: Not applicable for raw\
+    \ JSON output.\n\n3. Validation rules:\n   - validation: The output must pass\
+    \ a standard JSON lint/validation check.\n   - constraints: The value of the `\"\
+    goal\"` key must be a non-empty string. The value of the `\"context\"` key must\
+    \ be a non-empty string containing text extracted from the source paper.\n   -\
+    \ error_handling: If the provided texts are insufficient to define any clear objectives,\
+    \ output an empty JSON array `[]`.\n\n4. Example descriptions:\n   1. Example\
+    \ 1:\n      - Title: Full JSON Array Output\n      - Format type: JSON Array\n\
+    \      - Description: This demonstrates the final output format, which is a list\
+    \ containing multiple research objective objects.\n      - Example content: |\n\
+    \          [\n            {\n              \"goal\": \"Replicate Figure 1, including\
     \ downloading data from GSE146035, installing Seurat v3.1.0, performing cell filtering\
     \ and normalization, running UMAP for clustering, and plotting marker gene expression.\"\
-    \n    c.  **Extract the `context`:** Gather all relevant sentences, paragraphs,\
-    \ or data snippets from the entire paper (especially from \"Methods\", \"Results\"\
-    , and \"Figure Legends\") that describe, justify, or are directly related to any\
-    \ step in this consolidated workflow. Concatenate them into a single text block.\
-    \ This context provides the necessary information for an agent to execute the\
-    \ goal.\n3.  **Format the Output:** The final output MUST be a JSON formatted\
-    \ list of dictionaries. Each dictionary in the list represents one major objective\
-    \ and must contain two keys:\n    *   `\"goal\"`: The comprehensive summary string\
-    \ of the workflow.\n    *   `\"context\"`: The aggregated original text from the\
-    \ paper providing the details for the workflow.\n\n**EXAMPLE OF A SINGLE OUTPUT\
-    \ ELEMENT:**\n```json\n[\n  {\n    \"goal\": \"Replicate Figure 2: Perform comparative\
+    ,\n              \"context\": \"[Relevant text from Methods section in the 'paper_text'\
+    \ source describing data download and initial processing]... [Relevant text from\
+    \ Results section in 'paper_text' source describing Figure 1]... [Relevant text\
+    \ from Figure 1 Legend in 'paper_text' source describing the plots and parameters]...\"\
+    \n            },\n            {\n              \"goal\": \"Generate Supplementary\
+    \ Table S1: Perform differential gene expression analysis between Cluster A and\
+    \ Cluster B, apply filtering criteria (log2FC > 1, p-adj < 0.05), and format the\
+    \ output as a table with gene ID, log2FC, p-value, and adjusted p-value.\",\n\
+    \              \"context\": \"[Relevant text from Methods section in the 'supplementary_information'\
+    \ source describing differential expression methodology]... [Relevant text from\
+    \ Supplementary Table S1 legend describing the content and statistical thresholds\
+    \ used]...\"\n            }\n          ]\n\n   2. Example 2:\n      - Title: Single\
+    \ Research Objective Object\n      - Format type: JSON Object (as part of the\
+    \ main array)\n      - Description: This example shows the detailed structure\
+    \ for a single, complete research objective.\n      - Example content: |\n   \
+    \       {\n            \"goal\": \"Replicate Extended Data Figure 2: Perform comparative\
     \ analysis of cell-type clusters between Nip and 93-11 rice cultivars, including\
     \ merging datasets, aligning clusters, calculating correlation heatmaps, performing\
     \ GO enrichment analysis, and visualizing hormone-related gene expression on UMAP\
-    \ plots.\",\n    \"context\": \"The single-cell data from Nip and 93-11 were merged\
-    \ and subsequently clustered. We observed that all eight cell-type clusters were\
-    \ well aligned and matched one to one between the two cultivars (Figure 2A). Cell-type\
-    \ homologies were also supported by our cell-type marker genes and high Pearson's\
-    \ correlation coefficients... (Figure 2B). To provide insights into the molecular\
-    \ functions in each cell type in both cultivars, we performed GO analysis and\
-    \ found matching functional categories for each cell type (Figure 2D). ...we plotted\
-    \ the expression of genes related to major hormone biosynthesis and response pathways...\
-    \ (Figure 2E). [Methods section text]: Normalized scRNA-seq data from Nip and\
-    \ 93-11 were combined into one object... The FindIntegrationAnchors function command\
-    \ used default parameters... The IntegrateData function was run...\",\n  },\n\
-    \  {\n    \"goal\": \"...\",\n    \"context\": \"...\",\n  },\n  ...\n]\n```\n\
-    \nNow, analyze the following paper and generate the complete JSON list of dictionaries.\n\
-    \nPAPER TEXT:\n\n{{paper_text}}\n"
+    \ plots.\",\n            \"context\": \"The single-cell data from Nip and 93-11\
+    \ were merged and subsequently clustered. We observed that all eight cell-type\
+    \ clusters were well aligned (Extended Data Figure 2A). Cell-type homologies were\
+    \ also supported by our cell-type marker genes and high Pearson's correlation\
+    \ coefficients (Extended Data Figure 2B). To provide insights into the molecular\
+    \ functions in each cell type, we performed GO analysis (Extended Data Figure\
+    \ 2D). [Methods section text from the 'addendum' source]: Normalized scRNA-seq\
+    \ data from Nip and 93-11 were combined into one object... The FindIntegrationAnchors\
+    \ function command used default parameters... The IntegrateData function was run...\"\
+    \n          }\n\n## Initialization\nAs In Silico Research Agent, you must strictly\
+    \ follow all above Rules, execute tasks according to the Workflows, and produce\
+    \ output only in the specified OutputFormat. Now, analyze the following texts\
+    \ and generate the complete JSON list of dictionaries as defined.\n\n**PAPER TEXT\
+    \ (The full text content of the primary research article, including Abstract,\
+    \ Introduction, Methods, Results, Discussion, and all main figure/table legends):**\n\
+    {{paper_text}}\n\n**SUPPLEMENTARY INFORMATION (Text from Supplementary Information,\
+    \ Supplementary Methods, Extended Data, or other supporting documents. This often\
+    \ contains crucial details, parameters, and legends for supplementary figures/tables.\
+    \ Leave empty if not applicable):**\n{{supplementary_information}}\n\n**ADDENDUM\
+    \ (Text from any published errata, corrections, or addenda associated with the\
+    \ paper. This may contain updated methods or results. Leave empty if not applicable):**\n\
+    {{addendum}}\n\n**BLACKLIST (A comma-separated list of figure/table identifiers\
+    \ to be explicitly excluded from the analysis, e.g., 'Figure 1, Table 3, Supplementary\
+    \ Figure 2'. Useful for ignoring non-computational diagrams or schematics. Leave\
+    \ empty if not applicable):**\n{{blacklist}}"
   ppi_analysis: 'You are a bioinformatician specialized in the field of protein sturcture
     and you are well versed in various task analysis in the field of structure prediction
     of protein complexes, next, you will generate a task plan and complete the task
@@ -2165,101 +2406,153 @@ user:
     that we have provided you with, now your task goal is: Please help me analyze
     the conservation of Oryza sativa {{gene_id}} gene prompter.'
   promoter_analysis_meta: "Note1: You do not need to build blastn index;\nNote2: you\
-    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence using\
-    \ grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter sequence\
-    \ in rice; \nstep3, Extract the gene promoter sequence ids from the blastn result\
-    \ using awk; \nstep4, Extract the matched gene promoter sequences from the promoter\
-    \ database file using seqkit; \nstep5, Append the gene promoter sequence we analyzed\
-    \ to the end of the matched sequences file; \nstep6, Analysis the conserved motif in\
-    \ the gene promoter sequences using meme(conda install meme -c bioconda);\nstep7, Plot\
-    \ the motif logo figure using plot_motif.py;\nstep8, Summary the motif result using\
-    \ summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple).\
-    \ \n<plot example>\n    Tool_Usage:\n        usage: plot_motif.py [-h] [--meme_file MEME_FILE]\
-    \ [--output_dir OUTPUT_DIR]\n\n        options:\n        -h, --help           \
-    \ show this help message and exit\n        --meme_file MEME_FILE\n            \
-    \                    the motif result file for meme software\n        --output_dir\
-    \ OUTPUT_DIR\n                                the output folder\n    Tool_Example:\n\
-    \        conda activate af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
-    \ && python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir $output_dir\n\
-    \    Note: using this script, you will get a figure motif_all_logo.png in $output_dir.\n</plot\
-    \ example>\n<summary example>\n    Tool Usage example:\n        usage: summary_all.py\
-    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
-    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n    \
-    \    options:\n            -h, --help            show this help message and exit\n\
-    \            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file\
-    \ SUMMARY_FILE\n                                    The file requiring summarization.\n\
-    \            --summary_type SUMMARY_TYPE\n                                    Types\
-    \ of Summary Documents.\n            --annotation ANNOTATION\n                     \
-    \               Data annotation file corresponding to the documents requiring summarization.\n\
-    \            --is_png IS_PNG       Is the summary document in PNG format\n         \
-    \   --output_dir OUTPUT_DIR\n                                    Output Path for\
-    \ Summary Results.\n    Tool Usage example:\n        conda activate af3 && pip install\
-    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ need to install blast software first;\nstep1, Find Gene's Promoter Sequence\
+    \ using grep; \nstep2, Sequence alignment using blastn to find top10 gene promoter\
+    \ sequence in rice; \nstep3, Extract the gene promoter sequence ids from the blastn\
+    \ result using awk; \nstep4, Extract the matched gene promoter sequences from\
+    \ the promoter database file using seqkit; \nstep5, Append the gene promoter sequence\
+    \ we analyzed to the end of the matched sequences file; \nstep6, Analysis the\
+    \ conserved motif in the gene promoter sequences using meme(conda install meme\
+    \ -c bioconda);\nstep7, Plot the motif logo figure using plot_motif.py;\nstep8,\
+    \ Summary the motif result using summary_all.py(conda activate af3 && pip install\
+    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple). \n<plot example>\n\
+    \    Tool_Usage:\n        usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n        -h, --help            show this help\
+    \ message and exit\n        --meme_file MEME_FILE\n                          \
+    \      the motif result file for meme software\n        --output_dir OUTPUT_DIR\n\
+    \                                the output folder\n    Tool_Example:\n      \
+    \  conda activate af3 && pip install logomaker -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_motif.py --meme_file $meme_results_folder/meme.txt --output_dir\
+    \ $output_dir\n    Note: using this script, you will get a figure motif_all_logo.png\
+    \ in $output_dir.\n</plot example>\n<summary example>\n    Tool Usage example:\n\
+    \        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE]\
+    \ [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this\
+    \ help message and exit\n            --gene_id GENE_ID     Summary Gene ID.\n\
+    \            --summary_file SUMMARY_FILE\n                                   \
+    \ The file requiring summarization.\n            --summary_type SUMMARY_TYPE\n\
+    \                                    Types of Summary Documents.\n           \
+    \ --annotation ANNOTATION\n                                    Data annotation\
+    \ file corresponding to the documents requiring summarization.\n            --is_png\
+    \ IS_PNG       Is the summary document in PNG format\n            --output_dir\
+    \ OUTPUT_DIR\n                                    Output Path for Summary Results.\n\
+    \    Tool Usage example:\n        conda activate af3 && pip install openai -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
     \ --gene_id ${gene_id} --summary_file $output_dir/motif_all_logo.png --summary_type\
-    \ motif --annotation $meme_results_folder/meme.txt --is_png True --output_dir $out_dir\n\
-    \        Note: this task summary_type must be motif and is_png is True\n"
+    \ motif --annotation $meme_results_folder/meme.txt --is_png True --output_dir\
+    \ $out_dir\n        Note: this task summary_type must be motif and is_png is True\n"
+  promoter_design: Please help me to design {{gene_id}} promoter.
+  promoter_design_meta: "Note1: you need to using epic environment (conda activate\
+    \ epic);\nstep1, get the promoter sequence for the gene using grep;\nstep2, designing\
+    \ the gene promoter sequences; (cp -r $design_result_dir $output_dir)\nstep3,\
+    \ get the designed promoter sequences using get_promoter_design.py scripts; (conda\
+    \ activate epic)\nstep4, using smep to predict modifications for designed promoters;\
+    \ (conda activate epic)\nstep5, using smoc to predict chromatin accessibility\
+    \ for designed promoters. (conda activate epic)\n<get_promoter_design>\n    Tool_Usage:\n\
+    \        usage: get_promoter_design.py [-h] [--input_fasta INPUT_FASTA] [--gene_id\
+    \ GENE_ID] [--cape_file CAPE_FILE] [--output_dir OUTPUT_DIR] [--top TOP]\n\n \
+    \       options:\n            -h, --help            show this help message and\
+    \ exit\n            --input_fasta INPUT_FASTA\n                              \
+    \      Wild-type promoter FASTA file. \n            --gene_id GENE_ID     The\
+    \ gene id of promoter sequence.\n            --cape_file CAPE_FILE\n         \
+    \                           Promoter Site Mutation CAPE Score Results.\n     \
+    \       --output_dir OUTPUT_DIR\n                                    The output\
+    \ dir.\n            --top TOP             Number of top output mutation sequences.\n\
+    \n    Tool_Usage_Example:\n        conda activate epic && pip install pandas -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python get_promoter_design.py\
+    \ --input_fasta $wt_promoter_file --gene_id $gene_id --cape_file $output/$gene_id/aggregate.bedGraph\
+    \ --output_dir $output_dir\n    Note:\n        The output promoter design results\
+    \ are located in the copied folder under the filename aggregate.bedGraph.\n  \
+    \      Finnally, you will get $top files in $output_dir, file_name is ${gene_id}_mut_top1.fa\
+    \ - ${gene_id}_mut_top${top}.fa, and you will predict this design promoter file\
+    \ using smep and smoc;\n</get_promoter_design>\n<smep>\n    Tool_Usage:\n    \
+    \    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file\
+    \ -O /$output_dir/$out_file -T $epigenetic_modification_type\n        $epigenetic_modification_type:\n\
+    \            1. 5mC\n            2. 6mA\n            3. m6A\n            4. H3K27me3\n\
+    \            5. H3K4me3\n            6. H3K9ac\n        Note1: When you run the\
+    \ script, you must be under the path /opt/health/epic_models/smep/\n        Note2:\
+    \ The fasta_file must be saved under the path /opt/health/epic_models/smep/\n\
+    \        Note3: out_file You can specify files in any path\n\n    Tool_Usage_Example:\n\
+    \        question: please help me to predict the 5mC modification of A gene prompter\n\
+    \        commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep\
+    \ && cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
+    \ -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n</smep>\n<smoc>\n    Tool_Usage:\n\
+    \        python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input\
+    \ $input_fasta --model /opt/health/epic_models/smoc/model/$model_type --output\
+    \ $out_dir --threshold 0.8 --window_size 800 \n            $model_type: \n   \
+    \         1. Best_model_9311CK.h5: Wild-type chromatin accessibility of variety\
+    \ 9311\n            2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited\
+    \ state of variety 9311\n            3. Best_model_NIPCK.h5: Wild-type chromatin\
+    \ accessibility of variety NIP\n            4. Best_model_NIPHS.h5: Chromatin\
+    \ accessibility in the heat-excited state of variety NIP\n\n    Tool_Usage_Example:\n\
+    \        question: please help me to predict the wild-type chromatin accessibility\
+    \ of Oryza sativa Os12g0263100 gene prompter in 9311.\n        commond_line: conda\
+    \ activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
+    \ --input $input_fasta --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5\
+    \ --output ./\n</smoc>\n"
   protein_design_analysis: 'You are a bioinformatician specialized in the field of
     protein design based on evolution information and you are well versed in various
     task analysis in the field of protein design, next, you will generate a task plan
     and complete the task analysis based on the data that we have provided you with,
     now your task goal is: Please help me design the protein structure based on evolution
     information for gene {{gene_id}}.'
-  protein_design_analysis_meta: "Note1: You don't need to build nr database index; \nNote2:\
-    \ You need to install diamond software using conda(conda install diamond -c bioconda);\
-    \ \nNote3: You need to install cd-hit software using conda(conda install cd-hit -c\
-    \ bioconda); \nNote4: You need to install water software using conda(conda install\
-    \ emboss); \nNote5: Water software usage is as follows: \n<water usage> \n   \
-    \ Smith-Waterman local alignment of sequences \n    Version: EMBOSS:6.6.0.0 \n\
-    \    Standard (Mandatory) qualifiers: \n    [-asequence]         sequence   Sequence\
-    \ filename and optional format, or \n                                    reference\
-    \ (input USA) \n    [-bsequence]         seqall     Sequence(s) filename and optional\
-    \ format, or \n                                    reference (input USA) \n   \
-    \ -gapopen            float      [10.0 for any sequence] The gap open penalty \n\
-    \                                    is the score taken away when a gap is \n\
-    \                                    created. The best value depends on the \n\
-    \                                    choice of comparison matrix. The default \n\
-    \                                    value assumes you are using the EBLOSUM62 \n\
-    \                                    matrix for protein sequences, and the \n\
-    \                                    EDNAFULL matrix for nucleotide sequences. \n\
-    \                                    (Number from 0.000 to 100.000) \n    -gapextend\
-    \          float      [0.5 for any sequence] The gap extension \n              \
-    \                      penalty is added to the standard gap penalty \n         \
-    \                           for each base or residue in the gap. This \n       \
-    \                             is how long gaps are penalized. Usually you \n   \
-    \                                 will expect a few long gaps rather than many \n\
-    \                                    short gaps, so the gap extension penalty \n\
-    \                                    should be lower than the gap penalty. An \n\
-    \                                    exception is where one or both sequences are \n\
-    \                                    single reads with possible sequencing \n\
-    \                                    errors in which case you would expect many \n\
-    \                                    single base gaps. You can get this result by \n\
-    \                                    setting the gap open penalty to zero (or \n\
-    \                                    very low) and using the gap extension \n\
-    \                                    penalty to control gap scoring. (Number from \n\
-    \                                    0.000 to 10.000) \n    [-outfile]        \
-    \   align      [*.water] Output alignment file name \n                        \
-    \            (default -aformat srspair) \n    Additional (Optional) qualifiers:\
+  protein_design_analysis_meta: "Note1: You don't need to build nr database index;\
+    \ \nNote2: You need to install diamond software using conda(conda install diamond\
+    \ -c bioconda); \nNote3: You need to install cd-hit software using conda(conda\
+    \ install cd-hit -c bioconda); \nNote4: You need to install water software using\
+    \ conda(conda install emboss); \nNote5: Water software usage is as follows: \n\
+    <water usage> \n    Smith-Waterman local alignment of sequences \n    Version:\
+    \ EMBOSS:6.6.0.0 \n    Standard (Mandatory) qualifiers: \n    [-asequence]   \
+    \      sequence   Sequence filename and optional format, or \n               \
+    \                     reference (input USA) \n    [-bsequence]         seqall\
+    \     Sequence(s) filename and optional format, or \n                        \
+    \            reference (input USA) \n    -gapopen            float      [10.0\
+    \ for any sequence] The gap open penalty \n                                  \
+    \  is the score taken away when a gap is \n                                  \
+    \  created. The best value depends on the \n                                 \
+    \   choice of comparison matrix. The default \n                              \
+    \      value assumes you are using the EBLOSUM62 \n                          \
+    \          matrix for protein sequences, and the \n                          \
+    \          EDNAFULL matrix for nucleotide sequences. \n                      \
+    \              (Number from 0.000 to 100.000) \n    -gapextend          float\
+    \      [0.5 for any sequence] The gap extension \n                           \
+    \         penalty is added to the standard gap penalty \n                    \
+    \                for each base or residue in the gap. This \n                \
+    \                    is how long gaps are penalized. Usually you \n          \
+    \                          will expect a few long gaps rather than many \n   \
+    \                                 short gaps, so the gap extension penalty \n\
+    \                                    should be lower than the gap penalty. An\
+    \ \n                                    exception is where one or both sequences\
+    \ are \n                                    single reads with possible sequencing\
+    \ \n                                    errors in which case you would expect\
+    \ many \n                                    single base gaps. You can get this\
+    \ result by \n                                    setting the gap open penalty\
+    \ to zero (or \n                                    very low) and using the gap\
+    \ extension \n                                    penalty to control gap scoring.\
+    \ (Number from \n                                    0.000 to 10.000) \n    [-outfile]\
+    \           align      [*.water] Output alignment file name \n               \
+    \                     (default -aformat srspair) \n    Additional (Optional) qualifiers:\
     \ \n    -datafile           matrixf    [EBLOSUM62 for protein, EDNAFULL for DNA]\
     \ \n                                    This is the scoring matrix file used when\
-    \ \n                                    comparing sequences. By default it is the\
-    \ \n                                    file 'EBLOSUM62' (for proteins) or the file\
-    \ \n                                    'EDNAFULL' (for nucleic sequences). These\
-    \ \n                                    files are found in the 'data' directory of\
-    \ \n                                    the EMBOSS installation. \n    Advanced\
+    \ \n                                    comparing sequences. By default it is\
+    \ the \n                                    file 'EBLOSUM62' (for proteins) or\
+    \ the file \n                                    'EDNAFULL' (for nucleic sequences).\
+    \ These \n                                    files are found in the 'data' directory\
+    \ of \n                                    the EMBOSS installation. \n    Advanced\
     \ (Unprompted) qualifiers: \n    -[no]brief          boolean    [Y] Brief identity\
-    \ and similarity \n    General qualifiers: \n    -help               boolean  \
-    \  Report command line options and exit. More \n                              \
-    \      information on associated and general \n                               \
-    \     qualifiers can be found with -help -verbose \n</water usage> \n<water usage\
-    \ example> \n    water -asequence $target_sequence_file -bsequence $alignment_sequences_file\
+    \ and similarity \n    General qualifiers: \n    -help               boolean \
+    \   Report command line options and exit. More \n                            \
+    \        information on associated and general \n                            \
+    \        qualifiers can be found with -help -verbose \n</water usage> \n<water\
+    \ usage example> \n    water -asequence $target_sequence_file -bsequence $alignment_sequences_file\
     \ -gapopen 10 -gapextend 0.5 -outfile $out_file \n</water usage example> \nNote6:\
     \ compute_psap_score script usage is as follows: \n<compute_psap_score sage> \n\
     \    usage: compute_psap_score.py [-h] [--protein_file PROTEIN_FILE] [--align_file\
     \ ALIGN_FILE] [--out OUT] \n    options: \n    -h, --help            show this\
-    \ help message and exit \n    --protein_file PROTEIN_FILE \n                  \
-    \          Protein file as fasta format. \n    --align_file ALIGN_FILE \n     \
-    \                       Protein align file as water align format. \n    --out OUT\
-    \             PSAP output folder.. \n</compute_psap_score usage> \n<compute_psap_score\
+    \ help message and exit \n    --protein_file PROTEIN_FILE \n                 \
+    \           Protein file as fasta format. \n    --align_file ALIGN_FILE \n   \
+    \                         Protein align file as water align format. \n    --out\
+    \ OUT             PSAP output folder.. \n</compute_psap_score usage> \n<compute_psap_score\
     \ usage example> \n    conda activate af3 && python compute_psap_score.py --protein_file\
     \ $your_protein_file --align_file $water_out --out $out_dir\n    Note: you will\
     \ get the psap_scores.png and psap_scores.csv file in $out_dir, and you need to\
@@ -2267,52 +2560,53 @@ user:
     \ \n<summary example>\n    Tool Usage:\n        usage: summary_all.py [-h] [--gene_id\
     \ GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation\
     \ ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n        options:\n\
-    \            -h, --help            show this help message and exit\n          \
-    \  --gene_id GENE_ID     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n\
-    \                                    The file requiring summarization.\n      \
-    \      --summary_type SUMMARY_TYPE\n                                    Types of\
-    \ Summary Documents.\n            --annotation ANNOTATION\n                   \
-    \                 Data annotation file corresponding to the documents requiring\
+    \            -h, --help            show this help message and exit\n         \
+    \   --gene_id GENE_ID     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n\
+    \                                    The file requiring summarization.\n     \
+    \       --summary_type SUMMARY_TYPE\n                                    Types\
+    \ of Summary Documents.\n            --annotation ANNOTATION\n               \
+    \                     Data annotation file corresponding to the documents requiring\
     \ summarization.\n            --is_png IS_PNG       Is the summary document in\
-    \ PNG format\n            --output_dir OUTPUT_DIR\n                           \
-    \         Output Path for Summary Results.\n\n    Tool Usage example:\n       \
-    \ conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ PNG format\n            --output_dir OUTPUT_DIR\n                          \
+    \          Output Path for Summary Results.\n\n    Tool Usage example:\n     \
+    \   conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
     \ && python summary_all.py --gene_id ${gene_id} --summary_file $out_dir/psap_scores.png\
-    \ --summary_type protein_design --annotation $out_dir/psap_scores.csv --is_png True\
-    \ --output_dir $out_dir\n        Note: this task summary_type must be protein_design\
+    \ --summary_type protein_design --annotation $out_dir/psap_scores.csv --is_png\
+    \ True --output_dir $out_dir\n        Note: this task summary_type must be protein_design\
     \ and is_png is True\n</summary example>\n<generate mutaion>\n    Tool Usage:\n\
     \        usage: get_mutation_sequence.py [-h] [--input_fasta INPUT_FASTA] [--gene_id\
     \ GENE_ID] [--psap_file PSAP_FILE] [--output_file OUTPUT_FILE] [--top TOP]\n\n\
-    \        options:\n            -h, --help            show this help message and exit\n\
-    \            --input_fasta INPUT_FASTA\n                                    Wild-type\
-    \ protein FASTA file。\n            --gene_id GENE_ID     The gene id of protein\
-    \ sequence.\n            --psap_file PSAP_FILE\n                                \
-    \    Protein Site Mutation PSAP Score Results.\n            --output_file OUTPUT_FILE\n\
-    \                                    Mutant Protein Sequence Output File as json\
-    \ format.\n            --top TOP             Number of top output mutation sequences.\n\
-    \    \n    Tool Usage example:\n        conda activate af3 && python get_mutation_sequence.py\
-    \ --input_fasta $target_gene_protein_fasta_file --gene_id $gene_id --psap_file\
-    \ $out_dir/psap_scores.csv --output_file $json_file --top 3\n</generate mutation>\n<proteix\
-    \ usage method>\n    Tool Usage:\n        Usage: protenix predict [OPTIONS]\n\n\
-    \            predict: Run predictions with protenix. :param input, out_dir,\n\
-    \            use_msa_server :return:\n\n        Options:\n            --input TEXT\
-    \      json files or dir for inference\n            --out_dir TEXT    infer result\
-    \ dir\n            --seeds TEXT      the inference seed, split by comma\n      \
-    \      --use_msa_server  do msa search or not\n            --help            Show\
-    \ this message and exit.\n\n    Tool Usage example:\n        protenix predict --input\
-    \ $json_file --out_dir $output_dir --use_msa_server\n</proteix usage method>\nstep1,\
-    \ Find Gene's Protein Sequence using grep (grep -A1 $gene_id $fasta_file | head\
-    \ -n 2 > $out_file); \nstep2, Sequence alignment using diamond blastp to find\
-    \ top5000 sequence using -t 16 paramter and --tmpdir $tmp paramter(conda install\
-    \ diamond -c bioconda); \nstep3, Extract the sequence ids from the blast result\
-    \ using awk; \nstep4, Extract the matched sequences from the database using seqkit(conda\
-    \ install seqkit -c bioconda); \nstep5, De-redundancy of 5000 protein sequences\
-    \ using cd-hit(conda install cd-hit -c bioconda); \nstep6, Use water software to\
-    \ align the target protein sequence with the de-redundant protein sequence(conda\
-    \ install emboss); \nstep7, PSAP calculation using script compute_psap_score.py(conda\
-    \ activate af3);\nstep8, Summary the protein design result using summary_all.py(conda\
-    \ activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep9,\
-    \ Generate mutant protein sequences based on protein design results using\
+    \        options:\n            -h, --help            show this help message and\
+    \ exit\n            --input_fasta INPUT_FASTA\n                              \
+    \      Wild-type protein FASTA file。\n            --gene_id GENE_ID     The gene\
+    \ id of protein sequence.\n            --psap_file PSAP_FILE\n               \
+    \                     Protein Site Mutation PSAP Score Results.\n            --output_file\
+    \ OUTPUT_FILE\n                                    Mutant Protein Sequence Output\
+    \ File as json format.\n            --top TOP             Number of top output\
+    \ mutation sequences.\n    \n    Tool Usage example:\n        conda activate af3\
+    \ && python get_mutation_sequence.py --input_fasta $target_gene_protein_fasta_file\
+    \ --gene_id $gene_id --psap_file $out_dir/psap_scores.csv --output_file $json_file\
+    \ --top 3\n</generate mutation>\n<proteix usage method>\n    Tool Usage:\n   \
+    \     Usage: protenix predict [OPTIONS]\n\n            predict: Run predictions\
+    \ with protenix. :param input, out_dir,\n            use_msa_server :return:\n\
+    \n        Options:\n            --input TEXT      json files or dir for inference\n\
+    \            --out_dir TEXT    infer result dir\n            --seeds TEXT    \
+    \  the inference seed, split by comma\n            --use_msa_server  do msa search\
+    \ or not\n            --help            Show this message and exit.\n\n    Tool\
+    \ Usage example:\n        protenix predict --input $json_file --out_dir $output_dir\
+    \ --use_msa_server\n</proteix usage method>\nstep1, Find Gene's Protein Sequence\
+    \ using grep (grep -A1 $gene_id $fasta_file | head -n 2 > $out_file); \nstep2,\
+    \ Sequence alignment using diamond blastp to find top5000 sequence using -t 16\
+    \ paramter and --tmpdir $tmp paramter(conda install diamond -c bioconda); \nstep3,\
+    \ Extract the sequence ids from the blast result using awk; \nstep4, Extract the\
+    \ matched sequences from the database using seqkit(conda install seqkit -c bioconda);\
+    \ \nstep5, De-redundancy of 5000 protein sequences using cd-hit(conda install\
+    \ cd-hit -c bioconda); \nstep6, Use water software to align the target protein\
+    \ sequence with the de-redundant protein sequence(conda install emboss); \nstep7,\
+    \ PSAP calculation using script compute_psap_score.py(conda activate af3);\nstep8,\
+    \ Summary the protein design result using summary_all.py(conda activate af3 &&\
+    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\n\
+    step9, Generate mutant protein sequences based on protein design results using\
     \ get_mutation_sequence.py(conda activate af3);\nstep10, Predict Protein Sturctre\
     \ using protenix (conda activate af3)."
   protocol: 'You are an expert molecular biologist tasked with creating a detailed
@@ -2604,35 +2898,34 @@ user:
     \ \nstep1, install the packages and plot the gene expression in different tissues\
     \ using plot_single_cell_gene.py;(conda activate af3 && pip install scanpy anndata\
     \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep2, summary the\
-    \ results using summary_all.py(conda activate af3 && pip install openai -i\
-    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nTool Usage method:\n\
-    \        usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA] [-o OUTPUT_DIR]\
-    \ [-g GENE_ID] \n        options: \n        -h, --help            show this help\
-    \ message and exit \n        -i SINGLE_CELL_DATA   single cell data\n        -o\
-    \ OUTPUT_DIR   output folder path \n        -g GENE_ID  the gene id you want to\
-    \ plot. \nTool Usage example:\n    Question:  Please plot the expression of the\
-    \ gene MYC in different cells. \n    Cmd line code: conda activate af3 && pip install\
-    \ scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python\
-    \ plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir -g MYC\nNote:\
-    \ Using this script will generate 2 figures, ${gene_id}_umap.png and ${gene_id}_violin_plot.png,\
-    \ and you need using ${gene_id}_violin_plot.png figure to genrate summary result.\n\nTool\
-    \ Usage example:\n        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file\
-    \ SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png\
-    \ IS_PNG] [--output_dir OUTPUT_DIR]\n\n        options:\n            -h, --help\
-    \            show this help message and exit\n            --gene_id GENE_ID    \
-    \ Summary Gene ID.\n            --summary_file SUMMARY_FILE\n                  \
-    \                  The file requiring summarization.\n            --summary_type\
-    \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n\
-    \            --annotation ANNOTATION\n                                    Data\
-    \ annotation file corresponding to the documents requiring summarization.\n     \
-    \       --is_png IS_PNG       Is the summary document in PNG format\n          \
-    \  --output_dir OUTPUT_DIR\n                                    Output Path for\
-    \ Summary Results.\nTool Usage example:\n    conda activate af3 && pip install\
-    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
-    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_violin_plot.png --summary_type\
-    \ single_cell --annotation $output_dir/${gene_id}_expression.txt --is_png True\
-    \ --output_dir $out_dir\n    Note: this task summary_type must be single_cell and\
-    \ is_png is True\n"
+    \ results using summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\n\
+    Tool Usage method:\n        usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA]\
+    \ [-o OUTPUT_DIR] [-g GENE_ID] \n        options: \n        -h, --help       \
+    \     show this help message and exit \n        -i SINGLE_CELL_DATA   single cell\
+    \ data\n        -o OUTPUT_DIR   output folder path \n        -g GENE_ID  the gene\
+    \ id you want to plot. \nTool Usage example:\n    Question:  Please plot the expression\
+    \ of the gene MYC in different cells. \n    Cmd line code: conda activate af3\
+    \ && pip install scanpy anndata -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir -g\
+    \ MYC\nNote: Using this script will generate 2 figures, ${gene_id}_umap.png and\
+    \ ${gene_id}_violin_plot.png, and you need using ${gene_id}_violin_plot.png figure\
+    \ to genrate summary result.\n\nTool Usage example:\n        usage: summary_all.py\
+    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
+    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n  \
+    \      options:\n            -h, --help            show this help message and\
+    \ exit\n            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file\
+    \ SUMMARY_FILE\n                                    The file requiring summarization.\n\
+    \            --summary_type SUMMARY_TYPE\n                                   \
+    \ Types of Summary Documents.\n            --annotation ANNOTATION\n         \
+    \                           Data annotation file corresponding to the documents\
+    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document\
+    \ in PNG format\n            --output_dir OUTPUT_DIR\n                       \
+    \             Output Path for Summary Results.\nTool Usage example:\n    conda\
+    \ activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple\
+    \ && python summary_all.py --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_violin_plot.png\
+    \ --summary_type single_cell --annotation $output_dir/${gene_id}_expression.txt\
+    \ --is_png True --output_dir $out_dir\n    Note: this task summary_type must be\
+    \ single_cell and is_png is True\n"
   smep_analysis: 'You are a bioinformatician specialized in the field of epigenetics
     and you are very good at conducting epigenetic modification prediction studies,
     next, you will generate a task plan and complete the task analysis based on the
@@ -2642,52 +2935,53 @@ user:
     \ need to strictly adhere to Meta and generate a two-step plan;\nstep1, Find Gene's\
     \ prompter Sequence using grep;\nstep2, Prediction of modifications in promoters\
     \ using SMEP(conda activate epic && cp $step1_fasta_file /opt/health/epic_models/smep\
-    \ && cd /opt/health/epic_models/smep);\nstep3, plot smep results figure using plot_smep.py\
-    \ script(conda activate af3);\nstep4, summary the smep results using summary_all.py.(conda\
-    \ activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n<smep usage>\n\
-    \    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file -O\
-    \ /$output_dir/$out_file -T $epigenetic_modification_type\n    $epigenetic_modification_type:\n\
-    \    1. 5mC\n    2. 6mA\n    3. m6A\n    4. H3K27me3\n    5. H3K4me3\n    6. H3K9ac\n\
-    \    Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
-    \    Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n\
-    \    Note3: out_file You can specify files in any path\n</smep usage>\n<smep example>\n\
-    \    question: please help me to predict the 5mC modification of A gene prompter\n\
-    \    commond_line: conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep &&\
+    \ && cd /opt/health/epic_models/smep);\nstep3, plot smep results figure using\
+    \ plot_smep.py script(conda activate af3);\nstep4, summary the smep results using\
+    \ summary_all.py.(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n\
+    <smep usage>\n    perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I\
+    \ $fasta_file -O /$output_dir/$out_file -T $epigenetic_modification_type\n   \
+    \ $epigenetic_modification_type:\n    1. 5mC\n    2. 6mA\n    3. m6A\n    4. H3K27me3\n\
+    \    5. H3K4me3\n    6. H3K9ac\n    Note1: When you run the script, you must be\
+    \ under the path /opt/health/epic_models/smep/\n    Note2: The fasta_file must\
+    \ be saved under the path /opt/health/epic_models/smep/\n    Note3: out_file You\
+    \ can specify files in any path\n</smep usage>\n<smep example>\n    question:\
+    \ please help me to predict the 5mC modification of A gene prompter\n    commond_line:\
+    \ conda activate epic && cp A_gene_prompter.fa /opt/health/epic_models/smep &&\
     \ cd /opt/health/epic_models/smep && perl smep_prediction_py3.5.pl -I A_gene_prompter.fa\
     \ -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n<smep example>\n<plot example>\n\
     \    Tool_Usage:\n        usage: plot_smep.py [-h] [--promoter_file PROMOTER_FILE]\
     \ [--smep_file SMEP_FILE] [--modify_type MODIFY_TYPE] [--output_dir OUTPUT_DIR]\
     \ [--gene_id GENE_ID]\n\n        options:\n            -h, --help            show\
-    \ this help message and exit\n            --promoter_file PROMOTER_FILE\n        \
-    \                            the promoter fasta file\n            --smep_file\
+    \ this help message and exit\n            --promoter_file PROMOTER_FILE\n    \
+    \                                the promoter fasta file\n            --smep_file\
     \ SMEP_FILE\n                                    the output file using smep software.\n\
-    \            --modify_type MODIFY_TYPE\n                                    the modify\
-    \ type predict using smep.\n            --output_dir OUTPUT_DIR\n               \
-    \                     the output folder.\n            --gene_id GENE_ID     the\
-    \ promoter gene_id.\n    Tool_Usage_Example:\n        conda activate af3 && python\
-    \ plot_smep.py --promoter_file $promoter_fasta_file --smep_file $smep_outfile --modify_type\
-    \ $modify_type --output_dir $output_dir --gene_id $gene_id\n    Note: using this\
-    \ script, you will get a figure in $output_dir, the figure name is\
-    \ ${gene_id}_${modify_type}.png\n</plot example>\n<summary example>\n    Tool Usage\
-    \ example:\n        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file\
+    \            --modify_type MODIFY_TYPE\n                                    the\
+    \ modify type predict using smep.\n            --output_dir OUTPUT_DIR\n     \
+    \                               the output folder.\n            --gene_id GENE_ID\
+    \     the promoter gene_id.\n    Tool_Usage_Example:\n        conda activate af3\
+    \ && python plot_smep.py --promoter_file $promoter_fasta_file --smep_file $smep_outfile\
+    \ --modify_type $modify_type --output_dir $output_dir --gene_id $gene_id\n   \
+    \ Note: using this script, you will get a figure in $output_dir, the figure name\
+    \ is ${gene_id}_${modify_type}.png\n</plot example>\n<summary example>\n    Tool\
+    \ Usage example:\n        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file\
     \ SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png\
     \ IS_PNG] [--output_dir OUTPUT_DIR]\n\n        options:\n            -h, --help\
-    \            show this help message and exit\n            --gene_id GENE_ID    \
-    \ Summary Gene ID.\n            --summary_file SUMMARY_FILE\n                   \
-    \                 The file requiring summarization.\n            --summary_type\
+    \            show this help message and exit\n            --gene_id GENE_ID  \
+    \   Summary Gene ID.\n            --summary_file SUMMARY_FILE\n              \
+    \                      The file requiring summarization.\n            --summary_type\
     \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n\
     \            --annotation ANNOTATION\n                                    Data\
-    \ annotation file corresponding to the documents requiring summarization.\n     \
-    \       --is_png IS_PNG       Is the summary document in PNG format\n          \
-    \  --output_dir OUTPUT_DIR\n                                    Output Path for\
-    \ Summary Results.\n    Tool Usage example:\n        conda activate af3 && pip install\
-    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
-    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_${modify_type}.png\
+    \ annotation file corresponding to the documents requiring summarization.\n  \
+    \          --is_png IS_PNG       Is the summary document in PNG format\n     \
+    \       --output_dir OUTPUT_DIR\n                                    Output Path\
+    \ for Summary Results.\n    Tool Usage example:\n        conda activate af3 &&\
+    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
+    \ python summary_all.py --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_${modify_type}.png\
     \ --summary_type ${modify_type}_smep --annotation $output_dir/A_gene_prompter_5mC.out\
     \ --is_png True --output_dir $out_dir\n        Note: this task summary_type must\
-    \ be ${modify_type}_smep and is_png is True\n            modify_type: \n        \
-    \        1. 5mC\n                2. 6mA\n                3. m6A\n               \
-    \ 4. H3K27me3\n                5. H3K4me3\n                6. H3K9ac\n</summary\
+    \ be ${modify_type}_smep and is_png is True\n            modify_type: \n     \
+    \           1. 5mC\n                2. 6mA\n                3. m6A\n         \
+    \       4. H3K27me3\n                5. H3K4me3\n                6. H3K9ac\n</summary\
     \ example>\n"
   smoc_analysis: 'You are a bioinformatician specialized in the field of epigenetics
     and you are very good at conducting chromatin accessibility prediction studies,
@@ -2695,234 +2989,95 @@ user:
     data that we have provided you with, now your task goal is: Please help me to
     predict the wild-type chromatin accessibility of {{gene_id}} gene prompter in
     NIP.'
-  smoc_analysis_meta: "Note: You don't need to install any software;\nstep1, Find Gene's\
-    \ prompter Sequence using grep;\nstep2, Prediction of chromatin accessibility in\
-    \ promoters using SMOC(conda activate epic);\nstep3, plot smoc results figure using\
-    \ plot_smoc.py script(conda activate af3);\nstep4, summary the smoc results using\
-    \ summary_all.py.(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\
+  smoc_analysis_meta: "Note: You don't need to install any software;\nstep1, Find\
+    \ Gene's prompter Sequence using grep;\nstep2, Prediction of chromatin accessibility\
+    \ in promoters using SMOC(conda activate epic);\nstep3, plot smoc results figure\
+    \ using plot_smoc.py script(conda activate af3);\nstep4, summary the smoc results\
+    \ using summary_all.py.(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\
     \ \n<smoc usage>\n    python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
-    \ --input $input_fasta --model /opt/health/epic_models/smoc/model/$model_type --output\
-    \ $out_dir --threshold 0.8 --window_size 800 \n    $model_type: \n    1.\
-    \ Best_model_9311CK.h5: Wild-type chromatin accessibility of variety 9311\n\
-    \    2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state of\
-    \ variety 9311\n    3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of\
-    \ variety NIP\n    4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited\
-    \ state of variety NIP\n</smoc usage>\n<smoc example>\n    question: please help me\
-    \ to predict the wild-type chromatin accessibility of Oryza sativa Os12g0263100 gene\
-    \ prompter in 9311.\n    commond_line: conda activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
+    \ --input $input_fasta --model /opt/health/epic_models/smoc/model/$model_type\
+    \ --output $out_dir --threshold 0.8 --window_size 800 \n    $model_type: \n  \
+    \  1. Best_model_9311CK.h5: Wild-type chromatin accessibility of variety 9311\n\
+    \    2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited state\
+    \ of variety 9311\n    3. Best_model_NIPCK.h5: Wild-type chromatin accessibility\
+    \ of variety NIP\n    4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited\
+    \ state of variety NIP\n</smoc usage>\n<smoc example>\n    question: please help\
+    \ me to predict the wild-type chromatin accessibility of Oryza sativa Os12g0263100\
+    \ gene prompter in 9311.\n    commond_line: conda activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py\
     \ --input $input_fasta --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5\
-    \ --output ./\n    Note: you will generate a *.csv file in output_dir, and you need\
-    \ to use this file to plot the figuer and summary the result.\n<smoc example>\n<plot\
-    \ example>\n    Tool_Usage:\n        usage: plot_smoc.py [-h] [--promoter_file PROMOTER_FILE]\
-    \ [--smoc_file SMOC_FILE] [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n       \
-    \ options:\n            -h, --help            show this help message and exit\n   \
-    \         --promoter_file PROMOTER_FILE\n                                    the promoter\
-    \ fasta file\n            --smoc_file SMOC_FILE\n                                 \
-    \   the output file using smoc software.\n            --output_dir OUTPUT_DIR\n   \
-    \                                 the output folder.\n            --gene_id GENE_ID\
-    \     the promoter gene_id.\n    Tool_Usage_Example:\n        conda activate af3 &&\
-    \ python plot_smoc.py --promoter_file $promoter_fasta_file --smoc_file $output/*.csv\
-    \ --output_dir $output_dir --gene_id $gene_id\n    Note: using this script, you will\
-    \ get a figure in $output_dir, the figure name is ${gene_id}_smoc.png\n</plot\
-    \ example>\n<summary example>\n    Tool Usage example:\n        usage: summary_all.py\
-    \ [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE] [--summary_type SUMMARY_TYPE]\
-    \ [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]\n\n      \
-    \  options:\n            -h, --help            show this help message and exit\n \
-    \           --gene_id GENE_ID     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n\
-    \                                    The file requiring summarization.\n         \
-    \   --summary_type SUMMARY_TYPE\n                                    Types of Summary\
-    \ Documents.\n            --annotation ANNOTATION\n                              \
-    \      Data annotation file corresponding to the documents requiring summarization.\n\
-    \            --is_png IS_PNG       Is the summary document in PNG format\n       \
-    \     --output_dir OUTPUT_DIR\n                                    Output Path for\
-    \ Summary Results.\n    Tool Usage example:\n        conda activate af3 && pip install\
-    \ openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
+    \ --output ./\n    Note: you will generate a *.csv file in output_dir, and you\
+    \ need to use this file to plot the figuer and summary the result.\n<smoc example>\n\
+    <plot example>\n    Tool_Usage:\n        usage: plot_smoc.py [-h] [--promoter_file\
+    \ PROMOTER_FILE] [--smoc_file SMOC_FILE] [--output_dir OUTPUT_DIR] [--gene_id\
+    \ GENE_ID]\n\n        options:\n            -h, --help            show this help\
+    \ message and exit\n            --promoter_file PROMOTER_FILE\n              \
+    \                      the promoter fasta file\n            --smoc_file SMOC_FILE\n\
+    \                                    the output file using smoc software.\n  \
+    \          --output_dir OUTPUT_DIR\n                                    the output\
+    \ folder.\n            --gene_id GENE_ID     the promoter gene_id.\n    Tool_Usage_Example:\n\
+    \        conda activate af3 && python plot_smoc.py --promoter_file $promoter_fasta_file\
+    \ --smoc_file $output/*.csv --output_dir $output_dir --gene_id $gene_id\n    Note:\
+    \ using this script, you will get a figure in $output_dir, the figure name is\
+    \ ${gene_id}_smoc.png\n</plot example>\n<summary example>\n    Tool Usage example:\n\
+    \        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file SUMMARY_FILE]\
+    \ [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir\
+    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this\
+    \ help message and exit\n            --gene_id GENE_ID     Summary Gene ID.\n\
+    \            --summary_file SUMMARY_FILE\n                                   \
+    \ The file requiring summarization.\n            --summary_type SUMMARY_TYPE\n\
+    \                                    Types of Summary Documents.\n           \
+    \ --annotation ANNOTATION\n                                    Data annotation\
+    \ file corresponding to the documents requiring summarization.\n            --is_png\
+    \ IS_PNG       Is the summary document in PNG format\n            --output_dir\
+    \ OUTPUT_DIR\n                                    Output Path for Summary Results.\n\
+    \    Tool Usage example:\n        conda activate af3 && pip install openai -i\
+    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
     \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_smoc.png --summary_type\
-    \ smoc --annotation $output_dir/*.csv --is_png True --output_dir $out_dir\n      \
-    \  Note: this task summary_type must be smoc and is_png is True\n</summary example>"
+    \ smoc --annotation $output_dir/*.csv --is_png True --output_dir $out_dir\n  \
+    \      Note: this task summary_type must be smoc and is_png is True\n</summary\
+    \ example>"
   structure_analysis: 'You are a bioinformatician specialized in the field of protein
     sturcture and you are well versed in various task analysis in the field of protein
     sturcture, next, you will generate a task plan and complete the task analysis
     based on the data that we have provided you with, now your task goal is: Please
     help me predict the protein structure for gene {{gene_id}}. Note: You do not need
     to install protenix software using conda, you should activate af3 environment'
-  structure_analysis_meta: "Note1: You don't need to install protenix software using conda;\
-    \ \nNote2: You need to activate af3 environment;(conda activate af3); \nNote3: protenix\
-    \ commdline softwore usage is as follows:\n<proteix usage method>\n    Usage: protenix\
-    \ predict [OPTIONS]\n\n        predict: Run predictions with protenix. :param input,\
-    \ out_dir,\n        use_msa_server :return:\n\n    Options:\n        --input TEXT   \
-    \   json files or dir for inference\n        --out_dir TEXT    infer result dir\n   \
-    \     --seeds TEXT      the inference seed, split by comma\n        --use_msa_server\
-    \  do msa search or not\n        --help            Show this message and exit.\n</proteix\
-    \ usage method>\n<usage example>\n    protenix predict --input $input_json --out_dir\
-    \ $output_dir --use_msa_server\n</usage example>\nNote4: protenix commdline softwore\
-    \ input file example is as follows:\n    You should filled in the protein sequence in\
-    \ the sequence parameter in the proteinChain.\n    The dnaSequence and the ligand are\
-    \ optional parameters that can be filled in if provided by the user, otherwise, the\
-    \ module will be deleted.\n    The name parameter is the output dir names, you can\
-    \ change it if you want.\n    The count parameter is the number of relevant sequences\
-    \ in the composite structure, defalut number is 1.\n<input json file example>\n[\n \
-    \   {\n        \"sequences\": [\n            {\n                \"proteinChain\": {\n\
-    \                    \"sequence\": \"MGSSHHHHHHSSGLVPRGSHMSGKIQHKAVVPAPSRIPLTLSEIEDLRRKGFNQTEIAELYGVTRQAVSWHKKTYGGRLTTRQIVQQNWPWDTRKPHDKSKAFQRLRDHGEYMRVGSFRTMSEDKKKRLLSWWKMLRDNDLVLEFDPSIEPYEGMAGGGFRYVPRDISDDDLLIRVNEHTQLTAEGELLWSWPDDIEELLSEP\",\n\
-    \                    \"count\": 1,\n                }\n            },\n            {\n\
-    \                \"dnaSequence\": {\n                    \"sequence\": \"TTTCGGTGGCTGTCAAGCGGG\",\n\
-    \                    \"count\": 1\n                }\n            },\n            {\n\
-    \                \"ligand\": {\n                    \"ligand\": \"CCD_PCG\",\n\
-    \                    \"count\": 1\n                }\n            }\n        ],\n\
-    \        \"name\": \"7r6r\"\n    }\n]\n</input json file example>\n<structure feature>\n\
-    \    Tool_Usage:\n        usage: cif2structure_info.py [-h] [--input_path INPUT_PATH]\
-    \ [--output_dir OUTPUT_DIR]\n\n        options:\n            -h, --help\
-    \            show this help message and exit\n            --input_path INPUT_PATH\n\
-    \                                    the structure output_dir\n            --output_dir\
-    \ OUTPUT_DIR\n                                    the output folder     \n  \
-    \  Tool_Example:\n        conda activate af3 && conda install -c schrodinger pymol &&\
-    \ pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple &&\
-    \ python cif2structure_info.py --input_path $output_dir --output_dir\
-    \ $structure_information_dir\n</structure feature>\nstep1, Find Gene's Protein\
-    \ Sequence using grep;\nstep2, Organize the protein sequences into an input JSON format\
-    \ file, and save it; \nstep3, Predict Protein Sturctre using protenix; (conda activate\
-    \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
-    \ && conda install -c schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"
-  promoter_design: "Please help me to design {{gene_id}} promoter."
-  promoter_design_meta: "Note1: you need to using epic environment (conda activate epic);\nstep1, get\
-    \ the promoter sequence for the gene using grep;\nstep2, designing the gene promoter sequences;\
-    \ (cp -r $design_result_dir $output_dir)\nstep3, get the designed promoter sequences using get_promoter_design.py\
-    \ scripts; (conda activate epic)\nstep4, using smep to predict modifications for designed promoters;\
-    \ (conda activate epic)\nstep5, using smoc to predict chromatin accessibility for designed promoters.\
-    \ (conda activate epic)\n<get_promoter_design>\n    Tool_Usage:\n        usage: get_promoter_design.py\
-    \ [-h] [--input_fasta INPUT_FASTA] [--gene_id GENE_ID] [--cape_file CAPE_FILE] [--output_dir OUTPUT_DIR]\
-    \ [--top TOP]\n\n        options:\n            -h, --help            show this help message and exit\n\
-    \            --input_fasta INPUT_FASTA\n                                    Wild-type promoter FASTA file.\
-    \ \n            --gene_id GENE_ID     The gene id of promoter sequence.\n            --cape_file CAPE_FILE\n\
-    \                                    Promoter Site Mutation CAPE Score Results.\n            --output_dir OUTPUT_DIR\n\
-    \                                    The output dir.\n            --top TOP             Number of top output\
-    \ mutation sequences.\n\n    Tool_Usage_Example:\n        conda activate epic && pip install pandas -i\
-    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python get_promoter_design.py --input_fasta\
-    \ $wt_promoter_file --gene_id $gene_id --cape_file $output/$gene_id/aggregate.bedGraph --output_dir\
-    \ $output_dir\n    Note:\n        The output promoter design results are located in the copied folder\
-    \ under the filename aggregate.bedGraph.\n        Finnally, you will get $top files in $output_dir,\
-    \ file_name is ${gene_id}_mut_top1.fa - ${gene_id}_mut_top${top}.fa, and you will predict this design\
-    \ promoter file using smep and smoc;\n</get_promoter_design>\n<smep>\n    Tool_Usage:\n        perl\
-    \ /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I $fasta_file -O /$output_dir/$out_file -T\
-    \ $epigenetic_modification_type\n        $epigenetic_modification_type:\n            1. 5mC\n      \
-    \      2. 6mA\n            3. m6A\n            4. H3K27me3\n            5. H3K4me3\n            6. H3K9ac\n\
-    \        Note1: When you run the script, you must be under the path /opt/health/epic_models/smep/\n\
-    \        Note2: The fasta_file must be saved under the path /opt/health/epic_models/smep/\n        Note3:\
-    \ out_file You can specify files in any path\n\n    Tool_Usage_Example:\n        question: please help\
-    \ me to predict the 5mC modification of A gene prompter\n        commond_line: conda activate epic &&\
-    \ cp A_gene_prompter.fa /opt/health/epic_models/smep && cd /opt/health/epic_models/smep && perl\
-    \ smep_prediction_py3.5.pl -I A_gene_prompter.fa -O /$output_dir/A_gene_prompter_5mC.out -T 5mC\n</smep>\n<smoc>\n\
-    \    Tool_Usage:\n        python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta\
-    \ --model /opt/health/epic_models/smoc/model/$model_type --output $out_dir --threshold 0.8 --window_size 800\
-    \ \n            $model_type: \n            1. Best_model_9311CK.h5: Wild-type chromatin accessibility\
-    \ of variety 9311\n            2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited\
-    \ state of variety 9311\n            3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of\
-    \ variety NIP\n            4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited state\
-    \ of variety NIP\n\n    Tool_Usage_Example:\n        question: please help me to predict the wild-type\
-    \ chromatin accessibility of Oryza sativa Os12g0263100 gene prompter in 9311.\n        commond_line:\
-    \ conda activate epic && python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input $input_fasta\
-    \ --model /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./\n</smoc>\n"
-  get_taxid_meta: "I will provide a domain-specific question related to bioinformatics evolutionary\
-    \ analysis in <User query></User query> target. \nBased on this question, please list the Latin\
-    \ names of the species required for alignment.\nNote1: If the user selects multiple species for\
-    \ comparison, all Latin names of the target species will be added to the list.\nNote2: If the\
-    \ user does not explicitly specify the target species, the target species list is ['All'].\nNote3:\
-    \ If the target species specified by the user is not a specific species, please list the Latin\
-    \ names of 3-5 species based on all your knowledge.\nNote4: The result should only return a\
-    \ dictionary; do not return any other content.\n<example_query1>\nPlease help me analyze the\
-    \ evolution of the mouse gene MYC in human-related genes.\n</example_query1>\n<example_result1>\
-    \ \n{'target_spa_list': ['Homo sapiens']}\n</example_result1>\n<example_query2>\nPlease help me\
-    \ analyze the evolution of the mouse gene MYC in human-related and maize genes.\n</example_query2>\
-    \ \n<example_result2>\n{'target_spa_list': ['Homo sapiens', 'Zea mays']}\n</example_result2>\
-    \ \n<example_query3>\nPlease help me analyze the evolution of the mouse gene MYC\n</example_query3>\
-    \ \n<example_result3>\n{'target_spa_list': ['All']}\n</example_result3>\n<User query>\
-    \ \n{{user_query}}\n</User query>"
-  evolution_agents_analysis: 'You are a bioinformatician specialized in the field of evolutions
-    and you are well versed in various task analysis in the field of evolutions, next,
-    you will generate a task plan and complete the task analysis based on the data
-    that we have provided you with, now your task goal is: Please perform phylogenetic
-    and evolutionary analyses for gene {{gene_id}}, the target taxid is {{target_taxid}}'
-  evolution_agents_meta: "Note1: You don't need to build nr database index;\nNote2: You need to install\
-    \ diamond software using conda;\nNote3: if target taxid is All, the taxonlist parameter for diamond\
-    \ is not required.\nNote4: if target taxid is not All, the taxonlist parameter for diamond is a ','-separated\
-    \ list of taxids.\nstep1, Find Gene's Protein Sequence using grep;\nstep2, Sequence alignment using\
-    \ diamond blastp to find top40 sequence to target species if target taxid is not all, using -t 16\
-    \ paramter and --tmpdir $tmp paramter(conda install diamond -c bioconda);\nstep3, Extract the sequence\
-    \ ids from the blast result using awk;\nstep4, Extract the matched sequences from the database using\
-    \ seqkit(conda install seqkit -c bioconda);\nstep5, Append protein sequences of unknown function to the\
-    \ end of the matched sequences file;\nstep6, Multiple sequence alignment using clustalw2(conda install\
-    \ clustalw -c bioconda);\nstep7, Constructing the phylogenetic tree using fasttree(conda install fasttree\
-    \ -c bioconda);\nstep8, Plot the phylogenetic tree using plot_tree.py;\nstep9, Summary the tree result\
-    \ using summary_all.py(conda activate af3 && pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\
-    \ \nstep12, Searching for conserved domains of protein using hmmscan;\nstep13, Change domain results to\
-    \ markdown format using domain2markdown.py;\nstep14, Summary the domain result using summary_all.py.\n<change\
-    \ example>\n    Tool_Usage:\n        usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE] [--output_dir\
-    \ OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n        -h, --help            show this help\
-    \ message and exit\n        --domain_file DOMAIN_FILE\n                                the domain file\
-    \ for hmmer softwore\n        --output_dir OUTPUT_DIR\n                                the output\
-    \ folder\n        --gene_id GENE_ID     the tree for gene id\n    Tool_Example:\n        conda activate\
-    \ af3 && python domain2markdown.py --input $output_dir/$domain_file --out_dir $out_dir --gene_id\
-    \ $gene_id\n</change example>\n<plot example>\n    Tool_Usage:\n        usage: plot_tree.py [-h]\
-    \ [--tree_file TREE_FILE] [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]\n\n        options:\n\
-    \        -h, --help            show this help message and exit\n        --tree_file TREE_FILE\n\
-    \                                the tree file as nwk format\n        --output_dir OUTPUT_DIR\n\
-    \                                the output folder\n        --gene_id GENE_ID     the tree for\
-    \ gene id\n    Tool_Example:\n        conda activate af3 && pip install pycirclize biopython -i\
-    \ https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python plot_tree.py --input $output_dir/$tree_file\
-    \ --out_dir $out_dir --gene_id $gene_id\n    Note: using this script, you will get the ${gene_id}_tree.png\
-    \ figure, and you will using this figure to generate the summary results.\n</plot example>\n<summary\
-    \ example>\n    Tool Usage:\n        usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file\
-    \ SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation ANNOTATION] [--is_png IS_PNG] [--output_dir\
-    \ OUTPUT_DIR]\n\n        options:\n            -h, --help            show this help message and exit\n\
-    \            --gene_id GENE_ID     Summary Gene ID.\n            --summary_file SUMMARY_FILE\n\
-    \                                    The file requiring summarization.\n            --summary_type\
-    \ SUMMARY_TYPE\n                                    Types of Summary Documents.\n            --annotation\
-    \ ANNOTATION\n                                    Data annotation file corresponding to the documents\
-    \ requiring summarization.\n            --is_png IS_PNG       Is the summary document in PNG format\n\
-    \            --output_dir OUTPUT_DIR\n                                    Output Path for Summary\
-    \ Results.\n\n    Tool Usage example:\n        1. summary tree:\n            conda activate af3 &&\
-    \ pip install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
-    \ --gene_id ${gene_id} --summary_file $output_dir/${gene_id}_tree.png --summary_type tree --annotation\
-    \ $output_dir/$tree_file --is_png True --output_dir $out_dir\n            Note: this task summary_type\
-    \ must be tree and is_png is True\n        1. summary domain:\n            conda activate af3 && pip\
-    \ install openai -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python summary_all.py\
-    \ --gene_id ${gene_id} --summary_file $output_dir/$domain_file --summary_type domain --is_png False\
-    \ --output_dir $out_dir\n            Note: this task summary_type must be domain, is_png is False\
-    \ and do not pass the annotation parameter.\n</summary example>"
-  environment:
-    get_code_query: "<region>\n{{json_dict}}\n</region>\n<region></region>中是中国各省市县的名称及其代码信\
-      \ 息，最外层key对应中国不同的行政省，内\n部依次是市和县，其中，县对应的value包含三部分组成，分别为省、市、县的代\
-      \ 码，用|分割，接下\n来，我会给你一个相关问题，使用<query></query>包裹，问题中包含相应的省市县信息，如果存在，\
-      \ \n则返回对应的城市及其上级城市的代码，否则，返回空字符串即可，结果请用<result></result>\n形式返回。\n<example>\n\
-      \    query: 请帮我分析湖北鄂州的vci情况？\n    result: <result>420000|420700</result>\n    query:\
-      \ 请帮我分析鄂州市的vci情况？\n    result: <result>420000|420700</result>\n    query: 请帮我分析湖北的vci情况？\n\
-      \    result: <result>420000</result>\n    query: 请帮我分析深圳市光明区的vci情况？\n    result:\
-      \ <result>440000|440300|440311</result>\n</example>\n<query>\n{{query}}\n</query>"
-    vci_analysis: "Please help me to perform vci analysis, the province_code is {{province_code}},\
-      \ the city_code is {{city_code}}, the county_code is {{county_code}}, the target year is {{year}}"
-    vci_analysis_meta: "Note1: you need to using af3 environment (conda activate af3);\nNote2: you\
-      \ need install geopandas pyproj rioxarray and xarray packages (pip install pyproj==3.5.0\
-      \ xarray rioxarray geopandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);\nstep1,\
-      \ install python packages using pip in af3 environment; (conda activate af3)\nstep2, Analyze\
-      \ the NDVI and VCI indices for specific provinces, cities, and counties using vci_analysis.py.\
-      \ (conda activate af3)\n<Usage>\n    Tool_Usage:\n        usage: vci_analysis.py [-h]\
-      \ [--province_code PROVINCE_CODE] [--city_code CITY_CODE] [--county_code COUNTY_CODE] [--target_year\
-      \ TARGET_YEAR] [--target_month TARGET_MONTH] [--start_year START_YEAR]\n             \
-      \          [--output_dir OUTPUT_DIR]\n\n    options:\n        -h, --help           \
-      \ show this help message and exit\n\n        Location Parameters:\n        --province_code\
-      \ PROVINCE_CODE\n                                The province you wish to analyze. (in\
-      \ provice_code)\n        --city_code CITY_CODE\n                                The\
-      \ city you wish to analyze. (in city_code)\n        --county_code COUNTY_CODE\n    \
-      \                            The county you wish to analyze. (in county_code)\n\n  \
-      \  Time Parameters:\n        --target_year TARGET_YEAR\n                           \
-      \     Starting year of the analysis.\n        --target_month TARGET_MONTH\n        \
-      \                        Starting month of the analysis.\n        --start_year START_YEAR\n\
-      \                                Ending year of the analysis.\n\n    Output Parameters:\n\
-      \        --output_dir OUTPUT_DIR\n                                The output dir.\n    \n\
-      \    Tool_Usage_example:\n        conda activate af3 && python vci_analysis.py\
-      \ --province_code $province_code --city_code $city_code_if_provided --county_code\
-      \ $county_code_if_provided --target_year $target_year_if_provided --target_month\
-      \ $target_month_if_provided --start_year $start_year_if_provided --output_dir\
-      \ $output_dir\n        Note: If the parameter is not provided, the corresponding\
-      \ parameter is not required.\n</Usage>\n"
-
+  structure_analysis_meta: "Note1: You don't need to install protenix software using\
+    \ conda; \nNote2: You need to activate af3 environment;(conda activate af3); \n\
+    Note3: protenix commdline softwore usage is as follows:\n<proteix usage method>\n\
+    \    Usage: protenix predict [OPTIONS]\n\n        predict: Run predictions with\
+    \ protenix. :param input, out_dir,\n        use_msa_server :return:\n\n    Options:\n\
+    \        --input TEXT      json files or dir for inference\n        --out_dir\
+    \ TEXT    infer result dir\n        --seeds TEXT      the inference seed, split\
+    \ by comma\n        --use_msa_server  do msa search or not\n        --help   \
+    \         Show this message and exit.\n</proteix usage method>\n<usage example>\n\
+    \    protenix predict --input $input_json --out_dir $output_dir --use_msa_server\n\
+    </usage example>\nNote4: protenix commdline softwore input file example is as\
+    \ follows:\n    You should filled in the protein sequence in the sequence parameter\
+    \ in the proteinChain.\n    The dnaSequence and the ligand are optional parameters\
+    \ that can be filled in if provided by the user, otherwise, the module will be\
+    \ deleted.\n    The name parameter is the output dir names, you can change it\
+    \ if you want.\n    The count parameter is the number of relevant sequences in\
+    \ the composite structure, defalut number is 1.\n<input json file example>\n[\n\
+    \    {\n        \"sequences\": [\n            {\n                \"proteinChain\"\
+    : {\n                    \"sequence\": \"MGSSHHHHHHSSGLVPRGSHMSGKIQHKAVVPAPSRIPLTLSEIEDLRRKGFNQTEIAELYGVTRQAVSWHKKTYGGRLTTRQIVQQNWPWDTRKPHDKSKAFQRLRDHGEYMRVGSFRTMSEDKKKRLLSWWKMLRDNDLVLEFDPSIEPYEGMAGGGFRYVPRDISDDDLLIRVNEHTQLTAEGELLWSWPDDIEELLSEP\"\
+    ,\n                    \"count\": 1,\n                }\n            },\n    \
+    \        {\n                \"dnaSequence\": {\n                    \"sequence\"\
+    : \"TTTCGGTGGCTGTCAAGCGGG\",\n                    \"count\": 1\n             \
+    \   }\n            },\n            {\n                \"ligand\": {\n        \
+    \            \"ligand\": \"CCD_PCG\",\n                    \"count\": 1\n    \
+    \            }\n            }\n        ],\n        \"name\": \"7r6r\"\n    }\n\
+    ]\n</input json file example>\n<structure feature>\n    Tool_Usage:\n        usage:\
+    \ cif2structure_info.py [-h] [--input_path INPUT_PATH] [--output_dir OUTPUT_DIR]\n\
+    \n        options:\n            -h, --help            show this help message and\
+    \ exit\n            --input_path INPUT_PATH\n                                \
+    \    the structure output_dir\n            --output_dir OUTPUT_DIR\n         \
+    \                           the output folder     \n    Tool_Example:\n      \
+    \  conda activate af3 && conda install -c schrodinger pymol && pip install requests\
+    \ -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python cif2structure_info.py\
+    \ --input_path $output_dir --output_dir $structure_information_dir\n</structure\
+    \ feature>\nstep1, Find Gene's Protein Sequence using grep;\nstep2, Organize the\
+    \ protein sequences into an input JSON format file, and save it; \nstep3, Predict\
+    \ Protein Sturctre using protenix; (conda activate af3)\nstep4, Generate Protein\
+    \ 3D Structure Features Using Scripts;(conda activate af3 && conda install -c\
+    \ schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"

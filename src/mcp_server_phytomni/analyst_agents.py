@@ -27,6 +27,7 @@ interface for developers and researchers.
 import asyncio
 import datetime
 import json
+import re
 import time
 from pathlib import Path
 from random import uniform
@@ -90,6 +91,7 @@ async def submit(
     temperature: float = ac.TEMPERATURE,
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
+    meta_meta: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Submits an analysis task to the Bioinformatics Agents platform.
@@ -163,6 +165,7 @@ async def submit(
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
+    meta += meta_meta if meta_meta else ''
     meta += ('\nnext step, summarize each of the generated result files '
              '(including images, result files, etc.) into a json file (named '
              '`result_files.json`) and save it, with the key of the file '
@@ -191,6 +194,7 @@ async def submit(
                 timeout=timeout,
                 retriable_codes=retriable_codes,
                 max_retries=max_retries,
+                meta_meta=meta_meta,
             )
         except Exception as exc:
             raise McpError(ErrorData(
@@ -852,7 +856,9 @@ async def retrieve_plan_submit(
     """
     if not repo_id_dict:
         repo_id_dict = ac.REPO_ID_DICT
-    total_length = 0
+    total_length = len(get_prompt(
+            prompt_file, 'user/analysis_retrieve_file',
+            {'user_query': goal_description}))
     upload_context = ''
     if obs_file_list:
         upload_str_list = await download_list_convert(
@@ -951,14 +957,13 @@ async def retrieve_plan_submit(
             message='Failed to generate plan: '
                     'Invalid response from language model'
         ))
-    meta = content + meta_meta if meta_meta else content
     task_dict = await submit(
         goal_description=goal_description,
         data_list=data_list,
         user_id=user_id,
         is_create_dir=is_create_dir,
         output_dir=output_dir,
-        meta=meta,
+        meta=content,
         execute_code=execute_code,
         model_url=model_url,
         model_name=model_name,
@@ -973,6 +978,7 @@ async def retrieve_plan_submit(
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
         compute_resource=compute_resource,
+        meta_meta=meta_meta,
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
@@ -1873,6 +1879,7 @@ async def auto_select(
     temperature: float = ac.TEMPERATURE,
     top_p: float = ac.TOP_P,
     user: str = ac.USER,
+    meta_meta: Optional[str] = None,
     timeout: float = ac.TIMEOUT,
     retriable_codes: List[int] = ac.RETRIABLE_CODES,
     max_retries: int = ac.MAX_RETRIES,
@@ -1924,11 +1931,13 @@ async def auto_select(
             message='Failed to load species data list'
         )) from exc
     user_data_summary = json.dumps(data_list)
+    if meta_meta:
+        goal_description = f'{goal_description}: meta_meta'
     selection_prompt = get_prompt(
         prompt_file, 'user/data_selection',
         {
             'goal_description': goal_description,
-            'user_data_list': user_data_summary,
+            # 'user_data_list': user_data_summary,
             'available_data_list': json.dumps(species_data)
         }
     )
@@ -1968,18 +1977,44 @@ async def auto_select(
             selection_response['choices'][0]['message'].get('content')):
         try:
             content = selection_response['choices'][0]['message']['content']
-            start_index = content.find('{')
-            end_index = content.rfind('}') + 1
-            json_part = content[start_index:end_index]
+            json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```',
+                                   content, re.DOTALL)
+            if json_match:
+                json_part = json_match.group(1).strip()
+            else:
+                start_index = content.find('{')
+                if start_index != -1:
+                    brace_count = 0
+                    end_index = -1
+                    for i in range(start_index, len(content)):
+                        if content[i] == '{':
+                            brace_count += 1
+                        elif content[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_index = i + 1
+                                break
+                    if end_index == -1:
+                        raise ValueError("No complete JSON object found")
+                    json_part = content[start_index:end_index]
+                else:
+                    raise ValueError("No JSON object found in content")
+            json_part = json_part.strip()
+            if not json_part:
+                raise ValueError("Empty JSON content")
             parsed_response = json.loads(json_part)
             if 'selected_data' in parsed_response:
                 selected_data = parsed_response['selected_data']
             else:
                 selected_data = parsed_response
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError, KeyError, IndexError) as exc:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
                 message=f'Failed to parse data selection response: {str(exc)}'
             )) from exc
 
-    return {**data_list, **selected_data}
+    file_set = {k for t in species_data.values() for s in t.values() for k in s if k[:4] == '/obs'} | {ff for t in species_data.values() for s in t.values() for f in s if f[:4] != '/obs' for ff in s[f] if ff[:4] == '/obs'}
+    for file_path, description in selected_data.items():
+        if file_path in file_set:
+            data_list.update({file_path: description})
+    return data_list
