@@ -27,6 +27,7 @@ async def protein_design_analysis(
     gene_id: str,
     user_id: str = ddc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = ddc.PROMPT_FILE,
     deepgenome_data: str = ddc.DEEPGENOME_DATA,
     output_dir: str = ddc.OUTPUT_DIR,
@@ -128,6 +129,7 @@ async def protein_design_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -154,6 +156,7 @@ async def promoter_design_analysis(
     gene_id: str,
     user_id: str = ddc.USER_ID,
     batch: bool = False,
+    enable_auto_select: bool = False,
     prompt_file: str = ddc.PROMPT_FILE,
     deepgenome_data: str = ddc.DEEPGENOME_DATA,
     output_dir: str = ddc.OUTPUT_DIR,
@@ -244,6 +247,7 @@ async def promoter_design_analysis(
                                   {'gene_id': gene_id})
     data_list = get_data_list(deepgenome_data, 'promoter_design_analysis',
                               species)
+    data_list = loads(dumps(data_list).replace('/gene_id', f'/{gene_id}'))
     if not batch:
         if not user_id:
             user_id = str(uuid1())
@@ -255,6 +259,7 @@ async def promoter_design_analysis(
         output_dir=output_dir,
         meta=meta,
         execute_code=True,
+        enable_auto_select=enable_auto_select,
         model_url=model_url,
         model_name=model_name,
         coder_api_key=coder_api_key,
@@ -267,7 +272,7 @@ async def promoter_design_analysis(
         task_name='deepgenome-agents-dnadesign-task',
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='medium',
+        compute_resource='small',
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
@@ -281,6 +286,7 @@ async def design_module(
     gene_id: str,
     user_id: str = ddc.USER_ID,
     batch: bool = True,
+    enable_auto_select: bool = False,
     prompt_file: str = ddc.PROMPT_FILE,
     deepgenome_data: str = ddc.DEEPGENOME_DATA,
     output_dir: str = ddc.OUTPUT_DIR,
@@ -390,6 +396,7 @@ async def design_module(
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        enable_auto_select=enable_auto_select,
         prompt_file=prompt_file,
         deepgenome_data=deepgenome_data,
         output_dir=output_dir,
@@ -409,4 +416,30 @@ async def design_module(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return protein_design_task
+    promoter_design_task = await promoter_design_analysis(
+        species=species,
+        gene_id=gene_id,
+        user_id=user_id,
+        batch=batch,
+        enable_auto_select=enable_auto_select,
+        prompt_file=prompt_file,
+        deepgenome_data=deepgenome_data,
+        output_dir=output_dir,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        max_poll=max_poll,
+    )
+
+    return {**protein_design_task, **promoter_design_task}
