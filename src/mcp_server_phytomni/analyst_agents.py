@@ -51,6 +51,172 @@ ac = AnalystConfig()
 sc = SensitiveConfig().load()
 
 
+def _log_submit_params(
+    log_filename: str,
+    goal_description: str,
+    data_list: Dict[str, str],
+    user_id: str,
+    is_create_dir: bool,
+    output_dir: str,
+    meta: str,
+    execute_code: bool,
+    model_url: str,
+    model_name: str,
+    coder_api_key: str,
+    access_key_id: str,
+    secret_access_key: str,
+    obs_server: str,
+    bucket_name: str,
+    analysis_url: str,
+    region: str,
+    task_name: str,
+    resource_dict: Dict[str, Dict[str, int]],
+    app_id_dict: Dict[str, str],
+    compute_resource: Literal['small', 'medium', 'large'],
+    timeout: float,
+    retriable_codes: List[int],
+    max_retries: int,
+    enable_auto_select: bool,
+    prompt_file: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    frequency_penalty: float,
+    n: int,
+    presence_penalty: float,
+    reasoning_effort: Optional[str],
+    stream: bool,
+    temperature: float,
+    top_p: float,
+    user: str,
+    meta_meta: Optional[str],
+) -> str:
+    """
+    Logs submit parameters to a local file for reproduction.
+
+    Args:
+        All parameters from the submit function
+
+    Returns:
+        Path to the created log file
+    """
+    logs_dir = Path("submit_logs")
+    logs_dir.mkdir(exist_ok=True)
+    log_path = logs_dir / log_filename
+    log_data = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "submit_function": "submit",
+        "parameters": {
+            "goal_description": goal_description,
+            "data_list": data_list,
+            "user_id": user_id,
+            "is_create_dir": is_create_dir,
+            "output_dir": output_dir,
+            "meta": meta,
+            "execute_code": execute_code,
+            "model_url": model_url,
+            "model_name": model_name,
+            "coder_api_key": coder_api_key,
+            "access_key_id": access_key_id,
+            "secret_access_key": secret_access_key,
+            "obs_server": obs_server,
+            "bucket_name": bucket_name,
+            "analysis_url": analysis_url,
+            "region": region,
+            "task_name": task_name,
+            "resource_dict": resource_dict,
+            "app_id_dict": app_id_dict,
+            "compute_resource": compute_resource,
+            "timeout": timeout,
+            "retriable_codes": retriable_codes,
+            "max_retries": max_retries,
+            "enable_auto_select": enable_auto_select,
+            "prompt_file": prompt_file,
+            "api_key": api_key,
+            "base_url": base_url,
+            "model": model,
+            "frequency_penalty": frequency_penalty,
+            "n": n,
+            "presence_penalty": presence_penalty,
+            "reasoning_effort": reasoning_effort,
+            "stream": stream,
+            "temperature": temperature,
+            "top_p": top_p,
+            "user": user,
+            "meta_meta": meta_meta,
+        }
+    }
+    with open(log_path, 'w', encoding='utf-8') as f:
+        json.dump(log_data, f, indent=2, ensure_ascii=False)
+    return str(log_path)
+
+
+async def reproduce_submit_from_log(log_file_path: str) -> Dict[str, str]:
+    """
+    Reproduces a submit call from a previously saved log file.
+
+    Args:
+        log_file_path: Path to the JSON log file containing submit parameters
+
+    Returns:
+        The response dictionary from the submit function
+
+    Raises:
+        FileNotFoundError: If the log file doesn't exist
+        ValueError: If the log file format is invalid
+        McpError: If the submit call fails
+    """
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            log_data = json.load(f)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f'Log file not found: {log_file_path}') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'Invalid JSON in log file: {log_file_path}') from exc
+    if 'parameters' not in log_data:
+        raise ValueError('Invalid log file format: missing parameters section')
+    params = log_data['parameters']
+    return await submit(
+        goal_description=params['goal_description'],
+        data_list=params['data_list'],
+        user_id=params['user_id'],
+        is_create_dir=params['is_create_dir'],
+        output_dir=params['output_dir'],
+        meta=params['meta'],
+        execute_code=params['execute_code'],
+        model_url=params['model_url'],
+        model_name=params['model_name'],
+        coder_api_key=params['coder_api_key'],
+        access_key_id=params['access_key_id'],
+        secret_access_key=params['secret_access_key'],
+        obs_server=params['obs_server'],
+        bucket_name=params['bucket_name'],
+        analysis_url=params['analysis_url'],
+        region=params['region'],
+        task_name=params['task_name'],
+        resource_dict=params['resource_dict'],
+        app_id_dict=params['app_id_dict'],
+        compute_resource=params['compute_resource'],
+        timeout=params['timeout'],
+        retriable_codes=params['retriable_codes'],
+        max_retries=params['max_retries'],
+        enable_auto_select=params['enable_auto_select'],
+        prompt_file=params['prompt_file'],
+        api_key=params['api_key'],
+        base_url=params['base_url'],
+        model=params['model'],
+        frequency_penalty=params['frequency_penalty'],
+        n=params['n'],
+        presence_penalty=params['presence_penalty'],
+        reasoning_effort=params['reasoning_effort'],
+        stream=params['stream'],
+        temperature=params['temperature'],
+        top_p=params['top_p'],
+        user=params['user'],
+        meta_meta=params['meta_meta'],
+    )
+
+
 async def submit(
     goal_description: str,
     data_list: Dict[str, str],
@@ -983,6 +1149,49 @@ async def retrieve_plan_submit(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    output = Path(task_dict['output_dir']).name
+    log_filename = f"task_id-{task_dict['task_id']}-{output}.json"
+    log_file_path = _log_submit_params(
+        log_filename=log_filename,
+        goal_description=goal_description,
+        data_list=data_list,
+        user_id=user_id,
+        is_create_dir=is_create_dir,
+        output_dir=output_dir,
+        meta=content,
+        execute_code=execute_code,
+        model_url=model_url,
+        model_name=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=obs_server,
+        bucket_name=bucket_name,
+        analysis_url=analysis_url,
+        region=region,
+        task_name=task_name,
+        resource_dict=resource_dict,
+        app_id_dict=app_id_dict,
+        compute_resource=compute_resource,
+        timeout=timeout,
+        retriable_codes=retriable_codes,
+        max_retries=max_retries,
+        enable_auto_select=True,  # Default value in submit function
+        prompt_file=prompt_file,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        frequency_penalty=frequency_penalty,
+        n=n,
+        presence_penalty=presence_penalty,
+        reasoning_effort=reasoning_effort,
+        stream=stream,
+        temperature=temperature,
+        top_p=top_p,
+        user=user,
+        meta_meta=meta_meta,
+    )
+    task_dict['log_file_path'] = log_file_path
     return task_dict
 
 
@@ -1592,7 +1801,7 @@ def delete_analyst_agents_data(
                 'versionId', 'unknown')
             return (
                 'Delete Object Succeeded\n'
-                f'requestId: {getattr(response, 'requestId', 'unknown')}\n'
+                f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
                 f'deleteMarker: {delete_marker}\nversionId: {version_id}'
             )
         raise OSError(
@@ -1851,12 +2060,9 @@ def download_obs_out(
             else:
                 raise OSError(
                     'Get File List Failed\n'
-                    f'requestId: {getattr(
-                        file_response, 'requestId', 'unknown')}\n'
-                    f'errorCode: {getattr(
-                        file_response, 'errorCode', 'unknown')}\n'
-                    f'errorMessage: {getattr(
-                        file_response, 'errorMessage', 'unknown')}'
+                    f"requestId: {getattr(file_response, 'requestId', 'unknown')}\n"
+                    f"errorCode: {getattr(file_response, 'errorCode', 'unknown')}\n"
+                    f"errorMessage: {getattr(file_response, 'errorMessage', 'unknown')}"
                 )
     except Exception as exc:
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
@@ -2013,7 +2219,14 @@ async def auto_select(
                 message=f'Failed to parse data selection response: {str(exc)}'
             )) from exc
 
-    file_set = {k for t in species_data.values() for s in t.values() for k in s if k[:4] == '/obs'} | {ff for t in species_data.values() for s in t.values() for f in s if f[:4] != '/obs' for ff in s[f] if ff[:4] == '/obs'}
+    file_set = set()
+    for t in species_data.values():
+        for s in t.values():
+            file_set.update(k for k in s if k[:4] == '/obs' and
+                            k[-7:] != 'gene_id')
+            for k in (k for k in s if k[:4] != '/obs'):
+                file_set.update(ff for ff in s[k] if ff[:4] == '/obs' and
+                                ff[-7:] != 'gene_id')
     for file_path, description in selected_data.items():
         if file_path in file_set:
             data_list.update({file_path: description})
