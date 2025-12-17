@@ -16,7 +16,7 @@ The server provides the following specialized agents:
 
 - **ReviewAgent**: Conducts comprehensive multi-dimensional research investigations, synthesizing information from diverse scientific literature sources to produce structured reviews and detailed reports with automatic research dimension extraction.
 
-- **DeepGenomeAgent**: Advanced gene function analysis integrating multi-omics data (GO, KEGG, etc.) with experimental evidence from literature, supporting 65+ plant species with comprehensive functional annotation and comparative analysis.
+- **DeepGenomeAgent**: Advanced gene function analysis integrating multi-omics data (GO, MapMan, etc.) with experimental evidence from literature, supporting 65+ plant species with comprehensive functional annotation and comparative analysis.
 
 - **InSilicoResearchAgent**: Decomposes scientific papers by analyzing methodology and results, producing structured, computational-ready task lists for research replication and validation.
 
@@ -34,6 +34,8 @@ The server provides the following specialized agents:
   - [conda](https://docs.conda.io/en/latest/) or [mamba](https://mamba.readthedocs.io/en/latest/) (recommended for scientific computing)
 
 ### Installation
+
+**Typical Installation Time:** 10-30 minutes (including downloading dependency packages)
 
 1. **Clone the repository:**
    ```bash
@@ -96,14 +98,17 @@ The server provides the following specialized agents:
 2. **Edit the `.env` file with your credentials:**
    ```bash
    # Required API keys and credentials
-   OPENAI_API_KEY=your_openai_api_key
-   ACCESS_KEY_ID=your_obs_access_key
-   SECRET_ACCESS_KEY=your_obs_secret_key
-
-   # Optional custom endpoints
-   MODEL_URL=your_model_endpoint
-   OBS_SERVER=your_obs_server
-   BUCKET_NAME=your_bucket_name
+   DOMAIN_NAME=your_domain_name
+   USER_NAME=your_user_name
+   USER_PASSWORD=your_user_password
+   AccessKeyID=your_AccessKeyID
+   SecretAccessKey=your_SecretAccessKey
+   BASE_URL=your_base_url
+   MODEL_ID=your_model_id
+   API_KEY=your_api_key
+   CODER_URL=your_coder_url
+   CODER_MODEL=your_coder_model
+   CODER_API_KEY=your_coder_api_key
    ```
 
    Refer to the `.env.example` file for complete configuration options.
@@ -122,44 +127,554 @@ python -c "import asyncio; from mcp_server_phytomni.server import serve; asyncio
 
 ## 📖 Usage
 
-The server communicates over standard I/O using the MCP protocol and exposes the following endpoints:
+### MCP Protocol Overview
 
-- **`list_tools`**: Returns a list of available agents and their JSON schemas
-- **`call_tool`**: Executes a specific agent with the given parameters
+Phytomni-Bot implements the **Model Context Protocol (MCP)** for AI agent orchestration. The server communicates using **JSON-RPC 2.0** over **standard I/O (stdio)** transport, providing a standardized interface for client applications.
 
-### Example MCP Client Integration
+**Core MCP Methods:**
+- **`tools/list`**: Discover available agents and their parameter schemas
+- **`tools/call`**: Execute specific agents with validated parameters
+- **`initialize`**: Protocol handshake and capability exchange
+
+**Transport Protocol:**
+- **Communication**: JSON-RPC 2.0 messages
+- **Transport**: Standard input/output streams
+- **Session Management**: Async context managers with automatic cleanup
+
+### Configuration Prerequisites
+
+Before using the agents, ensure your `.env` file is properly configured:
+
+```bash
+# Required: Copy and edit configuration
+cp src/mcp_server_phytomni/config/.env.example src/mcp_server_phytomni/config/.env
+
+# Edit with your credentials:
+DOMAIN_NAME=your_domain_name
+USER_NAME=your_user_name
+USER_PASSWORD=your_user_password
+AccessKeyID=your_AccessKeyID
+SecretAccessKey=your_SecretAccessKey
+BASE_URL=your_base_url
+MODEL_ID=your_model_id
+API_KEY=your_api_key
+CODER_URL=your_coder_url
+CODER_MODEL=your_coder_model
+CODER_API_KEY=your_coder_api_key
+```
+
+**File Processing Note**: For agents that support document processing, provide absolute OBS paths in the format: `/obs/phytomni/path/to/document.pdf`
+
+### Client Integration Examples
+
+#### Python MCP SDK Client
 
 ```python
-from mcp import ClientSession
-
-async def example_usage():
-    async with ClientSession() as session:
-        # List available tools
-        tools = await session.list_tools()
-        print(f"Available tools: {[tool.name for tool in tools.tools]}")
-
-        # Use ChatAgent for basic Q&A
-        result = await session.call_tool(
-            "ChatAgent",
-            {
-                "user_query": "What is the role of chlorophyll in photosynthesis?",
-                "obs_file_list": []
-            }
-        )
-
-        # Use DeepGenomeAgent for gene analysis
-        gene_result = await session.call_tool(
-            "DeepGenomeAgent",
-            {
-                "species": "arabidopsis",
-                "gene_list": ["AT1G01010"],
-                "user_id": "researcher_001"
-            }
-        )
-
-# Run the example
 import asyncio
-asyncio.run(example_usage())
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    # Configure server parameters
+    server_params = StdioServerParameters(
+        command="python",
+        args=["-m", "src.mcp_server_phytomni.server"]
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize connection
+            await session.initialize()
+
+            # Discover available tools
+            tools = await session.list_tools()
+            print(f"Available agents: {[t.name for t in tools.tools]}")
+
+            # Example: Use ChatAgent
+            result = await session.call_tool(
+                "ChatAgent",
+                {
+                    "user_query": "Explain the Calvin cycle in plant photosynthesis"
+                }
+            )
+            print(f"Response: {result.content[0].text}")
+
+            # Example: Use DeepGenomeAgent
+            gene_result = await session.call_tool(
+                "DeepGenomeAgent",
+                {
+                    "species_code": "ath",  # Arabidopsis thaliana
+                    "gene_id": "AT1G01010"
+                }
+            )
+            print(f"Gene analysis: {gene_result.content[0].text}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### CLI Usage Pattern
+
+```bash
+# Start server in background
+python -m src.mcp_server_phytomni.server &
+
+# Use MCP CLI tools (requires mcp-cli installation)
+mcp list-tools
+mcp call ChatAgent '{"user_query": "What are plant hormones?"}'
+```
+
+#### Direct Function Call (for development)
+
+```python
+import asyncio
+from src.mcp_server_phytomni.server import serve
+from mcp.client.stdio import stdio_client
+
+async def direct_usage():
+    # Start server and connect directly
+    server_task = asyncio.create_task(serve())
+
+    # Your client code here
+    await asyncio.sleep(1)  # Give server time to start
+
+    # Cancel server when done
+    server_task.cancel()
+
+asyncio.run(direct_usage())
+```
+
+### Available Agents Overview
+
+The server provides **9 specialized AI agents** for plant science research:
+
+**Quick Response (1-5 minutes):**
+- **ChatAgent**: Foundational plant biology Q&A with document processing
+- **KnowledgeAgent**: Literature retrieval and RAG-based synthesis
+- **DataAgent**: Natural language to SQL queries on botanical databases
+
+**Medium Response (5-10 minutes):**
+- **ReviewAgent**: Comprehensive multi-dimensional research investigations
+
+**Long Response (1-3 hours):**
+- **AnalystAgent**: Bioinformatics workflow orchestration
+- **GeneNetworkAgent**: Gene interaction and regulatory network analysis
+- **DigitalDesignAgent**: Protein structure analysis and design workflows
+
+**Extended Response (24 hours):**
+- **DeepGenomeAgent**: Multi-omics gene function analysis (65+ plant species)
+- **InSilicoResearchAgent**: Scientific paper methodology decomposition
+
+### Error Handling and Best Practices
+
+#### MCP-Compliant Error Responses
+
+```python
+try:
+    result = await session.call_tool("ChatAgent", {
+        "user_query": "invalid query"
+    })
+except Exception as e:
+    # MCP errors include structured error data
+    if hasattr(e, 'data'):
+        print(f"Error Code: {e.code}")
+        print(f"Error Message: {e.message}")
+        print(f"Error Details: {e.data}")
+    else:
+        print(f"Unexpected error: {e}")
+```
+
+#### Resource Management
+
+```python
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def managed_session():
+    """Proper session management with cleanup."""
+    server_params = StdioServerParameters(
+        command="python",
+        args=["-m", "src.mcp_server_phytomni.server"]
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            try:
+                yield session
+            finally:
+                # Automatic cleanup handled by context managers
+                pass
+
+# Usage
+async with managed_session() as session:
+    result = await session.call_tool("ChatAgent", {
+        "user_query": "Your query here"
+    })
+```
+
+#### Performance Optimization
+
+- **Use Async Patterns**: Always use async/await for non-blocking operations
+- **Batch Operations**: Group multiple tool calls when possible
+- **Timeout Configuration**: Set appropriate timeouts for long-running agents
+- **Connection Reuse**: Maintain sessions for multiple related operations
+
+### Troubleshooting Common Issues
+
+**Configuration Problems:**
+- Ensure all 11 environment variables are set in `.env`
+- Verify OBS credentials for file processing operations
+- Check model URLs and API keys are accessible
+
+**Connection Issues:**
+- Confirm Python 3.12+ environment
+- Verify server startup: `python -m src.mcp_server_phytomni.server`
+- Check stdio transport compatibility with your client
+
+**Performance Issues:**
+- Network latency affects response times
+- Large file uploads require sufficient bandwidth
+- Consider agent-specific time expectations (1 min to 24 hours)
+
+For comprehensive demo examples and expected outputs, see the **🎯 Demo** section below.
+
+## 🎯 Demo
+
+This section provides comprehensive demonstration examples for all **9 specialized AI agents** in Phytomni-Bot. Each demo includes usage instructions, expected outputs, and realistic run time expectations.
+
+### 📋 Demo Setup
+
+Before running demos, ensure your environment is configured:
+
+```bash
+# 1. Copy demo configuration template
+cp demo_data/.env.demo src/mcp_server_phytomni/config/.env
+
+# 2. Edit the .env file with your actual credentials
+# 3. Start the MCP server
+python -m src.mcp_server_phytomni.server
+```
+
+### Quick Response Agents (1-5 minutes)
+
+#### ChatAgent - Plant Biology Q&A with Document Processing
+**Purpose**: Foundational plant science questions and document analysis
+
+**Prerequisites**: Basic configuration, optional document files
+
+**Example Usage**:
+```python
+import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def demo_chat_agent():
+    server_params = StdioServerParameters(
+        command="python",
+        args=["-m", "src.mcp_server_phytomni.server"]
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            # Basic Q&A without documents
+            result = await session.call_tool("ChatAgent", {
+                "user_query": "Explain the process of photosynthesis in C3 plants"
+            })
+            print(f"Response: {result.content[0].text}")
+
+asyncio.run/demo_chat_agent())
+```
+
+**Expected Output**:
+- Text response explaining photosynthesis mechanism
+- Document summary with key points and insights
+- Structured answer with scientific accuracy
+
+**Expected Run Time**: 1-3 minutes for text queries, 2-5 minutes with documents
+
+---
+
+#### KnowledgeAgent - Literature Retrieval and RAG Synthesis
+**Purpose**: Evidence-based answers from plant science literature, patents, and research databases
+
+**Prerequisites**: Access to literature databases, optional reference documents
+
+**Example Usage**:
+```python
+async def demo_knowledgeagent():
+    # ... session setup as above ...
+
+    # Literature-based research
+    result = await session.call_tool("KnowledgeAgent", {
+        "user_query": "How does high ambient temperature modulate the oligomerization and kinase activity of BSK3/BIN2 in Arabidopsis thaliana?"
+    })
+    print(f"Literature Synthesis: {result.content[0].text}")
+
+asyncio.run(demo_knowledgeagent())
+```
+
+**Expected Output**:
+- Comprehensive synthesis with citations
+- Multi-source information integration
+- Evidence-backed conclusions with references
+
+**Expected Run Time**: 3-5 minutes (literature search + synthesis)
+
+---
+
+#### DataAgent - Natural Language to SQL Queries
+**Purpose**: Extract numerical and statistical data from botanical databases
+
+**Prerequisites**: Database access configured in environment
+
+**Example Usage**:
+```python
+async def demo_dataagent():
+    # ... session setup as above ...
+
+    # Query plant trait data
+    result = await session.call_tool("DataAgent", {
+        "user_query": "What are the homologous genes of AT1G75370 in wheat?"
+    })
+    print(f"Data Query Result: {result.content[0].text}")
+
+asyncio.run(demo_dataagent())
+```
+
+**Expected Output**:
+- Structured numerical data with units
+- Tabular format with statistical summaries
+- SQL query results formatted as readable text
+
+**Expected Run Time**: 1-2 minutes per query
+
+---
+
+### Medium Response Agents (5-10 minutes)
+
+#### ReviewAgent - Multi-Dimensional Research Investigation
+**Purpose**: Comprehensive reviews and detailed reports across multiple research dimensions
+
+**Prerequisites**: Broad access to scientific literature sources
+
+**Example Usage**:
+```python
+async def demo_reviewagent():
+    # ... session setup as above ...
+
+    # Comprehensive research review
+    result = await session.call_tool("ReviewAgent", {
+        "user_query": "How novel epigenetic modifications, such as DNA 6mA, RNA m6A, and RNA m5C, regulate environmental responses in plants?"
+    })
+    print(f"Research Review: {result.content[0].text}")
+
+asyncio.run(demo_reviewagent())
+```
+
+**Expected Output**:
+- Structured review with multiple sections
+- Critical analysis of current state
+- Research gaps and future directions
+- Comparative analysis across studies
+
+**Expected Run Time**: 5-10 minutes (deep literature analysis)
+
+---
+
+### Long Response Agents (1-3 hours)
+
+#### AnalystAgent - Bioinformatics Workflow Orchestration
+**Purpose**: Automated execution of computational biology workflows (sequence alignment, phylogenetics, etc.)
+
+**Prerequisites**: Cloud platform access, genomic data files
+
+**Example Usage**:
+```python
+async def demo_analystagent():
+    # ... session setup as above ...
+
+    # Phylogenetic analysis
+    result = await session.call_tool("AnalystAgent", {
+        "goal_description": "Please help me to perform the callpeak analysis for rice ATAC-Seq data.",
+        "data_list": {
+            "/obs/phytomni/agent_data/raw_data/04.benchmark_data/PhytoBench-Analysis/PhytoBench-Analysis/genome/callsnp/data1_1.fq.gz": "pair-end fastq file 1",
+            "/obs/phytomni/agent_data/raw_data/04.benchmark_data/PhytoBench-Analysis/PhytoBench-Analysis/genome/callsnp/data1_2.fq.gz": "pair-end fastq file 2",
+        },
+    })
+    print(f"Analysis Results: {result.content[0].text}")
+
+asyncio.run(demo_analystagent())
+```
+
+**Expected Output**:
+- Workflow execution status and logs
+- Phylogenetic trees and alignment results
+- Statistical analysis outputs
+- Visualization file references
+
+**Expected Run Time**: 1-3 hours (computational workflow execution)
+
+---
+
+#### GeneNetworkAgent - Gene Interaction and Regulatory Network Analysis
+**Purpose**: Analyze gene co-expression, regulatory networks, and interaction patterns
+
+**Prerequisites**: Network analysis tools, gene expression data
+
+**Example Usage**:
+```python
+async def demo_genenetwork():
+    # ... session setup as above ...
+
+    # Network analysis
+    result = await session.call_tool("GeneNetworkAgent", {
+        "species": "oryza sativa",
+        "to_id": "TO:0000207"
+    })
+    print(f"Gene Network Analysis: {result.content[0].text}")
+
+asyncio.run(demo_genenetwork())
+```
+
+**Expected Output**:
+- Interaction network topology
+- Co-expression clusters
+- Regulatory pathway mappings
+- Hub gene identification
+- Network visualization references
+
+**Expected Run Time**: 1-3 hours (network construction + analysis)
+
+---
+
+#### DigitalDesignAgent - Protein Structure Analysis and Design
+**Purpose**: Computational protein modeling, structure prediction, and design workflows
+
+**Prerequisites**: Access to computational modeling platforms
+
+**Example Usage**:
+```python
+async def demo_digitaldesign():
+    # ... session setup as above ...
+
+    # Protein design analysis
+    result = await session.call_tool("DigitalDesignAgent", {
+        "species": "glycine max",
+        "gene_id": "GLYMA_11G228300"
+    })
+    print(f"Protein Design Analysis: {result.content[0].text}")
+
+asyncio.run(demo_digitaldesign())
+```
+
+**Expected Output**:
+- Protein structure predictions
+- Functional domain analysis
+- Design optimization suggestions
+- Stability assessments
+- Modeling file references
+
+**Expected Run Time**: 1-3 hours (computational modeling + analysis)
+
+---
+
+### Extended Response Agents (24 hours)
+
+#### DeepGenomeAgent - Multi-Omics Gene Function Analysis
+**Purpose**: Integrate multi-omics data (GO, KEGG, etc.) with literature evidence for comprehensive gene analysis
+
+**Prerequisites**: Access to multi-omics databases, species code knowledge
+
+**Example Usage**:
+```python
+async def demo_deepgenome():
+    # ... session setup as above ...
+
+    # Arabidopsis gene analysis
+    result = await session.call_tool("DeepGenomeAgent", {
+        "species_code": "ath",  # Arabidopsis thaliana
+        "gene_id": "AT1G01010"  # Specific gene identifier
+    })
+    print(f"Gene Function Analysis: {result.content[0].text}")
+
+    # Rice gene analysis
+    rice_result = await session.call_tool("DeepGenomeAgent", {
+        "species_code": "osa",  # Oryza sativa (rice)
+        "gene_id": "LOC_Os01g01010"
+    })
+    print(f"Rice Gene Analysis: {rice_result.content[0].text}")
+
+asyncio.run(demo_deepgenome())
+```
+
+**Expected Output**:
+- Comprehensive functional annotation
+- GO term enrichment analysis
+- KEGG pathway mappings
+- Experimental evidence synthesis
+- Cross-species comparative analysis
+
+**Expected Run Time**: 12-24 hours (multi-omics data integration + literature mining)
+
+**Supported Species Codes**:
+- `ath`: Arabidopsis thaliana, `osa`: Oryza sativa (rice), `zma`: Zea mays (maize)
+- `sly`: Solanum lycopersicum (tomato), `gma`: Glycine max (soybean)
+- Plus 60+ additional plant species (see agent parameter documentation)
+
+---
+
+#### InSilicoResearchAgent - Scientific Paper Methodology Decomposition
+**Purpose**: Analyze research papers and extract computational task lists for replication
+
+**Prerequisites**: Research paper in PDF format
+
+**Example Usage**:
+```python
+async def demo_insilicoresearch():
+    # ... session setup as above ...
+
+    # Paper analysis
+    result = await session.call_tool("InSilicoResearchAgent", {
+        "user_query": "Decompose this plant genomics paper into computational tasks for replication",
+        "data_list": {},
+        "obs_file_list": ["/obs/phytomni/agent_data/user_data/test_upload/xieshang0608@gmail.com/Plant Cell-2021-Prediction of conserved and variable heat and cold stress response in maize using cis-regulatory information.pdf"]
+    })
+    print(f"Methodology Decomposition: {result.content[0].text}")
+
+asyncio.run(demo_insilicoresearch())
+```
+
+**Expected Output**:
+- Structured list of computational tasks
+- Algorithm and parameter specifications
+- Data requirements and formats
+- Step-by-step replication workflow
+
+**Expected Run Time**: 8-24 hours (paper analysis + task extraction)
+
+---
+
+### 🔧 Troubleshooting Demo Issues
+
+**Common Problems**:
+1. **Configuration Errors**: Verify all 11 environment variables in `.env`
+2. **File Access Issues**: Ensure OBS files are accessible with correct paths
+3. **Timeout Issues**: Adjust timeouts for long-running agents
+4. **Resource Limits**: Monitor memory and CPU usage during extended analyses
+
+**Debug Mode**:
+```python
+# Enable verbose logging
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Test individual components
+tools = await session.list_tools()
+print(f"Available tools: {[tool.name for tool in tools.tools]}")
 ```
 
 ## 🏗️ Architecture
@@ -190,25 +705,55 @@ Development dependencies:
 - **pytest-asyncio** (>=1.0.0): Async testing support
 - **ipykernel** (>=6.30.0): Jupyter notebook support
 
+## 💻 System Requirements
+
+### Software Dependencies
+
+**Operating Systems:**
+- **Linux distributions only**
+  - Ubuntu 22.04 LTS
+  - CentOS Stream 8
+  - Huawei Cloud EulerOS 2.0 (tested environment)
+  - Other Linux distributions may also be compatible
+
+**Python Environment:**
+- **Python**: 3.12.0 or later (required)
+- **Package Manager**: uv 0.5.0 or later (recommended)
+- Other package managers (conda, mamba, pip) may also work
+
+### Tested Versions
+
+**Test Environment:**
+- **Operating System**: Huawei Cloud EulerOS 2.0 (x86_64)
+- **Python Version**: 3.12.3
+- **Package Manager**: uv 0.8.4
+- **Installation Method**: uv-based virtual environment
+
+The software has been tested with the above configuration and is known to work with Ubuntu 22.04 LTS and CentOS Stream 8.
+
+### Hardware Requirements
+
+**Current Test Environment:**
+- **CPU Cores**: 64 threads
+- **Memory**: 256 GB
+- **Available Storage**: 100 GB
+
+**Minimum Requirements:**
+- Exact minimum hardware requirements are not yet determined
+- The system is designed to work on standard Linux environments
+- Performance may scale with available CPU cores and memory
+
+**Recommended Configuration:**
+- For optimal performance, multi-core processors with sufficient RAM are recommended
+- Additional storage space may be required for large document processing and temporary files
+
+### Special Requirements
+
+- **Linux Environment**: Currently only supports Linux systems
+- **Internet Connection**: Required for API calls and cloud service integration
+- **Cloud Services**: Requires access to OpenAI API and compatible Object Storage Service (OBS/S3)
+
 ## 🧪 Development
-
-### Running Tests
-
-```bash
-# Using uv
-uv run pytest
-uv run pytest --cov=src/mcp_server_phytomni
-
-# Using conda/mamba environment
-conda activate phytomni-bot  # or: mamba activate phytomni-bot
-pytest
-pytest --cov=src/mcp_server_phytomni
-
-# Using traditional virtual environment
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pytest
-pytest --cov=src/mcp_server_phytomni
-```
 
 ### Code Quality
 
