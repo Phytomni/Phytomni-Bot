@@ -11,7 +11,7 @@ better performance.
 """
 import asyncio
 from random import uniform
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TypedDict
 from uuid import uuid1
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -25,282 +25,283 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .utils import get_prompt, get_token
 
+from pydantic import Field
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import AsyncCallbackManagerForRetrieverRun, CallbackManagerForRetrieverRun
+from langchain_core.documents import Document
+from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
+
 dc = DataConfig()
 sc = SensitiveConfig().load()
 
 
-async def nl2sql(message_content: str,
-                 database_url: str = dc.DATABASE_URL,
-                 workspace_id: str = dc.WORKSPACE_ID,
-                 subject_id: str = dc.SUBJECT_ID,
-                 dialog_id: str = dc.DIALOG_ID,
-                 need_insight: bool = dc.NEED_INSIGHT,
-                 simplify_response: bool = dc.SIMPLIFY_RESPONSE,
-                 timeout: float = dc.TIMEOUT,
-                 retriable_codes: List[int] = dc.RETRIABLE_CODES,
-                 max_retries: int = dc.MAX_RETRIES,
-                 ) -> Optional[List[Dict[str, Any]]]:
-    """Convert a natural language query to SQL and execute it.
+class DataAgentState(TypedDict):
+    """State schema for the DataAgent LangGraph workflow.
 
-    This function sends a natural language message to a service that
-    translates it into an SQL query, executes it against a specified
-    database subject within a workspace, and returns the results.
-    It supports conversational context via a dialog ID and includes
-    retry mechanisms for transient errors.
+    This TypedDict defines the shared state that flows through each node
+    in the DataAgent graph. Each node reads from and writes to this state
+    as the graph processes a natural language query for database retrieval.
+
+    Attributes:
+        user_query: The user's natural language query.
+        retrieve_promopt: The constructed prompt containing retrieved scenarios.
+        rewrite_query: The rewritten query optimized for SQL generation.
+        final_reponse: The final response from the database query execution.
+    """
+    user_query: str
+    retrieve_promopt: str
+    rewrite_query: str
+    final_reponse: str
+
+
+class DataAgent:
+    """A LangGraph-based agent for database querying via natural language.
+
+    This agent orchestrates a workflow that converts natural language queries
+    into SQL queries against a database. It retrieves relevant database
+    scenarios, rewrites the query using an LLM for better SQL generation,
+    and executes the resulting query.
+
+    The workflow graph consists of three main nodes:
+        1. retrieve_node: Retrieves relevant database scenarios for context.
+        2. rewrite_node: Rewrites the query using an LLM for SQL generation.
+        3. search_node: Executes the NL2SQL conversion and queries the database.
 
     Args:
-        message_content: The natural language query to be processed.
-        database_url: The URL of the NL2SQL service.
-        workspace_id: Identifier for the workspace containing the data.
-        subject_id: Identifier for the specific database subject or schema
-            to query against.
-        dialog_id: Identifier for the current dialog or conversation session.
-            If an empty string is provided, a new unique dialog ID
-            will be generated.
-        need_insight: Flag indicating whether to generate insights based on
-            the query results.
-        simplify_response: Flag indicating whether the structure of the
-            response should be simplified.
-        timeout: Total request timeout in seconds for each API call attempt.
-        retriable_codes: List of HTTP status codes that will trigger a retry.
-        max_retries: Maximum number of retry attempts for failed requests.
+        checkpointer: A LangGraph checkpointer for state persistence.
+                      Defaults to MemorySaver().
+        data_config: Configuration for data retrieval and NL2SQL.
+                     Defaults to the global dc instance.
+        sensitive_config: Configuration for sensitive data (e.g., API keys).
+                          Defaults to the global sc instance.
 
-    Returns:
-        A list of dictionaries representing the JSON response from the
-        NL2SQL service.
-
-    Raises:
-        McpError: If the API call to the NL2SQL service fails after all
-            retry attempts.
+    Attributes:
+        dc: The data configuration instance.
+        sc: The sensitive configuration instance.
+        checkpointer: The checkpointer for state persistence.
+        app: The compiled LangGraph application.
     """
-    dialog_id = dialog_id if dialog_id else str(uuid1())
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    database_url,
-                    headers={'X-Auth-Token': await get_token(),
-                             'X-Workspace-Id': workspace_id,
-                             'Content-Type': 'application/json'},
-                    json={
-                        'subject_id': subject_id,
-                        'dialog_id': dialog_id if dialog_id else str(uuid1()),
-                        'message_content': message_content,
-                        'need_insight': need_insight,
-                        'simplify_response': simplify_response,
-                    },
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response.json()
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
-                ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
-                    continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to query SQL database: {str(e)}',
-                )) from e
+    def __init__(self, checkpointer=MemorySaver(), data_config=dc, sensitive_config=sc):
+        """Initialize the DataAgent with configuration and build the graph."""
+        self.dc = data_config
+        self.sc = sensitive_config
+        self.checkpointer = checkpointer
+        self.app = self._build_graph()
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
-                    continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}'
-                )) from e
+    def _build_graph(self):
+        """Build and compile the LangGraph StateGraph workflow.
 
+        This method constructs the workflow graph by adding nodes and
+        defining the sequential edges between them. The resulting graph
+        orchestrates the retrieve -> rewrite -> search pipeline.
 
-async def rewrite_nl2sql(
-    user_query: str,
-    retrieve_url: str = dc.RETRIEVE_URL,
-    data_repo_id: str = dc.DATA_REPO_ID,
-    page_num: int = dc.PAGE_NUM,
-    page_size: int = dc.DATA_PAGE_SIZE,
-    filter_string: Optional[str] = dc.FILTER_STRING,
-    scope: str = dc.SCOPE,
-    rerank_url: str = dc.RERANK_URL,
-    rerank_batch_size: int = dc.RERANK_BATCH_SIZE,
-    score_threshold: float = dc.SCORE_THRESHOLD,
-    prompt_file: str = dc.PROMPT_FILE,
-    prompt_path: str = dc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = dc.FREQUENCY_PENALTY,
-    n: int = dc.N,
-    presence_penalty: float = dc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = dc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = dc.RESPONSE_FORMAT,
-    stream: bool = dc.STREAM,
-    temperature: float = dc.TEMPERATURE,
-    top_p: float = dc.TOP_P,
-    user: str = dc.USER,
-    database_url: str = dc.DATABASE_URL,
-    workspace_id: str = dc.WORKSPACE_ID,
-    subject_id: str = dc.SUBJECT_ID,
-    dialog_id: str = dc.DIALOG_ID,
-    need_insight: bool = dc.NEED_INSIGHT,
-    simplify_response: bool = dc.SIMPLIFY_RESPONSE,
-    timeout: float = dc.TIMEOUT,
-    retriable_codes: List[int] = dc.RETRIABLE_CODES,
-    max_retries: int = dc.MAX_RETRIES,
-    max_tokens: int = dc.MAX_TOKENS,
-) -> Optional[List[Dict[str, Any]]]:
-    """Rewrite a natural language query and then execute it via NL2SQL.
+        Returns:
+            A compiled StateGraph with checkpointer support.
+        """
+        workflow = StateGraph(DataAgentState)
+        workflow.add_node("retrieve_node", self.retrieve_node)
+        workflow.add_node("rewrite_node", self.rewrite_node)
+        workflow.add_node("search_node", self.search_node)
 
-    This function first performs RAG retrieval to enhance the query with
-    relevant knowledge base documents, then processes the enhanced query
-    through the `phyto_chat` service to rephrase or enhance it for better
-    NL2SQL performance. The rewritten query is then passed to the `nl2sql`
-    function to be converted into SQL and executed against a database.
+        workflow.add_edge(START, "retrieve_node")
+        workflow.add_edge("retrieve_node", "rewrite_node")
+        workflow.add_edge("rewrite_node", "search_node")
+        workflow.add_edge("search_node", END)
 
-    Args:
-        user_query: The user's initial natural language query.
-        retrieve_url: URL for the document retrieval service.
-        data_repo_id: The ID of the primary knowledge repository to search for
-            Data-Agent RAG functionality.
-        page_num: Page number for paginated results from retrieval services.
-        page_size: Number of items per page for paginated results from
-            retrieval services.
-        filter_string: Optional filter criteria string for metadata filtering
-            during retrieval.
-        scope: Scope of search for retrieval operations. 'both' searches
-            documents and keywords, 'doc' searches only documents, 'keyword'
-            searches only keywords.
-        rerank_url: URL for the document reranking service.
-        rerank_batch_size: Batch size for reranking operations, if reranking is
-            applied to retrieved documents.
-        score_threshold: Minimum relevance score threshold for retrieved items.
-            Results below this threshold are typically discarded.
-        prompt_file: Path to the prompt template file for query rewriting.
-        prompt_path: Path or key within the prompt file for query rewriting.
-        api_key: API key for the Phyto model.
-        base_url: Base URL of the Phyto API service.
-        model: Identifier of the Phyto model to use.
-        frequency_penalty: Penalty applied to new tokens based on their
-            frequency in the text so far, discouraging repetition of exact
-            words/phrases. Values range from -2.0 to 2.0.
-        n: Number of completion choices to generate for each input.
-        presence_penalty: Penalty applied to new tokens based on their presence
-            in the text so far, discouraging repetition of concepts. Values
-            range from -2.0 to 2.0.
-        reasoning_effort: Specifies the level of reasoning effort for the
-            language model.
-        response_format: Desired response format from the language model.
-            For example, `{'type': 'json_object'}` to request a JSON response.
-        stream: Flag to enable or disable streaming of responses from the
-            language model. If True, responses are sent as a series of events.
-        temperature: Sampling temperature for language model responses
-            (controls randomness). Higher values mean more random responses.
-        top_p: Nucleus sampling parameter for language model responses
-            (controls diversity). Considers tokens with cumulative probability
-            mass up to `TOP_P`.
-        user: User identifier for API interactions, particularly for chat or
-            LLM services.
-        database_url: URL for the database query service (e.g., NLQ).
-        workspace_id: Identifier for the workspace containing the data.
-        subject_id: Identifier for the specific database subject or schema.
-        dialog_id: Conversation ID for multi-turn context.
-        need_insight: Flag indicating whether to generate insights from
-            database queries.
-        simplify_response: Flag indicating whether to simplify the structure of
-            database query responses.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
+        return workflow.compile(checkpointer=self.checkpointer)
 
-    Returns:
-        A list of dictionaries representing the JSON response from the
-        NL2SQL service, or None if the request failed.
+    async def retrieve_node(self, state: DataAgentState):
+        """Retrieve relevant database scenarios and construct a query prompt.
 
-    Raises:
-        McpError: If either the RAG retrieval, query rewriting, or the NL2SQL
-            execution fails.
-    """
-    dialog_id = dialog_id if dialog_id else str(uuid1())
-    retrieve_response = await retrieve(
-        user_query=user_query,
-        retrieve_url=retrieve_url,
-        repo_id=data_repo_id,
-        page_num=page_num,
-        page_size=page_size,
-        filter_string=filter_string,
-        scope=scope,
-        extra_repo_ids=None,
-        rerank_url=rerank_url,
-        rerank_batch_size=rerank_batch_size,
-        score_threshold=score_threshold,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    retrieve_results = []
-    total_length = 0
-    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
-        header = f"[scenario {i+1} begin] {doc['title']}"
-        content_field = (doc.get('big_content') if 'big_content' in doc
-                         else doc.get('content', ''))
-        body = (f"{doc['subtitle']}\n{content_field}"
-                if doc.get('subtitle') else doc.get('content', ''))
-        fragment = f'{header}\n{body} [scenario {i+1} end]'
-        if total_length + len(fragment) <= max_tokens:
-            retrieve_results.append(fragment)
-            total_length += len(fragment)
-        else:
-            break
-    retrieve_context = '\n\n'.join(retrieve_results)
-    user_query = get_prompt(prompt_file, 'user/database',
-                            {'scenario_prompts': retrieve_context,
-                             'user_query': user_query})
-    phyto_response = await phyto_chat(
-        user_query=user_query,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
+        This node searches the knowledge base for relevant database scenarios
+        that can help the LLM better understand the query context. It formats
+        the retrieved scenarios into a prompt template for the rewrite node.
 
-    if (not phyto_response or 'choices' not in phyto_response or
-            not phyto_response['choices']):
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR,
-            message='Failed to get response from phyto_chat service'
-        ))
+        Args:
+            state: The current workflow state containing user_query.
 
-    response = await nl2sql(
-        message_content=phyto_response['choices'][0]['message']['content'],
-        database_url=database_url,
-        workspace_id=workspace_id,
-        subject_id=subject_id,
-        dialog_id=dialog_id,
-        need_insight=need_insight,
-        simplify_response=simplify_response,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    return response
+        Returns:
+            A dictionary containing the retrieve_promopt key with the
+            constructed prompt for the next node.
+        """
+        user_query = state["user_query"]
+        retrieve_response = await retrieve(
+            user_query=user_query,
+            retrieve_url=self.dc.RETRIEVE_URL,
+            repo_id=self.dc.DATA_REPO_ID,
+            page_num=self.dc.PAGE_NUM,
+            page_size=self.dc.DATA_PAGE_SIZE,
+            filter_string=self.dc.FILTER_STRING,
+            scope=self.dc.SCOPE,
+            extra_repo_ids=None,
+            rerank_url=self.dc.RERANK_URL,
+            rerank_batch_size=self.dc.RERANK_BATCH_SIZE,
+            score_threshold=self.dc.SCORE_THRESHOLD,
+            timeout=self.dc.TIMEOUT,
+            retriable_codes=self.dc.RETRIABLE_CODES,
+            max_retries=self.dc.MAX_RETRIES,
+        )
+
+        retrieve_results = []
+        total_length = 0
+        for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+            header = f"[scenario {i+1} begin] {doc['title']}"
+            content_field = (doc.get('big_content') if 'big_content' in doc
+                             else doc.get('content', ''))
+            body = (f"{doc['subtitle']}\n{content_field}"
+                    if doc.get('subtitle') else doc.get('content', ''))
+            fragment = f'{header}\n{body} [scenario {i+1} end]'
+            if total_length + len(fragment) <= dc.MAX_TOKENS:
+                retrieve_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+
+        retrieve_context = '\n\n'.join(retrieve_results)
+        retrieve_prompt = get_prompt(dc.PROMPT_FILE, 'user/database',
+                                     {'scenario_prompts': retrieve_context,
+                                      'user_query': user_query})
+
+        return {"retrieve_promopt": retrieve_prompt}
+    
+    async def rewrite_node(self, state: DataAgentState):
+        """Rewrite the query using an LLM for better SQL generation.
+
+        This node sends the retrieved scenarios and original query to an LLM,
+        which rewrites the query in a format optimized for natural language
+        to SQL conversion. This improves the accuracy of the resulting SQL.
+
+        Args:
+            state: The current workflow state containing retrieve_promopt.
+
+        Returns:
+            A dictionary containing the rewrite_query key with the
+            LLM-rewritten query.
+
+        Raises:
+            McpError: If the phyto_chat service fails to respond.
+        """
+        phyto_response = await phyto_chat(
+            user_query=state["retrieve_promopt"],
+            prompt_file=self.dc.PROMPT_FILE,
+            prompt_path=self.dc.PROMPT_PATH,
+            api_key=self.sc.API_KEY.get_secret_value(),
+            base_url=self.sc.BASE_URL,
+            model=self.sc.MODEL_ID,
+            frequency_penalty=self.dc.FREQUENCY_PENALTY,
+            n=self.dc.N,
+            presence_penalty=self.dc.PRESENCE_PENALTY,
+            reasoning_effort=self.dc.REASONING_EFFORT,
+            response_format=self.dc.RESPONSE_FORMAT,
+            stream=self.dc.STREAM,
+            temperature=self.dc.TEMPERATURE,
+            top_p=self.dc.TOP_P,
+            user=self.dc.USER,
+            timeout=self.dc.TIMEOUT,
+            retriable_codes=self.dc.RETRIABLE_CODES,
+            max_retries=self.dc.MAX_RETRIES,
+        )
+
+        if (not phyto_response or 'choices' not in phyto_response or
+                not phyto_response['choices']):
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message='Failed to get response from phyto_chat service'
+            ))
+
+        rewrite_query = phyto_response['choices'][0]['message']['content']
+        return {"rewrite_query": rewrite_query}
+
+    async def search_node(self, state: DataAgentState):
+        """Execute the NL2SQL query and return database results.
+
+        This node converts the rewritten natural language query to SQL
+        using the nl2sql service and executes it against the database.
+        The response may include insights depending on configuration.
+
+        Args:
+            state: The current workflow state containing rewrite_query.
+
+        Returns:
+            A dictionary containing the final_reponse key with the
+            database query results.
+        """
+        dialog_id = dialog_id if dialog_id else str(uuid1())
+        client_timeout = Timeout(self.dc.TIMEOUT, connect=self.dc.TIMEOUT)
+        async with AsyncClient(timeout=client_timeout, verify=False) as client:
+            for attempt in range(self.dc.MAX_RETRIES + 1):
+                try:
+                    response = await client.post(
+                        self.dc.DATABASE_URL,
+                        headers={'X-Auth-Token': await get_token(),
+                                'X-Workspace-Id': self.dc.WORKSPACE_ID,
+                                'Content-Type': 'application/json'},
+                        json={
+                            'subject_id': self.dc.SUBJECT_ID,
+                            'dialog_id': dialog_id if dialog_id else str(uuid1()),
+                            'message_content': state["rewrite_query"],
+                            'need_insight': self.dc.NEED_INSIGHT,
+                            'simplify_response': self.dc.SIMPLIFY_RESPONSE,
+                        },
+                        timeout=self.dc.TIMEOUT,
+                    )
+                    response.raise_for_status()
+
+                except HTTPStatusError as e:
+                    if (
+                        hasattr(e, 'response') and
+                        e.response is not None and
+                        e.response.status_code in self.dc.RETRIABLE_CODES and
+                        attempt < self.dc.MAX_RETRIES
+                    ):
+                        wait_time = (2 ** attempt) + uniform(0, 1)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Failed to query SQL database: {str(e)}',
+                    )) from e
+
+                except (ConnectError, TimeoutException) as e:
+                    if attempt < self.dc.MAX_RETRIES:
+                        await asyncio.sleep(1.5 ** attempt)
+                        continue
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Network error: {str(e)}'
+                    )) from e
+
+        return {"final_reponse": response.json()}
+
+    async def arun(self,
+                   user_query: str,
+                   thread_id: Optional[str] = None):
+        """Execute the DataAgent workflow.
+
+        This is the main entry point for invoking the agent. It initializes
+        the state with the user's query, then runs the LangGraph workflow
+        to retrieve scenarios, rewrite the query, and execute the database query.
+
+        Args:
+            user_query: The user's natural language query.
+            thread_id: Optional thread ID for state persistence. If not provided,
+                       a new UUID will be generated.
+
+        Returns:
+            The final response dictionary containing the database query results.
+        """
+        if not thread_id:
+            thread_id = str(uuid1())
+        initial_state = {
+            "user_query": user_query,
+            "retrieve_promopt": None,
+            "rewrite_query": None, 
+            "final_reponse": None
+        }
+
+        config = {"configurable": {"thread_id": thread_id}}
+        final_state = await self.app.ainvoke(initial_state, config=config)
+        
+        return final_state["final_response"]
