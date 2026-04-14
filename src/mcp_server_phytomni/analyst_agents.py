@@ -26,480 +26,1022 @@ interface for developers and researchers.
 """
 import asyncio
 import datetime
-import json
 import re
+import json
 import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, List, Literal, Dict, Optional, Union
+from typing import Any, List, Literal, Dict, Optional, Union, TypedDict
 from uuid import uuid1
-
+from pydantic import Field
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import GetObjectHeader, PutObjectHeader, ObsClient
-
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import AsyncCallbackManagerForRetrieverRun
+from langchain_core.documents import Document
+from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
+import langextract as lx
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
-from .knowledge_agents import multi_retrieve
+from .knowledge_agents import multi_retrieve, retrieve
 from .utils import download_list_convert, get_prompt, get_token
 
 ac = AnalystConfig()
 sc = SensitiveConfig().load()
 
+class AnalystAgentsState(TypedDict):
+    """State schema for the AnalystAgent LangGraph workflow.
 
-def _log_submit_params(
-    log_filename: str,
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str,
-    is_create_dir: bool,
-    output_dir: str,
-    meta: str,
-    execute_code: bool,
-    model_url: str,
-    model_name: str,
-    coder_api_key: str,
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-    bucket_name: str,
-    analysis_url: str,
-    region: str,
-    task_name: str,
-    resource_dict: Dict[str, Dict[str, int]],
-    app_id_dict: Dict[str, str],
-    compute_resource: Literal['small', 'medium', 'large'],
-    timeout: float,
-    retriable_codes: List[int],
-    max_retries: int,
-    enable_auto_select: bool,
-    prompt_file: str,
-    api_key: str,
-    base_url: str,
-    model: str,
-    frequency_penalty: float,
-    n: int,
-    presence_penalty: float,
-    reasoning_effort: Optional[str],
-    stream: bool,
-    temperature: float,
-    top_p: float,
-    user: str,
-    meta_meta: Optional[str],
-) -> str:
+    This TypedDict defines the shared state that flows through each node
+    in the AnalystAgent graph. Each node reads from and writes to this
+    state as the graph processes a bioinformatics analysis request.
+
+    Attributes:
+        query: The original user input query.
+        goal_description: The decomposed research goal/objective.
+        obs_file_list: List of OBS files uploaded by the user.
+        data_list: Dictionary mapping data file paths to their descriptions.
+        output_dir: The output directory path for analysis results.
+        compute_resource: The compute resource level (small, medium, large).
+        job_name: The name of the compute job.
+        method_context: Context retrieved from literature/SOPs for plan generation.
+        plan: The analysis plan/workflow (may be empty initially).
+        plan_feedback: Feedback from the critic node for plan revision.
+        plan_retries: Number of plan generation retries (prevents infinite loops).
+        extracted_tools: List of tools extracted from the plan.
+        tool_usages: Retrieved usage instructions for the extracted tools.
+        task_id: The unique identifier of the submitted task.
+        task_status: The current task status (PENDING, RUNNING, SUCCEEDED, FAILED).
+        is_polling: Whether to poll for task status updates.
+        is_auto_select: Whether to automatically select relevant data files.
     """
-    Logs submit parameters to a local file for reproduction.
+    query: str
+    goal_description: str
+    obs_file_list: List
+    data_list: Dict[str, str]
+    output_dir: str
+    compute_resource: str
+    job_name: str
+    method_context: Dict[str, str]
+    plan: str
+    plan_feedback: Optional[str]
+    plan_retries: int
+    extracted_tools: List
+    tool_usages: str
+    task_id: str
+    task_status: str
+    is_polling: bool
+    is_auto_select: bool
+
+
+class AnalystAgent:
+    """A LangGraph-based agent for bioinformatics analysis workflow orchestration.
+
+    This agent orchestrates a complex workflow that decomposes user queries,
+    selects appropriate data sources, retrieves relevant bioinformatics
+    methods and literature, generates analysis plans, extracts required
+    tools, and submits computational tasks for execution.
+
+    The workflow graph consists of nine main nodes:
+        1. parse_query_node: Decomposes the user query into goal, data_list, and plan.
+        2. data_select_node: Selects appropriate data files from the available database.
+        3. method_retrieve_node: Retrieves relevant methods, SOPs, and literature.
+        4. plan_node: Generates or revises the analysis plan.
+        5. check_node: Validates the plan using a critic mechanism.
+        6. tool_extract_node: Extracts required tools from the plan.
+        7. tool_retrieve_node: Retrieves usage instructions for extracted tools.
+        8. submit_node: Submits the task to the computation platform.
+        9. pooling_node: Polls task status until completion.
 
     Args:
-        All parameters from the submit function
+        checkpointer: A LangGraph checkpointer for state persistence.
+                      Defaults to MemorySaver().
+        analyst_config: Configuration for the analyst agent.
+                        Defaults to the global ac instance.
+        sensitive_config: Configuration for sensitive data (e.g., API keys).
+                          Defaults to the global sc instance.
 
-    Returns:
-        Path to the created log file
+    Attributes:
+        checkpointer: The checkpointer for state persistence.
+        ac: The analyst configuration instance.
+        sc: The sensitive configuration instance.
+        app: The compiled LangGraph application.
     """
-    logs_dir = Path("submit_logs")
-    logs_dir.mkdir(exist_ok=True)
-    log_path = logs_dir / log_filename
-    log_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "submit_function": "submit",
-        "parameters": {
-            "goal_description": goal_description,
-            "data_list": data_list,
-            "user_id": user_id,
-            "is_create_dir": is_create_dir,
-            "output_dir": output_dir,
-            "meta": meta,
-            "execute_code": execute_code,
-            "model_url": model_url,
-            "model_name": model_name,
-            "coder_api_key": coder_api_key,
-            "access_key_id": access_key_id,
-            "secret_access_key": secret_access_key,
-            "obs_server": obs_server,
-            "bucket_name": bucket_name,
-            "analysis_url": analysis_url,
-            "region": region,
-            "task_name": task_name,
-            "resource_dict": resource_dict,
-            "app_id_dict": app_id_dict,
-            "compute_resource": compute_resource,
-            "timeout": timeout,
-            "retriable_codes": retriable_codes,
-            "max_retries": max_retries,
-            "enable_auto_select": enable_auto_select,
-            "prompt_file": prompt_file,
-            "api_key": api_key,
-            "base_url": base_url,
-            "model": model,
-            "frequency_penalty": frequency_penalty,
-            "n": n,
-            "presence_penalty": presence_penalty,
-            "reasoning_effort": reasoning_effort,
-            "stream": stream,
-            "temperature": temperature,
-            "top_p": top_p,
-            "user": user,
-            "meta_meta": meta_meta,
-        }
-    }
-    with open(log_path, 'w', encoding='utf-8') as f:
-        json.dump(log_data, f, indent=2, ensure_ascii=False)
-    return str(log_path)
 
+    def __init__(self, checkpointer=MemorySaver(), analyst_config=ac, sensitive_config=sc):
+        """Initialize the AnalystAgent with configuration and build the graph."""
+        self.checkpointer = checkpointer
+        self.ac = analyst_config
+        self.sc = sensitive_config
+        self.app = self._build_graph()
 
-async def reproduce_submit_from_log(log_file_path: str) -> Dict[str, str]:
-    """
-    Reproduces a submit call from a previously saved log file.
+    def _build_graph(self):
+        """Build and compile the LangGraph StateGraph workflow.
 
-    Args:
-        log_file_path: Path to the JSON log file containing submit parameters
+        This method constructs the workflow graph by adding nodes,
+        defining edges, and setting up conditional routing for the
+        analysis pipeline.
 
-    Returns:
-        The response dictionary from the submit function
+        Returns:
+            A compiled StateGraph with checkpointer support.
+        """
+        workflow = StateGraph(AnalystAgentsState)
+        workflow.add_node("parse_query_node", self.parse_query_node)
+        workflow.add_node("data_select_node", self.data_select_node)
+        workflow.add_node("method_retrieve_node", self.method_retrieve_node)
+        workflow.add_node("plan_node", self.plan_node)
+        workflow.add_node("check_node", self.check_node)
+        workflow.add_node("tool_extract_node", self.tool_extract_node)
+        workflow.add_node("tool_retrieve_node", self.tool_retrieve_node)
+        workflow.add_node("submit_node", self.submit_node)
+        workflow.add_node("pooling_node", self.pooling_node)
+        workflow.add_edge(START, "parse_query_node")
+        workflow.add_conditional_edges("parse_query_node", self.route_after_extract)
+        workflow.add_conditional_edges("data_select_node", self.route_after_data_select)
+        workflow.add_edge("method_retrieve_node", "plan_node")
+        workflow.add_edge("plan_node", "check_node")
+        workflow.add_conditional_edges("check_node", self.route_after_check)
+        workflow.add_edge("tool_extract_node", "tool_retrieve_node")
+        workflow.add_edge("tool_retrieve_node", "submit_node")
+        workflow.add_conditional_edges("submit_node", self.route_after_submit)
+        workflow.add_conditional_edges("pooling_node", self.route_after_pooling)
 
-    Raises:
-        FileNotFoundError: If the log file doesn't exist
-        ValueError: If the log file format is invalid
-        McpError: If the submit call fails
-    """
-    try:
-        with open(log_file_path, 'r', encoding='utf-8') as f:
-            log_data = json.load(f)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f'Log file not found: {log_file_path}') from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f'Invalid JSON in log file: {log_file_path}') from exc
-    if 'parameters' not in log_data:
-        raise ValueError('Invalid log file format: missing parameters section')
-    params = log_data['parameters']
-    return await submit(
-        goal_description=params['goal_description'],
-        data_list=params['data_list'],
-        user_id=params['user_id'],
-        is_create_dir=params['is_create_dir'],
-        output_dir=params['output_dir'],
-        meta=params['meta'],
-        execute_code=params['execute_code'],
-        model_url=params['model_url'],
-        model_name=params['model_name'],
-        coder_api_key=params['coder_api_key'],
-        access_key_id=params['access_key_id'],
-        secret_access_key=params['secret_access_key'],
-        obs_server=params['obs_server'],
-        bucket_name=params['bucket_name'],
-        analysis_url=params['analysis_url'],
-        region=params['region'],
-        task_name=params['task_name'],
-        resource_dict=params['resource_dict'],
-        app_id_dict=params['app_id_dict'],
-        compute_resource=params['compute_resource'],
-        timeout=params['timeout'],
-        retriable_codes=params['retriable_codes'],
-        max_retries=params['max_retries'],
-        enable_auto_select=params['enable_auto_select'],
-        prompt_file=params['prompt_file'],
-        api_key=params['api_key'],
-        base_url=params['base_url'],
-        model=params['model'],
-        frequency_penalty=params['frequency_penalty'],
-        n=params['n'],
-        presence_penalty=params['presence_penalty'],
-        reasoning_effort=params['reasoning_effort'],
-        stream=params['stream'],
-        temperature=params['temperature'],
-        top_p=params['top_p'],
-        user=params['user'],
-        meta_meta=params['meta_meta'],
-    )
+        return workflow.compile(checkpointer=self.checkpointer)
 
+    async def parse_query_node(self, state: AnalystAgentsState):
+        """Decompose the user query into goal, data_list, and plan components.
 
-async def submit(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    meta: str = '',
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME,
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    max_poll: float = ac.MAX_POLL,
-    enable_auto_select: bool = True,
-    prompt_file: str = ac.PROMPT_FILE,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    meta_meta: Optional[str] = None,
-) -> Dict[str, str]:
-    """
-    Submits an analysis task to the Bioinformatics Agents platform.
+        This node checks if the query has already been decomposed. If not,
+        it uses an LLM to parse the user query into three components:
+        - goal_description: The core research objective
+        - data_list: Any mentioned or implied data sources
+        - plan: Any explicitly stated analysis workflow
 
-    This function constructs and sends a request to initiate a new analysis
-    task based on the provided parameters. It handles the creation of a JSON
-    payload, uploads it to object storage, and then triggers the analysis
-    workflow.
+        Args:
+            state: The current workflow state containing query.
 
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        meta: Step-by-step instructions for processing.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model to be used.
-        coder_api_key: The API key for the coding model service.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for the OBS.
-        bucket_name: The name of the OBS bucket.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name assigned to the task on the AI4S platform.
-        resource_dict: A dictionary defining the computational resources
-            (CPU, memory) for different resource levels.
-        app_id_dict: A dictionary mapping compute resource levels to
-            application IDs.
-        compute_resource: The level of compute resources to allocate for the
-            task ('small', 'medium', or 'large').
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-        max_poll: The maximum total duration in seconds to monitor the task.
-        enable_auto_select: A boolean flag to enable or disable automatic data
-            selection from the pre-configured database. When enabled, the
-            language model will automatically determine the appropriate
-            analysis type and species based on the research goal.
-        prompt_file: The path to the prompt template file for data selection.
-        api_key: The API key for the language model used for data selection.
-        base_url: The base URL of the language model API for data selection.
-        model: The identifier of the language model for data selection.
-        frequency_penalty: The penalty for token repetition for data selection.
-        n: The number of choices to generate for data selection.
-        presence_penalty: The penalty for new tokens for data selection.
-        reasoning_effort: The reasoning effort for the language model.
-        stream: A flag to enable real-time token streaming for data selection.
-        temperature: The randomness control for generation for data selection.
-        top_p: The nucleus sampling threshold for data selection.
-        user: A unique session identifier for the user for data selection.
+        Returns:
+            A dictionary containing goal_description, data_list, and plan.
+        """
+        if state['data_list'] and state['goal_description']:
+            return {
+                "goal_description": state["goal_description"], 
+                "data_list": state["data_list"], 
+                "plan": state.get("plan", None)
+            }
+        else:
+            parse_prompt = get_prompt(
+                self.ac.PROMPT_FILE, 'user/split_query',
+                {'user_query': state["query"]}
+            )
+            phyto_response = await phyto_chat(
+                user_query=parse_prompt,
+                prompt_file=self.ac.PROMPT_FILE,
+                prompt_path=self.ac.PROMPT_PATH,
+                api_key=self.sc.API_KEY.get_secret_value(),
+                base_url=self.sc.BASE_URL,
+                model=self.sc.MODEL_ID,
+                response_format={'type': 'json_schema'},
+                timeout=self.ac.TIMEOUT,
+                retriable_codes=self.ac.RETRIABLE_CODES,
+                max_retries=self.ac.MAX_RETRIES,
+            )
+            content = '{}'
+            if (phyto_response and
+                    phyto_response.get('choices') and
+                    len(phyto_response['choices']) > 0 and
+                    phyto_response['choices'][0].get('message') and
+                    phyto_response['choices'][0]['message'].get('content')):
+                content = phyto_response['choices'][0]['message']['content']
+            pattern = r"```json(.*?)```"
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                json_string = match.group(1).strip()
+                result = json.loads(json_string)
+            else:
+                result = json.loads(content)
+            return {
+                "goal_description": result['goal_description'] if result['goal_description'] else None, 
+                "data_list": json.loads(result['data_list']) if result['data_list'] else None, 
+                "plan": result['plan'] if result['plan'] else ""
+            }
 
-    Returns:
-        A dictionary containing the submission response, which includes the
-        task ID, output directory, job name, and compute resource details.
+    async def data_select_node(self, state: AnalystAgentsState):
+        """Select appropriate data files from the available database.
 
-    Raises:
-        McpError: If the task submission fails after all retries.
-        OSError: If uploading the data information to OBS fails.
-    """
-    if not user_id:
-        user_id = str(uuid1())
-    if is_create_dir:
-        output_dir = create_output_dir(
-            user_id=user_id,
-            task='analysis_agents_task',
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-        )
-    meta += meta_meta if meta_meta else ''
-    meta += ('\nnext step, summarize each of the generated result files '
-             '(including images, result files, etc.) into a json file (named '
-             '`result_files.json`) and save it, with the key of the file '
-             'being the absolute path of the generated result and the value '
-             'being a detailed description of the file.\nlast step, compress '
-             'the output folder into a zip file (zip -r $output_dir.zip '
-             '$output_dir).')
+        This node loads pre-prepared species data and uses an LLM to select
+        relevant data files based on the research goal. It merges user-provided
+        data with auto-selected data to create a comprehensive data list.
 
-    if enable_auto_select:
+        Args:
+            state: The current workflow state containing goal_description and data_list.
+
+        Returns:
+            A dictionary containing the updated data_list with selected files.
+
+        Raises:
+            McpError: If loading species data or parsing the LLM response fails.
+        """
         try:
-            data_list = await auto_select(
-                goal_description=goal_description,
-                data_list=data_list,
-                prompt_file=prompt_file,
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                frequency_penalty=frequency_penalty,
-                n=n,
-                presence_penalty=presence_penalty,
-                reasoning_effort=reasoning_effort,
-                stream=stream,
-                temperature=temperature,
-                top_p=top_p,
-                user=user,
-                timeout=timeout,
-                retriable_codes=retriable_codes,
-                max_retries=max_retries,
-                meta_meta=meta_meta,
+            with open(self.ac.PRE_PREPARED_DATA_PATH, 'r', encoding='utf-8') as f:
+                species_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f'Failed to load species data list from {self.ac.PRE_PREPARED_DATA_PATH}'
+            )) from exc
+        data_list = state["data_list"]
+        user_data_summary = json.dumps(data_list)
+        selection_prompt = get_prompt(
+            self.ac.PROMPT_FILE, 'user/data_selection',
+            {
+                'goal_description': state["goal_description"],
+                'user_data_list': user_data_summary,
+                'available_data_list': json.dumps(species_data)
+            }
+        )
+
+        try:
+            selection_response = await phyto_chat(
+                user_query=selection_prompt,
+                prompt_file=self.ac.PROMPT_FILE,
+                prompt_path=self.ac.PROMPT_PATH,
+                api_key=self.sc.API_KEY.get_secret_value(),
+                base_url=self.sc.BASE_URL,
+                model=self.sc.MODEL_ID,
+                frequency_penalty=self.ac.FREQUENCY_PENALTY,
+                n=self.ac.N,
+                presence_penalty=self.ac.PRESENCE_PENALTY,
+                reasoning_effort=self.ac.REASONING_EFFORT,
+                response_format={'type': 'json_schema'},
+                stream=self.ac.STREAM,
+                temperature=self.ac.TEMPERATURE,
+                top_p=self.ac.TOP_P,
+                user=self.ac.USER,
+                timeout=self.ac.TIMEOUT,
+                retriable_codes=self.ac.RETRIABLE_CODES,
+                max_retries=self.ac.MAX_RETRIES,
             )
         except Exception as exc:
             raise McpError(ErrorData(
                 code=INTERNAL_ERROR,
-                message=f'Auto-select data failed: {str(exc)}'
+                message=f'Failed to get data selection from language model: {str(exc)}'
             )) from exc
 
-    data = {
-        'goal_description': goal_description,
-        'data_list': data_list,
-        'output_dir': output_dir,
-        'meta': meta,
-        'execute_code': execute_code,
-        'model_url': model_url,
-        'model_name': model_name,
-        'api_key': coder_api_key,
-    }
-    josn_file = Path(f'{uuid1()}.json')
-    try:
-        with open(josn_file, 'w', encoding='utf-8') as open_json:
-            json.dump(data, open_json)
-        data_path = upload_analyst_agents_data(
-            analyst_agents_datapath=str(josn_file),
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-            )
-    except OSError as exc:
-        raise OSError('Data information upload obs error.') from exc
-    finally:
-        if josn_file.exists():
-            josn_file.unlink()
-
-    job_headers = {'Content-Type': 'application/json',
-                   'X-Auth-Token': await get_token(timeout=timeout,
-                                                   region=region)}
-    task_name = task_name.replace('_', '-')
-    time_stamp = datetime.datetime.now().strftime('%H%M%S-%f')
-    job_name = f'{task_name}-{time_stamp}'
-    job_data = {
-        'name': job_name,
-        'labels': [],
-        'description': '',
-        'timeout': max_poll,
-        'output_dir': '',
-        'tasks': [{
-            'task_name': f'analyst-agents-{compute_resource}',
-            'display_name': job_name,
-            'inputs': [
-                {
-                    'name': 'obs-mount',
-                    'type': 'DIRECTORY',
-                    'description': '',
-                    'required': True,
-                    'pattern': '',
-                    'values': ['phytomni:/agent_data/'],
-                    'enum': [],
-                    'concurrent': '',
-                },
-                {
-                    'name': 'meta-file',
-                    'type': 'FILE',
-                    'description': '',
-                    'required': True,
-                    'pattern': '',
-                    'values': [data_path],
-                    'enum': [],
-                    'concurrent': '',
-                },
-            ],
-            'outputs': [],
-            'output_dir': '',
-            'resources': {
-                'cpu': f"{resource_dict[compute_resource]['cpu']}C",
-                'cpu_type': 'X86',
-                'gpu': '0',
-                'gpu_type': '',
-                'memory': f"{resource_dict[compute_resource]['memory']}G"
-            },
-            'summary': '',
-            'labels': [],
-        }],
-        'io_acc_id': '',
-        'ioType': '',
-        'priority': 0,
-        'automatic': True,
-        'node_labels': [],
-        'tool_id': app_id_dict[compute_resource],
-        'tool_type': 'app',
-    }
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
+        selected_data = {}
+        if (selection_response and
+                selection_response.get('choices') and
+                len(selection_response['choices']) > 0 and
+                selection_response['choices'][0].get('message') and
+                selection_response['choices'][0]['message'].get('content')):
             try:
-                response = await client.post(
-                    analysis_url,
-                    headers=job_headers,
-                    json=job_data,
-                )
-                if response.status_code == 201:
-                    return {
-                        'task_id': json.loads(response.text)['id'],
-                        'output_dir': output_dir,
-                        'job_name': job_name,
-                        'compute_resource': compute_resource,
-                    }
+                content = selection_response['choices'][0]['message']['content']
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    content = match.group(0).strip()
+                parsed_response = json.loads(content)
+                if 'selected_data' in parsed_response:
+                    selected_data = parsed_response['selected_data']
+                else:
+                    selected_data = parsed_response
+                    
+            except (json.JSONDecodeError, ValueError) as exc:
                 raise McpError(ErrorData(
                     code=INTERNAL_ERROR,
-                    message='Failed to submit task'))
+                    message=f'Failed to parse data selection response: {str(exc)}'
+                )) from exc
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
-                ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
-                    continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to submit task: {str(e)}',
-                )) from e
+        final_data_list = {**data_list, **selected_data}
+        
+        return {"data_list": final_data_list}
+    
+    async def method_retrieve_node(self, state: AnalystAgentsState) -> dict:
+        """Retrieve relevant bioinformatics methods, SOPs, and literature.
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
-                    continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+        This node searches the knowledge base for relevant analysis methods,
+        standard operating procedures, and cutting-edge literature based on
+        the research goal. It also processes any user-uploaded files from OBS.
+        The retrieved context is used to inform plan generation.
 
-    raise McpError(ErrorData(
-        code=INTERNAL_ERROR,
-        message='Failed to submit task after all retries'
-    ))
+        Args:
+            state: The current workflow state containing goal_description and obs_file_list.
+
+        Returns:
+            A dictionary containing the method_context with upload_context
+            and retrieve_context.
+        """
+        total_length = 0
+        upload_context = ''
+        if state["obs_file_list"]:
+            upload_str_list = await download_list_convert(
+                obs_file_list=state["obs_file_list"],
+                server_dir=self.ac.TEMP_DIR,
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.ac.OBS_SERVER,
+                bucket_name=self.ac.BUCKET_NAME,
+                part_size=self.ac.PART_SIZT,
+                task_num=self.ac.TASK_NUM,
+                max_retries=self.ac.MAX_RETRIES,
+                max_concurrency=self.ac.MAX_CONCURRENCY,
+                max_workers=self.ac.MAX_WORKERS,
+            )
+            upload_results = []
+            for i, doc in enumerate(upload_str_list):
+                fragment = (f'[user upload file {i+1} begin]\n'
+                            f'{doc}\n[user upload file {i+1} end]')
+                if total_length + len(fragment) <= self.ac.MAX_TOKENS:
+                    upload_results.append(fragment)
+                    total_length += len(fragment)
+                else:
+                    break
+            upload_context = '\n\n'.join(upload_results)
+        retrieve_response = await multi_retrieve(
+            user_query=state["goal_description"],
+            retrieve_url=self.ac.RETRIEVE_URL,
+            repo_id_dict=self.ac.REPO_ID_DICT,
+            page_num=self.ac.PAGE_NUM,
+            filter_string=self.ac.FILTER_STRING,
+            scope=self.ac.SCOPE,
+            extra_repo_ids=self.ac.EXTRA_REPO_IDS,
+            rerank_url=self.ac.RERANK_URL,
+            rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
+            score_threshold=self.ac.SCORE_THRESHOLD,
+            top_n=self.ac.TOP_N,
+            timeout=self.ac.TIMEOUT,
+            retriable_codes=self.ac.RETRIABLE_CODES,
+            max_retries=self.ac.MAX_RETRIES
+        )
+        retrieve_results = []
+        for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+            header = f"[document {i+1} begin] {doc['title']}"
+            content_field = (doc.get('big_content') if 'big_content' in doc
+                            else doc.get('content', ''))
+            body = (f"{doc['subtitle']}\n{content_field}"
+                    if doc.get('subtitle') else doc.get('content', ''))
+            fragment = f'{header}\n{body} [document {i+1} end]'
+            if total_length + len(fragment) <= self.ac.MAX_TOKENS:
+                retrieve_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+        retrieve_context = '\n\n'.join(retrieve_results)
+        return {
+            "method_context": {
+                "upload_context": upload_context, 
+                "retrieve_context": retrieve_context
+            }
+        }
+    
+    async def plan_node(self, state: AnalystAgentsState):
+        """Generate or revise the analysis plan.
+
+        This node generates an analysis plan based on the research goal and
+        retrieved method context. If plan_feedback exists (from a previous
+        rejection), it revises the plan accordingly. The plan describes
+        the step-by-step workflow for the bioinformatics analysis.
+
+        Args:
+            state: The current workflow state containing goal_description,
+                   method_context, plan_feedback, and obs_file_list.
+
+        Returns:
+            A dictionary containing the generated plan, incremented plan_retries,
+            and reset plan_feedback.
+
+        Raises:
+            McpError: If the LLM fails to generate a valid plan.
+        """
+        if state.get("plan_feedback"):
+            if state["obs_file_list"]:
+                user_query = get_prompt(
+                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_file_feedback',
+                    {'retrieve_results': state["method_context"]["retrieve_context"],
+                     'upload_context': state["method_context"]["upload_context"], 
+                     'feed_back': state["plan_feedback"], 
+                     'user_query': state["goal_description"]})
+            else:
+                user_query = get_prompt(
+                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_feedback',
+                    {'retrieve_results': state["method_context"]["retrieve_context"],
+                     'feed_back': state["plan_feedback"], 
+                     'user_query': state["goal_description"]})
+        else:
+            if state["obs_file_list"]:
+                user_query = get_prompt(
+                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_file',
+                    {'retrieve_results': state["method_context"]["retrieve_context"],
+                     'upload_context': state["method_context"]["upload_context"], 
+                     'user_query': state["goal_description"]})
+            else:
+                user_query = get_prompt(
+                    self.ac.PROMPT_FILE, 'user/analysis_retrieve',
+                    {'retrieve_results': state["method_context"]["retrieve_context"],
+                     'user_query': state["goal_description"]})
+        phyto_response = await phyto_chat(
+            user_query=user_query,
+            prompt_file=self.ac.PROMPT_FILE,
+            prompt_path=self.ac.PROMPT_PATH,
+            api_key=self.sc.API_KEY.get_secret_value(),
+            base_url=self.sc.BASE_URL,
+            model=self.sc.MODEL_ID,
+            frequency_penalty=self.ac.FREQUENCY_PENALTY,
+            n=self.ac.N,
+            presence_penalty=self.ac.PRESENCE_PENALTY,
+            reasoning_effort=self.ac.REASONING_EFFORT,
+            response_format=self.ac.RESPONSE_FORMAT,
+            stream=self.ac.STREAM,
+            temperature=self.ac.TEMPERATURE,
+            top_p=self.ac.TOP_P,
+            user=self.ac.USER,
+            timeout=self.ac.TIMEOUT,
+            retriable_codes=self.ac.RETRIABLE_CODES,
+            max_retries=self.ac.MAX_RETRIES,
+        )
+        content = None
+        if (phyto_response and
+                phyto_response.get('choices') and
+                len(phyto_response['choices']) > 0 and
+                phyto_response['choices'][0].get('message') and
+                phyto_response['choices'][0]['message'].get('content')):
+            content = phyto_response['choices'][0]['message']['content']
+        if not content:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message='Failed to generate plan: '
+                        'Invalid response from language model'
+            ))
+        return {
+            "plan": content,
+            "plan_retries": state.get("plan_retries", 0) + 1,
+            "plan_feedback": None
+        }
+    
+    async def check_node(self, state: AnalystAgentsState):
+        """Validate the generated analysis plan using a critic mechanism.
+
+        This node evaluates the generated plan for accuracy, feasibility, and
+        alignment with the research goal. It uses an LLM as a critic to score
+        the plan and provide feedback. If the plan is approved or max retries
+        are reached, it proceeds to tool extraction. Otherwise, it returns
+        feedback to revise the plan.
+
+        Args:
+            state: The current workflow state containing goal_description,
+                   data_list, method_context, plan, and plan_retries.
+
+        Returns:
+            A dictionary containing plan_feedback ("APPROVED" or critic feedback).
+        """
+        check_prompt = get_prompt(
+            self.ac.PROMPT_FILE, "user/meta_step_check",
+            {'goal_description': state['goal_description'],
+             'data_list': str(state['data_list']),
+             'method_context': state['method_context'],
+             'current_plan': state['plan']}
+        )
+        max_retries = self.ac.MAX_RETRIES
+        current_retries = state.get("plan_retries", 0)
+        try:
+            phyto_response = await phyto_chat(
+                user_query=check_prompt,
+                prompt_file=self.ac.PROMPT_FILE,
+                prompt_path=self.ac.PROMPT_PATH,
+                api_key=self.sc.API_KEY.get_secret_value(),
+                base_url=self.sc.BASE_URL,
+                model=self.sc.MODEL_ID,
+                frequency_penalty=self.ac.FREQUENCY_PENALTY,
+                n=self.ac.N,
+                presence_penalty=self.ac.PRESENCE_PENALTY,
+                reasoning_effort=self.ac.REASONING_EFFORT,
+                response_format={"type": "json_object"},
+                stream=self.ac.STREAM,
+                temperature=self.ac.TEMPERATURE,
+                top_p=self.ac.TOP_P,
+                user=self.ac.USER,
+                timeout=self.ac.TIMEOUT,
+                retriable_codes=self.ac.RETRIABLE_CODES,
+                max_retries=self.ac.MAX_RETRIES,
+            )
+            content = '{}'
+            if (phyto_response and
+                    phyto_response.get('choices') and
+                    len(phyto_response['choices']) > 0 and
+                    phyto_response['choices'][0].get('message') and
+                    phyto_response['choices'][0]['message'].get('content')):
+                content = phyto_response['choices'][0]['message']['content']       
+            pattern = r"```json(.*?)```"
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                json_string = match.group(1).strip()
+                result = json.loads(json_string)
+            else:
+                result = json.loads(content)
+            score = result.get("score", 0)
+            decision = result.get("decision", "REJECTED")
+            feedback = result.get("feedback", "")
+        except Exception as e:
+            score = 0
+            decision = "REJECTED"
+            feedback = ""
+        if decision == "APPROVED" or current_retries >= max_retries:
+            return {"plan_feedback": "APPROVED"}
+        else:
+            return {"plan_feedback": feedback}
+    
+    async def tool_extract_node(self, state: AnalystAgentsState) -> dict:
+        """Extract required bioinformatics tools from the analysis plan.
+
+        This node analyzes the generated plan and extracts the specific tools,
+        algorithms, or software mentioned that are needed to execute the workflow.
+
+        Args:
+            state: The current workflow state containing plan.
+
+        Returns:
+            A dictionary containing the extracted_tools list.
+
+        Raises:
+            McpError: If parsing the tool extraction response fails.
+        """
+        tool_extract_prompt = get_prompt(
+            self.ac.PROMPT_FILE, "user/tool_extract",
+            {'plan': state['plan']}
+        )
+        phyto_response = await phyto_chat(
+            user_query=tool_extract_prompt,
+            prompt_file=self.ac.PROMPT_FILE,
+            prompt_path=self.ac.PROMPT_PATH,
+            api_key=self.sc.API_KEY.get_secret_value(),
+            base_url=self.sc.BASE_URL,
+            model=self.sc.MODEL_ID,
+            frequency_penalty=self.ac.FREQUENCY_PENALTY,
+            n=self.ac.N,
+            presence_penalty=self.ac.PRESENCE_PENALTY,
+            reasoning_effort=self.ac.REASONING_EFFORT,
+            response_format={"type": "json_object"},
+            stream=self.ac.STREAM,
+            temperature=self.ac.TEMPERATURE,
+            top_p=self.ac.TOP_P,
+            user=self.ac.USER,
+            timeout=self.ac.TIMEOUT,
+            retriable_codes=self.ac.RETRIABLE_CODES,
+            max_retries=self.ac.MAX_RETRIES,
+        )
+        content = '{}'
+        if (phyto_response and
+                phyto_response.get('choices') and
+                len(phyto_response['choices']) > 0 and
+                phyto_response['choices'][0].get('message') and
+                phyto_response['choices'][0]['message'].get('content')):
+            content = phyto_response['choices'][0]['message']['content']
+        pattern = r"```json(.*?)```"
+        match = re.search(pattern, content, re.DOTALL)
+        if match:
+            json_string = match.group(1).strip()
+            result = json.loads(json_string)
+        else:
+            result = json.loads(content)
+        return {"extracted_tools": result["tools"]}
+
+    async def tool_retrieve_node(self, state: AnalystAgentsState) -> dict:
+        """Retrieve usage instructions for the extracted tools.
+
+        This node queries the knowledge base for documentation, usage examples,
+        and instructions for each tool extracted from the plan. The retrieved
+        information is formatted and combined into tool_usages for the executor.
+
+        Args:
+            state: The current workflow state containing extracted_tools.
+
+        Returns:
+            A dictionary containing the tool_usages string with all retrieved
+            documentation.
+        """
+        tools = state.get("extracted_tools", [])
+        tool_usages = ''
+        for tool in tools:
+            tool_usages += f"[{tool} Usage START]\n"
+            tool_usage_info = await retrieve(
+                user_query=tool,
+                retrieve_url=self.ac.RETRIEVE_URL,
+                repo_id=self.ac.TOOL_REPO_ID,
+                page_num=self.ac.TOOL_PAGE_NUM,
+                page_size=self.ac.TOOL_PAGE_SIZE,
+                filter_string=self.ac.FILTER_STRING,
+                scope=self.ac.SCOPE,
+                extra_repo_ids=self.ac.EXTRA_REPO_IDS,
+                rerank_url=self.ac.RERANK_URL,
+                rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
+                score_threshold=self.ac.SCORE_THRESHOLD,
+                timeout=self.ac.TIMEOUT,
+                retriable_codes=self.ac.RETRIABLE_CODES,
+                max_retries=self.ac.MAX_RETRIES
+            )
+            for doc in tool_usage_info['doc_list']:
+                tool_usages += f"{doc['content']}\n"
+            tool_usages += f"[{tool} Usage END]\n\n\n"
+        return {"tool_usages": tool_usages}
+
+    async def submit_node(self, state: AnalystAgentsState):
+        """Prepare and submit the analysis task to the computation platform.
+
+        This node constructs the job payload including the analysis plan,
+        selected data files, and tool usage instructions. It creates an
+        output directory, uploads the metadata to OBS, and submits the job
+        to the analysis platform.
+
+        Args:
+            state: The current workflow state containing goal_description,
+                   data_list, output_dir, plan, tool_usages, and compute_resource.
+
+        Returns:
+            A dictionary containing task_id, task_status, job_name, and output_dir.
+
+        Raises:
+            McpError: If task submission fails after all retries.
+        """
+        timeout = self.ac.TIMEOUT
+        max_retries=self.ac.MAX_RETRIES
+        client_timeout = Timeout(timeout, connect=timeout) 
+        analysis_url = self.ac.ANALYSIS_URL
+
+        raw_data_list = state.get("data_list", {})
+        processed_data_list = {}
+        for k, v in raw_data_list.items():
+            if isinstance(k, str) and k.startswith("obs://"):
+                new_key = "/obs/" + k[6:].lstrip('/')
+                processed_data_list[new_key] = v
+            else:
+                processed_data_list[k] = v
+
+        plan = state.get("plan", "")
+        tool_usages = state.get("tool_usages", "")
+        plan += ('\nnext step, summarize each of the generated result files '
+                 '(including images, result files, etc.) into a json file (named '
+                 '`result_files.json`) and save it, with the key of the file '
+                 'being the absolute path of the generated result and the value '
+                 'being a detailed description of the file.\nlast step, compress '
+                 'the output folder into a zip file (zip -r $output_dir.zip '
+                 '$output_dir).')
+        
+        final_meta = f"### EXECUTION PLAN\n{plan}\n\n"
+        f"### TOOL USAGE\n{tool_usages}"
+
+        output_dir = state.get("output_dir")
+        if self.ac.CREATE_DIR:
+            output_dir = create_output_dir(
+                user_id=self.ac.USER_ID or str(uuid1()),
+                task='analysis_agents_task',
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.ac.OBS_SERVER,
+                bucket_name=self.ac.BUCKET_NAME,
+            )
+
+        submit_payload = {
+            'goal_description': state.get("goal_description"),
+            'data_list': processed_data_list,
+            'output_dir': output_dir,
+            'meta': final_meta,
+            'execute_code': self.ac.EXECUTE_CODE,
+            'model_url': self.sc.CODER_URL,
+            'model_name': self.sc.CODER_MODEL,
+            'api_key': self.sc.CODER_API_KEY.get_secret_value(),
+        }
+        
+        json_file = Path(f'{uuid1()}.json')
+        try:
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(submit_payload, f)
+            
+            obs_meta_path = upload_analyst_agents_data(
+                analyst_agents_datapath=str(json_file),
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.ac.OBS_SERVER,
+                bucket_name=self.ac.BUCKET_NAME,
+            )
+        finally:
+            if json_file.exists(): json_file.unlink()
+
+        token = await get_token(timeout=self.ac.TIMEOUT, region=self.ac.ANALYSIS_REGION)
+        job_headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
+        
+        time_stamp = datetime.datetime.now().strftime('%H%M%S-%f')
+        job_name = f"{self.ac.TASK_NAME.replace('_', '-')}-{time_stamp}"
+        compute_res = state.get("compute_resource", self.ac.COMPUTE_RESOURCE)
+        
+        job_data = {
+            'name': job_name,
+            'timeout': self.ac.MAX_POLL,
+            'tool_id': self.ac.APP_ID[compute_res],
+            'tool_type': 'app',
+            'tasks': [{
+                'task_name': f'analyst-agents-{compute_res}',
+                'display_name': job_name,
+                'inputs': [
+                    {'name': 'obs-mount', 'type': 'DIRECTORY', 'values': ['phytomni:/agent_data/']},
+                    {'name': 'meta-file', 'type': 'FILE', 'values': [obs_meta_path]},
+                ],
+                'resources': {
+                    'cpu': f"{self.ac.RESOURCE[compute_res]['cpu']}C",
+                    'memory': f"{self.ac.RESOURCE[compute_res]['memory']}G",
+                    'cpu_type': 'X86'
+                }
+            }],
+            'automatic': True,
+        }
+        
+        async with AsyncClient(timeout=client_timeout, verify=False) as client:
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(
+                        analysis_url,
+                        headers=job_headers,
+                        json=job_data,
+                    )
+                    if response.status_code == 201:
+                        return {
+                            "task_id": json.loads(response.text)['id'], 
+                            "task_status": "PENDING", 
+                            "job_name": job_name, 
+                            "output_dir": output_dir
+                        }
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message='Failed to submit task'))
+
+                except HTTPStatusError as e:
+                    if (
+                        hasattr(e, 'response') and
+                        e.response is not None and
+                        e.response.status_code in self.ac.RETRIABLE_CODES and
+                        attempt < max_retries
+                    ):
+                        wait_time = (2 ** attempt) + uniform(0, 1)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Failed to submit task: {str(e)}',
+                    )) from e
+
+                except (ConnectError, TimeoutException) as e:
+                    if attempt < max_retries:
+                        await asyncio.sleep(1.5 ** attempt)
+                        continue
+                    raise McpError(ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f'Network error: {str(e)}',
+                    )) from e
+
+        raise McpError(ErrorData(
+            code=INTERNAL_ERROR, 
+            message='Submission failed after retries'
+        ))
+
+    async def pooling_node(self, state: AnalystAgentsState):
+        """Poll task status until completion.
+
+        This node waits for the configured poll interval and then queries
+        the analysis platform for the current task status. It returns the
+        status which is used by the router to determine whether to continue
+        polling or end the workflow.
+
+        Args:
+            state: The current workflow state containing task_id.
+
+        Returns:
+            A dictionary containing the current task_status.
+
+        Raises:
+            McpError: If the task status request fails.
+        """
+        await asyncio.sleep(self.ac.POLL_INTERVAL)
+        task_id = state["task_id"]
+        try:
+            status_data = await task_status(
+                task_id,
+                analysis_url=self.ac.ANALYSIS_URL,
+                region=self.ac.ANALYSIS_REGION,
+                timeout = self.ac.TIMEOUT,
+                retriable_codes=self.ac.RETRIABLE_CODES,
+                max_retries=self.ac.MAX_RETRIES,
+            )
+            current_status = status_data.get('status')
+            return {"task_status": current_status}
+        except Exception as exc:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message=f'Task status request failed: {str(exc)}',
+            ))
+    
+    def route_after_extract(self, state: AnalystAgentsState) -> Literal["data_select_node", "method_retrieve_node", "tool_extract_node"]:
+        """Route after the parse_query node based on configuration.
+
+        This method determines the next node based on auto_select flag and
+        whether a plan was provided in the query.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "data_select_node" if auto_select is enabled,
+            "tool_extract_node" if a plan was provided,
+            otherwise "method_retrieve_node".
+        """
+        if state.get("is_auto_select"):
+            return "data_select_node"
+        if state.get("plan"):
+            return "tool_extract_node"
+        else:
+            return "method_retrieve_node"
+
+    def route_after_data_select(self, state: AnalystAgentsState) -> Literal["method_retrieve_node", "tool_extract_node"]:
+        """Route after the data_select node based on plan availability.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+        """
+        if state.get("plan"):
+            return "tool_extract_node"
+        return "method_retrieve_node"
+
+    def route_after_plan(self, state: AnalystAgentsState) -> Literal["plan_node", "tool_extract_node"]:
+        """Route after the plan node based on plan availability.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+        """
+        if state.get("plan"):
+            return "tool_extract_node"
+        return "method_retrieve_node"
+
+    def route_after_check(self, state: AnalystAgentsState) -> Literal["plan_node", "tool_extract_node"]:
+        """Route after the check node based on plan validation.
+
+        If the plan was approved or max retries were reached, proceed to
+        tool extraction. Otherwise, return to plan_node for revision.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "tool_extract_node" if approved, otherwise "plan_node".
+        """
+        feedback = state.get("plan_feedback")
+        
+        # 如果节点返回了 "APPROVED"，说明通过检查
+        if feedback == "APPROVED":
+            return "tool_extract_node"        
+        # 否则带着 feedback 回到 plan_node 重写
+        return "plan_node"
+
+    def route_after_submit(self, state: AnalystAgentsState) -> Literal["pooling_node", "__end__"]:
+        """Route after submit based on polling preference.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "pooling_node" if polling is enabled, otherwise "__end__".
+        """
+        if state.get("is_polling"):
+            return "pooling_node"
+        return END
+
+    def route_after_pooling(self, state: AnalystAgentsState) -> Literal["__end__", "pooling_node"]:
+        """Route based on task completion status.
+
+        Args:
+            state: The current workflow state.
+
+        Returns:
+            "__end__" if task is in a terminal state (SUCCEEDED, FAILED, CANCELLED),
+            otherwise "pooling_node" to continue polling.
+        """
+        status = state.get("task_status")
+        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            return END
+        return "pooling_node"
+    
+    async def arun(
+        self, 
+        query: str, 
+        goal_description: str = None,
+        user: str = ac.USER,
+        user_id: str = ac.USER_ID,
+        is_create_dir: bool = ac.CREATE_DIR,
+        output_dir: str = ac.OUTPUT_DIR, 
+        execute_code: bool = ac.EXECUTE_CODE,
+        compute_resource: Literal[
+            'small', 'medium', 'large'
+        ] = ac.COMPUTE_RESOURCE,
+        timeout: float = ac.TIMEOUT,
+        max_retries: int = ac.MAX_RETRIES,
+        reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+        frequency_penalty: float = ac.FREQUENCY_PENALTY,
+        presence_penalty: float = ac.PRESENCE_PENALTY,
+        n: int = ac.N,
+        stream: bool = ac.STREAM,
+        temperature: float = ac.TEMPERATURE,
+        top_p: float = ac.TOP_P,
+        prompt_file: str = ac.PROMPT_FILE,
+        preset_data_list: Dict[str, str] = None,
+        obs_file_list: List = [],
+        preset_plan: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        is_auto_select: bool = True, 
+        is_polling: bool = True, 
+    ) -> dict:
+        """Execute the AnalystAgent workflow.
+
+        This is the main entry point for invoking the agent. It initializes
+        the state with the user's query and configuration, then runs the
+        LangGraph workflow to process the bioinformatics analysis request.
+
+        Args:
+            query: The user's natural language query for the analysis.
+            goal_description: Optional pre-decomposed research goal.
+            user: The user identifier.
+            user_id: The user ID.
+            is_create_dir: Whether to create an output directory.
+            output_dir: The output directory path.
+            execute_code: Whether to execute code during analysis.
+            compute_resource: The compute resource level (small, medium, large).
+            timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for failed requests.
+            reasoning_effort: Reasoning effort level for the LLM.
+            frequency_penalty: Frequency penalty for LLM sampling.
+            presence_penalty: Presence penalty for LLM sampling.
+            n: Number of completions to generate.
+            stream: Whether to stream the response.
+            temperature: Sampling temperature for the LLM.
+            top_p: Top-p sampling parameter.
+            prompt_file: Path to the prompt template file.
+            preset_data_list: Pre-configured data file list.
+            obs_file_list: List of OBS files uploaded by the user.
+            preset_plan: Pre-configured analysis plan.
+            thread_id: Optional thread ID for state persistence.
+            is_auto_select: Whether to automatically select data files.
+            is_polling: Whether to poll for task status.
+
+        Returns:
+            A dictionary containing task_id, output_dir, job_name, and
+            compute_resource on success, or the initial state with
+            task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
+        """
+        if not thread_id:
+            thread_id = str(uuid1())
+            
+        initial_state = {
+            "query": query,
+            "goal_description": goal_description,
+            "obs_file_list": obs_file_list,
+            "data_list": preset_data_list or {},
+            "output_dir": output_dir, 
+            "compute_resource": compute_resource, 
+            "method_context": None,
+            "plan": preset_plan,
+            "plan_feedback": None,
+            "plan_retries": 0,
+            "extracted_tools": [],
+            "tool_usages": '',
+            "job_name": None,
+            "task_id": None,
+            "task_status": None,
+            "is_polling": is_polling,
+            "is_auto_select": is_auto_select
+        }
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        try:
+            final_state = await self.app.ainvoke(initial_state, config=config)
+            return {
+                'task_id': final_state['task_id'],
+                'output_dir': final_state["output_dir"],
+                'job_name': final_state["job_name"],
+                'compute_resource': final_state["compute_resource"],
+            }
+        except Exception as e:
+            return {
+                **initial_state, 
+                "task_status": "FAILED_AT_AGENT_LEVEL", 
+                "error_detail": str(e)
+            }
 
 
 async def task_delete(task_id: str,
@@ -733,978 +1275,6 @@ async def task_log(task_id: str,
     ))
 
 
-async def plan_submit(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME + '-plan',
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-) -> Dict[str, str]:
-    """
-    Generates a plan using a language model and submits it for execution.
-
-    This function first utilizes the `phyto_chat` service to process the
-    `goal_description` and generate a structured plan. This plan, along with
-    the original goal and data, is then passed to the `submit` function for
-    execution.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        prompt_file: The path to the prompt template file.
-        prompt_path: The path or key for the specific system prompt.
-        api_key: The API key for the language model.
-        base_url: The base URL of the language model API.
-        model: The identifier of the language model.
-        frequency_penalty: The penalty for token repetition.
-        n: The number of plan choices to generate.
-        presence_penalty: The penalty for new tokens.
-        reasoning_effort: The reasoning effort for the language model.
-        response_format: The desired output format from the language model.
-        stream: A flag to enable real-time token streaming.
-        temperature: The randomness control for generation.
-        top_p: The nucleus sampling threshold.
-        user: A unique session identifier for the user.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model to be used.
-        coder_api_key: The API key for the coding model service.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for the OBS.
-        bucket_name: The name of the OBS bucket.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name assigned to the task on the AI4S platform.
-        resource_dict: A dictionary defining the computational resources.
-        app_id_dict: A dictionary mapping compute resources to app IDs.
-        compute_resource: The level of compute resources to allocate.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-
-    Returns:
-        A dictionary with the response from the `submit` function, typically
-        containing submission status information.
-
-    Raises:
-        McpError: If plan generation or submission fails.
-    """
-    phyto_response = await phyto_chat(
-        user_query=get_prompt(prompt_file, 'user/analysis',
-                              {'user_query': goal_description}),
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    content = None
-    if (phyto_response and
-            phyto_response.get('choices') and
-            len(phyto_response['choices']) > 0 and
-            phyto_response['choices'][0].get('message') and
-            phyto_response['choices'][0]['message'].get('content')):
-        content = phyto_response['choices'][0]['message']['content']
-    if not content:
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR,
-            message='Failed to generate plan: '
-                    'Invalid response from language model',
-        ))
-    task_dict = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        meta=content,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    return task_dict
-
-
-async def retrieve_plan_submit(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    retrieve_url: str = ac.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
-    page_num: int = ac.PAGE_NUM,
-    filter_string: Optional[str] = ac.FILTER_STRING,
-    scope: str = ac.SCOPE,
-    extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
-    rerank_url: str = ac.RERANK_URL,
-    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
-    score_threshold: float = ac.SCORE_THRESHOLD,
-    top_n: int = ac.TOP_N,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    obs_file_list: List[str] = [],
-    server_dir: str = ac.TEMP_DIR,
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    part_size: int = ac.PART_SIZT,
-    task_num: int = ac.TASK_NUM,
-    max_concurrency: int = ac.MAX_CONCURRENCY,
-    max_workers: int = ac.MAX_WORKERS,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME + '-retrieve-plan',
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    meta_meta: Optional[str] = None,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-) -> Dict[str, str]:
-    """
-    Performs retrieval-augmented plan generation and submits it for execution.
-
-    This function first retrieves relevant documents, uses them to augment the
-    goal description, generates a plan with a language model, and then submits
-    this plan for execution. Optionally processes user-uploaded files from OBS
-    to provide additional context for the analysis.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        retrieve_url: The URL for the document retrieval service.
-        repo_id_dict: A dictionary of repository IDs for retrieval.
-        page_num: The page number for retrieval results.
-        filter_string: A string for filtering retrieval results.
-        scope: The scope of the retrieval ('doc', 'keyword', 'both').
-        extra_repo_ids: A list of additional repository IDs.
-        rerank_url: The URL for the reranking service.
-        rerank_batch_size: The batch size for reranking.
-        score_threshold: The minimum score for retrieved documents.
-        top_n: The number of top documents to retrieve.
-        prompt_file: The path to the prompt template file.
-        prompt_path: The path or key for the system prompt.
-        api_key: The API key for the language model.
-        base_url: The base URL of the language model API.
-        model: The identifier of the language model.
-        frequency_penalty: The penalty for token repetition.
-        max_tokens: The maximum number of tokens to generate.
-        n: The number of plan choices to generate.
-        presence_penalty: The penalty for new tokens.
-        reasoning_effort: The reasoning effort for the language model.
-        response_format: The desired output format.
-        stream: A flag for real-time token streaming.
-        temperature: The randomness control for generation.
-        top_p: The nucleus sampling threshold.
-        user: A unique session identifier for the user.
-        obs_file_list: List of OBS object keys (file paths) to download and
-            include as context in the query. Files are converted to markdown.
-        server_dir: Local directory path for temporary file storage during
-            file downloads and processing.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model.
-        coder_api_key: The API key for the coding model.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for OBS.
-        bucket_name: The name of the OBS bucket.
-        part_size: Size of each part for multipart downloads from OBS.
-        task_num: Number of concurrent tasks for multipart downloads from OBS.
-        max_concurrency: Maximum number of files to download from OBS
-            concurrently.
-        max_workers: Maximum number of worker processes to use for file
-            conversion operations.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name of the task.
-        resource_dict: A dictionary of computational resources.
-        app_id_dict: A dictionary mapping compute resources to app IDs.
-        compute_resource: The level of compute resources to allocate.
-        meta_meta: Additional metadata to append to the generated plan.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-
-    Returns:
-        A dictionary with the response from the `submit` function.
-
-    Raises:
-        McpError: If retrieval, plan generation, or submission fails.
-    """
-    if not repo_id_dict:
-        repo_id_dict = ac.REPO_ID_DICT
-    total_length = len(get_prompt(
-            prompt_file, 'user/analysis_retrieve_file',
-            {'user_query': goal_description}))
-    upload_context = ''
-    if obs_file_list:
-        upload_str_list = await download_list_convert(
-            obs_file_list=obs_file_list,
-            server_dir=server_dir,
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-            part_size=part_size,
-            task_num=task_num,
-            max_retries=max_retries,
-            max_concurrency=max_concurrency,
-            max_workers=max_workers,
-        )
-        upload_results = []
-        for i, doc in enumerate(upload_str_list):
-            fragment = (f'[user upload file {i+1} begin]\n'
-                        f'{doc}\n[user upload file {i+1} end]')
-            if total_length + len(fragment) <= max_tokens:
-                upload_results.append(fragment)
-                total_length += len(fragment)
-            else:
-                break
-        upload_context = '\n\n'.join(upload_results)
-    retrieve_response = await multi_retrieve(
-        user_query=goal_description,
-        retrieve_url=retrieve_url,
-        repo_id_dict=repo_id_dict,
-        page_num=page_num,
-        filter_string=filter_string,
-        scope=scope,
-        extra_repo_ids=extra_repo_ids,
-        rerank_url=rerank_url,
-        rerank_batch_size=rerank_batch_size,
-        score_threshold=score_threshold,
-        top_n=top_n,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    retrieve_results = []
-    for i, doc in enumerate(retrieve_response.get('doc_list', [])):
-        header = f"[document {i+1} begin] {doc['title']}"
-        content_field = (doc.get('big_content') if 'big_content' in doc
-                         else doc.get('content', ''))
-        body = (f"{doc['subtitle']}\n{content_field}"
-                if doc.get('subtitle') else doc.get('content', ''))
-        fragment = f'{header}\n{body} [document {i+1} end]'
-        if total_length + len(fragment) <= max_tokens:
-            retrieve_results.append(fragment)
-            total_length += len(fragment)
-        else:
-            break
-    retrieve_context = '\n\n'.join(retrieve_results)
-    if obs_file_list:
-        user_query = get_prompt(
-            prompt_file, 'user/analysis_retrieve_file',
-            {'retrieve_results': retrieve_context,
-             'upload_context': upload_context, 'user_query': goal_description})
-    else:
-        user_query = get_prompt(
-            prompt_file, 'user/analysis_retrieve',
-            {'retrieve_results': retrieve_context,
-             'user_query': goal_description})
-    phyto_response = await phyto_chat(
-        user_query=user_query,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    content = None
-    if (phyto_response and
-            phyto_response.get('choices') and
-            len(phyto_response['choices']) > 0 and
-            phyto_response['choices'][0].get('message') and
-            phyto_response['choices'][0]['message'].get('content')):
-        content = phyto_response['choices'][0]['message']['content']
-    if not content:
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR,
-            message='Failed to generate plan: '
-                    'Invalid response from language model'
-        ))
-    task_dict = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        meta=content,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        meta_meta=meta_meta,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    output = Path(task_dict['output_dir']).name
-    log_filename = f"task_id-{task_dict['task_id']}-{output}.json"
-    log_file_path = _log_submit_params(
-        log_filename=log_filename,
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        meta=content,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        enable_auto_select=True,  # Default value in submit function
-        prompt_file=prompt_file,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        meta_meta=meta_meta,
-    )
-    task_dict['log_file_path'] = log_file_path
-    return task_dict
-
-
-async def wait_for_completion(
-    task_id: str,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
-) -> Dict[str, Any]:
-    """
-    Asynchronously monitors a task until it completes or times out.
-
-    This function repeatedly polls the status of a task until it reaches a
-    terminal state (e.g., 'SUCCEEDED', 'FAILED', 'CANCELLED') or the
-    maximum polling time is exceeded.
-
-    Args:
-        task_id: The unique identifier of the task to monitor.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-        poll_interval: The interval in seconds between polling for task status.
-        max_poll: The maximum total duration in seconds to monitor the task.
-
-    Returns:
-        A dictionary containing the final status of the task.
-
-    Raises:
-        McpError: If the task enters a 'FAILED' or 'CANCELLED' state, or if
-            an unexpected status is returned.
-        asyncio.TimeoutError: If the maximum polling duration is exceeded.
-    """
-    start_time = time.time()
-    while (time.time() - start_time) < max_poll:
-        status_data = await task_status(
-            task_id,
-            analysis_url=analysis_url,
-            region=region,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        )
-        match status_data.get('status'):
-            case 'CANCELLED':
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message='Task cancelled',
-                ))
-            case 'FAILED':
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message='Task failed',
-                ))
-            case 'PENDING':
-                await asyncio.sleep(poll_interval)
-            case 'RUNNING':
-                await asyncio.sleep(poll_interval)
-            case 'SUCCEEDED':
-                return status_data
-            case _:
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message='Task status error',
-                ))
-    raise asyncio.TimeoutError(
-        f'Exceeded max polling time {max_poll/60} minutes')
-
-
-async def submit_wait(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    meta: str = '',
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME,
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
-) -> Dict[str, Any]:
-    """
-    Submits an analysis task and waits for its completion.
-
-    This function combines the functionality of `submit` and
-    `wait_for_completion`. It first submits a task and then monitors it
-    until it finishes or times out.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        meta: Step-by-step instructions for processing.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model.
-        coder_api_key: The API key for the coding model.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for OBS.
-        bucket_name: The name of the OBS bucket.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name of the task.
-        resource_dict: A dictionary of computational resources.
-        app_id_dict: A dictionary mapping compute resources to app IDs.
-        compute_resource: The level of compute resources to allocate.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-        poll_interval: The interval in seconds between polling for task status.
-        max_poll: The maximum total duration in seconds to monitor the task.
-
-    Returns:
-        A dictionary containing the final status and results of the task.
-
-    Raises:
-        McpError: If the task fails or is cancelled.
-        asyncio.TimeoutError: If the polling duration is exceeded.
-    """
-    task_dict = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        meta=meta,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    response = await wait_for_completion(
-        task_id=task_dict['task_id'],
-        analysis_url=analysis_url,
-        region=region,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        poll_interval=poll_interval,
-        max_poll=max_poll,
-    )
-    return response
-
-
-async def plan_submit_wait(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME + '-plan',
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
-) -> Dict[str, Any]:
-    """
-    Generates a plan, submits it, and waits for completion.
-
-    This function orchestrates a multi-step process: generating a plan based
-    on the goal description, submitting it for asynchronous execution, and then
-    polling until the task is finished or times out.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        prompt_file: The path to the prompt template file.
-        prompt_path: The path or key for the system prompt.
-        api_key: The API key for the language model.
-        base_url: The base URL of the language model API.
-        model: The identifier of the language model.
-        frequency_penalty: The penalty for token repetition.
-        n: The number of plan choices to generate.
-        presence_penalty: The penalty for new tokens.
-        reasoning_effort: The reasoning effort for the language model.
-        response_format: The desired output format.
-        stream: A flag for real-time token streaming.
-        temperature: The randomness control for generation.
-        top_p: The nucleus sampling threshold.
-        user: A unique session identifier for the user.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model.
-        coder_api_key: The API key for the coding model.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for OBS.
-        bucket_name: The name of the OBS bucket.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name of the task.
-        resource_dict: A dictionary of computational resources.
-        app_id_dict: A dictionary mapping compute resources to app IDs.
-        compute_resource: The level of compute resources to allocate.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-        poll_interval: The interval in seconds between polling for task status.
-        max_poll: The maximum total duration in seconds to monitor the task.
-
-    Returns:
-        A dictionary with the final result or status of the completed task.
-
-    Raises:
-        McpError: If the submission fails or the task encounters an error.
-    """
-    task_dict = await plan_submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    response = await wait_for_completion(
-        task_id=task_dict['task_id'],
-        analysis_url=analysis_url,
-        region=region,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        poll_interval=poll_interval,
-        max_poll=max_poll,
-    )
-    return response
-
-
-async def retrieve_plan_submit_wait(
-    goal_description: str,
-    data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
-    retrieve_url: str = ac.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
-    page_num: int = ac.PAGE_NUM,
-    filter_string: Optional[str] = ac.FILTER_STRING,
-    scope: str = ac.SCOPE,
-    extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
-    rerank_url: str = ac.RERANK_URL,
-    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
-    score_threshold: float = ac.SCORE_THRESHOLD,
-    top_n: int = ac.TOP_N,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME + '-retrieve-plan',
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
-    compute_resource: Literal[
-        'small', 'medium', 'large'
-    ] = ac.COMPUTE_RESOURCE,
-    meta_meta: Optional[str] = None,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
-) -> Dict[str, Any]:
-    """
-    Retrieves documents, generates a plan, submits it, and waits for
-    completion.
-
-    This function orchestrates a retrieval-augmented planning and execution
-    workflow. It retrieves relevant documents, generates an augmented plan,
-    submits it for execution, and then waits for the task to complete.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of input data sources, where keys are
-            identifiers and values are their descriptions or paths.
-        output_dir: The OBS path for storing analysis results.
-        retrieve_url: The URL for the document retrieval service.
-        repo_id_dict: A dictionary of repository IDs for retrieval.
-        page_num: The page number for retrieval results.
-        filter_string: A string for filtering retrieval results.
-        scope: The scope of the retrieval.
-        extra_repo_ids: A list of additional repository IDs.
-        rerank_url: The URL for the reranking service.
-        rerank_batch_size: The batch size for reranking.
-        score_threshold: The minimum score for retrieved documents.
-        top_n: The number of top documents to retrieve.
-        prompt_file: The path to the prompt template file.
-        prompt_path: The path or key for the system prompt.
-        api_key: The API key for the language model.
-        base_url: The base URL of the language model API.
-        model: The identifier of the language model.
-        frequency_penalty: The penalty for token repetition.
-        max_tokens: The maximum number of tokens to generate.
-        n: The number of plan choices to generate.
-        presence_penalty: The penalty for new tokens.
-        reasoning_effort: The reasoning effort for the language model.
-        response_format: The desired output format.
-        stream: A flag for real-time token streaming.
-        temperature: The randomness control for generation.
-        top_p: The nucleus sampling threshold.
-        user: A unique session identifier for the user.
-        execute_code: A boolean flag to enable or disable automated code
-            execution within the workflow.
-        model_url: The URL of the coding model service.
-        model_name: The name of the coding model.
-        coder_api_key: The API key for the coding model.
-        access_key_id: The access key ID for OBS.
-        secret_access_key: The secret access key for OBS.
-        obs_server: The server endpoint for OBS.
-        bucket_name: The name of the OBS bucket.
-        analysis_url: The URL for the analysis submission API.
-        region: The geographical region of the analysis service.
-        task_name: The name of the task.
-        resource_dict: A dictionary of computational resources.
-        app_id_dict: A dictionary mapping compute resources to app IDs.
-        compute_resource: The level of compute resources to allocate.
-        meta_meta: Additional metadata to append to the plan.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-        poll_interval: The interval in seconds between polling for task status.
-        max_poll: The maximum total duration in seconds to monitor the task.
-
-    Returns:
-        A dictionary with the final result or status of the completed task.
-
-    Raises:
-        McpError: If the submission fails or the task encounters an error.
-    """
-    if not repo_id_dict:
-        repo_id_dict = ac.REPO_ID_DICT
-    task_dict = await retrieve_plan_submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        retrieve_url=retrieve_url,
-        repo_id_dict=repo_id_dict,
-        page_num=page_num,
-        filter_string=filter_string,
-        scope=scope,
-        extra_repo_ids=extra_repo_ids,
-        rerank_url=rerank_url,
-        rerank_batch_size=rerank_batch_size,
-        score_threshold=score_threshold,
-        top_n=top_n,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        max_tokens=max_tokens,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        execute_code=execute_code,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name=task_name,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource=compute_resource,
-        meta_meta=meta_meta,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    response = await wait_for_completion(
-        task_id=task_dict['task_id'],
-        analysis_url=analysis_url,
-        region=region,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        poll_interval=poll_interval,
-        max_poll=max_poll,
-    )
-    return response
-
-
 def upload_analyst_agents_data(
     analyst_agents_datapath: str,
     access_key_id: str = sc.AccessKeyID.get_secret_value(),
@@ -1802,7 +1372,7 @@ def delete_analyst_agents_data(
             return (
                 'Delete Object Succeeded\n'
                 f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
-                f'deleteMarker: {delete_marker}\nversionId: {version_id}'
+                f"deleteMarker: {delete_marker}\nversionId: {version_id}"
             )
         raise OSError(
             'Delete Object Failed\n'
@@ -2060,174 +1630,10 @@ def download_obs_out(
             else:
                 raise OSError(
                     'Get File List Failed\n'
-                    f"requestId: {getattr(file_response, 'requestId', 'unknown')}\n"
-                    f"errorCode: {getattr(file_response, 'errorCode', 'unknown')}\n"
-                    f"errorMessage: {getattr(file_response, 'errorMessage', 'unknown')}"
+                    f'requestId: {getattr(file_response, "requestId", "unknown")}\n'
+                    f'errorCode: {getattr(file_response, "errorCode", "unknown")}\n'
+                    f'errorMessage: {getattr(file_response, "errorMessage", "unknown")}'
                 )
     except Exception as exc:
         raise OSError(f'Download File Failed\n{format_exc()}') from exc
 
-
-async def auto_select(
-    goal_description: str,
-    data_list: Dict[str, str],
-    pre_prepared_data_path: str = ac.PRE_PREPARED_DATA_PATH,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    meta_meta: Optional[str] = None,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-) -> Dict[str, str]:
-    """
-    Automatically selects relevant data from pre-configured database.
-
-    This function uses a language model to intelligently select relevant data
-    files from the species database based on the research goal. It
-    automatically determines the appropriate analysis type and species, then
-    merges the selected  data with user-provided data and returns the combined
-    dataset.
-
-    Args:
-        goal_description: A natural language description of the analysis goals.
-        data_list: A dictionary of user-provided input data sources, where keys
-            are identifiers and values are their descriptions or paths.
-        prompt_file: The path to the prompt template file.
-        api_key: The API key for the language model.
-        base_url: The base URL of the language model API.
-        model: The identifier of the language model.
-        frequency_penalty: The penalty for token repetition.
-        n: The number of choices to generate.
-        presence_penalty: The penalty for new tokens.
-        reasoning_effort: The reasoning effort for the language model.
-        stream: A flag to enable real-time token streaming.
-        temperature: The randomness control for generation.
-        top_p: The nucleus sampling threshold.
-        user: A unique session identifier for the user.
-        timeout: The total request timeout in seconds for API calls.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retry attempts for a failed request.
-
-    Returns:
-        A dictionary containing the merged data list with both user-provided
-        and AI-selected data.
-
-    Raises:
-        McpError: If data selection fails.
-        ValueError: If the language model response cannot be parsed.
-        OSError: If file operations fail.
-    """
-    try:
-        with open(pre_prepared_data_path, 'r', encoding='utf-8') as f:
-            species_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as exc:
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR,
-            message='Failed to load species data list'
-        )) from exc
-    user_data_summary = json.dumps(data_list)
-    if meta_meta:
-        goal_description = f'{goal_description}: meta_meta'
-    selection_prompt = get_prompt(
-        prompt_file, 'user/data_selection',
-        {
-            'goal_description': goal_description,
-            # 'user_data_list': user_data_summary,
-            'available_data_list': json.dumps(species_data)
-        }
-    )
-    try:
-        selection_response = await phyto_chat(
-            user_query=selection_prompt,
-            prompt_file=prompt_file,
-            prompt_path=prompt_path,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            frequency_penalty=frequency_penalty,
-            n=n,
-            presence_penalty=presence_penalty,
-            reasoning_effort=reasoning_effort,
-            response_format={'type': 'json_schema'},
-            stream=stream,
-            temperature=temperature,
-            top_p=top_p,
-            user=user,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        )
-    except Exception as exc:
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR,
-            message='Failed to get data selection '
-                    f'from language model: {str(exc)}'
-        )) from exc
-
-    selected_data = {}
-    if (selection_response and
-            selection_response.get('choices') and
-            len(selection_response['choices']) > 0 and
-            selection_response['choices'][0].get('message') and
-            selection_response['choices'][0]['message'].get('content')):
-        try:
-            content = selection_response['choices'][0]['message']['content']
-            json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```',
-                                   content, re.DOTALL)
-            if json_match:
-                json_part = json_match.group(1).strip()
-            else:
-                start_index = content.find('{')
-                if start_index != -1:
-                    brace_count = 0
-                    end_index = -1
-                    for i in range(start_index, len(content)):
-                        if content[i] == '{':
-                            brace_count += 1
-                        elif content[i] == '}':
-                            brace_count -= 1
-                            if brace_count == 0:
-                                end_index = i + 1
-                                break
-                    if end_index == -1:
-                        raise ValueError("No complete JSON object found")
-                    json_part = content[start_index:end_index]
-                else:
-                    raise ValueError("No JSON object found in content")
-            json_part = json_part.strip()
-            if not json_part:
-                raise ValueError("Empty JSON content")
-            parsed_response = json.loads(json_part)
-            if 'selected_data' in parsed_response:
-                selected_data = parsed_response['selected_data']
-            else:
-                selected_data = parsed_response
-        except (json.JSONDecodeError, ValueError, KeyError, IndexError) as exc:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Failed to parse data selection response: {str(exc)}'
-            )) from exc
-
-    file_set = set()
-    for t in species_data.values():
-        for s in t.values():
-            file_set.update(k for k in s if k[:4] == '/obs' and
-                            k[-7:] != 'gene_id')
-            for k in (k for k in s if k[:4] != '/obs'):
-                file_set.update(ff for ff in s[k] if ff[:4] == '/obs' and
-                                ff[-7:] != 'gene_id')
-    for file_path, description in selected_data.items():
-        if file_path in file_set:
-            data_list.update({file_path: description})
-    return data_list
