@@ -320,6 +320,10 @@ async def submit(
         McpError: If the task submission fails after all retries.
         OSError: If uploading the data information to OBS fails.
     """
+    data_list = {
+        ('/obs/' + k[6:] if isinstance(k, str) and
+         k.startswith('obs://') else k): v
+        for k, v in data_list.items()}
     if not user_id:
         user_id = str(uuid1())
     if is_create_dir:

@@ -420,27 +420,51 @@ async def download_list_convert(
     if should_shutdown:
         executor = ProcessPoolExecutor(max_workers=max_workers)
 
+    # Legacy: concurrent download and convert using asyncio.gather
+    # async def download_and_convert(obs_file: str) -> str:
+    #     async with semaphore:
+    #         server_file = await download_obs_file(
+    #             obs_file=obs_file,
+    #             server_dir=server_dir,
+    #             access_key_id=access_key_id,
+    #             secret_access_key=secret_access_key,
+    #             obs_server=obs_server,
+    #             bucket_name=bucket_name,
+    #             part_size=part_size,
+    #             task_num=task_num,
+    #             max_retries=max_retries,
+    #         )
+    #         loop = asyncio.get_event_loop()
+    #         result = await loop.run_in_executor(
+    #             executor, convert_single_file, server_file)
+    #         return result
+
+    # Default: sequential download and convert (more stable)
     async def download_and_convert(obs_file: str) -> str:
-        async with semaphore:
-            server_file = await download_obs_file(
-                obs_file=obs_file,
-                server_dir=server_dir,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
-                part_size=part_size,
-                task_num=task_num,
-                max_retries=max_retries,
-            )
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(executor, convert_single_file,
-                                                server_file)
-            return result
+        server_file = await download_obs_file(
+            obs_file=obs_file,
+            server_dir=server_dir,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=obs_server,
+            bucket_name=bucket_name,
+            part_size=part_size,
+            task_num=task_num,
+            max_retries=max_retries,
+        )
+        result = convert_single_file(server_file)
+        return result
 
     try:
-        tasks = [download_and_convert(obs_file) for obs_file in obs_file_list]
-        return await asyncio.gather(*tasks)
+        # Legacy (concurrent):
+        # tasks = [download_and_convert(obs_file)
+        #          for obs_file in obs_file_list]
+        # return await asyncio.gather(*tasks)
+
+        # Default (sequential):
+        result = [await download_and_convert(obs_file)
+                  for obs_file in obs_file_list]
+        return result
     finally:
         if should_shutdown and executor is not None:
             executor.shutdown(wait=True)

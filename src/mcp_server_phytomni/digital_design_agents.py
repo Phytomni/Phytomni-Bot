@@ -17,6 +17,7 @@ from .analyst_agents import get_data_list, create_output_dir, submit
 from .config.defaults import DigitalDesignConfig
 from .config.settings import SensitiveConfig
 from .utils import get_prompt
+from json import loads, dumps
 
 ddc = DigitalDesignConfig()
 sc = SensitiveConfig().load()
