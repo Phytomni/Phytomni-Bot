@@ -315,7 +315,7 @@ async def design_module(
 
     Args:
         species: The species name for which protein design analysis is
-            performed (e.g., "Arabidopsis_thaliana").
+            performed (e.g., "arabidopsis thaliana").
         gene_id: The specific gene identifier to analyze for protein design.
         user_id: Identifier for the user submitting the analysis task.
         batch: Flag indicating whether this is part of a batch processing
@@ -362,14 +362,14 @@ async def design_module(
     Examples:
         Execute protein design module:
             >>> result = await design_module(
-            ...     species="Arabidopsis_thaliana",
+            ...     species="arabidopsis thaliana",
             ...     gene_id="AT1G01010"
             ... )
             >>> print(result)
 
         Non-batch processing with custom user:
             >>> result = await design_module(
-            ...     species="Zea_mays",
+            ...     species="zea mays",
             ...     gene_id="GRMZM2G000001",
             ...     user_id="researcher_001",
             ...     batch=False

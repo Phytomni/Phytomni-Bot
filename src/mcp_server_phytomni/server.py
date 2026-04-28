@@ -80,12 +80,15 @@ from pydantic import BaseModel, Field
 
 from .analyst_agents import retrieve_plan_submit
 from .config.defaults import AnalystConfig, ChatConfig, DataConfig
-from .config.defaults import DeepGenomeConfig, InSilicoResearchConfig
+from .config.defaults import DeepGenomeConfig, DigitalDesignConfig
+from .config.defaults import GeneNetworkConfig, InSilicoResearchConfig
 from .config.defaults import KnowledgeConfig, ReviewConfig
 from .config.settings import SensitiveConfig
 from .chat_agents import phyto_chat_with_follow
 from .data_agents import rewrite_nl2sql
 from .deep_genome_agents import gene_function
+from .digital_design_agents import design_module
+from .gene_network_agents import network_analysis
 from .in_silico_research_agents import in_silico_research
 from .knowledge_agents import multi_retrieve_generate
 from .review_agents import deep_research
@@ -391,6 +394,106 @@ class InSilicoResearchAgent(BaseModel):
     ]
 
 
+class DigitalDesignAgent(BaseModel):
+    """Parameters for protein and promoter design analysis."""
+    species: Annotated[
+        str,
+        Field(
+            description="The species name in Latin lowercase format with "
+                        "spaces (e.g., 'arabidopsis thaliana', "
+                        "'oryza sativa', 'zea mays'). Examples: "
+                        "'arabidopsis thaliana' (thale cress), "
+                        "'oryza sativa' (rice), 'zea mays' (maize), "
+                        "'glycine max' (soybean), "
+                        "'triticum aestivum' (wheat), "
+                        "'hordeum vulgare' (barley), "
+                        "'solanum lycopersicum' (tomato), "
+                        "'solanum tuberosum' (potato), "
+                        "'brassica napus' (oilseed), "
+                        "'gossypium hirsutum' (cotton), "
+                        "'sorghum bicolor' (sorghum).",
+        ),
+    ]
+    gene_id: Annotated[
+        str,
+        Field(
+            description="The specific gene identifier to analyze for design.",
+        ),
+    ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
+        ),
+    ]
+
+
+class GeneNetworkAgent(BaseModel):
+    """Parameters for gene network analysis."""
+    species: Annotated[
+        str,
+        Field(
+            description="The species name in Latin lowercase format with "
+                        "spaces (e.g., 'arabidopsis thaliana', "
+                        "'oryza sativa', 'zea mays'). Examples: "
+                        "'arabidopsis thaliana' (thale cress), "
+                        "'oryza sativa' (rice), 'zea mays' (maize), "
+                        "'glycine max' (soybean), "
+                        "'triticum aestivum' (wheat), "
+                        "'hordeum vulgare' (barley), "
+                        "'solanum lycopersicum' (tomato), "
+                        "'solanum tuberosum' (potato), "
+                        "'brassica napus' (oilseed), "
+                        "'gossypium hirsutum' (cotton), "
+                        "'sorghum bicolor' (sorghum).",
+        ),
+    ]
+    to_id: Annotated[
+        str,
+        Field(
+            description="The Trait Ontology identifier for network analysis "
+                        "(e.g., 'TO:0000207' for plant height trait). Trait "
+                        "Ontologies (TO) are standardized controlled "
+                        "vocabularies that describe plant phenotypic traits "
+                        "and characteristics.",
+        ),
+    ]
+    obs_file_list: Annotated[
+        List[str],
+        Field(
+            description="List of observation file paths for the large "
+                        "language model to process. Users can upload one "
+                        "file, multiple files, or no files. Supported file "
+                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+                        "uploading files, provide complete file paths as a "
+                        "list of strings. When not uploading any files, pass "
+                        "an empty list [].",
+            json_schema_extra={
+                "example": [
+                    "/obs/phytomni/path/to/document.pdf",
+                    "/obs/phytomni/path/to/document.docx",
+                ],
+                "x-java-default": "new ArrayList<>()",
+                "x-csharp-default": "new List<string>()",
+            },
+        ),
+    ]
+
+
 class PhytomniAgents(str, Enum):
     """Enumeration of specialized AI agents for plant science research support.
 
@@ -459,6 +562,21 @@ class PhytomniAgents(str, Enum):
         "and results, producing a structured, sequential list of high-level "
         "tasks designed for computational replication."
     )
+    DIGITALDESIGNAGENT = "DigitalDesignAgent"
+    DIGITALDESIGNAGENT_DESCRIPTION = (
+        "Performs comprehensive protein and promoter design analysis for "
+        "specific genes, including protein structure prediction, property "
+        "analysis, design optimization, and promoter modification prediction. "
+        "This agent automatically runs both protein design and promoter "
+        "design analyses and returns combined results."
+    )
+    GENENETWORKAGENT = "GeneNetworkAgent"
+    GENENETWORKAGENT_DESCRIPTION = (
+        "Analyzes gene networks including interaction prediction, "
+        "co-expression analysis, and regulatory network characterization. "
+        "Identifies functional modules and constructs comprehensive gene "
+        "relationship networks for plant genomics research."
+    )
 
 
 async def serve() -> None:
@@ -480,6 +598,9 @@ async def serve() -> None:
     - DeepGenomeAgent: Multi-omics gene function analysis with experimental
         data
     - InSilicoResearchAgent: Scientific paper methodology decomposition
+    - DigitalDesignAgent: Protein and promoter design analysis with
+        computational modeling
+    - GeneNetworkAgent: Gene interaction and regulatory network analysis
 
     Service Architecture:
     - Tool registration with JSON schema validation for type safety
@@ -585,6 +706,16 @@ async def serve() -> None:
                 name=PhytomniAgents.INSILICORESEARCHAGENT,
                 description=PhytomniAgents.INSILICORESEARCHAGENT_DESCRIPTION,
                 inputSchema=InSilicoResearchAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.DIGITALDESIGNAGENT,
+                description=PhytomniAgents.DIGITALDESIGNAGENT_DESCRIPTION,
+                inputSchema=DigitalDesignAgent.model_json_schema()
+            ),
+            Tool(
+                name=PhytomniAgents.GENENETWORKAGENT,
+                description=PhytomniAgents.GENENETWORKAGENT_DESCRIPTION,
+                inputSchema=GeneNetworkAgent.model_json_schema()
             ),
         ]
 
@@ -996,6 +1127,87 @@ async def serve() -> None:
                     timeout=insilicoresearchconfig.TIMEOUT,
                     retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
                     max_retries=insilicoresearchconfig.MAX_RETRIES,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.DIGITALDESIGNAGENT:
+                try:
+                    args = DigitalDesignAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                digitaldesignconfig = DigitalDesignConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await design_module(
+                    species=args.species,
+                    gene_id=args.gene_id,
+                    user_id=digitaldesignconfig.USER_ID,
+                    batch=True,
+                    enable_auto_select=False,
+                    prompt_file=digitaldesignconfig.PROMPT_FILE,
+                    deepgenome_data=digitaldesignconfig.DEEPGENOME_DATA,
+                    output_dir=digitaldesignconfig.OUTPUT_DIR,
+                    model_url=sensitiveconfig.CODER_URL,
+                    model_name=sensitiveconfig.CODER_MODEL,
+                    coder_api_key=(
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=digitaldesignconfig.OBS_SERVER,
+                    bucket_name=digitaldesignconfig.BUCKET_NAME,
+                    analysis_url=digitaldesignconfig.ANALYSIS_URL,
+                    region=digitaldesignconfig.ANALYSIS_REGION,
+                    resource_dict=digitaldesignconfig.RESOURCE,
+                    app_id_dict=digitaldesignconfig.APP_ID,
+                    timeout=digitaldesignconfig.TIMEOUT,
+                    retriable_codes=digitaldesignconfig.RETRIABLE_CODES,
+                    max_retries=digitaldesignconfig.MAX_RETRIES,
+                    max_poll=digitaldesignconfig.MAX_POLL,
+                )
+                return [TextContent(
+                    type='text',
+                    text=dumps(response),
+                )]
+
+            case PhytomniAgents.GENENETWORKAGENT:
+                try:
+                    args = GeneNetworkAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(ErrorData(
+                        code=INVALID_PARAMS, message=str(e))) from e
+                genenetworkconfig = GeneNetworkConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await network_analysis(
+                    species=args.species,
+                    to_id=args.to_id,
+                    user_id=genenetworkconfig.USER_ID,
+                    batch=False,
+                    prompt_file=genenetworkconfig.PROMPT_FILE,
+                    deepgenome_data=genenetworkconfig.DEEPGENOME_DATA,
+                    output_dir=genenetworkconfig.OUTPUT_DIR,
+                    model_url=sensitiveconfig.CODER_URL,
+                    model_name=sensitiveconfig.CODER_MODEL,
+                    coder_api_key=(
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                    access_key_id=(
+                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                    secret_access_key=(
+                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                    obs_server=genenetworkconfig.OBS_SERVER,
+                    bucket_name=genenetworkconfig.BUCKET_NAME,
+                    analysis_url=genenetworkconfig.ANALYSIS_URL,
+                    region=genenetworkconfig.ANALYSIS_REGION,
+                    resource_dict=genenetworkconfig.RESOURCE,
+                    app_id_dict=genenetworkconfig.APP_ID,
+                    timeout=genenetworkconfig.TIMEOUT,
+                    retriable_codes=genenetworkconfig.RETRIABLE_CODES,
+                    max_retries=genenetworkconfig.MAX_RETRIES,
+                    max_poll=genenetworkconfig.MAX_POLL,
                 )
                 return [TextContent(
                     type='text',

@@ -25,14 +25,14 @@ Examples:
     Basic gene network analysis:
         >>> result = await network_analysis(
         ...     species='rice',
-        ...     to_id='LOC_Os01g01010'
+        ...     to_id='TO:0000207'
         ... )
         >>> print(f"Network task: {result['network_task']}")
 
-    Batch processing multiple genes:
+    Batch processing multiple traits:
         >>> result = await network_analysis(
         ...     species='arabidopsis',
-        ...     to_id='AT1G01010',
+        ...     to_id='TO:0000207',
         ...     batch=True,
         ...     user_id='batch_user_001'
         ... )
@@ -73,17 +73,21 @@ async def network_analysis(
     max_retries: int = gnc.MAX_RETRIES,
     max_poll: float = gnc.MAX_POLL,
 ) -> dict:
-    """Perform comprehensive gene network analysis for a target gene.
+    """Perform comprehensive gene network analysis for a target trait.
 
-    This function initiates a computational workflow to analyze gene networks,
-    including interaction prediction, co-expression analysis, and functional
-    module identification. It leverages plant-specific databases and advanced
-    network analysis algorithms to characterize gene relationships and
-    regulatory patterns.
+    This function initiates a computational workflow to analyze gene networks
+    associated with a specific phenotypic trait, including interaction
+    prediction, co-expression analysis, and functional module identification.
+    It leverages plant-specific databases and advanced network analysis
+    algorithms to characterize gene relationships and regulatory patterns.
 
     Args:
-        species: The target species for analysis (e.g., 'rice', 'arabidopsis').
-        to_id: The target gene identifier for network analysis.
+        species: The target species for analysis in Latin lowercase format
+            with spaces (e.g., 'oryza sativa', 'arabidopsis thaliana').
+        to_id: The Trait Ontology identifier for network analysis. Trait
+            Ontology (TO) is a controlled vocabulary for plant phenotypic
+            traits (e.g., 'TO:0000207' for plant height, 'TO:0000136' for
+            drought resistance).
         user_id: Unique identifier for the user submitting the analysis task.
         batch: Flag indicating whether the operation is part of a batch
             processing workflow. When True, skips individual output directory
@@ -144,21 +148,22 @@ async def network_analysis(
             attempts.
         FileNotFoundError: If the prompt file or deepgenome data file cannot
             be located at the specified paths.
-        ValueError: If invalid species or gene identifiers are provided.
+        ValueError: If invalid species or trait ontology identifiers are
+            provided.
         OSError: If output directory creation or OBS operations fail.
 
     Examples:
-        Basic network analysis:
+        Basic network analysis for plant height trait:
             >>> result = await network_analysis(
-            ...     species='rice',
-            ...     to_id='LOC_Os01g01010'
+            ...     species='oryza sativa',
+            ...     to_id='TO:0000207'
             ... )
             >>> print(f"Task ID: {result['network_task']['task_id']}")
 
         Batch processing with custom configuration:
             >>> result = await network_analysis(
-            ...     species='arabidopsis',
-            ...     to_id='AT1G01010',
+            ...     species='arabidopsis thaliana',
+            ...     to_id='TO:0000136',
             ...     batch=True,
             ...     user_id='batch_user_001',
             ...     timeout=3600.0,
@@ -171,7 +176,7 @@ async def network_analysis(
         batch=False. For batch operations, ensure output_dir is properly
         configured before calling this function. The analysis includes network
         topology metrics, functional enrichment analysis, and visualization
-        outputs.
+        outputs for genes associated with the specified trait ontology.
     """
     if not batch:
         if not user_id:
