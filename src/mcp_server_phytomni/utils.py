@@ -15,6 +15,7 @@ within the application. These utilities include functionalities such as:
   processing multiple files.
 - Splitting lists into smaller chunks for batch processing.
 """
+
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from math import ceil
@@ -39,8 +40,9 @@ serc = ServerConfig()
 senc = SensitiveConfig().load()
 
 
-async def get_token(timeout: float = serc.TIMEOUT,
-                    region: str = serc.REGION) -> str:
+async def get_token(
+    timeout: float = serc.TIMEOUT, region: str = serc.REGION
+) -> str:
     """Obtain an X-Subject-Token for API authentication.
 
     This function authenticates with the IAM service using credentials from
@@ -64,37 +66,42 @@ async def get_token(timeout: float = serc.TIMEOUT,
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         password = senc.USER_PASSWORD.get_secret_value()
         data = {
-            'auth': {
-                'identity': {
-                    'methods': ['password'],
-                    'password': {
-                        'user': {
-                            'name': senc.USER_NAME,
-                            'password': password,
-                            'domain': {'name': senc.DOMAIN_NAME},
+            "auth": {
+                "identity": {
+                    "methods": ["password"],
+                    "password": {
+                        "user": {
+                            "name": senc.USER_NAME,
+                            "password": password,
+                            "domain": {"name": senc.DOMAIN_NAME},
                         },
                     },
                 },
-                'scope': {'project': {'name': region}},
+                "scope": {"project": {"name": region}},
             },
         }
         try:
             response = await client.post(
                 serc.TOKEN_URL,
-                headers={'Content-Type': 'application/json'},
+                headers={"Content-Type": "application/json"},
                 json=data,
-                timeout=timeout)
+                timeout=timeout,
+            )
             response.raise_for_status()
-            return response.headers['X-Subject-Token']
+            return response.headers["X-Subject-Token"]
         except HTTPError as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Failed to get token: {str(e)}')) from e
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Failed to get token: {str(e)}",
+                )
+            ) from e
 
 
-def load_template(template_file: str,
-                  template_str: Optional[str] = None,
-                  ) -> str:
+def load_template(
+    template_file: str,
+    template_str: Optional[str] = None,
+) -> str:
     """Load a template string from a YAML file.
 
     This function reads a YAML file and extracts a specific template string.
@@ -118,15 +125,16 @@ def load_template(template_file: str,
     """
     template_path = Path(template_file)
     if not template_path.is_file():
-        raise FileNotFoundError(f'Template file not found: {template_file}')
-    with open(template_path, 'r', encoding='utf-8') as f:
+        raise FileNotFoundError(f"Template file not found: {template_file}")
+    with open(template_path, "r", encoding="utf-8") as f:
         data = safe_load(f)
     if template_str:
         current = data
-        for part in template_str.split('/'):
+        for part in template_str.split("/"):
             if part not in current:
                 raise KeyError(
-                    f"Path '{part}' not found in template structure")
+                    f"Path '{part}' not found in template structure"
+                )
             current = current[part]
         return current
     else:
@@ -134,12 +142,13 @@ def load_template(template_file: str,
             return next(iter(data.values()))
         else:
             raise ValueError(
-                'Must specify template_str for multi-level templates')
+                "Must specify template_str for multi-level templates"
+            )
 
 
-def render_template(template: str,
-                    parameters: Optional[Dict[str, str]] = None
-                    ) -> str:
+def render_template(
+    template: str, parameters: Optional[Dict[str, str]] = None
+) -> str:
     """Replace placeholders in a template string with provided values.
 
     This function finds all placeholders in the format `{{parameter}}` within
@@ -158,22 +167,23 @@ def render_template(template: str,
     """
     if parameters is None:
         parameters = {}
-    pattern = r'\{\{([^}]+)\}\}'
+    pattern = r"\{\{([^}]+)\}\}"
 
     def replacer(match):
         param_name = match.group(1).strip()
         if param_name not in parameters:
             warn(f"Missing parameter '{param_name}' in template")
-            return ''
+            return ""
         return str(parameters[param_name])
 
     return sub(pattern, replacer, template)
 
 
-def get_prompt(template_file: str,
-               template_str: Optional[str] = None,
-               parameters: Optional[Dict[str, str]] = None,
-               ) -> str:
+def get_prompt(
+    template_file: str,
+    template_str: Optional[str] = None,
+    parameters: Optional[Dict[str, str]] = None,
+) -> str:
     """Generate a complete prompt from a template file and parameters.
 
     This function combines `load_template` and `render_template` into a single
@@ -233,24 +243,26 @@ async def download_obs_file(
     Raises:
         OSError: If the file download fails after all retry attempts.
     """
-    user_name = obs_file.split('/')[-2]
+    user_name = obs_file.split("/")[-2]
     server_path = Path(server_dir) / user_name / str(uuid1())
     server_path.mkdir(parents=True, exist_ok=True)
     server_file = str(server_path / Path(obs_file).name)
 
     object_key = obs_file
-    if object_key.startswith(f'obs://{bucket_name}/'):
-        object_key = object_key[len(f'obs://{bucket_name}/'):]
-    elif object_key.startswith(f'/obs/{bucket_name}/'):
-        object_key = object_key[len(f'/obs/{bucket_name}/'):]
-    elif object_key.startswith(f'/{bucket_name}/'):
-        object_key = object_key[len(f'/{bucket_name}/'):]
-    elif object_key.startswith('/'):
+    if object_key.startswith(f"obs://{bucket_name}/"):
+        object_key = object_key[len(f"obs://{bucket_name}/"):]
+    elif object_key.startswith(f"/obs/{bucket_name}/"):
+        object_key = object_key[len(f"/obs/{bucket_name}/"):]
+    elif object_key.startswith(f"/{bucket_name}/"):
+        object_key = object_key[len(f"/{bucket_name}/"):]
+    elif object_key.startswith("/"):
         object_key = object_key[1:]
 
-    obs_client = ObsClient(access_key_id=access_key_id,
-                           secret_access_key=secret_access_key,
-                           server=obs_server)
+    obs_client = ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
     loop = asyncio.get_event_loop()
     for attempt in range(max_retries + 1):
         try:
@@ -267,15 +279,17 @@ async def download_obs_file(
             )
             if download_response.status < 300:
                 return server_file
-            raise OSError(f'Download File Failed\n'
-                          f'requestId: {download_response.requestId}\n'
-                          f'errorCode: {download_response.errorCode}\n'
-                          f'errorMessage: {download_response.errorMessage}')
+            raise OSError(
+                f"Download File Failed\n"
+                f"requestId: {download_response.requestId}\n"
+                f"errorCode: {download_response.errorCode}\n"
+                f"errorMessage: {download_response.errorMessage}"
+            )
         except Exception as exc:
             if attempt < max_retries:
-                await asyncio.sleep(1.5 ** attempt)
+                await asyncio.sleep(1.5**attempt)
                 continue
-            raise OSError(f'Download File Failed\n{format_exc()}') from exc
+            raise OSError(f"Download File Failed\n{format_exc()}") from exc
     return server_file
 
 
@@ -326,10 +340,9 @@ async def download_obs_list(
                 part_size=part_size,
                 task_num=task_num,
                 max_retries=max_retries,
-                )
+            )
 
-    tasks = [download_with_semaphore(obs_file)
-             for obs_file in obs_file_list]
+    tasks = [download_with_semaphore(obs_file) for obs_file in obs_file_list]
     return await asyncio.gather(*tasks)
 
 
@@ -346,7 +359,8 @@ def convert_single_file(server_file: str) -> str:
         A string containing the Markdown content of the converted file.
     """
     md_instance = MarkItDown(
-        docintel_endpoint='<document_intelligence_endpoint>')
+        docintel_endpoint="<document_intelligence_endpoint>"
+    )
     result = md_instance.convert(server_file)
     server_path = Path(server_file)
     server_path.unlink()
@@ -415,7 +429,7 @@ async def download_list_convert(
         A list of strings, each containing the Markdown content of a
         processed file.
     """
-    semaphore = asyncio.Semaphore(max_concurrency)
+    # semaphore = asyncio.Semaphore(max_concurrency)
     should_shutdown = executor is None
     if should_shutdown:
         executor = ProcessPoolExecutor(max_workers=max_workers)
@@ -462,8 +476,9 @@ async def download_list_convert(
         # return await asyncio.gather(*tasks)
 
         # Default (sequential):
-        result = [await download_and_convert(obs_file)
-                  for obs_file in obs_file_list]
+        result = [
+            await download_and_convert(obs_file) for obs_file in obs_file_list
+        ]
         return result
     finally:
         if should_shutdown and executor is not None:
@@ -496,6 +511,6 @@ def split_list(lst: List, max_size: int = 128) -> List[List]:
     index = 0
     for i in range(num_chunks):
         chunk_size = base_size + 1 if i < remainder else base_size
-        chunks.append(lst[index:index+chunk_size])
+        chunks.append(lst[index: index + chunk_size])
         index += chunk_size
     return chunks

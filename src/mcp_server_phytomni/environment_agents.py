@@ -10,15 +10,17 @@ It includes functions that leverage computational biology and bioinformatics
 tools to analyze protein structures, predict protein properties, and perform
 digital design workflows for protein engineering applications.
 """
+
 import re
 from typing import Dict, List
 from uuid import uuid1
-from typing import Any, List, Literal, Dict, Optional, Union
+from typing import Optional
 
 from .analyst_agents import get_data_list, create_output_dir, submit
 from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
+
 # from .config.defaults import AnalystConfig
 from .utils import get_prompt
 
@@ -65,8 +67,11 @@ async def region_vci_analysis(
 ) -> dict:
     with open(region_code) as fi:
         region_info = fi.read()
-    prompt = get_prompt(prompt_file, 'user/environment/get_code_query',
-                        {'json_dict': region_info, 'query': query})
+    prompt = get_prompt(
+        prompt_file,
+        "user/environment/get_code_query",
+        {"json_dict": region_info, "query": query},
+    )
     phyto_response = await phyto_chat(
         user_query=prompt,
         prompt_file=prompt_file,
@@ -86,24 +91,31 @@ async def region_vci_analysis(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    content = phyto_response['choices'][0]['message']['content']
+    content = phyto_response["choices"][0]["message"]["content"]
     try:
-        code_info = re.findall(r'<result>(.*?)</result>', content)[0]
-    except Exception as e:
-        return {'vci_analysis_task': None}
-    code_info = code_info.split('|')
+        code_info = re.findall(r"<result>(.*?)</result>", content)[0]
+    except Exception:
+        return {"vci_analysis_task": None}
+    code_info = code_info.split("|")
     province_code, city_code, county_code = (code_info + [None] * 3)[:3]
 
-    goal_description = get_prompt(prompt_file, 'user/environment/vci_analysis',
-                                  {'province_code': province_code,
-                                   'city_code': city_code,
-                                   'county_code': county_code})
-    data_list = get_data_list(environment_data, 'environment_analysis', 'vci_analysis')
+    goal_description = get_prompt(
+        prompt_file,
+        "user/environment/vci_analysis",
+        {
+            "province_code": province_code,
+            "city_code": city_code,
+            "county_code": county_code,
+        },
+    )
+    data_list = get_data_list(
+        environment_data, "environment_analysis", "vci_analysis"
+    )
     if not batch:
         if not user_id:
             user_id = str(uuid1())
-        output_dir = create_output_dir(user_id, 'vci_analysis_task')
-    meta = get_prompt(prompt_file, 'user/environment/vci_analysis_meta')
+        output_dir = create_output_dir(user_id, "vci_analysis_task")
+    meta = get_prompt(prompt_file, "user/environment/vci_analysis_meta")
     vci_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -119,13 +131,13 @@ async def region_vci_analysis(
         bucket_name=bucket_name,
         analysis_url=analysis_url,
         region=region,
-        task_name='environment-agents-vci-task',
+        task_name="environment-agents-vci-task",
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='large',
+        compute_resource="large",
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {'vci_analysis_task': vci_task}
+    return {"vci_analysis_task": vci_task}

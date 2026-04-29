@@ -1,26 +1,16 @@
-import asyncio
-from collections import deque
-from json import dumps, loads
-from pathlib import Path
-from random import randint
-from threading import Thread
-from typing import Any, Dict, List, Optional, Tuple, Union
+from json import loads
+from typing import Dict, List, Optional
 from uuid import uuid1
 
-from mcp.shared.exceptions import McpError
 
-from .analyst_agents import create_output_dir, download_obs_out
-from .analyst_agents import upload_analyst_agents_data, get_data_list
-from .analyst_agents import submit, wait_for_completion
+from .analyst_agents import create_output_dir
+from .analyst_agents import get_data_list
+from .analyst_agents import submit
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
-from .data_agents import nl2sql
-from .knowledge_agents import multi_retrieve, retrieve_generate
-from .task_manager import create_task, TaskManager, update_task
 from .utils import get_prompt, get_token
 import requests
-
 
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig().load()
@@ -73,25 +63,24 @@ async def evo_test_analysis(
         url = f"{endpoint}/v1/koosearch/repos/{repo_id}/faqs"
         headers = {
             "X-Auth-Token": await get_token(),
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        params = {
-            "question": spa_names,
-            "page_size": 10,
-            "page_num": 1
-        }
-        proxy = {'http': None, 'https': None}
-        response = requests.get(url, headers=headers, params=params, proxies=proxy)
+        params = {"question": spa_names, "page_size": 10, "page_num": 1}
+        proxy = {"http": None, "https": None}
+        response = requests.get(
+            url, headers=headers, params=params, proxies=proxy
+        )
         if response.status_code == 200:
             response_taxid_data = response.json()
-            if response_taxid_data['total'] > 0:
-                for faq in response_taxid_data['records']:
-                    tax_id = faq['answer'].split('.')[0]
+            if response_taxid_data["total"] > 0:
+                for faq in response_taxid_data["records"]:
+                    tax_id = faq["answer"].split(".")[0]
                     result.append((tax_id))
         return result
 
-    prompt = get_prompt(prompt_file, 'user/get_taxid_meta',
-                        {'user_query': query})
+    prompt = get_prompt(
+        prompt_file, "user/get_taxid_meta", {"user_query": query}
+    )
     phyto_response = await phyto_chat(
         user_query=prompt,
         prompt_file=prompt_file,
@@ -112,33 +101,35 @@ async def evo_test_analysis(
         max_retries=max_retries,
     )
 
-    content = phyto_response['choices'][0]['message']['content']
+    content = phyto_response["choices"][0]["message"]["content"]
     target_spa_list = loads(content.replace("'", '"'))
     target_spa_taxid_list = []
-    if target_spa_list['target_spa_list'][0] != 'All':
-        for spa in target_spa_list['target_spa_list']:
+    if target_spa_list["target_spa_list"][0] != "All":
+        for spa in target_spa_list["target_spa_list"]:
             spa_list = await find_spa_taxid(spa)
             target_spa_taxid_list += spa_list
-        target_spa_taxids = ','.join(target_spa_taxid_list)
+        target_spa_taxids = ",".join(target_spa_taxid_list)
     else:
-        target_spa_taxids = 'All'
+        target_spa_taxids = "All"
 
-    goal_description = get_prompt(prompt_file, 'user/evolution_agents_analysis',
-                                  {'gene_id': gene_id, 'target_taxid': target_spa_taxids})
-    data_list = get_data_list(deepgenome_data, 'evolution_analysis',
-                              species)
+    goal_description = get_prompt(
+        prompt_file,
+        "user/evolution_agents_analysis",
+        {"gene_id": gene_id, "target_taxid": target_spa_taxids},
+    )
+    data_list = get_data_list(deepgenome_data, "evolution_analysis", species)
     if not batch:
         if not user_id:
             user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
-            task='evolution_agents_task',
+            task="evolution_agents_task",
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=obs_server,
             bucket_name=bucket_name,
         )
-    meta = get_prompt(prompt_file, 'user/evolution_agents_meta')
+    meta = get_prompt(prompt_file, "user/evolution_agents_meta")
     evo_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -157,13 +148,13 @@ async def evo_test_analysis(
         bucket_name=bucket_name,
         analysis_url=analysis_url,
         region=region,
-        task_name='evolution-agents-evo-task',
+        task_name="evolution-agents-evo-task",
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='medium',
+        compute_resource="medium",
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {'evolution_agents_task': evo_task}
+    return {"evolution_agents_task": evo_task}
