@@ -2,456 +2,400 @@
 # Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides functions for conducting in silico research based on
-scientific literature.
+"""LangGraph-based in silico research agents for conducting computational
+research based on scientific literature.
 
-It includes functions that extract research goals from scientific papers and
-execute comprehensive computational research workflows to reproduce findings
-or explore related hypotheses.
+This module provides functions that extract research goals from scientific
+papers and execute comprehensive computational research workflows using
+LangGraph's parallel execution capabilities.
 """
-from asyncio import gather
 from json import loads
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Any, Optional, TypedDict
+from uuid import uuid1
 
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
 
-from .analyst_agents import retrieve_plan_submit
 from .chat_agents import phyto_chat
+from .utils import get_prompt, download_list_convert
+from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import InSilicoResearchConfig
 from .config.settings import SensitiveConfig
-from .utils import download_list_convert, get_prompt
 
 isrc = InSilicoResearchConfig()
-sc = SensitiveConfig()
+sc = SensitiveConfig().load()
 
 
-async def extract_goals(
-    user_query: str,
-    prompt_file: str = isrc.PROMPT_FILE,
-    prompt_path: str = isrc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = isrc.FREQUENCY_PENALTY,
-    n: int = isrc.N,
-    presence_penalty: float = isrc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = isrc.REASONING_EFFORT,
-    stream: bool = isrc.STREAM,
-    temperature: float = isrc.TEMPERATURE,
-    top_p: float = isrc.TOP_P,
-    user: str = isrc.USER,
-    obs_file_list: List[str] = [],
-    server_dir: str = isrc.TEMP_DIR,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = isrc.OBS_SERVER,
-    bucket_name: str = isrc.BUCKET_NAME,
-    part_size: int = isrc.PART_SIZT,
-    task_num: int = isrc.TASK_NUM,
-    max_concurrency: int = isrc.MAX_CONCURRENCY,
-    max_workers: int = isrc.MAX_WORKERS,
-    timeout: float = isrc.TIMEOUT,
-    retriable_codes: List[int] = isrc.RETRIABLE_CODES,
-    max_retries: int = isrc.MAX_RETRIES,
-    max_tokens: int = isrc.MAX_TOKENS
-) -> List[Dict[str, str]]:
-    """Extract research goals and context from scientific paper text.
+class InSilicoResearchState(TypedDict):
+    """State schema for the in silico research workflow.
 
-    This function analyzes scientific paper content using a language model to
-    identify specific research objectives that can be reproduced
-    computationally. Each extracted goal includes the complete workflow
-    description and supporting contextual information from the original paper.
+    This TypedDict defines the state structure used throughout the in silico
+    research workflow, tracking paper content, data sources, extracted research
+    goals, task management, and result aggregation for parallel research
+    task execution.
 
-    Args:
-        user_query: The scientific paper text or content to analyze for
-            extracting research goals.
-        prompt_file: Path to the YAML template file containing system prompts.
-        prompt_path: Nested path within the template file to locate the
-            specific system prompt (e.g., "system/ai4ps").
-        api_key: API key for authenticating with the language model service.
-        base_url: Base URL endpoint for the language model API service.
-        model: Identifier of the specific language model to use for generation.
-        frequency_penalty: Penalty applied to new tokens based on their
-            frequency in the text so far, discouraging repetition of exact
-            words/phrases. Values range from -2.0 to 2.0.
-        n: Number of completion choices to generate for each input.
-        presence_penalty: Penalty applied to new tokens based on their
-            presence in the text so far, discouraging repetition of concepts.
-            Values range from -2.0 to 2.0.
-        reasoning_effort: Level of reasoning effort for the language model.
-            Typically 'low', 'medium', or 'high'.
-        stream: Flag to enable or disable streaming of responses from the
-            language model. If True, responses are sent as a series of events.
-        temperature: Sampling temperature for language model responses
-            (controls randomness). Higher values mean more random responses.
-        top_p: Nucleus sampling parameter for language model responses
-            (controls diversity). Considers tokens with cumulative probability
-            mass up to top_p.
-        user: User identifier for API interactions, particularly for chat or
-            language model services.
-        obs_file_list: List of OBS object keys (file paths) to download and
-            include as context in the query. Files are converted to markdown.
-        server_dir: Local directory path for temporary file storage during
-            file downloads and processing.
-        access_key_id: Access key ID for OBS authentication.
-        secret_access_key: Secret access key for OBS authentication.
-        obs_server: Server endpoint URL for the Object Storage Service.
-        bucket_name: Name of the OBS bucket containing the files.
-        part_size: Size of each part for multipart downloads from OBS.
-        task_num: Number of concurrent tasks for multipart downloads from OBS.
-        max_concurrency: Maximum number of files to download from OBS
-            concurrently.
-        max_workers: Maximum number of worker processes to use for file
-            conversion operations.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
-        max_tokens: Maximum number of tokens to generate in language model
-            responses.
-
-    Returns:
-        A list of dictionaries, each containing:
-        - 'goal': A comprehensive workflow description for reproducing a
-          key finding or figure from the paper
-        - 'context': Supporting text snippets from the original paper
-          providing necessary details and parameters
-
-    Raises:
-        McpError: If the language model API call fails after all retry
-            attempts.
-        JSONDecodeError: If the response cannot be parsed as valid JSON.
-
-    Examples:
-        Extract goals from a paper:
-            >>> paper_text = "This study investigated CRISPR-Cas9..."
-            >>> goals = await extract_goals(paper_text)
-            >>> for goal in goals:
-            ...     print(f"Goal: {goal['goal']}")
-            ...     print(f"Context: {goal['context']}")
+    Attributes:
+        paper_text: Scientific paper text to analyze for research goals.
+        data_list: Dictionary of data sources for research.
+        user_id: User identifier.
+        obs_file_list: List of OBS file paths to include as context.
+        output_dir: Output directory path for results.
+        goals: List of extracted research objectives from the paper.
+        research_tasks: List of research tasks to be executed.
+        task_index: Current task index in parallel execution via Send API.
+        task_ids: Mapping of task names to their corresponding task IDs.
+        completed_count: Counter tracking the number of completed tasks.
+        error: Error message if any task failed during execution.
     """
-    total_length = 0
-    if obs_file_list:
-        upload_str_list = await download_list_convert(
-            obs_file_list=obs_file_list,
-            server_dir=server_dir,
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-            part_size=part_size,
-            task_num=task_num,
-            max_retries=max_retries,
-            max_concurrency=max_concurrency,
-            max_workers=max_workers,
-        )
-        upload_results = []
-        for i, doc in enumerate(upload_str_list):
-            fragment = (f'[user upload file {i+1} begin]\n'
-                        f'{doc}\n[user upload file {i+1} end]')
-            if total_length + len(fragment) <= max_tokens:
-                upload_results.append(fragment)
-                total_length += len(fragment)
-            else:
-                break
-        upload_context = '\n\n'.join(upload_results)
-        user_query = get_prompt(
-            prompt_file, 'user/in_silico_research_goals_file',
-            {'upload_context': upload_context, 'paper_text': user_query})
-    else:
-        user_query = get_prompt(
-            prompt_file, 'user/in_silico_research_goals',
-            {'paper_text': user_query})
+    paper_text: str
+    data_list: Dict[str, str]
+    user_id: str
+    obs_file_list: List[str]
+    output_dir: Optional[str]
+    goals: List[Dict[str, str]]  # List of extracted research objectives
+    research_tasks: List[Dict[str, Any]]  # List of research tasks
+    task_index: Optional[int]  # Current task index
+    task_ids: Dict[str, str]  # Mapping of task names to task IDs
+    completed_count: int  # Counter for completed tasks
+    error: Optional[str]
 
-    phyto_response = await phyto_chat(
-        user_query=user_query,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format={
-            'type': 'json_schema',
-            'json_schema': {
-                'type': 'array',
-                'description':
-                    'A list of research objectives derived from the paper. '
-                    'Each objective is a dictionary containing a consolidated '
-                    'goal and its supporting context.',
-                'items': {
-                    'type': 'object',
-                    'description':
-                        'Represents a single, end-to-end research objective.',
-                    'properties': {
-                        'goal': {
-                            'type': 'string',
-                            'description':
-                                'A comprehensive, single-string summary of '
-                                'the entire workflow required to reproduce a '
-                                'key finding or figure, detailing all major '
-                                'steps from data acquisition to final '
-                                'analysis.',
-                        },
-                        'context': {
-                            'type': 'string',
-                            'description':
-                                'Aggregated text snippets from the original '
-                                'paper (e.g., Methods, Results, Figure '
-                                'Legends) that provide the necessary details, '
-                                'parameters, and evidence for executing the '
-                                'specified goal.',
-                        }
-                    },
-                    'required': ['goal', 'context']
-                }
-            }
-        },
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    if phyto_response is None:
-        raise McpError(
-            ErrorData(
-                code=INTERNAL_ERROR,
-                message='Failed to get response from language model API'
+
+class InSilicoResearchAgents:
+    """LangGraph-based agent for in silico research from scientific literature.
+
+    This agent provides a workflow for extracting research goals from scientific
+    papers and executing comprehensive computational research workflows using
+    LangGraph's parallel execution capabilities.
+
+    Attributes:
+        checkpointer: LangGraph checkpointer for state persistence.
+        analyst_agent: AnalystAgent instance for task execution.
+        isrc: In silico research configuration.
+        sc: Sensitive configuration settings.
+        app: Compiled LangGraph application.
+    """
+
+    def __init__(self,
+                 checkpointer=MemorySaver(),
+                 analyst_agent: AnalystAgent = None,
+                 in_silico_config=isrc,
+                 sensitive_config=sc):
+        """Initialize the InSilicoResearchAgents.
+
+        Args:
+            checkpointer: LangGraph MemorySaver for state persistence.
+            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            in_silico_config: In silico research configuration object.
+            sensitive_config: Sensitive configuration for credentials.
+        """
+        self.checkpointer = checkpointer
+        self.analyst_agent = analyst_agent or AnalystAgent()
+        self.isrc = in_silico_config
+        self.sc = sensitive_config
+        self.app = self._build_graph()
+
+    def _build_graph(self):
+        """Build the LangGraph workflow for in silico research tasks."""
+        workflow = StateGraph(InSilicoResearchState)
+
+        workflow.add_node("extract_goals_node", self.extract_goals_node)
+        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
+        workflow.add_node("research_node", self.run_research_node)
+
+        workflow.add_edge(START, "extract_goals_node")
+        workflow.add_edge("extract_goals_node", "prepare_tasks_node")
+
+        # Use Send API for dynamic task dispatch
+        workflow.add_conditional_edges(
+            "prepare_tasks_node",
+            self.route_research_tasks,
+            ["research_node"]
+        )
+        workflow.add_edge("research_node", END)
+
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def route_research_tasks(self, state: InSilicoResearchState):
+        """Dispatch research tasks in parallel using Send API."""
+        tasks = state.get("research_tasks", [])
+        return [
+            Send("research_node", {"task_index": i, **task})
+            for i, task in enumerate(tasks)
+        ]
+
+    async def _extract_goals(self, user_query: str, obs_file_list: List[str]) -> List[Dict[str, str]]:
+        """Extract research goals from scientific paper text.
+
+        Args:
+            user_query: The paper text or research query.
+            obs_file_list: List of OBS file paths to include as context.
+
+        Returns:
+            List of research goal dictionaries with 'goal' and 'context' keys.
+        """
+        total_length = 0
+        if obs_file_list:
+            upload_str_list = await download_list_convert(
+                obs_file_list=obs_file_list,
+                server_dir=self.isrc.TEMP_DIR,
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.isrc.OBS_SERVER,
+                bucket_name=self.isrc.BUCKET_NAME,
+                part_size=self.isrc.PART_SIZT,
+                task_num=self.isrc.TASK_NUM,
+                max_retries=self.isrc.MAX_RETRIES,
+                max_concurrency=self.isrc.MAX_CONCURRENCY,
+                max_workers=self.isrc.MAX_WORKERS,
             )
+            upload_results = []
+            for i, doc in enumerate(upload_str_list):
+                fragment = (f'[user upload file {i+1} begin]\n'
+                            f'{doc}\n[user upload file {i+1} end]')
+                if total_length + len(fragment) <= self.isrc.MAX_TOKENS:
+                    upload_results.append(fragment)
+                    total_length += len(fragment)
+                else:
+                    break
+            upload_context = '\n\n'.join(upload_results)
+            user_query = get_prompt(
+                self.isrc.PROMPT_FILE,
+                'user/in_silico_research_goals_file',
+                {'upload_context': upload_context, 'paper_text': user_query})
+        else:
+            user_query = get_prompt(
+                self.isrc.PROMPT_FILE,
+                'user/in_silico_research_goals',
+                {'paper_text': user_query})
+
+        phyto_response = await phyto_chat(
+            user_query=user_query,
+            prompt_file=self.isrc.PROMPT_FILE,
+            prompt_path=self.isrc.PROMPT_PATH,
+            api_key=self.sc.API_KEY.get_secret_value(),
+            base_url=self.sc.BASE_URL,
+            model=self.sc.MODEL_ID,
+            frequency_penalty=self.isrc.FREQUENCY_PENALTY,
+            n=self.isrc.N,
+            presence_penalty=self.isrc.PRESENCE_PENALTY,
+            reasoning_effort=self.isrc.REASONING_EFFORT,
+            response_format={
+                'type': 'json_schema',
+                'json_schema': {
+                    'type': 'array',
+                    'description': 'A list of research objectives derived from the paper.',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'goal': {'type': 'string'},
+                            'context': {'type': 'string'}
+                        },
+                        'required': ['goal', 'context']
+                    }
+                }
+            },
+            stream=self.isrc.STREAM,
+            temperature=self.isrc.TEMPERATURE,
+            top_p=self.isrc.TOP_P,
+            user=self.isrc.USER,
+            timeout=self.isrc.TIMEOUT,
+            retriable_codes=self.isrc.RETRIABLE_CODES,
+            max_retries=self.isrc.MAX_RETRIES,
         )
-    return loads(phyto_response['choices'][0]['message']['content'])
+        if phyto_response is None:
+            return []
+        return loads(phyto_response['choices'][0]['message']['content'])
 
+    async def _submit_research_task(
+        self,
+        goal_description: str,
+        context: str,
+        data_list: Dict[str, str],
+        output_dir: str,
+        task_name: str
+    ) -> dict:
+        """Submit research task using AnalystAgent and wait for completion.
 
-async def in_silico_research(
-    user_query: str,
-    data_list: Dict[str, str],
-    user_id: str = isrc.USER_ID,
-    is_create_dir: bool = isrc.CREATE_DIR,
-    output_dir: str = isrc.OUTPUT_DIR,
-    repo_id_dict: Optional[Dict[str, int]] = isrc.REPO_ID_DICT,
-    page_num: int = isrc.PAGE_NUM,
-    filter_string: Optional[str] = isrc.FILTER_STRING,
-    scope: str = isrc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = isrc.EXTRA_REPO_IDS,
-    score_threshold: float = isrc.SCORE_THRESHOLD,
-    top_n: int = isrc.TOP_N,
-    prompt_file: str = isrc.PROMPT_FILE,
-    prompt_path: str = isrc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = isrc.FREQUENCY_PENALTY,
-    max_tokens: int = isrc.MAX_TOKENS,
-    n: int = isrc.N,
-    presence_penalty: float = isrc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = isrc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = isrc.RESPONSE_FORMAT,
-    stream: bool = isrc.STREAM,
-    temperature: float = isrc.TEMPERATURE,
-    top_p: float = isrc.TOP_P,
-    user: str = isrc.USER,
-    obs_file_list: List[str] = [],
-    server_dir: str = isrc.TEMP_DIR,
-    execute_code: bool = isrc.EXECUTE_CODE,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = isrc.OBS_SERVER,
-    bucket_name: str = isrc.BUCKET_NAME,
-    part_size: int = isrc.PART_SIZT,
-    task_num: int = isrc.TASK_NUM,
-    max_concurrency: int = isrc.MAX_CONCURRENCY,
-    max_workers: int = isrc.MAX_WORKERS,
-    timeout: float = isrc.TIMEOUT,
-    retriable_codes: List[int] = isrc.RETRIABLE_CODES,
-    max_retries: int = isrc.MAX_RETRIES,
-) -> List:
-    """Conduct comprehensive in silico research based on scientific literature.
+        Args:
+            goal_description: Description of the research goal.
+            context: Context information for the research.
+            data_list: Dictionary of data sources for research.
+            output_dir: Output directory path for results.
+            task_name: Name identifier for the task.
 
-    This function orchestrates a complete computational research workflow:
-    1. Extracts research goals from the provided scientific paper text
-    2. For each goal, executes a retrieve-plan-submit workflow that includes:
-       - Document retrieval for relevant knowledge
-       - Analysis plan generation
-       - Computational task submission and execution
-    3. Returns results from all concurrent research workflows
+        Returns:
+            Dict containing task_id and output_dir.
+        """
+        print(f"  → Submitting research task via AnalystAgent: {task_name}")
 
-    Args:
-        user_query: The scientific paper text or content to analyze and
-            reproduce computationally.
-        data_list: Dictionary mapping data identifiers to their descriptions
-            or file paths, providing the computational resources needed for
-            the research workflows.
-        user_id: Identifier for the user submitting the research tasks.
-        is_create_dir: Flag indicating whether to create output directories
-            for storing analysis results.
-        output_dir: Output directory path for storing results of analysis
-            or operations (e.g., an OBS path).
-        repo_id_dict: Dictionary mapping repository IDs to associated integer
-            values (e.g., page sizes or token limits).
-        page_num: Page number for paginated results from retrieval services.
-        filter_string: Optional filter criteria string for metadata filtering
-            during retrieval.
-        scope: Scope of search for retrieval operations. 'both' searches
-            documents and keywords, 'doc' searches only documents, 'keyword'
-            searches only keywords.
-        extra_repo_ids: Optional list of additional repository IDs to include
-            in retrieval.
-        score_threshold: Minimum relevance score threshold for retrieved items.
-            Results below this threshold are typically discarded.
-        top_n: Number of top-scoring results to retrieve or consider.
-        prompt_file: Path to the YAML template file containing system prompts.
-        prompt_path: Nested path within the template file to locate the
-            specific system prompt (e.g., "system/ai4ps").
-        api_key: API key for authenticating with the language model service.
-        base_url: Base URL endpoint for the language model API service.
-        model: Identifier of the specific language model to use for generation.
-        frequency_penalty: Penalty applied to new tokens based on their
-            frequency in the text so far, discouraging repetition of exact
-            words/phrases. Values range from -2.0 to 2.0.
-        max_tokens: Maximum number of tokens to generate in language model
-            responses.
-        n: Number of completion choices to generate for each input.
-        presence_penalty: Penalty applied to new tokens based on their
-            presence in the text so far, discouraging repetition of concepts.
-            Values range from -2.0 to 2.0.
-        reasoning_effort: Level of reasoning effort for the language model.
-            Typically 'low', 'medium', or 'high'.
-        response_format: Desired response format from the language model.
-            For example, {'type': 'json_object'} to request JSON response.
-        stream: Flag to enable or disable streaming of responses from the
-            language model. If True, responses are sent as a series of events.
-        temperature: Sampling temperature for language model responses
-            (controls randomness). Higher values mean more random responses.
-        top_p: Nucleus sampling parameter for language model responses
-            (controls diversity). Considers tokens with cumulative probability
-            mass up to top_p.
-        user: User identifier for API interactions, particularly for chat or
-            language model services.
-        execute_code: Flag indicating whether code execution is permitted
-            during an analysis operation.
-        obs_file_list: List of OBS object keys (file paths) to download and
-            include as context in the query. Files are converted to markdown.
-        server_dir: Local directory path for temporary file storage during
-            file downloads and processing.
-        access_key_id: Access key ID for OBS authentication.
-        secret_access_key: Secret access key for OBS authentication.
-        obs_server: Server endpoint URL for the Object Storage Service.
-        bucket_name: Name of the OBS bucket containing the files.
-        part_size: Size of each part for multipart downloads from OBS.
-        task_num: Number of concurrent tasks for multipart downloads from OBS.
-        max_concurrency: Maximum number of files to download from OBS
-            concurrently.
-        max_workers: Maximum number of worker processes to use for file
-            conversion operations.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
-
-    Returns:
-        A list containing the results from all executed research workflows.
-        Each element corresponds to a research goal extracted from the input
-        paper, containing the complete analysis results from the
-        retrieve-plan-submit process.
-
-    Raises:
-        McpError: If any of the underlying API calls fail after all retry
-            attempts.
-        Exception: Various exceptions may be returned as list elements if
-            individual research workflows fail during execution.
-
-    Examples:
-        Conduct research on a paper:
-            >>> data_sources = {
-            ...     "gene_expression": "/path/to/expression_data.csv",
-            ...     "genome_annotation": "/path/to/annotation.gtf"
-            ... }
-            >>> paper_text = "This study analyzed gene expression..."
-            >>> results = await in_silico_research(paper_text, data_sources)
-            >>> for i, result in enumerate(results):
-            ...     print(f"Research goal {i+1} result: {result}")
-
-        Custom configuration:
-            >>> results = await in_silico_research(
-            ...     paper_text,
-            ...     data_sources,
-            ...     output_dir="/custom/output/path/",
-            ...     execute_code=True,
-            ...     top_n=15
-            ... )
-    """
-    goal_list = await extract_goals(
-        user_query=user_query,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        obs_file_list=obs_file_list,
-        server_dir=server_dir,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        part_size=part_size,
-        task_num=task_num,
-        max_concurrency=max_concurrency,
-        max_workers=max_workers,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries
-    )
-    tasks = [
-        retrieve_plan_submit(
-            goal_description=goal_meta['goal'],
-            data_list=data_list,
-            user_id=user_id,
-            is_create_dir=is_create_dir,
+        # 使用 AnalystAgent 提交任务
+        result = await self.analyst_agent.arun(
+            query=None,
+            goal_description=goal_description,
+            preset_data_list=data_list,
+            preset_plan=context,  # Pass context as predefined plan
             output_dir=output_dir,
-            repo_id_dict=repo_id_dict,
-            page_num=page_num,
-            filter_string=filter_string,
-            scope=scope,
-            extra_repo_ids=extra_repo_ids,
-            score_threshold=score_threshold,
-            top_n=top_n,
-            prompt_file=prompt_file,
-            prompt_path=prompt_path,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            frequency_penalty=frequency_penalty,
-            max_tokens=max_tokens,
-            n=n,
-            presence_penalty=presence_penalty,
-            reasoning_effort=reasoning_effort,
-            response_format=response_format,
-            stream=stream,
-            temperature=temperature,
-            top_p=top_p,
-            user=user,
-            execute_code=execute_code,
-            meta_meta='\n\n'+goal_meta['context'],
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
+            compute_resource='medium',
+            is_auto_select=False,
+            is_polling=False,
+            thread_id=f"{task_name}_{uuid1()}",
         )
-        for goal_meta in goal_list
-    ]
-    response = await gather(*tasks, return_exceptions=True)
-    return response
+
+        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
+            raise RuntimeError(f"AnalystAgent failed: {result.get('error_detail')}")
+
+        task_id = result.get("task_id")
+        print(f"  → {task_name} task completed (task_id: {task_id})")
+
+        return {
+            "task_id": task_id,
+            "output_dir": result.get("output_dir")
+        }
+
+    async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
+        """Extract research goals from scientific paper text.
+
+        This node is the entry point of the workflow, analyzing the paper
+        content to identify and extract research objectives.
+
+        Args:
+            state: Current workflow state containing paper_text and obs_file_list.
+
+        Returns:
+            Dict with extracted goals list and error status.
+        """
+        paper_text = state["paper_text"]
+        obs_file_list = state.get("obs_file_list", [])
+
+        print(f"  → Extracting research goals from paper...")
+        try:
+            goals = await self._extract_goals(paper_text, obs_file_list)
+            print(f"  → Extracted {len(goals)} research goals")
+            return {"goals": goals, "error": None}
+        except Exception as e:
+            print(f"  → Goal extraction failed: {str(e)}")
+            return {"goals": [], "error": str(e)}
+
+    async def prepare_tasks(self, state: InSilicoResearchState) -> dict:
+        """Prepare the list of research tasks from extracted goals.
+
+        Args:
+            state: Current workflow state containing extracted goals.
+
+        Returns:
+            Dict with research_tasks, output_dir, task_ids, and completed_count.
+        """
+        goals = state.get("goals", [])
+        data_list = state.get("data_list", {})
+        output_dir = state.get("output_dir") or create_output_dir(
+            user_id=state.get("user_id") or str(uuid1()),
+            task='in_silico_research_task',
+            access_key_id=self.sc.AccessKeyID.get_secret_value(),
+            secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+            obs_server=self.isrc.OBS_SERVER,
+            bucket_name=self.isrc.BUCKET_NAME,
+        )
+
+        tasks = [
+            {
+                "goal_description": goal['goal'],
+                "context": goal['context'],
+                "task_name": f"research_goal_{i}"
+            }
+            for i, goal in enumerate(goals)
+        ]
+
+        return {
+            "research_tasks": tasks,
+            "output_dir": output_dir,
+            "task_ids": {},
+            "completed_count": 0
+        }
+
+    async def run_research_node(self, state: InSilicoResearchState) -> dict:
+        """Execute a single research task dispatched via Send API.
+
+        This node is called dynamically for each task in the research_tasks list.
+
+        Args:
+            state: Current workflow state containing task details.
+
+        Returns:
+            Dict with task_ids, completed_count, and optional error.
+        """
+        task_index = state.get("task_index")
+        goal_description = state.get("goal_description")
+        context = state.get("context")
+        task_name = state.get("task_name")
+        data_list = state.get("data_list", {})
+        output_dir = state.get("output_dir")
+
+        print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
+
+        try:
+            result = await self._submit_research_task(
+                goal_description=goal_description,
+                context=context,
+                data_list=data_list,
+                output_dir=output_dir,
+                task_name=task_name
+            )
+            existing_task_ids = state.get("task_ids", {})
+            existing_task_ids[task_name] = result.get("task_id")
+            return {
+                "task_ids": existing_task_ids,
+                "completed_count": 1
+            }
+        except Exception as e:
+            return {
+                "task_ids": state.get("task_ids", {}),
+                "completed_count": 1,
+                "error": str(e)
+            }
+
+    async def arun(
+        self,
+        paper_text: str,
+        data_list: Dict[str, str],
+        user_id: Optional[str] = None,
+        obs_file_list: List[str] = [],
+        output_dir: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Async entry function - conduct in silico research and return task_ids.
+
+        Args:
+            paper_text: Scientific paper text to analyze.
+            data_list: Dictionary of data sources for research.
+            user_id: Optional user identifier.
+            obs_file_list: List of OBS files to include as context.
+            output_dir: Optional output directory path.
+            thread_id: Optional thread ID for checkpointer.
+
+        Returns:
+            Dict with task_ids mapping research goals to task IDs.
+        """
+        if thread_id is None:
+            thread_id = str(uuid1())
+
+        initial_state = {
+            "paper_text": paper_text,
+            "data_list": data_list,
+            "user_id": user_id,
+            "obs_file_list": obs_file_list,
+            "output_dir": output_dir,
+            "goals": [],
+            "research_tasks": [],
+            "task_ids": {},
+            "completed_count": 0,
+            "error": None,
+        }
+
+        config = {"configurable": {"thread_id": thread_id}}
+        result = await self.app.ainvoke(initial_state, config)
+        return {
+            "task_ids": result.get("task_ids"),
+            "goals": result.get("goals"),
+            "error": result.get("error")
+        }
