@@ -9,9 +9,10 @@ It includes functions to convert natural language to SQL, execute the query,
 and to first rewrite the natural language query using a language model for
 better performance.
 """
+
 import asyncio
 from random import uniform
-from typing import Any, cast, Optional, TypedDict
+from typing import Any, cast, Dict, List, Optional, TypedDict, Union
 from uuid import uuid1
 
 from httpx import (
@@ -25,6 +26,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
+from pydantic import SecretStr
 
 from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
@@ -32,8 +34,176 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .utils import get_prompt, get_token
 
-dc = DataConfig()
-sc = SensitiveConfig().load()
+dc = DataConfig.model_validate({})
+sc = SensitiveConfig.load()
+
+
+async def nl2sql(
+    message_content: str,
+    database_url: str = dc.DATABASE_URL,
+    workspace_id: str = dc.WORKSPACE_ID,
+    subject_id: str = dc.SUBJECT_ID,
+    dialog_id: str = dc.DIALOG_ID,
+    need_insight: bool = dc.NEED_INSIGHT,
+    simplify_response: bool = dc.SIMPLIFY_RESPONSE,
+    timeout: float = dc.TIMEOUT,
+    retriable_codes: List[int] = dc.RETRIABLE_CODES,
+    max_retries: int = dc.MAX_RETRIES,
+) -> Dict[str, Any]:
+    """Convert a natural language query to SQL and execute it."""
+    dialog_id = dialog_id if dialog_id else str(uuid1())
+    client_timeout = Timeout(timeout, connect=timeout)
+    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(
+                    database_url,
+                    headers={
+                        "X-Auth-Token": await get_token(),
+                        "X-Workspace-Id": workspace_id,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "subject_id": subject_id,
+                        "dialog_id": dialog_id,
+                        "message_content": message_content,
+                        "need_insight": need_insight,
+                        "simplify_response": simplify_response,
+                    },
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return response.json()
+
+            except HTTPStatusError as exc:
+                if (
+                    hasattr(exc, "response")
+                    and exc.response is not None
+                    and exc.response.status_code in retriable_codes
+                    and attempt < max_retries
+                ):
+                    wait_time = (2**attempt) + uniform(0, 1)
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to query SQL database: {str(exc)}",
+                    )
+                ) from exc
+
+            except (ConnectError, TimeoutException) as exc:
+                if attempt < max_retries:
+                    await asyncio.sleep(1.5**attempt)
+                    continue
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(exc)}",
+                    )
+                ) from exc
+
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to query SQL database after all retries",
+        )
+    )
+
+
+async def rewrite_nl2sql(
+    user_query: str,
+    retrieve_url: str = dc.RETRIEVE_URL,
+    data_repo_id: str = dc.DATA_REPO_ID,
+    page_num: int = dc.PAGE_NUM,
+    page_size: int = dc.DATA_PAGE_SIZE,
+    filter_string: Optional[str] = dc.FILTER_STRING,
+    scope: str = dc.SCOPE,
+    rerank_url: str = dc.RERANK_URL,
+    rerank_batch_size: int = dc.RERANK_BATCH_SIZE,
+    score_threshold: float = dc.SCORE_THRESHOLD,
+    prompt_file: str = dc.PROMPT_FILE,
+    prompt_path: str = dc.PROMPT_PATH,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = dc.FREQUENCY_PENALTY,
+    n: int = dc.N,
+    presence_penalty: float = dc.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = dc.REASONING_EFFORT,
+    response_format: Dict[str, Union[str, Dict]] = dc.RESPONSE_FORMAT,
+    stream: bool = dc.STREAM,
+    temperature: float = dc.TEMPERATURE,
+    top_p: float = dc.TOP_P,
+    user: str = dc.USER,
+    database_url: str = dc.DATABASE_URL,
+    workspace_id: str = dc.WORKSPACE_ID,
+    subject_id: str = dc.SUBJECT_ID,
+    dialog_id: str = dc.DIALOG_ID,
+    need_insight: bool = dc.NEED_INSIGHT,
+    simplify_response: bool = dc.SIMPLIFY_RESPONSE,
+    timeout: float = dc.TIMEOUT,
+    retriable_codes: List[int] = dc.RETRIABLE_CODES,
+    max_retries: int = dc.MAX_RETRIES,
+    max_tokens: int = dc.MAX_TOKENS,
+) -> Dict[str, Any]:
+    """Compatibility wrapper around the LangGraph-based DataAgent."""
+    active_dialog_id = dialog_id or str(uuid1())
+    data_config = dc.model_copy(
+        update={
+            "DATA_PAGE_SIZE": page_size,
+            "DATA_REPO_ID": data_repo_id,
+            "DATABASE_URL": database_url,
+            "DIALOG_ID": active_dialog_id,
+            "FILTER_STRING": filter_string,
+            "FREQUENCY_PENALTY": frequency_penalty,
+            "MAX_RETRIES": max_retries,
+            "MAX_TOKENS": max_tokens,
+            "N": n,
+            "NEED_INSIGHT": need_insight,
+            "PAGE_NUM": page_num,
+            "PRESENCE_PENALTY": presence_penalty,
+            "PROMPT_FILE": prompt_file,
+            "PROMPT_PATH": prompt_path,
+            "REASONING_EFFORT": reasoning_effort,
+            "RESPONSE_FORMAT": response_format,
+            "RERANK_BATCH_SIZE": rerank_batch_size,
+            "RERANK_URL": rerank_url,
+            "RETRIABLE_CODES": retriable_codes,
+            "RETRIEVE_URL": retrieve_url,
+            "SCOPE": scope,
+            "SCORE_THRESHOLD": score_threshold,
+            "SIMPLIFY_RESPONSE": simplify_response,
+            "STREAM": stream,
+            "SUBJECT_ID": subject_id,
+            "TEMPERATURE": temperature,
+            "TIMEOUT": timeout,
+            "TOP_P": top_p,
+            "USER": user,
+            "WORKSPACE_ID": workspace_id,
+        }
+    )
+    sensitive_config = SensitiveConfig(
+        DOMAIN_NAME=sc.DOMAIN_NAME,
+        USER_NAME=sc.USER_NAME,
+        USER_PASSWORD=sc.USER_PASSWORD,
+        AccessKeyID=sc.AccessKeyID,
+        SecretAccessKey=sc.SecretAccessKey,
+        BASE_URL=base_url,
+        MODEL_ID=model,
+        API_KEY=SecretStr(api_key),
+        CODER_URL=sc.CODER_URL,
+        CODER_MODEL=sc.CODER_MODEL,
+        CODER_API_KEY=sc.CODER_API_KEY,
+    )
+    agent = DataAgent(
+        data_config=data_config,
+        sensitive_config=sensitive_config,
+    )
+    return await agent.arun(
+        user_query=user_query,
+        thread_id=active_dialog_id,
+    )
 
 
 class DataAgentState(TypedDict):
@@ -51,6 +221,7 @@ class DataAgentState(TypedDict):
         final_reponse: The final response from the database
             query execution.
     """
+
     user_query: str
     retrieve_promopt: str
     rewrite_query: str
@@ -155,23 +326,31 @@ class DataAgent:
 
         retrieve_results = []
         total_length = 0
-        for i, doc in enumerate(retrieve_response.get('doc_list', [])):
+        for i, doc in enumerate(retrieve_response.get("doc_list", [])):
             header = f"[scenario {i+1} begin] {doc['title']}"
-            content_field = (doc.get('big_content') if 'big_content' in doc
-                             else doc.get('content', ''))
-            body = (f"{doc['subtitle']}\n{content_field}"
-                    if doc.get('subtitle') else doc.get('content', ''))
-            fragment = f'{header}\n{body} [scenario {i+1} end]'
-            if total_length + len(fragment) <= dc.MAX_TOKENS:
+            content_field = (
+                doc.get("big_content")
+                if "big_content" in doc
+                else doc.get("content", "")
+            )
+            body = (
+                f"{doc['subtitle']}\n{content_field}"
+                if doc.get("subtitle")
+                else doc.get("content", "")
+            )
+            fragment = f"{header}\n{body} [scenario {i+1} end]"
+            if total_length + len(fragment) <= self.dc.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
 
-        retrieve_context = '\n\n'.join(retrieve_results)
-        retrieve_prompt = get_prompt(dc.PROMPT_FILE, 'user/database',
-                                     {'scenario_prompts': retrieve_context,
-                                      'user_query': user_query})
+        retrieve_context = "\n\n".join(retrieve_results)
+        retrieve_prompt = get_prompt(
+            self.dc.PROMPT_FILE,
+            "user/database",
+            {"scenario_prompts": retrieve_context, "user_query": user_query},
+        )
 
         return {"retrieve_promopt": retrieve_prompt}
 
@@ -213,14 +392,19 @@ class DataAgent:
             max_retries=self.dc.MAX_RETRIES,
         )
 
-        if (not phyto_response or 'choices' not in phyto_response or
-                not phyto_response['choices']):
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message='Failed to get response from phyto_chat service'
-            ))
+        if (
+            not phyto_response
+            or "choices" not in phyto_response
+            or not phyto_response["choices"]
+        ):
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Failed to get response from phyto_chat service",
+                )
+            )
 
-        rewrite_query = phyto_response['choices'][0]['message']['content']
+        rewrite_query = phyto_response["choices"][0]["message"]["content"]
         return {"rewrite_query": rewrite_query}
 
     async def search_node(self, state: DataAgentState):
@@ -237,7 +421,7 @@ class DataAgent:
             A dictionary containing the final_reponse key with the
             database query results.
         """
-        dialog_id = str(uuid1())
+        dialog_id = self.dc.DIALOG_ID or str(uuid1())
         client_timeout = Timeout(self.dc.TIMEOUT, connect=self.dc.TIMEOUT)
         response = None
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -246,16 +430,16 @@ class DataAgent:
                     response = await client.post(
                         self.dc.DATABASE_URL,
                         headers={
-                            'X-Auth-Token': await get_token(),
-                            'X-Workspace-Id': self.dc.WORKSPACE_ID,
-                            'Content-Type': 'application/json',
+                            "X-Auth-Token": await get_token(),
+                            "X-Workspace-Id": self.dc.WORKSPACE_ID,
+                            "Content-Type": "application/json",
                         },
                         json={
-                            'subject_id': self.dc.SUBJECT_ID,
-                            'dialog_id': dialog_id,
-                            'message_content': state["rewrite_query"],
-                            'need_insight': self.dc.NEED_INSIGHT,
-                            'simplify_response': self.dc.SIMPLIFY_RESPONSE,
+                            "subject_id": self.dc.SUBJECT_ID,
+                            "dialog_id": dialog_id,
+                            "message_content": state["rewrite_query"],
+                            "need_insight": self.dc.NEED_INSIGHT,
+                            "simplify_response": self.dc.SIMPLIFY_RESPONSE,
                         },
                         timeout=self.dc.TIMEOUT,
                     )
@@ -263,38 +447,42 @@ class DataAgent:
 
                 except HTTPStatusError as e:
                     if (
-                        hasattr(e, 'response') and
-                        e.response is not None and
-                        e.response.status_code in self.dc.RETRIABLE_CODES and
-                        attempt < self.dc.MAX_RETRIES
+                        hasattr(e, "response")
+                        and e.response is not None
+                        and e.response.status_code in self.dc.RETRIABLE_CODES
+                        and attempt < self.dc.MAX_RETRIES
                     ):
-                        wait_time = (2 ** attempt) + uniform(0, 1)
+                        wait_time = (2**attempt) + uniform(0, 1)
                         await asyncio.sleep(wait_time)
                         continue
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Failed to query SQL database: {str(e)}',
-                    )) from e
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Failed to query SQL database: {str(e)}",
+                        )
+                    ) from e
 
                 except (ConnectError, TimeoutException) as e:
                     if attempt < self.dc.MAX_RETRIES:
-                        await asyncio.sleep(1.5 ** attempt)
+                        await asyncio.sleep(1.5**attempt)
                         continue
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Network error: {str(e)}'
-                    )) from e
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Network error: {str(e)}",
+                        )
+                    ) from e
 
         if response is None:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message='Failed to get response from database',
-            ))
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Failed to get response from database",
+                )
+            )
         return {"final_reponse": response.json()}
 
-    async def arun(self,
-                   user_query: str,
-                   thread_id: Optional[str] = None):
+    async def arun(self, user_query: str, thread_id: Optional[str] = None):
         """Execute the DataAgent workflow.
 
         This is the main entry point for invoking the agent. It initializes
@@ -325,4 +513,4 @@ class DataAgent:
             cast(Any, initial_state), config=cast(Any, config)
         )
 
-        return final_state["final_response"]
+        return final_state["final_reponse"]
