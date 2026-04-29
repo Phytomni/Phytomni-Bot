@@ -32,20 +32,18 @@ import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, List, Literal, Dict, Optional, Union, TypedDict
+from typing import List, Literal, Dict, Optional, TypedDict, cast
 from uuid import uuid1
-from pydantic import Field
+
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START
+from langchain_core.runnables import RunnableConfig
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import GetObjectHeader, PutObjectHeader, ObsClient
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import AsyncCallbackManagerForRetrieverRun
-from langchain_core.documents import Document
-from langgraph.graph import StateGraph, END, START
-from langgraph.checkpoint.memory import MemorySaver
-import langextract as lx
+
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
@@ -54,6 +52,7 @@ from .utils import download_list_convert, get_prompt, get_token
 
 ac = AnalystConfig()
 sc = SensitiveConfig().load()
+
 
 class AnalystAgentsState(TypedDict):
     """State schema for the AnalystAgent LangGraph workflow.
@@ -70,17 +69,21 @@ class AnalystAgentsState(TypedDict):
         output_dir: The output directory path for analysis results.
         compute_resource: The compute resource level (small, medium, large).
         job_name: The name of the compute job.
-        method_context: Context retrieved from literature/SOPs for plan generation.
+        method_context: Context
+            retrieved from literature/SOPs for plan generation.
         plan: The analysis plan/workflow (may be empty initially).
         plan_feedback: Feedback from the critic node for plan revision.
-        plan_retries: Number of plan generation retries (prevents infinite loops).
+        plan_retries: Number of plan generation retries
+            (prevents infinite loops).
         extracted_tools: List of tools extracted from the plan.
         tool_usages: Retrieved usage instructions for the extracted tools.
         task_id: The unique identifier of the submitted task.
-        task_status: The current task status (PENDING, RUNNING, SUCCEEDED, FAILED).
+        task_status: The current task status
+            (PENDING, RUNNING, SUCCEEDED, FAILED).
         is_polling: Whether to poll for task status updates.
         is_auto_select: Whether to automatically select relevant data files.
     """
+
     query: str
     goal_description: str
     obs_file_list: List
@@ -101,7 +104,8 @@ class AnalystAgentsState(TypedDict):
 
 
 class AnalystAgent:
-    """A LangGraph-based agent for bioinformatics analysis workflow orchestration.
+    """A LangGraph-based agent for bioinformatics analysis workflow
+    orchestration.
 
     This agent orchestrates a complex workflow that decomposes user queries,
     selects appropriate data sources, retrieves relevant bioinformatics
@@ -109,13 +113,13 @@ class AnalystAgent:
     tools, and submits computational tasks for execution.
 
     The workflow graph consists of nine main nodes:
-        1. parse_query_node: Decomposes the user query into goal, data_list, and plan.
-        2. data_select_node: Selects appropriate data files from the available database.
-        3. method_retrieve_node: Retrieves relevant methods, SOPs, and literature.
+        1. parse_query_node: Decomposes user query into goal, data, and plan.
+        2. data_select_node: Selects appropriate data files from database.
+        3. method_retrieve_node: Retrieves relevant methods, SOPs, literature.
         4. plan_node: Generates or revises the analysis plan.
         5. check_node: Validates the plan using a critic mechanism.
         6. tool_extract_node: Extracts required tools from the plan.
-        7. tool_retrieve_node: Retrieves usage instructions for extracted tools.
+        7. tool_retrieve_node: Retrieves instructions for extracted tools.
         8. submit_node: Submits the task to the computation platform.
         9. pooling_node: Polls task status until completion.
 
@@ -134,8 +138,13 @@ class AnalystAgent:
         app: The compiled LangGraph application.
     """
 
-    def __init__(self, checkpointer=MemorySaver(), analyst_config=ac, sensitive_config=sc):
-        """Initialize the AnalystAgent with configuration and build the graph."""
+    def __init__(
+        self,
+        checkpointer=MemorySaver(),
+        analyst_config=ac,
+        sensitive_config=sc,
+    ):
+        """Initialize the AnalystAgent and build the graph."""
         self.checkpointer = checkpointer
         self.ac = analyst_config
         self.sc = sensitive_config
@@ -162,15 +171,21 @@ class AnalystAgent:
         workflow.add_node("submit_node", self.submit_node)
         workflow.add_node("pooling_node", self.pooling_node)
         workflow.add_edge(START, "parse_query_node")
-        workflow.add_conditional_edges("parse_query_node", self.route_after_extract)
-        workflow.add_conditional_edges("data_select_node", self.route_after_data_select)
+        workflow.add_conditional_edges(
+            "parse_query_node", self.route_after_extract
+        )
+        workflow.add_conditional_edges(
+            "data_select_node", self.route_after_data_select
+        )
         workflow.add_edge("method_retrieve_node", "plan_node")
         workflow.add_edge("plan_node", "check_node")
         workflow.add_conditional_edges("check_node", self.route_after_check)
         workflow.add_edge("tool_extract_node", "tool_retrieve_node")
         workflow.add_edge("tool_retrieve_node", "submit_node")
         workflow.add_conditional_edges("submit_node", self.route_after_submit)
-        workflow.add_conditional_edges("pooling_node", self.route_after_pooling)
+        workflow.add_conditional_edges(
+            "pooling_node", self.route_after_pooling
+        )
 
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -189,16 +204,17 @@ class AnalystAgent:
         Returns:
             A dictionary containing goal_description, data_list, and plan.
         """
-        if state['data_list'] and state['goal_description']:
+        if state["data_list"] and state["goal_description"]:
             return {
-                "goal_description": state["goal_description"], 
-                "data_list": state["data_list"], 
-                "plan": state.get("plan", None)
+                "goal_description": state["goal_description"],
+                "data_list": state["data_list"],
+                "plan": state.get("plan", None),
             }
         else:
             parse_prompt = get_prompt(
-                self.ac.PROMPT_FILE, 'user/split_query',
-                {'user_query': state["query"]}
+                self.ac.PROMPT_FILE,
+                "user/split_query",
+                {"user_query": state["query"]},
             )
             phyto_response = await phyto_chat(
                 user_query=parse_prompt,
@@ -207,18 +223,20 @@ class AnalystAgent:
                 api_key=self.sc.API_KEY.get_secret_value(),
                 base_url=self.sc.BASE_URL,
                 model=self.sc.MODEL_ID,
-                response_format={'type': 'json_schema'},
+                response_format={"type": "json_schema"},
                 timeout=self.ac.TIMEOUT,
                 retriable_codes=self.ac.RETRIABLE_CODES,
                 max_retries=self.ac.MAX_RETRIES,
             )
-            content = '{}'
-            if (phyto_response and
-                    phyto_response.get('choices') and
-                    len(phyto_response['choices']) > 0 and
-                    phyto_response['choices'][0].get('message') and
-                    phyto_response['choices'][0]['message'].get('content')):
-                content = phyto_response['choices'][0]['message']['content']
+            content = "{}"
+            if (
+                phyto_response
+                and phyto_response.get("choices")
+                and len(phyto_response["choices"]) > 0
+                and phyto_response["choices"][0].get("message")
+                and phyto_response["choices"][0]["message"].get("content")
+            ):
+                content = phyto_response["choices"][0]["message"]["content"]
             pattern = r"```json(.*?)```"
             match = re.search(pattern, content, re.DOTALL)
             if match:
@@ -227,9 +245,17 @@ class AnalystAgent:
             else:
                 result = json.loads(content)
             return {
-                "goal_description": result['goal_description'] if result['goal_description'] else None, 
-                "data_list": json.loads(result['data_list']) if result['data_list'] else None, 
-                "plan": result['plan'] if result['plan'] else ""
+                "goal_description": (
+                    result["goal_description"]
+                    if result["goal_description"]
+                    else None
+                ),
+                "data_list": (
+                    json.loads(result["data_list"])
+                    if result["data_list"]
+                    else None
+                ),
+                "plan": result["plan"] if result["plan"] else "",
             }
 
     async def data_select_node(self, state: AnalystAgentsState):
@@ -240,31 +266,39 @@ class AnalystAgent:
         data with auto-selected data to create a comprehensive data list.
 
         Args:
-            state: The current workflow state containing goal_description and data_list.
+            state: The current workflow state containing
+                goal_description and data_list.
 
         Returns:
             A dictionary containing the updated data_list with selected files.
 
         Raises:
-            McpError: If loading species data or parsing the LLM response fails.
+            McpError: If loading species data or parsing
+                the LLM response fails.
         """
         try:
-            with open(self.ac.PRE_PREPARED_DATA_PATH, 'r', encoding='utf-8') as f:
+            with open(
+                self.ac.PRE_PREPARED_DATA_PATH, "r", encoding="utf-8"
+            ) as f:
                 species_data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as exc:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Failed to load species data list from {self.ac.PRE_PREPARED_DATA_PATH}'
-            )) from exc
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Failed to load species data list from {
+                        self.ac.PRE_PREPARED_DATA_PATH}",
+                )
+            ) from exc
         data_list = state["data_list"]
         user_data_summary = json.dumps(data_list)
         selection_prompt = get_prompt(
-            self.ac.PROMPT_FILE, 'user/data_selection',
+            self.ac.PROMPT_FILE,
+            "user/data_selection",
             {
-                'goal_description': state["goal_description"],
-                'user_data_list': user_data_summary,
-                'available_data_list': json.dumps(species_data)
-            }
+                "goal_description": state["goal_description"],
+                "user_data_list": user_data_summary,
+                "available_data_list": json.dumps(species_data),
+            },
         )
 
         try:
@@ -279,7 +313,7 @@ class AnalystAgent:
                 n=self.ac.N,
                 presence_penalty=self.ac.PRESENCE_PENALTY,
                 reasoning_effort=self.ac.REASONING_EFFORT,
-                response_format={'type': 'json_schema'},
+                response_format={"type": "json_schema"},
                 stream=self.ac.STREAM,
                 temperature=self.ac.TEMPERATURE,
                 top_p=self.ac.TOP_P,
@@ -289,38 +323,50 @@ class AnalystAgent:
                 max_retries=self.ac.MAX_RETRIES,
             )
         except Exception as exc:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Failed to get data selection from language model: {str(exc)}'
-            )) from exc
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=(
+                        f"Failed to get data selection from language model: "
+                        f"{str(exc)}"
+                    ),
+                )
+            ) from exc
 
         selected_data = {}
-        if (selection_response and
-                selection_response.get('choices') and
-                len(selection_response['choices']) > 0 and
-                selection_response['choices'][0].get('message') and
-                selection_response['choices'][0]['message'].get('content')):
+        if (
+            selection_response
+            and selection_response.get("choices")
+            and len(selection_response["choices"]) > 0
+            and selection_response["choices"][0].get("message")
+            and selection_response["choices"][0]["message"].get("content")
+        ):
             try:
-                content = selection_response['choices'][0]['message']['content']
+                content = selection_response["choices"][0]["message"][
+                    "content"
+                ]
                 match = re.search(r"\{.*\}", content, re.DOTALL)
                 if match:
                     content = match.group(0).strip()
                 parsed_response = json.loads(content)
-                if 'selected_data' in parsed_response:
-                    selected_data = parsed_response['selected_data']
+                if "selected_data" in parsed_response:
+                    selected_data = parsed_response["selected_data"]
                 else:
                     selected_data = parsed_response
-                    
+
             except (json.JSONDecodeError, ValueError) as exc:
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to parse data selection response: {str(exc)}'
-                )) from exc
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to parse data selection response: {
+                            str(exc)}",
+                    )
+                ) from exc
 
         final_data_list = {**data_list, **selected_data}
-        
+
         return {"data_list": final_data_list}
-    
+
     async def method_retrieve_node(self, state: AnalystAgentsState) -> dict:
         """Retrieve relevant bioinformatics methods, SOPs, and literature.
 
@@ -330,14 +376,15 @@ class AnalystAgent:
         The retrieved context is used to inform plan generation.
 
         Args:
-            state: The current workflow state containing goal_description and obs_file_list.
+            state: The current workflow state containing
+            goal_description and obs_file_list.
 
         Returns:
             A dictionary containing the method_context with upload_context
             and retrieve_context.
         """
         total_length = 0
-        upload_context = ''
+        upload_context = ""
         if state["obs_file_list"]:
             upload_str_list = await download_list_convert(
                 obs_file_list=state["obs_file_list"],
@@ -354,14 +401,16 @@ class AnalystAgent:
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
-                fragment = (f'[user upload file {i+1} begin]\n'
-                            f'{doc}\n[user upload file {i+1} end]')
+                fragment = (
+                    f"[user upload file {i + 1} begin]\n"
+                    f"{doc}\n[user upload file {i + 1} end]"
+                )
                 if total_length + len(fragment) <= self.ac.MAX_TOKENS:
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
                     break
-            upload_context = '\n\n'.join(upload_results)
+            upload_context = "\n\n".join(upload_results)
         retrieve_response = await multi_retrieve(
             user_query=state["goal_description"],
             retrieve_url=self.ac.RETRIEVE_URL,
@@ -376,29 +425,35 @@ class AnalystAgent:
             top_n=self.ac.TOP_N,
             timeout=self.ac.TIMEOUT,
             retriable_codes=self.ac.RETRIABLE_CODES,
-            max_retries=self.ac.MAX_RETRIES
+            max_retries=self.ac.MAX_RETRIES,
         )
         retrieve_results = []
-        for i, doc in enumerate(retrieve_response.get('doc_list', [])):
-            header = f"[document {i+1} begin] {doc['title']}"
-            content_field = (doc.get('big_content') if 'big_content' in doc
-                            else doc.get('content', ''))
-            body = (f"{doc['subtitle']}\n{content_field}"
-                    if doc.get('subtitle') else doc.get('content', ''))
-            fragment = f'{header}\n{body} [document {i+1} end]'
+        for i, doc in enumerate(retrieve_response.get("doc_list", [])):
+            header = f"[document {i + 1} begin] {doc['title']}"
+            content_field = (
+                doc.get("big_content")
+                if "big_content" in doc
+                else doc.get("content", "")
+            )
+            body = (
+                f"{doc['subtitle']}\n{content_field}"
+                if doc.get("subtitle")
+                else doc.get("content", "")
+            )
+            fragment = f"{header}\n{body} [document {i + 1} end]"
             if total_length + len(fragment) <= self.ac.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
-        retrieve_context = '\n\n'.join(retrieve_results)
+        retrieve_context = "\n\n".join(retrieve_results)
         return {
             "method_context": {
-                "upload_context": upload_context, 
-                "retrieve_context": retrieve_context
+                "upload_context": upload_context,
+                "retrieve_context": retrieve_context,
             }
         }
-    
+
     async def plan_node(self, state: AnalystAgentsState):
         """Generate or revise the analysis plan.
 
@@ -412,8 +467,8 @@ class AnalystAgent:
                    method_context, plan_feedback, and obs_file_list.
 
         Returns:
-            A dictionary containing the generated plan, incremented plan_retries,
-            and reset plan_feedback.
+            A dictionary containing the generated plan, incremented
+            plan_retries, and reset plan_feedback.
 
         Raises:
             McpError: If the LLM fails to generate a valid plan.
@@ -421,29 +476,57 @@ class AnalystAgent:
         if state.get("plan_feedback"):
             if state["obs_file_list"]:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_file_feedback',
-                    {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'upload_context': state["method_context"]["upload_context"], 
-                     'feed_back': state["plan_feedback"], 
-                     'user_query': state["goal_description"]})
+                    self.ac.PROMPT_FILE,
+                    "user/analysis_retrieve_file_feedback",
+                    {
+                        "retrieve_results": str(
+                            state["method_context"]["retrieve_context"] or ""
+                        ),
+                        "upload_context": str(
+                            state["method_context"]["upload_context"] or ""
+                        ),
+                        "feed_back": str(state["plan_feedback"]),
+                        "user_query": str(state["goal_description"] or ""),
+                    },
+                )
             else:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_feedback',
-                    {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'feed_back': state["plan_feedback"], 
-                     'user_query': state["goal_description"]})
+                    self.ac.PROMPT_FILE,
+                    "user/analysis_retrieve_feedback",
+                    {
+                        "retrieve_results": str(
+                            state["method_context"]["retrieve_context"] or ""
+                        ),
+                        "feed_back": str(state["plan_feedback"]),
+                        "user_query": str(state["goal_description"] or ""),
+                    },
+                )
         else:
             if state["obs_file_list"]:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE, 'user/analysis_retrieve_file',
-                    {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'upload_context': state["method_context"]["upload_context"], 
-                     'user_query': state["goal_description"]})
+                    self.ac.PROMPT_FILE,
+                    "user/analysis_retrieve_file",
+                    {
+                        "retrieve_results": state["method_context"][
+                            "retrieve_context"
+                        ],
+                        "upload_context": state["method_context"][
+                            "upload_context"
+                        ],
+                        "user_query": state["goal_description"],
+                    },
+                )
             else:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE, 'user/analysis_retrieve',
-                    {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'user_query': state["goal_description"]})
+                    self.ac.PROMPT_FILE,
+                    "user/analysis_retrieve",
+                    {
+                        "retrieve_results": state["method_context"][
+                            "retrieve_context"
+                        ],
+                        "user_query": state["goal_description"],
+                    },
+                )
         phyto_response = await phyto_chat(
             user_query=user_query,
             prompt_file=self.ac.PROMPT_FILE,
@@ -465,24 +548,28 @@ class AnalystAgent:
             max_retries=self.ac.MAX_RETRIES,
         )
         content = None
-        if (phyto_response and
-                phyto_response.get('choices') and
-                len(phyto_response['choices']) > 0 and
-                phyto_response['choices'][0].get('message') and
-                phyto_response['choices'][0]['message'].get('content')):
-            content = phyto_response['choices'][0]['message']['content']
+        if (
+            phyto_response
+            and phyto_response.get("choices")
+            and len(phyto_response["choices"]) > 0
+            and phyto_response["choices"][0].get("message")
+            and phyto_response["choices"][0]["message"].get("content")
+        ):
+            content = phyto_response["choices"][0]["message"]["content"]
         if not content:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message='Failed to generate plan: '
-                        'Invalid response from language model'
-            ))
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Failed to generate plan: "
+                    "Invalid response from language model",
+                )
+            )
         return {
             "plan": content,
             "plan_retries": state.get("plan_retries", 0) + 1,
-            "plan_feedback": None
+            "plan_feedback": None,
         }
-    
+
     async def check_node(self, state: AnalystAgentsState):
         """Validate the generated analysis plan using a critic mechanism.
 
@@ -497,14 +584,17 @@ class AnalystAgent:
                    data_list, method_context, plan, and plan_retries.
 
         Returns:
-            A dictionary containing plan_feedback ("APPROVED" or critic feedback).
+            A dictionary containing plan_feedback ("APPROVED" or feedback).
         """
         check_prompt = get_prompt(
-            self.ac.PROMPT_FILE, "user/meta_step_check",
-            {'goal_description': state['goal_description'],
-             'data_list': str(state['data_list']),
-             'method_context': state['method_context'],
-             'current_plan': state['plan']}
+            self.ac.PROMPT_FILE,
+            "user/meta_step_check",
+            {
+                "goal_description": str(state["goal_description"] or ""),
+                "data_list": str(state["data_list"]),
+                "method_context": str(state["method_context"]),
+                "current_plan": str(state["plan"] or ""),
+            },
         )
         max_retries = self.ac.MAX_RETRIES
         current_retries = state.get("plan_retries", 0)
@@ -529,13 +619,15 @@ class AnalystAgent:
                 retriable_codes=self.ac.RETRIABLE_CODES,
                 max_retries=self.ac.MAX_RETRIES,
             )
-            content = '{}'
-            if (phyto_response and
-                    phyto_response.get('choices') and
-                    len(phyto_response['choices']) > 0 and
-                    phyto_response['choices'][0].get('message') and
-                    phyto_response['choices'][0]['message'].get('content')):
-                content = phyto_response['choices'][0]['message']['content']       
+            content = "{}"
+            if (
+                phyto_response
+                and phyto_response.get("choices")
+                and len(phyto_response["choices"]) > 0
+                and phyto_response["choices"][0].get("message")
+                and phyto_response["choices"][0]["message"].get("content")
+            ):
+                content = phyto_response["choices"][0]["message"]["content"]
             pattern = r"```json(.*?)```"
             match = re.search(pattern, content, re.DOTALL)
             if match:
@@ -543,23 +635,22 @@ class AnalystAgent:
                 result = json.loads(json_string)
             else:
                 result = json.loads(content)
-            score = result.get("score", 0)
+            result.get("score", 0)
             decision = result.get("decision", "REJECTED")
             feedback = result.get("feedback", "")
-        except Exception as e:
-            score = 0
+        except Exception:
             decision = "REJECTED"
             feedback = ""
         if decision == "APPROVED" or current_retries >= max_retries:
             return {"plan_feedback": "APPROVED"}
         else:
             return {"plan_feedback": feedback}
-    
+
     async def tool_extract_node(self, state: AnalystAgentsState) -> dict:
         """Extract required bioinformatics tools from the analysis plan.
 
-        This node analyzes the generated plan and extracts the specific tools,
-        algorithms, or software mentioned that are needed to execute the workflow.
+        This node analyzes the plan and extracts tools,
+        algorithms, or software needed to execute the workflow.
 
         Args:
             state: The current workflow state containing plan.
@@ -571,8 +662,7 @@ class AnalystAgent:
             McpError: If parsing the tool extraction response fails.
         """
         tool_extract_prompt = get_prompt(
-            self.ac.PROMPT_FILE, "user/tool_extract",
-            {'plan': state['plan']}
+            self.ac.PROMPT_FILE, "user/tool_extract", {"plan": state["plan"]}
         )
         phyto_response = await phyto_chat(
             user_query=tool_extract_prompt,
@@ -594,13 +684,15 @@ class AnalystAgent:
             retriable_codes=self.ac.RETRIABLE_CODES,
             max_retries=self.ac.MAX_RETRIES,
         )
-        content = '{}'
-        if (phyto_response and
-                phyto_response.get('choices') and
-                len(phyto_response['choices']) > 0 and
-                phyto_response['choices'][0].get('message') and
-                phyto_response['choices'][0]['message'].get('content')):
-            content = phyto_response['choices'][0]['message']['content']
+        content = "{}"
+        if (
+            phyto_response
+            and phyto_response.get("choices")
+            and len(phyto_response["choices"]) > 0
+            and phyto_response["choices"][0].get("message")
+            and phyto_response["choices"][0]["message"].get("content")
+        ):
+            content = phyto_response["choices"][0]["message"]["content"]
         pattern = r"```json(.*?)```"
         match = re.search(pattern, content, re.DOTALL)
         if match:
@@ -613,9 +705,9 @@ class AnalystAgent:
     async def tool_retrieve_node(self, state: AnalystAgentsState) -> dict:
         """Retrieve usage instructions for the extracted tools.
 
-        This node queries the knowledge base for documentation, usage examples,
-        and instructions for each tool extracted from the plan. The retrieved
-        information is formatted and combined into tool_usages for the executor.
+        This node queries the knowledge base for documentation,
+        usage examples, and instructions for each tool extracted from the plan.
+        The retrieved information is formatted and combined into tool_usages.
 
         Args:
             state: The current workflow state containing extracted_tools.
@@ -625,15 +717,15 @@ class AnalystAgent:
             documentation.
         """
         tools = state.get("extracted_tools", [])
-        tool_usages = ''
+        tool_usages = ""
         for tool in tools:
             tool_usages += f"[{tool} Usage START]\n"
             tool_usage_info = await retrieve(
                 user_query=tool,
                 retrieve_url=self.ac.RETRIEVE_URL,
-                repo_id=self.ac.TOOL_REPO_ID,
-                page_num=self.ac.TOOL_PAGE_NUM,
-                page_size=self.ac.TOOL_PAGE_SIZE,
+                repo_id=self.ac.REPO_ID,
+                page_num=self.ac.PAGE_NUM,
+                page_size=self.ac.PAGE_SIZE,
                 filter_string=self.ac.FILTER_STRING,
                 scope=self.ac.SCOPE,
                 extra_repo_ids=self.ac.EXTRA_REPO_IDS,
@@ -642,9 +734,9 @@ class AnalystAgent:
                 score_threshold=self.ac.SCORE_THRESHOLD,
                 timeout=self.ac.TIMEOUT,
                 retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES
+                max_retries=self.ac.MAX_RETRIES,
             )
-            for doc in tool_usage_info['doc_list']:
+            for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
         return {"tool_usages": tool_usages}
@@ -659,38 +751,41 @@ class AnalystAgent:
 
         Args:
             state: The current workflow state containing goal_description,
-                   data_list, output_dir, plan, tool_usages, and compute_resource.
+                data_list, output_dir, plan, tool_usages, and compute_resource.
 
         Returns:
-            A dictionary containing task_id, task_status, job_name, and output_dir.
+            A dictionary containing task_id, task_status, job_name,
+            and output_dir.
 
         Raises:
             McpError: If task submission fails after all retries.
         """
         timeout = self.ac.TIMEOUT
-        max_retries=self.ac.MAX_RETRIES
-        client_timeout = Timeout(timeout, connect=timeout) 
+        max_retries = self.ac.MAX_RETRIES
+        client_timeout = Timeout(timeout, connect=timeout)
         analysis_url = self.ac.ANALYSIS_URL
 
         raw_data_list = state.get("data_list", {})
         processed_data_list = {}
         for k, v in raw_data_list.items():
             if isinstance(k, str) and k.startswith("obs://"):
-                new_key = "/obs/" + k[6:].lstrip('/')
+                new_key = "/obs/" + k[6:].lstrip("/")
                 processed_data_list[new_key] = v
             else:
                 processed_data_list[k] = v
 
         plan = state.get("plan", "")
         tool_usages = state.get("tool_usages", "")
-        plan += ('\nnext step, summarize each of the generated result files '
-                 '(including images, result files, etc.) into a json file (named '
-                 '`result_files.json`) and save it, with the key of the file '
-                 'being the absolute path of the generated result and the value '
-                 'being a detailed description of the file.\nlast step, compress '
-                 'the output folder into a zip file (zip -r $output_dir.zip '
-                 '$output_dir).')
-        
+        plan += (
+            "\nnext step, summarize each of the generated result files "
+            "(including images, result files, etc.) into a json file (named "
+            "`result_files.json`) and save it, with the key of the file "
+            "being the absolute path of the generated result and the value "
+            "being a detailed description of the file.\nlast step, compress "
+            "the output folder into a zip file (zip -r $output_dir.zip "
+            "$output_dir)."
+        )
+
         final_meta = f"### EXECUTION PLAN\n{plan}\n\n"
         f"### TOOL USAGE\n{tool_usages}"
 
@@ -698,7 +793,7 @@ class AnalystAgent:
         if self.ac.CREATE_DIR:
             output_dir = create_output_dir(
                 user_id=self.ac.USER_ID or str(uuid1()),
-                task='analysis_agents_task',
+                task="analysis_agents_task",
                 access_key_id=self.sc.AccessKeyID.get_secret_value(),
                 secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
                 obs_server=self.ac.OBS_SERVER,
@@ -706,21 +801,21 @@ class AnalystAgent:
             )
 
         submit_payload = {
-            'goal_description': state.get("goal_description"),
-            'data_list': processed_data_list,
-            'output_dir': output_dir,
-            'meta': final_meta,
-            'execute_code': self.ac.EXECUTE_CODE,
-            'model_url': self.sc.CODER_URL,
-            'model_name': self.sc.CODER_MODEL,
-            'api_key': self.sc.CODER_API_KEY.get_secret_value(),
+            "goal_description": state.get("goal_description"),
+            "data_list": processed_data_list,
+            "output_dir": output_dir,
+            "meta": final_meta,
+            "execute_code": self.ac.EXECUTE_CODE,
+            "model_url": self.sc.CODER_URL,
+            "model_name": self.sc.CODER_MODEL,
+            "api_key": self.sc.CODER_API_KEY.get_secret_value(),
         }
-        
-        json_file = Path(f'{uuid1()}.json')
+
+        json_file = Path(f"{uuid1()}.json")
         try:
-            with open(json_file, 'w', encoding='utf-8') as f:
+            with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(submit_payload, f)
-            
+
             obs_meta_path = upload_analyst_agents_data(
                 analyst_agents_datapath=str(json_file),
                 access_key_id=self.sc.AccessKeyID.get_secret_value(),
@@ -729,36 +824,54 @@ class AnalystAgent:
                 bucket_name=self.ac.BUCKET_NAME,
             )
         finally:
-            if json_file.exists(): json_file.unlink()
+            if json_file.exists():
+                json_file.unlink()
 
-        token = await get_token(timeout=self.ac.TIMEOUT, region=self.ac.ANALYSIS_REGION)
-        job_headers = {'Content-Type': 'application/json', 'X-Auth-Token': token}
-        
-        time_stamp = datetime.datetime.now().strftime('%H%M%S-%f')
+        token = await get_token(
+            timeout=self.ac.TIMEOUT, region=self.ac.ANALYSIS_REGION
+        )
+        job_headers = {
+            "Content-Type": "application/json",
+            "X-Auth-Token": token,
+        }
+
+        time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
         job_name = f"{self.ac.TASK_NAME.replace('_', '-')}-{time_stamp}"
         compute_res = state.get("compute_resource", self.ac.COMPUTE_RESOURCE)
-        
+
         job_data = {
-            'name': job_name,
-            'timeout': self.ac.MAX_POLL,
-            'tool_id': self.ac.APP_ID[compute_res],
-            'tool_type': 'app',
-            'tasks': [{
-                'task_name': f'analyst-agents-{compute_res}',
-                'display_name': job_name,
-                'inputs': [
-                    {'name': 'obs-mount', 'type': 'DIRECTORY', 'values': ['phytomni:/agent_data/']},
-                    {'name': 'meta-file', 'type': 'FILE', 'values': [obs_meta_path]},
-                ],
-                'resources': {
-                    'cpu': f"{self.ac.RESOURCE[compute_res]['cpu']}C",
-                    'memory': f"{self.ac.RESOURCE[compute_res]['memory']}G",
-                    'cpu_type': 'X86'
+            "name": job_name,
+            "timeout": self.ac.MAX_POLL,
+            "tool_id": self.ac.APP_ID[compute_res],
+            "tool_type": "app",
+            "tasks": [
+                {
+                    "task_name": f"analyst-agents-{compute_res}",
+                    "display_name": job_name,
+                    "inputs": [
+                        {
+                            "name": "obs-mount",
+                            "type": "DIRECTORY",
+                            "values": ["phytomni:/agent_data/"],
+                        },
+                        {
+                            "name": "meta-file",
+                            "type": "FILE",
+                            "values": [obs_meta_path],
+                        },
+                    ],
+                    "resources": {
+                        "cpu": f"{self.ac.RESOURCE[compute_res]['cpu']}C",
+                        "memory": (
+                            f"{self.ac.RESOURCE[compute_res]['memory']}G"
+                        ),
+                        "cpu_type": "X86",
+                    },
                 }
-            }],
-            'automatic': True,
+            ],
+            "automatic": True,
         }
-        
+
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
             for attempt in range(max_retries + 1):
                 try:
@@ -769,43 +882,51 @@ class AnalystAgent:
                     )
                     if response.status_code == 201:
                         return {
-                            "task_id": json.loads(response.text)['id'], 
-                            "task_status": "PENDING", 
-                            "job_name": job_name, 
-                            "output_dir": output_dir
+                            "task_id": json.loads(response.text)["id"],
+                            "task_status": "PENDING",
+                            "job_name": job_name,
+                            "output_dir": output_dir,
                         }
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message='Failed to submit task'))
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message="Failed to submit task",
+                        )
+                    )
 
                 except HTTPStatusError as e:
                     if (
-                        hasattr(e, 'response') and
-                        e.response is not None and
-                        e.response.status_code in self.ac.RETRIABLE_CODES and
-                        attempt < max_retries
+                        hasattr(e, "response")
+                        and e.response is not None
+                        and e.response.status_code in self.ac.RETRIABLE_CODES
+                        and attempt < max_retries
                     ):
-                        wait_time = (2 ** attempt) + uniform(0, 1)
+                        wait_time = (2**attempt) + uniform(0, 1)
                         await asyncio.sleep(wait_time)
                         continue
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Failed to submit task: {str(e)}',
-                    )) from e
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Failed to submit task: {str(e)}",
+                        )
+                    ) from e
 
                 except (ConnectError, TimeoutException) as e:
                     if attempt < max_retries:
-                        await asyncio.sleep(1.5 ** attempt)
+                        await asyncio.sleep(1.5**attempt)
                         continue
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Network error: {str(e)}',
-                    )) from e
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Network error: {str(e)}",
+                        )
+                    ) from e
 
-        raise McpError(ErrorData(
-            code=INTERNAL_ERROR, 
-            message='Submission failed after retries'
-        ))
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR, message="Submission failed after retries"
+            )
+        )
 
     async def pooling_node(self, state: AnalystAgentsState):
         """Poll task status until completion.
@@ -831,19 +952,25 @@ class AnalystAgent:
                 task_id,
                 analysis_url=self.ac.ANALYSIS_URL,
                 region=self.ac.ANALYSIS_REGION,
-                timeout = self.ac.TIMEOUT,
+                timeout=self.ac.TIMEOUT,
                 retriable_codes=self.ac.RETRIABLE_CODES,
                 max_retries=self.ac.MAX_RETRIES,
             )
-            current_status = status_data.get('status')
+            current_status = status_data.get("status")
             return {"task_status": current_status}
         except Exception as exc:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Task status request failed: {str(exc)}',
-            ))
-    
-    def route_after_extract(self, state: AnalystAgentsState) -> Literal["data_select_node", "method_retrieve_node", "tool_extract_node"]:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Task status request failed: {str(exc)}",
+                )
+            )
+
+    def route_after_extract(
+        self, state: AnalystAgentsState
+    ) -> Literal[
+        "data_select_node", "method_retrieve_node", "tool_extract_node"
+    ]:
         """Route after the parse_query node based on configuration.
 
         This method determines the next node based on auto_select flag and
@@ -864,33 +991,41 @@ class AnalystAgent:
         else:
             return "method_retrieve_node"
 
-    def route_after_data_select(self, state: AnalystAgentsState) -> Literal["method_retrieve_node", "tool_extract_node"]:
+    def route_after_data_select(
+        self, state: AnalystAgentsState
+    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
         """Route after the data_select node based on plan availability.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists,
+            otherwise "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
         return "method_retrieve_node"
 
-    def route_after_plan(self, state: AnalystAgentsState) -> Literal["plan_node", "tool_extract_node"]:
+    def route_after_plan(
+        self, state: AnalystAgentsState
+    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
         """Route after the plan node based on plan availability.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists,
+            otherwise "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
         return "method_retrieve_node"
 
-    def route_after_check(self, state: AnalystAgentsState) -> Literal["plan_node", "tool_extract_node"]:
+    def route_after_check(
+        self, state: AnalystAgentsState
+    ) -> Literal["plan_node", "tool_extract_node"]:
         """Route after the check node based on plan validation.
 
         If the plan was approved or max retries were reached, proceed to
@@ -903,14 +1038,16 @@ class AnalystAgent:
             "tool_extract_node" if approved, otherwise "plan_node".
         """
         feedback = state.get("plan_feedback")
-        
+
         # 如果节点返回了 "APPROVED"，说明通过检查
         if feedback == "APPROVED":
-            return "tool_extract_node"        
+            return "tool_extract_node"
         # 否则带着 feedback 回到 plan_node 重写
         return "plan_node"
 
-    def route_after_submit(self, state: AnalystAgentsState) -> Literal["pooling_node", "__end__"]:
+    def route_after_submit(
+        self, state: AnalystAgentsState
+    ) -> Literal["pooling_node", "__end__"]:
         """Route after submit based on polling preference.
 
         Args:
@@ -921,34 +1058,37 @@ class AnalystAgent:
         """
         if state.get("is_polling"):
             return "pooling_node"
-        return END
+        return "__end__"
 
-    def route_after_pooling(self, state: AnalystAgentsState) -> Literal["__end__", "pooling_node"]:
+    def route_after_pooling(
+        self, state: AnalystAgentsState
+    ) -> Literal["__end__", "pooling_node"]:
         """Route based on task completion status.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "__end__" if task is in a terminal state (SUCCEEDED, FAILED, CANCELLED),
+            "__end__" if task is in a terminal state
+            (SUCCEEDED, FAILED, CANCELLED),
             otherwise "pooling_node" to continue polling.
         """
         status = state.get("task_status")
         if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            return END
+            return "__end__"
         return "pooling_node"
-    
+
     async def arun(
-        self, 
-        query: str, 
-        goal_description: str = None,
+        self,
+        query: str,
+        goal_description: Optional[str] = None,
         user: str = ac.USER,
         user_id: str = ac.USER_ID,
         is_create_dir: bool = ac.CREATE_DIR,
-        output_dir: str = ac.OUTPUT_DIR, 
+        output_dir: str = ac.OUTPUT_DIR,
         execute_code: bool = ac.EXECUTE_CODE,
         compute_resource: Literal[
-            'small', 'medium', 'large'
+            "small", "medium", "large"
         ] = ac.COMPUTE_RESOURCE,
         timeout: float = ac.TIMEOUT,
         max_retries: int = ac.MAX_RETRIES,
@@ -960,12 +1100,12 @@ class AnalystAgent:
         temperature: float = ac.TEMPERATURE,
         top_p: float = ac.TOP_P,
         prompt_file: str = ac.PROMPT_FILE,
-        preset_data_list: Dict[str, str] = None,
+        preset_data_list: Optional[Dict[str, str]] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
         thread_id: Optional[str] = None,
-        is_auto_select: bool = True, 
-        is_polling: bool = True, 
+        is_auto_select: bool = True,
+        is_polling: bool = True,
     ) -> dict:
         """Execute the AnalystAgent workflow.
 
@@ -981,7 +1121,8 @@ class AnalystAgent:
             is_create_dir: Whether to create an output directory.
             output_dir: The output directory path.
             execute_code: Whether to execute code during analysis.
-            compute_resource: The compute resource level (small, medium, large).
+            compute_resource: The compute resource level
+                (small, medium, large).
             timeout: Request timeout in seconds.
             max_retries: Maximum number of retries for failed requests.
             reasoning_effort: Reasoning effort level for the LLM.
@@ -1006,51 +1147,55 @@ class AnalystAgent:
         """
         if not thread_id:
             thread_id = str(uuid1())
-            
+
         initial_state = {
             "query": query,
             "goal_description": goal_description,
             "obs_file_list": obs_file_list,
             "data_list": preset_data_list or {},
-            "output_dir": output_dir, 
-            "compute_resource": compute_resource, 
+            "output_dir": output_dir,
+            "compute_resource": compute_resource,
             "method_context": None,
             "plan": preset_plan,
             "plan_feedback": None,
             "plan_retries": 0,
             "extracted_tools": [],
-            "tool_usages": '',
+            "tool_usages": "",
             "job_name": None,
             "task_id": None,
             "task_status": None,
             "is_polling": is_polling,
-            "is_auto_select": is_auto_select
+            "is_auto_select": is_auto_select,
         }
-        config = {"configurable": {"thread_id": thread_id}}
-        
         try:
-            final_state = await self.app.ainvoke(initial_state, config=config)
+            final_state = await self.app.ainvoke(
+                cast(AnalystAgentsState, initial_state),
+                config=cast(
+                    RunnableConfig, {"configurable": {"thread_id": thread_id}}
+                ),
+            )
             return {
-                'task_id': final_state['task_id'],
-                'output_dir': final_state["output_dir"],
-                'job_name': final_state["job_name"],
-                'compute_resource': final_state["compute_resource"],
+                "task_id": final_state["task_id"],
+                "output_dir": final_state["output_dir"],
+                "job_name": final_state["job_name"],
+                "compute_resource": final_state["compute_resource"],
             }
         except Exception as e:
             return {
-                **initial_state, 
-                "task_status": "FAILED_AT_AGENT_LEVEL", 
-                "error_detail": str(e)
+                **initial_state,
+                "task_status": "FAILED_AT_AGENT_LEVEL",
+                "error_detail": str(e),
             }
 
 
-async def task_delete(task_id: str,
-                      analysis_url: str = ac.ANALYSIS_URL,
-                      region: str = ac.ANALYSIS_REGION,
-                      timeout: float = ac.TIMEOUT,
-                      retriable_codes: List[int] = ac.RETRIABLE_CODES,
-                      max_retries: int = ac.MAX_RETRIES,
-                      ) -> str:
+async def task_delete(
+    task_id: str,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> str:
     """
     Deletes a specified task from the analysis platform.
 
@@ -1077,56 +1222,68 @@ async def task_delete(task_id: str,
         for attempt in range(max_retries + 1):
             try:
                 response = await client.post(
-                    url=f'{analysis_url}/{task_id}/terminate',
-                    headers={'Content-Type': 'application/json',
-                             'X-Auth-Token': await get_token(timeout=timeout,
-                                                             region=region)},
-                    json={'force': True},
+                    url=f"{analysis_url}/{task_id}/terminate",
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Auth-Token": await get_token(
+                            timeout=timeout, region=region
+                        ),
+                    },
+                    json={"force": True},
                     timeout=timeout,
                 )
                 if response.status_code == 200:
-                    return f'Delete task {task_id} success.'
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message='Failed to delete task'))
+                    return f"Delete task {task_id} success."
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR, message="Failed to delete task"
+                    )
+                )
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to delete task: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to delete task: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
-    raise McpError(ErrorData(
-        code=INTERNAL_ERROR,
-        message='Failed to delete task after all retries'
-    ))
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to delete task after all retries",
+        )
+    )
 
 
-async def task_status(task_id: str,
-                      analysis_url: str = ac.ANALYSIS_URL,
-                      region: str = ac.ANALYSIS_REGION,
-                      timeout: float = ac.TIMEOUT,
-                      retriable_codes: List[int] = ac.RETRIABLE_CODES,
-                      max_retries: int = ac.MAX_RETRIES,
-                      ) -> dict:
+async def task_status(
+    task_id: str,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> dict:
     """
     Checks the execution status of a specified task.
 
@@ -1154,58 +1311,71 @@ async def task_status(task_id: str,
         for attempt in range(max_retries + 1):
             try:
                 response = await client.get(
-                    f'{analysis_url}/{task_id}',
-                    headers={'Content-Type': 'application/json',
-                             'X-Auth-Token': await get_token(timeout=timeout,
-                                                             region=region)},
+                    f"{analysis_url}/{task_id}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Auth-Token": await get_token(
+                            timeout=timeout, region=region
+                        ),
+                    },
                     timeout=timeout,
                 )
                 if response.status_code == 200:
                     return response.json()
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Check task {task_id} status failed.'))
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Check task {task_id} status failed.",
+                    )
+                )
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to delete task: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to delete task: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
-    raise McpError(ErrorData(
-        code=INTERNAL_ERROR,
-        message='Failed to check task status after all retries'
-    ))
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to check task status after all retries",
+        )
+    )
 
 
-async def task_log(task_id: str,
-                   analysis_url: str = ac.ANALYSIS_URL,
-                   compute_resource: Literal[
-                       'small', 'medium', 'large'
-                   ] = ac.COMPUTE_RESOURCE,
-                   region: str = ac.ANALYSIS_REGION,
-                   timeout: float = ac.TIMEOUT,
-                   retriable_codes: List[int] = ac.RETRIABLE_CODES,
-                   max_retries: int = ac.MAX_RETRIES,
-                   ) -> dict:
+async def task_log(
+    task_id: str,
+    analysis_url: str = ac.ANALYSIS_URL,
+    compute_resource: Literal[
+        "small", "medium", "large"
+    ] = ac.COMPUTE_RESOURCE,
+    region: str = ac.ANALYSIS_REGION,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> dict:
     """
     Retrieves the execution log for a specified task.
 
@@ -1232,47 +1402,59 @@ async def task_log(task_id: str,
         for attempt in range(max_retries + 1):
             try:
                 response = await client.get(
-                    f'{analysis_url}/{task_id}/logs'
-                    f'?task_name=analyst-agents-{compute_resource}',
-                    headers={'Content-Type': 'application/json',
-                             'X-Auth-Token': await get_token(timeout=timeout,
-                                                             region=region)},
+                    f"{analysis_url}/{task_id}/logs"
+                    f"?task_name=analyst-agents-{compute_resource}",
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Auth-Token": await get_token(
+                            timeout=timeout, region=region
+                        ),
+                    },
                     timeout=timeout,
                 )
                 if response.status_code == 200:
                     return response.json()
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Check task {task_id} log failed.'))
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Check task {task_id} log failed.",
+                    )
+                )
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to delete task: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to delete task: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
-    raise McpError(ErrorData(
-        code=INTERNAL_ERROR,
-        message='Failed to check task log after all retries'
-    ))
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to check task log after all retries",
+        )
+    )
 
 
 def upload_analyst_agents_data(
@@ -1303,23 +1485,26 @@ def upload_analyst_agents_data(
     Raises:
         OSError: If the file upload to OBS fails.
     """
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
+    obsclient = ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
     try:
         headers = PutObjectHeader()
-        headers.contentType = 'text/plain'
-        object_file = analyst_agents_datapath.split('/')[-1]
-        object_key = f'agent_data/tmp_data/{object_file}'
+        headers.contentType = "text/plain"
+        object_file = analyst_agents_datapath.split("/")[-1]
+        object_key = f"agent_data/tmp_data/{object_file}"
         response = obsclient.putFile(
             bucketName=bucket_name,
             objectKey=object_key,
             file_path=object_file,
-            metadata={'meta1': 'value1', 'meta2': 'value2'},
-            headers=headers)
-        status_code = getattr(response, 'status', None)
+            metadata={"meta1": "value1", "meta2": "value2"},
+            headers=headers,
+        )
+        status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f'{bucket_name}:/{object_key}'
+            return f"{bucket_name}:/{object_key}"
         raise OSError(
             "Put File Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
@@ -1327,7 +1512,7 @@ def upload_analyst_agents_data(
             f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
         )
     except Exception as exc:
-        raise OSError(f'Put File Failed\n{format_exc()}') from exc
+        raise OSError(f"Put File Failed\n{format_exc()}") from exc
 
 
 def delete_analyst_agents_data(
@@ -1357,36 +1542,38 @@ def delete_analyst_agents_data(
     Raises:
         OSError: If the file deletion from OBS fails.
     """
-    obsclient = ObsClient(access_key_id=access_key_id,
-                          secret_access_key=secret_access_key,
-                          server=obs_server)
+    obsclient = ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
     try:
         object_key = analyst_agents_datapath
         response = obsclient.deleteObject(bucket_name, object_key)
-        status_code = getattr(response, 'status', None)
+        status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            delete_marker = getattr(response, 'body', {}).get(
-                'deleteMarker', 'unknown')
-            version_id = getattr(response, 'body', {}).get(
-                'versionId', 'unknown')
+            delete_marker = getattr(response, "body", {}).get(
+                "deleteMarker", "unknown"
+            )
+            version_id = getattr(response, "body", {}).get(
+                "versionId", "unknown"
+            )
             return (
-                'Delete Object Succeeded\n'
+                "Delete Object Succeeded\n"
                 f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
                 f"deleteMarker: {delete_marker}\nversionId: {version_id}"
             )
         raise OSError(
-            'Delete Object Failed\n'
+            "Delete Object Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
             f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
             f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
         )
     except Exception as exc:
-        raise OSError(f'Delete Object Failed\n{format_exc()}') from exc
+        raise OSError(f"Delete Object Failed\n{format_exc()}") from exc
 
 
-def get_data_list(data_file: str,
-                  analysis_type: str,
-                  species: str) -> list:
+def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
     """Generate ready-to-use prompt from template components.
 
     Combines template loading and rendering in one workflow:
@@ -1405,18 +1592,18 @@ def get_data_list(data_file: str,
         data_list for analysis
     """
     try:
-        with open(data_file, 'r', encoding='utf-8') as f:
+        with open(data_file, "r", encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError as exc:
-        raise FileNotFoundError(f'Data file not found: {data_file}') from exc
+        raise FileNotFoundError(f"Data file not found: {data_file}") from exc
     try:
         analysis_data_list = data[analysis_type]
     except KeyError as exc:
-        raise KeyError(f'Analysis type not found: {analysis_type}') from exc
+        raise KeyError(f"Analysis type not found: {analysis_type}") from exc
     try:
         data_list = analysis_data_list[species]
     except KeyError as exc:
-        raise KeyError(f'Species not found: {species}') from exc
+        raise KeyError(f"Species not found: {species}") from exc
     return data_list
 
 
@@ -1480,26 +1667,30 @@ def create_output_dir(
         as an empty placeholder in OBS and can be used immediately for
         storing analysis results.
     """
-    obs_client = ObsClient(access_key_id=access_key_id,
-                           secret_access_key=secret_access_key,
-                           server=obs_server)
+    obs_client = ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
     try:
-        output_dir = (f'agent_data/user_data/{user_id}/output/'
-                      f'{task}_{int(time.time())}_{uuid1()}/')
-        response = obs_client.putContent(bucketName=bucket_name,
-                                         objectKey=output_dir,
-                                         content=None)
-        status_code = getattr(response, 'status', None)
+        output_dir = (
+            f"agent_data/user_data/{user_id}/output/"
+            f"{task}_{int(time.time())}_{uuid1()}/"
+        )
+        response = obs_client.putContent(
+            bucketName=bucket_name, objectKey=output_dir, content=None
+        )
+        status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f'/obs/{bucket_name}/{output_dir}'
+            return f"/obs/{bucket_name}/{output_dir}"
         raise OSError(
-            f'Put File Failed\n'
+            f"Put File Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
             f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
             f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
         )
     except Exception as exc:
-        raise OSError(f'Put File Failed\n{format_exc()}') from exc
+        raise OSError(f"Put File Failed\n{format_exc()}") from exc
 
 
 def download_obs_out(
@@ -1579,29 +1770,33 @@ def download_obs_out(
         transfers. Large directories are handled through pagination to manage
         memory usage efficiently.
     """
-    output_path = Path(f'{download_path}/{task_dir}')
+    output_path = Path(f"{download_path}/{task_dir}")
     output_path.mkdir(parents=True, exist_ok=True)
     headers = GetObjectHeader()
-    headers.if_modified_since = 'date'
-    obs_client = ObsClient(access_key_id=access_key_id,
-                           secret_access_key=secret_access_key,
-                           server=obs_server)
+    headers.if_modified_since = "date"
+    obs_client = ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
     try:
         while True:
-            file_response = obs_client.listObjects(bucketName=bucket_name,
-                                                   prefix=obs_output_path,
-                                                   marker=marker,
-                                                   max_keys=max_keys,
-                                                   encoding_type='url')
-            file_status = getattr(file_response, 'status', None)
+            file_response = obs_client.listObjects(
+                bucketName=bucket_name,
+                prefix=obs_output_path,
+                marker=marker,
+                max_keys=max_keys,
+                encoding_type="url",
+            )
+            file_status = getattr(file_response, "status", None)
             if file_status is not None and file_status < 300:
-                file_body = getattr(file_response, 'body', None)
-                if file_body and hasattr(file_body, 'contents'):
+                file_body = getattr(file_response, "body", None)
+                if file_body and hasattr(file_body, "contents"):
                     for content in file_body.contents:
                         obj_file = content.key
-                        if obj_file.endswith('/'):
+                        if obj_file.endswith("/"):
                             continue
-                        output_file = obj_file.split('/')[-1]
+                        output_file = obj_file.split("/")[-1]
                         if not if_download_all and not any(
                             output_file.endswith(suffix)
                             for suffix in target_file_feature
@@ -1615,25 +1810,42 @@ def download_obs_out(
                             headers=headers,
                         )
                         download_status = getattr(
-                            download_response, 'status', None)
-                        if (download_status is not None and
-                                download_status > 300):
-                            yield f'{output_file} download failed.'
+                            download_response, "status", None
+                        )
+                        if (
+                            download_status is not None
+                            and download_status > 300
+                        ):
+                            yield f"{output_file} download failed."
                             continue
-                        yield f'{output_file} download succeed.'
+                        yield f"{output_file} download succeed."
                         continue
-                if (file_body and hasattr(file_body, 'is_truncated') and
-                        file_body.is_truncated is True):
-                    marker = getattr(file_body, 'next_marker', None)
+                if (
+                    file_body
+                    and hasattr(file_body, "is_truncated")
+                    and file_body.is_truncated is True
+                ):
+                    marker = getattr(file_body, "next_marker", None)
                 else:
                     break
             else:
                 raise OSError(
-                    'Get File List Failed\n'
-                    f'requestId: {getattr(file_response, "requestId", "unknown")}\n'
-                    f'errorCode: {getattr(file_response, "errorCode", "unknown")}\n'
-                    f'errorMessage: {getattr(file_response, "errorMessage", "unknown")}'
+                    "Get File List Failed\n"
+                    f'requestId: {
+                        getattr(
+                            file_response,
+                            "requestId",
+                            "unknown")}\n'
+                    f'errorCode: {
+                        getattr(
+                            file_response,
+                            "errorCode",
+                            "unknown")}\n'
+                    f'errorMessage: {
+                        getattr(
+                            file_response,
+                            "errorMessage",
+                            "unknown")}'
                 )
     except Exception as exc:
-        raise OSError(f'Download File Failed\n{format_exc()}') from exc
-
+        raise OSError(f"Download File Failed\n{format_exc()}") from exc
