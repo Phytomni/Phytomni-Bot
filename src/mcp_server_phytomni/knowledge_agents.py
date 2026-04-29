@@ -8,22 +8,22 @@ It includes functions for retrieving, reranking, and generating text based on
 the retrieved knowledge.
 """
 import asyncio
-from random import uniform
 from json import loads
+from random import uniform
+from typing import Any, Dict, List, Literal, Optional, TypedDict, cast
 from uuid import uuid1
-from typing import List, Dict, Any, Optional, Union, Literal, TypedDict
 
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
-
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import AsyncCallbackManagerForRetrieverRun, CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
-from pydantic import Field
-from langgraph.graph import StateGraph, END, START
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
@@ -54,6 +54,7 @@ class KnowledgeAgentState(TypedDict):
         follow_up_questions: A list of suggested follow-up questions.
         final_response: The final merged response returned to the user.
     """
+
     user_query: str
     obs_file_list: Optional[List[str]]
     repo_id_dict: Optional[Dict[str, int]]
@@ -96,7 +97,12 @@ class KnowledgeAgent:
         app: The compiled LangGraph application.
     """
 
-    def __init__(self, checkpointer=MemorySaver(), knowledge_config=kc, sensitive_config=sc):
+    def __init__(
+        self,
+        checkpointer=MemorySaver(),
+        knowledge_config=kc,
+        sensitive_config=sc,
+    ):
         """Initialize the KnowledgeAgent with configuration and build the graph."""
         self.kc = knowledge_config
         self.sc = sensitive_config
@@ -121,8 +127,12 @@ class KnowledgeAgent:
 
         workflow.add_conditional_edges(START, self.route_start)
         workflow.add_edge("process_files_node", "retrieve_node")
-        workflow.add_conditional_edges("retrieve_node", self.route_after_retrieve)
-        workflow.add_conditional_edges("generate_node", self.route_after_generate)
+        workflow.add_conditional_edges(
+            "retrieve_node", self.route_after_retrieve
+        )
+        workflow.add_conditional_edges(
+            "generate_node", self.route_after_generate
+        )
         workflow.add_edge("follow_up_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
@@ -143,7 +153,7 @@ class KnowledgeAgent:
             parsed file contents.
         """
         obs_file_list = state.get("obs_file_list", [])
-        upload_context = ''
+        upload_context = ""
         total_length = 0
 
         if obs_file_list:
@@ -162,17 +172,19 @@ class KnowledgeAgent:
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
-                fragment = (f'[user upload file {i+1} begin]\n'
-                            f'{doc}\n[user upload file {i+1} end]')
+                fragment = (
+                    f"[user upload file {i + 1} begin]\n"
+                    f"{doc}\n[user upload file {i + 1} end]"
+                )
                 if total_length + len(fragment) <= self.kc.MAX_TOKENS:
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
                     break
-            upload_context = '\n\n'.join(upload_results)
-            
+            upload_context = "\n\n".join(upload_results)
+
         return {"upload_context": upload_context}
-    
+
     async def retrieve_node(self, state: KnowledgeAgentState):
         """Retrieve and rerank documents from the knowledge base.
 
@@ -213,24 +225,30 @@ class KnowledgeAgent:
 
         retrieve_results = []
         total_length = len(upload_context)
-        for i, doc in enumerate(retrieve_response.get('doc_list', [])):
-            header = f"[document {i+1} begin] {doc['title']}"
-            content_field = (doc.get('big_content') if 'big_content' in doc
-                             else doc.get('content', ''))
-            body = (f"{doc['subtitle']}\n{content_field}"
-                    if doc.get('subtitle') else doc.get('content', ''))
-            fragment = f'{header}\n{body} [document {i+1} end]'
+        for i, doc in enumerate(retrieve_response.get("doc_list", [])):
+            header = f"[document {i + 1} begin] {doc['title']}"
+            content_field = (
+                doc.get("big_content")
+                if "big_content" in doc
+                else doc.get("content", "")
+            )
+            body = (
+                f"{doc['subtitle']}\n{content_field}"
+                if doc.get("subtitle")
+                else doc.get("content", "")
+            )
+            fragment = f"{header}\n{body} [document {i + 1} end]"
             if total_length + len(fragment) <= kc.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
 
-        retrieve_context = '\n\n'.join(retrieve_results)
+        retrieve_context = "\n\n".join(retrieve_results)
 
         return {
-            "retrieved_docs": retrieve_response.get('doc_list', []),
-            "retrieve_context": retrieve_context
+            "retrieved_docs": retrieve_response.get("doc_list", []),
+            "retrieve_context": retrieve_context,
         }
 
     async def generate_node(self, state: KnowledgeAgentState):
@@ -252,40 +270,63 @@ class KnowledgeAgent:
         user_query = state["user_query"]
         retrieve_context = state["retrieve_context"]
         upload_context = state.get("upload_context", "")
-        
+
         if upload_context:
             chat_query = get_prompt(
-                kc.PROMPT_FILE, 'user/retrieval_file',
-                {'retrieve_results': retrieve_context,
-                 'upload_context': upload_context, 'user_query': user_query}
+                kc.PROMPT_FILE,
+                "user/retrieval_file",
+                {
+                    "retrieve_results": retrieve_context,
+                    "upload_context": upload_context,
+                    "user_query": user_query,
+                },
             )
         else:
             chat_query = get_prompt(
-                kc.PROMPT_FILE, 'user/retrieval',
-                {'retrieve_results': retrieve_context, 'user_query': user_query}
+                kc.PROMPT_FILE,
+                "user/retrieval",
+                {
+                    "retrieve_results": retrieve_context,
+                    "user_query": user_query,
+                },
             )
-            
-        phyto_response = await phyto_chat(user_query=chat_query, prompt_file=kc.PROMPT_FILE)
-        
+
+        phyto_response = await phyto_chat(
+            user_query=chat_query, prompt_file=kc.PROMPT_FILE
+        )
+
         # 将 doc_list 挂载到大模型返回的 message 中
-        doc_list_payload = {'doc_list': state["retrieved_docs"], 'total': 10000}
-        
-        if (phyto_response and 'choices' in phyto_response and
-                len(phyto_response['choices']) > 0):
-            if ('message' in phyto_response['choices'][0] and
-                    phyto_response['choices'][0]['message'] is not None):
-                phyto_response['choices'][0]['message'].update(doc_list_payload)
+        doc_list_payload = {
+            "doc_list": state["retrieved_docs"],
+            "total": 10000,
+        }
+
+        if (
+            phyto_response
+            and "choices" in phyto_response
+            and len(phyto_response["choices"]) > 0
+        ):
+            if (
+                "message" in phyto_response["choices"][0]
+                and phyto_response["choices"][0]["message"] is not None
+            ):
+                phyto_response["choices"][0]["message"].update(
+                    doc_list_payload
+                )
             else:
-                phyto_response['choices'][0]['message'] = doc_list_payload
+                phyto_response["choices"][0]["message"] = doc_list_payload
         else:
             if phyto_response is None:
-                phyto_response = {'choices': [{'message': doc_list_payload}]}
-            elif 'choices' not in phyto_response:
-                phyto_response['choices'] = [{'message': doc_list_payload}]
-            elif len(phyto_response['choices']) == 0:
-                phyto_response['choices'].append({'message': doc_list_payload})
-                
-        return {"main_response": phyto_response, "final_response": phyto_response}
+                phyto_response = {"choices": [{"message": doc_list_payload}]}
+            elif "choices" not in phyto_response:
+                phyto_response["choices"] = [{"message": doc_list_payload}]
+            elif len(phyto_response["choices"]) == 0:
+                phyto_response["choices"].append({"message": doc_list_payload})
+
+        return {
+            "main_response": phyto_response,
+            "final_response": phyto_response,
+        }
 
     async def follow_up_node(self, state: KnowledgeAgentState):
         """Generate suggested follow-up questions based on the initial response.
@@ -306,49 +347,67 @@ class KnowledgeAgent:
         user_query = state["user_query"]
         phyto_response = state["main_response"]
         system_response_text = ""
-        
-        if (phyto_response and 'choices' in phyto_response and
-            len(phyto_response['choices']) > 0 and
-            'message' in phyto_response['choices'][0]):
-            system_response_text = phyto_response['choices'][0]['message'].get('content', '')
+
+        if (
+            phyto_response
+            and "choices" in phyto_response
+            and len(phyto_response["choices"]) > 0
+            and "message" in phyto_response["choices"][0]
+        ):
+            system_response_text = phyto_response["choices"][0]["message"].get(
+                "content", ""
+            )
 
         follow_up_response = await phyto_chat(
             user_query=get_prompt(
-                kc.PROMPT_FILE, 'system/follow_up_questions',
+                kc.PROMPT_FILE,
+                "system/follow_up_questions",
                 {
-                    'user_query': user_query,
-                    'system_response': system_response_text
-                }),
-            prompt_file=kc.PROMPT_FILE
+                    "user_query": user_query,
+                    "system_response": system_response_text,
+                },
+            ),
+            prompt_file=kc.PROMPT_FILE,
         )
-        
-        follow_up_content = ''
-        if (follow_up_response and 'choices' in follow_up_response and
-                len(follow_up_response['choices']) > 0 and
-                'message' in follow_up_response['choices'][0] and
-                follow_up_response['choices'][0]['message'] is not None):
-            follow_up_content = follow_up_response['choices'][0]['message'].get('content', '')
+
+        follow_up_content = ""
+        if (
+            follow_up_response
+            and "choices" in follow_up_response
+            and len(follow_up_response["choices"]) > 0
+            and "message" in follow_up_response["choices"][0]
+            and follow_up_response["choices"][0]["message"] is not None
+        ):
+            follow_up_content = follow_up_response["choices"][0][
+                "message"
+            ].get("content", "")
 
         # 解析 JSON
         follow_up_list = []
         if follow_up_content:
-            start_index = follow_up_content.find('[')
-            end_index = follow_up_content.rfind(']') + 1
+            start_index = follow_up_content.find("[")
+            end_index = follow_up_content.rfind("]") + 1
             if start_index != -1 and end_index > start_index:
                 try:
-                    follow_up_list = loads(follow_up_content[start_index:end_index])
+                    follow_up_list = loads(
+                        follow_up_content[start_index:end_index]
+                    )
                 except (ValueError, TypeError):
                     follow_up_list = []
-                    
+
         # 更新最终返回值
-        phyto_response['choices'][0]['message'].update({'follow_up_questions': follow_up_list})
-        
+        phyto_response["choices"][0]["message"].update(
+            {"follow_up_questions": follow_up_list}
+        )
+
         return {
             "follow_up_questions": follow_up_list,
-            "final_response": phyto_response
+            "final_response": phyto_response,
         }
-    
-    def route_start(self, state: KnowledgeAgentState) -> Literal["process_files_node", "retrieve_node"]:
+
+    def route_start(
+        self, state: KnowledgeAgentState
+    ) -> Literal["process_files_node", "retrieve_node"]:
         """Route from the START node based on whether files are uploaded.
 
         This method determines the first node to execute based on the
@@ -365,7 +424,9 @@ class KnowledgeAgent:
             return "process_files_node"
         return "retrieve_node"
 
-    def route_after_retrieve(self, state: KnowledgeAgentState) -> Literal["generate_node", "__end__"]:
+    def route_after_retrieve(
+        self, state: KnowledgeAgentState
+    ) -> Literal["generate_node", "__end__"]:
         """Route after the retrieve node based on generation flag.
 
         This method determines whether to proceed to the generate node
@@ -379,9 +440,11 @@ class KnowledgeAgent:
         """
         if state["is_generate"]:
             return "generate_node"
-        return END
+        return cast(Literal["generate_node", "__end__"], END)
 
-    def route_after_generate(self, state: KnowledgeAgentState) -> Literal["follow_up_node", "__end__"]:
+    def route_after_generate(
+        self, state: KnowledgeAgentState
+    ) -> Literal["follow_up_node", "__end__"]:
         """Route after the generate node based on follow-up flag.
 
         This method determines whether to proceed to the follow-up node
@@ -395,17 +458,17 @@ class KnowledgeAgent:
         """
         if state["is_follow_up"]:
             return "follow_up_node"
-        return END
-    
-    
+        return cast(Literal["follow_up_node", "__end__"], END)
 
-    async def arun(self,
-                   user_query: str,
-                   obs_file_list: Optional[List[str]] = None,
-                   repo_id_dict: Optional[Dict[str, int]] = None,
-                   is_generate: bool = True,
-                   is_follow_up: bool = True,
-                   thread_id: Optional[str] = None):
+    async def arun(
+        self,
+        user_query: str,
+        obs_file_list: Optional[List[str]] = None,
+        repo_id_dict: Optional[Dict[str, int]] = None,
+        is_generate: bool = True,
+        is_follow_up: bool = True,
+        thread_id: Optional[str] = None,
+    ):
         """Execute the KnowledgeAgent workflow.
 
         This is the main entry point for invoking the agent. It initializes
@@ -435,33 +498,36 @@ class KnowledgeAgent:
             "retrieved_docs": [],
             "retrieve_context": "",
             "main_response": {},
-            "is_generate": is_generate, 
+            "is_generate": is_generate,
             "is_follow_up": is_follow_up,
             "follow_up_questions": [],
-            "final_response": {}
+            "final_response": {},
         }
-        
-        config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
-        
-        return final_state["final_response"]
-    
 
-async def retrieve(user_query: str,
-                   retrieve_url: str = kc.RETRIEVE_URL,
-                   repo_id: str = kc.REPO_ID,
-                   page_num: int = kc.PAGE_NUM,
-                   page_size: int = kc.PAGE_SIZE,
-                   filter_string: Optional[str] = kc.FILTER_STRING,
-                   scope: str = kc.SCOPE,
-                   extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
-                   rerank_url: str = kc.RERANK_URL,
-                   rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-                   score_threshold: float = kc.SCORE_THRESHOLD,
-                   timeout: float = kc.TIMEOUT,
-                   retriable_codes: List[int] = kc.RETRIABLE_CODES,
-                   max_retries: int = kc.MAX_RETRIES,
-                   ) -> Dict[str, Any]:
+        config = {"configurable": {"thread_id": thread_id}}
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
+
+        return final_state["final_response"]
+
+
+async def retrieve(
+    user_query: str,
+    retrieve_url: str = kc.RETRIEVE_URL,
+    repo_id: str = kc.REPO_ID,
+    page_num: int = kc.PAGE_NUM,
+    page_size: int = kc.PAGE_SIZE,
+    filter_string: Optional[str] = kc.FILTER_STRING,
+    scope: str = kc.SCOPE,
+    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
+    rerank_url: str = kc.RERANK_URL,
+    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
+    score_threshold: float = kc.SCORE_THRESHOLD,
+    timeout: float = kc.TIMEOUT,
+    retriable_codes: List[int] = kc.RETRIABLE_CODES,
+    max_retries: int = kc.MAX_RETRIES,
+) -> Dict[str, Any]:
     """Retrieve and rerank documents from a knowledge base.
 
     This function queries a knowledge base service, retrieves documents based
@@ -497,86 +563,100 @@ async def retrieve(user_query: str,
                   after all retries.
         ValueError: If an unsupported `scope` value is provided.
     """
+
     async def make_retrieve_request(client, scope):
         for attempt in range(max_retries + 1):
             try:
                 response = await client.post(
                     retrieve_url,
-                    headers={'Content-Type': 'application/json'},
-                    json={'repo_id': repo_id,
-                          'content': user_query,
-                          'page_num': page_num,
-                          'page_size': page_size,
-                          'filter_string': filter_string,
-                          'scope': scope,
-                          'extra_repo_ids': extra_repo_ids},
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "repo_id": repo_id,
+                        "content": user_query,
+                        "page_num": page_num,
+                        "page_size": page_size,
+                        "filter_string": filter_string,
+                        "scope": scope,
+                        "extra_repo_ids": extra_repo_ids,
+                    },
                     timeout=timeout,
                 )
                 response.raise_for_status()
-                return response.json()['doc_list']
+                return response.json()["doc_list"]
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to retrieve knowledge base: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to retrieve knowledge base: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        if scope in ('doc', 'keyword'):
+        if scope in ("doc", "keyword"):
             doc_list = await make_retrieve_request(client, scope)
-        elif scope == 'both':
-            tasks = [make_retrieve_request(client, scope)
-                     for scope in ['doc', 'keyword']]
+        elif scope == "both":
+            tasks = [
+                make_retrieve_request(client, scope)
+                for scope in ["doc", "keyword"]
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             doc_list = []
             for each_result in results:
                 if isinstance(each_result, Exception):
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Retrieval failed: {str(each_result)}',
-                    )) from each_result
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Retrieval failed: {str(each_result)}",
+                        )
+                    ) from each_result
                 if each_result is not None and isinstance(each_result, list):
                     doc_list.extend(each_result)
         else:
-            raise ValueError("Invalid scope value. Must be 'doc', 'keyword',"
-                             " or 'both'.")
+            raise ValueError(
+                "Invalid scope value. Must be 'doc', 'keyword'," " or 'both'."
+            )
 
     if doc_list is None:
         doc_list = []
     elif not isinstance(doc_list, list):
         doc_list = list(doc_list)
 
-    return {'doc_list': await rerank(
-                user_query=user_query,
-                doc_list=doc_list,
-                rerank_url=rerank_url,
-                top_n=page_size,
-                rerank_batch_size=rerank_batch_size,
-                score_threshold=score_threshold,
-                timeout=timeout,
-                retriable_codes=retriable_codes,
-                max_retries=max_retries,
-            ),
-            'total': 10000}
+    return {
+        "doc_list": await rerank(
+            user_query=user_query,
+            doc_list=doc_list,
+            rerank_url=rerank_url,
+            top_n=page_size,
+            rerank_batch_size=rerank_batch_size,
+            score_threshold=score_threshold,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+        ),
+        "total": 10000,
+    }
 
 
 async def multi_retrieve(
@@ -656,23 +736,30 @@ async def multi_retrieve(
             results = await asyncio.gather(*tasks, return_exceptions=True)
             merged_docs = []
             for result in results:
-                if isinstance(result, dict) and 'doc_list' in result:
-                    merged_docs.extend(result['doc_list'])
-            sorted_docs = sorted(merged_docs,
-                                 key=lambda x: x['score'],
-                                 reverse=True)
+                if isinstance(result, dict) and "doc_list" in result:
+                    merged_docs.extend(result["doc_list"])
+            sorted_docs = sorted(
+                merged_docs, key=lambda x: x["score"], reverse=True
+            )
             if top_n is not None and top_n > 0:
                 sorted_docs = sorted_docs[:top_n]
             return {
-                'doc_list': sorted_docs,
-                'total': 10000,
+                "doc_list": sorted_docs,
+                "total": 10000,
             }
-        except (ValueError, TypeError, HTTPStatusError, ConnectError,
-                TimeoutException) as e:
-            raise McpError(ErrorData(
-                code=INTERNAL_ERROR,
-                message=f'Multi-retrieve operation failed: {str(e)}',
-            )) from e
+        except (
+            ValueError,
+            TypeError,
+            HTTPStatusError,
+            ConnectError,
+            TimeoutException,
+        ) as e:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=f"Multi-retrieve operation failed: {str(e)}",
+                )
+            ) from e
 
     if semaphore is not None:
         async with semaphore:
@@ -681,16 +768,17 @@ async def multi_retrieve(
         return await make_multi_retrieve()
 
 
-async def rerank(user_query: str,
-                 doc_list: List[Dict[str, Any]],
-                 rerank_url: str = kc.RERANK_URL,
-                 top_n: int = kc.TOP_N,
-                 rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-                 score_threshold: float = kc.SCORE_THRESHOLD,
-                 timeout: float = kc.TIMEOUT,
-                 retriable_codes: List[int] = kc.RETRIABLE_CODES,
-                 max_retries: int = kc.MAX_RETRIES,
-                 ) -> list:
+async def rerank(
+    user_query: str,
+    doc_list: List[Dict[str, Any]],
+    rerank_url: str = kc.RERANK_URL,
+    top_n: int = kc.TOP_N,
+    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
+    score_threshold: float = kc.SCORE_THRESHOLD,
+    timeout: float = kc.TIMEOUT,
+    retriable_codes: List[int] = kc.RETRIABLE_CODES,
+    max_retries: int = kc.MAX_RETRIES,
+) -> list:
     """Rerank a list of documents based on a user query.
 
     This function sends a list of documents to a reranking service to obtain
@@ -717,62 +805,73 @@ async def rerank(user_query: str,
         McpError: If the API call to the reranking service fails after all
                   retries.
     """
+
     async def make_rerank_request(client, docs_batch):
         for attempt in range(max_retries + 1):
             try:
                 response = await client.post(
                     rerank_url,
-                    headers={'Content-Type': 'application/json'},
-                    json={'query': user_query,
-                          'ranking_order': ['title', 'content'],
-                          'docs': docs_batch,
-                          'top_n': top_n},
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "query": user_query,
+                        "ranking_order": ["title", "content"],
+                        "docs": docs_batch,
+                        "top_n": top_n,
+                    },
                     timeout=timeout,
                 )
                 response.raise_for_status()
-                return response.json()['rank_result']
+                return response.json()["rank_result"]
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to rerank: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to rerank: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
     docs, id_doc_dict = [], {}
     for doc in doc_list:
-        if doc['chunk_id'] not in id_doc_dict:
-            if 'big_content' in doc:
-                docs.append({
-                    'id': doc['chunk_id'],
-                    'title': doc['title'],
-                    'content': doc['big_content'],
-                })
-                id_doc_dict.update({doc['chunk_id']: doc})
-            elif 'content' in doc:
-                docs.append({
-                    'id': doc['chunk_id'],
-                    'title': doc['title'],
-                    'content': doc['content'],
-                })
-                id_doc_dict.update({doc['chunk_id']: doc})
+        if doc["chunk_id"] not in id_doc_dict:
+            if "big_content" in doc:
+                docs.append(
+                    {
+                        "id": doc["chunk_id"],
+                        "title": doc["title"],
+                        "content": doc["big_content"],
+                    }
+                )
+                id_doc_dict.update({doc["chunk_id"]: doc})
+            elif "content" in doc:
+                docs.append(
+                    {
+                        "id": doc["chunk_id"],
+                        "title": doc["title"],
+                        "content": doc["content"],
+                    }
+                )
+                id_doc_dict.update({doc["chunk_id"]: doc})
 
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -783,18 +882,28 @@ async def rerank(user_query: str,
             all_results = []
             for result in results:
                 if isinstance(result, Exception):
-                    raise McpError(ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f'Reranking failed: {str(result)}',
-                    )) from result
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Reranking failed: {str(result)}",
+                        )
+                    ) from result
+                if isinstance(result, Exception):
+                    raise McpError(
+                        ErrorData(
+                            code=INTERNAL_ERROR,
+                            message=f"Reranking failed: {str(result)}",
+                        )
+                    ) from result
                 if result is not None:
                     try:
-                        if hasattr(result, '__iter__'):
-                            all_results.extend(result)
+                        if hasattr(result, "__iter__"):
+                            all_results.extend(cast(list, result))
                     except TypeError:
                         continue
             rank_docs = sorted(
-                all_results, key=lambda x: x['score'], reverse=True)[:top_n]
+                all_results, key=lambda x: x["score"], reverse=True
+            )[:top_n]
         else:
             rank_docs = await make_rerank_request(client, docs)
 
@@ -804,9 +913,9 @@ async def rerank(user_query: str,
         rank_docs = list(rank_docs)
 
     return [
-        {**id_doc_dict[doc['id']].copy(), 'score': doc['score']}
+        {**id_doc_dict[doc["id"]].copy(), "score": doc["score"]}
         for doc in rank_docs
-        if doc['score'] >= score_threshold
+        if doc["score"] >= score_threshold
     ]
 
 
@@ -847,23 +956,26 @@ def response_to_string(phyto_response: dict) -> str:
         [1] Plant Biology
         [2] Botany Research
     """
-    content = ''
+    content = ""
     doc_list = []
 
-    if (phyto_response and 'choices' in phyto_response and
-            len(phyto_response['choices']) > 0):
-        choice = phyto_response['choices'][0]
-        if 'message' in choice and choice['message'] is not None:
-            message = choice['message']
-            content = message.get('content', '')
-            doc_list = message.get('doc_list', [])
+    if (
+        phyto_response
+        and "choices" in phyto_response
+        and len(phyto_response["choices"]) > 0
+    ):
+        choice = phyto_response["choices"][0]
+        if "message" in choice and choice["message"] is not None:
+            message = choice["message"]
+            content = message.get("content", "")
+            doc_list = message.get("doc_list", [])
 
-    doc_string = ''
+    doc_string = ""
     for doc_id, doc in enumerate(doc_list):
-        title = doc.get('title', '') if doc is not None else ''
+        title = doc.get("title", "") if doc is not None else ""
         if title:
-            if title[-3:] in ('pdf', 'PDF'):
-                doc_string += f'[{doc_id+1}] ' + title[:-4] + '\n\n'
+            if title[-3:] in ("pdf", "PDF"):
+                doc_string += f"[{doc_id + 1}] " + title[:-4] + "\n\n"
             else:
-                doc_string += f'[{doc_id+1}] ' + title + '\n\n'
-    return content + '\n\n## Reference:\n\n' + doc_string
+                doc_string += f"[{doc_id + 1}] " + title + "\n\n"
+    return content + "\n\n## Reference:\n\n" + doc_string
