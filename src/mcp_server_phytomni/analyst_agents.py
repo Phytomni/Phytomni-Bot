@@ -1,29 +1,3 @@
-# Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
-# Author: maoyichao (maoyc_0316@163.com)
-#         xieshang (xieshang0608@gmail.com)
-#         guxiaofeng (guxiaofeng@caas.cn)
-"""
-This module provides a suite of asynchronous functions for interacting with a
-bioinformatics analysis platform. It enables submitting analysis tasks,
-monitoring their status, and managing them programmatically. The module
-leverages a combination of HTTP requests for API communication, object storage
-for data handling, and large language models for generating analysis plans.
-
-Key functionalities include:
-- Submitting complex bioinformatics tasks with specified parameters and data.
-- Generating analysis plans using language models, with or without retrieval
-  augmentation.
-- Monitoring the lifecycle of submitted tasks (e.g., pending, running,
-  completed, failed).
-- Handling asynchronous operations with retries and timeouts for robustness.
-- Uploading and deleting data from an Object Storage Service (OBS).
-
-The module is designed to be used in scenarios where automated, reproducible,
-and scalable bioinformatics analyses are required. It abstracts away the
-complexities of direct API and service interactions, providing a simplified
-interface for developers and researchers.
-"""
 import asyncio
 import datetime
 import re
@@ -318,6 +292,9 @@ class AnalystAgent:
                 )) from exc
 
         final_data_list = {**data_list, **selected_data}
+        print('===================AutoSelect Data===================')
+        print(final_data_list)
+        print('=====================================================')
         
         return {"data_list": final_data_list}
     
@@ -392,6 +369,9 @@ class AnalystAgent:
             else:
                 break
         retrieve_context = '\n\n'.join(retrieve_results)
+        print('===================Retrieve Information===================')
+        print(retrieve_context)
+        print('==========================================================')
         return {
             "method_context": {
                 "upload_context": upload_context, 
@@ -423,14 +403,16 @@ class AnalystAgent:
                 user_query = get_prompt(
                     self.ac.PROMPT_FILE, 'user/analysis_retrieve_file_feedback',
                     {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'upload_context': state["method_context"]["upload_context"], 
-                     'feed_back': state["plan_feedback"], 
+                     'upload_context': state["method_context"]["upload_context"],
+                     'feed_back': state["plan_feedback"],
+                     'raw_plan': state.get("plan", ""),
                      'user_query': state["goal_description"]})
             else:
                 user_query = get_prompt(
                     self.ac.PROMPT_FILE, 'user/analysis_retrieve_feedback',
                     {'retrieve_results': state["method_context"]["retrieve_context"],
-                     'feed_back': state["plan_feedback"], 
+                     'feed_back': state["plan_feedback"],
+                     'raw_plan': state.get("plan", ""),
                      'user_query': state["goal_description"]})
         else:
             if state["obs_file_list"]:
@@ -477,6 +459,9 @@ class AnalystAgent:
                 message='Failed to generate plan: '
                         'Invalid response from language model'
             ))
+        print('===================Plan===================')
+        print(content)
+        print('==========================================')
         return {
             "plan": content,
             "plan_retries": state.get("plan_retries", 0) + 1,
@@ -550,6 +535,11 @@ class AnalystAgent:
             score = 0
             decision = "REJECTED"
             feedback = ""
+        print('===================Check===================')
+        print(f'Retries: {current_retries}/{max_retries}')
+        print(f'Score: {score}')
+        print(f'Feedback: {feedback}')
+        print('==========================================')
         if decision == "APPROVED" or current_retries >= max_retries:
             return {"plan_feedback": "APPROVED"}
         else:
@@ -608,6 +598,9 @@ class AnalystAgent:
             result = json.loads(json_string)
         else:
             result = json.loads(content)
+        print('===================Tools===================')
+        print(result["tools"])
+        print('===========================================')
         return {"extracted_tools": result["tools"]}
 
     async def tool_retrieve_node(self, state: AnalystAgentsState) -> dict:
@@ -647,6 +640,9 @@ class AnalystAgent:
             for doc in tool_usage_info['doc_list']:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
+        print('===================Tools Usage===================')
+        print(tool_usages)
+        print('=================================================')
         return {"tool_usages": tool_usages}
 
     async def submit_node(self, state: AnalystAgentsState):
@@ -768,6 +764,12 @@ class AnalystAgent:
                         json=job_data,
                     )
                     if response.status_code == 201:
+                        print('===================Submit===================')
+                        print(f'Job_Name: {job_name}')
+                        print(f'Task_id: {json.loads(response.text)['id']}')
+                        print(f'Output_Dir: {output_dir}')
+                        print('Task_Status: RUNNING')
+                        print('============================================')
                         return {
                             "task_id": json.loads(response.text)['id'], 
                             "task_status": "PENDING", 
