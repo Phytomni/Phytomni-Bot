@@ -1,18 +1,21 @@
+"""Custom exception hierarchy for func_cache module."""
+
+
 class CacheError(Exception):
-    pass
+    """Base exception for all cache-related errors."""
 
 
 class CacheConfigError(CacheError):
-    pass
+    """Raised when cache configuration is invalid."""
 
 
 class LockTimeout(CacheError):
-    pass
+    """Raised when lock acquisition times out."""
 
 
 class SerializationError(CacheError):
-    pass
+    """Raised when serialization or deserialization fails."""
 
 
 class StorageError(CacheError):
-    pass
+    """Raised when database storage operation fails."""

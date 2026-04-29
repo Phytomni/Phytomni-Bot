@@ -1,3 +1,5 @@
+"""SQLite-based cache storage with WAL mode for concurrency."""
+
 import sqlite3
 import threading
 import time
@@ -11,12 +13,28 @@ logger = logging.getLogger(__name__)
 
 
 class Storage:
+    """SQLite-backed cache storage with process-safe connection management.
+
+    This class manages cache entries, metadata, and locks using SQLite with
+    WAL journal mode for improved concurrency. It uses thread-local connections
+    and supports cross-process lock cleanup.
+
+    Class Attributes:
+        _instances: Singleton instances keyed by database path.
+        _instances_lock: Class-level lock for instance creation.
+
+    Instance Attributes:
+        db_path: Absolute path to the SQLite database file.
+        _local: Thread-local connection storage.
+        _pid: Process ID at connection creation.
+    """
 
     _instances: dict[str, "Storage"] = {}
     _instances_lock = threading.Lock()
 
     @classmethod
     def get_instance(cls, db_path):
+        """Get or create a Storage singleton for the given database path."""
         db_path = os.path.abspath(db_path)
         with cls._instances_lock:
             if db_path not in cls._instances:
@@ -24,12 +42,14 @@ class Storage:
             return cls._instances[db_path]
 
     def __init__(self, db_path):
+        """Initialize storage with the given database path."""
         self.db_path = db_path
         self._local = threading.local()
         self._pid = os.getpid()
         self._init_db()
 
     def _get_conn(self):
+        """Get or create a thread-local database connection."""
         current_pid = os.getpid()
         if current_pid != self._pid:
             self._pid = current_pid
@@ -37,9 +57,7 @@ class Storage:
 
         if not hasattr(self._local, "conn") or self._local.conn is None:
             try:
-                conn = sqlite3.connect(
-                    self.db_path, timeout=10, isolation_level=None
-                )
+                conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA cache_size=-8000")
@@ -50,6 +68,7 @@ class Storage:
         return self._local.conn
 
     def _init_db(self):
+        """Create cache tables if they do not exist."""
         conn = self._get_conn()
         try:
             conn.execute(
@@ -84,6 +103,7 @@ class Storage:
     # ────────── cache_entries ────────── #
 
     def get(self, func_id, key_hash):
+        """Retrieve a cached value, returning None if not found or expired."""
         try:
             conn = self._get_conn()
             cursor = conn.execute(
@@ -97,8 +117,7 @@ class Storage:
             value, expires_at = row
             if expires_at is not None and expires_at < time.time():
                 conn.execute(
-                    "DELETE FROM cache_entries "
-                    "WHERE func_id=? AND key_hash=?",
+                    "DELETE FROM cache_entries WHERE func_id=? AND key_hash=?",
                     (func_id, key_hash),
                 )
                 return None
@@ -107,6 +126,7 @@ class Storage:
             raise StorageError(f"Failed to read cache: {e}") from e
 
     def set(self, func_id, key_hash, value, ttl=None):
+        """Store a value in the cache with optional TTL in seconds."""
         try:
             conn = self._get_conn()
             expires_at = time.time() + ttl if ttl is not None else None
@@ -119,6 +139,7 @@ class Storage:
             raise StorageError(f"Failed to write cache: {e}") from e
 
     def delete_entry(self, func_id, key_hash):
+        """Delete a specific cache entry by func_id and key_hash."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -129,6 +150,7 @@ class Storage:
             raise StorageError(f"Failed to delete cache entry: {e}") from e
 
     def delete_func(self, func_id):
+        """Delete all cache entries for a given function."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -139,6 +161,7 @@ class Storage:
             raise StorageError(f"Failed to delete function cache: {e}") from e
 
     def count(self, func_id):
+        """Return the number of non-expired cache entries for a function."""
         try:
             conn = self._get_conn()
             cursor = conn.execute(
@@ -152,6 +175,7 @@ class Storage:
             raise StorageError(f"Failed to count cache entries: {e}") from e
 
     def purge_expired(self):
+        """Remove all expired cache entries from the database."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -165,11 +189,11 @@ class Storage:
     # ────────── cache_meta ────────── #
 
     def get_meta(self, func_id):
+        """Retrieve cache metadata for a function, or None if not found."""
         try:
             conn = self._get_conn()
             cursor = conn.execute(
-                "SELECT key_params, compress FROM cache_meta "
-                "WHERE func_id=?",
+                "SELECT key_params, compress FROM cache_meta WHERE func_id=?",
                 (func_id,),
             )
             row = cursor.fetchone()
@@ -180,6 +204,7 @@ class Storage:
             raise StorageError(f"Failed to read metadata: {e}") from e
 
     def set_meta(self, func_id, key_params, compress):
+        """Store or update cache metadata for a function."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -194,6 +219,7 @@ class Storage:
     # ────────── cache_locks ────────── #
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
+        """Attempt to acquire a lock, returning True if successful."""
         conn = self._get_conn()
         now = time.time()
         try:
@@ -209,8 +235,7 @@ class Storage:
                 (func_id, key_hash, owner, now),
             )
             cursor = conn.execute(
-                "SELECT owner FROM cache_locks "
-                "WHERE func_id=? AND key_hash=?",
+                "SELECT owner FROM cache_locks WHERE func_id=? AND key_hash=?",
                 (func_id, key_hash),
             )
             row = cursor.fetchone()
@@ -228,17 +253,18 @@ class Storage:
             raise StorageError(f"Failed to acquire lock: {e}") from e
 
     def release_lock(self, func_id, key_hash, owner):
+        """Release a lock held by the given owner."""
         try:
             conn = self._get_conn()
             conn.execute(
-                "DELETE FROM cache_locks "
-                "WHERE func_id=? AND key_hash=? AND owner=?",
+                "DELETE FROM cache_locks WHERE func_id=? AND key_hash=? AND owner=?",
                 (func_id, key_hash, owner),
             )
         except sqlite3.Error as e:
             raise StorageError(f"Failed to release lock: {e}") from e
 
     def cleanup_process_locks(self, pid):
+        """Remove all locks held by processes matching the given PID."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -249,6 +275,7 @@ class Storage:
             raise StorageError(f"Failed to cleanup process locks: {e}") from e
 
     def cleanup_func_locks(self, func_id):
+        """Remove all locks for a given function."""
         try:
             conn = self._get_conn()
             conn.execute(
@@ -259,6 +286,7 @@ class Storage:
             raise StorageError(f"Failed to cleanup function locks: {e}") from e
 
     def close(self):
+        """Close the database connection and clean up process locks."""
         try:
             self.cleanup_process_locks(os.getpid())
         except Exception:

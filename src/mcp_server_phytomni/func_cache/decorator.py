@@ -1,3 +1,5 @@
+"""Caching decorator for function result memoization with SQLite persistence."""
+
 import functools
 import logging
 import atexit
@@ -23,6 +25,28 @@ def func_cache(
     lock_timeout=10,
     lock_expire=300,
 ):
+    """Decorator that caches function results to SQLite storage.
+
+    This decorator wraps a function to cache its results based on the
+    function's arguments. Cache entries are stored in an SQLite database
+    with optional TTL, compression, and distributed locking.
+
+    Args:
+        key_params: List of parameter names to include in cache key. If None,
+            all parameters are used.
+        db_path: Path to the SQLite database file.
+        ttl: Time-to-live in seconds for cache entries. If None, entries
+            persist until explicitly cleared.
+        compress: Whether to compress cached values using zlib.
+        lock_timeout: Maximum seconds to wait for lock acquisition on cache
+            miss.
+        lock_expire: Seconds before a lock is considered expired and can be
+            stolen.
+
+    Returns:
+        A decorator function that wraps the target function with caching.
+    """
+
     def decorator(func):
         storage = Storage.get_instance(db_path)
         kb = KeyBuilder(func, key_params)
@@ -40,6 +64,7 @@ def func_cache(
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            """Wrapper function that handles cache lookup, execution, and storage."""
             nonlocal hits, misses
 
             # ── Build key ──
@@ -118,6 +143,7 @@ def func_cache(
                         pass
 
         def cache_clear():
+            """Clear all cache entries and locks for the decorated function."""
             try:
                 storage.delete_func(kb.func_id)
                 storage.cleanup_func_locks(kb.func_id)
@@ -125,6 +151,7 @@ def func_cache(
                 logger.warning(f"Failed to clear cache: {e}")
 
         def cache_info():
+            """Return cache statistics for the decorated function."""
             try:
                 count = storage.count(kb.func_id)
             except CacheError:
@@ -140,6 +167,7 @@ def func_cache(
 
 
 def _check_and_update_meta(storage, func_id, key_params, compress):
+    """Check and update cache metadata, clearing cache on config changes."""
     try:
         meta = storage.get_meta(func_id)
         if meta is None:
