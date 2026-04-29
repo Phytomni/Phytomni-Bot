@@ -12,7 +12,7 @@ better performance.
 
 import asyncio
 from random import uniform
-from typing import Any, cast, Dict, List, Optional, TypedDict, Union
+from typing import Any, cast, Dict, List, Literal, Optional, TypedDict, Union
 from uuid import uuid1
 
 from httpx import (
@@ -215,6 +215,8 @@ class DataAgentState(TypedDict):
 
     Attributes:
         user_query: The user's natural language query.
+        is_rewrite: Whether the workflow should retrieve context and rewrite
+            the query before querying the database.
         retrieve_promopt: The constructed prompt containing
             retrieved scenarios.
         rewrite_query: The rewritten query optimized for SQL generation.
@@ -223,9 +225,10 @@ class DataAgentState(TypedDict):
     """
 
     user_query: str
+    is_rewrite: bool
     retrieve_promopt: str
     rewrite_query: str
-    final_reponse: str
+    final_reponse: Dict[str, Any]
 
 
 class DataAgent:
@@ -285,12 +288,22 @@ class DataAgent:
         workflow.add_node("rewrite_node", self.rewrite_node)
         workflow.add_node("search_node", self.search_node)
 
-        workflow.add_edge(START, "retrieve_node")
+        workflow.add_conditional_edges(
+            START, self.route_start, ["retrieve_node", "search_node"]
+        )
         workflow.add_edge("retrieve_node", "rewrite_node")
         workflow.add_edge("rewrite_node", "search_node")
         workflow.add_edge("search_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
+
+    def route_start(
+        self, state: DataAgentState
+    ) -> Literal["retrieve_node", "search_node"]:
+        """Route directly to search when query rewriting is disabled."""
+        if state["is_rewrite"]:
+            return "retrieve_node"
+        return "search_node"
 
     async def retrieve_node(self, state: DataAgentState):
         """Retrieve relevant database scenarios and construct a query prompt.
@@ -424,6 +437,7 @@ class DataAgent:
         dialog_id = self.dc.DIALOG_ID or str(uuid1())
         client_timeout = Timeout(self.dc.TIMEOUT, connect=self.dc.TIMEOUT)
         response = None
+        query = state["rewrite_query"] if state["is_rewrite"] else state["user_query"]
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
             for attempt in range(self.dc.MAX_RETRIES + 1):
                 try:
@@ -437,7 +451,7 @@ class DataAgent:
                         json={
                             "subject_id": self.dc.SUBJECT_ID,
                             "dialog_id": dialog_id,
-                            "message_content": state["rewrite_query"],
+                            "message_content": query,
                             "need_insight": self.dc.NEED_INSIGHT,
                             "simplify_response": self.dc.SIMPLIFY_RESPONSE,
                         },
@@ -482,7 +496,12 @@ class DataAgent:
             )
         return {"final_reponse": response.json()}
 
-    async def arun(self, user_query: str, thread_id: Optional[str] = None):
+    async def arun(
+        self,
+        user_query: str,
+        is_rewrite: bool = True,
+        thread_id: Optional[str] = None,
+    ):
         """Execute the DataAgent workflow.
 
         This is the main entry point for invoking the agent. It initializes
@@ -503,6 +522,7 @@ class DataAgent:
             thread_id = str(uuid1())
         initial_state = {
             "user_query": user_query,
+            "is_rewrite": is_rewrite,
             "retrieve_promopt": None,
             "rewrite_query": None,
             "final_reponse": None,

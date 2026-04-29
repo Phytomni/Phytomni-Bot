@@ -495,6 +495,7 @@ class AnalystAgent:
                             state["method_context"]["upload_context"] or ""
                         ),
                         "feed_back": str(state["plan_feedback"]),
+                        "raw_plan": str(state.get("plan") or ""),
                         "user_query": str(state["goal_description"] or ""),
                     },
                 )
@@ -507,6 +508,7 @@ class AnalystAgent:
                             state["method_context"]["retrieve_context"] or ""
                         ),
                         "feed_back": str(state["plan_feedback"]),
+                        "raw_plan": str(state.get("plan") or ""),
                         "user_query": str(state["goal_description"] or ""),
                     },
                 )

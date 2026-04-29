@@ -550,6 +550,8 @@ class KnowledgeAgent:
             cast(Any, initial_state), config=cast(Any, config)
         )
 
+        if not is_generate:
+            return final_state["retrieved_docs"]
         return final_state["final_response"]
 
 
