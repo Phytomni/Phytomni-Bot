@@ -1,9 +1,9 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: maoyc_0316@163.com
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Gene network analysis agents for plant bioinformatics research.
+"""LangGraph-based gene network analysis agents for plant bioinformatics research.
 
 This module provides specialized agents for analyzing gene networks in plant
 genomics, focusing on identifying and characterizing relationships between
@@ -17,211 +17,305 @@ Key functionalities include:
 - Co-expression network construction
 - Functional module identification
 - Integration with plant-specific databases and resources
-
-The module is designed for researchers studying plant gene regulatory networks,
-metabolic pathways, and systems-level genomics approaches.
-
-Examples:
-    Basic gene network analysis:
-        >>> result = await network_analysis(
-        ...     species='rice',
-        ...     to_id='TO:0000207'
-        ... )
-        >>> print(f"Network task: {result['network_task']}")
-
-    Batch processing multiple traits:
-        >>> result = await network_analysis(
-        ...     species='arabidopsis',
-        ...     to_id='TO:0000207',
-        ...     batch=True,
-        ...     user_id='batch_user_001'
-        ... )
 """
 
+from typing import Dict, List, Any, Optional, TypedDict
 from uuid import uuid1
-from typing import List, Dict
 
-from .analyst_agents import create_output_dir, get_data_list, submit
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
+
+from .utils import get_prompt
+from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig
-from .utils import get_prompt
 
 gnc = GeneNetworkConfig()
 sc = SensitiveConfig().load()
 
 
+class GeneNetworkState(TypedDict):
+    """State schema for the gene network analysis workflow.
+
+    This TypedDict defines the state structure used throughout the gene network
+    analysis workflow, tracking species information, gene identifiers, task
+    management, and result aggregation for parallel network analysis operations.
+
+    Attributes:
+        species: Species name (e.g., "rice", "arabidopsis").
+        to_id: Target gene identifier for network analysis.
+        user_id: User identifier.
+        batch: Whether this is batch processing.
+        output_dir: Output directory path for results.
+        network_tasks: List of network analysis tasks to be executed.
+        task_index: Current task index in parallel execution via Send API.
+        task_ids: Mapping of task names to their corresponding task IDs.
+        completed_count: Counter tracking the number of completed tasks.
+        error: Error message if any task failed during execution.
+    """
+
+    species: str  # Species name (e.g., "rice", "arabidopsis")
+    to_id: str  # Target gene identifier for network analysis
+    user_id: str  # User identifier
+    batch: bool  # Whether this is batch processing
+    output_dir: Optional[str]  # Output directory path for results
+    network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
+    task_index: Optional[int]  # Current task index in parallel execution
+    task_ids: Dict[str, str]  # Mapping of task names to task IDs
+    completed_count: int  # Counter for completed tasks
+    error: Optional[str]  # Error message if any task failed
+
+
+class GeneNetworkAgents:
+    """LangGraph-based agent for gene network analysis.
+
+    This agent provides a workflow for analyzing gene networks in plant genomics,
+    focusing on identifying and characterizing relationships between genes and their
+    regulatory networks. It leverages computational analysis workflows to examine
+    gene interactions, co-expression patterns, and functional associations.
+
+    Attributes:
+        checkpointer: LangGraph checkpointer for state persistence.
+        analyst_agent: AnalystAgent instance for task execution.
+        gnc: Gene network configuration.
+        sc: Sensitive configuration settings.
+        app: Compiled LangGraph application.
+
+    Example:
+        >>> agents = GeneNetworkAgents()
+        >>> result = await agents.arun(
+        ...     species="osa",
+        ...     to_id="TO:0000621"
+        ... )
+    """
+
+    def __init__(
+        self,
+        checkpointer=MemorySaver(),
+        analyst_agent: AnalystAgent = None,
+        gene_network_config=gnc,
+        sensitive_config=sc,
+    ):
+        """Initialize the GeneNetworkAgents.
+
+        Args:
+            checkpointer: LangGraph MemorySaver for state persistence.
+            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            gene_network_config: Gene network configuration object.
+            sensitive_config: Sensitive configuration for credentials.
+        """
+        self.checkpointer = checkpointer
+        self.analyst_agent = analyst_agent or AnalystAgent()
+        self.gnc = gene_network_config
+        self.sc = sensitive_config
+        self.app = self._build_graph()
+
+    def _build_graph(self):
+        """Build the LangGraph workflow for gene network analysis tasks."""
+        workflow = StateGraph(GeneNetworkState)
+
+        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
+        workflow.add_node("network_node", self.run_network_node)
+
+        workflow.add_edge(START, "prepare_tasks_node")
+
+        # Use Send API for dynamic task dispatch
+        workflow.add_conditional_edges(
+            "prepare_tasks_node", self.route_network_tasks, ["network_node"]
+        )
+        workflow.add_edge("network_node", END)
+
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def route_network_tasks(self, state: GeneNetworkState):
+        """Dispatch network analysis tasks in parallel using Send API."""
+        tasks = state.get("network_tasks", [])
+        return [
+            Send("network_node", {"task_index": i, **task})
+            for i, task in enumerate(tasks)
+        ]
+
+    async def _dispatch_and_wait_analysis(
+        self,
+        analysis_type: str,
+        species: str,
+        to_id: str,
+        output_dir: str = None,
+    ) -> dict:
+        """Submit network analysis task using AnalystAgent and wait for completion.
+
+        Args:
+            analysis_type: Type of network analysis (e.g., "gene_network_analysis").
+            species: Species name.
+            to_id: Target gene identifier.
+            output_dir: Optional output directory path.
+
+        Returns:
+            Dict containing task_id and output_dir.
+        """
+        goal_template_map = {
+            "gene_network_analysis": "user/gene_network_analysis"
+        }
+        meta_template_map = {
+            "gene_network_analysis": "user/gene_network_analysis_meta"
+        }
+
+        goal_path = goal_template_map.get(analysis_type)
+        meta_path = meta_template_map.get(analysis_type)
+        if not goal_path:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+
+        # Build goal_description
+        goal_description = get_prompt(
+            self.gnc.PROMPT_FILE, goal_path, {"to_id": to_id}
+        )
+        # Build meta prompt
+        meta = get_prompt(self.gnc.PROMPT_FILE, meta_path)
+        # Build data_list
+        data_list = get_data_list(
+            self.gnc.DEEPGENOME_DATA, analysis_type, species
+        )
+
+        # Determine compute resource level
+        compute_resource = self._get_compute_resource(analysis_type)
+
+        # Get output directory
+        if not output_dir:
+            output_dir = create_output_dir(
+                user_id=self.gnc.USER_ID or str(uuid1()),
+                task=f"{analysis_type}_task",
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.gnc.OBS_SERVER,
+                bucket_name=self.gnc.BUCKET_NAME,
+            )
+
+        print(f"  → Submitting {analysis_type} task via AnalystAgent...")
+
+        # Submit task using AnalystAgent
+        result = await self.analyst_agent.arun(
+            query=None,
+            goal_description=goal_description,
+            preset_data_list=data_list,
+            preset_plan=meta,  # Pass meta as predefined plan
+            output_dir=output_dir,
+            compute_resource=compute_resource,
+            is_auto_select=False,  # Data already preset via data_list
+            is_polling=True,  # Wait for task completion
+            thread_id=f"{to_id}_{analysis_type}_{uuid1()}",
+        )
+
+        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
+            raise RuntimeError(
+                f"AnalystAgent failed: {result.get('error_detail')}"
+            )
+
+        task_id = result.get("task_id")
+        print(f"  → {analysis_type} task completed (task_id: {task_id})")
+
+        return {"task_id": task_id, "output_dir": result.get("output_dir")}
+
+    def _get_compute_resource(self, analysis_type: str) -> str:
+        """Determine compute resource level based on analysis type."""
+        medium_compute_types = {"gene_network_analysis"}
+        if analysis_type in medium_compute_types:
+            return "medium"
+        else:
+            return "small"
+
+    async def prepare_tasks(self, state: GeneNetworkState) -> dict:
+        """Prepare the list of network analysis tasks."""
+        tasks = [{"analysis_type": "gene_network_analysis"}]
+        return {"network_tasks": tasks, "task_ids": {}, "completed_count": 0}
+
+    async def run_network_node(self, state: GeneNetworkState) -> dict:
+        """Execute a single network analysis task dispatched via Send API.
+
+        This node is called dynamically for each task in the network_tasks list.
+        """
+        task_index = state.get("task_index")
+        species = state["species"]
+        to_id = state["to_id"]
+        analysis_type = state.get("analysis_type")
+
+        print(
+            f"[Network-{task_index}] 🚀 Executing: {analysis_type} for {to_id}"
+        )
+
+        try:
+            result = await self._dispatch_and_wait_analysis(
+                analysis_type=analysis_type,
+                species=species,
+                to_id=to_id,
+            )
+            # Update task_id for the corresponding task
+            task_key = analysis_type.replace("_analysis", "")
+            existing_task_ids = state.get("task_ids", {})
+            existing_task_ids[task_key] = result.get("task_id")
+            return {"task_ids": existing_task_ids, "completed_count": 1}
+        except Exception as e:
+            return {
+                "task_ids": state.get("task_ids", {}),
+                "completed_count": 1,
+                "error": str(e),
+            }
+
+    async def arun(
+        self,
+        species: str,
+        to_id: str,
+        user_id: Optional[str] = None,
+        batch: bool = False,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Async entry function - submit gene network analysis task and return task_id.
+
+        Args:
+            species: Species name (e.g., "rice", "arabidopsis").
+            to_id: Target gene identifier for network analysis.
+            user_id: Optional user identifier.
+            batch: Whether this is batch processing.
+            thread_id: Optional thread ID for checkpointer.
+
+        Returns:
+            Dict with task_ids on success, or error on failure.
+        """
+        if thread_id is None:
+            thread_id = str(uuid1())
+
+        initial_state = {
+            "species": species,
+            "to_id": to_id,
+            "user_id": user_id,
+            "batch": batch,
+            "output_dir": None,
+            "network_tasks": [],
+            "task_ids": {},
+            "completed_count": 0,
+            "error": None,
+        }
+
+        config = {"configurable": {"thread_id": thread_id}}
+        result = await self.app.ainvoke(initial_state, config)
+        return {
+            "task_ids": result.get("task_ids"),
+            "error": result.get("error"),
+        }
+
+
 async def network_analysis(
     species: str,
     to_id: str,
-    user_id: str = gnc.USER_ID,
+    user_id: Optional[str] = None,
     batch: bool = False,
-    prompt_file: str = gnc.PROMPT_FILE,
-    deepgenome_data: str = gnc.DEEPGENOME_DATA,
-    output_dir: str = gnc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = gnc.OBS_SERVER,
-    bucket_name: str = gnc.BUCKET_NAME,
-    analysis_url: str = gnc.ANALYSIS_URL,
-    region: str = gnc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = gnc.RESOURCE,
-    app_id_dict: Dict[str, str] = gnc.APP_ID,
-    timeout: float = gnc.TIMEOUT,
-    retriable_codes: List[int] = gnc.RETRIABLE_CODES,
-    max_retries: int = gnc.MAX_RETRIES,
-    max_poll: float = gnc.MAX_POLL,
-) -> dict:
-    """Perform comprehensive gene network analysis for a target trait.
-
-    This function initiates a computational workflow to analyze gene networks
-    associated with a specific phenotypic trait, including interaction
-    prediction, co-expression analysis, and functional module identification.
-    It leverages plant-specific databases and advanced network analysis
-    algorithms to characterize gene relationships and regulatory patterns.
-
-    Args:
-        species: The target species for analysis in Latin lowercase format
-            with spaces (e.g., 'oryza sativa', 'arabidopsis thaliana').
-        to_id: The Trait Ontology identifier for network analysis. Trait
-            Ontology (TO) is a controlled vocabulary for plant phenotypic
-            traits (e.g., 'TO:0000207' for plant height, 'TO:0000136' for
-            drought resistance).
-        user_id: Unique identifier for the user submitting the analysis task.
-        batch: Flag indicating whether the operation is part of a batch
-            processing workflow. When True, skips individual output directory
-            creation.
-        prompt_file: Path to the YAML template file containing system prompts
-            for guiding the analysis workflow.
-        deepgenome_data: Path to the comprehensive genomic dataset file
-            containing species-specific reference data and analysis
-            configurations.
-        output_dir: Output directory path for storing results of analysis or
-            operations (e.g., an OBS path). Used when batch=False.
-        model_url: Base URL endpoint for the language model API service used
-            for analysis interpretation and report generation.
-        model_name: Identifier of the specific language model to use for
-            generating analysis summaries and interpretations.
-        coder_api_key: API key for authenticating with the language model
-            service used for computational analysis tasks.
-        access_key_id: Access key identifier for Object Storage Service (OBS)
-            authentication, required for data upload and retrieval operations.
-        secret_access_key: Secret access key for OBS authentication, paired
-            with access_key_id for secure storage operations.
-        obs_server: Base URL endpoint for the Object Storage Service where
-            analysis results and intermediate data are stored.
-        bucket_name: Name of the OBS bucket designated for storing analysis
-            results and associated data files.
-        analysis_url: Base URL endpoint for the bioinformatics analysis
-            platform where computational workflows are executed.
-        region: Geographical region identifier for the analysis service,
-            affecting data locality and service availability.
-        resource_dict: Dictionary mapping computational resource levels
-            ('small', 'medium', 'large') to their respective CPU and memory
-            allocations for analysis job scheduling.
-        app_id_dict: Dictionary mapping computational resource levels to their
-            corresponding application identifiers on the analysis platform.
-        timeout: General request timeout in seconds for API calls, preventing
-            indefinite blocking on network operations.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls, enabling resilient operation under transient failures.
-        max_retries: Maximum number of retry attempts for API calls before
-            raising an exception and terminating the operation.
-        max_poll: Maximum total duration in seconds to monitor the analysis
-            task before timing out, ensuring bounded execution time.
-
-    Returns:
-        A dictionary containing the network analysis task information with the
-        following structure:
-        {
-            'network_task': {
-                'task_id': str,          # Unique task identifier
-                'output_dir': str,       # Analysis results directory
-                'job_name': str,         # Analysis job name
-                'compute_resource': str  # Allocated resource level
-            }
-        }
-
-    Raises:
-        McpError: If the analysis task submission fails after all retry
-            attempts.
-        FileNotFoundError: If the prompt file or deepgenome data file cannot
-            be located at the specified paths.
-        ValueError: If invalid species or trait ontology identifiers are
-            provided.
-        OSError: If output directory creation or OBS operations fail.
-
-    Examples:
-        Basic network analysis for plant height trait:
-            >>> result = await network_analysis(
-            ...     species='oryza sativa',
-            ...     to_id='TO:0000207'
-            ... )
-            >>> print(f"Task ID: {result['network_task']['task_id']}")
-
-        Batch processing with custom configuration:
-            >>> result = await network_analysis(
-            ...     species='arabidopsis thaliana',
-            ...     to_id='TO:0000136',
-            ...     batch=True,
-            ...     user_id='batch_user_001',
-            ...     timeout=3600.0,
-            ...     max_retries=5
-            ... )
-            >>> print(f"Output: {result['network_task']['output_dir']}")
-
-    Note:
-        This function creates output directories automatically when
-        batch=False. For batch operations, ensure output_dir is properly
-        configured before calling this function. The analysis includes network
-        topology metrics, functional enrichment analysis, and visualization
-        outputs for genes associated with the specified trait ontology.
-    """
-    if not batch:
-        if not user_id:
-            user_id = str(uuid1())
-        output_dir = create_output_dir(
-            user_id=user_id,
-            task="network_task",
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-        )
-
-    goal_description = get_prompt(
-        prompt_file, "user/gene_network_analysis", {"to_id": to_id}
-    )
-    data_list = get_data_list(
-        deepgenome_data, "gene_network_analysis", species
-    )
-    meta = get_prompt(prompt_file, "user/gene_network_analysis_meta")
-    gene_network_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
+    **_: Any,
+) -> Dict[str, Any]:
+    """Compatibility wrapper around the LangGraph gene network agent."""
+    agent = GeneNetworkAgents()
+    return await agent.arun(
+        species=species,
+        to_id=to_id,
         user_id=user_id,
-        is_create_dir=False,
-        output_dir=output_dir,
-        meta=meta,
-        execute_code=True,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name="gene-network-agents-task",
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource="small",
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
+        batch=batch,
     )
-    return {"network_task": gene_network_task}

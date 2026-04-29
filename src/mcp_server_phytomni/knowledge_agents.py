@@ -1,5 +1,5 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """This module provides functions for interacting with a knowledge base.
@@ -9,31 +9,27 @@ the retrieved knowledge.
 """
 
 import asyncio
-from json import loads
 from random import uniform
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union, cast
+from json import loads
 from uuid import uuid1
+from typing import List, Dict, Any, Optional, Literal, TypedDict
 
-from httpx import (
-    AsyncClient,
-    ConnectError,
-    HTTPStatusError,
-    Timeout,
-    TimeoutException,
-)
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
+from httpx import AsyncClient, ConnectError, HTTPStatusError
+from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
+from mcp.types import ErrorData, INTERNAL_ERROR
+
 from pydantic import SecretStr
+from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
 
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
 from .config.settings import SensitiveConfig
 from .utils import download_list_convert, get_prompt, split_list
 
-kc = KnowledgeConfig.model_validate({})
-sc = SensitiveConfig.load()
+kc = KnowledgeConfig()
+sc = SensitiveConfig().load()
 
 
 class KnowledgeAgentState(TypedDict):
@@ -48,8 +44,7 @@ class KnowledgeAgentState(TypedDict):
         obs_file_list: A list of OBS file paths uploaded by the user.
         repo_id_dict: A dictionary mapping repository names to their IDs.
         upload_context: The parsed content from user-uploaded files.
-        retrieved_docs: The list of documents retrieved from the
-            knowledge base.
+        retrieved_docs: The list of documents retrieved from the knowledge base.
         retrieve_context: The formatted retrieval context for the LLM.
         main_response: The initial response from the LLM (contains choices).
         is_generate: Whether to generate a response after retrieval.
@@ -106,7 +101,7 @@ class KnowledgeAgent:
         knowledge_config=kc,
         sensitive_config=sc,
     ):
-        """Initialize the KnowledgeAgent and build the graph."""
+        """Initialize the KnowledgeAgent with configuration and build the graph."""
         self.kc = knowledge_config
         self.sc = sensitive_config
         self.checkpointer = checkpointer
@@ -141,7 +136,7 @@ class KnowledgeAgent:
         return workflow.compile(checkpointer=self.checkpointer)
 
     async def process_files_node(self, state: KnowledgeAgentState):
-        """Process uploaded OBS files and convert them to Markdown context.
+        """Process user-uploaded OBS files and convert them to Markdown context.
 
         This node downloads files from OBS storage, converts them to text,
         and adds them to the state as upload_context. The content is
@@ -176,8 +171,8 @@ class KnowledgeAgent:
             upload_results = []
             for i, doc in enumerate(upload_str_list):
                 fragment = (
-                    f"[user upload file {i + 1} begin]\n"
-                    f"{doc}\n[user upload file {i + 1} end]"
+                    f"[user upload file {i+1} begin]\n"
+                    f"{doc}\n[user upload file {i+1} end]"
                 )
                 if total_length + len(fragment) <= self.kc.MAX_TOKENS:
                     upload_results.append(fragment)
@@ -229,7 +224,7 @@ class KnowledgeAgent:
         retrieve_results = []
         total_length = len(upload_context)
         for i, doc in enumerate(retrieve_response.get("doc_list", [])):
-            header = f"[document {i + 1} begin] {doc['title']}"
+            header = f"[document {i+1} begin] {doc['title']}"
             content_field = (
                 doc.get("big_content")
                 if "big_content" in doc
@@ -240,7 +235,7 @@ class KnowledgeAgent:
                 if doc.get("subtitle")
                 else doc.get("content", "")
             )
-            fragment = f"{header}\n{body} [document {i + 1} end]"
+            fragment = f"{header}\n{body} [document {i+1} end]"
             if total_length + len(fragment) <= self.kc.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
@@ -258,8 +253,7 @@ class KnowledgeAgent:
         """Generate a response based on retrieved documents and user files.
 
         This node constructs a prompt using the retrieved context and any
-        uploaded file content, then sends it to the LLM for response
-        generation.
+        uploaded file content, then sends it to the LLM for response generation.
         The retrieved documents are attached to the response for reference.
 
         Args:
@@ -316,7 +310,7 @@ class KnowledgeAgent:
             max_retries=self.kc.MAX_RETRIES,
         )
 
-        # Attach doc_list to the message returned by the LLM
+        # 将 doc_list 挂载到大模型返回的 message 中
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],
             "total": 10000,
@@ -350,7 +344,7 @@ class KnowledgeAgent:
         }
 
     async def follow_up_node(self, state: KnowledgeAgentState):
-        """Generate suggested follow-up questions from the initial response.
+        """Generate suggested follow-up questions based on the initial response.
 
         This node analyzes the initial LLM response and generates relevant
         follow-up questions that the user might want to ask. Questions are
@@ -363,8 +357,7 @@ class KnowledgeAgent:
         Returns:
             A dictionary containing:
                 - follow_up_questions: A list of suggested questions.
-                - final_response: The updated response with follow-up
-                  questions.
+                - final_response: The updated response with follow-up questions.
         """
         user_query = state["user_query"]
         phyto_response = state["main_response"]
@@ -420,7 +413,7 @@ class KnowledgeAgent:
                 "message"
             ].get("content", "")
 
-        # Parse JSON
+        # 解析 JSON
         follow_up_list = []
         if follow_up_content:
             start_index = follow_up_content.find("[")
@@ -433,7 +426,7 @@ class KnowledgeAgent:
                 except (ValueError, TypeError):
                     follow_up_list = []
 
-        # Update final return value
+        # 更新最终返回值
         phyto_response["choices"][0]["message"].update(
             {"follow_up_questions": follow_up_list}
         )
@@ -455,8 +448,7 @@ class KnowledgeAgent:
             state: The current workflow state.
 
         Returns:
-            "process_files_node" if files are uploaded, otherwise
-            "retrieve_node".
+            "process_files_node" if files are uploaded, otherwise "retrieve_node".
         """
         obs_file_list = state.get("obs_file_list")
         if obs_file_list and len(obs_file_list) > 0:
@@ -479,7 +471,7 @@ class KnowledgeAgent:
         """
         if state["is_generate"]:
             return "generate_node"
-        return cast(Literal["generate_node", "__end__"], END)
+        return END
 
     def route_after_generate(
         self, state: KnowledgeAgentState
@@ -497,7 +489,7 @@ class KnowledgeAgent:
         """
         if state["is_follow_up"]:
             return "follow_up_node"
-        return cast(Literal["follow_up_node", "__end__"], END)
+        return END
 
     async def arun(
         self,
@@ -519,10 +511,8 @@ class KnowledgeAgent:
             obs_file_list: Optional list of OBS file paths to upload.
             repo_id_dict: Optional dictionary mapping repo names to IDs.
             is_generate: Whether to generate a response. Defaults to True.
-            is_follow_up: Whether to generate follow-up questions. Defaults to
-                True.
-            thread_id: Optional thread ID for state persistence. If not
-                provided,
+            is_follow_up: Whether to generate follow-up questions. Defaults to True.
+            thread_id: Optional thread ID for state persistence. If not provided,
                        a new UUID will be generated.
 
         Returns:
@@ -546,13 +536,12 @@ class KnowledgeAgent:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(
-            cast(Any, initial_state), config=cast(Any, config)
-        )
+        final_state = await self.app.ainvoke(initial_state, config=config)
 
         if not is_generate:
             return final_state["retrieved_docs"]
-        return final_state["final_response"]
+        else:
+            return final_state["final_response"]
 
 
 async def retrieve(
@@ -752,7 +741,8 @@ async def multi_retrieve(
     Raises:
         McpError: If any of the underlying `retrieve` operations fail.
     """
-    active_repo_id_dict: Dict[str, int] = repo_id_dict or kc.REPO_ID_DICT
+    if not repo_id_dict:
+        repo_id_dict = kc.REPO_ID_DICT
 
     async def make_multi_retrieve():
         try:
@@ -773,7 +763,7 @@ async def multi_retrieve(
                     retriable_codes=retriable_codes,
                     max_retries=max_retries,
                 )
-                for repo_id, page_size in active_repo_id_dict.items()
+                for repo_id, page_size in repo_id_dict.items()
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             merged_docs = []
@@ -930,17 +920,10 @@ async def rerank(
                             message=f"Reranking failed: {str(result)}",
                         )
                     ) from result
-                if isinstance(result, Exception):
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Reranking failed: {str(result)}",
-                        )
-                    ) from result
                 if result is not None:
                     try:
                         if hasattr(result, "__iter__"):
-                            all_results.extend(cast(list, result))
+                            all_results.extend(result)
                     except TypeError:
                         continue
             rank_docs = sorted(
@@ -961,237 +944,105 @@ async def rerank(
     ]
 
 
-def _attach_retrieve_response(
-    phyto_response: Optional[Dict[str, Any]],
-    retrieve_response: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Attach retrieved documents to a chat response payload."""
-    if (
-        phyto_response
-        and "choices" in phyto_response
-        and len(phyto_response["choices"]) > 0
-    ):
-        if (
-            "message" in phyto_response["choices"][0]
-            and phyto_response["choices"][0]["message"] is not None
-        ):
-            phyto_response["choices"][0]["message"].update(retrieve_response)
-        else:
-            phyto_response["choices"][0]["message"] = retrieve_response
-    else:
-        if phyto_response is None:
-            phyto_response = {"choices": [{"message": retrieve_response}]}
-        elif "choices" not in phyto_response:
-            phyto_response["choices"] = [{"message": retrieve_response}]
-        elif len(phyto_response["choices"]) == 0:
-            phyto_response["choices"].append({"message": retrieve_response})
-    return phyto_response
+def _knowledge_config_with_overrides(**kwargs: Any):
+    """Build a KnowledgeConfig copy from compatibility wrapper arguments."""
+    field_map = {
+        "retrieve_url": "RETRIEVE_URL",
+        "repo_id": "REPO_ID",
+        "repo_id_dict": "REPO_ID_DICT",
+        "page_num": "PAGE_NUM",
+        "page_size": "PAGE_SIZE",
+        "filter_string": "FILTER_STRING",
+        "scope": "SCOPE",
+        "extra_repo_ids": "EXTRA_REPO_IDS",
+        "rerank_url": "RERANK_URL",
+        "rerank_batch_size": "RERANK_BATCH_SIZE",
+        "score_threshold": "SCORE_THRESHOLD",
+        "top_n": "TOP_N",
+        "prompt_file": "PROMPT_FILE",
+        "prompt_path": "PROMPT_PATH",
+        "frequency_penalty": "FREQUENCY_PENALTY",
+        "max_tokens": "MAX_TOKENS",
+        "n": "N",
+        "presence_penalty": "PRESENCE_PENALTY",
+        "reasoning_effort": "REASONING_EFFORT",
+        "response_format": "RESPONSE_FORMAT",
+        "stream": "STREAM",
+        "temperature": "TEMPERATURE",
+        "top_p": "TOP_P",
+        "user": "USER",
+        "server_dir": "TEMP_DIR",
+        "obs_server": "OBS_SERVER",
+        "bucket_name": "BUCKET_NAME",
+        "part_size": "PART_SIZT",
+        "task_num": "TASK_NUM",
+        "max_concurrency": "MAX_CONCURRENCY",
+        "max_workers": "MAX_WORKERS",
+        "timeout": "TIMEOUT",
+        "retriable_codes": "RETRIABLE_CODES",
+        "max_retries": "MAX_RETRIES",
+    }
+    updates = {}
+    for source_key, target_key in field_map.items():
+        if source_key in kwargs:
+            updates[target_key] = kwargs[source_key]
+    return kc.model_copy(update=updates)
+
+
+def _knowledge_sensitive_config_with_overrides(**kwargs: Any):
+    """Build a SensitiveConfig copy from compatibility wrapper arguments."""
+    updates = {}
+    if "base_url" in kwargs:
+        updates["BASE_URL"] = kwargs["base_url"]
+    if "model" in kwargs:
+        updates["MODEL_ID"] = kwargs["model"]
+    secret_fields = {
+        "api_key": "API_KEY",
+        "access_key_id": "AccessKeyID",
+        "secret_access_key": "SecretAccessKey",
+    }
+    for source_key, target_key in secret_fields.items():
+        if source_key in kwargs:
+            updates[target_key] = SecretStr(kwargs[source_key])
+    return sc.model_copy(update=updates)
 
 
 async def multi_retrieve_generate(
     user_query: str,
-    retrieve_url: str = kc.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = kc.REPO_ID_DICT,
-    page_num: int = kc.PAGE_NUM,
-    filter_string: Optional[str] = kc.FILTER_STRING,
-    scope: str = kc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
-    rerank_url: str = kc.RERANK_URL,
-    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-    score_threshold: float = kc.SCORE_THRESHOLD,
-    top_n: int = kc.TOP_N,
-    prompt_file: str = kc.PROMPT_FILE,
-    prompt_path: str = kc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = kc.FREQUENCY_PENALTY,
-    max_tokens: int = kc.MAX_TOKENS,
-    n: int = kc.N,
-    presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
-    stream: bool = kc.STREAM,
-    temperature: float = kc.TEMPERATURE,
-    top_p: float = kc.TOP_P,
-    user: str = kc.USER,
     obs_file_list: Optional[List[str]] = None,
-    server_dir: str = kc.TEMP_DIR,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = kc.OBS_SERVER,
-    bucket_name: str = kc.BUCKET_NAME,
-    part_size: int = kc.PART_SIZT,
-    task_num: int = kc.TASK_NUM,
-    max_concurrency: int = kc.MAX_CONCURRENCY,
-    max_workers: int = kc.MAX_WORKERS,
-    timeout: float = kc.TIMEOUT,
-    retriable_codes: List[int] = kc.RETRIABLE_CODES,
-    max_retries: int = kc.MAX_RETRIES,
+    repo_id_dict: Optional[Dict[str, int]] = None,
+    is_generate: bool = True,
+    is_follow_up: bool = True,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based KnowledgeAgent."""
-    knowledge_config = kc.model_copy(
-        update={
-            "BUCKET_NAME": bucket_name,
-            "EXTRA_REPO_IDS": extra_repo_ids,
-            "FILTER_STRING": filter_string,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "MAX_CONCURRENCY": max_concurrency,
-            "MAX_RETRIES": max_retries,
-            "MAX_TOKENS": max_tokens,
-            "MAX_WORKERS": max_workers,
-            "N": n,
-            "OBS_SERVER": obs_server,
-            "PAGE_NUM": page_num,
-            "PART_SIZT": part_size,
-            "PRESENCE_PENALTY": presence_penalty,
-            "PROMPT_FILE": prompt_file,
-            "PROMPT_PATH": prompt_path,
-            "REASONING_EFFORT": reasoning_effort,
-            "REPO_ID_DICT": repo_id_dict or kc.REPO_ID_DICT,
-            "RESPONSE_FORMAT": response_format,
-            "RERANK_BATCH_SIZE": rerank_batch_size,
-            "RERANK_URL": rerank_url,
-            "RETRIABLE_CODES": retriable_codes,
-            "RETRIEVE_URL": retrieve_url,
-            "SCOPE": scope,
-            "SCORE_THRESHOLD": score_threshold,
-            "STREAM": stream,
-            "TASK_NUM": task_num,
-            "TEMPERATURE": temperature,
-            "TEMP_DIR": server_dir,
-            "TIMEOUT": timeout,
-            "TOP_N": top_n,
-            "TOP_P": top_p,
-            "USER": user,
-        }
-    )
-    sensitive_config = SensitiveConfig(
-        DOMAIN_NAME=sc.DOMAIN_NAME,
-        USER_NAME=sc.USER_NAME,
-        USER_PASSWORD=sc.USER_PASSWORD,
-        AccessKeyID=SecretStr(access_key_id),
-        SecretAccessKey=SecretStr(secret_access_key),
-        BASE_URL=base_url,
-        MODEL_ID=model,
-        API_KEY=SecretStr(api_key),
-        CODER_URL=sc.CODER_URL,
-        CODER_MODEL=sc.CODER_MODEL,
-        CODER_API_KEY=sc.CODER_API_KEY,
-    )
     agent = KnowledgeAgent(
-        knowledge_config=knowledge_config,
-        sensitive_config=sensitive_config,
+        knowledge_config=_knowledge_config_with_overrides(**kwargs),
+        sensitive_config=_knowledge_sensitive_config_with_overrides(**kwargs),
     )
     return await agent.arun(
         user_query=user_query,
         obs_file_list=obs_file_list or [],
         repo_id_dict=repo_id_dict,
-        is_generate=True,
-        is_follow_up=True,
+        is_generate=is_generate,
+        is_follow_up=is_follow_up,
     )
 
 
 async def retrieve_generate(
     user_query: str,
-    retrieve_url: str = kc.RETRIEVE_URL,
     repo_id: str = kc.REPO_ID,
-    page_num: int = kc.PAGE_NUM,
     page_size: int = kc.PAGE_SIZE,
-    filter_string: Optional[str] = kc.FILTER_STRING,
-    scope: str = kc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
-    rerank_url: str = kc.RERANK_URL,
-    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-    score_threshold: float = kc.SCORE_THRESHOLD,
-    prompt_file: str = kc.PROMPT_FILE,
-    prompt_path: str = kc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = kc.FREQUENCY_PENALTY,
-    max_tokens: int = kc.MAX_TOKENS,
-    n: int = kc.N,
-    presence_penalty: float = kc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = kc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = kc.RESPONSE_FORMAT,
-    stream: bool = kc.STREAM,
-    temperature: float = kc.TEMPERATURE,
-    top_p: float = kc.TOP_P,
-    user: str = kc.USER,
-    timeout: float = kc.TIMEOUT,
-    retriable_codes: List[int] = kc.RETRIABLE_CODES,
-    max_retries: int = kc.MAX_RETRIES,
+    obs_file_list: Optional[List[str]] = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Perform retrieval-augmented generation for one repository."""
-    retrieve_response = await retrieve(
+    """Compatibility wrapper for single-repository retrieve and generate."""
+    return await multi_retrieve_generate(
         user_query=user_query,
-        retrieve_url=retrieve_url,
-        repo_id=repo_id,
-        page_num=page_num,
-        page_size=page_size,
-        filter_string=filter_string,
-        scope=scope,
-        extra_repo_ids=extra_repo_ids,
-        rerank_url=rerank_url,
-        rerank_batch_size=rerank_batch_size,
-        score_threshold=score_threshold,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
+        obs_file_list=obs_file_list or [],
+        repo_id_dict={repo_id: page_size},
+        **kwargs,
     )
-
-    retrieve_results = []
-    total_length = 0
-    for index, doc in enumerate(retrieve_response.get("doc_list", [])):
-        header = f"[document {index + 1} begin] {doc['title']}"
-        content_field = (
-            doc.get("big_content")
-            if "big_content" in doc
-            else doc.get("content", "")
-        )
-        body = (
-            f"{doc['subtitle']}\n{content_field}"
-            if doc.get("subtitle")
-            else doc.get("content", "")
-        )
-        fragment = f"{header}\n{body} [document {index + 1} end]"
-        if total_length + len(fragment) <= max_tokens:
-            retrieve_results.append(fragment)
-            total_length += len(fragment)
-        else:
-            break
-
-    retrieve_context = "\n\n".join(retrieve_results)
-    prompted_query = get_prompt(
-        prompt_file,
-        "user/protocol",
-        {
-            "retrieve_results": retrieve_context,
-            "experiment": user_query,
-        },
-    )
-    phyto_response = await phyto_chat(
-        user_query=prompted_query,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-    )
-    return _attach_retrieve_response(phyto_response, retrieve_response)
 
 
 def response_to_string(phyto_response: dict) -> str:
@@ -1250,7 +1101,7 @@ def response_to_string(phyto_response: dict) -> str:
         title = doc.get("title", "") if doc is not None else ""
         if title:
             if title[-3:] in ("pdf", "PDF"):
-                doc_string += f"[{doc_id + 1}] " + title[:-4] + "\n\n"
+                doc_string += f"[{doc_id+1}] " + title[:-4] + "\n\n"
             else:
-                doc_string += f"[{doc_id + 1}] " + title + "\n\n"
+                doc_string += f"[{doc_id+1}] " + title + "\n\n"
     return content + "\n\n## Reference:\n\n" + doc_string

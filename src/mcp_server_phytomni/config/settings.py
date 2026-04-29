@@ -54,6 +54,7 @@ API_KEY=your_api_key
 CODER_URL=your_coder_url
 CODER_MODEL=your_coder_model
 CODER_API_KEY=your_coder_api_key
+BI_TOKEN=your_bi_token
 """
     env_example = Path(__file__).parent.parent / ".env.example"
     if not env_example.exists():
@@ -88,6 +89,8 @@ class SensitiveConfig(BaseSettings):
         CODER_API (SecretStr): Encrypted API key for accessing the code
             generation service at `CODER_URL`. `SecretStr` helps prevent
             accidental exposure.
+        BI_TOKEN (SecretStr): Optional token for direct biological database
+            SQL API access.
     """
 
     DOMAIN_NAME: str
@@ -101,6 +104,7 @@ class SensitiveConfig(BaseSettings):
     CODER_URL: str
     CODER_MODEL: str
     CODER_API_KEY: SecretStr
+    BI_TOKEN: SecretStr = SecretStr("")
 
     class Config:
         """Pydantic configuration for the `SensitiveConfig` model.

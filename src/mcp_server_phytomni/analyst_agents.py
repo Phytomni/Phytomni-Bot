@@ -1,65 +1,29 @@
-# Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
-# Author: maoyichao (maoyc_0316@163.com)
-#         xieshang (xieshang0608@gmail.com)
-#         guxiaofeng (guxiaofeng@caas.cn)
-"""
-This module provides a suite of asynchronous functions for interacting with a
-bioinformatics analysis platform. It enables submitting analysis tasks,
-monitoring their status, and managing them programmatically. The module
-leverages a combination of HTTP requests for API communication, object storage
-for data handling, and large language models for generating analysis plans.
-
-Key functionalities include:
-- Submitting complex bioinformatics tasks with specified parameters and data.
-- Generating analysis plans using language models, with or without retrieval
-  augmentation.
-- Monitoring the lifecycle of submitted tasks (e.g., pending, running,
-  completed, failed).
-- Handling asynchronous operations with retries and timeouts for robustness.
-- Uploading and deleting data from an Object Storage Service (OBS).
-
-The module is designed to be used in scenarios where automated, reproducible,
-and scalable bioinformatics analyses are required. It abstracts away the
-complexities of direct API and service interactions, providing a simplified
-interface for developers and researchers.
-"""
-
 import asyncio
 import datetime
-import json
 import re
+import json
 import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union, cast
+from typing import Any, List, Literal, Dict, Optional, TypedDict
 from uuid import uuid1
-
-from httpx import (
-    AsyncClient,
-    ConnectError,
-    HTTPStatusError,
-    Timeout,
-    TimeoutException,
-)
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import START, StateGraph
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
-from obs import GetObjectHeader, ObsClient, PutObjectHeader
-
 from pydantic import SecretStr
-
+from httpx import AsyncClient, ConnectError, HTTPStatusError
+from httpx import Timeout, TimeoutException
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData, INTERNAL_ERROR
+from obs import GetObjectHeader, PutObjectHeader, ObsClient
+from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve, retrieve
 from .utils import download_list_convert, get_prompt, get_token
 
-ac = AnalystConfig.model_validate({})
-sc = SensitiveConfig.load()
+ac = AnalystConfig()
+sc = SensitiveConfig().load()
 
 
 class AnalystAgentsState(TypedDict):
@@ -77,17 +41,14 @@ class AnalystAgentsState(TypedDict):
         output_dir: The output directory path for analysis results.
         compute_resource: The compute resource level (small, medium, large).
         job_name: The name of the compute job.
-        method_context: Context
-            retrieved from literature/SOPs for plan generation.
+        method_context: Context retrieved from literature/SOPs for plan generation.
         plan: The analysis plan/workflow (may be empty initially).
         plan_feedback: Feedback from the critic node for plan revision.
-        plan_retries: Number of plan generation retries
-            (prevents infinite loops).
+        plan_retries: Number of plan generation retries (prevents infinite loops).
         extracted_tools: List of tools extracted from the plan.
         tool_usages: Retrieved usage instructions for the extracted tools.
         task_id: The unique identifier of the submitted task.
-        task_status: The current task status
-            (PENDING, RUNNING, SUCCEEDED, FAILED).
+        task_status: The current task status (PENDING, RUNNING, SUCCEEDED, FAILED).
         is_polling: Whether to poll for task status updates.
         is_auto_select: Whether to automatically select relevant data files.
     """
@@ -112,8 +73,7 @@ class AnalystAgentsState(TypedDict):
 
 
 class AnalystAgent:
-    """A LangGraph-based agent for bioinformatics analysis workflow
-    orchestration.
+    """A LangGraph-based agent for bioinformatics analysis workflow orchestration.
 
     This agent orchestrates a complex workflow that decomposes user queries,
     selects appropriate data sources, retrieves relevant bioinformatics
@@ -121,13 +81,13 @@ class AnalystAgent:
     tools, and submits computational tasks for execution.
 
     The workflow graph consists of nine main nodes:
-        1. parse_query_node: Decomposes user query into goal, data, and plan.
-        2. data_select_node: Selects appropriate data files from database.
-        3. method_retrieve_node: Retrieves relevant methods, SOPs, literature.
+        1. parse_query_node: Decomposes the user query into goal, data_list, and plan.
+        2. data_select_node: Selects appropriate data files from the available database.
+        3. method_retrieve_node: Retrieves relevant methods, SOPs, and literature.
         4. plan_node: Generates or revises the analysis plan.
         5. check_node: Validates the plan using a critic mechanism.
         6. tool_extract_node: Extracts required tools from the plan.
-        7. tool_retrieve_node: Retrieves instructions for extracted tools.
+        7. tool_retrieve_node: Retrieves usage instructions for extracted tools.
         8. submit_node: Submits the task to the computation platform.
         9. pooling_node: Polls task status until completion.
 
@@ -152,7 +112,7 @@ class AnalystAgent:
         analyst_config=ac,
         sensitive_config=sc,
     ):
-        """Initialize the AnalystAgent and build the graph."""
+        """Initialize the AnalystAgent with configuration and build the graph."""
         self.checkpointer = checkpointer
         self.ac = analyst_config
         self.sc = sensitive_config
@@ -274,15 +234,13 @@ class AnalystAgent:
         data with auto-selected data to create a comprehensive data list.
 
         Args:
-            state: The current workflow state containing
-                goal_description and data_list.
+            state: The current workflow state containing goal_description and data_list.
 
         Returns:
             A dictionary containing the updated data_list with selected files.
 
         Raises:
-            McpError: If loading species data or parsing
-                the LLM response fails.
+            McpError: If loading species data or parsing the LLM response fails.
         """
         try:
             with open(
@@ -293,9 +251,7 @@ class AnalystAgent:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to load species data list from {
-                        self.ac.PRE_PREPARED_DATA_PATH
-                    }",
+                    message=f"Failed to load species data list from {self.ac.PRE_PREPARED_DATA_PATH}",
                 )
             ) from exc
         data_list = state["data_list"]
@@ -335,10 +291,7 @@ class AnalystAgent:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=(
-                        f"Failed to get data selection from language model: "
-                        f"{str(exc)}"
-                    ),
+                    message=f"Failed to get data selection from language model: {str(exc)}",
                 )
             ) from exc
 
@@ -367,12 +320,14 @@ class AnalystAgent:
                 raise McpError(
                     ErrorData(
                         code=INTERNAL_ERROR,
-                        message=f"Failed to parse data selection response: "
-                        f"{str(exc)}",
+                        message=f"Failed to parse data selection response: {str(exc)}",
                     )
                 ) from exc
 
         final_data_list = {**data_list, **selected_data}
+        print("===================AutoSelect Data===================")
+        print(final_data_list)
+        print("=====================================================")
 
         return {"data_list": final_data_list}
 
@@ -385,8 +340,7 @@ class AnalystAgent:
         The retrieved context is used to inform plan generation.
 
         Args:
-            state: The current workflow state containing
-            goal_description and obs_file_list.
+            state: The current workflow state containing goal_description and obs_file_list.
 
         Returns:
             A dictionary containing the method_context with upload_context
@@ -411,8 +365,8 @@ class AnalystAgent:
             upload_results = []
             for i, doc in enumerate(upload_str_list):
                 fragment = (
-                    f"[user upload file {i + 1} begin]\n"
-                    f"{doc}\n[user upload file {i + 1} end]"
+                    f"[user upload file {i+1} begin]\n"
+                    f"{doc}\n[user upload file {i+1} end]"
                 )
                 if total_length + len(fragment) <= self.ac.MAX_TOKENS:
                     upload_results.append(fragment)
@@ -438,7 +392,7 @@ class AnalystAgent:
         )
         retrieve_results = []
         for i, doc in enumerate(retrieve_response.get("doc_list", [])):
-            header = f"[document {i + 1} begin] {doc['title']}"
+            header = f"[document {i+1} begin] {doc['title']}"
             content_field = (
                 doc.get("big_content")
                 if "big_content" in doc
@@ -449,13 +403,16 @@ class AnalystAgent:
                 if doc.get("subtitle")
                 else doc.get("content", "")
             )
-            fragment = f"{header}\n{body} [document {i + 1} end]"
+            fragment = f"{header}\n{body} [document {i+1} end]"
             if total_length + len(fragment) <= self.ac.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
         retrieve_context = "\n\n".join(retrieve_results)
+        print("===================Retrieve Information===================")
+        print(retrieve_context)
+        print("==========================================================")
         return {
             "method_context": {
                 "upload_context": upload_context,
@@ -476,8 +433,8 @@ class AnalystAgent:
                    method_context, plan_feedback, and obs_file_list.
 
         Returns:
-            A dictionary containing the generated plan, incremented
-            plan_retries, and reset plan_feedback.
+            A dictionary containing the generated plan, incremented plan_retries,
+            and reset plan_feedback.
 
         Raises:
             McpError: If the LLM fails to generate a valid plan.
@@ -488,15 +445,15 @@ class AnalystAgent:
                     self.ac.PROMPT_FILE,
                     "user/analysis_retrieve_file_feedback",
                     {
-                        "retrieve_results": str(
-                            state["method_context"]["retrieve_context"] or ""
-                        ),
-                        "upload_context": str(
-                            state["method_context"]["upload_context"] or ""
-                        ),
-                        "feed_back": str(state["plan_feedback"]),
-                        "raw_plan": str(state.get("plan") or ""),
-                        "user_query": str(state["goal_description"] or ""),
+                        "retrieve_results": state["method_context"][
+                            "retrieve_context"
+                        ],
+                        "upload_context": state["method_context"][
+                            "upload_context"
+                        ],
+                        "feed_back": state["plan_feedback"],
+                        "raw_plan": state.get("plan", ""),
+                        "user_query": state["goal_description"],
                     },
                 )
             else:
@@ -504,12 +461,12 @@ class AnalystAgent:
                     self.ac.PROMPT_FILE,
                     "user/analysis_retrieve_feedback",
                     {
-                        "retrieve_results": str(
-                            state["method_context"]["retrieve_context"] or ""
-                        ),
-                        "feed_back": str(state["plan_feedback"]),
-                        "raw_plan": str(state.get("plan") or ""),
-                        "user_query": str(state["goal_description"] or ""),
+                        "retrieve_results": state["method_context"][
+                            "retrieve_context"
+                        ],
+                        "feed_back": state["plan_feedback"],
+                        "raw_plan": state.get("plan", ""),
+                        "user_query": state["goal_description"],
                     },
                 )
         else:
@@ -575,6 +532,9 @@ class AnalystAgent:
                     "Invalid response from language model",
                 )
             )
+        print("===================Plan===================")
+        print(content)
+        print("==========================================")
         return {
             "plan": content,
             "plan_retries": state.get("plan_retries", 0) + 1,
@@ -595,16 +555,16 @@ class AnalystAgent:
                    data_list, method_context, plan, and plan_retries.
 
         Returns:
-            A dictionary containing plan_feedback ("APPROVED" or feedback).
+            A dictionary containing plan_feedback ("APPROVED" or critic feedback).
         """
         check_prompt = get_prompt(
             self.ac.PROMPT_FILE,
             "user/meta_step_check",
             {
-                "goal_description": str(state["goal_description"] or ""),
+                "goal_description": state["goal_description"],
                 "data_list": str(state["data_list"]),
-                "method_context": str(state["method_context"]),
-                "current_plan": str(state["plan"] or ""),
+                "method_context": state["method_context"],
+                "current_plan": state["plan"],
             },
         )
         max_retries = self.ac.MAX_RETRIES
@@ -646,12 +606,18 @@ class AnalystAgent:
                 result = json.loads(json_string)
             else:
                 result = json.loads(content)
-            result.get("score", 0)
+            score = result.get("score", 0)
             decision = result.get("decision", "REJECTED")
             feedback = result.get("feedback", "")
         except Exception:
+            score = 0
             decision = "REJECTED"
             feedback = ""
+        print("===================Check===================")
+        print(f"Retries: {current_retries}/{max_retries}")
+        print(f"Score: {score}")
+        print(f"Feedback: {feedback}")
+        print("==========================================")
         if decision == "APPROVED" or current_retries >= max_retries:
             return {"plan_feedback": "APPROVED"}
         else:
@@ -660,8 +626,8 @@ class AnalystAgent:
     async def tool_extract_node(self, state: AnalystAgentsState) -> dict:
         """Extract required bioinformatics tools from the analysis plan.
 
-        This node analyzes the plan and extracts tools,
-        algorithms, or software needed to execute the workflow.
+        This node analyzes the generated plan and extracts the specific tools,
+        algorithms, or software mentioned that are needed to execute the workflow.
 
         Args:
             state: The current workflow state containing plan.
@@ -711,14 +677,17 @@ class AnalystAgent:
             result = json.loads(json_string)
         else:
             result = json.loads(content)
+        print("===================Tools===================")
+        print(result["tools"])
+        print("===========================================")
         return {"extracted_tools": result["tools"]}
 
     async def tool_retrieve_node(self, state: AnalystAgentsState) -> dict:
         """Retrieve usage instructions for the extracted tools.
 
-        This node queries the knowledge base for documentation,
-        usage examples, and instructions for each tool extracted from the plan.
-        The retrieved information is formatted and combined into tool_usages.
+        This node queries the knowledge base for documentation, usage examples,
+        and instructions for each tool extracted from the plan. The retrieved
+        information is formatted and combined into tool_usages for the executor.
 
         Args:
             state: The current workflow state containing extracted_tools.
@@ -734,9 +703,9 @@ class AnalystAgent:
             tool_usage_info = await retrieve(
                 user_query=tool,
                 retrieve_url=self.ac.RETRIEVE_URL,
-                repo_id=self.ac.REPO_ID,
-                page_num=self.ac.PAGE_NUM,
-                page_size=self.ac.PAGE_SIZE,
+                repo_id=self.ac.TOOL_REPO_ID,
+                page_num=self.ac.TOOL_PAGE_NUM,
+                page_size=self.ac.TOOL_PAGE_SIZE,
                 filter_string=self.ac.FILTER_STRING,
                 scope=self.ac.SCOPE,
                 extra_repo_ids=self.ac.EXTRA_REPO_IDS,
@@ -750,6 +719,9 @@ class AnalystAgent:
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
+        print("===================Tools Usage===================")
+        print(tool_usages)
+        print("=================================================")
         return {"tool_usages": tool_usages}
 
     async def submit_node(self, state: AnalystAgentsState):
@@ -762,11 +734,10 @@ class AnalystAgent:
 
         Args:
             state: The current workflow state containing goal_description,
-                data_list, output_dir, plan, tool_usages, and compute_resource.
+                   data_list, output_dir, plan, tool_usages, and compute_resource.
 
         Returns:
-            A dictionary containing task_id, task_status, job_name,
-            and output_dir.
+            A dictionary containing task_id, task_status, job_name, and output_dir.
 
         Raises:
             McpError: If task submission fails after all retries.
@@ -777,16 +748,13 @@ class AnalystAgent:
         analysis_url = self.ac.ANALYSIS_URL
 
         raw_data_list = state.get("data_list", {})
-        if isinstance(raw_data_list, dict):
-            processed_data_list = {}
-            for k, v in raw_data_list.items():
-                if isinstance(k, str) and k.startswith("obs://"):
-                    new_key = "/obs/" + k[6:].lstrip("/")
-                    processed_data_list[new_key] = v
-                else:
-                    processed_data_list[k] = v
-        else:
-            processed_data_list = raw_data_list
+        processed_data_list = {}
+        for k, v in raw_data_list.items():
+            if isinstance(k, str) and k.startswith("obs://"):
+                new_key = "/obs/" + k[6:].lstrip("/")
+                processed_data_list[new_key] = v
+            else:
+                processed_data_list[k] = v
 
         plan = state.get("plan", "")
         tool_usages = state.get("tool_usages", "")
@@ -800,9 +768,8 @@ class AnalystAgent:
             "$output_dir)."
         )
 
-        final_meta = (
-            f"### EXECUTION PLAN\n{plan}\n\n" f"### TOOL USAGE\n{tool_usages}"
-        )
+        final_meta = f"### EXECUTION PLAN\n{plan}\n\n"
+        f"### TOOL USAGE\n{tool_usages}"
 
         output_dir = state.get("output_dir")
         if self.ac.CREATE_DIR:
@@ -877,9 +844,7 @@ class AnalystAgent:
                     ],
                     "resources": {
                         "cpu": f"{self.ac.RESOURCE[compute_res]['cpu']}C",
-                        "memory": (
-                            f"{self.ac.RESOURCE[compute_res]['memory']}G"
-                        ),
+                        "memory": f"{self.ac.RESOURCE[compute_res]['memory']}G",
                         "cpu_type": "X86",
                     },
                 }
@@ -896,6 +861,12 @@ class AnalystAgent:
                         json=job_data,
                     )
                     if response.status_code == 201:
+                        print("===================Submit===================")
+                        print(f"Job_Name: {job_name}")
+                        print(f"Task_id: {json.loads(response.text)['id']}")
+                        print(f"Output_Dir: {output_dir}")
+                        print("Task_Status: RUNNING")
+                        print("============================================")
                         return {
                             "task_id": json.loads(response.text)["id"],
                             "task_status": "PENDING",
@@ -1015,8 +986,7 @@ class AnalystAgent:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists,
-            otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
@@ -1024,15 +994,14 @@ class AnalystAgent:
 
     def route_after_plan(
         self, state: AnalystAgentsState
-    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
+    ) -> Literal["plan_node", "tool_extract_node"]:
         """Route after the plan node based on plan availability.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists,
-            otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
@@ -1054,10 +1023,10 @@ class AnalystAgent:
         """
         feedback = state.get("plan_feedback")
 
-        # If node returned "APPROVED", the check passed
+        # 如果节点返回了 "APPROVED"，说明通过检查
         if feedback == "APPROVED":
             return "tool_extract_node"
-        # Otherwise, return to plan_node for revision with feedback
+        # 否则带着 feedback 回到 plan_node 重写
         return "plan_node"
 
     def route_after_submit(
@@ -1073,7 +1042,7 @@ class AnalystAgent:
         """
         if state.get("is_polling"):
             return "pooling_node"
-        return "__end__"
+        return END
 
     def route_after_pooling(
         self, state: AnalystAgentsState
@@ -1084,22 +1053,37 @@ class AnalystAgent:
             state: The current workflow state.
 
         Returns:
-            "__end__" if task is in a terminal state
-            (SUCCEEDED, FAILED, CANCELLED),
+            "__end__" if task is in a terminal state (SUCCEEDED, FAILED, CANCELLED),
             otherwise "pooling_node" to continue polling.
         """
         status = state.get("task_status")
         if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            return "__end__"
+            return END
         return "pooling_node"
 
     async def arun(
         self,
         query: str,
-        goal_description: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        compute_resource: Optional[Literal["small", "medium", "large"]] = None,
-        preset_data_list: Optional[Dict[str, str]] = None,
+        goal_description: str = None,
+        user: str = ac.USER,
+        user_id: str = ac.USER_ID,
+        is_create_dir: bool = ac.CREATE_DIR,
+        output_dir: str = ac.OUTPUT_DIR,
+        execute_code: bool = ac.EXECUTE_CODE,
+        compute_resource: Literal[
+            "small", "medium", "large"
+        ] = ac.COMPUTE_RESOURCE,
+        timeout: float = ac.TIMEOUT,
+        max_retries: int = ac.MAX_RETRIES,
+        reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+        frequency_penalty: float = ac.FREQUENCY_PENALTY,
+        presence_penalty: float = ac.PRESENCE_PENALTY,
+        n: int = ac.N,
+        stream: bool = ac.STREAM,
+        temperature: float = ac.TEMPERATURE,
+        top_p: float = ac.TOP_P,
+        prompt_file: str = ac.PROMPT_FILE,
+        preset_data_list: Dict[str, str] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
         thread_id: Optional[str] = None,
@@ -1115,9 +1099,22 @@ class AnalystAgent:
         Args:
             query: The user's natural language query for the analysis.
             goal_description: Optional pre-decomposed research goal.
+            user: The user identifier.
+            user_id: The user ID.
+            is_create_dir: Whether to create an output directory.
             output_dir: The output directory path.
-            compute_resource: The compute resource level
-                (small, medium, large).
+            execute_code: Whether to execute code during analysis.
+            compute_resource: The compute resource level (small, medium, large).
+            timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for failed requests.
+            reasoning_effort: Reasoning effort level for the LLM.
+            frequency_penalty: Frequency penalty for LLM sampling.
+            presence_penalty: Presence penalty for LLM sampling.
+            n: Number of completions to generate.
+            stream: Whether to stream the response.
+            temperature: Sampling temperature for the LLM.
+            top_p: Top-p sampling parameter.
+            prompt_file: Path to the prompt template file.
             preset_data_list: Pre-configured data file list.
             obs_file_list: List of OBS files uploaded by the user.
             preset_plan: Pre-configured analysis plan.
@@ -1130,8 +1127,6 @@ class AnalystAgent:
             compute_resource on success, or the initial state with
             task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
         """
-        output_dir = output_dir or self.ac.OUTPUT_DIR
-        compute_resource = compute_resource or self.ac.COMPUTE_RESOURCE
         if not thread_id:
             thread_id = str(uuid1())
 
@@ -1154,13 +1149,10 @@ class AnalystAgent:
             "is_polling": is_polling,
             "is_auto_select": is_auto_select,
         }
+        config = {"configurable": {"thread_id": thread_id}}
+
         try:
-            final_state = await self.app.ainvoke(
-                cast(AnalystAgentsState, initial_state),
-                config=cast(
-                    RunnableConfig, {"configurable": {"thread_id": thread_id}}
-                ),
-            )
+            final_state = await self.app.ainvoke(initial_state, config=config)
             return {
                 "task_id": final_state["task_id"],
                 "output_dir": final_state["output_dir"],
@@ -1175,30 +1167,86 @@ class AnalystAgent:
             }
 
 
-def _sensitive_config_with_overrides(
-    api_key: str,
-    base_url: str,
-    model: str,
-    coder_url: str,
-    coder_model: str,
-    coder_api_key: str,
-    access_key_id: str,
-    secret_access_key: str,
-) -> SensitiveConfig:
-    """Build a SensitiveConfig for compatibility wrapper calls."""
-    return SensitiveConfig(
-        DOMAIN_NAME=sc.DOMAIN_NAME,
-        USER_NAME=sc.USER_NAME,
-        USER_PASSWORD=sc.USER_PASSWORD,
-        AccessKeyID=SecretStr(access_key_id),
-        SecretAccessKey=SecretStr(secret_access_key),
-        BASE_URL=base_url,
-        MODEL_ID=model,
-        API_KEY=SecretStr(api_key),
-        CODER_URL=coder_url,
-        CODER_MODEL=coder_model,
-        CODER_API_KEY=SecretStr(coder_api_key),
-    )
+def _analyst_config_with_overrides(
+    user_id: str,
+    is_create_dir: bool,
+    output_dir: str,
+    compute_resource: Literal["small", "medium", "large"],
+    **kwargs: Any,
+):
+    """Build an AnalystConfig copy from compatibility wrapper arguments."""
+    field_map = {
+        "analysis_url": "ANALYSIS_URL",
+        "region": "ANALYSIS_REGION",
+        "resource_dict": "RESOURCE",
+        "app_id_dict": "APP_ID",
+        "task_name": "TASK_NAME",
+        "execute_code": "EXECUTE_CODE",
+        "retrieve_url": "RETRIEVE_URL",
+        "repo_id_dict": "REPO_ID_DICT",
+        "page_num": "PAGE_NUM",
+        "filter_string": "FILTER_STRING",
+        "scope": "SCOPE",
+        "extra_repo_ids": "EXTRA_REPO_IDS",
+        "rerank_url": "RERANK_URL",
+        "rerank_batch_size": "RERANK_BATCH_SIZE",
+        "score_threshold": "SCORE_THRESHOLD",
+        "top_n": "TOP_N",
+        "prompt_file": "PROMPT_FILE",
+        "prompt_path": "PROMPT_PATH",
+        "frequency_penalty": "FREQUENCY_PENALTY",
+        "max_tokens": "MAX_TOKENS",
+        "n": "N",
+        "presence_penalty": "PRESENCE_PENALTY",
+        "reasoning_effort": "REASONING_EFFORT",
+        "response_format": "RESPONSE_FORMAT",
+        "stream": "STREAM",
+        "temperature": "TEMPERATURE",
+        "top_p": "TOP_P",
+        "user": "USER",
+        "server_dir": "TEMP_DIR",
+        "obs_server": "OBS_SERVER",
+        "bucket_name": "BUCKET_NAME",
+        "part_size": "PART_SIZT",
+        "task_num": "TASK_NUM",
+        "max_concurrency": "MAX_CONCURRENCY",
+        "max_workers": "MAX_WORKERS",
+        "timeout": "TIMEOUT",
+        "retriable_codes": "RETRIABLE_CODES",
+        "max_retries": "MAX_RETRIES",
+        "max_poll": "MAX_POLL",
+    }
+    updates = {
+        "USER_ID": user_id,
+        "CREATE_DIR": is_create_dir,
+        "OUTPUT_DIR": output_dir,
+        "COMPUTE_RESOURCE": compute_resource,
+    }
+    for source_key, target_key in field_map.items():
+        if source_key in kwargs:
+            updates[target_key] = kwargs[source_key]
+    return ac.model_copy(update=updates)
+
+
+def _sensitive_config_with_overrides(**kwargs: Any):
+    """Build a SensitiveConfig copy from compatibility wrapper arguments."""
+    field_map = {
+        "api_key": "API_KEY",
+        "model_url": "CODER_URL",
+        "model_name": "CODER_MODEL",
+        "coder_api_key": "CODER_API_KEY",
+        "access_key_id": "AccessKeyID",
+        "secret_access_key": "SecretAccessKey",
+    }
+    updates = {}
+    if "base_url" in kwargs:
+        updates["BASE_URL"] = kwargs["base_url"]
+    if "model" in kwargs:
+        updates["MODEL_ID"] = kwargs["model"]
+    for source_key, target_key in field_map.items():
+        if source_key in kwargs:
+            updates[target_key] = SecretStr(kwargs[source_key])
+    return sc.model_copy(update=updates)
 
 
 async def submit(
@@ -1208,86 +1256,25 @@ async def submit(
     is_create_dir: bool = ac.CREATE_DIR,
     output_dir: str = ac.OUTPUT_DIR,
     meta: str = "",
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME,
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
     compute_resource: Literal[
         "small", "medium", "large"
     ] = ac.COMPUTE_RESOURCE,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    max_poll: float = ac.MAX_POLL,
     enable_auto_select: bool = True,
-    prompt_file: str = ac.PROMPT_FILE,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
     meta_meta: Optional[str] = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Submit an analysis task through the current AnalystAgent workflow."""
+    """Compatibility wrapper around the LangGraph-based AnalystAgent."""
     user_id = user_id or str(uuid1())
-    analyst_config = ac.model_copy(
-        update={
-            "ANALYSIS_URL": analysis_url,
-            "ANALYSIS_REGION": region,
-            "APP_ID": app_id_dict,
-            "BUCKET_NAME": bucket_name,
-            "COMPUTE_RESOURCE": compute_resource,
-            "CREATE_DIR": is_create_dir,
-            "EXECUTE_CODE": execute_code,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "MAX_POLL": max_poll,
-            "MAX_RETRIES": max_retries,
-            "N": n,
-            "OBS_SERVER": obs_server,
-            "OUTPUT_DIR": output_dir,
-            "PRESENCE_PENALTY": presence_penalty,
-            "PROMPT_FILE": prompt_file,
-            "REASONING_EFFORT": reasoning_effort,
-            "RESOURCE": resource_dict,
-            "RETRIABLE_CODES": retriable_codes,
-            "STREAM": stream,
-            "TASK_NAME": task_name,
-            "TEMPERATURE": temperature,
-            "TIMEOUT": timeout,
-            "TOP_P": top_p,
-            "USER": user,
-            "USER_ID": user_id,
-        }
+    analyst_config = _analyst_config_with_overrides(
+        user_id=user_id,
+        is_create_dir=is_create_dir,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        **kwargs,
     )
-    sensitive_config = _sensitive_config_with_overrides(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        coder_url=model_url,
-        coder_model=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-    )
-    preset_plan = meta + (meta_meta or "")
     agent = AnalystAgent(
         analyst_config=analyst_config,
-        sensitive_config=sensitive_config,
+        sensitive_config=_sensitive_config_with_overrides(**kwargs),
     )
     return await agent.arun(
         query=goal_description,
@@ -1295,7 +1282,7 @@ async def submit(
         output_dir=output_dir,
         compute_resource=compute_resource,
         preset_data_list=data_list,
-        preset_plan=preset_plan,
+        preset_plan=meta + (meta_meta or ""),
         thread_id=user_id,
         is_auto_select=enable_auto_select,
         is_polling=False,
@@ -1308,118 +1295,25 @@ async def retrieve_plan_submit(
     user_id: str = ac.USER_ID,
     is_create_dir: bool = ac.CREATE_DIR,
     output_dir: str = ac.OUTPUT_DIR,
-    retrieve_url: str = ac.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
-    page_num: int = ac.PAGE_NUM,
-    filter_string: Optional[str] = ac.FILTER_STRING,
-    scope: str = ac.SCOPE,
-    extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
-    rerank_url: str = ac.RERANK_URL,
-    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
-    score_threshold: float = ac.SCORE_THRESHOLD,
-    top_n: int = ac.TOP_N,
-    prompt_file: str = ac.PROMPT_FILE,
-    prompt_path: str = ac.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ac.FREQUENCY_PENALTY,
-    max_tokens: int = ac.MAX_TOKENS,
-    n: int = ac.N,
-    presence_penalty: float = ac.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
-    stream: bool = ac.STREAM,
-    temperature: float = ac.TEMPERATURE,
-    top_p: float = ac.TOP_P,
-    user: str = ac.USER,
-    obs_file_list: Optional[List[str]] = None,
-    server_dir: str = ac.TEMP_DIR,
-    execute_code: bool = ac.EXECUTE_CODE,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
-    part_size: int = ac.PART_SIZT,
-    task_num: int = ac.TASK_NUM,
-    max_concurrency: int = ac.MAX_CONCURRENCY,
-    max_workers: int = ac.MAX_WORKERS,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    task_name: str = ac.TASK_NAME + "-retrieve-plan",
-    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
-    app_id_dict: Dict[str, str] = ac.APP_ID,
     compute_resource: Literal[
         "small", "medium", "large"
     ] = ac.COMPUTE_RESOURCE,
     meta_meta: Optional[str] = None,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
+    obs_file_list: Optional[List[str]] = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based AnalystAgent."""
     user_id = user_id or str(uuid1())
-    analyst_config = ac.model_copy(
-        update={
-            "ANALYSIS_REGION": region,
-            "ANALYSIS_URL": analysis_url,
-            "APP_ID": app_id_dict,
-            "BUCKET_NAME": bucket_name,
-            "COMPUTE_RESOURCE": compute_resource,
-            "CREATE_DIR": is_create_dir,
-            "EXECUTE_CODE": execute_code,
-            "EXTRA_REPO_IDS": extra_repo_ids,
-            "FILTER_STRING": filter_string,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "MAX_CONCURRENCY": max_concurrency,
-            "MAX_RETRIES": max_retries,
-            "MAX_TOKENS": max_tokens,
-            "MAX_WORKERS": max_workers,
-            "N": n,
-            "OBS_SERVER": obs_server,
-            "OUTPUT_DIR": output_dir,
-            "PAGE_NUM": page_num,
-            "PART_SIZT": part_size,
-            "PRESENCE_PENALTY": presence_penalty,
-            "PROMPT_FILE": prompt_file,
-            "PROMPT_PATH": prompt_path,
-            "REASONING_EFFORT": reasoning_effort,
-            "REPO_ID_DICT": repo_id_dict or ac.REPO_ID_DICT,
-            "RESOURCE": resource_dict,
-            "RESPONSE_FORMAT": response_format,
-            "RERANK_BATCH_SIZE": rerank_batch_size,
-            "RERANK_URL": rerank_url,
-            "RETRIABLE_CODES": retriable_codes,
-            "RETRIEVE_URL": retrieve_url,
-            "SCOPE": scope,
-            "SCORE_THRESHOLD": score_threshold,
-            "STREAM": stream,
-            "TASK_NAME": task_name,
-            "TASK_NUM": task_num,
-            "TEMPERATURE": temperature,
-            "TIMEOUT": timeout,
-            "TOP_N": top_n,
-            "TOP_P": top_p,
-            "USER": user,
-            "USER_ID": user_id,
-        }
-    )
-    sensitive_config = _sensitive_config_with_overrides(
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        coder_url=model_url,
-        coder_model=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
+    analyst_config = _analyst_config_with_overrides(
+        user_id=user_id,
+        is_create_dir=is_create_dir,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        **kwargs,
     )
     agent = AnalystAgent(
         analyst_config=analyst_config,
-        sensitive_config=sensitive_config,
+        sensitive_config=_sensitive_config_with_overrides(**kwargs),
     )
     result = await agent.arun(
         query=goal_description,
@@ -1461,17 +1355,11 @@ async def wait_for_completion(
         match status_data.get("status"):
             case "CANCELLED":
                 raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message="Task cancelled",
-                    )
+                    ErrorData(code=INTERNAL_ERROR, message="Task cancelled")
                 )
             case "FAILED":
                 raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message="Task failed",
-                    )
+                    ErrorData(code=INTERNAL_ERROR, message="Task failed")
                 )
             case "PENDING" | "RUNNING":
                 await asyncio.sleep(poll_interval)
@@ -1479,10 +1367,7 @@ async def wait_for_completion(
                 return status_data
             case _:
                 raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message="Task status error",
-                    )
+                    ErrorData(code=INTERNAL_ERROR, message="Task status error")
                 )
     raise asyncio.TimeoutError(
         f"Exceeded max polling time {max_poll / 60} minutes"
@@ -2132,12 +2017,9 @@ def download_obs_out(
             else:
                 raise OSError(
                     "Get File List Failed\n"
-                    f"requestId: "
-                    f"{getattr(file_response, 'requestId', 'unknown')}\n"
-                    f"errorCode: "
-                    f"{getattr(file_response, 'errorCode', 'unknown')}\n"
-                    f"errorMessage: "
-                    f"{getattr(file_response, 'errorMessage', 'unknown')}"
+                    f'requestId: {getattr(file_response, "requestId", "unknown")}\n'
+                    f'errorCode: {getattr(file_response, "errorCode", "unknown")}\n'
+                    f'errorMessage: {getattr(file_response, "errorMessage", "unknown")}'
                 )
     except Exception as exc:
         raise OSError(f"Download File Failed\n{format_exc()}") from exc

@@ -294,6 +294,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     DEEPGENOME_DATA: str = Field(str(PRE_PREPARED_DATA_PATH))
     DEEPGENOME_OUT: str = Field(str(DOWNLOAD_PATH))
+    BI_URL: str = Field("")
     CREATE_TASK_URL: str = Field(
         "http://1.95.48.200:8082/v1/nky/server/" "create_task"
     )
