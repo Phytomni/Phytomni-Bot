@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 
 _current_dir = Path(__file__).parent
 PROJECT_ROOT = _current_dir.parent
-ENV_PATH = PROJECT_ROOT / 'config/.env'
+ENV_PATH = PROJECT_ROOT / "config/.env"
 
 
 def load_env_file() -> bool:
@@ -29,8 +29,8 @@ def load_env_file() -> bool:
     if not ENV_PATH.exists():
         generate_env_template()
         raise FileNotFoundError(
-            'Missing .env file. '
-            f'Please create using {PROJECT_ROOT}/config/.env.example'
+            "Missing .env file. "
+            f"Please create using {PROJECT_ROOT}/config/.env.example"
         )
     load_dotenv(ENV_PATH, override=True)
     return True
@@ -55,9 +55,9 @@ CODER_URL=your_coder_url
 CODER_MODEL=your_coder_model
 CODER_API_KEY=your_coder_api_key
 """
-    env_example = Path(__file__).parent.parent / '.env.example'
+    env_example = Path(__file__).parent.parent / ".env.example"
     if not env_example.exists():
-        with open(env_example, 'w', encoding='utf-8') as f:
+        with open(env_example, "w", encoding="utf-8") as f:
             f.write(template)
         print(f"Template generated: {env_example}")
 
@@ -89,6 +89,7 @@ class SensitiveConfig(BaseSettings):
             generation service at `CODER_URL`. `SecretStr` helps prevent
             accidental exposure.
     """
+
     DOMAIN_NAME: str
     USER_NAME: str
     USER_PASSWORD: SecretStr
@@ -114,11 +115,12 @@ class SensitiveConfig(BaseSettings):
             env_file_encoding (str): Encoding used to read the environment
                 file. Defaults to `'utf-8'`.
         """
+
         env_file = ENV_PATH
-        env_file_encoding = 'utf-8'
+        env_file_encoding = "utf-8"
 
     @classmethod
-    def load(cls) -> 'SensitiveConfig':
+    def load(cls) -> "SensitiveConfig":
         """Initialize configuration by loading environment variables.
 
         Returns:

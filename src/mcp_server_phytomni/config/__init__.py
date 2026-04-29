@@ -36,12 +36,19 @@ Copyright:
     Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
     2024-2026. All rights reserved.
 """
+
 from .defaults import AnalystConfig, ChatConfig, DataConfig
 from .defaults import DeepGenomeConfig, InSilicoResearchConfig
 from .defaults import KnowledgeConfig, ReviewConfig
 from .settings import SensitiveConfig
 
-
-__all__ = ['AnalystConfig', 'ChatConfig', 'DataConfig',
-           'DeepGenomeConfig', 'InSilicoResearchConfig', 'KnowledgeConfig',
-           'ReviewConfig', 'SensitiveConfig']
+__all__ = [
+    "AnalystConfig",
+    "ChatConfig",
+    "DataConfig",
+    "DeepGenomeConfig",
+    "InSilicoResearchConfig",
+    "KnowledgeConfig",
+    "ReviewConfig",
+    "SensitiveConfig",
+]

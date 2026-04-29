@@ -11,6 +11,7 @@ expand user queries into multiple research dimensions, retrieve relevant
 documents for each dimension, and synthesize the findings into a cohesive
 research report.
 """
+
 from asyncio import gather
 from json import loads
 from typing import Any, Dict, List, Optional, Union
@@ -198,21 +199,25 @@ async def deep_research(
         )
         upload_results = []
         for i, doc in enumerate(upload_str_list):
-            fragment = (f'[user upload file {i+1} begin]\n'
-                        f'{doc}\n[user upload file {i+1} end]')
+            fragment = (
+                f"[user upload file {i+1} begin]\n"
+                f"{doc}\n[user upload file {i+1} end]"
+            )
             if total_length + len(fragment) <= max_tokens:
                 upload_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
-        upload_context = '\n\n'.join(upload_results)
+        upload_context = "\n\n".join(upload_results)
         user_query = get_prompt(
-            prompt_file, 'user/deep_research_query_file',
-            {'upload_context': upload_context, 'user_query': user_query})
+            prompt_file,
+            "user/deep_research_query_file",
+            {"upload_context": upload_context, "user_query": user_query},
+        )
     else:
-        user_query = get_prompt(prompt_file,
-                                'user/deep_research_query',
-                                {'user_query': user_query})
+        user_query = get_prompt(
+            prompt_file, "user/deep_research_query", {"user_query": user_query}
+        )
 
     query_response = await phyto_chat(
         user_query=user_query,
@@ -232,16 +237,13 @@ async def deep_research(
                 "properties": {
                     "Research_dimensions": {
                         "type": "array",
-                        "description":
-                            "Four logically interconnected and "
-                            "thematically coherent research aspects",
-                        "items": {
-                            "type": "string"
-                        }
+                        "description": "Four logically interconnected and "
+                        "thematically coherent research aspects",
+                        "items": {"type": "string"},
                     }
                 },
-                "required": ["Research_dimensions"]
-            }
+                "required": ["Research_dimensions"],
+            },
         },
         stream=stream,
         temperature=temperature,
@@ -252,20 +254,22 @@ async def deep_research(
         max_retries=max_retries,
     )
 
-    if (not query_response or
-            'choices' not in query_response or
-            not query_response['choices'] or
-            not query_response['choices'][0] or
-            'message' not in query_response['choices'][0] or
-            not query_response['choices'][0]['message'] or
-            'content' not in query_response['choices'][0]['message']):
+    if (
+        not query_response
+        or "choices" not in query_response
+        or not query_response["choices"]
+        or not query_response["choices"][0]
+        or "message" not in query_response["choices"][0]
+        or not query_response["choices"][0]["message"]
+        or "content" not in query_response["choices"][0]["message"]
+    ):
         raise ValueError("Invalid response structure from phyto_chat")
 
-    dimensions_str = query_response['choices'][0]['message']['content']
-    start_index = dimensions_str.find('{')
-    end_index = dimensions_str.rfind('}') + 1
+    dimensions_str = query_response["choices"][0]["message"]["content"]
+    start_index = dimensions_str.find("{")
+    end_index = dimensions_str.rfind("}") + 1
     json_part = dimensions_str[start_index:end_index]
-    dimensions = loads(json_part)['Research_dimensions']
+    dimensions = loads(json_part)["Research_dimensions"]
     tasks = [
         multi_retrieve(
             user_query=dimension,
@@ -294,37 +298,47 @@ async def deep_research(
     for di, dimension_result in enumerate(results):
         retrieve_results = []
         if isinstance(dimension_result, BaseException):
-            dimensions_retrieval.append('')
+            dimensions_retrieval.append("")
             continue
 
-        for doc in dimension_result.get('doc_list', []):
+        for doc in dimension_result.get("doc_list", []):
             all_doc_list.append(doc)
             header = f"[document {file_id+1} begin] {doc['title']}"
-            content_field = (doc.get('big_content') if 'big_content' in doc
-                             else doc.get('content', ''))
-            body = (f"{doc['subtitle']}\n{content_field}"
-                    if doc.get('subtitle') else doc.get('content', ''))
-            fragment = f'{header}\n{body} [document {file_id+1} end]'
+            content_field = (
+                doc.get("big_content")
+                if "big_content" in doc
+                else doc.get("content", "")
+            )
+            body = (
+                f"{doc['subtitle']}\n{content_field}"
+                if doc.get("subtitle")
+                else doc.get("content", "")
+            )
+            fragment = f"{header}\n{body} [document {file_id+1} end]"
             if total_length + len(fragment) <= (
-                    upload_length + dimension_length * (di + 1)):
+                upload_length + dimension_length * (di + 1)
+            ):
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
             file_id += 1
-        dimensions_retrieval.append('\n\n'.join(retrieve_results))
+        dimensions_retrieval.append("\n\n".join(retrieve_results))
     prompt_parameters = {
-        f'research_point_{dimension_id+1}': dimension
-        for dimension_id, dimension in enumerate(dimensions)}
-    prompt_parameters.update({
-        f'knowledge_{dimension_id+1}': retrieval
-        for dimension_id, retrieval in enumerate(dimensions_retrieval)
-    })
-    prompt_parameters.update({'user_query': original_user_query})
+        f"research_point_{dimension_id+1}": dimension
+        for dimension_id, dimension in enumerate(dimensions)
+    }
+    prompt_parameters.update(
+        {
+            f"knowledge_{dimension_id+1}": retrieval
+            for dimension_id, retrieval in enumerate(dimensions_retrieval)
+        }
+    )
+    prompt_parameters.update({"user_query": original_user_query})
     report_response = await phyto_chat(
-        user_query=get_prompt(prompt_file,
-                              'user/deep_research_report',
-                              prompt_parameters),
+        user_query=get_prompt(
+            prompt_file, "user/deep_research_report", prompt_parameters
+        ),
         prompt_file=prompt_file,
         prompt_path=prompt_path,
         api_key=api_key,
@@ -344,32 +358,40 @@ async def deep_research(
         max_retries=max_retries,
     )
 
-    if (report_response and
-            'choices' in report_response and
-            report_response['choices'] and
-            report_response['choices'][0] and
-            'message' in report_response['choices'][0] and
-            report_response['choices'][0]['message']):
-        report_response['choices'][0]['message'].update(
-            {'doc_list': all_doc_list, 'total': 10000})
-        if 'content' in report_response['choices'][0]['message']:
-            system_response_content = (
-                report_response['choices'][0]['message']['content'])
+    if (
+        report_response
+        and "choices" in report_response
+        and report_response["choices"]
+        and report_response["choices"][0]
+        and "message" in report_response["choices"][0]
+        and report_response["choices"][0]["message"]
+    ):
+        report_response["choices"][0]["message"].update(
+            {"doc_list": all_doc_list, "total": 10000}
+        )
+        if "content" in report_response["choices"][0]["message"]:
+            system_response_content = report_response["choices"][0]["message"][
+                "content"
+            ]
         else:
             raise ValueError(
-                'Invalid response structure '
-                'for follow-up questions generation')
+                "Invalid response structure "
+                "for follow-up questions generation"
+            )
     else:
         raise ValueError(
-            'Invalid response structure from phyto_chat in report generation')
+            "Invalid response structure from phyto_chat in report generation"
+        )
 
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
-            prompt_file, 'system/follow_up_questions',
+            prompt_file,
+            "system/follow_up_questions",
             {
-                'user_query': original_user_query,
-                'system_response': system_response_content
-            }),
+                "user_query": original_user_query,
+                "system_response": system_response_content,
+            },
+        ),
         prompt_file=prompt_file,
         prompt_path=prompt_path,
         api_key=api_key,
@@ -388,24 +410,29 @@ async def deep_research(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    follow_up_content = ''
-    if (follow_up_response and 'choices' in follow_up_response and
-            len(follow_up_response['choices']) > 0 and
-            'message' in follow_up_response['choices'][0] and
-            follow_up_response['choices'][0]['message'] is not None and
-            'content' in follow_up_response['choices'][0]['message']):
-        follow_up_content = (
-            follow_up_response['choices'][0]['message']['content'])
+    follow_up_content = ""
+    if (
+        follow_up_response
+        and "choices" in follow_up_response
+        and len(follow_up_response["choices"]) > 0
+        and "message" in follow_up_response["choices"][0]
+        and follow_up_response["choices"][0]["message"] is not None
+        and "content" in follow_up_response["choices"][0]["message"]
+    ):
+        follow_up_content = follow_up_response["choices"][0]["message"][
+            "content"
+        ]
     follow_up_list = []
     if follow_up_content:
-        start_index = follow_up_content.find('[')
-        end_index = follow_up_content.rfind(']') + 1
+        start_index = follow_up_content.find("[")
+        end_index = follow_up_content.rfind("]") + 1
         if start_index != -1 and end_index > start_index:
             try:
                 json_part = follow_up_content[start_index:end_index]
                 follow_up_list = loads(json_part)
             except (ValueError, TypeError):
                 follow_up_list = []
-    report_response['choices'][0]['message'].update(
-        {'follow_up_questions': follow_up_list})
+    report_response["choices"][0]["message"].update(
+        {"follow_up_questions": follow_up_list}
+    )
     return report_response

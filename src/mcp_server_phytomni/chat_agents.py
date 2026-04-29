@@ -7,6 +7,7 @@
 It includes a function to generate text based on a user query and a system
 prompt, with support for various model parameters and retry mechanisms.
 """
+
 import asyncio
 from json import loads
 from random import uniform
@@ -170,23 +171,28 @@ async def phyto_chat_with_follow(
         semaphore=semaphore,
     )
 
-    system_response_content = ''
-    if (phyto_response and
-            'choices' in phyto_response and
-            len(phyto_response['choices']) > 0 and
-            'message' in phyto_response['choices'][0] and
-            phyto_response['choices'][0]['message'] is not None and
-            'content' in phyto_response['choices'][0]['message']):
-        system_response_content = (
-            phyto_response['choices'][0]['message']['content'])
+    system_response_content = ""
+    if (
+        phyto_response
+        and "choices" in phyto_response
+        and len(phyto_response["choices"]) > 0
+        and "message" in phyto_response["choices"][0]
+        and phyto_response["choices"][0]["message"] is not None
+        and "content" in phyto_response["choices"][0]["message"]
+    ):
+        system_response_content = phyto_response["choices"][0]["message"][
+            "content"
+        ]
 
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
-            prompt_file, 'system/follow_up_questions',
+            prompt_file,
+            "system/follow_up_questions",
             {
-                'user_query': user_query,
-                'system_response': system_response_content
-            }),
+                "user_query": user_query,
+                "system_response": system_response_content,
+            },
+        ),
         prompt_file=prompt_file,
         prompt_path=prompt_path,
         api_key=api_key,
@@ -207,19 +213,23 @@ async def phyto_chat_with_follow(
         semaphore=semaphore,
     )
 
-    follow_up_content = ''
-    if (follow_up_response and 'choices' in follow_up_response and
-            len(follow_up_response['choices']) > 0 and
-            'message' in follow_up_response['choices'][0] and
-            follow_up_response['choices'][0]['message'] is not None and
-            'content' in follow_up_response['choices'][0]['message']):
-        follow_up_content = (
-            follow_up_response['choices'][0]['message']['content'])
+    follow_up_content = ""
+    if (
+        follow_up_response
+        and "choices" in follow_up_response
+        and len(follow_up_response["choices"]) > 0
+        and "message" in follow_up_response["choices"][0]
+        and follow_up_response["choices"][0]["message"] is not None
+        and "content" in follow_up_response["choices"][0]["message"]
+    ):
+        follow_up_content = follow_up_response["choices"][0]["message"][
+            "content"
+        ]
 
     follow_up_list = []
     if follow_up_content:
-        start_index = follow_up_content.find('[')
-        end_index = follow_up_content.rfind(']') + 1
+        start_index = follow_up_content.find("[")
+        end_index = follow_up_content.rfind("]") + 1
         if start_index != -1 and end_index > start_index:
             try:
                 json_part = follow_up_content[start_index:end_index]
@@ -227,12 +237,16 @@ async def phyto_chat_with_follow(
             except (ValueError, TypeError):
                 follow_up_list = []
 
-    if (phyto_response and 'choices' in phyto_response and
-            len(phyto_response['choices']) > 0 and
-            'message' in phyto_response['choices'][0] and
-            phyto_response['choices'][0]['message'] is not None):
-        phyto_response['choices'][0]['message'].update(
-            {'follow_up_questions': follow_up_list})
+    if (
+        phyto_response
+        and "choices" in phyto_response
+        and len(phyto_response["choices"]) > 0
+        and "message" in phyto_response["choices"][0]
+        and phyto_response["choices"][0]["message"] is not None
+    ):
+        phyto_response["choices"][0]["message"].update(
+            {"follow_up_questions": follow_up_list}
+        )
 
     return phyto_response
 
@@ -365,29 +379,32 @@ async def phyto_chat(
         upload_results = []
         total_length = 0
         for i, doc in enumerate(upload_str_list):
-            fragment = (f'[user upload file {i+1} begin]\n'
-                        f'{doc}\n[user upload file {i+1} end]')
+            fragment = (
+                f"[user upload file {i+1} begin]\n"
+                f"{doc}\n[user upload file {i+1} end]"
+            )
             if total_length + len(fragment) <= max_tokens:
                 upload_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
-        upload_context = '\n\n'.join(upload_results)
+        upload_context = "\n\n".join(upload_results)
         user_query = (
-            'Based on the following files uploaded by the user:\n'
-            f'{upload_context}\n'
-            f"Please answer the user's questions:\n{user_query}")
+            "Based on the following files uploaded by the user:\n"
+            f"{upload_context}\n"
+            f"Please answer the user's questions:\n{user_query}"
+        )
     messages = [
         {
-            'role': 'system',
-            'content': get_prompt(prompt_file, prompt_path),
+            "role": "system",
+            "content": get_prompt(prompt_file, prompt_path),
         },
         {
-            'role': 'user',
-            'content': user_query,
+            "role": "user",
+            "content": user_query,
         },
     ]
-    if 'reasoner' not in model:
+    if "reasoner" not in model:
         reasoning_effort = None
 
     async def make_phyto_chat() -> Optional[Dict[str, Any]]:
@@ -395,80 +412,95 @@ async def phyto_chat(
         for attempt in range(max_retries + 1):
             try:
                 common_params = {
-                    'messages': messages,
-                    'model': model,
-                    'frequency_penalty': frequency_penalty,
-                    'n': n,
-                    'presence_penalty': presence_penalty,
-                    'response_format': response_format,
-                    'stream': stream,
-                    'temperature': temperature,
-                    'top_p': top_p,
-                    'user': user,
-                    'timeout': timeout,
+                    "messages": messages,
+                    "model": model,
+                    "frequency_penalty": frequency_penalty,
+                    "n": n,
+                    "presence_penalty": presence_penalty,
+                    "response_format": response_format,
+                    "stream": stream,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "user": user,
+                    "timeout": timeout,
                 }
 
-                if 'reasoner' in model and reasoning_effort is not None:
-                    common_params['reasoning_effort'] = reasoning_effort
+                if "reasoner" in model and reasoning_effort is not None:
+                    common_params["reasoning_effort"] = reasoning_effort
 
                 if stream:
                     stream_completions = await client.chat.completions.create(
-                        **common_params)
-                    full_content = ''
+                        **common_params
+                    )
+                    full_content = ""
                     chunk = None
                     async for chunk in stream_completions:
                         if chunk.choices and chunk.choices[0].delta.content:
                             content_piece = chunk.choices[0].delta.content
                             full_content += content_piece
                     if chunk is None:
-                        raise McpError(ErrorData(
-                            code=INTERNAL_ERROR,
-                            message='No response received from model',
-                        ))
+                        raise McpError(
+                            ErrorData(
+                                code=INTERNAL_ERROR,
+                                message="No response received from model",
+                            )
+                        )
                     chat_completions = chunk.model_dump()
-                    chat_completions.update({'choices': [{
-                        'finish_reason': 'stop',
-                        'index': 0,
-                        'logprobs': None,
-                        'message': {
-                            'content': full_content.strip(),
-                            'refusal': None,
-                            'role': 'assistant',
-                            'annotations': None,
-                            'audio': None,
-                            'function_call': None,
-                            'tool_calls': []},
-                        'stop_reason': None,
-                    }]})
+                    chat_completions.update(
+                        {
+                            "choices": [
+                                {
+                                    "finish_reason": "stop",
+                                    "index": 0,
+                                    "logprobs": None,
+                                    "message": {
+                                        "content": full_content.strip(),
+                                        "refusal": None,
+                                        "role": "assistant",
+                                        "annotations": None,
+                                        "audio": None,
+                                        "function_call": None,
+                                        "tool_calls": [],
+                                    },
+                                    "stop_reason": None,
+                                }
+                            ]
+                        }
+                    )
                     return chat_completions
 
                 chat_completions = await client.chat.completions.create(
-                    **common_params)
+                    **common_params
+                )
                 return chat_completions.model_dump()
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Failed to generate from Phyto: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to generate from Phyto: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f'Network error: {str(e)}',
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Network error: {str(e)}",
+                    )
+                ) from e
 
     if semaphore is not None:
         async with semaphore:

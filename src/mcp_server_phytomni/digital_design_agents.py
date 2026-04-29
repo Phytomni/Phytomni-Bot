@@ -10,6 +10,7 @@ It includes functions that leverage computational biology and bioinformatics
 tools to analyze protein structures, predict protein properties, and perform
 digital design workflows for protein engineering applications.
 """
+
 from typing import Dict, List
 from uuid import uuid1
 
@@ -115,15 +116,17 @@ async def protein_design_analysis(
             ...     batch=True
             ... )
     """
-    goal_description = get_prompt(prompt_file, 'user/protein_design_analysis',
-                                  {'gene_id': gene_id})
-    data_list = get_data_list(deepgenome_data, 'protein_design_analysis',
-                              species)
+    goal_description = get_prompt(
+        prompt_file, "user/protein_design_analysis", {"gene_id": gene_id}
+    )
+    data_list = get_data_list(
+        deepgenome_data, "protein_design_analysis", species
+    )
     if not batch:
         if not user_id:
             user_id = str(uuid1())
-        output_dir = create_output_dir(user_id, 'protein_design_task')
-    meta = get_prompt(prompt_file, 'user/protein_design_analysis_meta')
+        output_dir = create_output_dir(user_id, "protein_design_task")
+    meta = get_prompt(prompt_file, "user/protein_design_analysis_meta")
     pr_design_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -140,16 +143,16 @@ async def protein_design_analysis(
         bucket_name=bucket_name,
         analysis_url=analysis_url,
         region=region,
-        task_name='deepgenome-agents-prdesign-task',
+        task_name="deepgenome-agents-prdesign-task",
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='medium',
+        compute_resource="medium",
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {'protein_design_task': pr_design_task}
+    return {"protein_design_task": pr_design_task}
 
 
 async def promoter_design_analysis(
@@ -181,8 +184,8 @@ async def promoter_design_analysis(
 
     This function conducts comprehensive promoter design analysis by generating
     analysis goals, retrieving relevant genomic data, and submitting
-    computational tasks for promoter epicmodification prediction, property analysis,
-    and design optimization.
+    computational tasks for promoter epicmodification prediction, property
+    analysis, and design optimization.
 
     Args:
         species: The species name for which promoter design analysis is
@@ -244,16 +247,18 @@ async def promoter_design_analysis(
             ...     batch=True
             ... )
     """
-    goal_description = get_prompt(prompt_file, 'user/promoter_design_analysis',
-                                  {'gene_id': gene_id})
-    data_list = get_data_list(deepgenome_data, 'promoter_design_analysis',
-                              species)
-    data_list = loads(dumps(data_list).replace('/gene_id', f'/{gene_id}'))
+    goal_description = get_prompt(
+        prompt_file, "user/promoter_design_analysis", {"gene_id": gene_id}
+    )
+    data_list = get_data_list(
+        deepgenome_data, "promoter_design_analysis", species
+    )
+    data_list = loads(dumps(data_list).replace("/gene_id", f"/{gene_id}"))
     if not batch:
         if not user_id:
             user_id = str(uuid1())
-        output_dir = create_output_dir(user_id, 'promoter_design_task')
-    meta = get_prompt(prompt_file, 'user/promoter_design_analysis_meta')
+        output_dir = create_output_dir(user_id, "promoter_design_task")
+    meta = get_prompt(prompt_file, "user/promoter_design_analysis_meta")
     dna_design_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -270,16 +275,16 @@ async def promoter_design_analysis(
         bucket_name=bucket_name,
         analysis_url=analysis_url,
         region=region,
-        task_name='deepgenome-agents-dnadesign-task',
+        task_name="deepgenome-agents-dnadesign-task",
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='small',
+        compute_resource="small",
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {'promoter_design_task': dna_design_task}
+    return {"promoter_design_task": dna_design_task}
 
 
 async def design_module(
@@ -386,7 +391,7 @@ async def design_module(
             user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
-            task='design_task',
+            task="design_task",
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=obs_server,

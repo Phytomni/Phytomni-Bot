@@ -7,6 +7,7 @@
 It includes functions for retrieving, reranking, and generating text based on
 the retrieved knowledge.
 """
+
 import asyncio
 from json import loads
 from random import uniform

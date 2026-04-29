@@ -9,6 +9,7 @@ It includes functions that extract research goals from scientific papers and
 execute comprehensive computational research workflows to reproduce findings
 or explore related hypotheses.
 """
+
 from asyncio import gather
 from json import loads
 from typing import Dict, List, Optional, Union
@@ -54,7 +55,7 @@ async def extract_goals(
     timeout: float = isrc.TIMEOUT,
     retriable_codes: List[int] = isrc.RETRIABLE_CODES,
     max_retries: int = isrc.MAX_RETRIES,
-    max_tokens: int = isrc.MAX_TOKENS
+    max_tokens: int = isrc.MAX_TOKENS,
 ) -> List[Dict[str, str]]:
     """Extract research goals and context from scientific paper text.
 
@@ -148,21 +149,27 @@ async def extract_goals(
         )
         upload_results = []
         for i, doc in enumerate(upload_str_list):
-            fragment = (f'[user upload file {i+1} begin]\n'
-                        f'{doc}\n[user upload file {i+1} end]')
+            fragment = (
+                f"[user upload file {i+1} begin]\n"
+                f"{doc}\n[user upload file {i+1} end]"
+            )
             if total_length + len(fragment) <= max_tokens:
                 upload_results.append(fragment)
                 total_length += len(fragment)
             else:
                 break
-        upload_context = '\n\n'.join(upload_results)
+        upload_context = "\n\n".join(upload_results)
         user_query = get_prompt(
-            prompt_file, 'user/in_silico_research_goals_file',
-            {'upload_context': upload_context, 'paper_text': user_query})
+            prompt_file,
+            "user/in_silico_research_goals_file",
+            {"upload_context": upload_context, "paper_text": user_query},
+        )
     else:
         user_query = get_prompt(
-            prompt_file, 'user/in_silico_research_goals',
-            {'paper_text': user_query})
+            prompt_file,
+            "user/in_silico_research_goals",
+            {"paper_text": user_query},
+        )
 
     phyto_response = await phyto_chat(
         user_query=user_query,
@@ -176,40 +183,34 @@ async def extract_goals(
         presence_penalty=presence_penalty,
         reasoning_effort=reasoning_effort,
         response_format={
-            'type': 'json_schema',
-            'json_schema': {
-                'type': 'array',
-                'description':
-                    'A list of research objectives derived from the paper. '
-                    'Each objective is a dictionary containing a consolidated '
-                    'goal and its supporting context.',
-                'items': {
-                    'type': 'object',
-                    'description':
-                        'Represents a single, end-to-end research objective.',
-                    'properties': {
-                        'goal': {
-                            'type': 'string',
-                            'description':
-                                'A comprehensive, single-string summary of '
-                                'the entire workflow required to reproduce a '
-                                'key finding or figure, detailing all major '
-                                'steps from data acquisition to final '
-                                'analysis.',
+            "type": "json_schema",
+            "json_schema": {
+                "type": "array",
+                "description": "A list of research objectives from the "
+                "paper. Each objective is a dictionary containing a "
+                "consolidated goal and its supporting context.",
+                "items": {
+                    "type": "object",
+                    "description": "Represents a single, end-to-end research "
+                    "objective.",
+                    "properties": {
+                        "goal": {
+                            "type": "string",
+                            "description": "A comprehensive summary of the "
+                            "workflow to reproduce a key finding, "
+                            "detailing steps from data acquisition to "
+                            "final analysis.",
                         },
-                        'context': {
-                            'type': 'string',
-                            'description':
-                                'Aggregated text snippets from the original '
-                                'paper (e.g., Methods, Results, Figure '
-                                'Legends) that provide the necessary details, '
-                                'parameters, and evidence for executing the '
-                                'specified goal.',
-                        }
+                        "context": {
+                            "type": "string",
+                            "description": "Aggregated text from the paper "
+                            "(e.g., Methods, Results, Figure Legends) "
+                            "providing details and evidence for the goal.",
+                        },
                     },
-                    'required': ['goal', 'context']
-                }
-            }
+                    "required": ["goal", "context"],
+                },
+            },
         },
         stream=stream,
         temperature=temperature,
@@ -223,10 +224,10 @@ async def extract_goals(
         raise McpError(
             ErrorData(
                 code=INTERNAL_ERROR,
-                message='Failed to get response from language model API'
+                message="Failed to get response from language model API",
             )
         )
-    return loads(phyto_response['choices'][0]['message']['content'])
+    return loads(phyto_response["choices"][0]["message"]["content"])
 
 
 async def in_silico_research(
@@ -414,11 +415,11 @@ async def in_silico_research(
         max_workers=max_workers,
         timeout=timeout,
         retriable_codes=retriable_codes,
-        max_retries=max_retries
+        max_retries=max_retries,
     )
     tasks = [
         retrieve_plan_submit(
-            goal_description=goal_meta['goal'],
+            goal_description=goal_meta["goal"],
             data_list=data_list,
             user_id=user_id,
             is_create_dir=is_create_dir,
@@ -446,7 +447,7 @@ async def in_silico_research(
             top_p=top_p,
             user=user,
             execute_code=execute_code,
-            meta_meta='\n\n'+goal_meta['context'],
+            meta_meta="\n\n" + goal_meta["context"],
             timeout=timeout,
             retriable_codes=retriable_codes,
             max_retries=max_retries,

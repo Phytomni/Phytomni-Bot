@@ -4,6 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """This module provides a TaskManager class for managing tasks in a
 SQLite database and functions for interacting with a remote task server."""
+
 import asyncio
 import sqlite3
 import uuid
@@ -25,7 +26,8 @@ class TaskManager:
     Attributes:
         db_path (str): The path to the SQLite database file.
     """
-    def __init__(self, db_path='server_tasks.db'):
+
+    def __init__(self, db_path="server_tasks.db"):
         """Initializes the TaskManager with the given database path.
 
         Args:
@@ -39,15 +41,15 @@ class TaskManager:
         """Initializes the database and creates the tasks table if it
         doesn't exist."""
         conn = sqlite3.connect(self.db_path)
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('''
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 task_id TEXT PRIMARY KEY,
                 status TEXT,
                 analysis_id TEXT,
                 output_dir TEXT
             )
-        ''')
+        """)
         conn.commit()
         conn.close()
 
@@ -63,10 +65,13 @@ class TaskManager:
         """
         task_id = str(uuid.uuid4())
         conn = self._get_connection()
-        conn.execute('''
+        conn.execute(
+            """
             INSERT INTO tasks (task_id, status, analysis_id, output_dir)
             VALUES (?, ?, ?, ?)
-        ''', (task_id, 'running', 'unupdated', 'unupdated'))
+        """,
+            (task_id, "running", "unupdated", "unupdated"),
+        )
         conn.commit()
         conn.close()
         return task_id
@@ -81,21 +86,26 @@ class TaskManager:
             output_dir (str): The new output directory of the task.
         """
         conn = self._get_connection()
-        conn.execute('''
+        conn.execute(
+            """
             UPDATE tasks
             SET status = ?, analysis_id = ?, output_dir = ? WHERE task_id = ?
-        ''', (status, task_id, analysis_id, output_dir))
+        """,
+            (status, task_id, analysis_id, output_dir),
+        )
         conn.commit()
         conn.close()
 
 
-async def create_task(url,
-                      server_id: str,
-                      server_status: str,
-                      tool_name: str,
-                      timeout: float = 60,
-                      retriable_codes: List[int] = [429, 500, 502, 503, 504],
-                      max_retries: int = 5):
+async def create_task(
+    url,
+    server_id: str,
+    server_status: str,
+    tool_name: str,
+    timeout: float = 60,
+    retriable_codes: List[int] = [429, 500, 502, 503, 504],
+    max_retries: int = 5,
+):
     """Creates a task on a remote server.
 
     This function sends a POST request to the specified URL to create a new
@@ -123,9 +133,9 @@ async def create_task(url,
         McpError: If the request fails after all retries.
     """
     data = {
-        'server_id': server_id,
-        'server_status': server_status,
-        'tool_name': tool_name
+        "server_id": server_id,
+        "server_status": server_status,
+        "tool_name": tool_name,
     }
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -141,37 +151,42 @@ async def create_task(url,
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Failed to rerank: {str(e)}"
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to rerank: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR, message=f"Network error: {str(e)}"
+                    )
+                ) from e
 
 
-async def update_task(url,
-                      server_id: str,
-                      server_status: str,
-                      server_file_path: str,
-                      tool_result: str,
-                      timeout: float = 60,
-                      retriable_codes: List[int] = [429, 500, 502, 503, 504],
-                      max_retries: int = 5):
+async def update_task(
+    url,
+    server_id: str,
+    server_status: str,
+    server_file_path: str,
+    tool_result: str,
+    timeout: float = 60,
+    retriable_codes: List[int] = [429, 500, 502, 503, 504],
+    max_retries: int = 5,
+):
     """Updates a task on a remote server.
 
     This function sends a POST request to the specified URL to update an
@@ -200,10 +215,10 @@ async def update_task(url,
         McpError: If the request fails after all retries.
     """
     data = {
-        'server_id': server_id,
-        'server_status': server_status,
-        'server_file_path': server_file_path,
-        'tool_result': tool_result,
+        "server_id": server_id,
+        "server_status": server_status,
+        "server_file_path": server_file_path,
+        "tool_result": tool_result,
     }
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -219,24 +234,27 @@ async def update_task(url,
 
             except HTTPStatusError as e:
                 if (
-                    hasattr(e, 'response') and
-                    e.response is not None and
-                    e.response.status_code in retriable_codes and
-                    attempt < max_retries
+                    hasattr(e, "response")
+                    and e.response is not None
+                    and e.response.status_code in retriable_codes
+                    and attempt < max_retries
                 ):
-                    wait_time = (2 ** attempt) + uniform(0, 1)
+                    wait_time = (2**attempt) + uniform(0, 1)
                     await asyncio.sleep(wait_time)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Failed to rerank: {str(e)}"
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message=f"Failed to rerank: {str(e)}",
+                    )
+                ) from e
 
             except (ConnectError, TimeoutException) as e:
                 if attempt < max_retries:
-                    await asyncio.sleep(1.5 ** attempt)
+                    await asyncio.sleep(1.5**attempt)
                     continue
-                raise McpError(ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Network error: {str(e)}"
-                )) from e
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR, message=f"Network error: {str(e)}"
+                    )
+                ) from e

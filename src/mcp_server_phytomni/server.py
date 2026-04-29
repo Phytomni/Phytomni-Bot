@@ -67,6 +67,7 @@ Copyright:
     Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
     2024-2026. All rights reserved.
 """
+
 import asyncio
 from enum import Enum
 from json import dumps
@@ -96,6 +97,7 @@ from .review_agents import deep_research
 
 class ChatAgent(BaseModel):
     """Parameters for generating text using the Phyto model."""
+
     user_query: Annotated[
         str,
         Field(
@@ -106,12 +108,12 @@ class ChatAgent(BaseModel):
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -126,23 +128,24 @@ class ChatAgent(BaseModel):
 
 class KnowledgeAgent(BaseModel):
     """Parameters for retrieving documents and generating text."""
+
     user_query: Annotated[
         str,
         Field(
             description="The user's query string for retrieving documents "
-                        "and generating text."
+            "and generating text."
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -157,45 +160,42 @@ class KnowledgeAgent(BaseModel):
 
 class DataAgent(BaseModel):
     """Parameters for natural language searching SQL database."""
+
     user_query: Annotated[
         str,
         Field(
             description="The user's natural language query string for "
-                        "searching SQL database.",
+            "searching SQL database.",
         ),
     ]
 
 
 class AnalystAgent(BaseModel):
     """Parameters for submitting and waiting for a bioinformatic analysis."""
+
     goal_description: Annotated[
         str,
         Field(
             description="Description of the biological research objective "
-                        "and analysis goal.",
+            "and analysis goal.",
         ),
     ]
     data_list: Annotated[
         Dict[str, str],
         Field(
             description="Input datasets dictionary mapping OBS file paths to "
-                        "their detailed descriptions. Keys should be absolute "
-                        "OBS paths pointing to genomic data files. Values "
-                        "should comprehensively describe the data "
-                        "characteristics including sequencing type, organism "
-                        "source, data quality metrics, experimental "
-                        "conditions, and intended analysis purpose",
+            "their detailed descriptions. Keys should be absolute "
+            "OBS paths pointing to genomic data files. Values "
+            "should comprehensively describe the data "
+            "characteristics including sequencing type, organism "
+            "source, data quality metrics, experimental "
+            "conditions, and intended analysis purpose",
             json_schema_extra={
                 "example": {
-                    "/obs/phytomni/path/to/reference.fasta":
-                        "High-quality reference genome assembly for target "
-                        "organism, containing complete chromosomal sequences.",
-                    "/obs/phytomni/path/to/sequence.fastq":
-                        "Illumina paired-end whole genome sequencing data, "
-                        "150bp read length, from fresh tissue sample "
-                        "collected under standard conditions, intended for "
-                        "SNP/InDel detection and comparative genomics "
-                        "analysis.",
+                    "/obs/phytomni/path/to/reference.fasta": "Reference "
+                    "genome assembly for target organism.",
+                    "/obs/phytomni/path/to/sequence.fastq": "Illumina WGS "
+                    "data, 150bp read, for SNP/InDel detection.",
                 },
                 "x-java-default": "new HashMap<>()",
                 "x-csharp-default": "new Dictionary<string, string>()",
@@ -206,12 +206,12 @@ class AnalystAgent(BaseModel):
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -226,6 +226,7 @@ class AnalystAgent(BaseModel):
 
 class DeepGenomeAgent(BaseModel):
     """Parameters for submitting and waiting for a gene function analysis."""
+
     species_code: Annotated[
         str,
         Field(
@@ -308,23 +309,24 @@ class DeepGenomeAgent(BaseModel):
 class ReviewAgent(BaseModel):
     """Parameters for conducting in-depth research and
     generating a comprehensive review."""
+
     user_query: Annotated[
         str,
         Field(
             description="The user's research question or topic "
-                        "for which a detailed review is required."
+            "for which a detailed review is required."
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -339,49 +341,43 @@ class ReviewAgent(BaseModel):
 
 class InSilicoResearchAgent(BaseModel):
     """Parameters for conducting in silico research."""
+
     user_query: Annotated[
         str,
-        Field(
-            description="The user's paper context."
-        ),
+        Field(description="The user's paper context."),
     ]
     data_list: Annotated[
         Dict[str, str],
         Field(
             description="Input datasets dictionary mapping OBS file paths to "
-                        "their detailed descriptions. Keys should be absolute "
-                        "OBS paths pointing to genomic data files. Values "
-                        "should comprehensively describe the data "
-                        "characteristics including sequencing type, organism "
-                        "source, data quality metrics, experimental "
-                        "conditions, and intended analysis purpose",
+            "their detailed descriptions. Keys should be absolute "
+            "OBS paths pointing to genomic data files. Values "
+            "should comprehensively describe the data "
+            "characteristics including sequencing type, organism "
+            "source, data quality metrics, experimental "
+            "conditions, and intended analysis purpose",
             json_schema_extra={
                 "example": {
-                    "/obs/phytomni/path/to/reference.fasta":
-                        "High-quality reference genome assembly for target "
-                        "organism, containing complete chromosomal sequences.",
-                    "/obs/phytomni/path/to/sequence.fastq":
-                        "Illumina paired-end whole genome sequencing data, "
-                        "150bp read length, from fresh tissue sample "
-                        "collected under standard conditions, intended for "
-                        "SNP/InDel detection and comparative genomics "
-                        "analysis.",
+                    "/obs/phytomni/path/to/reference.fasta": "Reference "
+                    "genome assembly for target organism.",
+                    "/obs/phytomni/path/to/sequence.fastq": "Illumina WGS "
+                    "data, 150bp read, for SNP/InDel detection.",
                 },
                 "x-java-default": "new HashMap<>()",
                 "x-csharp-default": "new Dictionary<string, string>()",
-            }
+            },
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -396,22 +392,23 @@ class InSilicoResearchAgent(BaseModel):
 
 class DigitalDesignAgent(BaseModel):
     """Parameters for protein and promoter design analysis."""
+
     species: Annotated[
         str,
         Field(
             description="The species name in Latin lowercase format with "
-                        "spaces (e.g., 'arabidopsis thaliana', "
-                        "'oryza sativa', 'zea mays'). Examples: "
-                        "'arabidopsis thaliana' (thale cress), "
-                        "'oryza sativa' (rice), 'zea mays' (maize), "
-                        "'glycine max' (soybean), "
-                        "'triticum aestivum' (wheat), "
-                        "'hordeum vulgare' (barley), "
-                        "'solanum lycopersicum' (tomato), "
-                        "'solanum tuberosum' (potato), "
-                        "'brassica napus' (oilseed), "
-                        "'gossypium hirsutum' (cotton), "
-                        "'sorghum bicolor' (sorghum).",
+            "spaces (e.g., 'arabidopsis thaliana', "
+            "'oryza sativa', 'zea mays'). Examples: "
+            "'arabidopsis thaliana' (thale cress), "
+            "'oryza sativa' (rice), 'zea mays' (maize), "
+            "'glycine max' (soybean), "
+            "'triticum aestivum' (wheat), "
+            "'hordeum vulgare' (barley), "
+            "'solanum lycopersicum' (tomato), "
+            "'solanum tuberosum' (potato), "
+            "'brassica napus' (oilseed), "
+            "'gossypium hirsutum' (cotton), "
+            "'sorghum bicolor' (sorghum).",
         ),
     ]
     gene_id: Annotated[
@@ -424,12 +421,12 @@ class DigitalDesignAgent(BaseModel):
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -444,44 +441,45 @@ class DigitalDesignAgent(BaseModel):
 
 class GeneNetworkAgent(BaseModel):
     """Parameters for gene network analysis."""
+
     species: Annotated[
         str,
         Field(
             description="The species name in Latin lowercase format with "
-                        "spaces (e.g., 'arabidopsis thaliana', "
-                        "'oryza sativa', 'zea mays'). Examples: "
-                        "'arabidopsis thaliana' (thale cress), "
-                        "'oryza sativa' (rice), 'zea mays' (maize), "
-                        "'glycine max' (soybean), "
-                        "'triticum aestivum' (wheat), "
-                        "'hordeum vulgare' (barley), "
-                        "'solanum lycopersicum' (tomato), "
-                        "'solanum tuberosum' (potato), "
-                        "'brassica napus' (oilseed), "
-                        "'gossypium hirsutum' (cotton), "
-                        "'sorghum bicolor' (sorghum).",
+            "spaces (e.g., 'arabidopsis thaliana', "
+            "'oryza sativa', 'zea mays'). Examples: "
+            "'arabidopsis thaliana' (thale cress), "
+            "'oryza sativa' (rice), 'zea mays' (maize), "
+            "'glycine max' (soybean), "
+            "'triticum aestivum' (wheat), "
+            "'hordeum vulgare' (barley), "
+            "'solanum lycopersicum' (tomato), "
+            "'solanum tuberosum' (potato), "
+            "'brassica napus' (oilseed), "
+            "'gossypium hirsutum' (cotton), "
+            "'sorghum bicolor' (sorghum).",
         ),
     ]
     to_id: Annotated[
         str,
         Field(
             description="The Trait Ontology identifier for network analysis "
-                        "(e.g., 'TO:0000207' for plant height trait). Trait "
-                        "Ontologies (TO) are standardized controlled "
-                        "vocabularies that describe plant phenotypic traits "
-                        "and characteristics.",
+            "(e.g., 'TO:0000207' for plant height trait). Trait "
+            "Ontologies (TO) are standardized controlled "
+            "vocabularies that describe plant phenotypic traits "
+            "and characteristics.",
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
             description="List of observation file paths for the large "
-                        "language model to process. Users can upload one "
-                        "file, multiple files, or no files. Supported file "
-                        "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-                        "uploading files, provide complete file paths as a "
-                        "list of strings. When not uploading any files, pass "
-                        "an empty list [].",
+            "language model to process. Users can upload one "
+            "file, multiple files, or no files. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
+            "uploading files, provide complete file paths as a "
+            "list of strings. When not uploading any files, pass "
+            "an empty list [].",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -515,6 +513,7 @@ class PhytomniAgents(str, Enum):
     technical constraints for each agent type. All agents implement
     standardized JSON schema for parameter validation.
     """
+
     CHATAGENT = "ChatAgent"
     CHATAGENT_DESCRIPTION = (
         "Provides concise explanations for foundational or single-domain "
@@ -675,47 +674,47 @@ async def serve() -> None:
             Tool(
                 name=PhytomniAgents.CHATAGENT,
                 description=PhytomniAgents.CHATAGENT_DESCRIPTION,
-                inputSchema=ChatAgent.model_json_schema()
+                inputSchema=ChatAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.KNOWLEDGEAGENT,
                 description=PhytomniAgents.KNOWLEDGEAGENT_DESCRIPTION,
-                inputSchema=KnowledgeAgent.model_json_schema()
+                inputSchema=KnowledgeAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.DATAAGENT,
                 description=PhytomniAgents.DATAAGENT_DESCRIPTION,
-                inputSchema=DataAgent.model_json_schema()
+                inputSchema=DataAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.ANALYSTAGENT,
                 description=PhytomniAgents.ANALYSTAGENT_DESCRIPTION,
-                inputSchema=AnalystAgent.model_json_schema()
+                inputSchema=AnalystAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.REVIEWAGENT,
                 description=PhytomniAgents.REVIEWAGENT_DESCRIPTION,
-                inputSchema=ReviewAgent.model_json_schema()
+                inputSchema=ReviewAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.DEEPGENOMEAGENT,
                 description=PhytomniAgents.DEEPGENOMEAGENT_DESCRIPTION,
-                inputSchema=DeepGenomeAgent.model_json_schema()
+                inputSchema=DeepGenomeAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.INSILICORESEARCHAGENT,
                 description=PhytomniAgents.INSILICORESEARCHAGENT_DESCRIPTION,
-                inputSchema=InSilicoResearchAgent.model_json_schema()
+                inputSchema=InSilicoResearchAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.DIGITALDESIGNAGENT,
                 description=PhytomniAgents.DIGITALDESIGNAGENT_DESCRIPTION,
-                inputSchema=DigitalDesignAgent.model_json_schema()
+                inputSchema=DigitalDesignAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.GENENETWORKAGENT,
                 description=PhytomniAgents.GENENETWORKAGENT_DESCRIPTION,
-                inputSchema=GeneNetworkAgent.model_json_schema()
+                inputSchema=GeneNetworkAgent.model_json_schema(),
             ),
         ]
 
@@ -726,8 +725,9 @@ async def serve() -> None:
                 try:
                     args = ChatAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 chatconfig = ChatConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await phyto_chat_with_follow(
@@ -749,9 +749,11 @@ async def serve() -> None:
                     user=chatconfig.USER,
                     server_dir=chatconfig.TEMP_DIR,
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=chatconfig.OBS_SERVER,
                     bucket_name=chatconfig.BUCKET_NAME,
                     part_size=chatconfig.PART_SIZT,
@@ -763,17 +765,20 @@ async def serve() -> None:
                     max_workers=chatconfig.MAX_WORKERS,
                     max_tokens=chatconfig.MAX_TOKENS,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.KNOWLEDGEAGENT:
                 try:
                     args = KnowledgeAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 knowledgeconfig = KnowledgeConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await multi_retrieve_generate(
@@ -806,9 +811,11 @@ async def serve() -> None:
                     obs_file_list=args.obs_file_list,
                     server_dir=knowledgeconfig.TEMP_DIR,
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=knowledgeconfig.OBS_SERVER,
                     bucket_name=knowledgeconfig.BUCKET_NAME,
                     part_size=knowledgeconfig.PART_SIZT,
@@ -819,17 +826,20 @@ async def serve() -> None:
                     retriable_codes=knowledgeconfig.RETRIABLE_CODES,
                     max_retries=knowledgeconfig.MAX_RETRIES,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.DATAAGENT:
                 try:
                     args = DataAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 dataconfig = DataConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await rewrite_nl2sql(
@@ -868,17 +878,20 @@ async def serve() -> None:
                     max_retries=dataconfig.MAX_RETRIES,
                     max_tokens=dataconfig.MAX_TOKENS,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.ANALYSTAGENT:
                 try:
                     args = AnalystAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 analystconfig = AnalystConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await retrieve_plan_submit(
@@ -918,11 +931,14 @@ async def serve() -> None:
                     model_url=sensitiveconfig.CODER_URL,
                     model_name=sensitiveconfig.CODER_MODEL,
                     coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()
+                    ),
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=analystconfig.OBS_SERVER,
                     bucket_name=analystconfig.BUCKET_NAME,
                     part_size=analystconfig.PART_SIZT,
@@ -931,7 +947,7 @@ async def serve() -> None:
                     max_workers=analystconfig.MAX_WORKERS,
                     analysis_url=analystconfig.ANALYSIS_URL,
                     region=analystconfig.ANALYSIS_REGION,
-                    task_name=analystconfig.TASK_NAME + '-retrieve-plan',
+                    task_name=analystconfig.TASK_NAME + "-retrieve-plan",
                     resource_dict=analystconfig.RESOURCE,
                     app_id_dict=analystconfig.APP_ID,
                     compute_resource=analystconfig.COMPUTE_RESOURCE,
@@ -940,17 +956,20 @@ async def serve() -> None:
                     retriable_codes=analystconfig.RETRIABLE_CODES,
                     max_retries=analystconfig.MAX_RETRIES,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.REVIEWAGENT:
                 try:
                     args = ReviewAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 reviewconfig = ReviewConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await deep_research(
@@ -982,9 +1001,11 @@ async def serve() -> None:
                     obs_file_list=args.obs_file_list,
                     server_dir=reviewconfig.TEMP_DIR,
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=reviewconfig.OBS_SERVER,
                     bucket_name=reviewconfig.BUCKET_NAME,
                     part_size=reviewconfig.PART_SIZT,
@@ -996,17 +1017,20 @@ async def serve() -> None:
                     max_retries=reviewconfig.MAX_RETRIES,
                     max_tokens=reviewconfig.MAX_TOKENS,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.DEEPGENOMEAGENT:
                 try:
                     args = DeepGenomeAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 deepgenomeconfig = DeepGenomeConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await gene_function(
@@ -1028,11 +1052,14 @@ async def serve() -> None:
                     model_url=sensitiveconfig.CODER_URL,
                     model_name=sensitiveconfig.CODER_MODEL,
                     coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()
+                    ),
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=deepgenomeconfig.OBS_SERVER,
                     bucket_name=deepgenomeconfig.BUCKET_NAME,
                     analysis_url=deepgenomeconfig.ANALYSIS_URL,
@@ -1072,17 +1099,20 @@ async def serve() -> None:
                     max_concurrency=deepgenomeconfig.MAX_CONCURRENCY,
                     max_poll=deepgenomeconfig.MAX_POLL,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.INSILICORESEARCHAGENT:
                 try:
                     args = InSilicoResearchAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 insilicoresearchconfig = InSilicoResearchConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await in_silico_research(
@@ -1115,9 +1145,11 @@ async def serve() -> None:
                     server_dir=insilicoresearchconfig.TEMP_DIR,
                     execute_code=insilicoresearchconfig.EXECUTE_CODE,
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=insilicoresearchconfig.OBS_SERVER,
                     bucket_name=insilicoresearchconfig.BUCKET_NAME,
                     part_size=insilicoresearchconfig.PART_SIZT,
@@ -1128,17 +1160,20 @@ async def serve() -> None:
                     retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
                     max_retries=insilicoresearchconfig.MAX_RETRIES,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.DIGITALDESIGNAGENT:
                 try:
                     args = DigitalDesignAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 digitaldesignconfig = DigitalDesignConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await design_module(
@@ -1153,11 +1188,14 @@ async def serve() -> None:
                     model_url=sensitiveconfig.CODER_URL,
                     model_name=sensitiveconfig.CODER_MODEL,
                     coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()
+                    ),
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=digitaldesignconfig.OBS_SERVER,
                     bucket_name=digitaldesignconfig.BUCKET_NAME,
                     analysis_url=digitaldesignconfig.ANALYSIS_URL,
@@ -1169,17 +1207,20 @@ async def serve() -> None:
                     max_retries=digitaldesignconfig.MAX_RETRIES,
                     max_poll=digitaldesignconfig.MAX_POLL,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
             case PhytomniAgents.GENENETWORKAGENT:
                 try:
                     args = GeneNetworkAgent(**arguments)
                 except ValueError as e:
-                    raise McpError(ErrorData(
-                        code=INVALID_PARAMS, message=str(e))) from e
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
                 genenetworkconfig = GeneNetworkConfig()
                 sensitiveconfig = SensitiveConfig().load()
                 response = await network_analysis(
@@ -1193,11 +1234,14 @@ async def serve() -> None:
                     model_url=sensitiveconfig.CODER_URL,
                     model_name=sensitiveconfig.CODER_MODEL,
                     coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()),
+                        sensitiveconfig.CODER_API_KEY.get_secret_value()
+                    ),
                     access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()),
+                        sensitiveconfig.AccessKeyID.get_secret_value()
+                    ),
                     secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()),
+                        sensitiveconfig.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=genenetworkconfig.OBS_SERVER,
                     bucket_name=genenetworkconfig.BUCKET_NAME,
                     analysis_url=genenetworkconfig.ANALYSIS_URL,
@@ -1209,16 +1253,19 @@ async def serve() -> None:
                     max_retries=genenetworkconfig.MAX_RETRIES,
                     max_poll=genenetworkconfig.MAX_POLL,
                 )
-                return [TextContent(
-                    type='text',
-                    text=dumps(response),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
 
     options = server.create_initialization_options()
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream,
-                         options, raise_exceptions=True)
+        await server.run(
+            read_stream, write_stream, options, raise_exceptions=True
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(serve())

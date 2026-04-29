@@ -37,6 +37,7 @@ Examples:
         ...     user_id='batch_user_001'
         ... )
 """
+
 from uuid import uuid1
 from typing import List, Dict
 
@@ -183,7 +184,7 @@ async def network_analysis(
             user_id = str(uuid1())
         output_dir = create_output_dir(
             user_id=user_id,
-            task='network_task',
+            task="network_task",
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=obs_server,
@@ -191,13 +192,12 @@ async def network_analysis(
         )
 
     goal_description = get_prompt(
-        prompt_file, 'user/gene_network_analysis',
-        {'to_id': to_id})
-    data_list = get_data_list(deepgenome_data,
-                              'gene_network_analysis',
-                              species)
-    meta = get_prompt(prompt_file,
-                      'user/gene_network_analysis_meta')
+        prompt_file, "user/gene_network_analysis", {"to_id": to_id}
+    )
+    data_list = get_data_list(
+        deepgenome_data, "gene_network_analysis", species
+    )
+    meta = get_prompt(prompt_file, "user/gene_network_analysis_meta")
     gene_network_task = await submit(
         goal_description=goal_description,
         data_list=data_list,
@@ -215,13 +215,13 @@ async def network_analysis(
         bucket_name=bucket_name,
         analysis_url=analysis_url,
         region=region,
-        task_name='gene-network-agents-task',
+        task_name="gene-network-agents-task",
         resource_dict=resource_dict,
         app_id_dict=app_id_dict,
-        compute_resource='small',
+        compute_resource="small",
         timeout=timeout,
         retriable_codes=retriable_codes,
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {'network_task': gene_network_task}
+    return {"network_task": gene_network_task}
