@@ -1,3 +1,7 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 """Function result caching decorator with SQLite persistence.
 
 This module provides a caching decorator that stores function results in an

@@ -1,5 +1,5 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Phytomni MCP Server - Main server implementation for plant science research
@@ -65,7 +65,7 @@ Authors:
 
 Copyright:
     Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
-    2024-2025. All rights reserved.
+    2024-2026. All rights reserved.
 """
 import asyncio
 from enum import Enum

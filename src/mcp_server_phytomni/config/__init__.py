@@ -1,5 +1,5 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Configuration management module for Phytomni MCP Server.
@@ -34,7 +34,7 @@ Authors:
 
 Copyright:
     Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
-    2024-2025. All rights reserved.
+    2024-2026. All rights reserved.
 """
 from .defaults import AnalystConfig, ChatConfig, DataConfig
 from .defaults import DeepGenomeConfig, InSilicoResearchConfig

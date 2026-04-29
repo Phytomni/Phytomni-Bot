@@ -1,5 +1,5 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Phytomni MCP Server - A comprehensive plant science research platform.
@@ -29,7 +29,7 @@ Authors:
 
 Copyright:
     Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
-    2024-2025. All rights reserved.
+    2024-2026. All rights reserved.
 """
 from .analyst_agents import create_output_dir, get_data_list
 from .analyst_agents import retrieve_plan_submit, wait_for_completion
