@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Caching decorator for function result memoization with SQLite persistence."""
+"""Caching decorator for function result memoization."""
 
 import functools
 import logging
@@ -68,7 +68,7 @@ def func_cache(
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            """Wrapper function that handles cache lookup, execution, and storage."""
+            """Wrapper for cache lookup, execution, and storage."""
             nonlocal hits, misses
 
             # ── Build key ──

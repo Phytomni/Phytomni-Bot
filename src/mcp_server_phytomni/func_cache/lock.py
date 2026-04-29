@@ -37,8 +37,10 @@ class LockManager:
         self.lock_expire = lock_expire
 
     def _owner(self):
-        """Generate a unique owner identifier for the current process/thread."""
-        return f"{os.getpid()}:{threading.get_ident()}"
+        """Generate a unique owner ID for the current process/thread."""
+        pid = os.getpid()
+        tid = threading.get_ident()
+        return f"{pid}:{tid}"
 
     def acquire(self, func_id, key_hash):
         """Acquire a lock for the given cache entry.

@@ -61,7 +61,9 @@ class Storage:
 
         if not hasattr(self._local, "conn") or self._local.conn is None:
             try:
-                conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
+                conn = sqlite3.connect(
+                    self.db_path, timeout=10, isolation_level=None
+                )
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA cache_size=-8000")
@@ -261,7 +263,8 @@ class Storage:
         try:
             conn = self._get_conn()
             conn.execute(
-                "DELETE FROM cache_locks WHERE func_id=? AND key_hash=? AND owner=?",
+                "DELETE FROM cache_locks WHERE func_id=? AND"
+                " key_hash=? AND owner=?",
                 (func_id, key_hash, owner),
             )
         except sqlite3.Error as e:

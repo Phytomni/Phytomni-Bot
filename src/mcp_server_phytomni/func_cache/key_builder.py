@@ -61,7 +61,9 @@ class KeyBuilder:
         try:
             bound = self.sig.bind(*args, **kwargs)
             bound.apply_defaults()
-            selected = tuple((name, bound.arguments[name]) for name in self.key_params)
+            selected = tuple(
+                (name, bound.arguments[name]) for name in self.key_params
+            )
             raw = pickle.dumps(selected, protocol=PICKLE_PROTOCOL)
             return hashlib.sha256(raw).hexdigest()
         except (CacheConfigError, SerializationError):
