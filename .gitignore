@@ -213,6 +213,10 @@ __marimo__/
 # Claude Code
 CLAUDE.md
 
+# Local agent context
+.codex
+AGENTS.md
+
 # Gemini CLI
 package-lock.json
 
