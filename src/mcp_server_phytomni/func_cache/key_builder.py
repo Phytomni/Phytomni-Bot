@@ -20,7 +20,8 @@ class KeyBuilder:
             for p in key_params:
                 if p not in all_params:
                     raise CacheConfigError(
-                        f"Parameter '{p}' does not exist in function {self.func_id}'s signature, "
+                        f"Parameter '{p}' does not exist in "
+                        f"function {self.func_id}'s signature, "
                         f"available parameters: {all_params}"
                     )
             self.key_params = list(key_params)
@@ -37,6 +38,4 @@ class KeyBuilder:
         except (CacheConfigError, SerializationError):
             raise
         except Exception as e:
-            raise SerializationError(
-                f"Failed to build cache key: {e}"
-            ) from e
+            raise SerializationError(f"Failed to build cache key: {e}") from e

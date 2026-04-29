@@ -2,6 +2,7 @@ import functools
 import logging
 import atexit
 import os
+from typing import Any, cast
 
 from .key_builder import KeyBuilder
 from .serializer import dumps, loads
@@ -32,9 +33,7 @@ def func_cache(
             atexit.register(storage.close)
             _atexit_registered.add(db_abs)
 
-        _check_and_update_meta(
-            storage, kb.func_id, kb.key_params, compress
-        )
+        _check_and_update_meta(storage, kb.func_id, kb.key_params, compress)
 
         hits = 0
         misses = 0
@@ -64,7 +63,8 @@ def func_cache(
                     return result
                 except CacheError:
                     logger.warning(
-                        f"Cache deserialization failed, removing corrupted entry: {kb.func_id}:{cache_key}"
+                        "Cache deserialization failed, "
+                        f"removing corrupted entry: {kb.func_id}:{cache_key}"
                     )
                     try:
                         storage.delete_entry(kb.func_id, cache_key)
@@ -92,9 +92,7 @@ def func_cache(
                             return result
                         except CacheError:
                             try:
-                                storage.delete_entry(
-                                    kb.func_id, cache_key
-                                )
+                                storage.delete_entry(kb.func_id, cache_key)
                             except CacheError:
                                 pass
                 except CacheError:
@@ -133,9 +131,10 @@ def func_cache(
                 count = -1
             return {"hits": hits, "misses": misses, "count": count}
 
-        wrapper.cache_clear = cache_clear
-        wrapper.cache_info = cache_info
-        return wrapper
+        c_wrapper = cast(Any, wrapper)
+        c_wrapper.cache_clear = cache_clear
+        c_wrapper.cache_info = cache_info
+        return c_wrapper
 
     return decorator
 
@@ -150,15 +149,13 @@ def _check_and_update_meta(storage, func_id, key_params, compress):
             if old_params != key_params or old_compress != compress:
                 changes = []
                 if old_params != key_params:
-                    changes.append(
-                        f"key_params: {old_params} → {key_params}"
-                    )
+                    changes.append(f"key_params: {old_params} → {key_params}")
                 if old_compress != compress:
-                    changes.append(
-                        f"compress: {old_compress} → {compress}"
-                    )
+                    changes.append(f"compress: {old_compress} → {compress}")
                 logger.warning(
-                    f"Detected cache config change for {func_id}: {'; '.join(changes)}, automatically clearing old cache"
+                    f"Detected cache config change for {func_id}: "
+                    f"{'; '.join(changes)}, "
+                    "automatically clearing old cache"
                 )
                 storage.delete_func(func_id)
                 storage.cleanup_func_locks(func_id)

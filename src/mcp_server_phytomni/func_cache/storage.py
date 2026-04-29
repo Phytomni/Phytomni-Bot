@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class Storage:
 
-    _instances = {}
+    _instances: dict[str, "Storage"] = {}
     _instances_lock = threading.Lock()
 
     @classmethod
@@ -122,8 +122,7 @@ class Storage:
         try:
             conn = self._get_conn()
             conn.execute(
-                "DELETE FROM cache_entries "
-                "WHERE func_id=? AND key_hash=?",
+                "DELETE FROM cache_entries WHERE func_id=? AND key_hash=?",
                 (func_id, key_hash),
             )
         except sqlite3.Error as e:
