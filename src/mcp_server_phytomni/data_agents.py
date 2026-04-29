@@ -11,11 +11,18 @@ better performance.
 """
 import asyncio
 from random import uniform
-from typing import Any, Dict, List, Optional, Union, TypedDict
+from typing import Any, cast, Optional, TypedDict
 from uuid import uuid1
 
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 
@@ -24,13 +31,6 @@ from .config.defaults import DataConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .utils import get_prompt, get_token
-
-from pydantic import Field
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import AsyncCallbackManagerForRetrieverRun, CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
-from langgraph.graph import StateGraph, END, START
-from langgraph.checkpoint.memory import MemorySaver
 
 dc = DataConfig()
 sc = SensitiveConfig().load()
@@ -45,9 +45,11 @@ class DataAgentState(TypedDict):
 
     Attributes:
         user_query: The user's natural language query.
-        retrieve_promopt: The constructed prompt containing retrieved scenarios.
+        retrieve_promopt: The constructed prompt containing
+            retrieved scenarios.
         rewrite_query: The rewritten query optimized for SQL generation.
-        final_reponse: The final response from the database query execution.
+        final_reponse: The final response from the database
+            query execution.
     """
     user_query: str
     retrieve_promopt: str
@@ -66,7 +68,8 @@ class DataAgent:
     The workflow graph consists of three main nodes:
         1. retrieve_node: Retrieves relevant database scenarios for context.
         2. rewrite_node: Rewrites the query using an LLM for SQL generation.
-        3. search_node: Executes the NL2SQL conversion and queries the database.
+        3. search_node: Executes the NL2SQL conversion and queries the
+            database.
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
@@ -74,7 +77,8 @@ class DataAgent:
         data_config: Configuration for data retrieval and NL2SQL.
                      Defaults to the global dc instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
-                          Defaults to the global sc instance.
+                          Defaults to the global sc
+                          instance.
 
     Attributes:
         dc: The data configuration instance.
@@ -83,7 +87,12 @@ class DataAgent:
         app: The compiled LangGraph application.
     """
 
-    def __init__(self, checkpointer=MemorySaver(), data_config=dc, sensitive_config=sc):
+    def __init__(
+        self,
+        checkpointer=MemorySaver(),
+        data_config=dc,
+        sensitive_config=sc,
+    ):
         """Initialize the DataAgent with configuration and build the graph."""
         self.dc = data_config
         self.sc = sensitive_config
@@ -165,7 +174,7 @@ class DataAgent:
                                       'user_query': user_query})
 
         return {"retrieve_promopt": retrieve_prompt}
-    
+
     async def rewrite_node(self, state: DataAgentState):
         """Rewrite the query using an LLM for better SQL generation.
 
@@ -228,19 +237,22 @@ class DataAgent:
             A dictionary containing the final_reponse key with the
             database query results.
         """
-        dialog_id = dialog_id if dialog_id else str(uuid1())
+        dialog_id = str(uuid1())
         client_timeout = Timeout(self.dc.TIMEOUT, connect=self.dc.TIMEOUT)
+        response = None
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
             for attempt in range(self.dc.MAX_RETRIES + 1):
                 try:
                     response = await client.post(
                         self.dc.DATABASE_URL,
-                        headers={'X-Auth-Token': await get_token(),
-                                'X-Workspace-Id': self.dc.WORKSPACE_ID,
-                                'Content-Type': 'application/json'},
+                        headers={
+                            'X-Auth-Token': await get_token(),
+                            'X-Workspace-Id': self.dc.WORKSPACE_ID,
+                            'Content-Type': 'application/json',
+                        },
                         json={
                             'subject_id': self.dc.SUBJECT_ID,
-                            'dialog_id': dialog_id if dialog_id else str(uuid1()),
+                            'dialog_id': dialog_id,
                             'message_content': state["rewrite_query"],
                             'need_insight': self.dc.NEED_INSIGHT,
                             'simplify_response': self.dc.SIMPLIFY_RESPONSE,
@@ -273,6 +285,11 @@ class DataAgent:
                         message=f'Network error: {str(e)}'
                     )) from e
 
+        if response is None:
+            raise McpError(ErrorData(
+                code=INTERNAL_ERROR,
+                message='Failed to get response from database',
+            ))
         return {"final_reponse": response.json()}
 
     async def arun(self,
@@ -282,26 +299,30 @@ class DataAgent:
 
         This is the main entry point for invoking the agent. It initializes
         the state with the user's query, then runs the LangGraph workflow
-        to retrieve scenarios, rewrite the query, and execute the database query.
+        to retrieve scenarios, rewrite the query, and execute the database
+        query.
 
         Args:
             user_query: The user's natural language query.
-            thread_id: Optional thread ID for state persistence. If not provided,
-                       a new UUID will be generated.
+            thread_id: Optional thread ID for state persistence.
+                If not provided, a new UUID will be generated.
 
         Returns:
-            The final response dictionary containing the database query results.
+            The final response dictionary containing the database
+                query results.
         """
         if not thread_id:
             thread_id = str(uuid1())
         initial_state = {
             "user_query": user_query,
             "retrieve_promopt": None,
-            "rewrite_query": None, 
-            "final_reponse": None
+            "rewrite_query": None,
+            "final_reponse": None,
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
-        
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
+
         return final_state["final_response"]
