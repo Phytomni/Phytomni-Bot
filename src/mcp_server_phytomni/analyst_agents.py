@@ -24,25 +24,31 @@ and scalable bioinformatics analyses are required. It abstracts away the
 complexities of direct API and service interactions, providing a simplified
 interface for developers and researchers.
 """
+
 import asyncio
 import datetime
-import re
 import json
+import re
 import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import List, Literal, Dict, Optional, TypedDict, cast
+from typing import Dict, List, Literal, Optional, TypedDict, cast
 from uuid import uuid1
 
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, START
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
-from obs import GetObjectHeader, PutObjectHeader, ObsClient
+from mcp.types import INTERNAL_ERROR, ErrorData
+from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
@@ -286,7 +292,8 @@ class AnalystAgent:
                 ErrorData(
                     code=INTERNAL_ERROR,
                     message=f"Failed to load species data list from {
-                        self.ac.PRE_PREPARED_DATA_PATH}",
+                        self.ac.PRE_PREPARED_DATA_PATH
+                    }",
                 )
             ) from exc
         data_list = state["data_list"]
@@ -358,8 +365,8 @@ class AnalystAgent:
                 raise McpError(
                     ErrorData(
                         code=INTERNAL_ERROR,
-                        message=f"Failed to parse data selection response: {
-                            str(exc)}",
+                        message=f"Failed to parse data selection response: "
+                        f"{str(exc)}",
                     )
                 ) from exc
 
@@ -1039,10 +1046,10 @@ class AnalystAgent:
         """
         feedback = state.get("plan_feedback")
 
-        # 如果节点返回了 "APPROVED"，说明通过检查
+        # If node returned "APPROVED", the check passed
         if feedback == "APPROVED":
             return "tool_extract_node"
-        # 否则带着 feedback 回到 plan_node 重写
+        # Otherwise, return to plan_node for revision with feedback
         return "plan_node"
 
     def route_after_submit(
@@ -1082,24 +1089,10 @@ class AnalystAgent:
         self,
         query: str,
         goal_description: Optional[str] = None,
-        user: str = ac.USER,
-        user_id: str = ac.USER_ID,
-        is_create_dir: bool = ac.CREATE_DIR,
         output_dir: str = ac.OUTPUT_DIR,
-        execute_code: bool = ac.EXECUTE_CODE,
         compute_resource: Literal[
             "small", "medium", "large"
         ] = ac.COMPUTE_RESOURCE,
-        timeout: float = ac.TIMEOUT,
-        max_retries: int = ac.MAX_RETRIES,
-        reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-        frequency_penalty: float = ac.FREQUENCY_PENALTY,
-        presence_penalty: float = ac.PRESENCE_PENALTY,
-        n: int = ac.N,
-        stream: bool = ac.STREAM,
-        temperature: float = ac.TEMPERATURE,
-        top_p: float = ac.TOP_P,
-        prompt_file: str = ac.PROMPT_FILE,
         preset_data_list: Optional[Dict[str, str]] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
@@ -1116,23 +1109,9 @@ class AnalystAgent:
         Args:
             query: The user's natural language query for the analysis.
             goal_description: Optional pre-decomposed research goal.
-            user: The user identifier.
-            user_id: The user ID.
-            is_create_dir: Whether to create an output directory.
             output_dir: The output directory path.
-            execute_code: Whether to execute code during analysis.
             compute_resource: The compute resource level
                 (small, medium, large).
-            timeout: Request timeout in seconds.
-            max_retries: Maximum number of retries for failed requests.
-            reasoning_effort: Reasoning effort level for the LLM.
-            frequency_penalty: Frequency penalty for LLM sampling.
-            presence_penalty: Presence penalty for LLM sampling.
-            n: Number of completions to generate.
-            stream: Whether to stream the response.
-            temperature: Sampling temperature for the LLM.
-            top_p: Top-p sampling parameter.
-            prompt_file: Path to the prompt template file.
             preset_data_list: Pre-configured data file list.
             obs_file_list: List of OBS files uploaded by the user.
             preset_plan: Pre-configured analysis plan.
@@ -1831,21 +1810,12 @@ def download_obs_out(
             else:
                 raise OSError(
                     "Get File List Failed\n"
-                    f'requestId: {
-                        getattr(
-                            file_response,
-                            "requestId",
-                            "unknown")}\n'
-                    f'errorCode: {
-                        getattr(
-                            file_response,
-                            "errorCode",
-                            "unknown")}\n'
-                    f'errorMessage: {
-                        getattr(
-                            file_response,
-                            "errorMessage",
-                            "unknown")}'
+                    f"requestId: "
+                    f"{getattr(file_response, 'requestId', 'unknown')}\n"
+                    f"errorCode: "
+                    f"{getattr(file_response, 'errorCode', 'unknown')}\n"
+                    f"errorMessage: "
+                    f"{getattr(file_response, 'errorMessage', 'unknown')}"
                 )
     except Exception as exc:
         raise OSError(f"Download File Failed\n{format_exc()}") from exc
