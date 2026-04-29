@@ -3,443 +3,307 @@
 # Author: maoyc_0316@163.com
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides functions for protein design and computational
-structural analysis.
+"""This module provides LangGraph-based workflow for protein design
+and computational structural analysis.
 
 It includes functions that leverage computational biology and bioinformatics
 tools to analyze protein structures, predict protein properties, and perform
 digital design workflows for protein engineering applications.
 """
-from typing import Dict, List
+from typing import Dict, List, Any, Optional, TypedDict
 from uuid import uuid1
 
-from .analyst_agents import get_data_list, create_output_dir, submit
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
+
+from .utils import get_prompt
+from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import DigitalDesignConfig
 from .config.settings import SensitiveConfig
-from .utils import get_prompt
 
 ddc = DigitalDesignConfig()
 sc = SensitiveConfig().load()
 
 
-async def protein_design_analysis(
-    species: str,
-    gene_id: str,
-    user_id: str = ddc.USER_ID,
-    batch: bool = False,
-    enable_auto_select: bool = False,
-    prompt_file: str = ddc.PROMPT_FILE,
-    deepgenome_data: str = ddc.DEEPGENOME_DATA,
-    output_dir: str = ddc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ddc.OBS_SERVER,
-    bucket_name: str = ddc.BUCKET_NAME,
-    analysis_url: str = ddc.ANALYSIS_URL,
-    region: str = ddc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = ddc.RESOURCE,
-    app_id_dict: Dict[str, str] = ddc.APP_ID,
-    timeout: float = ddc.TIMEOUT,
-    retriable_codes: List[int] = ddc.RETRIABLE_CODES,
-    max_retries: int = ddc.MAX_RETRIES,
-    max_poll: float = ddc.MAX_POLL,
-) -> dict:
-    """Perform protein design analysis for a specific gene.
+class DigitalDesignState(TypedDict):
+    """State schema for the digital design workflow.
 
-    This function conducts comprehensive protein design analysis by generating
-    analysis goals, retrieving relevant genomic data, and submitting
-    computational tasks for protein structure prediction, property analysis,
-    and design optimization.
+    This TypedDict defines the state structure used throughout the protein
+    and promoter digital design workflow, tracking species information, gene
+    identifiers, task management, and result aggregation for parallel design
+    task execution.
 
-    Args:
-        species: The species name for which protein design analysis is
-            performed (e.g., "Arabidopsis_thaliana").
-        gene_id: The specific gene identifier to analyze for protein design.
-        user_id: Identifier for the user submitting the analysis task.
-        batch: Flag indicating whether this is part of a batch processing
-            workflow. If False, a new output directory will be created.
-        prompt_file: Path to the YAML template file containing system prompts.
-        deepgenome_data: Path to the species data configuration file containing
-            genome and annotation information.
-        output_dir: Output directory path for storing results of analysis
-            or operations (e.g., an OBS path).
-        model_url: Base URL endpoint for the coding model API service.
-        model_name: Identifier of the specific coding model to use for
-            generating analysis code.
-        coder_api_key: API key for authenticating with the coding model
-            service.
-        access_key_id: Access key ID for OBS authentication.
-        secret_access_key: Secret access key for OBS authentication.
-        obs_server: Server endpoint URL for the Object Storage Service.
-        bucket_name: Name of the OBS bucket for storing analysis results.
-        analysis_url: URL for the workflow analysis service.
-        region: Cloud service region for analysis operations.
-        resource_dict: Dictionary mapping compute resource types to their
-            CPU and memory specifications.
-        app_id_dict: Dictionary mapping compute resource types to their
-            corresponding application IDs.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
-        max_poll: Maximum duration in seconds for polling the status of
-            long-running tasks.
-
-    Returns:
-        A dictionary containing the protein design task results with the key
-        'protein_design_task' mapping to the complete analysis results.
-
-    Raises:
-        McpError: If any of the underlying API calls or file operations fail
-            after all retry attempts.
-        FileNotFoundError: If the deepgenome_data file or other required
-            resources cannot be found.
-
-    Examples:
-        Analyze protein design for a specific gene:
-            >>> result = await protein_design_analysis(
-            ...     species="Arabidopsis_thaliana",
-            ...     gene_id="AT1G01010"
-            ... )
-            >>> print(result['protein_design_task'])
-
-        Custom output directory:
-            >>> result = await protein_design_analysis(
-            ...     species="Zea_mays",
-            ...     gene_id="GRMZM2G000001",
-            ...     output_dir="/custom/output/path/",
-            ...     batch=True
-            ... )
+    Attributes:
+        species: Species name (e.g., "Arabidopsis_thaliana").
+        gene_id: Gene identifier for target protein or promoter.
+        user_id: User identifier.
+        batch: Whether this is batch processing.
+        output_dir: Output directory path for results.
+        design_tasks: List of design tasks to be executed.
+        task_index: Current task index in parallel execution via Send API.
+        task_ids: Mapping of task names to their corresponding task IDs.
+        completed_count: Counter tracking the number of completed tasks.
+        error: Error message if any task failed during execution.
     """
-    goal_description = get_prompt(prompt_file, 'user/protein_design_analysis',
-                                  {'gene_id': gene_id})
-    data_list = get_data_list(deepgenome_data, 'protein_design_analysis',
-                              species)
-    if not batch:
-        if not user_id:
-            user_id = str(uuid1())
-        output_dir = create_output_dir(user_id, 'protein_design_task')
-    meta = get_prompt(prompt_file, 'user/protein_design_analysis_meta')
-    pr_design_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        output_dir=output_dir,
-        meta=meta,
-        execute_code=True,
-        enable_auto_select=enable_auto_select,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name='deepgenome-agents-prdesign-task',
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource='medium',
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    return {'protein_design_task': pr_design_task}
+    species: str
+    gene_id: str
+    user_id: str
+    batch: bool
+    output_dir: Optional[str]
+    design_tasks: List[Dict[str, Any]]  # List of design tasks
+    task_index: Optional[int]  # Current task index
+    task_ids: Dict[str, str]  # Multiple task_ids: {"protein_design": "xxx", "other_task": "yyy"}
+    completed_count: int  # Completed task counter
+    error: Optional[str]
 
 
-async def promoter_design_analysis(
-    species: str,
-    gene_id: str,
-    user_id: str = ddc.USER_ID,
-    batch: bool = False,
-    enable_auto_select: bool = False,
-    prompt_file: str = ddc.PROMPT_FILE,
-    deepgenome_data: str = ddc.DEEPGENOME_DATA,
-    output_dir: str = ddc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ddc.OBS_SERVER,
-    bucket_name: str = ddc.BUCKET_NAME,
-    analysis_url: str = ddc.ANALYSIS_URL,
-    region: str = ddc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = ddc.RESOURCE,
-    app_id_dict: Dict[str, str] = ddc.APP_ID,
-    timeout: float = ddc.TIMEOUT,
-    retriable_codes: List[int] = ddc.RETRIABLE_CODES,
-    max_retries: int = ddc.MAX_RETRIES,
-    max_poll: float = ddc.MAX_POLL,
-) -> dict:
-    """Perform promoter design analysis for a specific gene.
+class DigitalDesignAgents:
+    """LangGraph-based agent for protein and promoter digital design.
 
-    This function conducts comprehensive promoter design analysis by generating
-    analysis goals, retrieving relevant genomic data, and submitting
-    computational tasks for promoter epicmodification prediction, property analysis,
-    and design optimization.
+    This agent provides a workflow for computational protein design and promoter
+    analysis using LangGraph's parallel execution capabilities. It leverages the
+    AnalystAgent to submit and manage design tasks asynchronously.
 
-    Args:
-        species: The species name for which promoter design analysis is
-            performed (e.g., "Arabidopsis_thaliana").
-        gene_id: The specific gene identifier to analyze for promoter design.
-        user_id: Identifier for the user submitting the analysis task.
-        batch: Flag indicating whether this is part of a batch processing
-            workflow. If False, a new output directory will be created.
-        prompt_file: Path to the YAML template file containing system prompts.
-        deepgenome_data: Path to the species data configuration file containing
-            genome and annotation information.
-        output_dir: Output directory path for storing results of analysis
-            or operations (e.g., an OBS path).
-        model_url: Base URL endpoint for the coding model API service.
-        model_name: Identifier of the specific coding model to use for
-            generating analysis code.
-        coder_api_key: API key for authenticating with the coding model
-            service.
-        access_key_id: Access key ID for OBS authentication.
-        secret_access_key: Secret access key for OBS authentication.
-        obs_server: Server endpoint URL for the Object Storage Service.
-        bucket_name: Name of the OBS bucket for storing analysis results.
-        analysis_url: URL for the workflow analysis service.
-        region: Cloud service region for analysis operations.
-        resource_dict: Dictionary mapping compute resource types to their
-            CPU and memory specifications.
-        app_id_dict: Dictionary mapping compute resource types to their
-            corresponding application IDs.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
-        max_poll: Maximum duration in seconds for polling the status of
-            long-running tasks.
+    Attributes:
+        checkpointer: LangGraph checkpointer for state persistence.
+        analyst_agent: AnalystAgent instance for task execution.
+        ddc: Digital design configuration.
+        sc: Sensitive configuration settings.
+        app: Compiled LangGraph application.
 
-    Returns:
-        A dictionary containing the promoter design task results with the key
-        'promoter_design_task' mapping to the complete analysis results.
-
-    Raises:
-        McpError: If any of the underlying API calls or file operations fail
-            after all retry attempts.
-        FileNotFoundError: If the deepgenome_data file or other required
-            resources cannot be found.
-
-    Examples:
-        Analyze promoter design for a specific gene:
-            >>> result = await promoter_design_analysis(
-            ...     species="Arabidopsis_thaliana",
-            ...     gene_id="AT1G01010"
-            ... )
-            >>> print(result['promoter_design_task'])
-
-        Custom output directory:
-            >>> result = await promoter_design_analysis(
-            ...     species="Zea_mays",
-            ...     gene_id="GRMZM2G000001",
-            ...     output_dir="/custom/output/path/",
-            ...     batch=True
-            ... )
+    Example:
+        >>> agents = DigitalDesignAgents()
+        >>> result = await agents.arun(
+        ...     species="osa",
+        ...     gene_id="Os01g0177400"
+        ... )
     """
-    goal_description = get_prompt(prompt_file, 'user/promoter_design_analysis',
-                                  {'gene_id': gene_id})
-    data_list = get_data_list(deepgenome_data, 'promoter_design_analysis',
-                              species)
-    data_list = loads(dumps(data_list).replace('/gene_id', f'/{gene_id}'))
-    if not batch:
-        if not user_id:
-            user_id = str(uuid1())
-        output_dir = create_output_dir(user_id, 'promoter_design_task')
-    meta = get_prompt(prompt_file, 'user/promoter_design_analysis_meta')
-    dna_design_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        output_dir=output_dir,
-        meta=meta,
-        execute_code=True,
-        enable_auto_select=enable_auto_select,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        task_name='deepgenome-agents-dnadesign-task',
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        compute_resource='small',
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    return {'promoter_design_task': dna_design_task}
 
+    def __init__(self,
+                 checkpointer=MemorySaver(),
+                 analyst_agent: AnalystAgent = None,
+                 digital_design_config=ddc,
+                 sensitive_config=sc):
+        """Initialize the DigitalDesignAgents.
 
-async def design_module(
-    species: str,
-    gene_id: str,
-    user_id: str = ddc.USER_ID,
-    batch: bool = True,
-    enable_auto_select: bool = False,
-    prompt_file: str = ddc.PROMPT_FILE,
-    deepgenome_data: str = ddc.DEEPGENOME_DATA,
-    output_dir: str = ddc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ddc.OBS_SERVER,
-    bucket_name: str = ddc.BUCKET_NAME,
-    analysis_url: str = ddc.ANALYSIS_URL,
-    region: str = ddc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = ddc.RESOURCE,
-    app_id_dict: Dict[str, str] = ddc.APP_ID,
-    timeout: float = ddc.TIMEOUT,
-    retriable_codes: List[int] = ddc.RETRIABLE_CODES,
-    max_retries: int = ddc.MAX_RETRIES,
-    max_poll: float = ddc.MAX_POLL,
-) -> dict:
-    """Execute a complete protein design workflow module.
+        Args:
+            checkpointer: LangGraph MemorySaver for state persistence.
+            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            digital_design_config: Digital design configuration object.
+            sensitive_config: Sensitive configuration for credentials.
+        """
+        self.checkpointer = checkpointer
+        self.analyst_agent = analyst_agent or AnalystAgent()
+        self.ddc = digital_design_config
+        self.sc = sensitive_config
+        self.app = self._build_graph()
 
-    This function serves as a high-level interface for protein design tasks,
-    orchestrating the entire workflow including output directory management
-    and protein design analysis execution. It acts as a wrapper around
-    protein_design_analysis with enhanced directory management capabilities.
+    def _build_graph(self):
+        """Build the LangGraph workflow for digital design tasks."""
+        workflow = StateGraph(DigitalDesignState)
 
-    Args:
-        species: The species name for which protein design analysis is
-            performed (e.g., "Arabidopsis_thaliana").
-        gene_id: The specific gene identifier to analyze for protein design.
-        user_id: Identifier for the user submitting the analysis task.
-        batch: Flag indicating whether this is part of a batch processing
-            workflow. If False, a new output directory will be created
-            automatically.
-        prompt_file: Path to the YAML template file containing system prompts.
-        deepgenome_data: Path to the species data configuration file containing
-            genome and annotation information.
-        output_dir: Output directory path for storing results of analysis
-            or operations (e.g., an OBS path).
-        model_url: Base URL endpoint for the coding model API service.
-        model_name: Identifier of the specific coding model to use for
-            generating analysis code.
-        coder_api_key: API key for authenticating with the coding model
-            service.
-        access_key_id: Access key ID for OBS authentication.
-        secret_access_key: Secret access key for OBS authentication.
-        obs_server: Server endpoint URL for the Object Storage Service.
-        bucket_name: Name of the OBS bucket for storing analysis results.
-        analysis_url: URL for the workflow analysis service.
-        region: Cloud service region for analysis operations.
-        resource_dict: Dictionary mapping compute resource types to their
-            CPU and memory specifications.
-        app_id_dict: Dictionary mapping compute resource types to their
-            corresponding application IDs.
-        timeout: General request timeout in seconds for API calls.
-        retriable_codes: List of HTTP status codes that trigger retries for
-            API calls.
-        max_retries: Maximum number of retry attempts for API calls.
-        max_poll: Maximum duration in seconds for polling the status of
-            long-running tasks.
+        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
+        workflow.add_node("design_node", self.run_design_node)
 
-    Returns:
-        A dictionary containing the complete protein design task results,
-        typically with the same structure as returned by
-        protein_design_analysis.
-
-    Raises:
-        McpError: If any of the underlying API calls or file operations fail
-            after all retry attempts.
-        FileNotFoundError: If the deepgenome_data file or other required
-            resources cannot be found.
-
-    Examples:
-        Execute protein design module:
-            >>> result = await design_module(
-            ...     species="Arabidopsis_thaliana",
-            ...     gene_id="AT1G01010"
-            ... )
-            >>> print(result)
-
-        Non-batch processing with custom user:
-            >>> result = await design_module(
-            ...     species="Zea_mays",
-            ...     gene_id="GRMZM2G000001",
-            ...     user_id="researcher_001",
-            ...     batch=False
-            ... )
-
-    Note:
-        This function is designed to be the primary entry point for protein
-        design workflows, providing simplified parameter management and
-        automatic directory creation when needed.
-    """
-    if not batch:
-        if not user_id:
-            user_id = str(uuid1())
-        output_dir = create_output_dir(
-            user_id=user_id,
-            task='design_task',
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
+        # Use Send API for dynamic task dispatch
+        workflow.add_conditional_edges(
+            "prepare_tasks_node",
+            self.route_design_tasks,
+            ["design_node"]
         )
-    protein_design_task = await protein_design_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        enable_auto_select=enable_auto_select,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
-    promoter_design_task = await promoter_design_analysis(
-        species=species,
-        gene_id=gene_id,
-        user_id=user_id,
-        batch=batch,
-        enable_auto_select=enable_auto_select,
-        prompt_file=prompt_file,
-        deepgenome_data=deepgenome_data,
-        output_dir=output_dir,
-        model_url=model_url,
-        model_name=model_name,
-        coder_api_key=coder_api_key,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        analysis_url=analysis_url,
-        region=region,
-        resource_dict=resource_dict,
-        app_id_dict=app_id_dict,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_poll=max_poll,
-    )
+        workflow.add_edge("design_node", END)
 
-    return {**protein_design_task, **promoter_design_task}
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def route_design_tasks(self, state: DigitalDesignState):
+        """Dispatch design tasks in parallel using Send API."""
+        tasks = state.get("design_tasks", [])
+        return [
+            Send("design_node", {"task_index": i, **task})
+            for i, task in enumerate(tasks)
+        ]
+
+    async def _dispatch_and_wait_analysis(
+        self,
+        analysis_type: str,
+        species: str,
+        gene_id: str,
+        output_dir: str = None
+    ) -> dict:
+        """Submit task using AnalystAgent and wait for completion.
+
+        Args:
+            analysis_type: Type of design analysis (protein_design or promoter_design).
+            species: Species name.
+            gene_id: Target gene identifier.
+            output_dir: Optional output directory path.
+
+        Returns:
+            Dict containing task_id and output_dir.
+        """
+        goal_template_map = {
+            "protein_design_analysis": "user/protein_design_analysis",
+            "promoter_design_analysis": "user/promoter_design_analysis"
+        }
+        meta_template_map = {
+            "protein_design_analysis": "user/protein_design_analysis_meta",
+            "promoter_design_analysis": "user/promoter_design_analysis_meta"
+        }
+
+        goal_path = goal_template_map.get(analysis_type)
+        meta_path = meta_template_map.get(analysis_type)
+        if not goal_path:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+
+        # Build goal_description
+        goal_description = get_prompt(
+            self.ddc.PROMPT_FILE,
+            goal_path,
+            {'gene_id': gene_id}
+        )
+        # Build meta prompt
+        meta = get_prompt(self.ddc.PROMPT_FILE, meta_path)
+        # Build data_list
+        data_list = get_data_list(
+            self.ddc.DEEPGENOME_DATA,
+            analysis_type,
+            species
+        )
+
+        # Determine compute resource level
+        compute_resource = self._get_compute_resource(analysis_type)
+
+        # Get output directory
+        if not output_dir:
+            output_dir = create_output_dir(
+                user_id=self.sc.USER_ID or str(uuid1()),
+                task=f'{analysis_type}_task',
+                access_key_id=self.sc.AccessKeyID.get_secret_value(),
+                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                obs_server=self.ddc.OBS_SERVER,
+                bucket_name=self.ddc.BUCKET_NAME,
+            )
+
+        print(f"  → Submitting {analysis_type} task via AnalystAgent...")
+
+        # Submit task using AnalystAgent
+        result = await self.analyst_agent.arun(
+            query=None,
+            goal_description=goal_description,
+            preset_data_list=data_list,
+            preset_plan=meta,  # Pass meta as predefined plan
+            output_dir=output_dir,
+            compute_resource=compute_resource,
+            is_auto_select=False,  # Data already preset via data_list
+            is_polling=False,       # Wait for task completion
+            thread_id=f"{gene_id}_{analysis_type}_{uuid1()}",
+        )
+
+        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
+            raise RuntimeError(f"AnalystAgent failed: {result.get('error_detail')}")
+
+        task_id = result.get("task_id")
+        print(f"  → {analysis_type} task completed (task_id: {task_id})")
+
+        return {
+            "task_id": task_id,
+            "output_dir": result.get("output_dir")
+        }
+
+    def _get_compute_resource(self, analysis_type: str) -> str:
+        """Determine compute resource level based on analysis type."""
+        medium_compute_types = {
+            "protein_design_analysis"
+        }
+        if analysis_type in medium_compute_types:
+            return "medium"
+        else:
+            return "small"
+
+    async def prepare_tasks(self, state: DigitalDesignState) -> dict:
+        """Prepare the list of design tasks."""
+        tasks = [
+            {"analysis_type": "protein_design_analysis"},
+            {"analysis_type": "promoter_design_analysis"}
+        ]
+        return {
+            "design_tasks": tasks,
+            "task_ids": {},
+            "completed_count": 0
+        }
+
+    async def run_design_node(self, state: DigitalDesignState) -> dict:
+        """Execute a single design task dispatched via Send API.
+
+        This node is called dynamically for each task in the design_tasks list.
+        """
+        task_index = state.get("task_index")
+        species = state["species"]
+        gene_id = state["gene_id"]
+        analysis_type = state.get("analysis_type")
+
+        print(f"[Design-{task_index}] 🚀 Executing: {analysis_type} for {gene_id}")
+
+        try:
+            result = await self._dispatch_and_wait_analysis(
+                analysis_type=analysis_type,
+                species=species,
+                gene_id=gene_id,
+            )
+            # Update task_id for the corresponding task
+            task_key = analysis_type.replace("_analysis", "")
+            existing_task_ids = state.get("task_ids", {})
+            existing_task_ids[task_key] = result.get("task_id")
+            return {
+                "task_ids": existing_task_ids,
+                "completed_count": 1
+            }
+        except Exception as e:
+            return {
+                "task_ids": state.get("task_ids", {}),
+                "completed_count": 1,
+                "error": str(e)
+            }
+
+    async def arun(
+        self,
+        species: str,
+        gene_id: str,
+        user_id: Optional[str] = None,
+        batch: bool = False,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Async entry function - submit protein design tasks and return task_ids.
+
+        Args:
+            species: Species name (e.g., "Arabidopsis_thaliana").
+            gene_id: Gene identifier.
+            user_id: Optional user identifier.
+            batch: Whether this is batch processing.
+            thread_id: Optional thread ID for checkpointer.
+
+        Returns:
+            Dict with task_ids on success, or error on failure.
+        """
+        if thread_id is None:
+            thread_id = str(uuid1())
+
+        initial_state = {
+            "species": species,
+            "gene_id": gene_id,
+            "user_id": user_id,
+            "batch": batch,
+            "output_dir": None,
+            "design_tasks": [],
+            "task_ids": {},
+            "completed_count": 0,
+            "error": None,
+        }
+
+        config = {"configurable": {"thread_id": thread_id}}
+        result = await self.app.ainvoke(initial_state, config)
+        return {
+            "task_ids": result.get("task_ids"),
+            "error": result.get("error")
+        }
