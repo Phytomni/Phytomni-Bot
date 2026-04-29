@@ -31,7 +31,7 @@ import requests
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.constants import Send
+from langgraph.types import Send
 
 from .analyst_agents import create_output_dir, download_obs_out
 from .analyst_agents import get_data_list

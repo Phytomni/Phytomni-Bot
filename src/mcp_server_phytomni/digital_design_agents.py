@@ -16,7 +16,7 @@ from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.constants import Send
+from langgraph.types import Send
 
 from .utils import get_prompt
 from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
