@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Dict, List, Literal, Optional, TypedDict, cast
+from typing import Any, Dict, List, Literal, Optional, TypedDict, Union, cast
 from uuid import uuid1
 
 from httpx import (
@@ -50,14 +50,16 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
+from pydantic import SecretStr
+
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve, retrieve
 from .utils import download_list_convert, get_prompt, get_token
 
-ac = AnalystConfig()
-sc = SensitiveConfig().load()
+ac = AnalystConfig.model_validate({})
+sc = SensitiveConfig.load()
 
 
 class AnalystAgentsState(TypedDict):
@@ -773,13 +775,16 @@ class AnalystAgent:
         analysis_url = self.ac.ANALYSIS_URL
 
         raw_data_list = state.get("data_list", {})
-        processed_data_list = {}
-        for k, v in raw_data_list.items():
-            if isinstance(k, str) and k.startswith("obs://"):
-                new_key = "/obs/" + k[6:].lstrip("/")
-                processed_data_list[new_key] = v
-            else:
-                processed_data_list[k] = v
+        if isinstance(raw_data_list, dict):
+            processed_data_list = {}
+            for k, v in raw_data_list.items():
+                if isinstance(k, str) and k.startswith("obs://"):
+                    new_key = "/obs/" + k[6:].lstrip("/")
+                    processed_data_list[new_key] = v
+                else:
+                    processed_data_list[k] = v
+        else:
+            processed_data_list = raw_data_list
 
         plan = state.get("plan", "")
         tool_usages = state.get("tool_usages", "")
@@ -793,8 +798,9 @@ class AnalystAgent:
             "$output_dir)."
         )
 
-        final_meta = f"### EXECUTION PLAN\n{plan}\n\n"
-        f"### TOOL USAGE\n{tool_usages}"
+        final_meta = (
+            f"### EXECUTION PLAN\n{plan}\n\n" f"### TOOL USAGE\n{tool_usages}"
+        )
 
         output_dir = state.get("output_dir")
         if self.ac.CREATE_DIR:
@@ -1089,10 +1095,8 @@ class AnalystAgent:
         self,
         query: str,
         goal_description: Optional[str] = None,
-        output_dir: str = ac.OUTPUT_DIR,
-        compute_resource: Literal[
-            "small", "medium", "large"
-        ] = ac.COMPUTE_RESOURCE,
+        output_dir: Optional[str] = None,
+        compute_resource: Optional[Literal["small", "medium", "large"]] = None,
         preset_data_list: Optional[Dict[str, str]] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
@@ -1124,6 +1128,8 @@ class AnalystAgent:
             compute_resource on success, or the initial state with
             task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
         """
+        output_dir = output_dir or self.ac.OUTPUT_DIR
+        compute_resource = compute_resource or self.ac.COMPUTE_RESOURCE
         if not thread_id:
             thread_id = str(uuid1())
 
@@ -1165,6 +1171,320 @@ class AnalystAgent:
                 "task_status": "FAILED_AT_AGENT_LEVEL",
                 "error_detail": str(e),
             }
+
+
+def _sensitive_config_with_overrides(
+    api_key: str,
+    base_url: str,
+    model: str,
+    coder_url: str,
+    coder_model: str,
+    coder_api_key: str,
+    access_key_id: str,
+    secret_access_key: str,
+) -> SensitiveConfig:
+    """Build a SensitiveConfig for compatibility wrapper calls."""
+    return SensitiveConfig(
+        DOMAIN_NAME=sc.DOMAIN_NAME,
+        USER_NAME=sc.USER_NAME,
+        USER_PASSWORD=sc.USER_PASSWORD,
+        AccessKeyID=SecretStr(access_key_id),
+        SecretAccessKey=SecretStr(secret_access_key),
+        BASE_URL=base_url,
+        MODEL_ID=model,
+        API_KEY=SecretStr(api_key),
+        CODER_URL=coder_url,
+        CODER_MODEL=coder_model,
+        CODER_API_KEY=SecretStr(coder_api_key),
+    )
+
+
+async def submit(
+    goal_description: str,
+    data_list: Dict[str, str],
+    user_id: str = ac.USER_ID,
+    is_create_dir: bool = ac.CREATE_DIR,
+    output_dir: str = ac.OUTPUT_DIR,
+    meta: str = "",
+    execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME,
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        "small", "medium", "large"
+    ] = ac.COMPUTE_RESOURCE,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+    max_poll: float = ac.MAX_POLL,
+    enable_auto_select: bool = True,
+    prompt_file: str = ac.PROMPT_FILE,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    n: int = ac.N,
+    presence_penalty: float = ac.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+    stream: bool = ac.STREAM,
+    temperature: float = ac.TEMPERATURE,
+    top_p: float = ac.TOP_P,
+    user: str = ac.USER,
+    meta_meta: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Submit an analysis task through the current AnalystAgent workflow."""
+    user_id = user_id or str(uuid1())
+    analyst_config = ac.model_copy(
+        update={
+            "ANALYSIS_URL": analysis_url,
+            "ANALYSIS_REGION": region,
+            "APP_ID": app_id_dict,
+            "BUCKET_NAME": bucket_name,
+            "COMPUTE_RESOURCE": compute_resource,
+            "CREATE_DIR": is_create_dir,
+            "EXECUTE_CODE": execute_code,
+            "FREQUENCY_PENALTY": frequency_penalty,
+            "MAX_POLL": max_poll,
+            "MAX_RETRIES": max_retries,
+            "N": n,
+            "OBS_SERVER": obs_server,
+            "OUTPUT_DIR": output_dir,
+            "PRESENCE_PENALTY": presence_penalty,
+            "PROMPT_FILE": prompt_file,
+            "REASONING_EFFORT": reasoning_effort,
+            "RESOURCE": resource_dict,
+            "RETRIABLE_CODES": retriable_codes,
+            "STREAM": stream,
+            "TASK_NAME": task_name,
+            "TEMPERATURE": temperature,
+            "TIMEOUT": timeout,
+            "TOP_P": top_p,
+            "USER": user,
+            "USER_ID": user_id,
+        }
+    )
+    sensitive_config = _sensitive_config_with_overrides(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        coder_url=model_url,
+        coder_model=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+    )
+    preset_plan = meta + (meta_meta or "")
+    agent = AnalystAgent(
+        analyst_config=analyst_config,
+        sensitive_config=sensitive_config,
+    )
+    return await agent.arun(
+        query=goal_description,
+        goal_description=goal_description,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        preset_data_list=data_list,
+        preset_plan=preset_plan,
+        thread_id=user_id,
+        is_auto_select=enable_auto_select,
+        is_polling=False,
+    )
+
+
+async def retrieve_plan_submit(
+    goal_description: str,
+    data_list: Dict[str, str],
+    user_id: str = ac.USER_ID,
+    is_create_dir: bool = ac.CREATE_DIR,
+    output_dir: str = ac.OUTPUT_DIR,
+    retrieve_url: str = ac.RETRIEVE_URL,
+    repo_id_dict: Optional[Dict[str, int]] = ac.REPO_ID_DICT,
+    page_num: int = ac.PAGE_NUM,
+    filter_string: Optional[str] = ac.FILTER_STRING,
+    scope: str = ac.SCOPE,
+    extra_repo_ids: Optional[List[str]] = ac.EXTRA_REPO_IDS,
+    rerank_url: str = ac.RERANK_URL,
+    rerank_batch_size: int = ac.RERANK_BATCH_SIZE,
+    score_threshold: float = ac.SCORE_THRESHOLD,
+    top_n: int = ac.TOP_N,
+    prompt_file: str = ac.PROMPT_FILE,
+    prompt_path: str = ac.PROMPT_PATH,
+    api_key: str = sc.API_KEY.get_secret_value(),
+    base_url: str = sc.BASE_URL,
+    model: str = sc.MODEL_ID,
+    frequency_penalty: float = ac.FREQUENCY_PENALTY,
+    max_tokens: int = ac.MAX_TOKENS,
+    n: int = ac.N,
+    presence_penalty: float = ac.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
+    response_format: Dict[str, Union[str, Dict]] = ac.RESPONSE_FORMAT,
+    stream: bool = ac.STREAM,
+    temperature: float = ac.TEMPERATURE,
+    top_p: float = ac.TOP_P,
+    user: str = ac.USER,
+    obs_file_list: Optional[List[str]] = None,
+    server_dir: str = ac.TEMP_DIR,
+    execute_code: bool = ac.EXECUTE_CODE,
+    model_url: str = sc.CODER_URL,
+    model_name: str = sc.CODER_MODEL,
+    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = sc.AccessKeyID.get_secret_value(),
+    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
+    obs_server: str = ac.OBS_SERVER,
+    bucket_name: str = ac.BUCKET_NAME,
+    part_size: int = ac.PART_SIZT,
+    task_num: int = ac.TASK_NUM,
+    max_concurrency: int = ac.MAX_CONCURRENCY,
+    max_workers: int = ac.MAX_WORKERS,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    task_name: str = ac.TASK_NAME + "-retrieve-plan",
+    resource_dict: Dict[str, Dict[str, int]] = ac.RESOURCE,
+    app_id_dict: Dict[str, str] = ac.APP_ID,
+    compute_resource: Literal[
+        "small", "medium", "large"
+    ] = ac.COMPUTE_RESOURCE,
+    meta_meta: Optional[str] = None,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+) -> Dict[str, Any]:
+    """Compatibility wrapper around the LangGraph-based AnalystAgent."""
+    user_id = user_id or str(uuid1())
+    analyst_config = ac.model_copy(
+        update={
+            "ANALYSIS_REGION": region,
+            "ANALYSIS_URL": analysis_url,
+            "APP_ID": app_id_dict,
+            "BUCKET_NAME": bucket_name,
+            "COMPUTE_RESOURCE": compute_resource,
+            "CREATE_DIR": is_create_dir,
+            "EXECUTE_CODE": execute_code,
+            "EXTRA_REPO_IDS": extra_repo_ids,
+            "FILTER_STRING": filter_string,
+            "FREQUENCY_PENALTY": frequency_penalty,
+            "MAX_CONCURRENCY": max_concurrency,
+            "MAX_RETRIES": max_retries,
+            "MAX_TOKENS": max_tokens,
+            "MAX_WORKERS": max_workers,
+            "N": n,
+            "OBS_SERVER": obs_server,
+            "OUTPUT_DIR": output_dir,
+            "PAGE_NUM": page_num,
+            "PART_SIZT": part_size,
+            "PRESENCE_PENALTY": presence_penalty,
+            "PROMPT_FILE": prompt_file,
+            "PROMPT_PATH": prompt_path,
+            "REASONING_EFFORT": reasoning_effort,
+            "REPO_ID_DICT": repo_id_dict or ac.REPO_ID_DICT,
+            "RESOURCE": resource_dict,
+            "RESPONSE_FORMAT": response_format,
+            "RERANK_BATCH_SIZE": rerank_batch_size,
+            "RERANK_URL": rerank_url,
+            "RETRIABLE_CODES": retriable_codes,
+            "RETRIEVE_URL": retrieve_url,
+            "SCOPE": scope,
+            "SCORE_THRESHOLD": score_threshold,
+            "STREAM": stream,
+            "TASK_NAME": task_name,
+            "TASK_NUM": task_num,
+            "TEMPERATURE": temperature,
+            "TIMEOUT": timeout,
+            "TOP_N": top_n,
+            "TOP_P": top_p,
+            "USER": user,
+            "USER_ID": user_id,
+        }
+    )
+    sensitive_config = _sensitive_config_with_overrides(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        coder_url=model_url,
+        coder_model=model_name,
+        coder_api_key=coder_api_key,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+    )
+    agent = AnalystAgent(
+        analyst_config=analyst_config,
+        sensitive_config=sensitive_config,
+    )
+    result = await agent.arun(
+        query=goal_description,
+        goal_description=goal_description,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        preset_data_list=data_list,
+        obs_file_list=obs_file_list or [],
+        thread_id=user_id,
+        is_auto_select=True,
+        is_polling=False,
+    )
+    if meta_meta:
+        result["meta_meta"] = meta_meta
+    return result
+
+
+async def wait_for_completion(
+    task_id: str,
+    analysis_url: str = ac.ANALYSIS_URL,
+    region: str = ac.ANALYSIS_REGION,
+    timeout: float = ac.TIMEOUT,
+    retriable_codes: List[int] = ac.RETRIABLE_CODES,
+    max_retries: int = ac.MAX_RETRIES,
+    poll_interval: float = ac.POLL_INTERVAL,
+    max_poll: float = ac.MAX_POLL,
+) -> Dict[str, Any]:
+    """Poll a submitted task until it reaches a terminal status."""
+    start_time = time.time()
+    while (time.time() - start_time) < max_poll:
+        status_data = await task_status(
+            task_id,
+            analysis_url=analysis_url,
+            region=region,
+            timeout=timeout,
+            retriable_codes=retriable_codes,
+            max_retries=max_retries,
+        )
+        match status_data.get("status"):
+            case "CANCELLED":
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message="Task cancelled",
+                    )
+                )
+            case "FAILED":
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message="Task failed",
+                    )
+                )
+            case "PENDING" | "RUNNING":
+                await asyncio.sleep(poll_interval)
+            case "SUCCEEDED":
+                return status_data
+            case _:
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message="Task status error",
+                    )
+                )
+    raise asyncio.TimeoutError(
+        f"Exceeded max polling time {max_poll / 60} minutes"
+    )
 
 
 async def task_delete(
