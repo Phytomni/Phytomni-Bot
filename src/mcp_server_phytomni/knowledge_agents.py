@@ -396,8 +396,6 @@ class KnowledgeAgent:
         if state["is_follow_up"]:
             return "follow_up_node"
         return END
-    
-    
 
     async def arun(self,
                    user_query: str,
@@ -444,7 +442,10 @@ class KnowledgeAgent:
         config = {"configurable": {"thread_id": thread_id}}
         final_state = await self.app.ainvoke(initial_state, config=config)
         
-        return final_state["final_response"]
+        if not is_generate:
+            return final_state["retrieved_docs"]
+        else:
+            return final_state["final_response"]
     
 
 async def retrieve(user_query: str,
