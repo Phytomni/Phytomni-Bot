@@ -33,7 +33,7 @@ async def region_vci_analysis(
     batch: bool = False,
     prompt_file: str = ec.PROMPT_FILE,
     environment_data: str = ec.ENVIRONMENT_DATA,
-    region_code: str = ec.REGION_CODE, 
+    region_code: str = ec.REGION_CODE,
     output_dir: str = ec.OUTPUT_DIR,
     model_url: str = sc.CODER_URL,
     model_name: str = sc.CODER_MODEL,
@@ -93,10 +93,10 @@ async def region_vci_analysis(
         return {'vci_analysis_task': None}
     code_info = code_info.split('|')
     province_code, city_code, county_code = (code_info + [None] * 3)[:3]
-    
+
     goal_description = get_prompt(prompt_file, 'user/environment/vci_analysis',
-                                  {'province_code': province_code, 
-                                   'city_code': city_code, 
+                                  {'province_code': province_code,
+                                   'city_code': city_code,
                                    'county_code': county_code})
     data_list = get_data_list(environment_data, 'environment_analysis', 'vci_analysis')
     if not batch:
@@ -129,4 +129,3 @@ async def region_vci_analysis(
         max_poll=max_poll,
     )
     return {'vci_analysis_task': vci_task}
-

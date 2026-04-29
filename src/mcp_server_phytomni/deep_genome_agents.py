@@ -2898,7 +2898,7 @@ async def fst_analysis(
     if not msu_id:
         return {'fst_task': None}
     goal_description = get_prompt(
-        prompt_file, 'user/fst_analysis', 
+        prompt_file, 'user/fst_analysis',
         {'gene_id': gene_id, 'msu_id': msu_id})
     goal_description += f'The mus id for this gene is {msu_id}'
     data_list = get_data_list(deepgenome_data, 'fst_analysis', species)
@@ -3709,7 +3709,7 @@ async def submit_gene_analysis(
         max_retries=max_retries,
         max_poll=max_poll,
     )
-    return {**evo_task, **haplotypes_task, **fst_task, **promoter_task, 
+    return {**evo_task, **haplotypes_task, **fst_task, **promoter_task,
         **epic_task, **gene_exp_task, **single_cell_exp_task, **structure_task}
 
 
@@ -3768,7 +3768,7 @@ async def summarize_gene_analysis(
             ['sample_0.cif', '.summary', '.legend'],
         'promoter_task':
             ['motif_all_logo.png', '.summary', '.legend'],
-        'fst_task': ['.png'], 
+        'fst_task': ['.png'],
         'haplotypes_task': ['.png', '.summary', '.legend'],
         'single_cell_task': ['.png', '.summary', '.legend'],
         'tissues_task': ['.png', '.summary', '.legend'],
@@ -3975,7 +3975,7 @@ async def summarize_gene_analysis(
         gene_results_data['haplotype_path'] = ''
         gene_results_data['haplotype_summary'] = 'None Results'
         gene_results_data['haplotype_legend'] = ''
-    
+
     try:
         target_file = next(out_path.rglob('*_fst_japonica-indica.png')).name
         fst_img = f'{gene_id}/{target_file}'
@@ -4046,7 +4046,7 @@ async def summarize_gene_analysis(
         gene_results_data['smoc_legend'] = ''
         gene_results_data['smoc_summary'] = ''
 
-    if (gene_results_data['smep_summary'] == '' and 
+    if (gene_results_data['smep_summary'] == '' and
         gene_results_data['smoc_summary'] == ''):
         gene_results_data['smoc_summary'] = 'None Results'
 
@@ -4068,7 +4068,7 @@ async def summarize_gene_analysis(
                     legend = legend.replace('Table 1', f'Figure {figure_index}')
                     legend = legend.replace('Figure 1', f'Figure {figure_index}')
                     gene_results_data['protein_structures'] += f'{legend}\n'
-                      
+
                 with open(out_path / f'{structure_start}.summary',
                           'r', encoding='utf-8') as summary_file:
                     summary = summary_file.read()
@@ -4088,12 +4088,12 @@ async def summarize_gene_analysis(
         'mutant_path': '![Genotype Image]()',
         'umap_path': '![Single_cell Umap Image]()',
         'violin_path': '![Single_cell Violin Image]()',
-        'haplotype_path': '![Haplotype Image]()', 
+        'haplotype_path': '![Haplotype Image]()',
         'fst_path': '![fst Image]()',
-        'motif_path': '![Motif Image]()', 
+        'motif_path': '![Motif Image]()',
         'smep_path': '![SMEP Image]()',
-        'smoc_path': '![SMOC Image]()', 
-        'promoter_path': '![Promoter Design]()', 
+        'smoc_path': '![SMOC Image]()',
+        'promoter_path': '![Promoter Design]()',
         'protein_path': '![Protein Design]()'
     }
     for obj_key, replace_content in obj_replace_dict.items():

@@ -315,7 +315,7 @@ class KnowledgeAgent:
             max_retries=self.kc.MAX_RETRIES,
         )
 
-        # 将 doc_list 挂载到大模型返回的 message 中
+        # Attach doc_list to the message returned by the LLM
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],
             "total": 10000,
@@ -419,7 +419,7 @@ class KnowledgeAgent:
                 "message"
             ].get("content", "")
 
-        # 解析 JSON
+        # Parse JSON
         follow_up_list = []
         if follow_up_content:
             start_index = follow_up_content.find("[")
@@ -432,7 +432,7 @@ class KnowledgeAgent:
                 except (ValueError, TypeError):
                     follow_up_list = []
 
-        # 更新最终返回值
+        # Update final return value
         phyto_response["choices"][0]["message"].update(
             {"follow_up_questions": follow_up_list}
         )

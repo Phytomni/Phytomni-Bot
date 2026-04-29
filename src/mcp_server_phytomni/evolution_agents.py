@@ -66,7 +66,7 @@ async def evo_test_analysis(
     user: str = dgc.USER,
 ) -> dict:
     async def find_spa_taxid(spa_names):
-        
+
         result = []
         repo_id = "4a533117-9416-4e8b-b7cc-27b448a90095"
         endpoint = "http://1.95.74.240:8000"
@@ -89,7 +89,7 @@ async def evo_test_analysis(
                     tax_id = faq['answer'].split('.')[0]
                     result.append((tax_id))
         return result
-    
+
     prompt = get_prompt(prompt_file, 'user/get_taxid_meta',
                         {'user_query': query})
     phyto_response = await phyto_chat(
@@ -111,7 +111,7 @@ async def evo_test_analysis(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    
+
     content = phyto_response['choices'][0]['message']['content']
     target_spa_list = loads(content.replace("'", '"'))
     target_spa_taxid_list = []
