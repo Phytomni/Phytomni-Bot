@@ -59,7 +59,7 @@ class GeneNetworkState(TypedDict):
     to_id: str  # Target gene identifier for network analysis
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
-    output_dir: Optional[str]  # Output directory path for results
+    network_task: Dict[str, str] # submit results
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
     task_index: Optional[int]  # Current task index in parallel execution
     task_ids: Dict[str, str]  # Mapping of task names to task IDs
@@ -132,7 +132,7 @@ class GeneNetworkAgents:
         """Dispatch network analysis tasks in parallel using Send API."""
         tasks = state.get("network_tasks", [])
         return [
-            Send("network_node", {"task_index": i, **task})
+            Send("network_node", {"task_index": i, "species": state["species"], "to_id": state["to_id"], **task})
             for i, task in enumerate(tasks)
         ]
 
@@ -202,27 +202,19 @@ class GeneNetworkAgents:
             output_dir=output_dir,
             compute_resource=compute_resource,
             is_auto_select=False,  # Data already preset via data_list
-            is_polling=True,  # Wait for task completion
+            is_polling=False,  # Wait for task completion
             thread_id=f"{to_id}_{analysis_type}_{uuid1()}",
         )
 
-        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
-            raise RuntimeError(
-                f"AnalystAgent failed: {result.get('error_detail')}"
-            )
-
         task_id = result.get("task_id")
-        print(f"  → {analysis_type} task completed (task_id: {task_id})")
-
-        return {"task_id": task_id, "output_dir": result.get("output_dir")}
+        print(f"=>{analysis_type} task completed (task_id: {task_id})")
+        
+        # return {"task_id": task_id, "output_dir": result.get("output_dir")}
+        return {"network_task": result}
 
     def _get_compute_resource(self, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type."""
-        medium_compute_types = {"gene_network_analysis"}
-        if analysis_type in medium_compute_types:
-            return "medium"
-        else:
-            return "small"
+        return "small"
 
     async def prepare_tasks(self, state: GeneNetworkState) -> dict:
         """Prepare the list of network analysis tasks."""
@@ -242,18 +234,19 @@ class GeneNetworkAgents:
         print(
             f"[Network-{task_index}] 🚀 Executing: {analysis_type} for {to_id}"
         )
-
+        print(species)
         try:
             result = await self._dispatch_and_wait_analysis(
                 analysis_type=analysis_type,
                 species=species,
-                to_id=to_id,
+                to_id=to_id
             )
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
             existing_task_ids = state.get("task_ids", {})
-            existing_task_ids[task_key] = result.get("task_id")
-            return {"task_ids": existing_task_ids, "completed_count": 1}
+            task_result = result.get("network_task", {})
+            existing_task_ids[task_key] = task_result.get("task_id")
+            return {"task_ids": existing_task_ids, "completed_count": 1, "network_task": task_result}
         except Exception as e:
             return {
                 "task_ids": state.get("task_ids", {}),
@@ -289,7 +282,7 @@ class GeneNetworkAgents:
             "to_id": to_id,
             "user_id": user_id,
             "batch": batch,
-            "output_dir": None,
+            "network_task": {},
             "network_tasks": [],
             "task_ids": {},
             "completed_count": 0,
@@ -299,7 +292,7 @@ class GeneNetworkAgents:
         config = {"configurable": {"thread_id": thread_id}}
         result = await self.app.ainvoke(initial_state, config)
         return {
-            "task_ids": result.get("task_ids"),
+            "network_task": result.get("network_task"),
             "error": result.get("error"),
         }
 
