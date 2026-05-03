@@ -137,7 +137,6 @@ class DeepGenomeState(TypedDict):
         gene_annotation: Dictionary containing gene annotation data including
             gene symbol, description, GO terms, InterPro domains, and MapMan bins.
         skip_synthesize: Flag to skip synthesis node in test mode.
-        data_context: Context data from data agent operations.
         knowledge_context: Context data from knowledge agent literature retrieval.
         orthologs_data: Orthologous gene list with species and gene symbols.
         paralogs_data: Paralogous gene list with species and gene symbols.
@@ -167,7 +166,6 @@ class DeepGenomeState(TypedDict):
     config_params: Dict[str, Any]
     gene_annotation: Dict[str, Any]
     skip_synthesize: bool
-    data_context: Dict[str, Any]
     knowledge_context: Dict[str, Any]
     orthologs_data: Dict[str, Any]
     paralogs_data: Dict[str, Any]
@@ -415,7 +413,6 @@ class DeepGenomeAgents:
             "part1_completed_branches": 0,
             "experiment_completed_branches": 0,
             # Initialize empty context
-            "data_context": {},
             "knowledge_context": {},
             "orthologs_data": {},
             "paralogs_data": {},
