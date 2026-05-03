@@ -11,7 +11,8 @@ tools to analyze protein structures, predict protein properties, and perform
 digital design workflows for protein engineering applications.
 """
 
-from typing import Dict, List, Any, Optional, TypedDict
+import operator
+from typing import Annotated, Dict, List, Any, Optional, TypedDict
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -53,12 +54,13 @@ class DigitalDesignState(TypedDict):
     user_id: str
     batch: bool
     output_dir: Optional[str]
+    design_task_result: Annotated[List[Dict[str, Any]], operator.add]
     design_tasks: List[Dict[str, Any]]  # List of design tasks
     task_index: Optional[int]  # Current task index
-    task_ids: Dict[
-        str, str
+    task_ids: Annotated[
+        Dict[str, str], operator.or_
     ]  # Multiple task_ids: {"protein_design": "xxx", "other_task": "yyy"}
-    completed_count: int  # Completed task counter
+    completed_count: Annotated[int, operator.add]  # Completed task counter
     error: Optional[str]
 
 
@@ -126,7 +128,7 @@ class DigitalDesignAgents:
         """Dispatch design tasks in parallel using Send API."""
         tasks = state.get("design_tasks", [])
         return [
-            Send("design_node", {"task_index": i, **task})
+            Send("design_node", {"task_index": i, "species": state["species"], "gene_id": state["gene_id"], **task})
             for i, task in enumerate(tasks)
         ]
 
@@ -202,15 +204,10 @@ class DigitalDesignAgents:
             thread_id=f"{gene_id}_{analysis_type}_{uuid1()}",
         )
 
-        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
-            raise RuntimeError(
-                f"AnalystAgent failed: {result.get('error_detail')}"
-            )
-
         task_id = result.get("task_id")
-        print(f"  → {analysis_type} task completed (task_id: {task_id})")
+        print(f"=>{analysis_type} task completed (task_id: {task_id})")
 
-        return {"task_id": task_id, "output_dir": result.get("output_dir")}
+        return {"submit_result": result}
 
     def _get_compute_resource(self, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type."""
@@ -241,6 +238,7 @@ class DigitalDesignAgents:
         print(
             f"[Design-{task_index}] 🚀 Executing: {analysis_type} for {gene_id}"
         )
+        design_task_result = state.get("design_task_result", [])
 
         try:
             result = await self._dispatch_and_wait_analysis(
@@ -248,11 +246,12 @@ class DigitalDesignAgents:
                 species=species,
                 gene_id=gene_id,
             )
+            design_task_result.append(result.get("submit_result"))
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
             existing_task_ids = state.get("task_ids", {})
             existing_task_ids[task_key] = result.get("task_id")
-            return {"task_ids": existing_task_ids, "completed_count": 1}
+            return {"design_task_result": design_task_result, "task_ids": existing_task_ids, "completed_count": 1}
         except Exception as e:
             return {
                 "task_ids": state.get("task_ids", {}),
@@ -289,6 +288,7 @@ class DigitalDesignAgents:
             "user_id": user_id,
             "batch": batch,
             "output_dir": None,
+            "design_task_result": [],
             "design_tasks": [],
             "task_ids": {},
             "completed_count": 0,
@@ -298,7 +298,7 @@ class DigitalDesignAgents:
         config = {"configurable": {"thread_id": thread_id}}
         result = await self.app.ainvoke(initial_state, config)
         return {
-            "task_ids": result.get("task_ids"),
+            "design_task_result": result.get("design_task_result"),
             "error": result.get("error"),
         }
 
