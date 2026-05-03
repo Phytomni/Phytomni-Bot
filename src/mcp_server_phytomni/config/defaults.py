@@ -229,7 +229,9 @@ class AnalystConfig(KnowledgeConfig):
         APP_ID: app id in difference compute resource
         RESOURCE: cpu and memory information in difference compute resource.
     """
-
+    TOOL_REPO_ID: str = Field('381d8f6c-89d9-468d-9531-a0ced46c7d02')
+    TOOL_PAGE_NUM: int = Field(1)
+    TOOL_PAGE_SIZE: int = Field(2)
     OUTPUT_DIR: str = Field("/obs/phytomni/agent_data/test/")
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = Field("small")
     TASK_NAME: str = Field("analyst-agents-task")
