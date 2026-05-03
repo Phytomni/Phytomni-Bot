@@ -700,22 +700,25 @@ class AnalystAgent:
         tool_usages = ""
         for tool in tools:
             tool_usages += f"[{tool} Usage START]\n"
-            tool_usage_info = await retrieve(
-                user_query=tool,
-                retrieve_url=self.ac.RETRIEVE_URL,
-                repo_id=self.ac.TOOL_REPO_ID,
-                page_num=self.ac.TOOL_PAGE_NUM,
-                page_size=self.ac.TOOL_PAGE_SIZE,
-                filter_string=self.ac.FILTER_STRING,
-                scope=self.ac.SCOPE,
-                extra_repo_ids=self.ac.EXTRA_REPO_IDS,
-                rerank_url=self.ac.RERANK_URL,
-                rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
-                score_threshold=self.ac.SCORE_THRESHOLD,
-                timeout=self.ac.TIMEOUT,
-                retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES,
-            )
+            try:
+                tool_usage_info = await retrieve(
+                    user_query=tool,
+                    retrieve_url=self.ac.RETRIEVE_URL,
+                    repo_id=self.ac.TOOL_REPO_ID,
+                    page_num=self.ac.TOOL_PAGE_NUM,
+                    page_size=self.ac.TOOL_PAGE_SIZE,
+                    filter_string=self.ac.FILTER_STRING,
+                    scope=self.ac.SCOPE,
+                    extra_repo_ids=self.ac.EXTRA_REPO_IDS,
+                    rerank_url=self.ac.RERANK_URL,
+                    rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
+                    score_threshold=self.ac.SCORE_THRESHOLD,
+                    timeout=self.ac.TIMEOUT,
+                    retriable_codes=self.ac.RETRIABLE_CODES,
+                    max_retries=self.ac.MAX_RETRIES,
+                )
+            except Exception as e:
+                tool_usage_info = {'doc_list': []}
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
