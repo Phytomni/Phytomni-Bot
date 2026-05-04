@@ -2,6 +2,8 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""Default non-secret configuration for Phytomni agents."""
+
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Union
 
@@ -229,7 +231,8 @@ class AnalystConfig(KnowledgeConfig):
         APP_ID: app id in difference compute resource
         RESOURCE: cpu and memory information in difference compute resource.
     """
-    TOOL_REPO_ID: str = Field('381d8f6c-89d9-468d-9531-a0ced46c7d02')
+
+    TOOL_REPO_ID: str = Field("381d8f6c-89d9-468d-9531-a0ced46c7d02")
     TOOL_PAGE_NUM: int = Field(1)
     TOOL_PAGE_SIZE: int = Field(2)
     OUTPUT_DIR: str = Field("/obs/phytomni/agent_data/test/")
@@ -275,6 +278,18 @@ class ReviewConfig(KnowledgeConfig):
     TOP_N: int = Field(int(_MAX_TOKENS / 2048))
 
 
+class BriefGeneConfig(KnowledgeConfig):
+    """Configuration settings for brief gene function reports.
+
+    This agent combines direct BI database annotation lookup with literature
+    retrieval, so it inherits the knowledge retrieval and chat defaults while
+    adding the BI API endpoint.
+    """
+
+    BI_URL: str = Field("https://phytomni.cn/api/data")
+    TOP_N: int = Field(int(_MAX_TOKENS / 2048))
+
+
 class GeneNetworkConfig(AnalystConfig):
     """Configuration settings specific to gene network tasks.
 
@@ -298,10 +313,10 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     DEEPGENOME_OUT: str = Field(str(DOWNLOAD_PATH))
     BI_URL: str = Field("https://phytomni.cn/api/data")
     CREATE_TASK_URL: str = Field(
-        "http://1.95.48.200:8082/v1/nky/server/" "create_task"
+        "http://1.95.48.200:8082/v1/nky/server/create_task"
     )
     UPDATE_TASK_URL: str = Field(
-        "http://1.95.48.200:8082/v1/nky/server/" "update_task"
+        "http://1.95.48.200:8082/v1/nky/server/update_task"
     )
     BATCH: bool = Field(True)
     EPIC_TYPE: str = Field("6mA")

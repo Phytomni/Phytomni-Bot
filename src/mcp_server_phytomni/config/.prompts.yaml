@@ -3089,3 +3089,154 @@ user:
     \ file, and save it; \nstep3, Predict Protein Sturctre using protenix; (conda activate\
     \ af3)\nstep4, Generate Protein 3D Structure Features Using Scripts;(conda activate af3\
     \ && conda install -c schrodinger pymol && pip install requests -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple)\n"
+  deep_research_dimension: |
+    You are a plant-science review writer. Write one rigorous subsection for
+    the subtopic below using only the supplied knowledge snippets.
+
+    Subtopic:
+    {{subtopic}}
+
+    Knowledge snippets:
+    {{knowledge}}
+
+    Requirements:
+    - Write in English with a professional academic tone.
+    - Preserve citation tags exactly as they appear, such as [document 001].
+    - Put citations immediately after the supported claim.
+    - Do not invent unsupported details.
+    - Return only the subsection text.
+  deep_research_review: |
+    You are a strict literature-review critic. Evaluate whether the draft
+    below has critical evidence gaps compared with the current subtopic and
+    the neighboring subtopics. Return only valid JSON.
+
+    Current subtopic:
+    {{current_subtopic}}
+
+    Other subtopics:
+    {{other_subtopics}}
+
+    Draft:
+    {{draft_text}}
+
+    JSON schema:
+    {
+      "has_critical_gaps": true,
+      "search_queries": ["query for missing evidence"],
+      "reason": "short explanation"
+    }
+
+    Rules:
+    - Set "has_critical_gaps" to false when the draft is adequately supported.
+    - Use at most three focused search queries.
+    - Do not include markdown or prose outside the JSON object.
+  deep_research_feedback: |
+    You are revising a plant-science review subsection. Improve the existing
+    draft only when the new snippets provide stronger or missing evidence.
+
+    Existing draft:
+    {{existing_draft}}
+
+    New snippets:
+    {{new_snippets}}
+
+    Requirements:
+    - Keep the original scope and tone.
+    - Preserve existing valid citations.
+    - Cite new evidence with the exact supplied tags, such as
+      [add document S1-001].
+    - Do not add unsupported claims.
+    - Return only the revised subsection text.
+  deep_research_check: |
+    You are a strict citation auditor. Check whether every citation tag in
+    the input text is supported by the corresponding source document JSON.
+
+    Input text:
+    {{input_text}}
+
+    Source documents JSON:
+    {{source_docs_json}}
+
+    Requirements:
+    - If a citation is unsupported, remove that citation tag but keep the
+      surrounding sentence when the sentence still makes sense.
+    - Do not add new claims or new citations.
+    - Preserve supported citation tags exactly.
+    - Return only the corrected text.
+  deep_research_summary: |
+    You are a synthesis and integration agent for a deep plant-science review.
+    Combine the subsections into one cohesive final report for the user query.
+
+    User query:
+    {{user_query}}
+
+    Subsection 1 title:
+    {{subsection_1_title}}
+    Subsection 1 content:
+    {{subsection_1_content}}
+
+    Subsection 2 title:
+    {{subsection_2_title}}
+    Subsection 2 content:
+    {{subsection_2_content}}
+
+    Subsection 3 title:
+    {{subsection_3_title}}
+    Subsection 3 content:
+    {{subsection_3_content}}
+
+    Subsection 4 title:
+    {{subsection_4_title}}
+    Subsection 4 content:
+    {{subsection_4_content}}
+
+    Requirements:
+    - Produce a structured Markdown review with a concise title, integrated
+      thematic sections, and a short conclusion.
+    - Preserve citation tags exactly as supplied, such as [document 001] or
+      [add document S1-001].
+    - Keep citations immediately next to the supported claims.
+    - Remove duplicated ideas while preserving important evidence.
+    - Return only the final report.
+  brief_gene_function: |
+    You are an expert plant geneticist and bioinformatician. Generate a
+    professional, accurate, readable report for a specific gene using the
+    provided basic genomic information and retrieved literature context.
+
+    Strict directives:
+    - Part I must display the supplied basic genomic variables. Do not alter,
+      omit, or hallucinate these facts.
+    - Part II must be derived strictly from the retrieved literature context.
+      If no relevant information is available, state that clearly.
+    - Cite literature-derived claims with the exact format [document:X].
+    - Do not include a bibliography or reference list.
+
+    ### Part I: Basic Genomic Information
+    - **User Query ID**: {{user_query}} (Version: {{query_id_type}})
+    - **Search ID**: {{gene_id}} (Version: {{gene_id_type}})
+    - **Species**: {{species_english_name}} ({{species_latin_name}}, {{species}})
+    - **Gene IDs & Aliases**: {{gene_string}}
+    - **Genomic Location**: Chromosome {{chromosome}} : {{start}} - {{end}} ({{strand}})
+    - **Core GO Annotations**: {{go_terms}}
+    - **KEGG / MapMan Pathways**: {{kegg_annotation}}
+    - **InterPro Domains**: {{interpro_terms}}
+
+    ### Part II: Functional Research Summary
+    Retrieved literature context:
+    {{retrieve_results}}
+  brief_gene_function_nogeneid: |
+    Gene names or IDs:
+    {{user_query}}
+
+    Provide a comprehensive and accurate plant gene function summary based
+    only on the reference materials below. Cover discovery/localization,
+    gene structure, expression patterns, phenotypes, molecular mechanisms,
+    pathways, breeding applications, domestication, and genetic diversity
+    when evidence is available. If a section has no relevant evidence, state
+    "No relevant information available."
+
+    Cite the context at the end of relevant sentences using [document:X].
+    Do not cluster all citations at the end. Do not include a bibliography.
+
+    Reference materials:
+    {{retrieve_results}}

@@ -80,7 +80,9 @@ from mcp.types import ErrorData, TextContent, Tool, INVALID_PARAMS
 from pydantic import BaseModel, Field
 
 from .analyst_agents import retrieve_plan_submit
-from .config.defaults import AnalystConfig, ChatConfig, DataConfig
+from .brief_gene_agents import brief_gene_function
+from .config.defaults import AnalystConfig, BriefGeneConfig, ChatConfig
+from .config.defaults import DataConfig
 from .config.defaults import DeepGenomeConfig, DigitalDesignConfig
 from .config.defaults import GeneNetworkConfig, InSilicoResearchConfig
 from .config.defaults import KnowledgeConfig, ReviewConfig
@@ -339,6 +341,18 @@ class ReviewAgent(BaseModel):
     ]
 
 
+class BriefGeneAgent(BaseModel):
+    """Parameters for generating a brief gene function report."""
+
+    user_query: Annotated[
+        str,
+        Field(
+            description="A plant gene ID, transcript ID, or gene symbol to "
+            "summarize using BI database annotations and literature evidence.",
+        ),
+    ]
+
+
 class InSilicoResearchAgent(BaseModel):
     """Parameters for conducting in silico research."""
 
@@ -549,6 +563,12 @@ class PhytomniAgents(str, Enum):
         "assessment, or an extensive overview of a complex topic is required, "
         "going beyond targeted Q&A or data retrieval."
     )
+    BRIEFGENEAGENT = "BriefGeneAgent"
+    BRIEFGENEAGENT_DESCRIPTION = (
+        "Generates a concise, evidence-supported gene function report for a "
+        "plant gene ID or alias by combining BI database annotations with "
+        "retrieved literature context."
+    )
     DEEPGENOMEAGENT = "DeepGenomeAgent"
     DEEPGENOMEAGENT_DESCRIPTION = (
         "Integrates functional annotations from plant multi-omics databases "
@@ -695,6 +715,11 @@ async def serve() -> None:
                 name=PhytomniAgents.REVIEWAGENT,
                 description=PhytomniAgents.REVIEWAGENT_DESCRIPTION,
                 inputSchema=ReviewAgent.model_json_schema(),
+            ),
+            Tool(
+                name=PhytomniAgents.BRIEFGENEAGENT,
+                description=PhytomniAgents.BRIEFGENEAGENT_DESCRIPTION,
+                inputSchema=BriefGeneAgent.model_json_schema(),
             ),
             Tool(
                 name=PhytomniAgents.DEEPGENOMEAGENT,
@@ -1016,6 +1041,56 @@ async def serve() -> None:
                     retriable_codes=reviewconfig.RETRIABLE_CODES,
                     max_retries=reviewconfig.MAX_RETRIES,
                     max_tokens=reviewconfig.MAX_TOKENS,
+                )
+                return [
+                    TextContent(
+                        type="text",
+                        text=dumps(response),
+                    )
+                ]
+
+            case PhytomniAgents.BRIEFGENEAGENT:
+                try:
+                    args = BriefGeneAgent(**arguments)
+                except ValueError as e:
+                    raise McpError(
+                        ErrorData(code=INVALID_PARAMS, message=str(e))
+                    ) from e
+                briefgeneconfig = BriefGeneConfig()
+                sensitiveconfig = SensitiveConfig().load()
+                response = await brief_gene_function(
+                    user_query=args.user_query,
+                    prompt_file=briefgeneconfig.PROMPT_FILE,
+                    prompt_path=briefgeneconfig.PROMPT_PATH,
+                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
+                    base_url=sensitiveconfig.BASE_URL,
+                    model=sensitiveconfig.MODEL_ID,
+                    frequency_penalty=briefgeneconfig.FREQUENCY_PENALTY,
+                    n=briefgeneconfig.N,
+                    presence_penalty=briefgeneconfig.PRESENCE_PENALTY,
+                    reasoning_effort=briefgeneconfig.REASONING_EFFORT,
+                    response_format=briefgeneconfig.RESPONSE_FORMAT,
+                    stream=briefgeneconfig.STREAM,
+                    temperature=briefgeneconfig.TEMPERATURE,
+                    top_p=briefgeneconfig.TOP_P,
+                    user=briefgeneconfig.USER,
+                    retrieve_url=briefgeneconfig.RETRIEVE_URL,
+                    repo_id_dict=briefgeneconfig.REPO_ID_DICT,
+                    page_num=briefgeneconfig.PAGE_NUM,
+                    filter_string=briefgeneconfig.FILTER_STRING,
+                    scope=briefgeneconfig.SCOPE,
+                    extra_repo_ids=briefgeneconfig.EXTRA_REPO_IDS,
+                    rerank_url=briefgeneconfig.RERANK_URL,
+                    rerank_batch_size=briefgeneconfig.RERANK_BATCH_SIZE,
+                    score_threshold=briefgeneconfig.SCORE_THRESHOLD,
+                    top_n=briefgeneconfig.TOP_N,
+                    bi_url=briefgeneconfig.BI_URL,
+                    bi_token=sensitiveconfig.BI_TOKEN.get_secret_value(),
+                    max_concurrency=briefgeneconfig.MAX_CONCURRENCY,
+                    timeout=briefgeneconfig.TIMEOUT,
+                    retriable_codes=briefgeneconfig.RETRIABLE_CODES,
+                    max_retries=briefgeneconfig.MAX_RETRIES,
+                    max_tokens=briefgeneconfig.MAX_TOKENS,
                 )
                 return [
                     TextContent(
