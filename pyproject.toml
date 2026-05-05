@@ -51,3 +51,40 @@ build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 79
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py312"
+src = ["src"]
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+exclude = [
+    "\\.mypy_cache/",
+    "\\.pytest_cache/",
+    "\\.ruff_cache/",
+    "\\.venv/",
+]
+
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/.mypy_cache",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "**/.venv",
+]
+pythonVersion = "3.12"
+
+[tool.pylint.main]
+py-version = "3.12"
+ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
