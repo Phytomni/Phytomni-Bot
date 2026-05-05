@@ -14,7 +14,11 @@ The package lives under `src/mcp_server_phytomni`. The main MCP entrypoint is
 - The project is packaged as `mcp_server_phytomni` with a `src/` layout.
 - The MCP server currently exposes 10 tools.
 - Several domain agents are LangGraph `StateGraph` workflows with compiled
-  apps and `MemorySaver` checkpointing.
+  apps invoked through a shared runner.
+- MCP dispatch is split between `server.py` for schemas/routing and
+  `tool_handlers.py` for runtime config expansion.
+- Public wrapper functions remain compatible and reuse agent instances through
+  a non-secret agent registry where safe.
 - `func_cache` provides a tested SQLite-backed synchronous cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, and
@@ -43,10 +47,14 @@ document upload is needed.
 ```text
 src/mcp_server_phytomni/
   server.py                  MCP tool schema, validation, dispatch
+  tool_handlers.py           MCP tool runtime handlers and config expansion
   *_agents.py                Domain workflows and external service calls
+  langgraph_runner.py        Shared LangGraph invocation helpers
+  agent_registry.py          Reusable agent registry keyed by safe config
   config/
     defaults.py              Non-secret defaults and agent config classes
     settings.py              Environment and secret loading
+    overrides.py             Wrapper argument to config override helpers
     species_data_list.json   Species metadata
     region_map.json          Region metadata
   func_cache/                SQLite-backed function cache package
@@ -61,7 +69,14 @@ src/mcp_server_phytomni/
 - Pydantic request models for each tool.
 - JSON schema generation for `tools/list`.
 - Argument validation and MCP-compliant `INVALID_PARAMS` errors.
-- Dispatch to the public wrapper functions in each agent module.
+- Tool name to handler routing through `dispatch_tool`.
+- MCP `TextContent` response serialization.
+
+`tool_handlers.py` owns runtime adaptation from MCP requests to agent calls:
+
+- Loading default config and sensitive config.
+- Expanding config values into compatibility wrapper arguments.
+- Calling the public wrapper functions in each agent module.
 
 Keep public tool names and request schemas stable unless a change is planned
 as an API migration.
@@ -72,12 +87,14 @@ Most complex agents are implemented as LangGraph workflows:
 
 - `StateGraph` defines the workflow state and node transitions.
 - Agent classes compile a graph into `self.app`.
-- Public wrapper functions build config objects and call `app.ainvoke(...)`.
-- `MemorySaver` is currently used as the checkpointer in several agents.
+- `langgraph_runner.py` centralizes `RunnableConfig`, `thread_id`,
+  checkpointer defaults, and async graph invocation.
+- Public wrapper functions build config objects, preserve historical
+  signatures, and call agent classes rather than exposing graph internals.
+- `agent_registry.py` reuses agent instances by explicit non-secret config
+  fingerprints. Secret values are omitted from cache keys.
 
-The next planned refactor is to consolidate the repeated wrapper/runtime
-logic into a shared LangGraph runner. Until then, public wrappers should stay
-compatible:
+The following public wrappers are intentionally kept as compatibility facades:
 
 - `rewrite_nl2sql`
 - `multi_retrieve_generate`
@@ -90,10 +107,18 @@ compatible:
 - `in_silico_research`
 - `retrieve_plan_submit`
 
+Server handlers should call these wrappers or a shared service layer; they
+should not duplicate graph construction or reach into private graph builders.
+
 ### Configuration
 
 Non-secret defaults live in `config/defaults.py`. Secrets and environment
 loading live in `config/settings.py` via `pydantic-settings`.
+
+Wrapper override logic lives in `config/overrides.py`. It maps historical
+keyword arguments such as `model_url`, `coder_api_key`, `output_dir`, and
+`deepgenome_data` onto the appropriate config or sensitive config fields
+without changing public wrapper signatures.
 
 For tests, `PHYTOMNI_TESTING=1` disables real `.env` file loading and lets
 the test suite inject dummy secrets. Do not use that mode for real service
@@ -110,9 +135,14 @@ runs.
 - `cache_info()` and `cache_clear()` helpers.
 
 The current decorator is synchronous. Async cache support and selective
-agent-level cache integration are planned for a later phase. Cache database
+function-level cache integration are planned for a later phase. Cache database
 files such as `.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars are ignored
 by git.
+
+This is separate from `agent_registry.py`. The registry only reuses in-memory
+agent instances and compiled LangGraph apps for matching non-secret
+configuration; it does not cache LLM responses, external API responses, task
+submissions, uploads, downloads, or polling results.
 
 ## Installation
 
@@ -279,8 +309,12 @@ The test suite currently includes unit coverage for:
 
 - `func_cache` serializer, key builder, storage, lock, and decorator behavior,
 - config defaults and sensitive settings test mode,
+- config override helpers for wrapper argument compatibility,
 - prompt/template helpers and `split_list`,
-- MCP tool schemas,
+- MCP tool schemas and dispatch routing,
+- shared LangGraph runner and agent registry behavior,
+- wrapper override propagation for digital design, gene network, and
+  in-silico research entrypoints,
 - a minimal `DataAgent` fake-graph smoke test.
 
 ### Lint and Type Checks
