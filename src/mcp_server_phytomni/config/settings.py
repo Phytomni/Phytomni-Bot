@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _current_dir = Path(__file__).parent
 PROJECT_ROOT = _current_dir.parent
@@ -108,23 +108,10 @@ class SensitiveConfig(BaseSettings):
     CODER_MODEL: str
     CODER_API_KEY: SecretStr
     BI_TOKEN: SecretStr = SecretStr("")
-
-    class Config:
-        """Pydantic configuration for the `SensitiveConfig` model.
-
-        This inner class specifies how Pydantic should handle the loading and
-        validation of settings for the `SensitiveConfig` class.
-
-        Attributes:
-            env_file (str): Path to the environment file (e.g., `.env`) from
-                which to load environment variables. The actual path is
-                determined by the `ENV_PATH` variable.
-            env_file_encoding (str): Encoding used to read the environment
-                file. Defaults to `'utf-8'`.
-        """
-
-        env_file = ENV_PATH
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=ENV_PATH,
+        env_file_encoding="utf-8",
+    )
 
     @classmethod
     def load(cls) -> "SensitiveConfig":

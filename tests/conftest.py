@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import socket
-import importlib
 from collections.abc import Iterator
 from typing import Any
 
@@ -30,21 +29,13 @@ _TEST_ENV = {
 }
 
 
-def _skip_real_env_file() -> bool:
-    return True
-
-
 def _install_test_environment() -> None:
-    os.environ.setdefault("PHYTOMNI_TESTING", "1")
+    os.environ["PHYTOMNI_TESTING"] = "1"
     for name, value in _TEST_ENV.items():
         os.environ[name] = value
 
 
 _install_test_environment()
-
-_settings = importlib.import_module("mcp_server_phytomni.config.settings")
-_settings.load_env_file = _skip_real_env_file
-_settings.SensitiveConfig.model_config["env_file"] = None
 
 
 @pytest.fixture(autouse=True)
