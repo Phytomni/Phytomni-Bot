@@ -24,7 +24,7 @@ from .config.settings import SensitiveConfig
 from .utils import download_list_convert, get_prompt
 
 cc = ChatConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 async def phyto_chat_with_follow(
@@ -411,7 +411,7 @@ async def phyto_chat(
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         for attempt in range(max_retries + 1):
             try:
-                common_params = {
+                common_params: Dict[str, Any] = {
                     "messages": messages,
                     "model": model,
                     "frequency_penalty": frequency_penalty,
@@ -501,6 +501,7 @@ async def phyto_chat(
                         message=f"Network error: {str(e)}",
                     )
                 ) from e
+        return None
 
     if semaphore is not None:
         async with semaphore:

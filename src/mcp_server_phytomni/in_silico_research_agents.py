@@ -11,7 +11,7 @@ LangGraph's parallel execution capabilities.
 """
 
 from json import loads
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Dict, List, Any, Optional, TypedDict, cast
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -25,7 +25,7 @@ from .config.defaults import InSilicoResearchConfig
 from .config.settings import SensitiveConfig
 
 isrc = InSilicoResearchConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 class InSilicoResearchState(TypedDict):
@@ -56,7 +56,10 @@ class InSilicoResearchState(TypedDict):
     obs_file_list: List[str]
     output_dir: Optional[str]
     goals: List[Dict[str, str]]  # List of extracted research objectives
-    research_tasks: List[Dict[str, Any]]  # List of research tasks
+    research_tasks: List[Dict[str, str]]  # List of research tasks
+    goal_description: str
+    context: str
+    task_name: str
     task_index: Optional[int]  # Current task index
     task_ids: Dict[str, str]  # Mapping of task names to task IDs
     completed_count: int  # Counter for completed tasks
@@ -81,7 +84,7 @@ class InSilicoResearchAgents:
     def __init__(
         self,
         checkpointer=MemorySaver(),
-        analyst_agent: AnalystAgent = None,
+        analyst_agent: Optional[AnalystAgent] = None,
         in_silico_config=isrc,
         sensitive_config=sc,
     ):
@@ -336,11 +339,13 @@ class InSilicoResearchAgents:
             Dict with task_ids, completed_count, and optional error.
         """
         task_index = state.get("task_index")
-        goal_description = state.get("goal_description")
-        context = state.get("context")
-        task_name = state.get("task_name")
+        goal_description = state["goal_description"]
+        context = state["context"]
+        task_name = state["task_name"]
         data_list = state.get("data_list", {})
         output_dir = state.get("output_dir")
+        if output_dir is None:
+            raise ValueError("output_dir is required for research tasks")
 
         print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
 
@@ -352,8 +357,10 @@ class InSilicoResearchAgents:
                 output_dir=output_dir,
                 task_name=task_name,
             )
-            existing_task_ids = state.get("task_ids", {})
-            existing_task_ids[task_name] = result.get("task_id")
+            existing_task_ids: Dict[str, str] = state.get("task_ids", {})
+            task_id = result.get("task_id")
+            if task_id is not None:
+                existing_task_ids[task_name] = str(task_id)
             return {"task_ids": existing_task_ids, "completed_count": 1}
         except Exception as e:
             return {
@@ -401,7 +408,9 @@ class InSilicoResearchAgents:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(initial_state, config)
+        result = await self.app.ainvoke(
+            cast(Any, initial_state), cast(Any, config)
+        )
         return {
             "task_ids": result.get("task_ids"),
             "goals": result.get("goals"),

@@ -134,4 +134,4 @@ class SensitiveConfig(BaseSettings):
             ValidationError: If any required fields are missing or invalid
         """
         load_env_file()
-        return cls()
+        return cls()  # type: ignore[call-arg]

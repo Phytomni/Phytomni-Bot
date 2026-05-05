@@ -1,5 +1,5 @@
 from json import loads
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid1
 
 
@@ -13,8 +13,8 @@ from .utils import get_prompt, get_token
 import requests
 
 dgc = DeepGenomeConfig()
-sc = SensitiveConfig().load()
-_manager_cache = {}
+sc = SensitiveConfig.load()
+_manager_cache: Dict[str, Any] = {}
 
 
 async def evo_test_analysis(
@@ -66,7 +66,7 @@ async def evo_test_analysis(
             "Content-Type": "application/json",
         }
         params = {"question": spa_names, "page_size": 10, "page_num": 1}
-        proxy = {"http": None, "https": None}
+        proxy: Any = {"http": None, "https": None}
         response = requests.get(
             url, headers=headers, params=params, proxies=proxy
         )
@@ -100,6 +100,8 @@ async def evo_test_analysis(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    if phyto_response is None:
+        return {"evolution_task": None}
 
     content = phyto_response["choices"][0]["message"]["content"]
     target_spa_list = loads(content.replace("'", '"'))

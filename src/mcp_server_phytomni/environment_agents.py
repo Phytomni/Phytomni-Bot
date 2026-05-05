@@ -25,7 +25,7 @@ from .config.settings import SensitiveConfig
 from .utils import get_prompt
 
 ec = EnvironmentConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 # ac = AnalystConfig()
 
 
@@ -91,6 +91,9 @@ async def region_vci_analysis(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
+    if phyto_response is None:
+        return {"vci_analysis_task": None}
+
     content = phyto_response["choices"][0]["message"]["content"]
     try:
         code_info = re.findall(r"<result>(.*?)</result>", content)[0]

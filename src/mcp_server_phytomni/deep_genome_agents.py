@@ -25,7 +25,7 @@ import operator
 from collections import deque
 from json import loads
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TypedDict, Annotated
+from typing import List, Dict, Any, Optional, TypedDict, Annotated, cast
 from uuid import uuid1
 import requests
 
@@ -110,8 +110,8 @@ SPECIES_CODE_MAP = {
     "zma": "maize (Zea mays)",
 }
 dgc = DeepGenomeConfig()
-sc = SensitiveConfig().load()
-_manager_cache = {}
+sc = SensitiveConfig.load()
+_manager_cache: Dict[str, Any] = {}
 
 
 # 定义字典合并函数，确保并行写入 raw_analyst_data 时安全合并
@@ -190,6 +190,10 @@ class DeepGenomeState(TypedDict):
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
     report_triggered: bool
+    target_gene: str
+    species: str
+    analysis_type: str
+    part12_combined: Optional[str]
 
 
 class DeepGenomeAgents:
@@ -464,7 +468,9 @@ class DeepGenomeAgents:
 
         config = {"configurable": {"thread_id": thread_id}}
 
-        result = await self.app.ainvoke(initial_state, config)
+        result = await self.app.ainvoke(
+            cast(Any, initial_state), cast(Any, config)
+        )
         return result
 
     def route_start(self, state: DeepGenomeState):
@@ -614,9 +620,9 @@ class DeepGenomeAgents:
                 - analysis_completed_branches: Increment counter by 1
         """
         task_index = state.get("task_index")
-        gene_id = state.get("target_gene")
-        species = state.get("species")
-        analysis_type = state.get("analysis_type")
+        gene_id = state["target_gene"]
+        species = state["species"]
+        analysis_type = state["analysis_type"]
 
         print(
             f"[Analyst-{task_index}] Executing: {analysis_type} for {gene_id}"
@@ -1351,7 +1357,7 @@ class DeepGenomeAgents:
         analysis_type: str,
         species: str,
         gene_id: str,
-        output_dir: str = None,
+        output_dir: Optional[str] = None,
     ) -> dict:
         """Submit analysis task using AnalystAgent and wait for completion.
 
@@ -1591,7 +1597,7 @@ class DeepGenomeAgents:
             gene_symbol_response = requests.post(
                 url=self.dgc.BI_URL, json=payload, headers=self._sql_headers
             ).json()
-            gene_symbol_list = []
+            gene_symbol_list: List[str] = []
             if gene_symbol_response["data"][0]["symbol"] is not None:
                 cell_raw_value = gene_symbol_response["data"][0]["symbol"]
                 if "|" in cell_raw_value:
@@ -1633,6 +1639,7 @@ class DeepGenomeAgents:
                 f"WHERE gene_id = '{gene_id}' "
                 f"AND species_code = '{species_code}'",
             )
+
             # responses = []
             # for sql in sql_list:
             #     response = requests.post(
@@ -1644,17 +1651,15 @@ class DeepGenomeAgents:
             #         headers=self._sql_headers
             #     ).json()
             #     responses.append(response)
+            def fetch_annotation(sql: str) -> Dict[str, Any]:
+                return requests.post(
+                    url=self.dgc.BI_URL,
+                    json={"sql": sql, "returnType": "json"},
+                    headers=self._sql_headers,
+                ).json()
+
             responses = await asyncio.gather(
-                *(
-                    asyncio.to_thread(
-                        lambda sql=sql: requests.post(
-                            url=self.dgc.BI_URL,
-                            json={"sql": sql, "returnType": "json"},
-                            headers=self._sql_headers,
-                        ).json()
-                    )
-                    for sql in sql_list
-                )
+                *(asyncio.to_thread(fetch_annotation, sql) for sql in sql_list)
             )
             # responses = await asyncio.gather(
             #     *(requests.post(
@@ -2184,11 +2189,7 @@ class DeepGenomeAgents:
         part1_str = state.get("part1_report", "")
         gene_results_data = state.get("synthesize_report", "")
         if gene_results_data:
-            part2_str = get_prompt(
-                self.dgc.PROMPT_FILE,
-                "template/gene_function_result",
-                gene_results_data,
-            )
+            part2_str = str(gene_results_data)
         else:
             part2_str = ""
         part12_str = f"## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n"
@@ -2294,7 +2295,7 @@ class DeepGenomeAgents:
         """
         print("-> Generating experimental protocol summary...")
 
-        part12_str = state.get("part12_combined", "")
+        part12_str = state.get("part12_combined") or ""
         experiment_report = state.get("experiment_report", "")
 
         protocol_response = await phyto_chat(
@@ -2366,7 +2367,7 @@ class DeepGenomeAgents:
         )
 
         # 构建内容字符串
-        part12_str = state.get("part12_combined", "")
+        part12_str = state.get("part12_combined") or ""
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
@@ -2446,7 +2447,7 @@ class DeepGenomeAgents:
         )
 
         # Build content string
-        part12_str = state.get("part12_combined", "")
+        part12_str = state.get("part12_combined") or ""
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
@@ -2529,7 +2530,7 @@ class DeepGenomeAgents:
         )
 
         # 构建内容字符串
-        part12_str = state.get("part12_combined", "")
+        part12_str = state.get("part12_combined") or ""
         discussion_report = state.get("discussion_report", "")
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
@@ -2611,7 +2612,7 @@ class DeepGenomeAgents:
         )
 
         # Assemble complete final report content
-        part12_str = state.get("part12_combined", "")
+        part12_str = state.get("part12_combined") or ""
         introduction_report = state.get("introduction_report", "")
         discussion_report = state.get("discussion_report", "")
         summary_report = state.get("summary_report", "")
@@ -2808,8 +2809,12 @@ def network_to_string(
     """
     if gene_network_list:
         network_string = ""
-        go_id_dict, ip_id_dict, mm_id_dict = {}, {}, {}
-        go_count_dict, ip_count_dict, mm_count_dict = {}, {}, {}
+        go_id_dict: Dict[str, Any] = {}
+        ip_id_dict: Dict[str, Any] = {}
+        mm_id_dict: Dict[str, Any] = {}
+        go_count_dict: Dict[str, int] = {}
+        ip_count_dict: Dict[str, int] = {}
+        mm_count_dict: Dict[str, int] = {}
         for species_gene in gene_network_list:
             if species_gene in species_gene_symbol_dict:
                 symbol_string = "|".join(

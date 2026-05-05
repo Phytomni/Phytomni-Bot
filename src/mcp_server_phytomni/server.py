@@ -71,7 +71,7 @@ Copyright:
 import asyncio
 from enum import Enum
 from json import dumps
-from typing import Annotated, Dict, List
+from typing import Annotated, Any, Dict, List
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -744,7 +744,8 @@ async def serve() -> None:
         ]
 
     @server.call_tool()
-    async def call_tool(name, arguments: dict) -> list[TextContent]:
+    async def call_tool(name, arguments: Dict[str, Any]) -> list[TextContent]:
+        args: Any
         match name:
             case PhytomniAgents.CHATAGENT:
                 try:
@@ -754,7 +755,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 chatconfig = ChatConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await phyto_chat_with_follow(
                     user_query=args.user_query,
                     obs_file_list=args.obs_file_list,
@@ -796,7 +797,6 @@ async def serve() -> None:
                         text=dumps(response),
                     )
                 ]
-
             case PhytomniAgents.KNOWLEDGEAGENT:
                 try:
                     args = KnowledgeAgent(**arguments)
@@ -805,7 +805,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 knowledgeconfig = KnowledgeConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await multi_retrieve_generate(
                     user_query=args.user_query,
                     retrieve_url=knowledgeconfig.RETRIEVE_URL,
@@ -866,7 +866,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 dataconfig = DataConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await rewrite_nl2sql(
                     user_query=args.user_query,
                     retrieve_url=dataconfig.RETRIEVE_URL,
@@ -918,7 +918,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 analystconfig = AnalystConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await retrieve_plan_submit(
                     goal_description=args.goal_description,
                     data_list=args.data_list,
@@ -996,7 +996,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 reviewconfig = ReviewConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await deep_research(
                     user_query=args.user_query,
                     prompt_file=reviewconfig.PROMPT_FILE,
@@ -1057,7 +1057,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 briefgeneconfig = BriefGeneConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await brief_gene_function(
                     user_query=args.user_query,
                     prompt_file=briefgeneconfig.PROMPT_FILE,
@@ -1107,7 +1107,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 deepgenomeconfig = DeepGenomeConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await gene_function(
                     species_code=args.species_code,
                     gene_id=args.gene_id,
@@ -1189,7 +1189,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 insilicoresearchconfig = InSilicoResearchConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await in_silico_research(
                     user_query=args.user_query,
                     data_list=args.data_list,
@@ -1250,7 +1250,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 digitaldesignconfig = DigitalDesignConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await design_module(
                     species=args.species,
                     gene_id=args.gene_id,
@@ -1297,7 +1297,7 @@ async def serve() -> None:
                         ErrorData(code=INVALID_PARAMS, message=str(e))
                     ) from e
                 genenetworkconfig = GeneNetworkConfig()
-                sensitiveconfig = SensitiveConfig().load()
+                sensitiveconfig = SensitiveConfig.load()
                 response = await network_analysis(
                     species=args.species,
                     to_id=args.to_id,
@@ -1334,6 +1334,12 @@ async def serve() -> None:
                         text=dumps(response),
                     )
                 ]
+        raise McpError(
+            ErrorData(
+                code=INVALID_PARAMS,
+                message=f"Unknown tool: {name}",
+            )
+        )
 
     options = server.create_initialization_options()
     async with stdio_server() as (read_stream, write_stream):

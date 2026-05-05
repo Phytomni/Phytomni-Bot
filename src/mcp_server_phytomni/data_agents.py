@@ -12,7 +12,7 @@ better performance.
 
 import asyncio
 from random import uniform
-from typing import Any, Dict, List, Optional, Union, TypedDict, Literal
+from typing import Any, Dict, List, Optional, Union, TypedDict, Literal, cast
 from uuid import uuid1
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -31,7 +31,7 @@ from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 
 dc = DataConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 async def nl2sql(
@@ -423,6 +423,7 @@ class DataAgent:
             query = state["rewrite_query"]
         else:
             query = state["user_query"]
+        response: Any = None
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
             for attempt in range(self.dc.MAX_RETRIES + 1):
                 try:
@@ -473,6 +474,13 @@ class DataAgent:
                             message=f"Network error: {str(e)}",
                         )
                     ) from e
+        if response is None:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="No response received from SQL database",
+                )
+            )
         print(response.json())
         return {"final_reponse": response.json()}
 
@@ -508,6 +516,8 @@ class DataAgent:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
 
         return final_state["final_reponse"]

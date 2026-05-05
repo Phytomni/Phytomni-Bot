@@ -12,7 +12,16 @@ digital design workflows for protein engineering applications.
 """
 
 import operator
-from typing import Annotated, Dict, List, Any, Optional, TypedDict
+from typing import (
+    Annotated,
+    Dict,
+    List,
+    Any,
+    Literal,
+    Optional,
+    TypedDict,
+    cast,
+)
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -25,7 +34,7 @@ from .config.defaults import DigitalDesignConfig
 from .config.settings import SensitiveConfig
 
 ddc = DigitalDesignConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 class DigitalDesignState(TypedDict):
@@ -56,6 +65,7 @@ class DigitalDesignState(TypedDict):
     output_dir: Optional[str]
     design_task_result: Annotated[List[Dict[str, Any]], operator.add]
     design_tasks: List[Dict[str, Any]]  # List of design tasks
+    analysis_type: str
     task_index: Optional[int]  # Current task index
     task_ids: Annotated[
         Dict[str, str], operator.or_
@@ -89,7 +99,7 @@ class DigitalDesignAgents:
     def __init__(
         self,
         checkpointer=MemorySaver(),
-        analyst_agent: AnalystAgent = None,
+        analyst_agent: Optional[AnalystAgent] = None,
         digital_design_config=ddc,
         sensitive_config=sc,
     ):
@@ -146,7 +156,7 @@ class DigitalDesignAgents:
         analysis_type: str,
         species: str,
         gene_id: str,
-        output_dir: str = None,
+        output_dir: Optional[str] = None,
     ) -> dict:
         """Submit task using AnalystAgent and wait for completion.
 
@@ -218,13 +228,14 @@ class DigitalDesignAgents:
 
         return {"submit_result": result}
 
-    def _get_compute_resource(self, analysis_type: str) -> str:
+    def _get_compute_resource(
+        self, analysis_type: str
+    ) -> Literal["small", "medium", "large"]:
         """Determine compute resource level based on analysis type."""
         medium_compute_types = {"protein_design_analysis"}
         if analysis_type in medium_compute_types:
             return "medium"
-        else:
-            return "small"
+        return "small"
 
     async def prepare_tasks(self, state: DigitalDesignState) -> dict:
         """Prepare the list of design tasks."""
@@ -242,7 +253,7 @@ class DigitalDesignAgents:
         task_index = state.get("task_index")
         species = state["species"]
         gene_id = state["gene_id"]
-        analysis_type = state.get("analysis_type")
+        analysis_type = state["analysis_type"]
 
         print(
             f"[Design-{task_index}] 🚀 Executing: {analysis_type} for {gene_id}"
@@ -255,11 +266,19 @@ class DigitalDesignAgents:
                 species=species,
                 gene_id=gene_id,
             )
-            design_task_result.append(result.get("submit_result"))
+            raw_submit_result = result.get("submit_result", {})
+            submit_result: Dict[str, Any] = (
+                raw_submit_result
+                if isinstance(raw_submit_result, dict)
+                else {}
+            )
+            design_task_result.append(submit_result)
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
             existing_task_ids = state.get("task_ids", {})
-            existing_task_ids[task_key] = result.get("task_id")
+            task_id = submit_result.get("task_id")
+            if task_id is not None:
+                existing_task_ids[task_key] = str(task_id)
             return {
                 "design_task_result": design_task_result,
                 "task_ids": existing_task_ids,
@@ -295,7 +314,7 @@ class DigitalDesignAgents:
         if thread_id is None:
             thread_id = str(uuid1())
 
-        initial_state = {
+        initial_state: Dict[str, Any] = {
             "species": species,
             "gene_id": gene_id,
             "user_id": user_id,
@@ -309,7 +328,9 @@ class DigitalDesignAgents:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(initial_state, config)
+        result = await self.app.ainvoke(
+            cast(Any, initial_state), cast(Any, config)
+        )
         return {
             "design_task_result": result.get("design_task_result"),
             "error": result.get("error"),

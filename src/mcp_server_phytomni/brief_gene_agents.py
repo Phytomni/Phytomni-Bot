@@ -8,7 +8,7 @@
 import asyncio
 from json import loads
 from random import uniform
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Dict, List, Optional, TypedDict, Union, cast
 from uuid import uuid1
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -26,7 +26,7 @@ from .knowledge_agents import KnowledgeAgent
 from .utils import get_prompt
 
 bgc = BriefGeneConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 def _sql_literal(value: str) -> str:
@@ -706,7 +706,9 @@ class BriefGeneAgent:
             "final_response": {},
         }
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
         return final_state["final_response"]
 
 

@@ -9,7 +9,7 @@ import asyncio
 import json
 import re
 from json import loads
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Dict, List, Optional, TypedDict, Union, cast
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -23,7 +23,7 @@ from .knowledge_agents import KnowledgeAgent
 from .utils import download_list_convert, get_prompt
 
 rc = ReviewConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 CITATION_PATTERN = (
     r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
@@ -343,7 +343,7 @@ class DeepResearchAgent:
 
         for di, dimension_result in enumerate(results):
             fragments = []
-            if not isinstance(dimension_result, Exception):
+            if not isinstance(dimension_result, BaseException):
                 for doc in dimension_result:
                     current_doc_id = f"document {file_id + 1:03d}"
                     doc_copy = doc.copy()
@@ -390,7 +390,7 @@ class DeepResearchAgent:
             "draft_contents": [
                 (
                     ""
-                    if isinstance(result, Exception)
+                    if isinstance(result, BaseException)
                     else _message_content(result)
                 )
                 for result in draft_results
@@ -426,7 +426,7 @@ class DeepResearchAgent:
             "review_contents": [
                 (
                     "{}"
-                    if isinstance(result, Exception)
+                    if isinstance(result, BaseException)
                     else _message_content(result)
                 )
                 for result in review_results
@@ -451,7 +451,7 @@ class DeepResearchAgent:
         revised_reports = []
         add_doc_list: List[Dict[str, Any]] = []
         for idx, result in enumerate(revised_results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 revised_reports.append(
                     {
                         "subtopic": state["research_dimensions"][idx],
@@ -732,7 +732,9 @@ class DeepResearchAgent:
             "final_response": {},
         }
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
         return final_state["final_response"]
 
 

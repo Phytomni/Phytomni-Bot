@@ -75,14 +75,14 @@ def func_cache(
             try:
                 cache_key = kb.build_key(args, kwargs)
             except CacheError as e:
-                logger.warning(f"Cache key build failed, falling back: {e}")
+                logger.warning("Cache key build failed, falling back: %s", e)
                 return func(*args, **kwargs)
 
             # ── Lock-free read ──
             try:
                 cached = storage.get(kb.func_id, cache_key)
             except CacheError as e:
-                logger.warning(f"Cache read error, falling back: {e}")
+                logger.warning("Cache read error, falling back: %s", e)
                 return func(*args, **kwargs)
 
             if cached is not None:
@@ -92,8 +92,10 @@ def func_cache(
                     return result
                 except CacheError:
                     logger.warning(
-                        "Cache deserialization failed, "
-                        f"removing corrupted entry: {kb.func_id}:{cache_key}"
+                        "Cache deserialization failed, removing corrupted "
+                        "entry: %s:%s",
+                        kb.func_id,
+                        cache_key,
                     )
                     try:
                         storage.delete_entry(kb.func_id, cache_key)
@@ -106,7 +108,7 @@ def func_cache(
                 lock_mgr.acquire(kb.func_id, cache_key)
                 locked = True
             except CacheError as e:
-                logger.warning(f"Failed to acquire lock, falling back: {e}")
+                logger.warning("Failed to acquire lock, falling back: %s", e)
                 misses += 1
                 return func(*args, **kwargs)
 
@@ -136,7 +138,7 @@ def func_cache(
                     value = dumps(result, compress)
                     storage.set(kb.func_id, cache_key, value, ttl)
                 except CacheError as e:
-                    logger.warning(f"Cache write failed: {e}")
+                    logger.warning("Cache write failed: %s", e)
 
                 return result
             finally:
@@ -152,7 +154,7 @@ def func_cache(
                 storage.delete_func(kb.func_id)
                 storage.cleanup_func_locks(kb.func_id)
             except CacheError as e:
-                logger.warning(f"Failed to clear cache: {e}")
+                logger.warning("Failed to clear cache: %s", e)
 
         def cache_info():
             """Return cache statistics for the decorated function."""
@@ -185,12 +187,13 @@ def _check_and_update_meta(storage, func_id, key_params, compress):
                 if old_compress != compress:
                     changes.append(f"compress: {old_compress} → {compress}")
                 logger.warning(
-                    f"Detected cache config change for {func_id}: "
-                    f"{'; '.join(changes)}, "
-                    "automatically clearing old cache"
+                    "Detected cache config change for %s: %s, "
+                    "automatically clearing old cache",
+                    func_id,
+                    "; ".join(changes),
                 )
                 storage.delete_func(func_id)
                 storage.cleanup_func_locks(func_id)
                 storage.set_meta(func_id, key_params, compress)
     except CacheError as e:
-        logger.warning(f"Metadata check failed: {e}")
+        logger.warning("Metadata check failed: %s", e)

@@ -12,7 +12,7 @@ import asyncio
 from random import uniform
 from json import loads
 from uuid import uuid1
-from typing import List, Dict, Any, Optional, Literal, TypedDict
+from typing import List, Dict, Any, Optional, Literal, TypedDict, cast
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
@@ -29,7 +29,7 @@ from .config.settings import SensitiveConfig
 from .utils import download_list_convert, get_prompt, split_list
 
 kc = KnowledgeConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 class KnowledgeAgentState(TypedDict):
@@ -473,7 +473,7 @@ class KnowledgeAgent:
         """
         if state["is_generate"]:
             return "generate_node"
-        return END
+        return "__end__"
 
     def route_after_generate(
         self, state: KnowledgeAgentState
@@ -491,7 +491,7 @@ class KnowledgeAgent:
         """
         if state["is_follow_up"]:
             return "follow_up_node"
-        return END
+        return "__end__"
 
     async def arun(
         self,
@@ -539,7 +539,9 @@ class KnowledgeAgent:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(initial_state, config=config)
+        final_state = await self.app.ainvoke(
+            cast(Any, initial_state), config=cast(Any, config)
+        )
 
         if not is_generate:
             return final_state["retrieved_docs"]
@@ -670,7 +672,7 @@ async def retrieve(
                     doc_list.extend(each_result)
         else:
             raise ValueError(
-                "Invalid scope value. Must be 'doc', 'keyword'," " or 'both'."
+                "Invalid scope value. Must be 'doc', 'keyword', or 'both'."
             )
 
     if doc_list is None:
@@ -914,21 +916,17 @@ async def rerank(
             chunks = split_list(docs, rerank_batch_size)
             tasks = [make_rerank_request(client, chunk) for chunk in chunks]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            all_results = []
+            all_results: List[Dict[str, Any]] = []
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     raise McpError(
                         ErrorData(
                             code=INTERNAL_ERROR,
                             message=f"Reranking failed: {str(result)}",
                         )
                     ) from result
-                if result is not None:
-                    try:
-                        if hasattr(result, "__iter__"):
-                            all_results.extend(result)
-                    except TypeError:
-                        continue
+                if isinstance(result, list):
+                    all_results.extend(result)
             rank_docs = sorted(
                 all_results, key=lambda x: x["score"], reverse=True
             )[:top_n]

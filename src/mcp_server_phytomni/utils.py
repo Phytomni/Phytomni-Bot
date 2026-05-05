@@ -22,7 +22,7 @@ from math import ceil
 from pathlib import Path
 from re import sub
 from traceback import format_exc
-from typing import Dict, List, Optional
+from typing import Any, List, Mapping, Optional
 from uuid import uuid1
 from warnings import warn
 
@@ -37,7 +37,7 @@ from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
 
 serc = ServerConfig()
-senc = SensitiveConfig().load()
+senc = SensitiveConfig.load()
 
 
 async def get_token(
@@ -147,7 +147,7 @@ def load_template(
 
 
 def render_template(
-    template: str, parameters: Optional[Dict[str, str]] = None
+    template: str, parameters: Optional[Mapping[str, Any]] = None
 ) -> str:
     """Replace placeholders in a template string with provided values.
 
@@ -182,7 +182,7 @@ def render_template(
 def get_prompt(
     template_file: str,
     template_str: Optional[str] = None,
-    parameters: Optional[Dict[str, str]] = None,
+    parameters: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """Generate a complete prompt from a template file and parameters.
 

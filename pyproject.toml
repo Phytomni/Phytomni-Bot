@@ -68,6 +68,8 @@ exclude = [
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src"
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 exclude = [
     "\\.mypy_cache/",
     "\\.pytest_cache/",
@@ -84,7 +86,40 @@ exclude = [
     "**/.venv",
 ]
 pythonVersion = "3.12"
+reportMissingTypeStubs = false
 
 [tool.pylint.main]
 py-version = "3.12"
 ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
+
+[tool.pylint.messages_control]
+disable = [
+    # Legacy/public API shape kept for compatibility; phase 4 will refactor
+    # these with narrower scopes instead of changing signatures in phase 1.
+    "broad-exception-caught",
+    "dangerous-default-value",
+    "duplicate-code",
+    "import-outside-toplevel",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "missing-timeout",
+    "no-else-return",
+    "pointless-statement",
+    "raise-missing-from",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-boolean-expressions",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements",
+    "ungrouped-imports",
+    "unused-argument",
+    "unspecified-encoding",
+    "wrong-import-order",
+]

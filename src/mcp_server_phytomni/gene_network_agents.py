@@ -19,7 +19,7 @@ Key functionalities include:
 - Integration with plant-specific databases and resources
 """
 
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Dict, List, Any, Literal, Optional, TypedDict, cast
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -32,7 +32,7 @@ from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig
 
 gnc = GeneNetworkConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 class GeneNetworkState(TypedDict):
@@ -60,8 +60,9 @@ class GeneNetworkState(TypedDict):
     to_id: str  # Target gene identifier for network analysis
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
-    network_task: Dict[str, str]  # submit results
+    network_task: Dict[str, Any]  # submit results
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
+    analysis_type: str
     task_index: Optional[int]  # Current task index in parallel execution
     task_ids: Dict[str, str]  # Mapping of task names to task IDs
     completed_count: int  # Counter for completed tasks
@@ -94,7 +95,7 @@ class GeneNetworkAgents:
     def __init__(
         self,
         checkpointer=MemorySaver(),
-        analyst_agent: AnalystAgent = None,
+        analyst_agent: Optional[AnalystAgent] = None,
         gene_network_config=gnc,
         sensitive_config=sc,
     ):
@@ -151,7 +152,7 @@ class GeneNetworkAgents:
         analysis_type: str,
         species: str,
         to_id: str,
-        output_dir: str = None,
+        output_dir: Optional[str] = None,
     ) -> dict:
         """Submit network analysis task and wait for completion.
 
@@ -222,7 +223,9 @@ class GeneNetworkAgents:
         # return {"task_id": task_id, "output_dir": result.get("output_dir")}
         return {"network_task": result}
 
-    def _get_compute_resource(self, analysis_type: str) -> str:
+    def _get_compute_resource(
+        self, analysis_type: str
+    ) -> Literal["small", "medium", "large"]:
         """Determine compute resource level based on analysis type."""
         return "small"
 
@@ -239,7 +242,7 @@ class GeneNetworkAgents:
         task_index = state.get("task_index")
         species = state["species"]
         to_id = state["to_id"]
-        analysis_type = state.get("analysis_type")
+        analysis_type = state["analysis_type"]
 
         print(
             f"[Network-{task_index}] 🚀 Executing: {analysis_type} for {to_id}"
@@ -251,9 +254,14 @@ class GeneNetworkAgents:
             )
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
-            existing_task_ids = state.get("task_ids", {})
-            task_result = result.get("network_task", {})
-            existing_task_ids[task_key] = task_result.get("task_id")
+            existing_task_ids: Dict[str, str] = state.get("task_ids", {})
+            raw_task_result = result.get("network_task", {})
+            task_result: Dict[str, Any] = (
+                raw_task_result if isinstance(raw_task_result, dict) else {}
+            )
+            task_id = task_result.get("task_id")
+            if task_id is not None:
+                existing_task_ids[task_key] = str(task_id)
             return {
                 "task_ids": existing_task_ids,
                 "completed_count": 1,
@@ -289,7 +297,7 @@ class GeneNetworkAgents:
         if thread_id is None:
             thread_id = str(uuid1())
 
-        initial_state = {
+        initial_state: Dict[str, Any] = {
             "species": species,
             "to_id": to_id,
             "user_id": user_id,
@@ -302,7 +310,9 @@ class GeneNetworkAgents:
         }
 
         config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(initial_state, config)
+        result = await self.app.ainvoke(
+            cast(Any, initial_state), cast(Any, config)
+        )
         return {
             "network_task": result.get("network_task"),
             "error": result.get("error"),

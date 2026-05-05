@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, List, Literal, Dict, Optional, TypedDict
+from typing import Any, List, Literal, Dict, Optional, TypedDict, cast
 from uuid import uuid1
 from pydantic import SecretStr
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -14,7 +14,7 @@ from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import GetObjectHeader, PutObjectHeader, ObsClient
-from langgraph.graph import StateGraph, END, START
+from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
@@ -23,7 +23,7 @@ from .knowledge_agents import multi_retrieve, retrieve
 from .utils import download_list_convert, get_prompt, get_token
 
 ac = AnalystConfig()
-sc = SensitiveConfig().load()
+sc = SensitiveConfig.load()
 
 
 class AnalystAgentsState(TypedDict):
@@ -1017,7 +1017,7 @@ class AnalystAgent:
 
     def route_after_plan(
         self, state: AnalystAgentsState
-    ) -> Literal["plan_node", "tool_extract_node"]:
+    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
         """Route after the plan node based on plan availability.
 
         Args:
@@ -1066,7 +1066,7 @@ class AnalystAgent:
         """
         if state.get("is_polling"):
             return "pooling_node"
-        return END
+        return "__end__"
 
     def route_after_pooling(
         self, state: AnalystAgentsState
@@ -1082,13 +1082,13 @@ class AnalystAgent:
         """
         status = state.get("task_status")
         if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            return END
+            return "__end__"
         return "pooling_node"
 
     async def arun(
         self,
-        query: str,
-        goal_description: str = None,
+        query: Optional[str],
+        goal_description: Optional[str] = None,
         user: str = ac.USER,
         user_id: str = ac.USER_ID,
         is_create_dir: bool = ac.CREATE_DIR,
@@ -1107,7 +1107,7 @@ class AnalystAgent:
         temperature: float = ac.TEMPERATURE,
         top_p: float = ac.TOP_P,
         prompt_file: str = ac.PROMPT_FILE,
-        preset_data_list: Dict[str, str] = None,
+        preset_data_list: Optional[Any] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
         thread_id: Optional[str] = None,
@@ -1176,7 +1176,9 @@ class AnalystAgent:
         config = {"configurable": {"thread_id": thread_id}}
 
         try:
-            final_state = await self.app.ainvoke(initial_state, config=config)
+            final_state = await self.app.ainvoke(
+                cast(Any, initial_state), config=cast(Any, config)
+            )
             return {
                 "task_id": final_state["task_id"],
                 "output_dir": final_state["output_dir"],
@@ -1275,7 +1277,7 @@ def _sensitive_config_with_overrides(**kwargs: Any):
 
 async def submit(
     goal_description: str,
-    data_list: Dict[str, str],
+    data_list: Any,
     user_id: str = ac.USER_ID,
     is_create_dir: bool = ac.CREATE_DIR,
     output_dir: str = ac.OUTPUT_DIR,
