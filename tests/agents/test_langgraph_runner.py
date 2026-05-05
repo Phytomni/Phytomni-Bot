@@ -1,0 +1,123 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Tests for shared LangGraph runtime helpers."""
+
+from pydantic import SecretStr
+
+from mcp_server_phytomni.langgraph_runner import (
+    GraphRegistry,
+    ainvoke_graph,
+    build_runnable_config,
+    config_fingerprint,
+    ensure_checkpointer,
+    ensure_thread_id,
+)
+
+
+class FakeGraph:
+    """Small async graph stand-in used to inspect runner behavior."""
+
+    def __init__(self):
+        self.initial_state = None
+        self.config = None
+
+    async def ainvoke(self, initial_state, config=None):
+        self.initial_state = initial_state
+        self.config = config
+        return {"final": initial_state["value"]}
+
+
+def test_ensure_thread_id_keeps_existing_value():
+    assert ensure_thread_id("thread-1") == "thread-1"
+
+
+def test_build_runnable_config_uses_thread_id():
+    assert build_runnable_config("thread-1") == {
+        "configurable": {"thread_id": "thread-1"}
+    }
+
+
+def test_ensure_thread_id_generates_value_when_missing():
+    first = ensure_thread_id()
+    second = ensure_thread_id("")
+
+    assert first
+    assert second
+    assert first != second
+
+
+def test_ensure_checkpointer_creates_fresh_instances():
+    first = ensure_checkpointer()
+    second = ensure_checkpointer()
+
+    assert first is not second
+    assert ensure_checkpointer(first) is first
+
+
+async def test_ainvoke_graph_passes_standard_config():
+    graph = FakeGraph()
+
+    result = await ainvoke_graph(graph, {"value": "ok"}, thread_id="thread-1")
+
+    assert result == {"final": "ok"}
+    assert graph.initial_state == {"value": "ok"}
+    assert graph.config == {"configurable": {"thread_id": "thread-1"}}
+
+
+def test_config_fingerprint_is_stable_and_omits_secret_fields():
+    left = config_fingerprint(
+        {
+            "model": "demo",
+            "api_key": "plain-secret",
+            "nested": {"password": "hidden", "temperature": 0.2},
+            "secret_value": SecretStr("also-hidden"),
+        }
+    )
+    right = config_fingerprint(
+        {
+            "secret_value": SecretStr("changed"),
+            "nested": {"temperature": 0.2, "password": "changed"},
+            "api_key": "changed",
+            "model": "demo",
+        }
+    )
+
+    assert left == right
+    assert "plain-secret" not in left
+    assert "also-hidden" not in left
+    assert "password" not in left
+
+
+def test_graph_registry_reuses_by_name_and_fingerprint():
+    registry: GraphRegistry[object] = GraphRegistry()
+    created = 0
+
+    def factory():
+        nonlocal created
+        created += 1
+        return object()
+
+    first = registry.get_or_create("data", factory, {"model": "demo"})
+    second = registry.get_or_create("data", factory, {"model": "demo"})
+    third = registry.get_or_create("knowledge", factory, {"model": "demo"})
+
+    assert first is second
+    assert first is not third
+    assert created == 2
+    assert registry.count() == 2
+
+
+def test_graph_registry_can_clear_one_name_or_all():
+    registry: GraphRegistry[object] = GraphRegistry()
+    registry.get_or_create("data", object, {"model": "demo"})
+    registry.get_or_create("knowledge", object, {"model": "demo"})
+
+    registry.clear("data")
+
+    assert registry.count() == 1
+
+    registry.clear()
+
+    assert registry.count() == 0

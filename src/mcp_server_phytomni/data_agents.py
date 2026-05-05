@@ -12,7 +12,7 @@ better performance.
 
 import asyncio
 from random import uniform
-from typing import Any, Dict, List, Optional, Union, TypedDict, Literal, cast
+from typing import Any, Dict, List, Optional, Union, TypedDict, Literal
 from uuid import uuid1
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
@@ -24,6 +24,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt, get_token
 
 from pydantic import SecretStr
@@ -235,7 +236,7 @@ class DataAgent:
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
-                      Defaults to MemorySaver().
+                      Defaults to a fresh MemorySaver instance.
         data_config: Configuration for data retrieval and NL2SQL.
                      Defaults to the global dc instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
@@ -249,12 +250,15 @@ class DataAgent:
     """
 
     def __init__(
-        self, checkpointer=MemorySaver(), data_config=dc, sensitive_config=sc
+        self,
+        checkpointer: Optional[MemorySaver] = None,
+        data_config=dc,
+        sensitive_config=sc,
     ):
         """Initialize the DataAgent with configuration and build the graph."""
         self.dc = data_config
         self.sc = sensitive_config
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -505,8 +509,6 @@ class DataAgent:
         Returns:
             The final response dictionary containing database query results.
         """
-        if not thread_id:
-            thread_id = str(uuid1())
         initial_state = {
             "user_query": user_query,
             "is_rewrite": is_rewrite,
@@ -515,9 +517,8 @@ class DataAgent:
             "final_reponse": None,
         }
 
-        config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(
-            cast(Any, initial_state), config=cast(Any, config)
+        final_state = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
 
         return final_state["final_reponse"]
