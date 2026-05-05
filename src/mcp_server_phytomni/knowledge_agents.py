@@ -19,17 +19,66 @@ from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 
-from pydantic import SecretStr
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .utils import download_list_convert, get_prompt, split_list
 
 kc = KnowledgeConfig()
 sc = SensitiveConfig.load()
+
+KNOWLEDGE_CONFIG_FIELD_MAP = {
+    "retrieve_url": "RETRIEVE_URL",
+    "repo_id": "REPO_ID",
+    "repo_id_dict": "REPO_ID_DICT",
+    "page_num": "PAGE_NUM",
+    "page_size": "PAGE_SIZE",
+    "filter_string": "FILTER_STRING",
+    "scope": "SCOPE",
+    "extra_repo_ids": "EXTRA_REPO_IDS",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "top_n": "TOP_N",
+    "prompt_file": "PROMPT_FILE",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "max_tokens": "MAX_TOKENS",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+    "server_dir": "TEMP_DIR",
+    "obs_server": "OBS_SERVER",
+    "bucket_name": "BUCKET_NAME",
+    "part_size": "PART_SIZT",
+    "task_num": "TASK_NUM",
+    "max_concurrency": "MAX_CONCURRENCY",
+    "max_workers": "MAX_WORKERS",
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+}
+KNOWLEDGE_SENSITIVE_FIELD_MAP = {
+    "base_url": "BASE_URL",
+    "model": "MODEL_ID",
+}
+KNOWLEDGE_SECRET_FIELD_MAP = {
+    "api_key": "API_KEY",
+    "access_key_id": "AccessKeyID",
+    "secret_access_key": "SecretAccessKey",
+}
 
 
 class KnowledgeAgentState(TypedDict):
@@ -947,65 +996,21 @@ async def rerank(
 
 def _knowledge_config_with_overrides(**kwargs: Any):
     """Build a KnowledgeConfig copy from compatibility wrapper arguments."""
-    field_map = {
-        "retrieve_url": "RETRIEVE_URL",
-        "repo_id": "REPO_ID",
-        "repo_id_dict": "REPO_ID_DICT",
-        "page_num": "PAGE_NUM",
-        "page_size": "PAGE_SIZE",
-        "filter_string": "FILTER_STRING",
-        "scope": "SCOPE",
-        "extra_repo_ids": "EXTRA_REPO_IDS",
-        "rerank_url": "RERANK_URL",
-        "rerank_batch_size": "RERANK_BATCH_SIZE",
-        "score_threshold": "SCORE_THRESHOLD",
-        "top_n": "TOP_N",
-        "prompt_file": "PROMPT_FILE",
-        "prompt_path": "PROMPT_PATH",
-        "frequency_penalty": "FREQUENCY_PENALTY",
-        "max_tokens": "MAX_TOKENS",
-        "n": "N",
-        "presence_penalty": "PRESENCE_PENALTY",
-        "reasoning_effort": "REASONING_EFFORT",
-        "response_format": "RESPONSE_FORMAT",
-        "stream": "STREAM",
-        "temperature": "TEMPERATURE",
-        "top_p": "TOP_P",
-        "user": "USER",
-        "server_dir": "TEMP_DIR",
-        "obs_server": "OBS_SERVER",
-        "bucket_name": "BUCKET_NAME",
-        "part_size": "PART_SIZT",
-        "task_num": "TASK_NUM",
-        "max_concurrency": "MAX_CONCURRENCY",
-        "max_workers": "MAX_WORKERS",
-        "timeout": "TIMEOUT",
-        "retriable_codes": "RETRIABLE_CODES",
-        "max_retries": "MAX_RETRIES",
-    }
-    updates = {}
-    for source_key, target_key in field_map.items():
-        if source_key in kwargs:
-            updates[target_key] = kwargs[source_key]
-    return kc.model_copy(update=updates)
+    return copy_config_with_overrides(
+        kc,
+        kwargs,
+        KNOWLEDGE_CONFIG_FIELD_MAP,
+    )
 
 
 def _knowledge_sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
-    updates = {}
-    if "base_url" in kwargs:
-        updates["BASE_URL"] = kwargs["base_url"]
-    if "model" in kwargs:
-        updates["MODEL_ID"] = kwargs["model"]
-    secret_fields = {
-        "api_key": "API_KEY",
-        "access_key_id": "AccessKeyID",
-        "secret_access_key": "SecretAccessKey",
-    }
-    for source_key, target_key in secret_fields.items():
-        if source_key in kwargs:
-            updates[target_key] = SecretStr(kwargs[source_key])
-    return sc.model_copy(update=updates)
+    return copy_sensitive_config_with_overrides(
+        sc,
+        kwargs,
+        field_map=KNOWLEDGE_SENSITIVE_FIELD_MAP,
+        secret_field_map=KNOWLEDGE_SECRET_FIELD_MAP,
+    )
 
 
 async def multi_retrieve_generate(

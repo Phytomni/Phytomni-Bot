@@ -17,16 +17,57 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
-from pydantic import SecretStr
 
 from .chat_agents import phyto_chat
 from .config.defaults import BriefGeneConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .utils import get_prompt
 
 bgc = BriefGeneConfig()
 sc = SensitiveConfig.load()
+
+BRIEF_GENE_CONFIG_FIELD_MAP = {
+    "prompt_file": "PROMPT_FILE",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+    "retrieve_url": "RETRIEVE_URL",
+    "repo_id_dict": "REPO_ID_DICT",
+    "page_num": "PAGE_NUM",
+    "filter_string": "FILTER_STRING",
+    "scope": "SCOPE",
+    "extra_repo_ids": "EXTRA_REPO_IDS",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "top_n": "TOP_N",
+    "bi_url": "BI_URL",
+    "max_concurrency": "MAX_CONCURRENCY",
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+    "max_tokens": "MAX_TOKENS",
+}
+BRIEF_GENE_SENSITIVE_FIELD_MAP = {
+    "base_url": "BASE_URL",
+    "model": "MODEL_ID",
+}
+BRIEF_GENE_SECRET_FIELD_MAP = {
+    "api_key": "API_KEY",
+    "bi_token": "BI_TOKEN",
+}
 
 
 def _sql_literal(value: str) -> str:
@@ -747,44 +788,17 @@ async def brief_gene_function(
     max_tokens: int = bgc.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph BriefGeneAgent."""
-    brief_config = bgc.model_copy(
-        update={
-            "PROMPT_FILE": prompt_file,
-            "PROMPT_PATH": prompt_path,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "N": n,
-            "PRESENCE_PENALTY": presence_penalty,
-            "REASONING_EFFORT": reasoning_effort,
-            "RESPONSE_FORMAT": response_format,
-            "STREAM": stream,
-            "TEMPERATURE": temperature,
-            "TOP_P": top_p,
-            "USER": user,
-            "RETRIEVE_URL": retrieve_url,
-            "REPO_ID_DICT": repo_id_dict,
-            "PAGE_NUM": page_num,
-            "FILTER_STRING": filter_string,
-            "SCOPE": scope,
-            "EXTRA_REPO_IDS": extra_repo_ids,
-            "RERANK_URL": rerank_url,
-            "RERANK_BATCH_SIZE": rerank_batch_size,
-            "SCORE_THRESHOLD": score_threshold,
-            "TOP_N": top_n,
-            "BI_URL": bi_url,
-            "MAX_CONCURRENCY": max_concurrency,
-            "TIMEOUT": timeout,
-            "RETRIABLE_CODES": retriable_codes,
-            "MAX_RETRIES": max_retries,
-            "MAX_TOKENS": max_tokens,
-        }
+    arguments = locals().copy()
+    brief_config = copy_config_with_overrides(
+        bgc,
+        arguments,
+        BRIEF_GENE_CONFIG_FIELD_MAP,
     )
-    sensitive_config = sc.model_copy(
-        update={
-            "API_KEY": SecretStr(api_key),
-            "BASE_URL": base_url,
-            "MODEL_ID": model,
-            "BI_TOKEN": SecretStr(bi_token),
-        }
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        arguments,
+        field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
+        secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,
     )
     knowledge_agent = KnowledgeAgent(
         knowledge_config=brief_config,

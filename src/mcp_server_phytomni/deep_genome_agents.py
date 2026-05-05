@@ -38,6 +38,7 @@ from .analyst_agents import get_data_list
 from .analyst_agents import AnalystAgent
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
+from .config.overrides import copy_config_with_overrides
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .utils import get_prompt
@@ -112,6 +113,48 @@ SPECIES_CODE_MAP = {
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
+
+DEEP_GENOME_CONFIG_FIELD_MAP = {
+    "batch": "BATCH",
+    "epic_type": "EPIC_TYPE",
+    "database_url": "DATABASE_URL",
+    "workspace_id": "WORKSPACE_ID",
+    "subject_id": "SUBJECT_ID",
+    "dialog_id": "DIALOG_ID",
+    "need_insight": "NEED_INSIGHT",
+    "prompt_file": "PROMPT_FILE",
+    "deepgenome_data": "DEEPGENOME_DATA",
+    "output_dir": "OUTPUT_DIR",
+    "retrieve_url": "RETRIEVE_URL",
+    "repo_id_dict": "REPO_ID_DICT",
+    "page_num": "PAGE_NUM",
+    "filter_string": "FILTER_STRING",
+    "extra_repo_ids": "EXTRA_REPO_IDS",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "top_n": "TOP_N",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "max_tokens": "MAX_TOKENS",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+    "deepgenome_out": "DEEPGENOME_OUT",
+    "download_path": "DOWNLOAD_PATH",
+    "marker": "DOWNLOAD_MARKER",
+    "max_keys": "DOWNLOAD_MAX_KEYS",
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+    "max_concurrency": "MAX_CONCURRENCY",
+    "max_poll": "MAX_POLL",
+}
 
 
 # 定义字典合并函数，确保并行写入 raw_analyst_data 时安全合并
@@ -2710,59 +2753,18 @@ async def gene_function(
     """Compatibility wrapper around the LangGraph deep genome agent."""
     from .data_agents import DataAgent
 
-    config_updates = {
-        "USER_ID": user_id if user_id is not None else dgc.USER_ID,
-    }
-    field_map = {
-        "batch": "BATCH",
-        "epic_type": "EPIC_TYPE",
-        "database_url": "DATABASE_URL",
-        "workspace_id": "WORKSPACE_ID",
-        "subject_id": "SUBJECT_ID",
-        "dialog_id": "DIALOG_ID",
-        "need_insight": "NEED_INSIGHT",
-        "prompt_file": "PROMPT_FILE",
-        "deepgenome_data": "DEEPGENOME_DATA",
-        "output_dir": "OUTPUT_DIR",
-        "retrieve_url": "RETRIEVE_URL",
-        "repo_id_dict": "REPO_ID_DICT",
-        "page_num": "PAGE_NUM",
-        "filter_string": "FILTER_STRING",
-        "extra_repo_ids": "EXTRA_REPO_IDS",
-        "rerank_url": "RERANK_URL",
-        "rerank_batch_size": "RERANK_BATCH_SIZE",
-        "score_threshold": "SCORE_THRESHOLD",
-        "top_n": "TOP_N",
-        "prompt_path": "PROMPT_PATH",
-        "frequency_penalty": "FREQUENCY_PENALTY",
-        "max_tokens": "MAX_TOKENS",
-        "n": "N",
-        "presence_penalty": "PRESENCE_PENALTY",
-        "reasoning_effort": "REASONING_EFFORT",
-        "response_format": "RESPONSE_FORMAT",
-        "stream": "STREAM",
-        "temperature": "TEMPERATURE",
-        "top_p": "TOP_P",
-        "user": "USER",
-        "deepgenome_out": "DEEPGENOME_OUT",
-        "download_path": "DOWNLOAD_PATH",
-        "marker": "DOWNLOAD_MARKER",
-        "max_keys": "DOWNLOAD_MAX_KEYS",
-        "timeout": "TIMEOUT",
-        "retriable_codes": "RETRIABLE_CODES",
-        "max_retries": "MAX_RETRIES",
-        "max_concurrency": "MAX_CONCURRENCY",
-        "max_poll": "MAX_POLL",
-    }
-    for source_key, target_key in field_map.items():
-        if source_key in kwargs:
-            config_updates[target_key] = kwargs[source_key]
+    deepgenome_config = copy_config_with_overrides(
+        dgc,
+        kwargs,
+        DEEP_GENOME_CONFIG_FIELD_MAP,
+        fixed_updates={"USER_ID": user_id},
+    )
 
     agent = DeepGenomeAgents(
         data_agent=DataAgent(),
         knowledge_agent=KnowledgeAgent(),
         analyst_agent=AnalystAgent(),
-        deepgenome_config=dgc.model_copy(update=config_updates),
+        deepgenome_config=deepgenome_config,
         sensitive_config=sc,
     )
     return await agent.arun(

@@ -22,17 +22,58 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 
 from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt, get_token
 
-from pydantic import SecretStr
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 
 dc = DataConfig()
 sc = SensitiveConfig.load()
+
+DATA_CONFIG_FIELD_MAP = {
+    "retrieve_url": "RETRIEVE_URL",
+    "data_repo_id": "DATA_REPO_ID",
+    "page_num": "PAGE_NUM",
+    "page_size": "DATA_PAGE_SIZE",
+    "filter_string": "FILTER_STRING",
+    "scope": "SCOPE",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "prompt_file": "PROMPT_FILE",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+    "database_url": "DATABASE_URL",
+    "workspace_id": "WORKSPACE_ID",
+    "subject_id": "SUBJECT_ID",
+    "dialog_id": "DIALOG_ID",
+    "need_insight": "NEED_INSIGHT",
+    "simplify_response": "SIMPLIFY_RESPONSE",
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+    "max_tokens": "MAX_TOKENS",
+}
+DATA_SENSITIVE_FIELD_MAP = {
+    "base_url": "BASE_URL",
+    "model": "MODEL_ID",
+}
+DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 
 
 async def nl2sql(
@@ -146,47 +187,19 @@ async def rewrite_nl2sql(
     is_rewrite: bool = True,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent."""
+    arguments = locals().copy()
     active_dialog_id = dialog_id or str(uuid1())
-    data_config = dc.model_copy(
-        update={
-            "DATA_PAGE_SIZE": page_size,
-            "DATA_REPO_ID": data_repo_id,
-            "DATABASE_URL": database_url,
-            "DIALOG_ID": active_dialog_id,
-            "FILTER_STRING": filter_string,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "MAX_RETRIES": max_retries,
-            "MAX_TOKENS": max_tokens,
-            "N": n,
-            "NEED_INSIGHT": need_insight,
-            "PAGE_NUM": page_num,
-            "PRESENCE_PENALTY": presence_penalty,
-            "PROMPT_FILE": prompt_file,
-            "PROMPT_PATH": prompt_path,
-            "REASONING_EFFORT": reasoning_effort,
-            "RESPONSE_FORMAT": response_format,
-            "RERANK_BATCH_SIZE": rerank_batch_size,
-            "RERANK_URL": rerank_url,
-            "RETRIABLE_CODES": retriable_codes,
-            "RETRIEVE_URL": retrieve_url,
-            "SCOPE": scope,
-            "SCORE_THRESHOLD": score_threshold,
-            "SIMPLIFY_RESPONSE": simplify_response,
-            "STREAM": stream,
-            "SUBJECT_ID": subject_id,
-            "TEMPERATURE": temperature,
-            "TIMEOUT": timeout,
-            "TOP_P": top_p,
-            "USER": user,
-            "WORKSPACE_ID": workspace_id,
-        }
+    arguments["dialog_id"] = active_dialog_id
+    data_config = copy_config_with_overrides(
+        dc,
+        arguments,
+        DATA_CONFIG_FIELD_MAP,
     )
-    sensitive_config = sc.model_copy(
-        update={
-            "BASE_URL": base_url,
-            "MODEL_ID": model,
-            "API_KEY": SecretStr(api_key),
-        }
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        arguments,
+        field_map=DATA_SENSITIVE_FIELD_MAP,
+        secret_field_map=DATA_SECRET_FIELD_MAP,
     )
     agent = DataAgent(
         data_config=data_config,

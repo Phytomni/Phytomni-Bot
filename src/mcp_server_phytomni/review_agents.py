@@ -14,16 +14,63 @@ from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from pydantic import SecretStr
 
 from .chat_agents import phyto_chat
 from .config.defaults import ReviewConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .utils import download_list_convert, get_prompt
 
 rc = ReviewConfig()
 sc = SensitiveConfig.load()
+
+REVIEW_CONFIG_FIELD_MAP = {
+    "prompt_file": "PROMPT_FILE",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+    "retrieve_url": "RETRIEVE_URL",
+    "repo_id_dict": "REPO_ID_DICT",
+    "page_num": "PAGE_NUM",
+    "filter_string": "FILTER_STRING",
+    "scope": "SCOPE",
+    "extra_repo_ids": "EXTRA_REPO_IDS",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "top_n": "TOP_N",
+    "server_dir": "TEMP_DIR",
+    "obs_server": "OBS_SERVER",
+    "bucket_name": "BUCKET_NAME",
+    "part_size": "PART_SIZT",
+    "task_num": "TASK_NUM",
+    "max_concurrency": "MAX_CONCURRENCY",
+    "max_workers": "MAX_WORKERS",
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+    "max_tokens": "MAX_TOKENS",
+}
+REVIEW_SENSITIVE_FIELD_MAP = {
+    "base_url": "BASE_URL",
+    "model": "MODEL_ID",
+}
+REVIEW_SECRET_FIELD_MAP = {
+    "api_key": "API_KEY",
+    "access_key_id": "AccessKeyID",
+    "secret_access_key": "SecretAccessKey",
+}
 
 CITATION_PATTERN = (
     r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
@@ -780,50 +827,17 @@ async def deep_research(
     max_tokens: int = rc.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph DeepResearchAgent."""
-    review_config = rc.model_copy(
-        update={
-            "PROMPT_FILE": prompt_file,
-            "PROMPT_PATH": prompt_path,
-            "FREQUENCY_PENALTY": frequency_penalty,
-            "N": n,
-            "PRESENCE_PENALTY": presence_penalty,
-            "REASONING_EFFORT": reasoning_effort,
-            "RESPONSE_FORMAT": response_format,
-            "STREAM": stream,
-            "TEMPERATURE": temperature,
-            "TOP_P": top_p,
-            "USER": user,
-            "RETRIEVE_URL": retrieve_url,
-            "REPO_ID_DICT": repo_id_dict,
-            "PAGE_NUM": page_num,
-            "FILTER_STRING": filter_string,
-            "SCOPE": scope,
-            "EXTRA_REPO_IDS": extra_repo_ids,
-            "RERANK_URL": rerank_url,
-            "RERANK_BATCH_SIZE": rerank_batch_size,
-            "SCORE_THRESHOLD": score_threshold,
-            "TOP_N": top_n,
-            "TEMP_DIR": server_dir,
-            "OBS_SERVER": obs_server,
-            "BUCKET_NAME": bucket_name,
-            "PART_SIZT": part_size,
-            "TASK_NUM": task_num,
-            "MAX_CONCURRENCY": max_concurrency,
-            "MAX_WORKERS": max_workers,
-            "TIMEOUT": timeout,
-            "RETRIABLE_CODES": retriable_codes,
-            "MAX_RETRIES": max_retries,
-            "MAX_TOKENS": max_tokens,
-        }
+    arguments = locals().copy()
+    review_config = copy_config_with_overrides(
+        rc,
+        arguments,
+        REVIEW_CONFIG_FIELD_MAP,
     )
-    sensitive_config = sc.model_copy(
-        update={
-            "API_KEY": SecretStr(api_key),
-            "BASE_URL": base_url,
-            "MODEL_ID": model,
-            "AccessKeyID": SecretStr(access_key_id),
-            "SecretAccessKey": SecretStr(secret_access_key),
-        }
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        arguments,
+        field_map=REVIEW_SENSITIVE_FIELD_MAP,
+        secret_field_map=REVIEW_SECRET_FIELD_MAP,
     )
     knowledge_agent = KnowledgeAgent(
         knowledge_config=review_config,
