@@ -18,10 +18,18 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .utils import get_prompt, download_list_convert
+from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
+from .analyst_agents import ANALYST_SECRET_FIELD_MAP
+from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
 from .analyst_agents import AnalystAgent, create_output_dir
 from .config.defaults import InSilicoResearchConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
@@ -99,9 +107,12 @@ class InSilicoResearchAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.analyst_agent = analyst_agent or AnalystAgent()
         self.isrc = in_silico_config
         self.sc = sensitive_config
+        self.analyst_agent = analyst_agent or AnalystAgent(
+            analyst_config=in_silico_config,
+            sensitive_config=sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -127,7 +138,15 @@ class InSilicoResearchAgents:
         """Dispatch research tasks in parallel using Send API."""
         tasks = state.get("research_tasks", [])
         return [
-            Send("research_node", {"task_index": i, **task})
+            Send(
+                "research_node",
+                {
+                    "task_index": i,
+                    "data_list": state.get("data_list", {}),
+                    "output_dir": state.get("output_dir"),
+                    **task,
+                },
+            )
             for i, task in enumerate(tasks)
         ]
 
@@ -421,10 +440,35 @@ async def in_silico_research(
     user_id: Optional[str] = None,
     obs_file_list: Optional[List[str]] = None,
     output_dir: Optional[str] = None,
-    **_: Any,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph in-silico research agent."""
-    agent = InSilicoResearchAgents()
+    in_silico_config = copy_config_with_overrides(
+        isrc,
+        kwargs,
+        ANALYST_CONFIG_FIELD_MAP,
+        fixed_updates={
+            "USER_ID": user_id,
+            "OUTPUT_DIR": output_dir,
+        },
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        kwargs,
+        field_map=ANALYST_SENSITIVE_FIELD_MAP,
+        secret_field_map=ANALYST_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "InSilicoResearchAgents",
+        lambda: InSilicoResearchAgents(
+            in_silico_config=in_silico_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            in_silico_config=in_silico_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
     return await agent.arun(
         paper_text=user_query,
         data_list=data_list,

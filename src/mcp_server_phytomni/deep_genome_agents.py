@@ -33,12 +33,19 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
+from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
+from .analyst_agents import ANALYST_SECRET_FIELD_MAP
+from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
 from .analyst_agents import create_output_dir, download_obs_out
 from .analyst_agents import get_data_list
 from .analyst_agents import AnalystAgent
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
-from .config.overrides import copy_config_with_overrides
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
@@ -116,8 +123,11 @@ sc = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
 
 DEEP_GENOME_CONFIG_FIELD_MAP = {
+    **ANALYST_CONFIG_FIELD_MAP,
     "batch": "BATCH",
     "epic_type": "EPIC_TYPE",
+    "create_task_url": "CREATE_TASK_URL",
+    "update_task_url": "UPDATE_TASK_URL",
     "database_url": "DATABASE_URL",
     "workspace_id": "WORKSPACE_ID",
     "subject_id": "SUBJECT_ID",
@@ -150,11 +160,21 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
     "download_path": "DOWNLOAD_PATH",
     "marker": "DOWNLOAD_MARKER",
     "max_keys": "DOWNLOAD_MAX_KEYS",
+    "bi_url": "BI_URL",
+    "obs_server": "OBS_SERVER",
+    "bucket_name": "BUCKET_NAME",
+    "part_size": "PART_SIZT",
+    "task_num": "TASK_NUM",
     "timeout": "TIMEOUT",
     "retriable_codes": "RETRIABLE_CODES",
     "max_retries": "MAX_RETRIES",
     "max_concurrency": "MAX_CONCURRENCY",
+    "max_workers": "MAX_WORKERS",
     "max_poll": "MAX_POLL",
+}
+DEEP_GENOME_SECRET_FIELD_MAP = {
+    **ANALYST_SECRET_FIELD_MAP,
+    "bi_token": "BI_TOKEN",
 }
 
 
@@ -2755,13 +2775,35 @@ async def gene_function(
         DEEP_GENOME_CONFIG_FIELD_MAP,
         fixed_updates={"USER_ID": user_id},
     )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        kwargs,
+        field_map=ANALYST_SENSITIVE_FIELD_MAP,
+        secret_field_map=DEEP_GENOME_SECRET_FIELD_MAP,
+    )
 
-    agent = DeepGenomeAgents(
-        data_agent=DataAgent(),
-        knowledge_agent=KnowledgeAgent(),
-        analyst_agent=AnalystAgent(),
-        deepgenome_config=deepgenome_config,
-        sensitive_config=sc,
+    agent = get_cached_agent(
+        "DeepGenomeAgents",
+        lambda: DeepGenomeAgents(
+            data_agent=DataAgent(
+                data_config=deepgenome_config,
+                sensitive_config=sensitive_config,
+            ),
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=deepgenome_config,
+                sensitive_config=sensitive_config,
+            ),
+            analyst_agent=AnalystAgent(
+                analyst_config=deepgenome_config,
+                sensitive_config=sensitive_config,
+            ),
+            deepgenome_config=deepgenome_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            deepgenome_config=deepgenome_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(
         species_code=species_code,

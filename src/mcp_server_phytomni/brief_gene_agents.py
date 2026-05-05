@@ -17,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import BriefGeneConfig
 from .config.overrides import (
@@ -797,13 +798,19 @@ async def brief_gene_function(
         field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
         secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,
     )
-    knowledge_agent = KnowledgeAgent(
-        knowledge_config=brief_config,
-        sensitive_config=sensitive_config,
-    )
-    agent = BriefGeneAgent(
-        brief_config=brief_config,
-        sensitive_config=sensitive_config,
-        knowledge_agent=knowledge_agent,
+    agent = get_cached_agent(
+        "BriefGeneAgent",
+        lambda: BriefGeneAgent(
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=brief_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(user_query=user_query)

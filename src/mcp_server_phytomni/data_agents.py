@@ -20,6 +20,7 @@ from httpx import Timeout, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.overrides import (
@@ -201,9 +202,16 @@ async def rewrite_nl2sql(
         field_map=DATA_SENSITIVE_FIELD_MAP,
         secret_field_map=DATA_SECRET_FIELD_MAP,
     )
-    agent = DataAgent(
-        data_config=data_config,
-        sensitive_config=sensitive_config,
+    agent = get_cached_agent(
+        "DataAgent",
+        lambda: DataAgent(
+            data_config=data_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            data_config=data_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(
         user_query=user_query,

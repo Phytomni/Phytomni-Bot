@@ -15,6 +15,7 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 from obs import GetObjectHeader, PutObjectHeader, ObsClient
 from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.overrides import (
@@ -36,6 +37,7 @@ ANALYST_CONFIG_FIELD_MAP = {
     "app_id_dict": "APP_ID",
     "task_name": "TASK_NAME",
     "execute_code": "EXECUTE_CODE",
+    "output_dir": "OUTPUT_DIR",
     "retrieve_url": "RETRIEVE_URL",
     "repo_id_dict": "REPO_ID_DICT",
     "page_num": "PAGE_NUM",
@@ -1301,9 +1303,17 @@ async def submit(
         compute_resource=compute_resource,
         **kwargs,
     )
-    agent = AnalystAgent(
-        analyst_config=analyst_config,
-        sensitive_config=_sensitive_config_with_overrides(**kwargs),
+    sensitive_config = _sensitive_config_with_overrides(**kwargs)
+    agent = get_cached_agent(
+        "AnalystAgent.submit",
+        lambda: AnalystAgent(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(
         query=goal_description,
@@ -1340,9 +1350,17 @@ async def retrieve_plan_submit(
         compute_resource=compute_resource,
         **kwargs,
     )
-    agent = AnalystAgent(
-        analyst_config=analyst_config,
-        sensitive_config=_sensitive_config_with_overrides(**kwargs),
+    sensitive_config = _sensitive_config_with_overrides(**kwargs)
+    agent = get_cached_agent(
+        "AnalystAgent.retrieve_plan_submit",
+        lambda: AnalystAgent(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     result = await agent.arun(
         query=goal_description,

@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, TypedDict, Union
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import ReviewConfig
 from .config.overrides import (
@@ -836,14 +837,20 @@ async def deep_research(
         field_map=REVIEW_SENSITIVE_FIELD_MAP,
         secret_field_map=REVIEW_SECRET_FIELD_MAP,
     )
-    knowledge_agent = KnowledgeAgent(
-        knowledge_config=review_config,
-        sensitive_config=sensitive_config,
-    )
-    agent = DeepResearchAgent(
-        review_config=review_config,
-        sensitive_config=sensitive_config,
-        knowledge_agent=knowledge_agent,
+    agent = get_cached_agent(
+        "DeepResearchAgent",
+        lambda: DeepResearchAgent(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=review_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(
         user_query=user_query,

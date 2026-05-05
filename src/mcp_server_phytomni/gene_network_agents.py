@@ -26,14 +26,26 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .utils import get_prompt
+from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
+from .analyst_agents import ANALYST_SECRET_FIELD_MAP
+from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
 from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import GeneNetworkConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 gnc = GeneNetworkConfig()
 sc = SensitiveConfig.load()
+GENE_NETWORK_CONFIG_FIELD_MAP = {
+    **ANALYST_CONFIG_FIELD_MAP,
+    "deepgenome_data": "DEEPGENOME_DATA",
+}
 
 
 class GeneNetworkState(TypedDict):
@@ -61,6 +73,7 @@ class GeneNetworkState(TypedDict):
     to_id: str  # Target gene identifier for network analysis
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
+    output_dir: Optional[str]
     network_task: Dict[str, Any]  # submit results
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
     analysis_type: str
@@ -110,9 +123,12 @@ class GeneNetworkAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.analyst_agent = analyst_agent or AnalystAgent()
         self.gnc = gene_network_config
         self.sc = sensitive_config
+        self.analyst_agent = analyst_agent or AnalystAgent(
+            analyst_config=gene_network_config,
+            sensitive_config=sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -142,6 +158,7 @@ class GeneNetworkAgents:
                     "task_index": i,
                     "species": state["species"],
                     "to_id": state["to_id"],
+                    "output_dir": state.get("output_dir"),
                     **task,
                 },
             )
@@ -251,7 +268,10 @@ class GeneNetworkAgents:
         print(species)
         try:
             result = await self._dispatch_and_wait_analysis(
-                analysis_type=analysis_type, species=species, to_id=to_id
+                analysis_type=analysis_type,
+                species=species,
+                to_id=to_id,
+                output_dir=state.get("output_dir"),
             )
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
@@ -281,6 +301,7 @@ class GeneNetworkAgents:
         to_id: str,
         user_id: Optional[str] = None,
         batch: bool = False,
+        output_dir: Optional[str] = None,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Submit a gene network analysis task and return task_id.
@@ -300,6 +321,7 @@ class GeneNetworkAgents:
             "to_id": to_id,
             "user_id": user_id,
             "batch": batch,
+            "output_dir": output_dir,
             "network_task": {},
             "network_tasks": [],
             "task_ids": {},
@@ -321,13 +343,36 @@ async def network_analysis(
     to_id: str,
     user_id: Optional[str] = None,
     batch: bool = False,
-    **_: Any,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph gene network agent."""
-    agent = GeneNetworkAgents()
+    gene_network_config = copy_config_with_overrides(
+        gnc,
+        kwargs,
+        GENE_NETWORK_CONFIG_FIELD_MAP,
+        fixed_updates={"USER_ID": user_id},
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        kwargs,
+        field_map=ANALYST_SENSITIVE_FIELD_MAP,
+        secret_field_map=ANALYST_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "GeneNetworkAgents",
+        lambda: GeneNetworkAgents(
+            gene_network_config=gene_network_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            gene_network_config=gene_network_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
     return await agent.arun(
         species=species,
         to_id=to_id,
         user_id=user_id,
         batch=batch,
+        output_dir=kwargs.get("output_dir"),
     )

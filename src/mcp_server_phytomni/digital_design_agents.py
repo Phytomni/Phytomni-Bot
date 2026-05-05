@@ -27,14 +27,26 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .utils import get_prompt
+from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
+from .analyst_agents import ANALYST_SECRET_FIELD_MAP
+from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
 from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import DigitalDesignConfig
+from .config.overrides import (
+    copy_config_with_overrides,
+    copy_sensitive_config_with_overrides,
+)
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 ddc = DigitalDesignConfig()
 sc = SensitiveConfig.load()
+DIGITAL_DESIGN_CONFIG_FIELD_MAP = {
+    **ANALYST_CONFIG_FIELD_MAP,
+    "deepgenome_data": "DEEPGENOME_DATA",
+}
 
 
 class DigitalDesignState(TypedDict):
@@ -113,9 +125,12 @@ class DigitalDesignAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.analyst_agent = analyst_agent or AnalystAgent()
         self.ddc = digital_design_config
         self.sc = sensitive_config
+        self.analyst_agent = analyst_agent or AnalystAgent(
+            analyst_config=digital_design_config,
+            sensitive_config=sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -145,6 +160,7 @@ class DigitalDesignAgents:
                     "task_index": i,
                     "species": state["species"],
                     "gene_id": state["gene_id"],
+                    "output_dir": state.get("output_dir"),
                     **task,
                 },
             )
@@ -265,6 +281,7 @@ class DigitalDesignAgents:
                 analysis_type=analysis_type,
                 species=species,
                 gene_id=gene_id,
+                output_dir=state.get("output_dir"),
             )
             raw_submit_result = result.get("submit_result", {})
             submit_result: Dict[str, Any] = (
@@ -297,6 +314,7 @@ class DigitalDesignAgents:
         gene_id: str,
         user_id: Optional[str] = None,
         batch: bool = False,
+        output_dir: Optional[str] = None,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Submit protein design tasks and return task_ids.
@@ -316,7 +334,7 @@ class DigitalDesignAgents:
             "gene_id": gene_id,
             "user_id": user_id,
             "batch": batch,
-            "output_dir": None,
+            "output_dir": output_dir,
             "design_task_result": [],
             "design_tasks": [],
             "task_ids": {},
@@ -338,13 +356,36 @@ async def design_module(
     gene_id: str,
     user_id: Optional[str] = None,
     batch: bool = True,
-    **_: Any,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph digital design agent."""
-    agent = DigitalDesignAgents()
+    digital_design_config = copy_config_with_overrides(
+        ddc,
+        kwargs,
+        DIGITAL_DESIGN_CONFIG_FIELD_MAP,
+        fixed_updates={"USER_ID": user_id},
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        sc,
+        kwargs,
+        field_map=ANALYST_SENSITIVE_FIELD_MAP,
+        secret_field_map=ANALYST_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "DigitalDesignAgents",
+        lambda: DigitalDesignAgents(
+            digital_design_config=digital_design_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            digital_design_config=digital_design_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
     return await agent.arun(
         species=species,
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
+        output_dir=kwargs.get("output_dir"),
     )

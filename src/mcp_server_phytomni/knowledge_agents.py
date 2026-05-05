@@ -21,6 +21,7 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 
+from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
 from .config.overrides import (
@@ -1019,9 +1020,18 @@ async def multi_retrieve_generate(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based KnowledgeAgent."""
-    agent = KnowledgeAgent(
-        knowledge_config=_knowledge_config_with_overrides(**kwargs),
-        sensitive_config=_knowledge_sensitive_config_with_overrides(**kwargs),
+    knowledge_config = _knowledge_config_with_overrides(**kwargs)
+    sensitive_config = _knowledge_sensitive_config_with_overrides(**kwargs)
+    agent = get_cached_agent(
+        "KnowledgeAgent",
+        lambda: KnowledgeAgent(
+            knowledge_config=knowledge_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            knowledge_config=knowledge_config,
+            sensitive_config=sensitive_config,
+        ),
     )
     return await agent.arun(
         user_query=user_query,

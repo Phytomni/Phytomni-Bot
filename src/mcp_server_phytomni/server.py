@@ -71,7 +71,7 @@ Copyright:
 import asyncio
 from enum import Enum
 from json import dumps
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, Any, Awaitable, Callable, Dict, List
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -79,22 +79,13 @@ from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, TextContent, Tool, INVALID_PARAMS
 from pydantic import BaseModel, Field
 
-from .analyst_agents import retrieve_plan_submit
-from .brief_gene_agents import brief_gene_function
-from .config.defaults import AnalystConfig, BriefGeneConfig, ChatConfig
-from .config.defaults import DataConfig
-from .config.defaults import DeepGenomeConfig, DigitalDesignConfig
-from .config.defaults import GeneNetworkConfig, InSilicoResearchConfig
-from .config.defaults import KnowledgeConfig, ReviewConfig
-from .config.settings import SensitiveConfig
-from .chat_agents import phyto_chat_with_follow
-from .data_agents import rewrite_nl2sql
-from .deep_genome_agents import gene_function
-from .digital_design_agents import design_module
-from .gene_network_agents import network_analysis
-from .in_silico_research_agents import in_silico_research
-from .knowledge_agents import multi_retrieve_generate
-from .review_agents import deep_research
+from .tool_handlers import handle_analyst_agent, handle_brief_gene_agent
+from .tool_handlers import handle_chat_agent, handle_data_agent
+from .tool_handlers import handle_deep_genome_agent
+from .tool_handlers import handle_digital_design_agent
+from .tool_handlers import handle_gene_network_agent
+from .tool_handlers import handle_in_silico_research_agent
+from .tool_handlers import handle_knowledge_agent, handle_review_agent
 
 
 class ChatAgent(BaseModel):
@@ -598,6 +589,73 @@ class PhytomniAgents(str, Enum):
     )
 
 
+ToolHandler = Callable[[Any], Awaitable[Any]]
+
+TOOL_ARGUMENT_MODELS: Dict[str, type[BaseModel]] = {
+    PhytomniAgents.CHATAGENT.value: ChatAgent,
+    PhytomniAgents.KNOWLEDGEAGENT.value: KnowledgeAgent,
+    PhytomniAgents.DATAAGENT.value: DataAgent,
+    PhytomniAgents.ANALYSTAGENT.value: AnalystAgent,
+    PhytomniAgents.REVIEWAGENT.value: ReviewAgent,
+    PhytomniAgents.BRIEFGENEAGENT.value: BriefGeneAgent,
+    PhytomniAgents.DEEPGENOMEAGENT.value: DeepGenomeAgent,
+    PhytomniAgents.INSILICORESEARCHAGENT.value: InSilicoResearchAgent,
+    PhytomniAgents.DIGITALDESIGNAGENT.value: DigitalDesignAgent,
+    PhytomniAgents.GENENETWORKAGENT.value: GeneNetworkAgent,
+}
+
+TOOL_HANDLERS: Dict[str, ToolHandler] = {
+    PhytomniAgents.CHATAGENT.value: handle_chat_agent,
+    PhytomniAgents.KNOWLEDGEAGENT.value: handle_knowledge_agent,
+    PhytomniAgents.DATAAGENT.value: handle_data_agent,
+    PhytomniAgents.ANALYSTAGENT.value: handle_analyst_agent,
+    PhytomniAgents.REVIEWAGENT.value: handle_review_agent,
+    PhytomniAgents.BRIEFGENEAGENT.value: handle_brief_gene_agent,
+    PhytomniAgents.DEEPGENOMEAGENT.value: handle_deep_genome_agent,
+    PhytomniAgents.INSILICORESEARCHAGENT.value: (
+        handle_in_silico_research_agent
+    ),
+    PhytomniAgents.DIGITALDESIGNAGENT.value: handle_digital_design_agent,
+    PhytomniAgents.GENENETWORKAGENT.value: handle_gene_network_agent,
+}
+
+
+def _tool_name(name: Any) -> str:
+    """Return the string tool name from a raw MCP name value."""
+    if isinstance(name, PhytomniAgents):
+        return name.value
+    return str(name)
+
+
+def _invalid_params(message: str) -> McpError:
+    """Build an MCP invalid-params error."""
+    return McpError(ErrorData(code=INVALID_PARAMS, message=message))
+
+
+def _text_response(response: Any) -> list[TextContent]:
+    """Serialize a handler response into MCP text content."""
+    return [TextContent(type="text", text=dumps(response))]
+
+
+async def dispatch_tool(
+    name: Any, arguments: Dict[str, Any]
+) -> list[TextContent]:
+    """Validate arguments, call a tool handler, and serialize the response."""
+    tool_name = _tool_name(name)
+    model = TOOL_ARGUMENT_MODELS.get(tool_name)
+    handler = TOOL_HANDLERS.get(tool_name)
+    if model is None or handler is None:
+        raise _invalid_params(f"Unknown tool: {tool_name}")
+
+    try:
+        args = model(**arguments)
+    except ValueError as exc:
+        raise _invalid_params(str(exc)) from exc
+
+    response = await handler(args)
+    return _text_response(response)
+
+
 async def serve() -> None:
     """Initialize and run the Phytomni MCP service endpoint.
 
@@ -745,601 +803,7 @@ async def serve() -> None:
 
     @server.call_tool()
     async def call_tool(name, arguments: Dict[str, Any]) -> list[TextContent]:
-        args: Any
-        match name:
-            case PhytomniAgents.CHATAGENT:
-                try:
-                    args = ChatAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                chatconfig = ChatConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await phyto_chat_with_follow(
-                    user_query=args.user_query,
-                    obs_file_list=args.obs_file_list,
-                    prompt_file=chatconfig.PROMPT_FILE,
-                    prompt_path=chatconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=chatconfig.FREQUENCY_PENALTY,
-                    n=chatconfig.N,
-                    presence_penalty=chatconfig.PRESENCE_PENALTY,
-                    reasoning_effort=chatconfig.REASONING_EFFORT,
-                    response_format=chatconfig.RESPONSE_FORMAT,
-                    stream=chatconfig.STREAM,
-                    temperature=chatconfig.TEMPERATURE,
-                    top_p=chatconfig.TOP_P,
-                    user=chatconfig.USER,
-                    server_dir=chatconfig.TEMP_DIR,
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=chatconfig.OBS_SERVER,
-                    bucket_name=chatconfig.BUCKET_NAME,
-                    part_size=chatconfig.PART_SIZT,
-                    task_num=chatconfig.TASK_NUM,
-                    timeout=chatconfig.TIMEOUT,
-                    retriable_codes=chatconfig.RETRIABLE_CODES,
-                    max_retries=chatconfig.MAX_RETRIES,
-                    max_concurrency=chatconfig.MAX_CONCURRENCY,
-                    max_workers=chatconfig.MAX_WORKERS,
-                    max_tokens=chatconfig.MAX_TOKENS,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-            case PhytomniAgents.KNOWLEDGEAGENT:
-                try:
-                    args = KnowledgeAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                knowledgeconfig = KnowledgeConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await multi_retrieve_generate(
-                    user_query=args.user_query,
-                    retrieve_url=knowledgeconfig.RETRIEVE_URL,
-                    repo_id_dict=knowledgeconfig.REPO_ID_DICT,
-                    page_num=knowledgeconfig.PAGE_NUM,
-                    filter_string=knowledgeconfig.FILTER_STRING,
-                    scope=knowledgeconfig.SCOPE,
-                    extra_repo_ids=knowledgeconfig.EXTRA_REPO_IDS,
-                    rerank_url=knowledgeconfig.RERANK_URL,
-                    rerank_batch_size=knowledgeconfig.RERANK_BATCH_SIZE,
-                    score_threshold=knowledgeconfig.SCORE_THRESHOLD,
-                    top_n=knowledgeconfig.TOP_N,
-                    prompt_file=knowledgeconfig.PROMPT_FILE,
-                    prompt_path=knowledgeconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=knowledgeconfig.FREQUENCY_PENALTY,
-                    max_tokens=knowledgeconfig.MAX_TOKENS,
-                    n=knowledgeconfig.N,
-                    presence_penalty=knowledgeconfig.PRESENCE_PENALTY,
-                    reasoning_effort=knowledgeconfig.REASONING_EFFORT,
-                    response_format=knowledgeconfig.RESPONSE_FORMAT,
-                    stream=knowledgeconfig.STREAM,
-                    temperature=knowledgeconfig.TEMPERATURE,
-                    top_p=knowledgeconfig.TOP_P,
-                    user=knowledgeconfig.USER,
-                    obs_file_list=args.obs_file_list,
-                    server_dir=knowledgeconfig.TEMP_DIR,
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=knowledgeconfig.OBS_SERVER,
-                    bucket_name=knowledgeconfig.BUCKET_NAME,
-                    part_size=knowledgeconfig.PART_SIZT,
-                    task_num=knowledgeconfig.TASK_NUM,
-                    max_concurrency=knowledgeconfig.MAX_CONCURRENCY,
-                    max_workers=knowledgeconfig.MAX_WORKERS,
-                    timeout=knowledgeconfig.TIMEOUT,
-                    retriable_codes=knowledgeconfig.RETRIABLE_CODES,
-                    max_retries=knowledgeconfig.MAX_RETRIES,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.DATAAGENT:
-                try:
-                    args = DataAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                dataconfig = DataConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await rewrite_nl2sql(
-                    user_query=args.user_query,
-                    retrieve_url=dataconfig.RETRIEVE_URL,
-                    data_repo_id=dataconfig.DATA_REPO_ID,
-                    page_num=dataconfig.PAGE_NUM,
-                    page_size=dataconfig.DATA_PAGE_SIZE,
-                    filter_string=dataconfig.FILTER_STRING,
-                    scope=dataconfig.SCOPE,
-                    rerank_url=dataconfig.RERANK_URL,
-                    rerank_batch_size=dataconfig.RERANK_BATCH_SIZE,
-                    score_threshold=dataconfig.SCORE_THRESHOLD,
-                    prompt_file=dataconfig.PROMPT_FILE,
-                    prompt_path=dataconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=dataconfig.FREQUENCY_PENALTY,
-                    n=dataconfig.N,
-                    presence_penalty=dataconfig.PRESENCE_PENALTY,
-                    reasoning_effort=dataconfig.REASONING_EFFORT,
-                    response_format=dataconfig.RESPONSE_FORMAT,
-                    stream=dataconfig.STREAM,
-                    temperature=dataconfig.TEMPERATURE,
-                    top_p=dataconfig.TOP_P,
-                    user=dataconfig.USER,
-                    database_url=dataconfig.DATABASE_URL,
-                    workspace_id=dataconfig.WORKSPACE_ID,
-                    subject_id=dataconfig.SUBJECT_ID,
-                    dialog_id=dataconfig.DIALOG_ID,
-                    need_insight=dataconfig.NEED_INSIGHT,
-                    simplify_response=dataconfig.SIMPLIFY_RESPONSE,
-                    timeout=dataconfig.TIMEOUT,
-                    retriable_codes=dataconfig.RETRIABLE_CODES,
-                    max_retries=dataconfig.MAX_RETRIES,
-                    max_tokens=dataconfig.MAX_TOKENS,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.ANALYSTAGENT:
-                try:
-                    args = AnalystAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                analystconfig = AnalystConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await retrieve_plan_submit(
-                    goal_description=args.goal_description,
-                    data_list=args.data_list,
-                    user_id=analystconfig.USER_ID,
-                    is_create_dir=analystconfig.CREATE_DIR,
-                    output_dir=analystconfig.OUTPUT_DIR,
-                    retrieve_url=analystconfig.RETRIEVE_URL,
-                    repo_id_dict=analystconfig.REPO_ID_DICT,
-                    page_num=analystconfig.PAGE_NUM,
-                    filter_string=analystconfig.FILTER_STRING,
-                    scope=analystconfig.SCOPE,
-                    extra_repo_ids=analystconfig.EXTRA_REPO_IDS,
-                    rerank_url=analystconfig.RERANK_URL,
-                    rerank_batch_size=analystconfig.RERANK_BATCH_SIZE,
-                    score_threshold=analystconfig.SCORE_THRESHOLD,
-                    top_n=analystconfig.TOP_N,
-                    prompt_file=analystconfig.PROMPT_FILE,
-                    prompt_path=analystconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=analystconfig.FREQUENCY_PENALTY,
-                    max_tokens=analystconfig.MAX_TOKENS,
-                    n=analystconfig.N,
-                    presence_penalty=analystconfig.PRESENCE_PENALTY,
-                    reasoning_effort=analystconfig.REASONING_EFFORT,
-                    response_format=analystconfig.RESPONSE_FORMAT,
-                    stream=analystconfig.STREAM,
-                    temperature=analystconfig.TEMPERATURE,
-                    top_p=analystconfig.TOP_P,
-                    user=analystconfig.USER,
-                    obs_file_list=args.obs_file_list,
-                    server_dir=analystconfig.TEMP_DIR,
-                    execute_code=analystconfig.EXECUTE_CODE,
-                    model_url=sensitiveconfig.CODER_URL,
-                    model_name=sensitiveconfig.CODER_MODEL,
-                    coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()
-                    ),
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=analystconfig.OBS_SERVER,
-                    bucket_name=analystconfig.BUCKET_NAME,
-                    part_size=analystconfig.PART_SIZT,
-                    task_num=analystconfig.TASK_NUM,
-                    max_concurrency=analystconfig.MAX_CONCURRENCY,
-                    max_workers=analystconfig.MAX_WORKERS,
-                    analysis_url=analystconfig.ANALYSIS_URL,
-                    region=analystconfig.ANALYSIS_REGION,
-                    task_name=analystconfig.TASK_NAME + "-retrieve-plan",
-                    resource_dict=analystconfig.RESOURCE,
-                    app_id_dict=analystconfig.APP_ID,
-                    compute_resource=analystconfig.COMPUTE_RESOURCE,
-                    meta_meta=None,
-                    timeout=analystconfig.TIMEOUT,
-                    retriable_codes=analystconfig.RETRIABLE_CODES,
-                    max_retries=analystconfig.MAX_RETRIES,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.REVIEWAGENT:
-                try:
-                    args = ReviewAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                reviewconfig = ReviewConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await deep_research(
-                    user_query=args.user_query,
-                    prompt_file=reviewconfig.PROMPT_FILE,
-                    prompt_path=reviewconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=reviewconfig.FREQUENCY_PENALTY,
-                    n=reviewconfig.N,
-                    presence_penalty=reviewconfig.PRESENCE_PENALTY,
-                    reasoning_effort=reviewconfig.REASONING_EFFORT,
-                    response_format=reviewconfig.RESPONSE_FORMAT,
-                    stream=reviewconfig.STREAM,
-                    temperature=reviewconfig.TEMPERATURE,
-                    top_p=reviewconfig.TOP_P,
-                    user=reviewconfig.USER,
-                    retrieve_url=reviewconfig.RETRIEVE_URL,
-                    repo_id_dict=reviewconfig.REPO_ID_DICT,
-                    page_num=reviewconfig.PAGE_NUM,
-                    filter_string=reviewconfig.FILTER_STRING,
-                    scope=reviewconfig.SCOPE,
-                    extra_repo_ids=reviewconfig.EXTRA_REPO_IDS,
-                    rerank_url=reviewconfig.RERANK_URL,
-                    rerank_batch_size=reviewconfig.RERANK_BATCH_SIZE,
-                    score_threshold=reviewconfig.SCORE_THRESHOLD,
-                    top_n=reviewconfig.TOP_N,
-                    obs_file_list=args.obs_file_list,
-                    server_dir=reviewconfig.TEMP_DIR,
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=reviewconfig.OBS_SERVER,
-                    bucket_name=reviewconfig.BUCKET_NAME,
-                    part_size=reviewconfig.PART_SIZT,
-                    task_num=reviewconfig.TASK_NUM,
-                    max_concurrency=reviewconfig.MAX_CONCURRENCY,
-                    max_workers=reviewconfig.MAX_WORKERS,
-                    timeout=reviewconfig.TIMEOUT,
-                    retriable_codes=reviewconfig.RETRIABLE_CODES,
-                    max_retries=reviewconfig.MAX_RETRIES,
-                    max_tokens=reviewconfig.MAX_TOKENS,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.BRIEFGENEAGENT:
-                try:
-                    args = BriefGeneAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                briefgeneconfig = BriefGeneConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await brief_gene_function(
-                    user_query=args.user_query,
-                    prompt_file=briefgeneconfig.PROMPT_FILE,
-                    prompt_path=briefgeneconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=briefgeneconfig.FREQUENCY_PENALTY,
-                    n=briefgeneconfig.N,
-                    presence_penalty=briefgeneconfig.PRESENCE_PENALTY,
-                    reasoning_effort=briefgeneconfig.REASONING_EFFORT,
-                    response_format=briefgeneconfig.RESPONSE_FORMAT,
-                    stream=briefgeneconfig.STREAM,
-                    temperature=briefgeneconfig.TEMPERATURE,
-                    top_p=briefgeneconfig.TOP_P,
-                    user=briefgeneconfig.USER,
-                    retrieve_url=briefgeneconfig.RETRIEVE_URL,
-                    repo_id_dict=briefgeneconfig.REPO_ID_DICT,
-                    page_num=briefgeneconfig.PAGE_NUM,
-                    filter_string=briefgeneconfig.FILTER_STRING,
-                    scope=briefgeneconfig.SCOPE,
-                    extra_repo_ids=briefgeneconfig.EXTRA_REPO_IDS,
-                    rerank_url=briefgeneconfig.RERANK_URL,
-                    rerank_batch_size=briefgeneconfig.RERANK_BATCH_SIZE,
-                    score_threshold=briefgeneconfig.SCORE_THRESHOLD,
-                    top_n=briefgeneconfig.TOP_N,
-                    bi_url=briefgeneconfig.BI_URL,
-                    bi_token=sensitiveconfig.BI_TOKEN.get_secret_value(),
-                    max_concurrency=briefgeneconfig.MAX_CONCURRENCY,
-                    timeout=briefgeneconfig.TIMEOUT,
-                    retriable_codes=briefgeneconfig.RETRIABLE_CODES,
-                    max_retries=briefgeneconfig.MAX_RETRIES,
-                    max_tokens=briefgeneconfig.MAX_TOKENS,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.DEEPGENOMEAGENT:
-                try:
-                    args = DeepGenomeAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                deepgenomeconfig = DeepGenomeConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await gene_function(
-                    species_code=args.species_code,
-                    gene_id=args.gene_id,
-                    user_id=deepgenomeconfig.USER_ID,
-                    batch=deepgenomeconfig.BATCH,
-                    epic_type=deepgenomeconfig.EPIC_TYPE,
-                    create_task_url=deepgenomeconfig.CREATE_TASK_URL,
-                    update_task_url=deepgenomeconfig.UPDATE_TASK_URL,
-                    database_url=deepgenomeconfig.DATABASE_URL,
-                    workspace_id=deepgenomeconfig.WORKSPACE_ID,
-                    subject_id=deepgenomeconfig.SUBJECT_ID,
-                    dialog_id=deepgenomeconfig.DIALOG_ID,
-                    need_insight=deepgenomeconfig.NEED_INSIGHT,
-                    prompt_file=deepgenomeconfig.PROMPT_FILE,
-                    deepgenome_data=deepgenomeconfig.DEEPGENOME_DATA,
-                    output_dir=deepgenomeconfig.OUTPUT_DIR,
-                    model_url=sensitiveconfig.CODER_URL,
-                    model_name=sensitiveconfig.CODER_MODEL,
-                    coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()
-                    ),
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=deepgenomeconfig.OBS_SERVER,
-                    bucket_name=deepgenomeconfig.BUCKET_NAME,
-                    analysis_url=deepgenomeconfig.ANALYSIS_URL,
-                    region=deepgenomeconfig.ANALYSIS_REGION,
-                    resource_dict=deepgenomeconfig.RESOURCE,
-                    app_id_dict=deepgenomeconfig.APP_ID,
-                    retrieve_url=deepgenomeconfig.RETRIEVE_URL,
-                    repo_id_dict=deepgenomeconfig.REPO_ID_DICT,
-                    page_num=deepgenomeconfig.PAGE_NUM,
-                    filter_string=deepgenomeconfig.FILTER_STRING,
-                    extra_repo_ids=deepgenomeconfig.EXTRA_REPO_IDS,
-                    rerank_url=deepgenomeconfig.RERANK_URL,
-                    rerank_batch_size=deepgenomeconfig.RERANK_BATCH_SIZE,
-                    score_threshold=deepgenomeconfig.SCORE_THRESHOLD,
-                    top_n=deepgenomeconfig.TOP_N,
-                    prompt_path=deepgenomeconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=deepgenomeconfig.FREQUENCY_PENALTY,
-                    max_tokens=deepgenomeconfig.MAX_TOKENS,
-                    n=deepgenomeconfig.N,
-                    presence_penalty=deepgenomeconfig.PRESENCE_PENALTY,
-                    reasoning_effort=deepgenomeconfig.REASONING_EFFORT,
-                    response_format=deepgenomeconfig.RESPONSE_FORMAT,
-                    stream=deepgenomeconfig.STREAM,
-                    temperature=deepgenomeconfig.TEMPERATURE,
-                    top_p=deepgenomeconfig.TOP_P,
-                    user=deepgenomeconfig.USER,
-                    deepgenome_out=deepgenomeconfig.DEEPGENOME_OUT,
-                    download_path=deepgenomeconfig.DOWNLOAD_PATH,
-                    marker=deepgenomeconfig.DOWNLOAD_MARKER,
-                    max_keys=deepgenomeconfig.DOWNLOAD_MAX_KEYS,
-                    timeout=deepgenomeconfig.TIMEOUT,
-                    retriable_codes=deepgenomeconfig.RETRIABLE_CODES,
-                    max_retries=deepgenomeconfig.MAX_RETRIES,
-                    max_concurrency=deepgenomeconfig.MAX_CONCURRENCY,
-                    max_poll=deepgenomeconfig.MAX_POLL,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.INSILICORESEARCHAGENT:
-                try:
-                    args = InSilicoResearchAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                insilicoresearchconfig = InSilicoResearchConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await in_silico_research(
-                    user_query=args.user_query,
-                    data_list=args.data_list,
-                    output_dir=insilicoresearchconfig.OUTPUT_DIR,
-                    repo_id_dict=insilicoresearchconfig.REPO_ID_DICT,
-                    page_num=insilicoresearchconfig.PAGE_NUM,
-                    filter_string=insilicoresearchconfig.FILTER_STRING,
-                    scope=insilicoresearchconfig.SCOPE,
-                    extra_repo_ids=insilicoresearchconfig.EXTRA_REPO_IDS,
-                    score_threshold=insilicoresearchconfig.SCORE_THRESHOLD,
-                    top_n=insilicoresearchconfig.TOP_N,
-                    prompt_file=insilicoresearchconfig.PROMPT_FILE,
-                    prompt_path=insilicoresearchconfig.PROMPT_PATH,
-                    api_key=sensitiveconfig.API_KEY.get_secret_value(),
-                    base_url=sensitiveconfig.BASE_URL,
-                    model=sensitiveconfig.MODEL_ID,
-                    frequency_penalty=insilicoresearchconfig.FREQUENCY_PENALTY,
-                    max_tokens=insilicoresearchconfig.MAX_TOKENS,
-                    n=insilicoresearchconfig.N,
-                    presence_penalty=insilicoresearchconfig.PRESENCE_PENALTY,
-                    reasoning_effort=insilicoresearchconfig.REASONING_EFFORT,
-                    response_format=insilicoresearchconfig.RESPONSE_FORMAT,
-                    stream=insilicoresearchconfig.STREAM,
-                    temperature=insilicoresearchconfig.TEMPERATURE,
-                    top_p=insilicoresearchconfig.TOP_P,
-                    user=insilicoresearchconfig.USER,
-                    obs_file_list=args.obs_file_list,
-                    server_dir=insilicoresearchconfig.TEMP_DIR,
-                    execute_code=insilicoresearchconfig.EXECUTE_CODE,
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=insilicoresearchconfig.OBS_SERVER,
-                    bucket_name=insilicoresearchconfig.BUCKET_NAME,
-                    part_size=insilicoresearchconfig.PART_SIZT,
-                    task_num=insilicoresearchconfig.TASK_NUM,
-                    max_concurrency=insilicoresearchconfig.MAX_CONCURRENCY,
-                    max_workers=insilicoresearchconfig.MAX_WORKERS,
-                    timeout=insilicoresearchconfig.TIMEOUT,
-                    retriable_codes=insilicoresearchconfig.RETRIABLE_CODES,
-                    max_retries=insilicoresearchconfig.MAX_RETRIES,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.DIGITALDESIGNAGENT:
-                try:
-                    args = DigitalDesignAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                digitaldesignconfig = DigitalDesignConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await design_module(
-                    species=args.species,
-                    gene_id=args.gene_id,
-                    user_id=digitaldesignconfig.USER_ID,
-                    batch=True,
-                    enable_auto_select=False,
-                    prompt_file=digitaldesignconfig.PROMPT_FILE,
-                    deepgenome_data=digitaldesignconfig.DEEPGENOME_DATA,
-                    output_dir=digitaldesignconfig.OUTPUT_DIR,
-                    model_url=sensitiveconfig.CODER_URL,
-                    model_name=sensitiveconfig.CODER_MODEL,
-                    coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()
-                    ),
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=digitaldesignconfig.OBS_SERVER,
-                    bucket_name=digitaldesignconfig.BUCKET_NAME,
-                    analysis_url=digitaldesignconfig.ANALYSIS_URL,
-                    region=digitaldesignconfig.ANALYSIS_REGION,
-                    resource_dict=digitaldesignconfig.RESOURCE,
-                    app_id_dict=digitaldesignconfig.APP_ID,
-                    timeout=digitaldesignconfig.TIMEOUT,
-                    retriable_codes=digitaldesignconfig.RETRIABLE_CODES,
-                    max_retries=digitaldesignconfig.MAX_RETRIES,
-                    max_poll=digitaldesignconfig.MAX_POLL,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-
-            case PhytomniAgents.GENENETWORKAGENT:
-                try:
-                    args = GeneNetworkAgent(**arguments)
-                except ValueError as e:
-                    raise McpError(
-                        ErrorData(code=INVALID_PARAMS, message=str(e))
-                    ) from e
-                genenetworkconfig = GeneNetworkConfig()
-                sensitiveconfig = SensitiveConfig.load()
-                response = await network_analysis(
-                    species=args.species,
-                    to_id=args.to_id,
-                    user_id=genenetworkconfig.USER_ID,
-                    batch=False,
-                    prompt_file=genenetworkconfig.PROMPT_FILE,
-                    deepgenome_data=genenetworkconfig.DEEPGENOME_DATA,
-                    output_dir=genenetworkconfig.OUTPUT_DIR,
-                    model_url=sensitiveconfig.CODER_URL,
-                    model_name=sensitiveconfig.CODER_MODEL,
-                    coder_api_key=(
-                        sensitiveconfig.CODER_API_KEY.get_secret_value()
-                    ),
-                    access_key_id=(
-                        sensitiveconfig.AccessKeyID.get_secret_value()
-                    ),
-                    secret_access_key=(
-                        sensitiveconfig.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=genenetworkconfig.OBS_SERVER,
-                    bucket_name=genenetworkconfig.BUCKET_NAME,
-                    analysis_url=genenetworkconfig.ANALYSIS_URL,
-                    region=genenetworkconfig.ANALYSIS_REGION,
-                    resource_dict=genenetworkconfig.RESOURCE,
-                    app_id_dict=genenetworkconfig.APP_ID,
-                    timeout=genenetworkconfig.TIMEOUT,
-                    retriable_codes=genenetworkconfig.RETRIABLE_CODES,
-                    max_retries=genenetworkconfig.MAX_RETRIES,
-                    max_poll=genenetworkconfig.MAX_POLL,
-                )
-                return [
-                    TextContent(
-                        type="text",
-                        text=dumps(response),
-                    )
-                ]
-        raise McpError(
-            ErrorData(
-                code=INVALID_PARAMS,
-                message=f"Unknown tool: {name}",
-            )
-        )
+        return await dispatch_tool(name, arguments)
 
     options = server.create_initialization_options()
     async with stdio_server() as (read_stream, write_stream):
