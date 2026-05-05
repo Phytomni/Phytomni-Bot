@@ -37,7 +37,7 @@ def _skip_real_env_file() -> bool:
 def _install_test_environment() -> None:
     os.environ.setdefault("PHYTOMNI_TESTING", "1")
     for name, value in _TEST_ENV.items():
-        os.environ.setdefault(name, value)
+        os.environ[name] = value
 
 
 _install_test_environment()

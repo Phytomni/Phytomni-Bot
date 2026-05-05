@@ -2,6 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,6 +27,8 @@ def load_env_file() -> bool:
     Returns:
         bool: True if environment variables were successfully loaded
     """
+    if os.getenv("PHYTOMNI_TESTING") == "1":
+        return True
     if not ENV_PATH.exists():
         generate_env_template()
         raise FileNotFoundError(
@@ -134,4 +137,6 @@ class SensitiveConfig(BaseSettings):
             ValidationError: If any required fields are missing or invalid
         """
         load_env_file()
+        if os.getenv("PHYTOMNI_TESTING") == "1":
+            return cls(_env_file=None)  # type: ignore[call-arg]
         return cls()  # type: ignore[call-arg]
