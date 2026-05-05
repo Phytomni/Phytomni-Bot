@@ -22,7 +22,7 @@ from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
 
 # from .config.defaults import AnalystConfig
-from .utils import get_prompt
+from .utils import get_prompt, load_text_file
 
 ec = EnvironmentConfig()
 sc = SensitiveConfig.load()
@@ -65,8 +65,7 @@ async def region_vci_analysis(
     top_p: float = ec.TOP_P,
     user: str = ec.USER,
 ) -> dict:
-    with open(region_code) as fi:
-        region_info = fi.read()
+    region_info = load_text_file(region_code)
     prompt = get_prompt(
         prompt_file,
         "user/environment/get_code_query",

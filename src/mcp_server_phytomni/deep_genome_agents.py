@@ -47,6 +47,7 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt
@@ -2813,6 +2814,16 @@ async def gene_function(
     )
 
 
+@func_cache(
+    key_params=[
+        "gene_network_list",
+        "species_gene_symbol_dict",
+        "species_gene_anno_dict",
+        "network_type",
+        "top_n",
+    ],
+    ttl=3600,
+)
 def network_to_string(
     gene_network_list: list,
     species_gene_symbol_dict: dict,

@@ -25,7 +25,14 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve, retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import download_list_convert, get_prompt, get_token
+from .func_cache import func_cache
+from .utils import (
+    download_list_convert,
+    file_cache_fingerprint,
+    get_prompt,
+    get_token,
+    load_json_file,
+)
 
 ac = AnalystConfig()
 sc = SensitiveConfig.load()
@@ -307,10 +314,7 @@ class AnalystAgent:
                 fails.
         """
         try:
-            with open(
-                self.ac.PRE_PREPARED_DATA_PATH, "r", encoding="utf-8"
-            ) as f:
-                species_data = json.load(f)
+            species_data = load_json_file(self.ac.PRE_PREPARED_DATA_PATH)
         except (FileNotFoundError, json.JSONDecodeError) as exc:
             raise McpError(
                 ErrorData(
@@ -1825,10 +1829,32 @@ def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
         data_list for analysis
     """
     try:
-        with open(data_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        cache_path, mtime_ns, size = file_cache_fingerprint(data_file)
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Data file not found: {data_file}") from exc
+    return _get_data_list_cached(
+        cache_path,
+        analysis_type,
+        species,
+        mtime_ns,
+        size,
+    )
+
+
+@func_cache(
+    key_params=["data_file", "analysis_type", "species", "mtime_ns", "size"],
+    ttl=3600,
+)
+def _get_data_list_cached(
+    data_file: str,
+    analysis_type: str,
+    species: str,
+    mtime_ns: int,
+    size: int,
+) -> list:
+    """Select a data list from cached static species metadata."""
+    del mtime_ns, size
+    data = load_json_file(data_file)
     try:
         analysis_data_list = data[analysis_type]
     except KeyError as exc:

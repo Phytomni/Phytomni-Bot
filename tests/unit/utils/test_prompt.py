@@ -8,7 +8,9 @@ import pytest
 
 from mcp_server_phytomni.utils import (
     get_prompt,
+    load_json_file,
     load_template,
+    load_text_file,
     render_template,
 )
 
@@ -66,3 +68,43 @@ def test_get_prompt_loads_and_renders_template(tmp_path):
     )
 
     assert prompt == "Query: plant height"
+
+
+def test_load_template_cache_key_tracks_file_changes(tmp_path):
+    template_file = tmp_path / "prompts.yaml"
+    template_file.write_text("only: first\n", encoding="utf-8")
+
+    assert load_template(str(template_file)) == "first"
+
+    template_file.write_text("only: second value\n", encoding="utf-8")
+
+    assert load_template(str(template_file)) == "second value"
+
+
+def test_load_json_file_cache_key_tracks_file_changes(tmp_path):
+    json_file = tmp_path / "data.json"
+    json_file.write_text('{"value": 1}', encoding="utf-8")
+
+    assert load_json_file(str(json_file)) == {"value": 1}
+
+    json_file.write_text('{"value": 2, "label": "leaf"}', encoding="utf-8")
+
+    assert load_json_file(str(json_file)) == {
+        "value": 2,
+        "label": "leaf",
+    }
+
+
+def test_load_text_file_cache_key_tracks_file_changes(tmp_path):
+    text_file = tmp_path / "region.json"
+    text_file.write_text('{"region": "old"}', encoding="utf-8")
+
+    assert load_text_file(str(text_file)) == '{"region": "old"}'
+
+    text_file.write_text(
+        '{"region": "new", "code": "510000"}', encoding="utf-8"
+    )
+
+    assert load_text_file(str(text_file)) == (
+        '{"region": "new", "code": "510000"}'
+    )
