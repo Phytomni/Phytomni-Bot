@@ -437,8 +437,10 @@ class BriefGeneAgent:
             f"WHERE gene_id = {gene_id_literal} AND sequence_type = 'gene'",
             "SELECT * FROM annotation_gene_ontology "
             f"WHERE gene_id = {gene_id_literal} LIMIT 50",
-            f"SELECT * FROM annotation_gene_mapman WHERE gene_id = {gene_id_literal}",
-            f"SELECT * FROM annotation_gene_interpro WHERE gene_id = {gene_id_literal}",
+            "SELECT * FROM annotation_gene_mapman "
+            f"WHERE gene_id = {gene_id_literal}",
+            "SELECT * FROM annotation_gene_interpro "
+            f"WHERE gene_id = {gene_id_literal}",
         ]
         annotation_responses = await asyncio.gather(
             *[

@@ -44,7 +44,7 @@ class KnowledgeAgentState(TypedDict):
         obs_file_list: A list of OBS file paths uploaded by the user.
         repo_id_dict: A dictionary mapping repository names to their IDs.
         upload_context: The parsed content from user-uploaded files.
-        retrieved_docs: The list of documents retrieved from the knowledge base.
+        retrieved_docs: Documents retrieved from the knowledge base.
         retrieve_context: The formatted retrieval context for the LLM.
         main_response: The initial response from the LLM (contains choices).
         is_generate: Whether to generate a response after retrieval.
@@ -101,7 +101,7 @@ class KnowledgeAgent:
         knowledge_config=kc,
         sensitive_config=sc,
     ):
-        """Initialize the KnowledgeAgent with configuration and build the graph."""
+        """Initialize the KnowledgeAgent and build the graph."""
         self.kc = knowledge_config
         self.sc = sensitive_config
         self.checkpointer = checkpointer
@@ -136,7 +136,7 @@ class KnowledgeAgent:
         return workflow.compile(checkpointer=self.checkpointer)
 
     async def process_files_node(self, state: KnowledgeAgentState):
-        """Process user-uploaded OBS files and convert them to Markdown context.
+        """Process OBS files and convert them to Markdown context.
 
         This node downloads files from OBS storage, converts them to text,
         and adds them to the state as upload_context. The content is
@@ -253,7 +253,8 @@ class KnowledgeAgent:
         """Generate a response based on retrieved documents and user files.
 
         This node constructs a prompt using the retrieved context and any
-        uploaded file content, then sends it to the LLM for response generation.
+        uploaded file content, then sends it to the LLM for response
+        generation.
         The retrieved documents are attached to the response for reference.
 
         Args:
@@ -344,7 +345,7 @@ class KnowledgeAgent:
         }
 
     async def follow_up_node(self, state: KnowledgeAgentState):
-        """Generate suggested follow-up questions based on the initial response.
+        """Generate suggested follow-up questions.
 
         This node analyzes the initial LLM response and generates relevant
         follow-up questions that the user might want to ask. Questions are
@@ -357,7 +358,7 @@ class KnowledgeAgent:
         Returns:
             A dictionary containing:
                 - follow_up_questions: A list of suggested questions.
-                - final_response: The updated response with follow-up questions.
+                - final_response: Response with follow-up questions.
         """
         user_query = state["user_query"]
         phyto_response = state["main_response"]
@@ -448,7 +449,8 @@ class KnowledgeAgent:
             state: The current workflow state.
 
         Returns:
-            "process_files_node" if files are uploaded, otherwise "retrieve_node".
+            "process_files_node" if files are uploaded, otherwise
+            "retrieve_node".
         """
         obs_file_list = state.get("obs_file_list")
         if obs_file_list and len(obs_file_list) > 0:
@@ -511,9 +513,10 @@ class KnowledgeAgent:
             obs_file_list: Optional list of OBS file paths to upload.
             repo_id_dict: Optional dictionary mapping repo names to IDs.
             is_generate: Whether to generate a response. Defaults to True.
-            is_follow_up: Whether to generate follow-up questions. Defaults to True.
-            thread_id: Optional thread ID for state persistence. If not provided,
-                       a new UUID will be generated.
+            is_follow_up: Whether to generate follow-up questions. Defaults
+                to True.
+            thread_id: Optional thread ID for state persistence. If not
+                provided, a new UUID will be generated.
 
         Returns:
             The final response dictionary containing the LLM response

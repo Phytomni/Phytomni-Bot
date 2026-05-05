@@ -41,14 +41,15 @@ class AnalystAgentsState(TypedDict):
         output_dir: The output directory path for analysis results.
         compute_resource: The compute resource level (small, medium, large).
         job_name: The name of the compute job.
-        method_context: Context retrieved from literature/SOPs for plan generation.
+        method_context: Context retrieved from literature/SOPs for plan
+            generation.
         plan: The analysis plan/workflow (may be empty initially).
         plan_feedback: Feedback from the critic node for plan revision.
-        plan_retries: Number of plan generation retries (prevents infinite loops).
+        plan_retries: Number of plan generation retries.
         extracted_tools: List of tools extracted from the plan.
         tool_usages: Retrieved usage instructions for the extracted tools.
         task_id: The unique identifier of the submitted task.
-        task_status: The current task status (PENDING, RUNNING, SUCCEEDED, FAILED).
+        task_status: The current task status.
         is_polling: Whether to poll for task status updates.
         is_auto_select: Whether to automatically select relevant data files.
     """
@@ -73,7 +74,7 @@ class AnalystAgentsState(TypedDict):
 
 
 class AnalystAgent:
-    """A LangGraph-based agent for bioinformatics analysis workflow orchestration.
+    """A LangGraph-based agent for bioinformatics workflows.
 
     This agent orchestrates a complex workflow that decomposes user queries,
     selects appropriate data sources, retrieves relevant bioinformatics
@@ -81,13 +82,14 @@ class AnalystAgent:
     tools, and submits computational tasks for execution.
 
     The workflow graph consists of nine main nodes:
-        1. parse_query_node: Decomposes the user query into goal, data_list, and plan.
-        2. data_select_node: Selects appropriate data files from the available database.
-        3. method_retrieve_node: Retrieves relevant methods, SOPs, and literature.
+        1. parse_query_node: Decomposes the query into goal, data_list,
+           and plan.
+        2. data_select_node: Selects data files from the available database.
+        3. method_retrieve_node: Retrieves methods, SOPs, and literature.
         4. plan_node: Generates or revises the analysis plan.
         5. check_node: Validates the plan using a critic mechanism.
         6. tool_extract_node: Extracts required tools from the plan.
-        7. tool_retrieve_node: Retrieves usage instructions for extracted tools.
+        7. tool_retrieve_node: Retrieves usage instructions for tools.
         8. submit_node: Submits the task to the computation platform.
         9. pooling_node: Polls task status until completion.
 
@@ -112,7 +114,7 @@ class AnalystAgent:
         analyst_config=ac,
         sensitive_config=sc,
     ):
-        """Initialize the AnalystAgent with configuration and build the graph."""
+        """Initialize the AnalystAgent and build the graph."""
         self.checkpointer = checkpointer
         self.ac = analyst_config
         self.sc = sensitive_config
@@ -234,13 +236,15 @@ class AnalystAgent:
         data with auto-selected data to create a comprehensive data list.
 
         Args:
-            state: The current workflow state containing goal_description and data_list.
+            state: The current workflow state containing goal_description
+                and data_list.
 
         Returns:
             A dictionary containing the updated data_list with selected files.
 
         Raises:
-            McpError: If loading species data or parsing the LLM response fails.
+            McpError: If loading species data or parsing the LLM response
+                fails.
         """
         try:
             with open(
@@ -251,7 +255,10 @@ class AnalystAgent:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to load species data list from {self.ac.PRE_PREPARED_DATA_PATH}",
+                    message=(
+                        "Failed to load species data list from "
+                        f"{self.ac.PRE_PREPARED_DATA_PATH}"
+                    ),
                 )
             ) from exc
         data_list = state["data_list"]
@@ -291,7 +298,10 @@ class AnalystAgent:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to get data selection from language model: {str(exc)}",
+                    message=(
+                        "Failed to get data selection from language model: "
+                        f"{str(exc)}"
+                    ),
                 )
             ) from exc
 
@@ -320,7 +330,10 @@ class AnalystAgent:
                 raise McpError(
                     ErrorData(
                         code=INTERNAL_ERROR,
-                        message=f"Failed to parse data selection response: {str(exc)}",
+                        message=(
+                            "Failed to parse data selection response: "
+                            f"{str(exc)}"
+                        ),
                     )
                 ) from exc
 
@@ -340,7 +353,8 @@ class AnalystAgent:
         The retrieved context is used to inform plan generation.
 
         Args:
-            state: The current workflow state containing goal_description and obs_file_list.
+            state: The current workflow state containing goal_description
+                and obs_file_list.
 
         Returns:
             A dictionary containing the method_context with upload_context
@@ -433,8 +447,8 @@ class AnalystAgent:
                    method_context, plan_feedback, and obs_file_list.
 
         Returns:
-            A dictionary containing the generated plan, incremented plan_retries,
-            and reset plan_feedback.
+            A dictionary containing the generated plan, incremented
+            plan_retries, and reset plan_feedback.
 
         Raises:
             McpError: If the LLM fails to generate a valid plan.
@@ -555,7 +569,7 @@ class AnalystAgent:
                    data_list, method_context, plan, and plan_retries.
 
         Returns:
-            A dictionary containing plan_feedback ("APPROVED" or critic feedback).
+            A dictionary containing plan_feedback.
         """
         check_prompt = get_prompt(
             self.ac.PROMPT_FILE,
@@ -627,7 +641,8 @@ class AnalystAgent:
         """Extract required bioinformatics tools from the analysis plan.
 
         This node analyzes the generated plan and extracts the specific tools,
-        algorithms, or software mentioned that are needed to execute the workflow.
+        algorithms, or software mentioned that are needed to execute the
+        workflow.
 
         Args:
             state: The current workflow state containing plan.
@@ -687,7 +702,8 @@ class AnalystAgent:
 
         This node queries the knowledge base for documentation, usage examples,
         and instructions for each tool extracted from the plan. The retrieved
-        information is formatted and combined into tool_usages for the executor.
+        information is formatted and combined into tool_usages for the
+        executor.
 
         Args:
             state: The current workflow state containing extracted_tools.
@@ -717,8 +733,8 @@ class AnalystAgent:
                     retriable_codes=self.ac.RETRIABLE_CODES,
                     max_retries=self.ac.MAX_RETRIES,
                 )
-            except Exception as e:
-                tool_usage_info = {'doc_list': []}
+            except Exception:
+                tool_usage_info = {"doc_list": []}
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
@@ -737,10 +753,12 @@ class AnalystAgent:
 
         Args:
             state: The current workflow state containing goal_description,
-                   data_list, output_dir, plan, tool_usages, and compute_resource.
+                   data_list, output_dir, plan, tool_usages, and
+                   compute_resource.
 
         Returns:
-            A dictionary containing task_id, task_status, job_name, and output_dir.
+            A dictionary containing task_id, task_status, job_name, and
+            output_dir.
 
         Raises:
             McpError: If task submission fails after all retries.
@@ -823,6 +841,7 @@ class AnalystAgent:
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
         job_name = f"{self.ac.TASK_NAME.replace('_', '-')}-{time_stamp}"
         compute_res = state.get("compute_resource", self.ac.COMPUTE_RESOURCE)
+        resource = self.ac.RESOURCE[compute_res]
 
         job_data = {
             "name": job_name,
@@ -846,8 +865,8 @@ class AnalystAgent:
                         },
                     ],
                     "resources": {
-                        "cpu": f"{self.ac.RESOURCE[compute_res]['cpu']}C",
-                        "memory": f"{self.ac.RESOURCE[compute_res]['memory']}G",
+                        "cpu": f"{resource['cpu']}C",
+                        "memory": f"{resource['memory']}G",
                         "cpu_type": "X86",
                     },
                 }
@@ -989,7 +1008,8 @@ class AnalystAgent:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists, otherwise
+            "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
@@ -1004,7 +1024,8 @@ class AnalystAgent:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists, otherwise "method_retrieve_node".
+            "tool_extract_node" if a plan exists, otherwise
+            "method_retrieve_node".
         """
         if state.get("plan"):
             return "tool_extract_node"
@@ -1056,8 +1077,8 @@ class AnalystAgent:
             state: The current workflow state.
 
         Returns:
-            "__end__" if task is in a terminal state (SUCCEEDED, FAILED, CANCELLED),
-            otherwise "pooling_node" to continue polling.
+            "__end__" if task is in a terminal state (SUCCEEDED, FAILED,
+            CANCELLED), otherwise "pooling_node" to continue polling.
         """
         status = state.get("task_status")
         if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
@@ -1107,7 +1128,7 @@ class AnalystAgent:
             is_create_dir: Whether to create an output directory.
             output_dir: The output directory path.
             execute_code: Whether to execute code during analysis.
-            compute_resource: The compute resource level (small, medium, large).
+            compute_resource: The compute resource level.
             timeout: Request timeout in seconds.
             max_retries: Maximum number of retries for failed requests.
             reasoning_effort: Reasoning effort level for the LLM.
@@ -2018,11 +2039,16 @@ def download_obs_out(
                 else:
                     break
             else:
+                request_id = getattr(file_response, "requestId", "unknown")
+                error_code = getattr(file_response, "errorCode", "unknown")
+                error_message = getattr(
+                    file_response, "errorMessage", "unknown"
+                )
                 raise OSError(
                     "Get File List Failed\n"
-                    f'requestId: {getattr(file_response, "requestId", "unknown")}\n'
-                    f'errorCode: {getattr(file_response, "errorCode", "unknown")}\n'
-                    f'errorMessage: {getattr(file_response, "errorMessage", "unknown")}'
+                    f"requestId: {request_id}\n"
+                    f"errorCode: {error_code}\n"
+                    f"errorMessage: {error_message}"
                 )
     except Exception as exc:
         raise OSError(f"Download File Failed\n{format_exc()}") from exc

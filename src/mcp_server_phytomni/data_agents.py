@@ -208,7 +208,7 @@ class DataAgentState(TypedDict):
     Attributes:
         user_query: The user's natural language query.
         is_rewrite: Is rewrite query or not.
-        retrieve_promopt: The constructed prompt containing retrieved scenarios.
+        retrieve_promopt: Prompt containing retrieved scenarios.
         rewrite_query: The rewritten query optimized for SQL generation.
         final_reponse: The final response from the database query execution.
     """
@@ -231,7 +231,7 @@ class DataAgent:
     The workflow graph consists of three main nodes:
         1. retrieve_node: Retrieves relevant database scenarios for context.
         2. rewrite_node: Rewrites the query using an LLM for SQL generation.
-        3. search_node: Executes the NL2SQL conversion and queries the database.
+        3. search_node: Executes NL2SQL conversion and queries the database.
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
@@ -486,15 +486,16 @@ class DataAgent:
 
         This is the main entry point for invoking the agent. It initializes
         the state with the user's query, then runs the LangGraph workflow
-        to retrieve scenarios, rewrite the query, and execute the database query.
+        to retrieve scenarios, rewrite the query, and execute the database
+        query.
 
         Args:
             user_query: The user's natural language query.
-            thread_id: Optional thread ID for state persistence. If not provided,
-                       a new UUID will be generated.
+            thread_id: Optional thread ID for state persistence. If not
+                       provided, a new UUID will be generated.
 
         Returns:
-            The final response dictionary containing the database query results.
+            The final response dictionary containing database query results.
         """
         if not thread_id:
             thread_id = str(uuid1())

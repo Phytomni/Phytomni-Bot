@@ -124,29 +124,31 @@ def update_dict(left: dict, right: dict) -> dict:
 class DeepGenomeState(TypedDict):
     """State schema for the deep genome analysis workflow.
 
-    This TypedDict defines the state structure used throughout the comprehensive
-    gene analysis workflow, managing parallel execution of multiple analysis
-    tasks and aggregating results into a final research report.
+    This TypedDict defines the state structure used throughout the gene
+    analysis workflow, managing parallel execution of multiple analysis tasks
+    and aggregating results into a final research report.
 
     Attributes:
         species_code: Three-letter species code (e.g., 'osa', 'ath', 'zma').
         gene_id: Target gene identifier for analysis.
         config_params: Configuration parameters controlling workflow behavior:
-            - use_analyst_agent: bool, whether to run deep analyst analysis (default: True)
-            - use_data_agent: bool, whether to fetch gene network data (default: True)
+            - use_analyst_agent: bool, whether to run deep analyst analysis.
+            - use_data_agent: bool, whether to fetch gene network data.
         gene_annotation: Dictionary containing gene annotation data including
-            gene symbol, description, GO terms, InterPro domains, and MapMan bins.
+            gene symbol, description, GO terms, InterPro domains, and
+            MapMan bins.
         skip_synthesize: Flag to skip synthesis node in test mode.
-        knowledge_context: Context data from knowledge agent literature retrieval.
+        knowledge_context: Context data from knowledge agent retrieval.
         orthologs_data: Orthologous gene list with species and gene symbols.
         paralogs_data: Paralogous gene list with species and gene symbols.
-        interaction_data: Protein interaction gene list with species and symbols.
+        interaction_data: Protein interaction gene list with species and
+            symbols.
         orthologs_summary: Formatted string summarizing ortholog gene network.
         paralogs_summary: Formatted string summarizing paralog gene network.
         interaction_summary: Formatted string summarizing interaction network.
         part1_report: Aggregated basic gene network profile report.
-        analysis_tasks: List of analysis task dictionaries for parallel execution.
-        raw_analyst_data: Raw data from analyst tasks (annotated dict for thread-safe merge).
+        analysis_tasks: Analysis task dictionaries for parallel execution.
+        raw_analyst_data: Raw data from analyst tasks.
         analyst_summaries: Processed summaries from analyst tasks.
         synthesize_report: Aggregated deep analysis synthesis report.
         experiment_report: Recommended experiments section.
@@ -156,8 +158,8 @@ class DeepGenomeState(TypedDict):
         summary_report: Report summary and conclusion section.
         follow_up_questions: List of suggested follow-up research questions.
         part1_completed_branches: Counter for part1 barrier (target: 4)
-        analysis_completed_branches: Counter for analysis barrier (target: len(tasks))
-        experiment_completed_branches: Counter for experiment barrier (target: 2)
+        analysis_completed_branches: Counter for the analysis barrier.
+        experiment_completed_branches: Counter for the experiment barrier.
         report_triggered: Boolean to prevent duplicate report node execution.
     """
 
@@ -195,23 +197,25 @@ class DeepGenomeAgents:
 
     This agent provides a sophisticated workflow for analyzing gene function
     and related biological processes in plant genomes. It orchestrates multiple
-    specialized agents including data_agent, knowledge_agent, and analyst_agent
-    to perform parallel gene network analysis and deep computational analysis.
+    specialized agents including data_agent, knowledge_agent, and
+    analyst_agent to perform parallel gene network and deep computational
+    analysis.
 
     The workflow consists of three main phases:
     1. **Part 1 - Gene Network Profile**: Retrieves orthologs, paralogs, and
        protein interactions; fetches gene annotations; aggregates into a basic
        gene function network report.
     2. **Part 2 - Deep Analysis**: Executes 9 parallel analysis tasks including
-       evolution analysis, expression analysis across tissues/cultivars/treatments/
-       genotypes, single-cell analysis, promoter analysis, SMEP and SMOC analysis.
+       evolution analysis, expression analysis across tissues/cultivars/
+       treatments/genotypes, single-cell analysis, promoter analysis, SMEP,
+       and SMOC analysis.
     3. **Part 3 - Report Generation**: Synthesizes experiment recommendations,
        protocols, introduction, discussion, and summary sections.
 
     Attributes:
         data_agent: Data agent for retrieving gene network information.
         knowledge_agent: Knowledge agent for literature retrieval.
-        analyst_agent: Analyst agent for submitting and managing analysis tasks.
+        analyst_agent: Analyst agent for submitting and managing tasks.
         checkpointer: LangGraph MemorySaver for state persistence.
         dgc: Deep genome configuration object.
         sc: Sensitive configuration settings.
@@ -243,7 +247,7 @@ class DeepGenomeAgents:
         Args:
             data_agent: Data agent for retrieving gene network information.
             knowledge_agent: Knowledge agent for literature retrieval.
-            analyst_agent: Analyst agent for submitting and managing analysis tasks.
+            analyst_agent: Analyst agent for submitting and managing tasks.
             checkpointer: LangGraph MemorySaver for state persistence.
             deepgenome_config: Deep genome configuration object.
             sensitive_config: Sensitive configuration for credentials.
@@ -378,11 +382,12 @@ class DeepGenomeAgents:
             species_code: Three-letter species code (e.g., 'osa', 'ath').
             gene_id: Target gene identifier.
             config_params: Optional configuration parameters:
-                - use_analyst_agent: bool, whether to run deep analyst analysis (default: True)
-                - use_data_agent: bool, whether to fetch gene network data (default: True)
-            thread_id: Optional thread ID for checkpointer. If None, generates UUID.
-            test_mode: If True, skip actual analyst tasks and use mock_analyst_data.
-            mock_analyst_data: Pre-prepared analyst data for testing. Should contain:
+                - use_analyst_agent: bool, whether to run deep analyst
+                  analysis.
+                - use_data_agent: bool, whether to fetch gene network data.
+            thread_id: Optional thread ID for checkpointer.
+            test_mode: If True, skip actual analyst tasks and use mock data.
+            mock_analyst_data: Pre-prepared analyst data. Should contain:
                 - analyst_summaries: Dict mapping task names to summary strings
                 - synthesis_report: Optional pre-generated synthesis report
                 - analysis_tasks: List of task dicts (for counter purposes)
@@ -390,7 +395,7 @@ class DeepGenomeAgents:
         Returns:
             Final state containing all analysis results including:
             - part1_report: Gene function and network summary
-            - synthesize_report: Deep analysis synthesis (if use_analyst_agent=True)
+            - synthesize_report: Deep analysis synthesis
             - experiment_report: Recommended experiments
             - protocol_report: Experimental protocols
             - introduction_report: Report introduction
@@ -472,8 +477,8 @@ class DeepGenomeAgents:
             state: Current workflow state containing config_params.
 
         Returns:
-            List of node names to execute: ["knowledge_node", "data_node", "prepare_tasks_node"]
-                when both flags are True, or subsets based on configuration.
+            List of node names to execute. When both flags are True, run
+            knowledge_node, data_node, and prepare_tasks_node.
         """
         use_analyst = state.get("config_params", {}).get(
             "use_analyst_agent", True
@@ -591,9 +596,9 @@ class DeepGenomeAgents:
     async def run_analyst_node(self, state: DeepGenomeState) -> dict:
         """Execute a single analysis task dispatched via Send API.
 
-        This node is called dynamically for each task in the analysis_tasks list.
-        It dispatches the analysis task to the AnalystAgent, waits for completion,
-        and generates a sub-summary of the results.
+        This node is called dynamically for each analysis task. It dispatches
+        the task to AnalystAgent, waits for completion, and generates a
+        sub-summary of the results.
 
         Args:
             state: Current workflow state containing task details:
@@ -1066,7 +1071,7 @@ class DeepGenomeAgents:
         return gene_results_data
 
     async def run_knowledge_agent(self, state: DeepGenomeState):
-        """Retrieve literature knowledge for the target gene using KnowledgeAgent.
+        """Retrieve literature knowledge for the target gene.
 
         This node retrieves relevant scientific literature for the target gene
         using the KnowledgeAgent. It fetches gene symbols, queries literature
@@ -1115,15 +1120,15 @@ class DeepGenomeAgents:
     async def run_gene_annotation_node(self, state: DeepGenomeState):
         """Retrieve annotation for the target gene.
 
-        This node fetches comprehensive annotation information for the target gene
-        including gene symbol, description, GO terms, InterPro domains, and MapMan
-        bins. Results are aggregated into the gene_annotation field.
+        This node fetches comprehensive annotation information for the target
+        gene including gene symbol, description, GO terms, InterPro domains,
+        and MapMan bins. Results are aggregated into gene_annotation.
 
         Args:
             state: Current workflow state containing gene_id and species_code.
 
         Returns:
-            Dict with gene_annotation data and part1_completed_branches increment.
+            Dict with gene_annotation data and part1 branch increment.
         """
         gene_id = state["gene_id"]
         species_code = state["species_code"]
@@ -1181,20 +1186,22 @@ class DeepGenomeAgents:
     async def run_data_agent(self, state: DeepGenomeState):
         """Retrieve gene list for network analysis.
 
-        This node queries the database to retrieve orthologous genes (from other species),
-        paralogous genes (within the same species), and protein interaction partners.
+        This node queries the database to retrieve orthologous genes,
+        paralogous genes, and protein interaction partners.
 
         Args:
             state: Current workflow state containing gene_id and species_code.
 
         Returns:
-            Dict containing orthologs_data, paralogs_data, and interaction_data.
+            Dict containing orthologs_data, paralogs_data, and
+            interaction_data.
         """
         print("=> Retrieving gene list...")
         gene_id = state["gene_id"]
         species_code = state["species_code"]
         sql = (
-            "SELECT query_gene_id, query_species, homology_gene_id, homology_species "
+            "SELECT query_gene_id, query_species, homology_gene_id, "
+            "homology_species "
             f"FROM homology_gene WHERE query_gene_id = '{gene_id}'"
         )
         payload = {"sql": sql, "returnType": "json"}
@@ -1203,8 +1210,10 @@ class DeepGenomeAgents:
         ).json()
 
         sql = (
-            "SELECT query_gene_id, query_protein, interact_gene_id, interact_protein "
-            f"FROM protein_interaction_col WHERE query_gene_id = '{gene_id}' OR "
+            "SELECT query_gene_id, query_protein, interact_gene_id, "
+            "interact_protein "
+            "FROM protein_interaction_col "
+            f"WHERE query_gene_id = '{gene_id}' OR "
             f"interact_gene_id = '{gene_id}'"
         )
         payload = {"sql": sql, "returnType": "json"}
@@ -1257,9 +1266,10 @@ class DeepGenomeAgents:
     async def prepare_analysis_tasks(self, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
-        This method prepares 9 analysis tasks for the deep genome analysis phase,
-        including evolution analysis, expression analysis across tissues/cultivars/
-        treatments/genotypes, single-cell analysis, promoter analysis, SMEP and SMOC.
+        This method prepares 9 analysis tasks for the deep genome analysis
+        phase, including evolution analysis, expression analysis across
+        tissues/cultivars/treatments/genotypes, single-cell analysis,
+        promoter analysis, SMEP, and SMOC.
 
         Args:
             state: Current workflow state containing gene_id and species_code.
@@ -1490,7 +1500,9 @@ class DeepGenomeAgents:
                     obs_output_path=obs_output_path,
                     download_path=output_path,
                     access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                    secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
+                    secret_access_key=(
+                        self.sc.SecretAccessKey.get_secret_value()
+                    ),
                     obs_server=self.dgc.OBS_SERVER,
                     bucket_name=self.dgc.BUCKET_NAME,
                     target_file_feature=target_file_feature,
@@ -1510,8 +1522,8 @@ class DeepGenomeAgents:
     def _get_compute_resource(self, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type.
 
-        Analysis types that require more computational resources (protein_structure_analysis
-        and evolution_analysis) are assigned "medium" compute, while others use "small".
+        Analysis types that require more computational resources are assigned
+        "medium" compute, while others use "small".
 
         Args:
             analysis_type: Type of analysis to determine resource level for.
@@ -1539,29 +1551,23 @@ class DeepGenomeAgents:
         This function queries a database using the `nl2sql` service to find
         gene symbols associated with the provided `gene_id` and `species_code`.
         It parses the response from `nl2sql`, expecting a specific structure,
-        and extracts gene symbols. It can handle symbols that are pipe-separated
-        or comma-separated within a single field. An optional semaphore can be
-        used to limit concurrency if this function is called multiple times.
+        and extracts gene symbols. It can handle symbols that are
+        pipe-separated or comma-separated within a single field. An optional
+        semaphore can limit concurrency.
 
         Args:
             species_code: The species code for the gene for which symbols are
                 being retrieved.
             gene_id: The identifier of the gene for which symbols are being
                 retrieved.
-            workspace_id: Identifier for the workspace containing the data, passed
-                to the `nl2sql` function.
-            subject_id: Identifier for the specific database subject or schema to
-                query against, passed to the `nl2sql` function.
-            dialog_id: Identifier for the current dialog or conversation session,
-                passed to the `nl2sql` function.
-            need_insight: Flag indicating whether to generate insights based on the
-                query results, passed to the `nl2sql` function.
+            workspace_id: Identifier for the workspace containing the data.
+            subject_id: Identifier for the database subject or schema.
+            dialog_id: Identifier for the current dialog or conversation.
+            need_insight: Whether to generate insights based on query results.
             timeout: Request timeout in seconds for the underlying `nl2sql` API
                 calls.
-            retriable_codes: List of HTTP status codes that will trigger a retry
-                for underlying `nl2sql` API calls.
-            max_retries: Maximum number of retry attempts for underlying `nl2sql`
-                API calls.
+            retriable_codes: HTTP status codes that trigger a retry.
+            max_retries: Maximum number of retry attempts.
             semaphore: An optional `asyncio.Semaphore` instance to limit the
                 concurrency of `nl2sql` calls if this function is called
                 multiple times concurrently.
@@ -1613,13 +1619,19 @@ class DeepGenomeAgents:
         async def get_gene_annotation() -> Dict:
             sql_list = (
                 "SELECT description FROM annotation_gene_description "
-                f"WHERE gene_id = '{gene_id}' AND species_code = '{species_code}'",
+                f"WHERE gene_id = '{gene_id}' "
+                f"AND species_code = '{species_code}'",
                 "SELECT go_id, go_name FROM annotation_gene_ontology WHERE "
-                f"gene_id = '{gene_id}' AND species_code = '{species_code}'",
-                "SELECT interpro_id, interpro_name FROM annotation_gene_interpro "
-                f"WHERE gene_id = '{gene_id}' AND species_code = '{species_code}'",
-                "SELECT mapman, mapman_description FROM annotation_gene_mapman "
-                f"WHERE gene_id = '{gene_id}' AND species_code = '{species_code}'",
+                f"gene_id = '{gene_id}' "
+                f"AND species_code = '{species_code}'",
+                "SELECT interpro_id, interpro_name "
+                "FROM annotation_gene_interpro "
+                f"WHERE gene_id = '{gene_id}' "
+                f"AND species_code = '{species_code}'",
+                "SELECT mapman, mapman_description "
+                "FROM annotation_gene_mapman "
+                f"WHERE gene_id = '{gene_id}' "
+                f"AND species_code = '{species_code}'",
             )
             # responses = []
             # for sql in sql_list:
@@ -1674,9 +1686,8 @@ class DeepGenomeAgents:
     async def run_orthologs_node(self, state: DeepGenomeState):
         """Retrieve orthologous gene symbols for network analysis.
 
-        This node fetches gene symbols for orthologous genes (genes from different
-        species that share a common ancestor) in parallel using a semaphore to
-        limit concurrency.
+        This node fetches gene symbols for orthologous genes in parallel using
+        a semaphore to limit concurrency.
 
         Args:
             state: Current workflow state containing orthologs_data.
@@ -1716,8 +1727,8 @@ class DeepGenomeAgents:
     async def run_paralogs_node(self, state: DeepGenomeState):
         """Retrieve paralogous gene symbols for network analysis.
 
-        This node fetches gene symbols for paralogous genes (genes within the same
-        species that result from gene duplication) in parallel using a semaphore.
+        This node fetches gene symbols for paralogous genes in parallel using
+        a semaphore.
 
         Args:
             state: Current workflow state containing paralogs_data.
@@ -1757,8 +1768,8 @@ class DeepGenomeAgents:
     async def run_interaction_node(self, state: DeepGenomeState):
         """Retrieve interacting gene symbols for network analysis.
 
-        This node fetches gene symbols for protein interaction partners in parallel
-        using a semaphore to limit concurrency.
+        This node fetches gene symbols for protein interaction partners in
+        parallel using a semaphore to limit concurrency.
 
         Args:
             state: Current workflow state containing interaction_data.
@@ -1769,13 +1780,14 @@ class DeepGenomeAgents:
         print("=> Retrieving interacting genes...")
         semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
+        interaction_genes = interaction_species_gene_list
         interaction_symbol_tasks = [
             self.gene_symbol(
                 species_code=each_species_code,
                 gene_id=each_gene_id,
                 semaphore=semaphore,
             )
-            for each_species_code, each_gene_id in interaction_species_gene_list
+            for each_species_code, each_gene_id in interaction_genes
         ]
         interaction_gene_symbol_results = await asyncio.gather(
             *(interaction_symbol_tasks), return_exceptions=True
@@ -1907,11 +1919,12 @@ class DeepGenomeAgents:
             state: Current workflow state containing interaction_data.
 
         Returns:
-            Dict with interaction_summary and part1_completed_branches increment.
+            Dict with interaction_summary and part1 branch increment.
         """
         print("=> Summarizing interacting gene network...")
         semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
+        interaction_genes = interaction_species_gene_list
         species_interaction_gene_symbol_dict = state["interaction_data"].get(
             "gene_symbol", {}
         )
@@ -1923,7 +1936,7 @@ class DeepGenomeAgents:
                 gene_id=each_gene_id,
                 semaphore=semaphore,
             )
-            for each_species_code, each_gene_id in interaction_species_gene_list
+            for each_species_code, each_gene_id in interaction_genes
         ]
         interaction_gene_anno_results = await asyncio.gather(
             *(interaction_anno_tasks), return_exceptions=True
@@ -1951,8 +1964,8 @@ class DeepGenomeAgents:
     async def run_part1_node(self, state: DeepGenomeState):
         """Barrier node for Part 1 - Gene Network Profile aggregation.
 
-        This node waits for 4 parallel branches to complete (gene_annotation + 3 network
-        annotations), then generates an integrated gene function network report using LLM.
+        This node waits for 4 parallel branches to complete, then generates
+        an integrated gene function network report using LLM.
 
         Args:
             state: Current workflow state containing all network data.
@@ -1970,7 +1983,8 @@ class DeepGenomeAgents:
             return {}
 
         print(
-            "\n[Merging] Part 1 Gene Network Profile data ready, generating integrated report..."
+            "\n[Merging] Part 1 Gene Network Profile data ready, "
+            "generating integrated report..."
         )
 
         gene_id = state["gene_id"]
@@ -2077,18 +2091,21 @@ class DeepGenomeAgents:
         # Test mode: skip synthesize_node and use mock data directly
         if state.get("skip_synthesize", False):
             print(
-                "  [Test Mode] Skipping synthesize_node, using pre-prepared mock data"
+                "  [Test Mode] Skipping synthesize_node, using "
+                "pre-prepared mock data"
             )
             return {"experiment_completed_branches": 1}
 
         if total_expected > 0 and completed < total_expected:
             print(
-                f"  [Barrier] Waiting for analysis completion: {completed}/{total_expected}"
+                "  [Barrier] Waiting for analysis completion: "
+                f"{completed}/{total_expected}"
             )
             return {}
 
         print(
-            f"  [Barrier] All analysis completed ({completed}/{total_expected}), starting synthesis..."
+            "  [Barrier] All analysis completed "
+            f"({completed}/{total_expected}), starting synthesis..."
         )
 
         gene_results_data = state.get("analyst_summaries", {})
@@ -2134,16 +2151,17 @@ class DeepGenomeAgents:
     async def run_report_experiment(self, state: DeepGenomeState):
         """Barrier node for experiment recommendations generation.
 
-        This is the "Ultimate Convergence" barrier - waits for both part1_node and
-        synthesize_node to complete, then generates recommended experiments using LLM.
-        Also retrieves detailed protocols for each experiment.
+        This is the "Ultimate Convergence" barrier. It waits for both
+        part1_node and synthesize_node, then generates recommended
+        experiments using LLM. It also retrieves detailed protocols.
 
         Args:
-            state: Current workflow state containing part1_report and synthesize_report.
+            state: Current workflow state containing part1_report and
+                synthesize_report.
 
         Returns:
-            Dict with experiment_report, part12_combined, and report_triggered flag,
-            or empty dict if barrier not satisfied or already triggered.
+            Dict with experiment_report, part12_combined, and
+            report_triggered flag, or empty dict if blocked.
         """
         # Barrier 3: Ultimate convergence - wait for part1 and synthesize
         if state.get("experiment_completed_branches", 0) < 2:
@@ -2154,7 +2172,8 @@ class DeepGenomeAgents:
             return {}
 
         print(
-            "\n[Ultimate Convergence] Basic profile + Deep analysis merged! Designing recommended experiments..."
+            "\n[Ultimate Convergence] Basic profile + Deep analysis merged! "
+            "Designing recommended experiments..."
         )
 
         species_code = state["species_code"]
@@ -2267,7 +2286,8 @@ class DeepGenomeAgents:
         recommended experiments and analysis sections.
 
         Args:
-            state: Current workflow state containing part12_combined and experiment_report.
+            state: Current workflow state containing part12_combined and
+                experiment_report.
 
         Returns:
             Dict with protocol_report.
@@ -2321,11 +2341,12 @@ class DeepGenomeAgents:
     async def run_report_introduction(self, state: DeepGenomeState):
         """Generate report introduction section.
 
-        This node generates the introduction section of the gene function report,
-        providing background and context based on the gene annotation and analysis.
+        This node generates the introduction section of the gene function
+        report, with context based on gene annotation and analysis.
 
         Args:
-            state: Current workflow state containing gene_annotation, part12_combined, etc.
+            state: Current workflow state containing gene_annotation,
+                part12_combined, etc.
 
         Returns:
             Dict with introduction_report, or empty dict if already triggered.
@@ -2349,7 +2370,11 @@ class DeepGenomeAgents:
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
-            part123_str = f"{part12_str}\n\n## Recommended experiments\n\n{protocol_report}\n\n{experiment_report}\n\n"
+            part123_str = (
+                f"{part12_str}\n\n"
+                f"## Recommended experiments\n\n{protocol_report}\n\n"
+                f"{experiment_report}\n\n"
+            )
             content = part123_str
         else:
             content = part12_str
@@ -2399,11 +2424,12 @@ class DeepGenomeAgents:
     async def run_report_discussion(self, state: DeepGenomeState):
         """Generate report discussion section.
 
-        This node generates the discussion section of the gene function report,
-        interpreting results and providing insights based on the comprehensive analysis.
+        This node generates the discussion section of the gene function
+        report, interpreting results and providing insights.
 
         Args:
-            state: Current workflow state containing gene_annotation, all report sections.
+            state: Current workflow state containing gene_annotation and all
+                report sections.
 
         Returns:
             Dict with discussion_report.
@@ -2425,7 +2451,12 @@ class DeepGenomeAgents:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
             introduction_report = state.get("introduction_report", "")
-            part0123_str = f"# Deep Genome Analysis of {gene_id}\n\n{introduction_report}\n\n{part12_str}\n\n## Recommended experiments\n\n{protocol_report}\n\n{experiment_report}\n\n"
+            part0123_str = (
+                f"# Deep Genome Analysis of {gene_id}\n\n"
+                f"{introduction_report}\n\n{part12_str}\n\n"
+                f"## Recommended experiments\n\n{protocol_report}\n\n"
+                f"{experiment_report}\n\n"
+            )
             content = part0123_str
         else:
             content = part12_str
@@ -2475,11 +2506,13 @@ class DeepGenomeAgents:
     async def run_report_summary(self, state: DeepGenomeState):
         """Generate report conclusion and future outlook section.
 
-        This node generates the summary and conclusion section of the gene function
-        report, synthesizing findings and suggesting future research directions.
+        This node generates the summary and conclusion section of the gene
+        function report, synthesizing findings and suggesting future research
+        directions.
 
         Args:
-            state: Current workflow state containing gene_annotation, all report sections.
+            state: Current workflow state containing gene_annotation and all
+                report sections.
 
         Returns:
             Dict with summary_report.
@@ -2502,7 +2535,13 @@ class DeepGenomeAgents:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
             introduction_report = state.get("introduction_report", "")
-            part014_str = f"# Deep Genome Analysis of {gene_id}\n\n{introduction_report}\n\n{part12_str}\n\n## Recommended experiments\n\n{protocol_report}\n\n{experiment_report}\n\n## Discussion\n\n{discussion_report}\n\n"
+            part014_str = (
+                f"# Deep Genome Analysis of {gene_id}\n\n"
+                f"{introduction_report}\n\n{part12_str}\n\n"
+                f"## Recommended experiments\n\n{protocol_report}\n\n"
+                f"{experiment_report}\n\n## Discussion\n\n"
+                f"{discussion_report}\n\n"
+            )
             content = part014_str
         else:
             part014_str = (

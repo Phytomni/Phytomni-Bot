@@ -250,11 +250,11 @@ async def download_obs_file(
 
     object_key = obs_file
     if object_key.startswith(f"obs://{bucket_name}/"):
-        object_key = object_key[len(f"obs://{bucket_name}/"):]
+        object_key = object_key[len(f"obs://{bucket_name}/") :]
     elif object_key.startswith(f"/obs/{bucket_name}/"):
-        object_key = object_key[len(f"/obs/{bucket_name}/"):]
+        object_key = object_key[len(f"/obs/{bucket_name}/") :]
     elif object_key.startswith(f"/{bucket_name}/"):
-        object_key = object_key[len(f"/{bucket_name}/"):]
+        object_key = object_key[len(f"/{bucket_name}/") :]
     elif object_key.startswith("/"):
         object_key = object_key[1:]
 
@@ -511,6 +511,6 @@ def split_list(lst: List, max_size: int = 128) -> List[List]:
     index = 0
     for i in range(num_chunks):
         chunk_size = base_size + 1 if i < remainder else base_size
-        chunks.append(lst[index: index + chunk_size])
+        chunks.append(lst[index : index + chunk_size])
         index += chunk_size
     return chunks

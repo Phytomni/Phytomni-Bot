@@ -3,7 +3,7 @@
 # Author: maoyc_0316@163.com
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph-based gene network analysis agents for plant bioinformatics research.
+"""LangGraph-based gene network agents for plant bioinformatics research.
 
 This module provides specialized agents for analyzing gene networks in plant
 genomics, focusing on identifying and characterizing relationships between
@@ -40,7 +40,8 @@ class GeneNetworkState(TypedDict):
 
     This TypedDict defines the state structure used throughout the gene network
     analysis workflow, tracking species information, gene identifiers, task
-    management, and result aggregation for parallel network analysis operations.
+    management, and result aggregation for parallel network analysis
+    operations.
 
     Attributes:
         species: Species name (e.g., "rice", "arabidopsis").
@@ -59,7 +60,7 @@ class GeneNetworkState(TypedDict):
     to_id: str  # Target gene identifier for network analysis
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
-    network_task: Dict[str, str] # submit results
+    network_task: Dict[str, str]  # submit results
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
     task_index: Optional[int]  # Current task index in parallel execution
     task_ids: Dict[str, str]  # Mapping of task names to task IDs
@@ -70,10 +71,10 @@ class GeneNetworkState(TypedDict):
 class GeneNetworkAgents:
     """LangGraph-based agent for gene network analysis.
 
-    This agent provides a workflow for analyzing gene networks in plant genomics,
-    focusing on identifying and characterizing relationships between genes and their
-    regulatory networks. It leverages computational analysis workflows to examine
-    gene interactions, co-expression patterns, and functional associations.
+    This agent provides a workflow for analyzing gene networks in plant
+    genomics, focusing on identifying relationships between genes and their
+    regulatory networks. It leverages computational workflows to examine gene
+    interactions, co-expression patterns, and functional associations.
 
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
@@ -101,7 +102,8 @@ class GeneNetworkAgents:
 
         Args:
             checkpointer: LangGraph MemorySaver for state persistence.
-            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            analyst_agent: Optional AnalystAgent instance. Creates one if
+                omitted.
             gene_network_config: Gene network configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
@@ -132,7 +134,15 @@ class GeneNetworkAgents:
         """Dispatch network analysis tasks in parallel using Send API."""
         tasks = state.get("network_tasks", [])
         return [
-            Send("network_node", {"task_index": i, "species": state["species"], "to_id": state["to_id"], **task})
+            Send(
+                "network_node",
+                {
+                    "task_index": i,
+                    "species": state["species"],
+                    "to_id": state["to_id"],
+                    **task,
+                },
+            )
             for i, task in enumerate(tasks)
         ]
 
@@ -143,10 +153,10 @@ class GeneNetworkAgents:
         to_id: str,
         output_dir: str = None,
     ) -> dict:
-        """Submit network analysis task using AnalystAgent and wait for completion.
+        """Submit network analysis task and wait for completion.
 
         Args:
-            analysis_type: Type of network analysis (e.g., "gene_network_analysis").
+            analysis_type: Type of network analysis.
             species: Species name.
             to_id: Target gene identifier.
             output_dir: Optional output directory path.
@@ -208,7 +218,7 @@ class GeneNetworkAgents:
 
         task_id = result.get("task_id")
         print(f"=>{analysis_type} task completed (task_id: {task_id})")
-        
+
         # return {"task_id": task_id, "output_dir": result.get("output_dir")}
         return {"network_task": result}
 
@@ -224,7 +234,7 @@ class GeneNetworkAgents:
     async def run_network_node(self, state: GeneNetworkState) -> dict:
         """Execute a single network analysis task dispatched via Send API.
 
-        This node is called dynamically for each task in the network_tasks list.
+        This node is called dynamically for each network task.
         """
         task_index = state.get("task_index")
         species = state["species"]
@@ -237,16 +247,18 @@ class GeneNetworkAgents:
         print(species)
         try:
             result = await self._dispatch_and_wait_analysis(
-                analysis_type=analysis_type,
-                species=species,
-                to_id=to_id
+                analysis_type=analysis_type, species=species, to_id=to_id
             )
             # Update task_id for the corresponding task
             task_key = analysis_type.replace("_analysis", "")
             existing_task_ids = state.get("task_ids", {})
             task_result = result.get("network_task", {})
             existing_task_ids[task_key] = task_result.get("task_id")
-            return {"task_ids": existing_task_ids, "completed_count": 1, "network_task": task_result}
+            return {
+                "task_ids": existing_task_ids,
+                "completed_count": 1,
+                "network_task": task_result,
+            }
         except Exception as e:
             return {
                 "task_ids": state.get("task_ids", {}),
@@ -262,7 +274,7 @@ class GeneNetworkAgents:
         batch: bool = False,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Async entry function - submit gene network analysis task and return task_id.
+        """Submit a gene network analysis task and return task_id.
 
         Args:
             species: Species name (e.g., "rice", "arabidopsis").

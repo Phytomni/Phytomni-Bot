@@ -66,8 +66,8 @@ class InSilicoResearchState(TypedDict):
 class InSilicoResearchAgents:
     """LangGraph-based agent for in silico research from scientific literature.
 
-    This agent provides a workflow for extracting research goals from scientific
-    papers and executing comprehensive computational research workflows using
+    This agent provides a workflow for extracting research goals from
+    scientific papers and executing computational research workflows using
     LangGraph's parallel execution capabilities.
 
     Attributes:
@@ -89,7 +89,8 @@ class InSilicoResearchAgents:
 
         Args:
             checkpointer: LangGraph MemorySaver for state persistence.
-            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            analyst_agent: Optional AnalystAgent instance. Creates one if
+                omitted.
             in_silico_config: In silico research configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
@@ -192,7 +193,9 @@ class InSilicoResearchAgents:
                 "type": "json_schema",
                 "json_schema": {
                     "type": "array",
-                    "description": "A list of research objectives derived from the paper.",
+                    "description": (
+                        "A list of research objectives derived from the paper."
+                    ),
                     "items": {
                         "type": "object",
                         "properties": {
@@ -267,7 +270,8 @@ class InSilicoResearchAgents:
         content to identify and extract research objectives.
 
         Args:
-            state: Current workflow state containing paper_text and obs_file_list.
+            state: Current workflow state containing paper_text and
+                obs_file_list.
 
         Returns:
             Dict with extracted goals list and error status.
@@ -291,7 +295,8 @@ class InSilicoResearchAgents:
             state: Current workflow state containing extracted goals.
 
         Returns:
-            Dict with research_tasks, output_dir, task_ids, and completed_count.
+            Dict with research_tasks, output_dir, task_ids, and
+            completed_count.
         """
         goals = state.get("goals", [])
         output_dir = state.get("output_dir") or create_output_dir(
@@ -322,7 +327,7 @@ class InSilicoResearchAgents:
     async def run_research_node(self, state: InSilicoResearchState) -> dict:
         """Execute a single research task dispatched via Send API.
 
-        This node is called dynamically for each task in the research_tasks list.
+        This node is called dynamically for each research task.
 
         Args:
             state: Current workflow state containing task details.
@@ -366,7 +371,7 @@ class InSilicoResearchAgents:
         output_dir: Optional[str] = None,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Async entry function - conduct in silico research and return task_ids.
+        """Conduct in silico research and return task_ids.
 
         Args:
             paper_text: Scientific paper text to analyze.

@@ -67,9 +67,9 @@ class DigitalDesignState(TypedDict):
 class DigitalDesignAgents:
     """LangGraph-based agent for protein and promoter digital design.
 
-    This agent provides a workflow for computational protein design and promoter
-    analysis using LangGraph's parallel execution capabilities. It leverages the
-    AnalystAgent to submit and manage design tasks asynchronously.
+    This agent provides a workflow for computational protein design and
+    promoter analysis using LangGraph's parallel execution capabilities. It
+    leverages the AnalystAgent to submit and manage design tasks.
 
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
@@ -97,7 +97,8 @@ class DigitalDesignAgents:
 
         Args:
             checkpointer: LangGraph MemorySaver for state persistence.
-            analyst_agent: Optional AnalystAgent instance. If None, creates a new one.
+            analyst_agent: Optional AnalystAgent instance. Creates one if
+                omitted.
             digital_design_config: Digital design configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
@@ -128,7 +129,15 @@ class DigitalDesignAgents:
         """Dispatch design tasks in parallel using Send API."""
         tasks = state.get("design_tasks", [])
         return [
-            Send("design_node", {"task_index": i, "species": state["species"], "gene_id": state["gene_id"], **task})
+            Send(
+                "design_node",
+                {
+                    "task_index": i,
+                    "species": state["species"],
+                    "gene_id": state["gene_id"],
+                    **task,
+                },
+            )
             for i, task in enumerate(tasks)
         ]
 
@@ -142,7 +151,7 @@ class DigitalDesignAgents:
         """Submit task using AnalystAgent and wait for completion.
 
         Args:
-            analysis_type: Type of design analysis (protein_design or promoter_design).
+            analysis_type: Type of design analysis.
             species: Species name.
             gene_id: Target gene identifier.
             output_dir: Optional output directory path.
@@ -251,7 +260,11 @@ class DigitalDesignAgents:
             task_key = analysis_type.replace("_analysis", "")
             existing_task_ids = state.get("task_ids", {})
             existing_task_ids[task_key] = result.get("task_id")
-            return {"design_task_result": design_task_result, "task_ids": existing_task_ids, "completed_count": 1}
+            return {
+                "design_task_result": design_task_result,
+                "task_ids": existing_task_ids,
+                "completed_count": 1,
+            }
         except Exception as e:
             return {
                 "task_ids": state.get("task_ids", {}),
@@ -267,7 +280,7 @@ class DigitalDesignAgents:
         batch: bool = False,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Async entry function - submit protein design tasks and return task_ids.
+        """Submit protein design tasks and return task_ids.
 
         Args:
             species: Species name (e.g., "Arabidopsis_thaliana").
