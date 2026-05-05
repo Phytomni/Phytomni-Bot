@@ -50,6 +50,14 @@ class Storage:
         self.db_path = db_path
         self._local = threading.local()
         self._pid = os.getpid()
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            try:
+                os.makedirs(parent, exist_ok=True)
+            except OSError as e:
+                raise StorageError(
+                    f"Failed to create cache directory: {e}"
+                ) from e
         self._init_db()
 
     def _get_conn(self):

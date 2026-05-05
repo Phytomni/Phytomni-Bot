@@ -36,13 +36,13 @@ class LockManager:
         self.lock_timeout = lock_timeout
         self.lock_expire = lock_expire
 
-    def _owner(self):
-        """Generate a unique owner ID for the current process/thread."""
+    def owner(self, token=None):
+        """Generate a unique owner ID for this process and token."""
         pid = os.getpid()
-        tid = threading.get_ident()
-        return f"{pid}:{tid}"
+        owner_token = token if token is not None else threading.get_ident()
+        return f"{pid}:{owner_token}"
 
-    def acquire(self, func_id, key_hash):
+    def acquire(self, func_id, key_hash, owner=None):
         """Acquire a lock for the given cache entry.
 
         Blocks until the lock is acquired or timeout is reached.
@@ -50,17 +50,19 @@ class LockManager:
         Args:
             func_id: The function identifier.
             key_hash: The cache key hash.
+            owner: Optional explicit owner ID. Async callers use this to
+                acquire and release a lock across thread-pool calls.
 
         Raises:
             LockTimeout: If lock cannot be acquired within timeout.
         """
-        owner = self._owner()
+        lock_owner = owner or self.owner()
         deadline = time.time() + self.lock_timeout
 
         while True:
             try:
                 if self.storage.try_acquire_lock(
-                    func_id, key_hash, owner, self.lock_expire
+                    func_id, key_hash, lock_owner, self.lock_expire
                 ):
                     return
             except StorageError:
@@ -73,12 +75,13 @@ class LockManager:
                 )
             time.sleep(0.05)
 
-    def release(self, func_id, key_hash):
+    def release(self, func_id, key_hash, owner=None):
         """Release the lock for the given cache entry.
 
         Args:
             func_id: The function identifier.
             key_hash: The cache key hash.
+            owner: Optional explicit owner ID matching `acquire`.
         """
-        owner = self._owner()
-        self.storage.release_lock(func_id, key_hash, owner)
+        lock_owner = owner or self.owner()
+        self.storage.release_lock(func_id, key_hash, lock_owner)

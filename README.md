@@ -19,7 +19,7 @@ The package lives under `src/mcp_server_phytomni`. The main MCP entrypoint is
   `tool_handlers.py` for runtime config expansion.
 - Public wrapper functions remain compatible and reuse agent instances through
   a non-secret agent registry where safe.
-- `func_cache` provides a tested SQLite-backed synchronous cache decorator.
+- `func_cache` provides a tested SQLite-backed sync/async cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, and
   default offline `pytest`.
@@ -132,12 +132,14 @@ runs.
 - pickle serialization with optional zlib compression,
 - SQLite storage with TTL support,
 - database-backed locks,
+- sync and async decorators with concurrent-miss protection,
+- `exclude_params` support for clients, sessions, checkpointers, and secrets,
 - `cache_info()` and `cache_clear()` helpers.
 
-The current decorator is synchronous. Async cache support and selective
-function-level cache integration are planned for a later phase. Cache database
-files such as `.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars are ignored
-by git.
+The default cache database path is `PHYTOMNI_CACHE_DB` when set, otherwise
+`.cache/phytomni/func_cache.sqlite`. Selective function-level cache
+integration is planned for a later phase. Cache database files such as
+`.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars are ignored by git.
 
 This is separate from `agent_registry.py`. The registry only reuses in-memory
 agent instances and compiled LangGraph apps for matching non-secret

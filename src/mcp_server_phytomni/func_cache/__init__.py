@@ -4,15 +4,16 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Function result caching decorator with SQLite persistence.
 
-This module provides a caching decorator that stores function results in an
-SQLite database, supporting TTL, compression, and distributed locking for
-concurrent access control.
+This module provides a caching decorator that stores sync and async function
+results in an SQLite database, supporting TTL, compression, and distributed
+locking for concurrent access control.
 
 Key Features:
     - TTL-based cache expiration
     - Optional zlib compression for large results
     - Distributed lock management to prevent cache stampedes
     - Per-function cache isolation via unique func_id
+    - Parameter exclusion for clients, sessions, and secrets
     - Automatic cleanup of expired entries and stale locks
 
 Usage:

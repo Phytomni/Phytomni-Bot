@@ -37,6 +37,28 @@ def test_key_params_ignore_unselected_arguments():
     assert first_key == second_key
 
 
+def test_exclude_params_omit_infrastructure_arguments():
+    key_builder = KeyBuilder(
+        sample_function,
+        exclude_params=["gamma"],
+    )
+
+    first_key = key_builder.build_key((1,), {"gamma": "client-a"})
+    second_key = key_builder.build_key((1,), {"gamma": "client-b"})
+
+    assert key_builder.key_params == ["alpha", "beta"]
+    assert first_key == second_key
+
+
+def test_key_params_and_exclude_params_cannot_overlap():
+    with pytest.raises(CacheConfigError, match="both included and excluded"):
+        KeyBuilder(
+            sample_function,
+            key_params=["alpha", "gamma"],
+            exclude_params=["gamma"],
+        )
+
+
 def test_invalid_key_param_raises_config_error():
     with pytest.raises(CacheConfigError, match="does not exist"):
         KeyBuilder(sample_function, key_params=["missing"])
