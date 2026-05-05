@@ -9,8 +9,7 @@ import asyncio
 import json
 import re
 from json import loads
-from typing import Any, Dict, List, Optional, TypedDict, Union, cast
-from uuid import uuid1
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -23,6 +22,7 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt
 
 rc = ReviewConfig()
@@ -231,7 +231,7 @@ class DeepResearchAgent:
         sensitive_config: SensitiveConfig = sc,
         knowledge_agent: Optional[KnowledgeAgent] = None,
     ):
-        self.checkpointer = checkpointer or MemorySaver()
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.rc = review_config
         self.sc = sensitive_config
         self.ka = knowledge_agent or KnowledgeAgent(
@@ -760,8 +760,6 @@ class DeepResearchAgent:
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute the DeepResearchAgent workflow."""
-        if not thread_id:
-            thread_id = str(uuid1())
         initial_state: DeepResearchState = {
             "original_user_query": user_query,
             "user_query": "",
@@ -778,9 +776,8 @@ class DeepResearchAgent:
             "summary_content": "",
             "final_response": {},
         }
-        config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(
-            cast(Any, initial_state), config=cast(Any, config)
+        final_state = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return final_state["final_response"]
 

@@ -8,8 +8,7 @@
 import asyncio
 from json import loads
 from random import uniform
-from typing import Any, Dict, List, Optional, TypedDict, Union, cast
-from uuid import uuid1
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
@@ -26,6 +25,7 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt
 
 bgc = BriefGeneConfig()
@@ -384,7 +384,7 @@ class BriefGeneAgent:
             knowledge_config=brief_config,
             sensitive_config=sensitive_config,
         )
-        self.checkpointer = checkpointer or MemorySaver()
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -720,8 +720,6 @@ class BriefGeneAgent:
         self, user_query: str, thread_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Execute the BriefGeneAgent workflow."""
-        if thread_id is None:
-            thread_id = str(uuid1())
         initial_state: BriefGeneAgentState = {
             "user_query": user_query,
             "gene_found": False,
@@ -746,9 +744,8 @@ class BriefGeneAgent:
             "follow_up_questions": [],
             "final_response": {},
         }
-        config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(
-            cast(Any, initial_state), config=cast(Any, config)
+        final_state = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return final_state["final_response"]
 

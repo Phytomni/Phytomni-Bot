@@ -11,7 +11,7 @@ LangGraph's parallel execution capabilities.
 """
 
 from json import loads
-from typing import Dict, List, Any, Optional, TypedDict, cast
+from typing import Dict, List, Any, Optional, TypedDict
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -23,6 +23,7 @@ from .utils import get_prompt, download_list_convert
 from .analyst_agents import AnalystAgent, create_output_dir
 from .config.defaults import InSilicoResearchConfig
 from .config.settings import SensitiveConfig
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 isrc = InSilicoResearchConfig()
 sc = SensitiveConfig.load()
@@ -83,7 +84,7 @@ class InSilicoResearchAgents:
 
     def __init__(
         self,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         in_silico_config=isrc,
         sensitive_config=sc,
@@ -97,7 +98,7 @@ class InSilicoResearchAgents:
             in_silico_config: In silico research configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_agent = analyst_agent or AnalystAgent()
         self.isrc = in_silico_config
         self.sc = sensitive_config
@@ -374,7 +375,7 @@ class InSilicoResearchAgents:
         paper_text: str,
         data_list: Dict[str, str],
         user_id: Optional[str] = None,
-        obs_file_list: List[str] = [],
+        obs_file_list: Optional[List[str]] = None,
         output_dir: Optional[str] = None,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -391,14 +392,11 @@ class InSilicoResearchAgents:
         Returns:
             Dict with task_ids mapping research goals to task IDs.
         """
-        if thread_id is None:
-            thread_id = str(uuid1())
-
         initial_state = {
             "paper_text": paper_text,
             "data_list": data_list,
             "user_id": user_id,
-            "obs_file_list": obs_file_list,
+            "obs_file_list": obs_file_list or [],
             "output_dir": output_dir,
             "goals": [],
             "research_tasks": [],
@@ -407,9 +405,8 @@ class InSilicoResearchAgents:
             "error": None,
         }
 
-        config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(
-            cast(Any, initial_state), cast(Any, config)
+        result = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return {
             "task_ids": result.get("task_ids"),

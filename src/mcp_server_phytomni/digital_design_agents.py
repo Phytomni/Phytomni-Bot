@@ -20,7 +20,6 @@ from typing import (
     Literal,
     Optional,
     TypedDict,
-    cast,
 )
 from uuid import uuid1
 
@@ -32,6 +31,7 @@ from .utils import get_prompt
 from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import DigitalDesignConfig
 from .config.settings import SensitiveConfig
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 ddc = DigitalDesignConfig()
 sc = SensitiveConfig.load()
@@ -98,7 +98,7 @@ class DigitalDesignAgents:
 
     def __init__(
         self,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         digital_design_config=ddc,
         sensitive_config=sc,
@@ -112,7 +112,7 @@ class DigitalDesignAgents:
             digital_design_config: Digital design configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_agent = analyst_agent or AnalystAgent()
         self.ddc = digital_design_config
         self.sc = sensitive_config
@@ -311,9 +311,6 @@ class DigitalDesignAgents:
         Returns:
             Dict with task_ids on success, or error on failure.
         """
-        if thread_id is None:
-            thread_id = str(uuid1())
-
         initial_state: Dict[str, Any] = {
             "species": species,
             "gene_id": gene_id,
@@ -327,9 +324,8 @@ class DigitalDesignAgents:
             "error": None,
         }
 
-        config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(
-            cast(Any, initial_state), cast(Any, config)
+        result = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return {
             "design_task_result": result.get("design_task_result"),

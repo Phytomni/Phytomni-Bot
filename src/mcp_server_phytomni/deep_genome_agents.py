@@ -25,7 +25,7 @@ import operator
 from collections import deque
 from json import loads
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TypedDict, Annotated, cast
+from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from uuid import uuid1
 import requests
 
@@ -41,6 +41,7 @@ from .config.defaults import DeepGenomeConfig
 from .config.overrides import copy_config_with_overrides
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt
 
 SPECIES_CODE_MAP = {
@@ -285,7 +286,7 @@ class DeepGenomeAgents:
         data_agent,
         knowledge_agent,
         analyst_agent,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         deepgenome_config=dgc,
         sensitive_config=sc,
     ):
@@ -302,7 +303,7 @@ class DeepGenomeAgents:
         self.data_agent = data_agent
         self.knowledge_agent = knowledge_agent
         self.analyst_agent = analyst_agent
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.dgc = deepgenome_config
         self.sc = sensitive_config
         self._figure_index = 1
@@ -454,9 +455,6 @@ class DeepGenomeAgents:
         if config_params is None:
             config_params = {}
 
-        if thread_id is None:
-            thread_id = str(uuid1())
-
         initial_state = {
             "species_code": species_code,
             "gene_id": gene_id,
@@ -509,10 +507,8 @@ class DeepGenomeAgents:
             )
             print(f"skip_synthesize: {initial_state['skip_synthesize']}")
 
-        config = {"configurable": {"thread_id": thread_id}}
-
-        result = await self.app.ainvoke(
-            cast(Any, initial_state), cast(Any, config)
+        result = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return result
 

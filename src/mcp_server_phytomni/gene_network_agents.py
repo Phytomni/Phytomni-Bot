@@ -19,7 +19,7 @@ Key functionalities include:
 - Integration with plant-specific databases and resources
 """
 
-from typing import Dict, List, Any, Literal, Optional, TypedDict, cast
+from typing import Dict, List, Any, Literal, Optional, TypedDict
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -30,6 +30,7 @@ from .utils import get_prompt
 from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
 from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 gnc = GeneNetworkConfig()
 sc = SensitiveConfig.load()
@@ -94,7 +95,7 @@ class GeneNetworkAgents:
 
     def __init__(
         self,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         gene_network_config=gnc,
         sensitive_config=sc,
@@ -108,7 +109,7 @@ class GeneNetworkAgents:
             gene_network_config: Gene network configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_agent = analyst_agent or AnalystAgent()
         self.gnc = gene_network_config
         self.sc = sensitive_config
@@ -294,9 +295,6 @@ class GeneNetworkAgents:
         Returns:
             Dict with task_ids on success, or error on failure.
         """
-        if thread_id is None:
-            thread_id = str(uuid1())
-
         initial_state: Dict[str, Any] = {
             "species": species,
             "to_id": to_id,
@@ -309,9 +307,8 @@ class GeneNetworkAgents:
             "error": None,
         }
 
-        config = {"configurable": {"thread_id": thread_id}}
-        result = await self.app.ainvoke(
-            cast(Any, initial_state), cast(Any, config)
+        result = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
         return {
             "network_task": result.get("network_task"),

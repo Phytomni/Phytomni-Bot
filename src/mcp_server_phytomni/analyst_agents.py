@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, List, Literal, Dict, Optional, TypedDict, cast
+from typing import Any, List, Literal, Dict, Optional, TypedDict
 from uuid import uuid1
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
@@ -23,6 +23,7 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .knowledge_agents import multi_retrieve, retrieve
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt, get_token
 
 ac = AnalystConfig()
@@ -152,7 +153,7 @@ class AnalystAgent:
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
-                      Defaults to MemorySaver().
+                      Defaults to a fresh MemorySaver instance.
         analyst_config: Configuration for the analyst agent.
                         Defaults to the global ac instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
@@ -167,12 +168,12 @@ class AnalystAgent:
 
     def __init__(
         self,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         analyst_config=ac,
         sensitive_config=sc,
     ):
         """Initialize the AnalystAgent and build the graph."""
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.ac = analyst_config
         self.sc = sensitive_config
         self.app = self._build_graph()
@@ -1208,9 +1209,6 @@ class AnalystAgent:
             compute_resource on success, or the initial state with
             task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
         """
-        if not thread_id:
-            thread_id = str(uuid1())
-
         initial_state = {
             "query": query,
             "goal_description": goal_description,
@@ -1230,11 +1228,10 @@ class AnalystAgent:
             "is_polling": is_polling,
             "is_auto_select": is_auto_select,
         }
-        config = {"configurable": {"thread_id": thread_id}}
 
         try:
-            final_state = await self.app.ainvoke(
-                cast(Any, initial_state), config=cast(Any, config)
+            final_state = await ainvoke_graph(
+                self.app, initial_state, thread_id=thread_id
             )
             return {
                 "task_id": final_state["task_id"],

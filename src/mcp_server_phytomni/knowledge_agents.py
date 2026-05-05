@@ -11,8 +11,7 @@ the retrieved knowledge.
 import asyncio
 from random import uniform
 from json import loads
-from uuid import uuid1
-from typing import List, Dict, Any, Optional, Literal, TypedDict, cast
+from typing import List, Dict, Any, Optional, Literal, TypedDict
 
 from httpx import AsyncClient, ConnectError, HTTPStatusError
 from httpx import Timeout, TimeoutException
@@ -29,6 +28,7 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt, split_list
 
 kc = KnowledgeConfig()
@@ -131,7 +131,7 @@ class KnowledgeAgent:
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
-                      Defaults to MemorySaver().
+                      Defaults to a fresh MemorySaver instance.
         knowledge_config: Configuration for knowledge base retrieval.
                           Defaults to the global kc instance.
         sensitive_config: Configuration for sensitive data (e.g., credentials).
@@ -146,14 +146,14 @@ class KnowledgeAgent:
 
     def __init__(
         self,
-        checkpointer=MemorySaver(),
+        checkpointer: Optional[MemorySaver] = None,
         knowledge_config=kc,
         sensitive_config=sc,
     ):
         """Initialize the KnowledgeAgent and build the graph."""
         self.kc = knowledge_config
         self.sc = sensitive_config
-        self.checkpointer = checkpointer
+        self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -571,8 +571,6 @@ class KnowledgeAgent:
             The final response dictionary containing the LLM response
             and optionally the doc_list and follow_up_questions.
         """
-        if not thread_id:
-            thread_id = str(uuid1())
         initial_state = {
             "user_query": user_query,
             "obs_file_list": obs_file_list or [],
@@ -587,9 +585,8 @@ class KnowledgeAgent:
             "final_response": {},
         }
 
-        config = {"configurable": {"thread_id": thread_id}}
-        final_state = await self.app.ainvoke(
-            cast(Any, initial_state), config=cast(Any, config)
+        final_state = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
         )
 
         if not is_generate:

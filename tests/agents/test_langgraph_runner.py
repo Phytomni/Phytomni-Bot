@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for shared LangGraph runtime helpers."""
 
+from pathlib import Path
+
 from pydantic import SecretStr
 
 from mcp_server_phytomni.langgraph_runner import (
@@ -14,6 +16,8 @@ from mcp_server_phytomni.langgraph_runner import (
     ensure_checkpointer,
     ensure_thread_id,
 )
+
+PACKAGE_DIR = Path(__file__).resolve().parents[2] / "src/mcp_server_phytomni"
 
 
 class FakeGraph:
@@ -121,3 +125,19 @@ def test_graph_registry_can_clear_one_name_or_all():
     registry.clear()
 
     assert registry.count() == 0
+
+
+def test_agent_sources_use_shared_runner_for_graph_invocation():
+    agent_files = sorted(PACKAGE_DIR.glob("*_agents.py"))
+    source_by_name = {
+        agent_file.name: agent_file.read_text(encoding="utf-8")
+        for agent_file in agent_files
+    }
+
+    assert source_by_name
+    for source in source_by_name.values():
+        assert "checkpointer=MemorySaver()" not in source
+        assert "self.app.ainvoke(" not in source
+        assert (
+            'config = {"configurable": {"thread_id": thread_id}}' not in source
+        )

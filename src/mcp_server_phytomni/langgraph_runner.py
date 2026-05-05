@@ -14,7 +14,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
-ResultT = TypeVar("ResultT")
 ResultT_co = TypeVar("ResultT_co", covariant=True)
 GraphT = TypeVar("GraphT")
 
@@ -67,10 +66,10 @@ def ensure_checkpointer(
 
 
 async def ainvoke_graph(
-    app: AsyncGraph[ResultT],
+    app: AsyncGraph[Any],
     initial_state: Any,
     thread_id: Optional[str] = None,
-) -> ResultT:
+) -> Any:
     """Invoke a compiled graph with a standard RunnableConfig."""
     return await app.ainvoke(
         initial_state,
