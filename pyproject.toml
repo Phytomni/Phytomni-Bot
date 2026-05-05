@@ -88,6 +88,26 @@ exclude = [
 pythonVersion = "3.12"
 reportMissingTypeStubs = false
 
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "-ra",
+    "-m",
+    "not integration and not network",
+]
+markers = [
+    "unit: fast offline unit tests.",
+    "server: MCP server schema and dispatch tests.",
+    "agent: offline agent smoke tests with mocked external services.",
+    "integration: tests that may require configured external services.",
+    "network: tests that may perform real network, OBS, or LLM calls.",
+]
+
 [tool.pylint.main]
 py-version = "3.12"
 ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
