@@ -72,7 +72,7 @@ The server provides the following specialized agents:
    pip install -e .
 
    # For development (optional)
-   pip install pytest pytest-asyncio ipykernel
+   pip install -e ".[dev]"
    ```
 
 #### Option C: Using pip (Traditional)
@@ -701,9 +701,14 @@ Core dependencies (managed by package managers):
 - **[pyyaml](https://pypi.org/project/pyyaml/)** (>=6.0.2): YAML processing
 
 Development dependencies:
-- **pytest** (>=8.4.1): Testing framework
-- **pytest-asyncio** (>=1.0.0): Async testing support
-- **ipykernel** (>=6.30.0): Jupyter notebook support
+- **black** (>=26.3.1): Code formatter
+- **flake8** (>=7.3.0): Style checker
+- **ipykernel** (>=7.2.0): Jupyter notebook support
+- **mypy** (>=1.20.2): Static type checker
+- **pylint** (>=4.0.5): Python linter
+- **pytest** (>=9.0.3): Testing framework
+- **pytest-asyncio** (>=1.3.0): Async testing support
+- **ruff** (>=0.15.12): Fast Python linter
 
 ## 💻 System Requirements
 
