@@ -39,7 +39,7 @@ from .data_agents import DataAgent
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import get_prompt
+from .utils import get_prompt, message_content, parse_follow_up_questions
 
 SPECIES_CODE_MAP = {
     "ach": "kiwi (Actinidia chinensis)",
@@ -2770,30 +2770,9 @@ class DeepGenomeAgents:
             max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
-        follow_up_content = ""
-        if (
-            follow_up_response
-            and "choices" in follow_up_response
-            and len(follow_up_response["choices"]) > 0
-            and "message" in follow_up_response["choices"][0]
-            and follow_up_response["choices"][0]["message"] is not None
-            and "content" in follow_up_response["choices"][0]["message"]
-        ):
-            follow_up_content = follow_up_response["choices"][0]["message"][
-                "content"
-            ]
-
-        # 解析 JSON 获取 follow-up questions 列表
-        follow_up_list = []
-        if follow_up_content:
-            start_index = follow_up_content.find("[")
-            end_index = follow_up_content.rfind("]") + 1
-            if start_index != -1 and end_index > start_index:
-                try:
-                    json_part = follow_up_content[start_index:end_index]
-                    follow_up_list = loads(json_part)
-                except (ValueError, TypeError):
-                    follow_up_list = []
+        follow_up_list = parse_follow_up_questions(
+            message_content(follow_up_response)
+        )
         return {
             "final_report": part0145_str,
             "follow_up_questions": follow_up_list,

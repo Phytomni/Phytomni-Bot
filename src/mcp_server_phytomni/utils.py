@@ -35,6 +35,56 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 FILE_CACHE_TTL = 3600
 
 
+def message_content(response: Any) -> str:
+    """Return the first assistant message content from an OpenAI-style dict."""
+    if (
+        isinstance(response, dict)
+        and response.get("choices")
+        and isinstance(response["choices"], list)
+        and response["choices"][0]
+        and isinstance(response["choices"][0], dict)
+        and isinstance(response["choices"][0].get("message"), dict)
+    ):
+        return str(response["choices"][0]["message"].get("content", ""))
+    return ""
+
+
+def parse_json_list_fragment(text: str) -> List[Any]:
+    """Parse a JSON list embedded in model output text."""
+    if not text:
+        return []
+    start_index = text.find("[")
+    end_index = text.rfind("]") + 1
+    if start_index == -1 or end_index <= start_index:
+        return []
+    try:
+        parsed = json.loads(text[start_index:end_index])
+    except (ValueError, TypeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def parse_follow_up_questions(text: str) -> List[str]:
+    """Parse follow-up questions from a JSON list embedded in model output."""
+    return parse_json_list_fragment(text)
+
+
+def attach_message_payload(
+    phyto_response: dict[str, Any],
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach payload fields to the first assistant message."""
+    if not isinstance(phyto_response, dict) or "choices" not in phyto_response:
+        phyto_response = {"choices": [{"message": {}}]}
+    if not phyto_response["choices"]:
+        phyto_response["choices"].append({"message": {}})
+    if "message" not in phyto_response["choices"][0]:
+        phyto_response["choices"][0]["message"] = {}
+
+    phyto_response["choices"][0]["message"].update(dict(payload))
+    return phyto_response
+
+
 async def get_token(
     timeout: float = SERVER_CONFIG.TIMEOUT, region: str = SERVER_CONFIG.REGION
 ) -> str:

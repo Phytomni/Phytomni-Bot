@@ -7,7 +7,6 @@
 """Brief gene function summaries from BI annotations and literature RAG."""
 
 import asyncio
-from json import loads
 from random import uniform
 from typing import Any, Dict, List, Optional, TypedDict, Union
 
@@ -34,7 +33,12 @@ from .config.settings import SensitiveConfig
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import get_prompt
+from .utils import (
+    attach_message_payload,
+    get_prompt,
+    message_content,
+    parse_follow_up_questions,
+)
 
 BRIEF_CONFIG = BriefGeneConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -139,53 +143,16 @@ def _format_docs(doc_list: List[Dict[str, Any]], max_tokens: int) -> str:
     return "\n\n".join(fragments)
 
 
-def _parse_follow_up_questions(text: str) -> List[str]:
-    """Parse follow-up questions from a JSON list embedded in model output."""
-    if not text:
-        return []
-    start_index = text.find("[")
-    end_index = text.rfind("]") + 1
-    if start_index == -1 or end_index <= start_index:
-        return []
-    try:
-        parsed = loads(text[start_index:end_index])
-    except (ValueError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def _message_content(response: Any) -> str:
-    """Return the first assistant message content from an OpenAI-style dict."""
-    if (
-        isinstance(response, dict)
-        and response.get("choices")
-        and isinstance(response["choices"], list)
-        and response["choices"][0]
-        and isinstance(response["choices"][0], dict)
-        and isinstance(response["choices"][0].get("message"), dict)
-    ):
-        return str(response["choices"][0]["message"].get("content", ""))
-    return ""
-
-
 def _attach_metadata(
     phyto_response: Dict[str, Any],
     doc_list: List[Dict[str, Any]],
     follow_up_questions: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Attach references and follow-up questions to a model response."""
-    if not isinstance(phyto_response, dict) or "choices" not in phyto_response:
-        phyto_response = {"choices": [{"message": {}}]}
-    if not phyto_response["choices"]:
-        phyto_response["choices"].append({"message": {}})
-    if "message" not in phyto_response["choices"][0]:
-        phyto_response["choices"][0]["message"] = {}
-
     payload: Dict[str, Any] = {"doc_list": doc_list, "total": 10000}
     if follow_up_questions is not None:
         payload["follow_up_questions"] = follow_up_questions
-    phyto_response["choices"][0]["message"].update(payload)
-    return phyto_response
+    return attach_message_payload(phyto_response, payload)
 
 
 async def run_bi_api(
@@ -358,7 +325,7 @@ async def _generate_follow_up(
             "system/follow_up_questions",
             {
                 "user_query": f"What is gene function of {user_query}",
-                "system_response": _message_content(phyto_response),
+                "system_response": message_content(phyto_response),
             },
         ),
         prompt_file=prompt_file,
@@ -379,7 +346,7 @@ async def _generate_follow_up(
         retriable_codes=retriable_codes,
         max_retries=max_retries,
     )
-    return _parse_follow_up_questions(_message_content(follow_up_response))
+    return parse_follow_up_questions(message_content(follow_up_response))
 
 
 class BriefGeneAgentState(TypedDict):

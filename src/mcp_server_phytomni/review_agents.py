@@ -25,7 +25,12 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import download_list_convert, get_prompt
+from .utils import (
+    download_list_convert,
+    get_prompt,
+    message_content,
+    parse_follow_up_questions,
+)
 
 REVIEW_CONFIG = ReviewConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -82,20 +87,6 @@ CITATION_PATTERN = (
 )
 
 
-def _message_content(response: Any) -> str:
-    """Return the first assistant message content from an OpenAI-style dict."""
-    if (
-        isinstance(response, dict)
-        and response.get("choices")
-        and isinstance(response["choices"], list)
-        and response["choices"][0]
-        and isinstance(response["choices"][0], dict)
-        and isinstance(response["choices"][0].get("message"), dict)
-    ):
-        return str(response["choices"][0]["message"].get("content", ""))
-    return ""
-
-
 def _extract_json_object(text: str) -> Dict[str, Any]:
     """Extract a JSON object from model output."""
     start_index = text.find("{")
@@ -107,21 +98,6 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     except (ValueError, TypeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
-
-
-def _parse_follow_up_questions(text: str) -> List[str]:
-    """Parse follow-up questions from a JSON list embedded in model output."""
-    if not text:
-        return []
-    start_index = text.find("[")
-    end_index = text.rfind("]") + 1
-    if start_index == -1 or end_index <= start_index:
-        return []
-    try:
-        parsed = loads(text[start_index:end_index])
-    except (ValueError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
 
 
 def _doc_content(doc: Dict[str, Any]) -> str:
@@ -362,9 +338,7 @@ class DeepResearchAgent:
                 },
             },
         )
-        dimensions_json = _extract_json_object(
-            _message_content(query_response)
-        )
+        dimensions_json = _extract_json_object(message_content(query_response))
         dimensions = dimensions_json.get("Research_dimensions", [])
         if not isinstance(dimensions, list) or not dimensions:
             raise ValueError("Invalid research dimensions from phyto_chat")
@@ -449,7 +423,7 @@ class DeepResearchAgent:
                 (
                     ""
                     if isinstance(result, BaseException)
-                    else _message_content(result)
+                    else message_content(result)
                 )
                 for result in draft_results
             ]
@@ -485,7 +459,7 @@ class DeepResearchAgent:
                 (
                     "{}"
                     if isinstance(result, BaseException)
-                    else _message_content(result)
+                    else message_content(result)
                 )
                 for result in review_results
             ]
@@ -577,7 +551,7 @@ class DeepResearchAgent:
                         },
                     )
                 )
-                feedback_content = _message_content(feedback_response)
+                feedback_content = message_content(feedback_response)
                 if feedback_content:
                     content_to_check = feedback_content
 
@@ -678,7 +652,7 @@ class DeepResearchAgent:
                     },
                 )
             )
-            checked_text = _message_content(check_response).strip()
+            checked_text = message_content(check_response).strip()
             if checked_text:
                 content_to_check = checked_text
 
@@ -732,7 +706,7 @@ class DeepResearchAgent:
                 summary_params,
             )
         )
-        content = _message_content(summary_response).replace("`", "")
+        content = message_content(summary_response).replace("`", "")
         return {"summary_content": content or "No summary generated"}
 
     async def post_process_node(self, state: DeepResearchState):
@@ -751,8 +725,8 @@ class DeepResearchAgent:
                 },
             )
         )
-        follow_up_list = _parse_follow_up_questions(
-            _message_content(follow_up_response)
+        follow_up_list = parse_follow_up_questions(
+            message_content(follow_up_response)
         )
         final_response = {
             "choices": [

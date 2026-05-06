@@ -9,7 +9,6 @@ the retrieved knowledge.
 """
 
 import asyncio
-from json import loads
 from random import uniform
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
@@ -35,7 +34,13 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .func_cache import func_cache
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import download_list_convert, get_prompt, split_list
+from .utils import (
+    download_list_convert,
+    get_prompt,
+    message_content,
+    parse_follow_up_questions,
+    split_list,
+)
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -429,17 +434,7 @@ class KnowledgeAgent:
         """
         user_query = state["user_query"]
         phyto_response = state["main_response"]
-        system_response_text = ""
-
-        if (
-            phyto_response
-            and "choices" in phyto_response
-            and len(phyto_response["choices"]) > 0
-            and "message" in phyto_response["choices"][0]
-        ):
-            system_response_text = phyto_response["choices"][0]["message"].get(
-                "content", ""
-            )
+        system_response_text = message_content(phyto_response)
 
         follow_up_response = await phyto_chat(
             user_query=get_prompt(
@@ -469,30 +464,9 @@ class KnowledgeAgent:
             max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
-        follow_up_content = ""
-        if (
-            follow_up_response
-            and "choices" in follow_up_response
-            and len(follow_up_response["choices"]) > 0
-            and "message" in follow_up_response["choices"][0]
-            and follow_up_response["choices"][0]["message"] is not None
-        ):
-            follow_up_content = follow_up_response["choices"][0][
-                "message"
-            ].get("content", "")
-
-        # 解析 JSON
-        follow_up_list = []
-        if follow_up_content:
-            start_index = follow_up_content.find("[")
-            end_index = follow_up_content.rfind("]") + 1
-            if start_index != -1 and end_index > start_index:
-                try:
-                    follow_up_list = loads(
-                        follow_up_content[start_index:end_index]
-                    )
-                except (ValueError, TypeError):
-                    follow_up_list = []
+        follow_up_list = parse_follow_up_questions(
+            message_content(follow_up_response)
+        )
 
         # 更新最终返回值
         phyto_response["choices"][0]["message"].update(

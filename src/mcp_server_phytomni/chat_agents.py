@@ -9,7 +9,6 @@ prompt, with support for various model parameters and retry mechanisms.
 """
 
 import asyncio
-from json import loads
 from random import uniform
 from typing import Any, Dict, List, Optional, Union
 
@@ -20,7 +19,12 @@ from openai import AsyncOpenAI
 
 from .config.defaults import ChatConfig
 from .config.settings import SensitiveConfig
-from .utils import download_list_convert, get_prompt
+from .utils import (
+    download_list_convert,
+    get_prompt,
+    message_content,
+    parse_follow_up_questions,
+)
 
 CHAT_CONFIG = ChatConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -228,29 +232,9 @@ async def phyto_chat_with_follow(
         semaphore=semaphore,
     )
 
-    follow_up_content = ""
-    if (
-        follow_up_response
-        and "choices" in follow_up_response
-        and len(follow_up_response["choices"]) > 0
-        and "message" in follow_up_response["choices"][0]
-        and follow_up_response["choices"][0]["message"] is not None
-        and "content" in follow_up_response["choices"][0]["message"]
-    ):
-        follow_up_content = follow_up_response["choices"][0]["message"][
-            "content"
-        ]
-
-    follow_up_list = []
-    if follow_up_content:
-        start_index = follow_up_content.find("[")
-        end_index = follow_up_content.rfind("]") + 1
-        if start_index != -1 and end_index > start_index:
-            try:
-                json_part = follow_up_content[start_index:end_index]
-                follow_up_list = loads(json_part)
-            except (ValueError, TypeError):
-                follow_up_list = []
+    follow_up_list = parse_follow_up_questions(
+        message_content(follow_up_response)
+    )
 
     if (
         phyto_response
