@@ -8,8 +8,8 @@
 import asyncio
 import operator
 from collections import deque
+from dataclasses import dataclass
 from json import loads
-from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
 from uuid import uuid1
 
@@ -40,6 +40,7 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .data_agents import DataAgent
 from .deep_genome_formatting import SPECIES_CODE_MAP, network_to_string
+from .deep_genome_summary import build_sub_summary
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import (
@@ -113,6 +114,16 @@ MEDIUM_COMPUTE_ANALYSIS_TYPES = {
     "protein_structure_analysis",
     "evolution_analysis",
 }
+
+
+@dataclass(frozen=True)
+class AnalysisDispatchContext:
+    """Resolved request context for one deep analysis task."""
+
+    analysis_type: str
+    species: str
+    gene_id: str
+    output_dir: str
 
 
 def _post_bi_sql(
@@ -810,412 +821,16 @@ class DeepGenomeAgents:
     def _generate_sub_summary(
         self, analysis_type: str, gene_id: str, state: DeepGenomeState
     ) -> dict:
-        """Generate sub-summary for a specific analysis type.
-
-        This method reads output files from completed analysis tasks and
-        formats them into a structured dictionary for report generation.
-        It handles multiple analysis types including evolution, expression,
-        single-cell, promoter, and protein structure analysis.
-
-        Args:
-            analysis_type: Type of analysis (e.g., 'evolution_analysis',
-                         'gene_expression_tissues').
-            gene_id: Target gene identifier.
-            state: Current workflow state containing analyst_summaries.
-
-        Returns:
-            Dict containing analysis results with image paths, summaries,
-            and legends formatted for report integration.
-        """
-        deepgenome_out = self.deep_genome_config.DEEPGENOME_OUT
-        out_path = Path(f"{deepgenome_out}/{gene_id}")
-        gene_results_data = state.get(
-            "analyst_summaries", {"gene_name": gene_id}
+        """Generate sub-summary for a specific analysis type."""
+        result = build_sub_summary(
+            analysis_type=analysis_type,
+            gene_id=gene_id,
+            deepgenome_out=self.deep_genome_config.DEEPGENOME_OUT,
+            data=state.get("analyst_summaries"),
+            figure_index=self._figure_index,
         )
-        match analysis_type:
-            case "evolution_analysis":
-                try:
-                    target_file = next(out_path.rglob("*tree.png")).name
-                    tree_img_path = f"{gene_id}/{target_file}"
-                    gene_results_data["tree_path"] = tree_img_path
-                    with open(
-                        out_path / f"{gene_id}_tree.summary",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["tree_summary"] = summary
-                    with open(
-                        out_path / f"{gene_id}_tree.legend",
-                        "r",
-                        encoding="utf-8",
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["tree_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["tree_path"] = ""
-                    gene_results_data["tree_summary"] = "None Results"
-                    gene_results_data["tree_legend"] = ""
-                try:
-                    with open(
-                        out_path / f"{gene_id}_domain.md",
-                        "r",
-                        encoding="utf-8",
-                    ) as domain_f:
-                        domain = domain_f.read()
-                        gene_results_data["domain_table"] = domain
-                    with open(
-                        out_path / f"{gene_id}_domain.summary",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        gene_results_data["domain_summary"] = summary
-                    with open(
-                        out_path / f"{gene_id}_domain.legend",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        gene_results_data["domain_legend"] = summary
-                except (FileNotFoundError, OSError, IOError):
-                    gene_results_data["domain_table"] = ""
-                    gene_results_data["domain_summary"] = "None Results"
-                    gene_results_data["domain_legend"] = ""
-            case "gene_expression_tissues":
-                try:
-                    target_file = next(out_path.rglob("*tissues.png")).name
-                    tissue_img = f"{gene_id}/{target_file}"
-                    gene_results_data["tissue_path"] = tissue_img
-                    target_file = next(out_path.rglob("*tissues.summary")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["tissue_summary"] = summary
-                    target_file = next(out_path.rglob("*tissues.legend")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["tissue_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["tissue_path"] = ""
-                    gene_results_data["tissue_summary"] = "None Results"
-                    gene_results_data["tissue_legend"] = ""
-            case "gene_expression_cultivars":
-                try:
-                    target_file = next(out_path.rglob("*cultivars.png")).name
-                    cultivar_img = f"{gene_id}/{target_file}"
-                    gene_results_data["cultivar_path"] = cultivar_img
-                    target_file = next(
-                        out_path.rglob("*cultivars.summary")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["cultivar_summary"] = summary
-                    target_file = next(
-                        out_path.rglob("*cultivars.legend")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["cultivar_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["cultivar_path"] = ""
-                    gene_results_data["cultivar_summary"] = "None Results"
-                    gene_results_data["cultivar_legend"] = ""
-            case "gene_expression_treatments":
-                try:
-                    target_file = next(out_path.rglob("*treatments.png")).name
-                    treatment_img = f"{gene_id}/{target_file}"
-                    gene_results_data["treatment_path"] = treatment_img
-                    target_file = next(
-                        out_path.rglob("*treatments.summary")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["treatment_summary"] = summary
-                    target_file = next(
-                        out_path.rglob("*treatments.legend")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["treatment_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["treatment_path"] = ""
-                    gene_results_data["treatment_summary"] = "None Results"
-                    gene_results_data["treatment_legend"] = ""
-            case "gene_expression_genotypes":
-                try:
-                    target_file = next(out_path.rglob("*genotypes.png")).name
-                    genotype_img = f"{gene_id}/{target_file}"
-                    gene_results_data["mutant_path"] = genotype_img
-                    target_file = next(
-                        out_path.rglob("*genotypes.summary")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["mutant_summary"] = summary
-                    target_file = next(
-                        out_path.rglob("*genotypes.legend")
-                    ).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["mutant_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["mutant_path"] = ""
-                    gene_results_data["mutant_summary"] = "None Results"
-                    gene_results_data["mutant_legend"] = ""
-            case "single_cell_analysis":
-                try:
-                    target_file = next(out_path.rglob("*_umap.png")).name
-                    sc_umap = f"{gene_id}/{target_file}"
-                    gene_results_data["umap_path"] = sc_umap
-                    target_file = next(
-                        out_path.rglob("*_violin_plot.png")
-                    ).name
-                    sc_violin = f"{gene_id}/{target_file}"
-                    gene_results_data["violin_path"] = sc_violin
-                    with open(
-                        out_path / f"{gene_id}_single_cell.summary",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        gene_results_data["single_cell_summary"] = summary
-                    with open(
-                        out_path / f"{gene_id}_single_cell.legend",
-                        "r",
-                        encoding="utf-8",
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["single_cell_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["umap_path"] = ""
-                    gene_results_data["violin_path"] = ""
-                    gene_results_data["single_cell_summary"] = "None Results"
-                    gene_results_data["single_cell_legend"] = ""
-            case "haplotypes_analysis":
-                try:
-                    target_file = next(
-                        out_path.rglob("*promoter_hap.png")
-                    ).name
-                    haplotype_img = f"{gene_id}/{target_file}"
-                    gene_results_data["haplotype_path"] = haplotype_img
-                    with open(
-                        out_path / f"{gene_id}_haplotype.summary",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        gene_results_data["haplotype_summary"] = summary
-                    with open(
-                        out_path / f"{gene_id}_haplotype.legend",
-                        "r",
-                        encoding="utf-8",
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["haplotype_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["haplotype_path"] = ""
-                    gene_results_data["haplotype_summary"] = "None Results"
-                    gene_results_data["haplotype_legend"] = ""
-            case "promoter_analysis":
-                try:
-                    target_file = next(
-                        out_path.rglob("motif_all_logo.png")
-                    ).name
-                    motif_img = f"{gene_id}/{target_file}"
-                    gene_results_data["motif_path"] = motif_img
-                    with open(
-                        out_path / f"{gene_id}_motif.summary",
-                        "r",
-                        encoding="utf-8",
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["motif_summary"] = summary
-                    with open(
-                        out_path / f"{gene_id}_motif.legend",
-                        "r",
-                        encoding="utf-8",
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["motif_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["motif_path"] = ""
-                    gene_results_data["motif_summary"] = "None Results"
-                    gene_results_data["motif_legend"] = ""
-            case "smep_analysis":
-                try:
-                    target_file = next(out_path.rglob("*smep.png")).name
-                    smep_img = f"{gene_id}/{target_file}"
-                    gene_results_data["smep_path"] = smep_img
-                    target_file = next(out_path.rglob("*smep.summary")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["smep_summary"] = summary
-                    target_file = next(out_path.rglob("*smep.legend")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["smep_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["smep_path"] = ""
-                    gene_results_data["smep_legend"] = ""
-                    gene_results_data["smep_summary"] = ""
-            case "smoc_analysis":
-                try:
-                    target_file = next(out_path.rglob("*smoc.png")).name
-                    smep_img = f"{gene_id}/{target_file}"
-                    gene_results_data["smoc_path"] = smep_img
-                    target_file = next(out_path.rglob("*smoc.summary")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as summary_file:
-                        summary = summary_file.read()
-                        summary = summary.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["smoc_summary"] = summary
-                    target_file = next(out_path.rglob("*smoc.legend")).name
-                    with open(
-                        out_path / f"{target_file}", "r", encoding="utf-8"
-                    ) as legend_file:
-                        legend = legend_file.read()
-                        legend = legend.replace(
-                            "Figure 1", f"Figure {self._figure_index}"
-                        )
-                        gene_results_data["smoc_legend"] = legend
-                    self._figure_index += 1
-                except (StopIteration, FileNotFoundError, OSError, IOError):
-                    gene_results_data["smoc_path"] = ""
-                    gene_results_data["smoc_legend"] = ""
-                    gene_results_data["smoc_summary"] = ""
-            case "protein_structure_analysis":
-                try:
-                    protein_structure_files = list(
-                        out_path.glob("*_seed_101_sample_0.cif")
-                    )
-                    if len(protein_structure_files) == 0:
-                        gene_results_data["protein_structures"] = (
-                            "None Results"
-                        )
-                    else:
-                        gene_results_data["protein_structures"] = ""
-                        for structure_path in protein_structure_files:
-                            structure_file = f"{gene_id}/{structure_path.name}"
-                            structure_start = structure_path.name.split(
-                                ".cif"
-                            )[0]
-                            gene_results_data[
-                                "protein_structures"
-                            ] += f"![3D Structure]({structure_file})\n"
-                            with open(
-                                out_path / f"{structure_start}.legend",
-                                "r",
-                                encoding="utf-8",
-                            ) as legend_file:
-                                legend = legend_file.read()
-                                legend = legend.replace(
-                                    "Table 1", f"Figure {self._figure_index}"
-                                )
-                                legend = legend.replace(
-                                    "Figure 1", f"Figure {self._figure_index}"
-                                )
-                                gene_results_data[
-                                    "protein_structures"
-                                ] += f"{legend}\n"
-
-                            with open(
-                                out_path / f"{structure_start}.summary",
-                                "r",
-                                encoding="utf-8",
-                            ) as summary_file:
-                                summary = summary_file.read()
-                                summary = summary.replace(
-                                    "Figure 1", f"Figure {self._figure_index}"
-                                )
-                                gene_results_data[
-                                    "protein_structures"
-                                ] += f"{summary}\n"
-                            self._figure_index += 1
-                except (FileNotFoundError, OSError, IOError):
-                    gene_results_data["protein_structures"] = "None Results"
-            case _:
-                pass
-        return gene_results_data
+        self._figure_index = result.figure_index
+        return result.data
 
     async def run_knowledge_agent(self, state: DeepGenomeState):
         """Retrieve literature knowledge for the target gene.
@@ -1525,86 +1140,130 @@ class DeepGenomeAgents:
         Returns:
             Dict containing task_id and output_path.
         """
-        # 根据 analysis_type 获取对应的 prompt 和 data_list
+        output_dir = self._ensure_analysis_output_dir(
+            analysis_type,
+            output_dir,
+        )
+        context = AnalysisDispatchContext(
+            analysis_type=analysis_type,
+            species=species,
+            gene_id=gene_id,
+            output_dir=output_dir,
+        )
+        print(f"  → 使用 AnalystAgent 提交 {analysis_type} 任务...")
+
+        result = await self._submit_analysis_task(context)
+        self._raise_if_agent_failed(result)
+
+        task_id = result.get("task_id")
+        output_path = result.get("output_dir")
+        if not isinstance(output_path, str):
+            raise RuntimeError("AnalystAgent returned no output directory")
+        print(f"  → {analysis_type} 任务完成 (task_id: {task_id})")
+
+        print(f"  → 下载 {analysis_type} 结果...")
+        self._download_analysis_result(context, output_path)
+        return {
+            "task_id": task_id,
+            "output_path": output_path,
+            "status": "completed",
+        }
+
+    def _analysis_prompt_parts(
+        self,
+        context: AnalysisDispatchContext,
+    ) -> tuple[str, list, str, str]:
+        """Build goal, data list, meta prompt, and compute resource."""
+        analysis_type = context.analysis_type
         goal_path = ANALYSIS_GOAL_TEMPLATE_MAP.get(analysis_type)
         meta_path = ANALYSIS_META_TEMPLATE_MAP.get(analysis_type)
         if not goal_path or not meta_path:
             raise ValueError(f"Unknown analysis type: {analysis_type}")
 
-        # 构建 goal_description
         goal_description = get_prompt(
             self.deep_genome_config.PROMPT_FILE,
             goal_path,
-            {"gene_id": gene_id},
+            {"gene_id": context.gene_id},
         )
-        # 构建 meta
         meta = get_prompt(self.deep_genome_config.PROMPT_FILE, meta_path)
-        # 构建 data_list
         data_list = get_data_list(
-            self.deep_genome_config.DEEPGENOME_DATA, analysis_type, species
+            self.deep_genome_config.DEEPGENOME_DATA,
+            analysis_type,
+            context.species,
+        )
+        compute_resource = self._get_compute_resource(analysis_type)
+        return goal_description, data_list, meta, compute_resource
+
+    def _ensure_analysis_output_dir(
+        self,
+        analysis_type: str,
+        output_dir: Optional[str],
+    ) -> str:
+        """Return an existing or newly created analysis output directory."""
+        if output_dir:
+            return output_dir
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
+        return create_output_dir(
+            user_id=self.deep_genome_config.USER_ID or str(uuid1()),
+            task=f"{analysis_type}_task",
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.deep_genome_config.OBS_SERVER,
+            bucket_name=self.deep_genome_config.BUCKET_NAME,
         )
 
-        # 获取计算资源等级
-        compute_resource = self._get_compute_resource(analysis_type)
-
-        # 获取输出目录
-        if not output_dir:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
-            output_dir = create_output_dir(
-                user_id=self.deep_genome_config.USER_ID or str(uuid1()),
-                task=f"{analysis_type}_task",
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.deep_genome_config.OBS_SERVER,
-                bucket_name=self.deep_genome_config.BUCKET_NAME,
-            )
-
-        print(f"  → 使用 AnalystAgent 提交 {analysis_type} 任务...")
-
-        # 使用 AnalystAgent 提交任务
-        result = await self.analyst_agent.arun(
+    async def _submit_analysis_task(
+        self,
+        context: AnalysisDispatchContext,
+    ) -> dict:
+        """Submit one resolved analysis task to AnalystAgent."""
+        goal_description, data_list, meta, compute_resource = (
+            self._analysis_prompt_parts(context)
+        )
+        return await self.analyst_agent.arun(
             query=None,
             goal_description=goal_description,
             preset_data_list=data_list,
-            preset_plan=meta,  # meta 作为预定义计划传入
-            output_dir=output_dir,
+            preset_plan=meta,
+            output_dir=context.output_dir,
             compute_resource=compute_resource,
-            is_auto_select=False,  # 已通过 data_list 预设数据
-            is_polling=True,  # 等待任务完成
-            thread_id=f"{gene_id}_{analysis_type}_{uuid1()}",
+            is_auto_select=False,
+            is_polling=True,
+            thread_id=(f"{context.gene_id}_{context.analysis_type}_{uuid1()}"),
         )
 
+    @staticmethod
+    def _raise_if_agent_failed(result: dict) -> None:
+        """Raise when AnalystAgent returned an agent-level failure state."""
         if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
             raise RuntimeError(
                 f"AnalystAgent failed: {result.get('error_detail')}"
             )
 
-        task_id = result.get("task_id")
-        output_path = result.get("output_dir")
-
-        print(f"  → {analysis_type} 任务完成 (task_id: {task_id})")
-
-        # 下载结果 - 根据分析类型下载特定文件
-        print(f"  → 下载 {analysis_type} 结果...")
+    def _download_analysis_result(
+        self,
+        context: AnalysisDispatchContext,
+        output_path: str,
+    ) -> None:
+        """Download result files for one completed analysis task."""
         obs_output_path = (
             output_path.split("/obs/phytomni/")[-1]
             if "/obs/phytomni/" in output_path
             else output_path
         )
         target_file_feature = ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
-            analysis_type,
+            context.analysis_type,
             DEFAULT_TARGET_FILE_FEATURE,
         )
-
         try:
             access_key_id, secret_access_key = (
                 self.sensitive_config.obs_credentials()
             )
             deque(
                 download_obs_out(
-                    task_dir=gene_id,
+                    task_dir=context.gene_id,
                     obs_output_path=obs_output_path,
                     download_path=output_path,
                     access_key_id=access_key_id,
@@ -1616,14 +1275,8 @@ class DeepGenomeAgents:
                 ),
                 maxlen=0,
             )
-        except OSError as e:
-            print(f"  Warning: Failed to download results (continuing): {e}")
-
-        return {
-            "task_id": task_id,
-            "output_path": output_path,
-            "status": "completed",
-        }
+        except OSError as exc:
+            print(f"  Warning: Failed to download results (continuing): {exc}")
 
     def _get_compute_resource(self, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type.
