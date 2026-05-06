@@ -9,7 +9,6 @@ prompt, with support for various model parameters and retry mechanisms.
 """
 
 import asyncio
-from random import uniform
 from typing import Any, Dict, List, Optional, Union
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
@@ -24,6 +23,8 @@ from .utils import (
     get_prompt,
     message_content,
     parse_follow_up_questions,
+    retry_http_status_or_raise,
+    retry_network_or_raise,
 )
 
 CHAT_CONFIG = ChatConfig()
@@ -486,33 +487,23 @@ async def phyto_chat(
                 )
                 return chat_completions.model_dump()
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to generate from Phyto",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to generate from Phyto: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
         return None
 
     if semaphore is not None:

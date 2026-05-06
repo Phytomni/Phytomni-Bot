@@ -10,13 +10,21 @@ from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from math import ceil
 from pathlib import Path
+from random import uniform
 from re import sub
 from traceback import format_exc
 from typing import Any, List, Mapping, Optional
 from uuid import uuid1
 from warnings import warn
 
-from httpx import AsyncClient, HTTPError, Timeout
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
 from markitdown import MarkItDown
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -48,6 +56,49 @@ def message_content(response: Any) -> str:
     ):
         return str(response["choices"][0]["message"].get("content", ""))
     return ""
+
+
+async def retry_http_status_or_raise(
+    exc: HTTPStatusError,
+    *,
+    attempt: int,
+    max_retries: int,
+    retriable_codes: Iterable[int],
+    message: str,
+) -> bool:
+    """Sleep for a retriable HTTP status error or raise an MCP error."""
+    if (
+        exc.response is not None
+        and exc.response.status_code in retriable_codes
+        and attempt < max_retries
+    ):
+        await asyncio.sleep((2**attempt) + uniform(0, 1))
+        return True
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message=f"{message}: {str(exc)}",
+        )
+    ) from exc
+
+
+async def retry_network_or_raise(
+    exc: ConnectError | TimeoutException,
+    *,
+    attempt: int,
+    max_retries: int,
+    message: str = "Network error",
+) -> bool:
+    """Sleep for a retriable network error or raise an MCP error."""
+    if attempt < max_retries:
+        await asyncio.sleep(1.5**attempt)
+        return True
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message=f"{message}: {str(exc)}",
+        )
+    ) from exc
 
 
 def parse_json_list_fragment(text: str) -> List[Any]:

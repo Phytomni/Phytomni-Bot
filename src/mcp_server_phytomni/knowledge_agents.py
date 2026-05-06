@@ -9,7 +9,6 @@ the retrieved knowledge.
 """
 
 import asyncio
-from random import uniform
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from httpx import (
@@ -45,6 +44,8 @@ from .utils import (
     get_prompt,
     message_content,
     parse_follow_up_questions,
+    retry_http_status_or_raise,
+    retry_network_or_raise,
     split_list,
 )
 
@@ -626,33 +627,23 @@ async def retrieve(
                 response.raise_for_status()
                 return response.json()["doc_list"]
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to retrieve knowledge base",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to retrieve knowledge base: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
 
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -892,33 +883,23 @@ async def rerank(
                 response.raise_for_status()
                 return response.json()["rank_result"]
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to rerank",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to rerank: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
 
     docs, id_doc_dict = [], {}
     for doc in doc_list:

@@ -19,6 +19,10 @@ from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import ReviewConfig
 from .config.overrides import (
+    CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    OBS_TRANSFER_CONFIG_FIELD_MAP,
+    RETRIEVAL_CONFIG_FIELD_MAP,
+    RETRY_CONFIG_FIELD_MAP,
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
@@ -39,38 +43,10 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 )
 
 REVIEW_CONFIG_FIELD_MAP = {
-    "prompt_file": "PROMPT_FILE",
-    "prompt_path": "PROMPT_PATH",
-    "frequency_penalty": "FREQUENCY_PENALTY",
-    "n": "N",
-    "presence_penalty": "PRESENCE_PENALTY",
-    "reasoning_effort": "REASONING_EFFORT",
-    "response_format": "RESPONSE_FORMAT",
-    "stream": "STREAM",
-    "temperature": "TEMPERATURE",
-    "top_p": "TOP_P",
-    "user": "USER",
-    "retrieve_url": "RETRIEVE_URL",
-    "repo_id_dict": "REPO_ID_DICT",
-    "page_num": "PAGE_NUM",
-    "filter_string": "FILTER_STRING",
-    "scope": "SCOPE",
-    "extra_repo_ids": "EXTRA_REPO_IDS",
-    "rerank_url": "RERANK_URL",
-    "rerank_batch_size": "RERANK_BATCH_SIZE",
-    "score_threshold": "SCORE_THRESHOLD",
-    "top_n": "TOP_N",
-    "server_dir": "TEMP_DIR",
-    "obs_server": "OBS_SERVER",
-    "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZE",
-    "task_num": "TASK_NUM",
-    "max_concurrency": "MAX_CONCURRENCY",
-    "max_workers": "MAX_WORKERS",
-    "timeout": "TIMEOUT",
-    "retriable_codes": "RETRIABLE_CODES",
-    "max_retries": "MAX_RETRIES",
-    "max_tokens": "MAX_TOKENS",
+    **CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    **RETRIEVAL_CONFIG_FIELD_MAP,
+    **OBS_TRANSFER_CONFIG_FIELD_MAP,
+    **RETRY_CONFIG_FIELD_MAP,
 }
 REVIEW_SENSITIVE_FIELD_MAP = {
     "base_url": "BASE_URL",

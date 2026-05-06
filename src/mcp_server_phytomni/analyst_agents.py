@@ -11,7 +11,6 @@ import json
 import re
 import time
 from pathlib import Path
-from random import uniform
 from traceback import format_exc
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 from uuid import uuid1
@@ -56,6 +55,8 @@ from .utils import (
     get_prompt,
     get_token,
     load_json_file,
+    retry_http_status_or_raise,
+    retry_network_or_raise,
 )
 
 ANALYST_CONFIG = AnalystConfig()
@@ -956,34 +957,23 @@ class AnalystAgent:
                         )
                     )
 
-                except HTTPStatusError as e:
-                    if (
-                        hasattr(e, "response")
-                        and e.response is not None
-                        and e.response.status_code
-                        in self.analyst_config.RETRIABLE_CODES
-                        and attempt < max_retries
+                except HTTPStatusError as exc:
+                    if await retry_http_status_or_raise(
+                        exc,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                        message="Failed to submit task",
                     ):
-                        wait_time = (2**attempt) + uniform(0, 1)
-                        await asyncio.sleep(wait_time)
                         continue
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Failed to submit task: {str(e)}",
-                        )
-                    ) from e
 
-                except (ConnectError, TimeoutException) as e:
-                    if attempt < max_retries:
-                        await asyncio.sleep(1.5**attempt)
+                except (ConnectError, TimeoutException) as exc:
+                    if await retry_network_or_raise(
+                        exc,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                    ):
                         continue
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Network error: {str(e)}",
-                        )
-                    ) from e
 
         raise McpError(
             ErrorData(
@@ -1513,33 +1503,23 @@ async def task_delete(
                     )
                 )
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to delete task",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to delete task: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
 
     raise McpError(
         ErrorData(
@@ -1606,33 +1586,23 @@ async def task_status(
                     )
                 )
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to delete task",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to delete task: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
 
     raise McpError(
         ErrorData(
@@ -1702,33 +1672,23 @@ async def task_log(
                     )
                 )
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to delete task",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to delete task: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(e)}",
-                    )
-                ) from e
 
     raise McpError(
         ErrorData(

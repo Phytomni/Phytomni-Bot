@@ -5,10 +5,8 @@
 """This module provides a TaskManager class for managing tasks in a
 SQLite database and functions for interacting with a remote task server."""
 
-import asyncio
 import sqlite3
 import uuid
-from random import uniform
 from typing import List, Optional
 
 from httpx import (
@@ -18,8 +16,8 @@ from httpx import (
     Timeout,
     TimeoutException,
 )
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
+
+from .utils import retry_http_status_or_raise, retry_network_or_raise
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
@@ -160,32 +158,23 @@ async def create_task(
                 response.raise_for_status()
                 return response.json()
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to rerank",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to rerank: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR, message=f"Network error: {str(e)}"
-                    )
-                ) from e
 
 
 async def update_task(
@@ -247,29 +236,20 @@ async def update_task(
                 response.raise_for_status()
                 return response.json()
 
-            except HTTPStatusError as e:
-                if (
-                    hasattr(e, "response")
-                    and e.response is not None
-                    and e.response.status_code in retriable_codes
-                    and attempt < max_retries
+            except HTTPStatusError as exc:
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to rerank",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to rerank: {str(e)}",
-                    )
-                ) from e
 
-            except (ConnectError, TimeoutException) as e:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+            except (ConnectError, TimeoutException) as exc:
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR, message=f"Network error: {str(e)}"
-                    )
-                ) from e

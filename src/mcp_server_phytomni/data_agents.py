@@ -10,8 +10,6 @@ and to first rewrite the natural language query using a language model for
 better performance.
 """
 
-import asyncio
-from random import uniform
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 from uuid import uuid1
 
@@ -31,13 +29,20 @@ from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.overrides import (
+    CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    RETRY_CONFIG_FIELD_MAP,
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .utils import get_prompt, get_token
+from .utils import (
+    get_prompt,
+    get_token,
+    retry_http_status_or_raise,
+    retry_network_or_raise,
+)
 
 DATA_CONFIG = DataConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -52,27 +57,14 @@ DATA_CONFIG_FIELD_MAP = {
     "rerank_url": "RERANK_URL",
     "rerank_batch_size": "RERANK_BATCH_SIZE",
     "score_threshold": "SCORE_THRESHOLD",
-    "prompt_file": "PROMPT_FILE",
-    "prompt_path": "PROMPT_PATH",
-    "frequency_penalty": "FREQUENCY_PENALTY",
-    "n": "N",
-    "presence_penalty": "PRESENCE_PENALTY",
-    "reasoning_effort": "REASONING_EFFORT",
-    "response_format": "RESPONSE_FORMAT",
-    "stream": "STREAM",
-    "temperature": "TEMPERATURE",
-    "top_p": "TOP_P",
-    "user": "USER",
+    **CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    **RETRY_CONFIG_FIELD_MAP,
     "database_url": "DATABASE_URL",
     "workspace_id": "WORKSPACE_ID",
     "subject_id": "SUBJECT_ID",
     "dialog_id": "DIALOG_ID",
     "need_insight": "NEED_INSIGHT",
     "simplify_response": "SIMPLIFY_RESPONSE",
-    "timeout": "TIMEOUT",
-    "retriable_codes": "RETRIABLE_CODES",
-    "max_retries": "MAX_RETRIES",
-    "max_tokens": "MAX_TOKENS",
 }
 DATA_SENSITIVE_FIELD_MAP = {
     "base_url": "BASE_URL",
@@ -123,32 +115,22 @@ async def nl2sql(
                 return response.json()
 
             except HTTPStatusError as exc:
-                if (
-                    hasattr(exc, "response")
-                    and exc.response is not None
-                    and exc.response.status_code in retriable_codes
-                    and attempt < max_retries
+                if await retry_http_status_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to query SQL database",
                 ):
-                    wait_time = (2**attempt) + uniform(0, 1)
-                    await asyncio.sleep(wait_time)
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Failed to query SQL database: {str(exc)}",
-                    )
-                ) from exc
 
             except (ConnectError, TimeoutException) as exc:
-                if attempt < max_retries:
-                    await asyncio.sleep(1.5**attempt)
+                if await retry_network_or_raise(
+                    exc,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                ):
                     continue
-                raise McpError(
-                    ErrorData(
-                        code=INTERNAL_ERROR,
-                        message=f"Network error: {str(exc)}",
-                    )
-                ) from exc
 
     raise McpError(
         ErrorData(
@@ -518,34 +500,23 @@ class DataAgent:
                     )
                     response.raise_for_status()
 
-                except HTTPStatusError as e:
-                    if (
-                        hasattr(e, "response")
-                        and e.response is not None
-                        and e.response.status_code
-                        in self.data_config.RETRIABLE_CODES
-                        and attempt < self.data_config.MAX_RETRIES
+                except HTTPStatusError as exc:
+                    if await retry_http_status_or_raise(
+                        exc,
+                        attempt=attempt,
+                        max_retries=self.data_config.MAX_RETRIES,
+                        retriable_codes=self.data_config.RETRIABLE_CODES,
+                        message="Failed to query SQL database",
                     ):
-                        wait_time = (2**attempt) + uniform(0, 1)
-                        await asyncio.sleep(wait_time)
                         continue
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Failed to query SQL database: {str(e)}",
-                        )
-                    ) from e
 
-                except (ConnectError, TimeoutException) as e:
-                    if attempt < self.data_config.MAX_RETRIES:
-                        await asyncio.sleep(1.5**attempt)
+                except (ConnectError, TimeoutException) as exc:
+                    if await retry_network_or_raise(
+                        exc,
+                        attempt=attempt,
+                        max_retries=self.data_config.MAX_RETRIES,
+                    ):
                         continue
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Network error: {str(e)}",
-                        )
-                    ) from e
         if response is None:
             raise McpError(
                 ErrorData(

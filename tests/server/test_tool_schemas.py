@@ -51,28 +51,39 @@ def test_chat_agent_validates_required_fields():
         server.ChatAgent(user_query="missing file list")
 
 
-def test_public_agent_enum_values_remain_stable():
+@pytest.mark.parametrize(
+    ("member_name", "value"),
+    [
+        ("CHAT_AGENT", "ChatAgent"),
+        ("KNOWLEDGE_AGENT", "KnowledgeAgent"),
+        ("DATA_AGENT", "DataAgent"),
+        ("ANALYST_AGENT", "AnalystAgent"),
+        ("REVIEW_AGENT", "ReviewAgent"),
+        ("BRIEF_GENE_AGENT", "BriefGeneAgent"),
+        ("DEEP_GENOME_AGENT", "DeepGenomeAgent"),
+        ("IN_SILICO_RESEARCH_AGENT", "InSilicoResearchAgent"),
+        ("DIGITAL_DESIGN_AGENT", "DigitalDesignAgent"),
+        ("GENE_NETWORK_AGENT", "GeneNetworkAgent"),
+    ],
+)
+def test_public_agent_enum_values_remain_stable(member_name, value):
     """Verify public agent enum values remain stable."""
-    assert server.PhytomniAgents.CHAT_AGENT.value == "ChatAgent"
-    assert server.PhytomniAgents.KNOWLEDGE_AGENT.value == "KnowledgeAgent"
-    assert server.PhytomniAgents.DATA_AGENT.value == "DataAgent"
-    assert server.PhytomniAgents.ANALYST_AGENT.value == "AnalystAgent"
-    assert server.PhytomniAgents.REVIEW_AGENT.value == "ReviewAgent"
-    assert server.PhytomniAgents.BRIEF_GENE_AGENT.value == "BriefGeneAgent"
-    assert server.PhytomniAgents.DEEP_GENOME_AGENT.value == "DeepGenomeAgent"
-    assert (
-        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value
-        == "InSilicoResearchAgent"
-    )
-    assert server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value == (
-        "DigitalDesignAgent"
-    )
-    assert server.PhytomniAgents.GENE_NETWORK_AGENT.value == "GeneNetworkAgent"
+    assert server.PhytomniAgents[member_name].value == value
 
 
-def test_public_agent_enum_members_use_constant_style_names():
+@pytest.mark.parametrize(
+    "member_name",
+    ["CHAT_AGENT", "IN_SILICO_RESEARCH_AGENT"],
+)
+def test_public_agent_enum_members_use_constant_style_names(member_name):
     """Verify public agent enum members use constant style names."""
-    assert "CHATAGENT" not in server.PhytomniAgents.__members__
-    assert "INSILICORESEARCHAGENT" not in server.PhytomniAgents.__members__
-    assert "CHAT_AGENT" in server.PhytomniAgents.__members__
-    assert "IN_SILICO_RESEARCH_AGENT" in server.PhytomniAgents.__members__
+    assert member_name in server.PhytomniAgents.__members__
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    ["CHATAGENT", "INSILICORESEARCHAGENT"],
+)
+def test_public_agent_enum_omits_legacy_member_names(member_name):
+    """Verify public agent enum omits legacy member names."""
+    assert member_name not in server.PhytomniAgents.__members__
