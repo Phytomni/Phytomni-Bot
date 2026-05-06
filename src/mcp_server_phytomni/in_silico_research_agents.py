@@ -316,7 +316,8 @@ class InSilicoResearchAgents:
             goals = await self._extract_goals(paper_text, obs_file_list)
             print(f"  → Extracted {len(goals)} research goals")
             return {"goals": goals, "error": None}
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Workflow boundary: store node failures in state for callers.
             print(f"  → Goal extraction failed: {str(e)}")
             return {"goals": [], "error": str(e)}
 
@@ -394,7 +395,8 @@ class InSilicoResearchAgents:
             if task_id is not None:
                 existing_task_ids[task_name] = str(task_id)
             return {"task_ids": existing_task_ids, "completed_count": 1}
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Workflow boundary: preserve partial task progress on failure.
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,

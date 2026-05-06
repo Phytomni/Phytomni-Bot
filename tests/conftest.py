@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 TEST_ROOT = Path(__file__).resolve().parent
@@ -115,30 +116,23 @@ def block_external_http(
 
     monkeypatch.setattr(socket, "create_connection", blocked_create_connection)
 
-    try:
-        import httpx
-    except ImportError:
-        httpx = None
-
-    if httpx is not None:
-
-        def blocked_request(*args: Any, **kwargs: Any) -> Any:
-            raise RuntimeError(
-                "HTTP requests are disabled for default pytest runs. "
-                "Mark the test with @pytest.mark.network to opt in."
-            )
-
-        async def blocked_async_request(*args: Any, **kwargs: Any) -> Any:
-            raise RuntimeError(
-                "HTTP requests are disabled for default pytest runs. "
-                "Mark the test with @pytest.mark.network to opt in."
-            )
-
-        monkeypatch.setattr(httpx.Client, "request", blocked_request)
-        monkeypatch.setattr(
-            httpx.AsyncClient,
-            "request",
-            blocked_async_request,
+    def blocked_request(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError(
+            "HTTP requests are disabled for default pytest runs. "
+            "Mark the test with @pytest.mark.network to opt in."
         )
+
+    async def blocked_async_request(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError(
+            "HTTP requests are disabled for default pytest runs. "
+            "Mark the test with @pytest.mark.network to opt in."
+        )
+
+    monkeypatch.setattr(httpx.Client, "request", blocked_request)
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "request",
+        blocked_async_request,
+    )
 
     yield

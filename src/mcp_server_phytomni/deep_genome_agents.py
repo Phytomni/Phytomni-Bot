@@ -35,6 +35,7 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .data_agents import DataAgent
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
@@ -798,7 +799,8 @@ class DeepGenomeAgents:
                 "analyst_summaries": sub_summary,
                 "analysis_completed_branches": 1,
             }
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Workflow boundary: preserve branch failure details in state.
             return {
                 "raw_analyst_data": {
                     f"task_{task_index}": {
@@ -1675,7 +1677,7 @@ class DeepGenomeAgents:
                 ),
                 maxlen=0,
             )
-        except Exception as e:
+        except OSError as e:
             print(f"  Warning: Failed to download results (continuing): {e}")
 
         return {
@@ -2803,8 +2805,6 @@ async def gene_function(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph deep genome agent."""
-    from .data_agents import DataAgent
-
     deep_genome_config = copy_config_with_overrides(
         DEEP_GENOME_CONFIG,
         kwargs,

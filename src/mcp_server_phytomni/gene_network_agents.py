@@ -281,7 +281,8 @@ class GeneNetworkAgents:
                 "completed_count": 1,
                 "network_task": task_result,
             }
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Workflow boundary: preserve partial task progress on failure.
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,

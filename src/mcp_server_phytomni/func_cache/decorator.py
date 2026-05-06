@@ -235,7 +235,7 @@ def func_cache(
                 if locked:
                     try:
                         lock_mgr.release(kb.func_id, cache_key)
-                    except Exception:
+                    except CacheError:
                         pass
 
         @functools.wraps(func)
@@ -286,7 +286,7 @@ def func_cache(
                             cache_key,
                             owner,
                         )
-                    except Exception:
+                    except CacheError:
                         pass
 
         def cache_clear():

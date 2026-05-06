@@ -108,7 +108,7 @@ async def region_vci_analysis(
     content = phyto_response["choices"][0]["message"]["content"]
     try:
         code_info = re.findall(r"<result>(.*?)</result>", content)[0]
-    except Exception:
+    except IndexError:
         return {"vci_analysis_task": None}
     code_info = code_info.split("|")
     province_code, city_code, county_code = (code_info + [None] * 3)[:3]

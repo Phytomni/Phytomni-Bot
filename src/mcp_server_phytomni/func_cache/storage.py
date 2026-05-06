@@ -258,10 +258,10 @@ class Storage:
         except sqlite3.Error as e:
             try:
                 conn.execute("ROLLBACK")
-            except Exception:
+            except sqlite3.Error:
                 try:
                     conn.close()
-                except Exception:
+                except sqlite3.Error:
                     pass
                 self._local.conn = None
             raise StorageError(f"Failed to acquire lock: {e}") from e
@@ -304,12 +304,12 @@ class Storage:
         """Close the database connection and clean up process locks."""
         try:
             self.cleanup_process_locks(os.getpid())
-        except Exception:
+        except StorageError:
             pass
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
+            except sqlite3.Error:
                 pass
             self._local.conn = None

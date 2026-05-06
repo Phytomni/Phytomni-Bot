@@ -711,7 +711,7 @@ class AnalystAgent:
             score = result.get("score", 0)
             decision = result.get("decision", "REJECTED")
             feedback = result.get("feedback", "")
-        except Exception:
+        except (json.JSONDecodeError, TypeError, AttributeError):
             score = 0
             decision = "REJECTED"
             feedback = ""
@@ -822,7 +822,7 @@ class AnalystAgent:
                     retriable_codes=self.analyst_config.RETRIABLE_CODES,
                     max_retries=self.analyst_config.MAX_RETRIES,
                 )
-            except Exception:
+            except McpError:
                 tool_usage_info = {"doc_list": []}
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
@@ -1284,7 +1284,8 @@ class AnalystAgent:
                 "job_name": final_state["job_name"],
                 "compute_resource": final_state["compute_resource"],
             }
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Workflow boundary: return graph failures as agent state.
             return {
                 **initial_state,
                 "task_status": "FAILED_AT_AGENT_LEVEL",
