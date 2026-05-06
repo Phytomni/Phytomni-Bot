@@ -359,6 +359,8 @@ or access a read-only uv cache.
 
 ## Repository Hygiene
 
+- Follow [STYLE.md](STYLE.md) for naming, docstrings, copyright headers, and
+  import organization.
 - Keep public MCP tool names and schemas stable.
 - Keep generated caches and SQLite cache databases out of git.
 - Prefer structured parsing and Pydantic validation over ad hoc string
