@@ -10,7 +10,7 @@ and to first rewrite the natural language query using a language model for
 better performance.
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
+from typing import Any, Dict, Literal, Optional, TypedDict
 from uuid import uuid1
 
 from httpx import (
@@ -75,17 +75,20 @@ DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 
 async def nl2sql(
     message_content: str,
-    database_url: str = DATA_CONFIG.DATABASE_URL,
-    workspace_id: str = DATA_CONFIG.WORKSPACE_ID,
-    subject_id: str = DATA_CONFIG.SUBJECT_ID,
-    dialog_id: str = DATA_CONFIG.DIALOG_ID,
-    need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
-    simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
-    timeout: float = DATA_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = DATA_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Convert a natural language query to SQL and execute it."""
+    database_url = kwargs.get("database_url", DATA_CONFIG.DATABASE_URL)
+    workspace_id = kwargs.get("workspace_id", DATA_CONFIG.WORKSPACE_ID)
+    subject_id = kwargs.get("subject_id", DATA_CONFIG.SUBJECT_ID)
+    dialog_id = kwargs.get("dialog_id", DATA_CONFIG.DIALOG_ID)
+    need_insight = kwargs.get("need_insight", DATA_CONFIG.NEED_INSIGHT)
+    simplify_response = kwargs.get(
+        "simplify_response", DATA_CONFIG.SIMPLIFY_RESPONSE
+    )
+    timeout = kwargs.get("timeout", DATA_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", DATA_CONFIG.MAX_RETRIES)
     if retriable_codes is None:
         retriable_codes = list(DATA_CONFIG.RETRIABLE_CODES)
     else:
@@ -142,78 +145,12 @@ async def nl2sql(
 
 async def rewrite_nl2sql(
     user_query: str,
-    retrieve_url: str = DATA_CONFIG.RETRIEVE_URL,
-    data_repo_id: str = DATA_CONFIG.DATA_REPO_ID,
-    page_num: int = DATA_CONFIG.PAGE_NUM,
-    page_size: int = DATA_CONFIG.DATA_PAGE_SIZE,
-    filter_string: Optional[str] = DATA_CONFIG.FILTER_STRING,
-    scope: str = DATA_CONFIG.SCOPE,
-    rerank_url: str = DATA_CONFIG.RERANK_URL,
-    rerank_batch_size: int = DATA_CONFIG.RERANK_BATCH_SIZE,
-    score_threshold: float = DATA_CONFIG.SCORE_THRESHOLD,
-    prompt_file: str = DATA_CONFIG.PROMPT_FILE,
-    prompt_path: str = DATA_CONFIG.PROMPT_PATH,
-    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
-    base_url: str = SENSITIVE_CONFIG.BASE_URL,
-    model: str = SENSITIVE_CONFIG.MODEL_ID,
-    frequency_penalty: float = DATA_CONFIG.FREQUENCY_PENALTY,
-    n: int = DATA_CONFIG.N,
-    presence_penalty: float = DATA_CONFIG.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = DATA_CONFIG.REASONING_EFFORT,
-    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
-    stream: bool = DATA_CONFIG.STREAM,
-    temperature: float = DATA_CONFIG.TEMPERATURE,
-    top_p: float = DATA_CONFIG.TOP_P,
-    user: str = DATA_CONFIG.USER,
-    database_url: str = DATA_CONFIG.DATABASE_URL,
-    workspace_id: str = DATA_CONFIG.WORKSPACE_ID,
-    subject_id: str = DATA_CONFIG.SUBJECT_ID,
-    dialog_id: str = DATA_CONFIG.DIALOG_ID,
-    need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
-    simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
-    timeout: float = DATA_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = DATA_CONFIG.MAX_RETRIES,
-    max_tokens: int = DATA_CONFIG.MAX_TOKENS,
     is_rewrite: bool = True,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent."""
-    active_dialog_id = dialog_id or str(uuid1())
-    arguments = {
-        "retrieve_url": retrieve_url,
-        "data_repo_id": data_repo_id,
-        "page_num": page_num,
-        "page_size": page_size,
-        "filter_string": filter_string,
-        "scope": scope,
-        "rerank_url": rerank_url,
-        "rerank_batch_size": rerank_batch_size,
-        "score_threshold": score_threshold,
-        "prompt_file": prompt_file,
-        "prompt_path": prompt_path,
-        "api_key": api_key,
-        "base_url": base_url,
-        "model": model,
-        "frequency_penalty": frequency_penalty,
-        "n": n,
-        "presence_penalty": presence_penalty,
-        "reasoning_effort": reasoning_effort,
-        "response_format": response_format,
-        "stream": stream,
-        "temperature": temperature,
-        "top_p": top_p,
-        "user": user,
-        "database_url": database_url,
-        "workspace_id": workspace_id,
-        "subject_id": subject_id,
-        "dialog_id": active_dialog_id,
-        "need_insight": need_insight,
-        "simplify_response": simplify_response,
-        "timeout": timeout,
-        "retriable_codes": retriable_codes,
-        "max_retries": max_retries,
-        "max_tokens": max_tokens,
-    }
+    active_dialog_id = kwargs.get("dialog_id") or str(uuid1())
+    arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
         DATA_CONFIG,
         arguments,

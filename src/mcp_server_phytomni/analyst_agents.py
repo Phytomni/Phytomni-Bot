@@ -1305,19 +1305,20 @@ def _sensitive_config_with_overrides(**kwargs: Any):
 async def submit(
     goal_description: str,
     data_list: Any,
-    user_id: str = ANALYST_CONFIG.USER_ID,
-    is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
-    output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
-    meta: str = "",
-    compute_resource: Literal[
-        "small", "medium", "large"
-    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
-    enable_auto_select: bool = True,
-    meta_meta: Optional[str] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based AnalystAgent."""
+    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
     user_id = user_id or str(uuid1())
+    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
+    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
+    meta = kwargs.get("meta", "")
+    compute_resource = kwargs.get(
+        "compute_resource",
+        ANALYST_CONFIG.COMPUTE_RESOURCE,
+    )
+    enable_auto_select = kwargs.get("enable_auto_select", True)
+    meta_meta = kwargs.get("meta_meta")
     analyst_config = _analyst_config_with_overrides(
         user_id=user_id,
         is_create_dir=is_create_dir,
@@ -1353,18 +1354,19 @@ async def submit(
 async def retrieve_plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
-    user_id: str = ANALYST_CONFIG.USER_ID,
-    is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
-    output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
-    compute_resource: Literal[
-        "small", "medium", "large"
-    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
-    meta_meta: Optional[str] = None,
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based AnalystAgent."""
+    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
     user_id = user_id or str(uuid1())
+    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
+    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
+    compute_resource = kwargs.get(
+        "compute_resource",
+        ANALYST_CONFIG.COMPUTE_RESOURCE,
+    )
+    meta_meta = kwargs.get("meta_meta")
     analyst_config = _analyst_config_with_overrides(
         user_id=user_id,
         is_create_dir=is_create_dir,

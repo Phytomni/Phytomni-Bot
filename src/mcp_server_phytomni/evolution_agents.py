@@ -6,7 +6,7 @@
 """Evolution analysis helpers built on Phytomni analyst workflows."""
 
 from json import loads
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from uuid import uuid1
 
 import requests
@@ -29,41 +29,56 @@ async def evo_test_analysis(
     query: str,
     species: str,
     gene_id: str,
-    user_id: str = DEEP_GENOME_CONFIG.USER_ID,
     batch: bool = False,
     enable_auto_select: bool = False,
-    prompt_file: str = DEEP_GENOME_CONFIG.PROMPT_FILE,
-    deepgenome_data: str = DEEP_GENOME_CONFIG.DEEPGENOME_DATA,
-    output_dir: str = DEEP_GENOME_CONFIG.OUTPUT_DIR,
-    model_url: str = SENSITIVE_CONFIG.CODER_URL,
-    model_name: str = SENSITIVE_CONFIG.CODER_MODEL,
-    coder_api_key: str = SENSITIVE_CONFIG.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = DEEP_GENOME_CONFIG.OBS_SERVER,
-    bucket_name: str = DEEP_GENOME_CONFIG.BUCKET_NAME,
-    analysis_url: str = DEEP_GENOME_CONFIG.ANALYSIS_URL,
-    region: str = DEEP_GENOME_CONFIG.ANALYSIS_REGION,
-    resource_dict: Optional[Dict[str, Dict[str, int]]] = None,
-    app_id_dict: Optional[Dict[str, str]] = None,
-    timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = DEEP_GENOME_CONFIG.MAX_RETRIES,
-    max_poll: float = DEEP_GENOME_CONFIG.MAX_POLL,
-    prompt_path: str = DEEP_GENOME_CONFIG.PROMPT_PATH,
-    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
-    base_url: str = SENSITIVE_CONFIG.BASE_URL,
-    model: str = SENSITIVE_CONFIG.MODEL_ID,
-    frequency_penalty: float = DEEP_GENOME_CONFIG.FREQUENCY_PENALTY,
-    n: int = DEEP_GENOME_CONFIG.N,
-    presence_penalty: float = DEEP_GENOME_CONFIG.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = DEEP_GENOME_CONFIG.REASONING_EFFORT,
-    stream: bool = DEEP_GENOME_CONFIG.STREAM,
-    temperature: float = DEEP_GENOME_CONFIG.TEMPERATURE,
-    top_p: float = DEEP_GENOME_CONFIG.TOP_P,
-    user: str = DEEP_GENOME_CONFIG.USER,
+    **kwargs: Any,
 ) -> dict:
     """Run an evolution analysis workflow for a target gene."""
+    user_id = kwargs.get("user_id", DEEP_GENOME_CONFIG.USER_ID)
+    prompt_file = kwargs.get("prompt_file", DEEP_GENOME_CONFIG.PROMPT_FILE)
+    deepgenome_data = kwargs.get(
+        "deepgenome_data", DEEP_GENOME_CONFIG.DEEPGENOME_DATA
+    )
+    output_dir = kwargs.get("output_dir", DEEP_GENOME_CONFIG.OUTPUT_DIR)
+    model_url = kwargs.get("model_url", SENSITIVE_CONFIG.CODER_URL)
+    model_name = kwargs.get("model_name", SENSITIVE_CONFIG.CODER_MODEL)
+    coder_api_key = kwargs.get(
+        "coder_api_key", SENSITIVE_CONFIG.CODER_API_KEY.get_secret_value()
+    )
+    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
+    secret_access_key = kwargs.get(
+        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+    )
+    obs_server = kwargs.get("obs_server", DEEP_GENOME_CONFIG.OBS_SERVER)
+    bucket_name = kwargs.get("bucket_name", DEEP_GENOME_CONFIG.BUCKET_NAME)
+    analysis_url = kwargs.get("analysis_url", DEEP_GENOME_CONFIG.ANALYSIS_URL)
+    region = kwargs.get("region", DEEP_GENOME_CONFIG.ANALYSIS_REGION)
+    resource_dict = kwargs.get("resource_dict")
+    app_id_dict = kwargs.get("app_id_dict")
+    timeout = kwargs.get("timeout", DEEP_GENOME_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", DEEP_GENOME_CONFIG.MAX_RETRIES)
+    max_poll = kwargs.get("max_poll", DEEP_GENOME_CONFIG.MAX_POLL)
+    prompt_path = kwargs.get("prompt_path", DEEP_GENOME_CONFIG.PROMPT_PATH)
+    api_key = kwargs.get(
+        "api_key", SENSITIVE_CONFIG.API_KEY.get_secret_value()
+    )
+    base_url = kwargs.get("base_url", SENSITIVE_CONFIG.BASE_URL)
+    model = kwargs.get("model", SENSITIVE_CONFIG.MODEL_ID)
+    frequency_penalty = kwargs.get(
+        "frequency_penalty", DEEP_GENOME_CONFIG.FREQUENCY_PENALTY
+    )
+    n = kwargs.get("n", DEEP_GENOME_CONFIG.N)
+    presence_penalty = kwargs.get(
+        "presence_penalty", DEEP_GENOME_CONFIG.PRESENCE_PENALTY
+    )
+    reasoning_effort = kwargs.get(
+        "reasoning_effort", DEEP_GENOME_CONFIG.REASONING_EFFORT
+    )
+    stream = kwargs.get("stream", DEEP_GENOME_CONFIG.STREAM)
+    temperature = kwargs.get("temperature", DEEP_GENOME_CONFIG.TEMPERATURE)
+    top_p = kwargs.get("top_p", DEEP_GENOME_CONFIG.TOP_P)
+    user = kwargs.get("user", DEEP_GENOME_CONFIG.USER)
     if resource_dict is None:
         resource_dict = {
             key: dict(value)

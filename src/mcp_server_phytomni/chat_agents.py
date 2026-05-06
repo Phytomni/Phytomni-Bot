@@ -9,7 +9,7 @@ prompt, with support for various model parameters and retry mechanisms.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
@@ -37,34 +37,8 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 async def phyto_chat_with_follow(
     user_query: str,
     obs_file_list: Optional[List[str]] = None,
-    prompt_file: str = CHAT_CONFIG.PROMPT_FILE,
-    prompt_path: str = CHAT_CONFIG.PROMPT_PATH,
-    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
-    base_url: str = SENSITIVE_CONFIG.BASE_URL,
-    model: str = SENSITIVE_CONFIG.MODEL_ID,
-    frequency_penalty: float = CHAT_CONFIG.FREQUENCY_PENALTY,
-    n: int = CHAT_CONFIG.N,
-    presence_penalty: float = CHAT_CONFIG.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = CHAT_CONFIG.REASONING_EFFORT,
-    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
-    stream: bool = CHAT_CONFIG.STREAM,
-    temperature: float = CHAT_CONFIG.TEMPERATURE,
-    top_p: float = CHAT_CONFIG.TOP_P,
-    user: str = CHAT_CONFIG.USER,
-    server_dir: str = CHAT_CONFIG.TEMP_DIR,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = CHAT_CONFIG.OBS_SERVER,
-    bucket_name: str = CHAT_CONFIG.BUCKET_NAME,
-    part_size: int = CHAT_CONFIG.PART_SIZE,
-    task_num: int = CHAT_CONFIG.TASK_NUM,
-    timeout: float = CHAT_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = CHAT_CONFIG.MAX_RETRIES,
-    max_concurrency: int = CHAT_CONFIG.MAX_CONCURRENCY,
-    max_workers: int = CHAT_CONFIG.MAX_WORKERS,
-    max_tokens: int = CHAT_CONFIG.MAX_TOKENS,
     semaphore: Optional[asyncio.Semaphore] = None,
+    **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     """Generate text using a Phyto language model with optional file context.
 
@@ -145,50 +119,13 @@ async def phyto_chat_with_follow(
             ...     obs_file_list=files
             ... )
     """
-    if obs_file_list is None:
-        obs_file_list = []
-    else:
-        obs_file_list = list(obs_file_list)
-    if response_format is None:
-        response_format = dict(CHAT_CONFIG.RESPONSE_FORMAT)
-    else:
-        response_format = dict(response_format)
-    if retriable_codes is None:
-        retriable_codes = list(CHAT_CONFIG.RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
+    prompt_file = kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
 
     phyto_response = await phyto_chat(
         user_query=user_query,
         obs_file_list=obs_file_list,
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        server_dir=server_dir,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=obs_server,
-        bucket_name=bucket_name,
-        part_size=part_size,
-        task_num=task_num,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
-        max_concurrency=max_concurrency,
-        max_workers=max_workers,
-        max_tokens=max_tokens,
         semaphore=semaphore,
+        **kwargs,
     )
 
     system_response_content = ""
@@ -204,6 +141,7 @@ async def phyto_chat_with_follow(
             "content"
         ]
 
+    follow_kwargs = {**kwargs, "prompt_file": prompt_file}
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
             prompt_file,
@@ -213,24 +151,8 @@ async def phyto_chat_with_follow(
                 "system_response": system_response_content,
             },
         ),
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
         semaphore=semaphore,
+        **follow_kwargs,
     )
 
     follow_up_list = parse_follow_up_questions(
@@ -254,34 +176,8 @@ async def phyto_chat_with_follow(
 async def phyto_chat(
     user_query: str,
     obs_file_list: Optional[List[str]] = None,
-    prompt_file: str = CHAT_CONFIG.PROMPT_FILE,
-    prompt_path: str = CHAT_CONFIG.PROMPT_PATH,
-    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
-    base_url: str = SENSITIVE_CONFIG.BASE_URL,
-    model: str = SENSITIVE_CONFIG.MODEL_ID,
-    frequency_penalty: float = CHAT_CONFIG.FREQUENCY_PENALTY,
-    n: int = CHAT_CONFIG.N,
-    presence_penalty: float = CHAT_CONFIG.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = CHAT_CONFIG.REASONING_EFFORT,
-    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
-    stream: bool = CHAT_CONFIG.STREAM,
-    temperature: float = CHAT_CONFIG.TEMPERATURE,
-    top_p: float = CHAT_CONFIG.TOP_P,
-    user: str = CHAT_CONFIG.USER,
-    server_dir: str = CHAT_CONFIG.TEMP_DIR,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = CHAT_CONFIG.OBS_SERVER,
-    bucket_name: str = CHAT_CONFIG.BUCKET_NAME,
-    part_size: int = CHAT_CONFIG.PART_SIZE,
-    task_num: int = CHAT_CONFIG.TASK_NUM,
-    timeout: float = CHAT_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = CHAT_CONFIG.MAX_RETRIES,
-    max_concurrency: int = CHAT_CONFIG.MAX_CONCURRENCY,
-    max_workers: int = CHAT_CONFIG.MAX_WORKERS,
-    max_tokens: int = CHAT_CONFIG.MAX_TOKENS,
     semaphore: Optional[asyncio.Semaphore] = None,
+    **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     """Generate text using a Phyto language model with optional file context.
 
@@ -366,6 +262,45 @@ async def phyto_chat(
         obs_file_list = []
     else:
         obs_file_list = list(obs_file_list)
+    prompt_file = kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
+    prompt_path = kwargs.get("prompt_path", CHAT_CONFIG.PROMPT_PATH)
+    api_key = kwargs.get(
+        "api_key", SENSITIVE_CONFIG.API_KEY.get_secret_value()
+    )
+    base_url = kwargs.get("base_url", SENSITIVE_CONFIG.BASE_URL)
+    model = kwargs.get("model", SENSITIVE_CONFIG.MODEL_ID)
+    frequency_penalty = kwargs.get(
+        "frequency_penalty", CHAT_CONFIG.FREQUENCY_PENALTY
+    )
+    n = kwargs.get("n", CHAT_CONFIG.N)
+    presence_penalty = kwargs.get(
+        "presence_penalty", CHAT_CONFIG.PRESENCE_PENALTY
+    )
+    reasoning_effort = kwargs.get(
+        "reasoning_effort", CHAT_CONFIG.REASONING_EFFORT
+    )
+    response_format = kwargs.get("response_format")
+    stream = kwargs.get("stream", CHAT_CONFIG.STREAM)
+    temperature = kwargs.get("temperature", CHAT_CONFIG.TEMPERATURE)
+    top_p = kwargs.get("top_p", CHAT_CONFIG.TOP_P)
+    user = kwargs.get("user", CHAT_CONFIG.USER)
+    server_dir = kwargs.get("server_dir", CHAT_CONFIG.TEMP_DIR)
+    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
+    secret_access_key = kwargs.get(
+        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+    )
+    obs_server = kwargs.get("obs_server", CHAT_CONFIG.OBS_SERVER)
+    bucket_name = kwargs.get("bucket_name", CHAT_CONFIG.BUCKET_NAME)
+    part_size = kwargs.get("part_size", CHAT_CONFIG.PART_SIZE)
+    task_num = kwargs.get("task_num", CHAT_CONFIG.TASK_NUM)
+    timeout = kwargs.get("timeout", CHAT_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", CHAT_CONFIG.MAX_RETRIES)
+    max_concurrency = kwargs.get(
+        "max_concurrency", CHAT_CONFIG.MAX_CONCURRENCY
+    )
+    max_workers = kwargs.get("max_workers", CHAT_CONFIG.MAX_WORKERS)
+    max_tokens = kwargs.get("max_tokens", CHAT_CONFIG.MAX_TOKENS)
     if response_format is None:
         response_format = dict(CHAT_CONFIG.RESPONSE_FORMAT)
     else:
