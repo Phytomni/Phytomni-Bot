@@ -10,6 +10,8 @@ import pytest
 
 from mcp_server_phytomni.utils import (
     attach_message_payload,
+    format_retrieved_doc_context,
+    format_upload_context,
     message_content,
     parse_follow_up_questions,
     parse_json_list_fragment,
@@ -59,3 +61,36 @@ def test_attach_message_payload_creates_missing_message_shape():
         "follow_up_questions": ["next"],
         "total": 1,
     }
+
+
+def test_format_upload_context_respects_length_limit():
+    context, total_length = format_upload_context(
+        ["first", "second"],
+        max_tokens=80,
+    )
+
+    assert (
+        context
+        == "[user upload file 1 begin]\nfirst\n[user upload file 1 end]"
+    )
+    assert total_length == len(context)
+
+
+def test_format_retrieved_doc_context_preserves_existing_shape():
+    context, total_length = format_retrieved_doc_context(
+        [
+            {
+                "title": "Paper",
+                "subtitle": "Abstract",
+                "big_content": "large text",
+                "content": "short text",
+            }
+        ],
+        max_tokens=200,
+        initial_length=5,
+    )
+
+    assert context == (
+        "[document 1 begin] Paper\n" "Abstract\nlarge text [document 1 end]"
+    )
+    assert total_length == 5 + len(context)

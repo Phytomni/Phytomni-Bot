@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from math import ceil
 from pathlib import Path
@@ -83,6 +84,76 @@ def attach_message_payload(
 
     phyto_response["choices"][0]["message"].update(dict(payload))
     return phyto_response
+
+
+def join_limited_fragments(
+    fragments: Iterable[str],
+    max_tokens: int,
+    initial_length: int = 0,
+) -> tuple[str, int]:
+    """Join fragments until their combined length reaches the limit."""
+    selected_fragments = []
+    total_length = initial_length
+    for fragment in fragments:
+        if total_length + len(fragment) <= max_tokens:
+            selected_fragments.append(fragment)
+            total_length += len(fragment)
+        else:
+            break
+    return "\n\n".join(selected_fragments), total_length
+
+
+def format_upload_context(
+    upload_texts: Iterable[str],
+    max_tokens: int,
+    initial_length: int = 0,
+) -> tuple[str, int]:
+    """Format uploaded file texts as bounded prompt context."""
+    fragments = (
+        f"[user upload file {index + 1} begin]\n"
+        f"{text}\n[user upload file {index + 1} end]"
+        for index, text in enumerate(upload_texts)
+    )
+    return join_limited_fragments(
+        fragments,
+        max_tokens=max_tokens,
+        initial_length=initial_length,
+    )
+
+
+def format_retrieved_doc_context(
+    docs: Iterable[Mapping[str, Any]],
+    max_tokens: int,
+    initial_length: int = 0,
+) -> tuple[str, int]:
+    """Format retrieved documents as bounded prompt context."""
+    fragments = (
+        _format_retrieved_doc_fragment(doc, index)
+        for index, doc in enumerate(docs)
+    )
+    return join_limited_fragments(
+        fragments,
+        max_tokens=max_tokens,
+        initial_length=initial_length,
+    )
+
+
+def _format_retrieved_doc_fragment(
+    doc: Mapping[str, Any],
+    index: int,
+) -> str:
+    header = f"[document {index + 1} begin] {doc['title']}"
+    content_field = (
+        doc.get("big_content")
+        if "big_content" in doc
+        else doc.get("content", "")
+    )
+    body = (
+        f"{doc['subtitle']}\n{content_field}"
+        if doc.get("subtitle")
+        else doc.get("content", "")
+    )
+    return f"{header}\n{body} [document {index + 1} end]"
 
 
 async def get_token(

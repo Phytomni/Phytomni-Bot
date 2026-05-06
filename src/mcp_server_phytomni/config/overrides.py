@@ -12,6 +12,50 @@ from pydantic import BaseModel, SecretStr
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
 FieldMap = Mapping[str, str]
 
+RETRIEVAL_CONFIG_FIELD_MAP = {
+    "retrieve_url": "RETRIEVE_URL",
+    "repo_id_dict": "REPO_ID_DICT",
+    "page_num": "PAGE_NUM",
+    "filter_string": "FILTER_STRING",
+    "scope": "SCOPE",
+    "extra_repo_ids": "EXTRA_REPO_IDS",
+    "rerank_url": "RERANK_URL",
+    "rerank_batch_size": "RERANK_BATCH_SIZE",
+    "score_threshold": "SCORE_THRESHOLD",
+    "top_n": "TOP_N",
+}
+
+CHAT_COMPLETION_CONFIG_FIELD_MAP = {
+    "prompt_file": "PROMPT_FILE",
+    "prompt_path": "PROMPT_PATH",
+    "frequency_penalty": "FREQUENCY_PENALTY",
+    "max_tokens": "MAX_TOKENS",
+    "n": "N",
+    "presence_penalty": "PRESENCE_PENALTY",
+    "reasoning_effort": "REASONING_EFFORT",
+    "response_format": "RESPONSE_FORMAT",
+    "stream": "STREAM",
+    "temperature": "TEMPERATURE",
+    "top_p": "TOP_P",
+    "user": "USER",
+}
+
+OBS_TRANSFER_CONFIG_FIELD_MAP = {
+    "server_dir": "TEMP_DIR",
+    "obs_server": "OBS_SERVER",
+    "bucket_name": "BUCKET_NAME",
+    "part_size": "PART_SIZE",
+    "task_num": "TASK_NUM",
+    "max_concurrency": "MAX_CONCURRENCY",
+    "max_workers": "MAX_WORKERS",
+}
+
+RETRY_CONFIG_FIELD_MAP = {
+    "timeout": "TIMEOUT",
+    "retriable_codes": "RETRIABLE_CODES",
+    "max_retries": "MAX_RETRIES",
+}
+
 
 def collect_mapped_overrides(
     values: Mapping[str, Any],

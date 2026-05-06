@@ -33,6 +33,10 @@ from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
 from .config.overrides import (
+    CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    OBS_TRANSFER_CONFIG_FIELD_MAP,
+    RETRIEVAL_CONFIG_FIELD_MAP,
+    RETRY_CONFIG_FIELD_MAP,
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
@@ -43,6 +47,8 @@ from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
     download_list_convert,
     file_cache_fingerprint,
+    format_retrieved_doc_context,
+    format_upload_context,
     get_prompt,
     get_token,
     load_json_file,
@@ -62,38 +68,10 @@ ANALYST_CONFIG_FIELD_MAP = {
     "task_name": "TASK_NAME",
     "execute_code": "EXECUTE_CODE",
     "output_dir": "OUTPUT_DIR",
-    "retrieve_url": "RETRIEVE_URL",
-    "repo_id_dict": "REPO_ID_DICT",
-    "page_num": "PAGE_NUM",
-    "filter_string": "FILTER_STRING",
-    "scope": "SCOPE",
-    "extra_repo_ids": "EXTRA_REPO_IDS",
-    "rerank_url": "RERANK_URL",
-    "rerank_batch_size": "RERANK_BATCH_SIZE",
-    "score_threshold": "SCORE_THRESHOLD",
-    "top_n": "TOP_N",
-    "prompt_file": "PROMPT_FILE",
-    "prompt_path": "PROMPT_PATH",
-    "frequency_penalty": "FREQUENCY_PENALTY",
-    "max_tokens": "MAX_TOKENS",
-    "n": "N",
-    "presence_penalty": "PRESENCE_PENALTY",
-    "reasoning_effort": "REASONING_EFFORT",
-    "response_format": "RESPONSE_FORMAT",
-    "stream": "STREAM",
-    "temperature": "TEMPERATURE",
-    "top_p": "TOP_P",
-    "user": "USER",
-    "server_dir": "TEMP_DIR",
-    "obs_server": "OBS_SERVER",
-    "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZE",
-    "task_num": "TASK_NUM",
-    "max_concurrency": "MAX_CONCURRENCY",
-    "max_workers": "MAX_WORKERS",
-    "timeout": "TIMEOUT",
-    "retriable_codes": "RETRIABLE_CODES",
-    "max_retries": "MAX_RETRIES",
+    **RETRIEVAL_CONFIG_FIELD_MAP,
+    **CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    **OBS_TRANSFER_CONFIG_FIELD_MAP,
+    **RETRY_CONFIG_FIELD_MAP,
     "max_poll": "MAX_POLL",
 }
 ANALYST_SENSITIVE_FIELD_MAP = {
@@ -448,7 +426,7 @@ class AnalystAgent:
             access_key_id, secret_access_key = (
                 self.sensitive_config.obs_credentials()
             )
-            upload_str_list = await download_list_convert(
+            upload_texts = await download_list_convert(
                 obs_file_list=state["obs_file_list"],
                 server_dir=self.analyst_config.TEMP_DIR,
                 access_key_id=access_key_id,
@@ -461,21 +439,10 @@ class AnalystAgent:
                 max_concurrency=self.analyst_config.MAX_CONCURRENCY,
                 max_workers=self.analyst_config.MAX_WORKERS,
             )
-            upload_results = []
-            for i, doc in enumerate(upload_str_list):
-                fragment = (
-                    f"[user upload file {i+1} begin]\n"
-                    f"{doc}\n[user upload file {i+1} end]"
-                )
-                if (
-                    total_length + len(fragment)
-                    <= self.analyst_config.MAX_TOKENS
-                ):
-                    upload_results.append(fragment)
-                    total_length += len(fragment)
-                else:
-                    break
-            upload_context = "\n\n".join(upload_results)
+            upload_context, total_length = format_upload_context(
+                upload_texts,
+                max_tokens=self.analyst_config.MAX_TOKENS,
+            )
         retrieve_response = await multi_retrieve(
             user_query=state["goal_description"],
             retrieve_url=self.analyst_config.RETRIEVE_URL,
@@ -492,26 +459,11 @@ class AnalystAgent:
             retriable_codes=self.analyst_config.RETRIABLE_CODES,
             max_retries=self.analyst_config.MAX_RETRIES,
         )
-        retrieve_results = []
-        for i, doc in enumerate(retrieve_response.get("doc_list", [])):
-            header = f"[document {i+1} begin] {doc['title']}"
-            content_field = (
-                doc.get("big_content")
-                if "big_content" in doc
-                else doc.get("content", "")
-            )
-            body = (
-                f"{doc['subtitle']}\n{content_field}"
-                if doc.get("subtitle")
-                else doc.get("content", "")
-            )
-            fragment = f"{header}\n{body} [document {i+1} end]"
-            if total_length + len(fragment) <= self.analyst_config.MAX_TOKENS:
-                retrieve_results.append(fragment)
-                total_length += len(fragment)
-            else:
-                break
-        retrieve_context = "\n\n".join(retrieve_results)
+        retrieve_context, _ = format_retrieved_doc_context(
+            retrieve_response.get("doc_list", []),
+            max_tokens=self.analyst_config.MAX_TOKENS,
+            initial_length=total_length,
+        )
         print("===================Retrieve Information===================")
         print(retrieve_context)
         print("==========================================================")
