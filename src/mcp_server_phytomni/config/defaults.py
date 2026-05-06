@@ -98,7 +98,7 @@ class ServerConfig(BaseSettings):
 
     OBS_SERVER: str = "https://obs.cn-east-3.myhuaweicloud.com"
     BUCKET_NAME: str = "phytomni"
-    PART_SIZT: int = 16777216
+    PART_SIZE: int = 16777216
     TASK_NUM: int = 8
 
     POLL_INTERVAL: float = 300

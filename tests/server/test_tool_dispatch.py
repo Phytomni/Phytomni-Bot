@@ -21,16 +21,16 @@ pytestmark = pytest.mark.server
 
 def test_tool_dispatch_tables_cover_public_agents():
     expected_names = {
-        server.PhytomniAgents.CHATAGENT.value,
-        server.PhytomniAgents.KNOWLEDGEAGENT.value,
-        server.PhytomniAgents.DATAAGENT.value,
-        server.PhytomniAgents.ANALYSTAGENT.value,
-        server.PhytomniAgents.REVIEWAGENT.value,
-        server.PhytomniAgents.BRIEFGENEAGENT.value,
-        server.PhytomniAgents.DEEPGENOMEAGENT.value,
-        server.PhytomniAgents.INSILICORESEARCHAGENT.value,
-        server.PhytomniAgents.DIGITALDESIGNAGENT.value,
-        server.PhytomniAgents.GENENETWORKAGENT.value,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        server.PhytomniAgents.DATA_AGENT.value,
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        server.PhytomniAgents.REVIEW_AGENT.value,
+        server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+        server.PhytomniAgents.DEEP_GENOME_AGENT.value,
+        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
+        server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+        server.PhytomniAgents.GENE_NETWORK_AGENT.value,
     }
 
     assert set(server.TOOL_ARGUMENT_MODELS) == expected_names
@@ -55,12 +55,12 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHATAGENT.value,
+        server.PhytomniAgents.CHAT_AGENT.value,
         fake_handler,
     )
 
     result = await server.dispatch_tool(
-        server.PhytomniAgents.CHATAGENT,
+        server.PhytomniAgents.CHAT_AGENT,
         {"user_query": "hello", "obs_file_list": []},
     )
 
@@ -81,7 +81,7 @@ async def test_dispatch_tool_rejects_unknown_tool():
 async def test_dispatch_tool_rejects_invalid_arguments():
     with pytest.raises(McpError) as exc_info:
         await server.dispatch_tool(
-            server.PhytomniAgents.CHATAGENT.value,
+            server.PhytomniAgents.CHAT_AGENT.value,
             {"user_query": "missing required obs list"},
         )
 

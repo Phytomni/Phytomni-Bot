@@ -21,49 +21,50 @@ from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
 
-# from .config.defaults import AnalystConfig
 from .utils import get_prompt, load_text_file
 
-ec = EnvironmentConfig()
-sc = SensitiveConfig.load()
-# ac = AnalystConfig()
+ENVIRONMENT_CONFIG = EnvironmentConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
 
 
 async def region_vci_analysis(
     query: str,
-    user_id: str = ec.USER_ID,
+    user_id: str = ENVIRONMENT_CONFIG.USER_ID,
     batch: bool = False,
-    prompt_file: str = ec.PROMPT_FILE,
-    environment_data: str = ec.ENVIRONMENT_DATA,
-    region_code: str = ec.REGION_CODE,
-    output_dir: str = ec.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ec.OBS_SERVER,
-    bucket_name: str = ec.BUCKET_NAME,
-    analysis_url: str = ec.ANALYSIS_URL,
-    region: str = ec.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = ec.RESOURCE,
-    app_id_dict: Dict[str, str] = ec.APP_ID,
-    timeout: float = ec.TIMEOUT,
-    retriable_codes: List[int] = ec.RETRIABLE_CODES,
-    max_retries: int = ec.MAX_RETRIES,
-    max_poll: float = ec.MAX_POLL,
-    prompt_path: str = ec.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = ec.FREQUENCY_PENALTY,
-    n: int = ec.N,
-    presence_penalty: float = ec.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = ec.REASONING_EFFORT,
-    stream: bool = ec.STREAM,
-    temperature: float = ec.TEMPERATURE,
-    top_p: float = ec.TOP_P,
-    user: str = ec.USER,
+    prompt_file: str = ENVIRONMENT_CONFIG.PROMPT_FILE,
+    environment_data: str = ENVIRONMENT_CONFIG.ENVIRONMENT_DATA,
+    region_code: str = ENVIRONMENT_CONFIG.REGION_CODE,
+    output_dir: str = ENVIRONMENT_CONFIG.OUTPUT_DIR,
+    model_url: str = SENSITIVE_CONFIG.CODER_URL,
+    model_name: str = SENSITIVE_CONFIG.CODER_MODEL,
+    coder_api_key: str = SENSITIVE_CONFIG.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = ENVIRONMENT_CONFIG.OBS_SERVER,
+    bucket_name: str = ENVIRONMENT_CONFIG.BUCKET_NAME,
+    analysis_url: str = ENVIRONMENT_CONFIG.ANALYSIS_URL,
+    region: str = ENVIRONMENT_CONFIG.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = ENVIRONMENT_CONFIG.RESOURCE,
+    app_id_dict: Dict[str, str] = ENVIRONMENT_CONFIG.APP_ID,
+    timeout: float = ENVIRONMENT_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = ENVIRONMENT_CONFIG.RETRIABLE_CODES,
+    max_retries: int = ENVIRONMENT_CONFIG.MAX_RETRIES,
+    max_poll: float = ENVIRONMENT_CONFIG.MAX_POLL,
+    prompt_path: str = ENVIRONMENT_CONFIG.PROMPT_PATH,
+    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
+    base_url: str = SENSITIVE_CONFIG.BASE_URL,
+    model: str = SENSITIVE_CONFIG.MODEL_ID,
+    frequency_penalty: float = ENVIRONMENT_CONFIG.FREQUENCY_PENALTY,
+    n: int = ENVIRONMENT_CONFIG.N,
+    presence_penalty: float = ENVIRONMENT_CONFIG.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = ENVIRONMENT_CONFIG.REASONING_EFFORT,
+    stream: bool = ENVIRONMENT_CONFIG.STREAM,
+    temperature: float = ENVIRONMENT_CONFIG.TEMPERATURE,
+    top_p: float = ENVIRONMENT_CONFIG.TOP_P,
+    user: str = ENVIRONMENT_CONFIG.USER,
 ) -> dict:
     region_info = load_text_file(region_code)
     prompt = get_prompt(

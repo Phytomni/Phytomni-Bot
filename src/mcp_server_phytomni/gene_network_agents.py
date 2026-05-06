@@ -40,8 +40,8 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
-gnc = GeneNetworkConfig()
-sc = SensitiveConfig.load()
+GENE_NETWORK_CONFIG = GeneNetworkConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 GENE_NETWORK_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
@@ -94,8 +94,8 @@ class GeneNetworkAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        gnc: Gene network configuration.
-        sc: Sensitive configuration settings.
+        GENE_NETWORK_CONFIG: Gene network configuration.
+        SENSITIVE_CONFIG: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -110,8 +110,8 @@ class GeneNetworkAgents:
         self,
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
-        gene_network_config=gnc,
-        sensitive_config=sc,
+        gene_network_config=GENE_NETWORK_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the GeneNetworkAgents.
 
@@ -123,8 +123,8 @@ class GeneNetworkAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.gnc = gene_network_config
-        self.sc = sensitive_config
+        self.gene_network_config = gene_network_config
+        self.sensitive_config = sensitive_config
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=gene_network_config,
             sensitive_config=sensitive_config,
@@ -197,13 +197,13 @@ class GeneNetworkAgents:
 
         # Build goal_description
         goal_description = get_prompt(
-            self.gnc.PROMPT_FILE, goal_path, {"to_id": to_id}
+            self.gene_network_config.PROMPT_FILE, goal_path, {"to_id": to_id}
         )
         # Build meta prompt
-        meta = get_prompt(self.gnc.PROMPT_FILE, meta_path)
+        meta = get_prompt(self.gene_network_config.PROMPT_FILE, meta_path)
         # Build data_list
         data_list = get_data_list(
-            self.gnc.DEEPGENOME_DATA, analysis_type, species
+            self.gene_network_config.DEEPGENOME_DATA, analysis_type, species
         )
 
         # Determine compute resource level
@@ -211,13 +211,16 @@ class GeneNetworkAgents:
 
         # Get output directory
         if not output_dir:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             output_dir = create_output_dir(
-                user_id=self.gnc.USER_ID or str(uuid1()),
+                user_id=self.gene_network_config.USER_ID or str(uuid1()),
                 task=f"{analysis_type}_task",
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.gnc.OBS_SERVER,
-                bucket_name=self.gnc.BUCKET_NAME,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.gene_network_config.OBS_SERVER,
+                bucket_name=self.gene_network_config.BUCKET_NAME,
             )
 
         print(f"  → Submitting {analysis_type} task via AnalystAgent...")
@@ -347,13 +350,13 @@ async def network_analysis(
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph gene network agent."""
     gene_network_config = copy_config_with_overrides(
-        gnc,
+        GENE_NETWORK_CONFIG,
         kwargs,
         GENE_NETWORK_CONFIG_FIELD_MAP,
         fixed_updates={"USER_ID": user_id},
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,

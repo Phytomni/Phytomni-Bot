@@ -225,7 +225,7 @@ async def test_gene_retrieve_uses_agent_context_cache():
     class FakeKnowledgeAgent:
         """Minimal KnowledgeAgent-compatible stub."""
 
-        kc = KnowledgeConfig()
+        knowledge_config = KnowledgeConfig()
 
         async def arun(self, **kwargs):
             calls["arun"] += 1

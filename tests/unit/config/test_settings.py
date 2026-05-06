@@ -23,6 +23,11 @@ def test_sensitive_config_load_uses_environment_without_real_env_file(
     assert config.API_KEY.get_secret_value() == "override-api-key"
     assert config.USER_NAME == "pytest-user"
     assert config.USER_PASSWORD.get_secret_value() == "pytest-password"
+    assert config.ACCESS_KEY_ID.get_secret_value() == "pytest-access-key-id"
+    assert (
+        config.SECRET_ACCESS_KEY.get_secret_value()
+        == "pytest-secret-access-key"
+    )
 
 
 def test_sensitive_config_masks_secret_repr():
@@ -30,3 +35,38 @@ def test_sensitive_config_masks_secret_repr():
 
     assert "pytest-api-key" not in repr(config)
     assert "**********" in repr(config)
+
+
+def test_sensitive_config_prefers_uppercase_obs_env(monkeypatch):
+    monkeypatch.setenv("ACCESS_KEY_ID", "uppercase-access-key-id")
+    monkeypatch.setenv("SECRET_ACCESS_KEY", "uppercase-secret-access-key")
+    monkeypatch.setenv("AccessKeyID", "legacy-access-key-id")
+    monkeypatch.setenv("SecretAccessKey", "legacy-secret-access-key")
+
+    config = settings.SensitiveConfig.load()
+
+    assert config.ACCESS_KEY_ID.get_secret_value() == (
+        "uppercase-access-key-id"
+    )
+    assert config.SECRET_ACCESS_KEY.get_secret_value() == (
+        "uppercase-secret-access-key"
+    )
+
+
+def test_sensitive_config_accepts_legacy_obs_env(monkeypatch):
+    monkeypatch.delenv("ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.setenv("AccessKeyID", "legacy-access-key-id")
+    monkeypatch.setenv("SecretAccessKey", "legacy-secret-access-key")
+
+    config = settings.SensitiveConfig.load()
+
+    assert config.ACCESS_KEY_ID.get_secret_value() == "legacy-access-key-id"
+    assert (
+        config.SECRET_ACCESS_KEY.get_secret_value()
+        == "legacy-secret-access-key"
+    )
+    assert config.AccessKeyID.get_secret_value() == "legacy-access-key-id"
+    assert (
+        config.SecretAccessKey.get_secret_value() == "legacy-secret-access-key"
+    )

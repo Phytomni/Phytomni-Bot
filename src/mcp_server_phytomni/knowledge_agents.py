@@ -33,8 +33,8 @@ from .func_cache import func_cache
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt, split_list
 
-kc = KnowledgeConfig()
-sc = SensitiveConfig.load()
+KNOWLEDGE_CONFIG = KnowledgeConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 RETRIEVE_CACHE_TTL = 300
 
 KNOWLEDGE_CONFIG_FIELD_MAP = {
@@ -65,7 +65,7 @@ KNOWLEDGE_CONFIG_FIELD_MAP = {
     "server_dir": "TEMP_DIR",
     "obs_server": "OBS_SERVER",
     "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZT",
+    "part_size": "PART_SIZE",
     "task_num": "TASK_NUM",
     "max_concurrency": "MAX_CONCURRENCY",
     "max_workers": "MAX_WORKERS",
@@ -79,8 +79,8 @@ KNOWLEDGE_SENSITIVE_FIELD_MAP = {
 }
 KNOWLEDGE_SECRET_FIELD_MAP = {
     "api_key": "API_KEY",
-    "access_key_id": "AccessKeyID",
-    "secret_access_key": "SecretAccessKey",
+    "access_key_id": "ACCESS_KEY_ID",
+    "secret_access_key": "SECRET_ACCESS_KEY",
 }
 
 
@@ -136,13 +136,13 @@ class KnowledgeAgent:
         checkpointer: A LangGraph checkpointer for state persistence.
                       Defaults to a fresh MemorySaver instance.
         knowledge_config: Configuration for knowledge base retrieval.
-                          Defaults to the global kc instance.
+                          Defaults to the global KNOWLEDGE_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., credentials).
-                          Defaults to the global sc instance.
+                          Defaults to the global SENSITIVE_CONFIG instance.
 
     Attributes:
-        kc: The knowledge configuration instance.
-        sc: The sensitive configuration instance.
+        KNOWLEDGE_CONFIG: The knowledge configuration instance.
+        SENSITIVE_CONFIG: The sensitive configuration instance.
         checkpointer: The checkpointer for state persistence.
         app: The compiled LangGraph application.
     """
@@ -150,12 +150,12 @@ class KnowledgeAgent:
     def __init__(
         self,
         checkpointer: Optional[MemorySaver] = None,
-        knowledge_config=kc,
-        sensitive_config=sc,
+        knowledge_config=KNOWLEDGE_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the KnowledgeAgent and build the graph."""
-        self.kc = knowledge_config
-        self.sc = sensitive_config
+        self.knowledge_config = knowledge_config
+        self.sensitive_config = sensitive_config
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
@@ -207,18 +207,21 @@ class KnowledgeAgent:
         total_length = 0
 
         if obs_file_list:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             upload_str_list = await download_list_convert(
                 obs_file_list=obs_file_list,
-                server_dir=self.kc.TEMP_DIR,
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.kc.OBS_SERVER,
-                bucket_name=self.kc.BUCKET_NAME,
-                part_size=self.kc.PART_SIZT,
-                task_num=self.kc.TASK_NUM,
-                max_retries=self.kc.MAX_RETRIES,
-                max_concurrency=self.kc.MAX_CONCURRENCY,
-                max_workers=self.kc.MAX_WORKERS,
+                server_dir=self.knowledge_config.TEMP_DIR,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.knowledge_config.OBS_SERVER,
+                bucket_name=self.knowledge_config.BUCKET_NAME,
+                part_size=self.knowledge_config.PART_SIZE,
+                task_num=self.knowledge_config.TASK_NUM,
+                max_retries=self.knowledge_config.MAX_RETRIES,
+                max_concurrency=self.knowledge_config.MAX_CONCURRENCY,
+                max_workers=self.knowledge_config.MAX_WORKERS,
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
@@ -226,7 +229,10 @@ class KnowledgeAgent:
                     f"[user upload file {i+1} begin]\n"
                     f"{doc}\n[user upload file {i+1} end]"
                 )
-                if total_length + len(fragment) <= self.kc.MAX_TOKENS:
+                if (
+                    total_length + len(fragment)
+                    <= self.knowledge_config.MAX_TOKENS
+                ):
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
@@ -253,24 +259,26 @@ class KnowledgeAgent:
                 - retrieve_context: The formatted context string for the LLM.
         """
         user_query = state["user_query"]
-        repo_id_dict = state.get("repo_id_dict") or self.kc.REPO_ID_DICT
+        repo_id_dict = (
+            state.get("repo_id_dict") or self.knowledge_config.REPO_ID_DICT
+        )
         upload_context = state.get("upload_context", "")
 
         retrieve_response = await multi_retrieve(
             user_query=user_query,
-            retrieve_url=self.kc.RETRIEVE_URL,
+            retrieve_url=self.knowledge_config.RETRIEVE_URL,
             repo_id_dict=repo_id_dict,
-            page_num=self.kc.PAGE_NUM,
-            filter_string=self.kc.FILTER_STRING,
-            scope=self.kc.SCOPE,
-            extra_repo_ids=self.kc.EXTRA_REPO_IDS,
-            rerank_url=self.kc.RERANK_URL,
-            rerank_batch_size=self.kc.RERANK_BATCH_SIZE,
-            score_threshold=self.kc.SCORE_THRESHOLD,
-            top_n=self.kc.TOP_N,
-            timeout=self.kc.TIMEOUT,
-            retriable_codes=self.kc.RETRIABLE_CODES,
-            max_retries=self.kc.MAX_RETRIES,
+            page_num=self.knowledge_config.PAGE_NUM,
+            filter_string=self.knowledge_config.FILTER_STRING,
+            scope=self.knowledge_config.SCOPE,
+            extra_repo_ids=self.knowledge_config.EXTRA_REPO_IDS,
+            rerank_url=self.knowledge_config.RERANK_URL,
+            rerank_batch_size=self.knowledge_config.RERANK_BATCH_SIZE,
+            score_threshold=self.knowledge_config.SCORE_THRESHOLD,
+            top_n=self.knowledge_config.TOP_N,
+            timeout=self.knowledge_config.TIMEOUT,
+            retriable_codes=self.knowledge_config.RETRIABLE_CODES,
+            max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
         retrieve_results = []
@@ -288,7 +296,10 @@ class KnowledgeAgent:
                 else doc.get("content", "")
             )
             fragment = f"{header}\n{body} [document {i+1} end]"
-            if total_length + len(fragment) <= self.kc.MAX_TOKENS:
+            if (
+                total_length + len(fragment)
+                <= self.knowledge_config.MAX_TOKENS
+            ):
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
@@ -324,7 +335,7 @@ class KnowledgeAgent:
 
         if upload_context:
             chat_query = get_prompt(
-                self.kc.PROMPT_FILE,
+                self.knowledge_config.PROMPT_FILE,
                 "user/retrieval_file",
                 {
                     "retrieve_results": retrieve_context,
@@ -334,7 +345,7 @@ class KnowledgeAgent:
             )
         else:
             chat_query = get_prompt(
-                self.kc.PROMPT_FILE,
+                self.knowledge_config.PROMPT_FILE,
                 "user/retrieval",
                 {
                     "retrieve_results": retrieve_context,
@@ -344,23 +355,23 @@ class KnowledgeAgent:
 
         phyto_response = await phyto_chat(
             user_query=chat_query,
-            prompt_file=self.kc.PROMPT_FILE,
-            prompt_path=self.kc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.kc.FREQUENCY_PENALTY,
-            n=self.kc.N,
-            presence_penalty=self.kc.PRESENCE_PENALTY,
-            reasoning_effort=self.kc.REASONING_EFFORT,
-            response_format=self.kc.RESPONSE_FORMAT,
-            stream=self.kc.STREAM,
-            temperature=self.kc.TEMPERATURE,
-            top_p=self.kc.TOP_P,
-            user=self.kc.USER,
-            timeout=self.kc.TIMEOUT,
-            retriable_codes=self.kc.RETRIABLE_CODES,
-            max_retries=self.kc.MAX_RETRIES,
+            prompt_file=self.knowledge_config.PROMPT_FILE,
+            prompt_path=self.knowledge_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
+            n=self.knowledge_config.N,
+            presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
+            reasoning_effort=self.knowledge_config.REASONING_EFFORT,
+            response_format=self.knowledge_config.RESPONSE_FORMAT,
+            stream=self.knowledge_config.STREAM,
+            temperature=self.knowledge_config.TEMPERATURE,
+            top_p=self.knowledge_config.TOP_P,
+            user=self.knowledge_config.USER,
+            timeout=self.knowledge_config.TIMEOUT,
+            retriable_codes=self.knowledge_config.RETRIABLE_CODES,
+            max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
         # 将 doc_list 挂载到大模型返回的 message 中
@@ -428,30 +439,30 @@ class KnowledgeAgent:
 
         follow_up_response = await phyto_chat(
             user_query=get_prompt(
-                self.kc.PROMPT_FILE,
+                self.knowledge_config.PROMPT_FILE,
                 "system/follow_up_questions",
                 {
                     "user_query": user_query,
                     "system_response": system_response_text,
                 },
             ),
-            prompt_file=self.kc.PROMPT_FILE,
-            prompt_path=self.kc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.kc.FREQUENCY_PENALTY,
-            n=self.kc.N,
-            presence_penalty=self.kc.PRESENCE_PENALTY,
-            reasoning_effort=self.kc.REASONING_EFFORT,
-            response_format=self.kc.RESPONSE_FORMAT,
-            stream=self.kc.STREAM,
-            temperature=self.kc.TEMPERATURE,
-            top_p=self.kc.TOP_P,
-            user=self.kc.USER,
-            timeout=self.kc.TIMEOUT,
-            retriable_codes=self.kc.RETRIABLE_CODES,
-            max_retries=self.kc.MAX_RETRIES,
+            prompt_file=self.knowledge_config.PROMPT_FILE,
+            prompt_path=self.knowledge_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
+            n=self.knowledge_config.N,
+            presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
+            reasoning_effort=self.knowledge_config.REASONING_EFFORT,
+            response_format=self.knowledge_config.RESPONSE_FORMAT,
+            stream=self.knowledge_config.STREAM,
+            temperature=self.knowledge_config.TEMPERATURE,
+            top_p=self.knowledge_config.TOP_P,
+            user=self.knowledge_config.USER,
+            timeout=self.knowledge_config.TIMEOUT,
+            retriable_codes=self.knowledge_config.RETRIABLE_CODES,
+            max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
         follow_up_content = ""
@@ -616,19 +627,19 @@ class KnowledgeAgent:
 )
 async def retrieve(
     user_query: str,
-    retrieve_url: str = kc.RETRIEVE_URL,
-    repo_id: str = kc.REPO_ID,
-    page_num: int = kc.PAGE_NUM,
-    page_size: int = kc.PAGE_SIZE,
-    filter_string: Optional[str] = kc.FILTER_STRING,
-    scope: str = kc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
-    rerank_url: str = kc.RERANK_URL,
-    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-    score_threshold: float = kc.SCORE_THRESHOLD,
-    timeout: float = kc.TIMEOUT,
-    retriable_codes: List[int] = kc.RETRIABLE_CODES,
-    max_retries: int = kc.MAX_RETRIES,
+    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL,
+    repo_id: str = KNOWLEDGE_CONFIG.REPO_ID,
+    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM,
+    page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE,
+    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING,
+    scope: str = KNOWLEDGE_CONFIG.SCOPE,
+    extra_repo_ids: Optional[List[str]] = KNOWLEDGE_CONFIG.EXTRA_REPO_IDS,
+    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
+    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
+    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Retrieve and rerank documents from a knowledge base.
 
@@ -780,19 +791,19 @@ async def retrieve(
 )
 async def multi_retrieve(
     user_query: str,
-    retrieve_url: str = kc.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = kc.REPO_ID_DICT,
-    page_num: int = kc.PAGE_NUM,
-    filter_string: Optional[str] = kc.FILTER_STRING,
-    scope: str = kc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = kc.EXTRA_REPO_IDS,
-    rerank_url: str = kc.RERANK_URL,
-    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-    score_threshold: float = kc.SCORE_THRESHOLD,
-    top_n: int = kc.TOP_N,
-    timeout: float = kc.TIMEOUT,
-    retriable_codes: List[int] = kc.RETRIABLE_CODES,
-    max_retries: int = kc.MAX_RETRIES,
+    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL,
+    repo_id_dict: Optional[Dict[str, int]] = KNOWLEDGE_CONFIG.REPO_ID_DICT,
+    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM,
+    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING,
+    scope: str = KNOWLEDGE_CONFIG.SCOPE,
+    extra_repo_ids: Optional[List[str]] = KNOWLEDGE_CONFIG.EXTRA_REPO_IDS,
+    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
+    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
+    top_n: int = KNOWLEDGE_CONFIG.TOP_N,
+    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Concurrently retrieve and rerank documents from multiple repositories.
@@ -829,7 +840,7 @@ async def multi_retrieve(
         McpError: If any of the underlying `retrieve` operations fail.
     """
     if not repo_id_dict:
-        repo_id_dict = kc.REPO_ID_DICT
+        repo_id_dict = KNOWLEDGE_CONFIG.REPO_ID_DICT
 
     async def make_multi_retrieve():
         try:
@@ -890,13 +901,13 @@ async def multi_retrieve(
 async def rerank(
     user_query: str,
     doc_list: List[Dict[str, Any]],
-    rerank_url: str = kc.RERANK_URL,
-    top_n: int = kc.TOP_N,
-    rerank_batch_size: int = kc.RERANK_BATCH_SIZE,
-    score_threshold: float = kc.SCORE_THRESHOLD,
-    timeout: float = kc.TIMEOUT,
-    retriable_codes: List[int] = kc.RETRIABLE_CODES,
-    max_retries: int = kc.MAX_RETRIES,
+    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
+    top_n: int = KNOWLEDGE_CONFIG.TOP_N,
+    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
+    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
 ) -> list:
     """Rerank a list of documents based on a user query.
 
@@ -1030,7 +1041,7 @@ async def rerank(
 def _knowledge_config_with_overrides(**kwargs: Any):
     """Build a KnowledgeConfig copy from compatibility wrapper arguments."""
     return copy_config_with_overrides(
-        kc,
+        KNOWLEDGE_CONFIG,
         kwargs,
         KNOWLEDGE_CONFIG_FIELD_MAP,
     )
@@ -1039,7 +1050,7 @@ def _knowledge_config_with_overrides(**kwargs: Any):
 def _knowledge_sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
     return copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=KNOWLEDGE_SENSITIVE_FIELD_MAP,
         secret_field_map=KNOWLEDGE_SECRET_FIELD_MAP,
@@ -1079,8 +1090,8 @@ async def multi_retrieve_generate(
 
 async def retrieve_generate(
     user_query: str,
-    repo_id: str = kc.REPO_ID,
-    page_size: int = kc.PAGE_SIZE,
+    repo_id: str = KNOWLEDGE_CONFIG.REPO_ID,
+    page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE,
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:

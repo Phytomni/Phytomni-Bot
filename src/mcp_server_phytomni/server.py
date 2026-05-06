@@ -504,14 +504,14 @@ class PhytomniAgents(str, Enum):
     different aspects of botanical studies and computational biology workflows.
 
     Members:
-        CHATAGENT: Core language model interface for fundamental Q&A.
+        CHAT_AGENT: Core language model interface for fundamental Q&A.
             Usage: Basic conceptual queries, single-domain problem solving.
             Limitations: Avoid for multi-factor agricultural optimizations.
-        KNOWLEDGEAGENT: Evidence-based literature synthesis system.
+        KNOWLEDGE_AGENT: Evidence-based literature synthesis system.
             Usage: Cross-referenced answers from curated scientific sources.
-        DATAAGENT: Structured data query interface.
+        DATA_AGENT: Structured data query interface.
             Usage: Precise numerical/statistical retrieval from databases.
-        ANALYSTAGENT: Genomic workflow orchestration system.
+        ANALYST_AGENT: Genomic workflow orchestration system.
             Usage: Automated execution of bioinformatics pipelines.
 
     Descriptions provide guidance on appropriate application scenarios and
@@ -519,34 +519,34 @@ class PhytomniAgents(str, Enum):
     standardized JSON schema for parameter validation.
     """
 
-    CHATAGENT = "ChatAgent"
-    CHATAGENT_DESCRIPTION = (
+    CHAT_AGENT = "ChatAgent"
+    CHAT_AGENT_DESCRIPTION = (
         "Provides concise explanations for foundational or single-domain "
         "questions in plant biology (e.g., definitions, basic mechanisms) "
         "using the LLM's internal knowledge. Not recommended for "
         "multi-dimensional agricultural optimization or climate adaptation "
         "strategies."
     )
-    KNOWLEDGEAGENT = "KnowledgeAgent"
-    KNOWLEDGEAGENT_DESCRIPTION = (
+    KNOWLEDGE_AGENT = "KnowledgeAgent"
+    KNOWLEDGE_AGENT_DESCRIPTION = (
         "Retrieves and synthesizes information from plant science literature, "
         "patents, and books through RAG (Retrieval-Augmented Generation) "
         "pipelines, providing evidence-supported answers."
     )
-    DATAAGENT = "DataAgent"
-    DATAAGENT_DESCRIPTION = (
+    DATA_AGENT = "DataAgent"
+    DATA_AGENT_DESCRIPTION = (
         "Executes structured queries on botanical databases (e.g., species "
         "traits, experimental data) using SQL interfaces, returning precise "
         "numerical/statistical results."
     )
-    ANALYSTAGENT = "AnalystAgent"
-    ANALYSTAGENT_DESCRIPTION = (
+    ANALYST_AGENT = "AnalystAgent"
+    ANALYST_AGENT_DESCRIPTION = (
         "Initiates computational workflows (e.g., sequence alignment, "
         "phylogenetic analysis) through integrated bioinformatics platforms "
         "for genomic/proteomic investigations."
     )
-    REVIEWAGENT = "ReviewAgent"
-    REVIEWAGENT_DESCRIPTION = (
+    REVIEW_AGENT = "ReviewAgent"
+    REVIEW_AGENT_DESCRIPTION = (
         "Conducts a comprehensive and in-depth investigation into a user's "
         "query, synthesizing information from a wide range of scientific "
         "literature and other relevant sources to produce a structured review "
@@ -554,34 +554,34 @@ class PhytomniAgents(str, Enum):
         "assessment, or an extensive overview of a complex topic is required, "
         "going beyond targeted Q&A or data retrieval."
     )
-    BRIEFGENEAGENT = "BriefGeneAgent"
-    BRIEFGENEAGENT_DESCRIPTION = (
+    BRIEF_GENE_AGENT = "BriefGeneAgent"
+    BRIEF_GENE_AGENT_DESCRIPTION = (
         "Generates a concise, evidence-supported gene function report for a "
         "plant gene ID or alias by combining BI database annotations with "
         "retrieved literature context."
     )
-    DEEPGENOMEAGENT = "DeepGenomeAgent"
-    DEEPGENOMEAGENT_DESCRIPTION = (
+    DEEP_GENOME_AGENT = "DeepGenomeAgent"
+    DEEP_GENOME_AGENT_DESCRIPTION = (
         "Integrates functional annotations from plant multi-omics databases "
         "(GO, KEGG, etc.) with experimental evidence mined from literature, "
         "generating comparative summaries with experimental evidence."
     )
-    INSILICORESEARCHAGENT = "InSilicoResearchAgent"
-    INSILICORESEARCHAGENT_DESCRIPTION = (
+    IN_SILICO_RESEARCH_AGENT = "InSilicoResearchAgent"
+    IN_SILICO_RESEARCH_AGENT_DESCRIPTION = (
         "Decomposes a complete scientific paper by analyzing its methodology "
         "and results, producing a structured, sequential list of high-level "
         "tasks designed for computational replication."
     )
-    DIGITALDESIGNAGENT = "DigitalDesignAgent"
-    DIGITALDESIGNAGENT_DESCRIPTION = (
+    DIGITAL_DESIGN_AGENT = "DigitalDesignAgent"
+    DIGITAL_DESIGN_AGENT_DESCRIPTION = (
         "Performs comprehensive protein and promoter design analysis for "
         "specific genes, including protein structure prediction, property "
         "analysis, design optimization, and promoter modification prediction. "
         "This agent automatically runs both protein design and promoter "
         "design analyses and returns combined results."
     )
-    GENENETWORKAGENT = "GeneNetworkAgent"
-    GENENETWORKAGENT_DESCRIPTION = (
+    GENE_NETWORK_AGENT = "GeneNetworkAgent"
+    GENE_NETWORK_AGENT_DESCRIPTION = (
         "Analyzes gene networks including interaction prediction, "
         "co-expression analysis, and regulatory network characterization. "
         "Identifies functional modules and constructs comprehensive gene "
@@ -592,31 +592,31 @@ class PhytomniAgents(str, Enum):
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
 TOOL_ARGUMENT_MODELS: Dict[str, type[BaseModel]] = {
-    PhytomniAgents.CHATAGENT.value: ChatAgent,
-    PhytomniAgents.KNOWLEDGEAGENT.value: KnowledgeAgent,
-    PhytomniAgents.DATAAGENT.value: DataAgent,
-    PhytomniAgents.ANALYSTAGENT.value: AnalystAgent,
-    PhytomniAgents.REVIEWAGENT.value: ReviewAgent,
-    PhytomniAgents.BRIEFGENEAGENT.value: BriefGeneAgent,
-    PhytomniAgents.DEEPGENOMEAGENT.value: DeepGenomeAgent,
-    PhytomniAgents.INSILICORESEARCHAGENT.value: InSilicoResearchAgent,
-    PhytomniAgents.DIGITALDESIGNAGENT.value: DigitalDesignAgent,
-    PhytomniAgents.GENENETWORKAGENT.value: GeneNetworkAgent,
+    PhytomniAgents.CHAT_AGENT.value: ChatAgent,
+    PhytomniAgents.KNOWLEDGE_AGENT.value: KnowledgeAgent,
+    PhytomniAgents.DATA_AGENT.value: DataAgent,
+    PhytomniAgents.ANALYST_AGENT.value: AnalystAgent,
+    PhytomniAgents.REVIEW_AGENT.value: ReviewAgent,
+    PhytomniAgents.BRIEF_GENE_AGENT.value: BriefGeneAgent,
+    PhytomniAgents.DEEP_GENOME_AGENT.value: DeepGenomeAgent,
+    PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value: InSilicoResearchAgent,
+    PhytomniAgents.DIGITAL_DESIGN_AGENT.value: DigitalDesignAgent,
+    PhytomniAgents.GENE_NETWORK_AGENT.value: GeneNetworkAgent,
 }
 
 TOOL_HANDLERS: Dict[str, ToolHandler] = {
-    PhytomniAgents.CHATAGENT.value: handle_chat_agent,
-    PhytomniAgents.KNOWLEDGEAGENT.value: handle_knowledge_agent,
-    PhytomniAgents.DATAAGENT.value: handle_data_agent,
-    PhytomniAgents.ANALYSTAGENT.value: handle_analyst_agent,
-    PhytomniAgents.REVIEWAGENT.value: handle_review_agent,
-    PhytomniAgents.BRIEFGENEAGENT.value: handle_brief_gene_agent,
-    PhytomniAgents.DEEPGENOMEAGENT.value: handle_deep_genome_agent,
-    PhytomniAgents.INSILICORESEARCHAGENT.value: (
+    PhytomniAgents.CHAT_AGENT.value: handle_chat_agent,
+    PhytomniAgents.KNOWLEDGE_AGENT.value: handle_knowledge_agent,
+    PhytomniAgents.DATA_AGENT.value: handle_data_agent,
+    PhytomniAgents.ANALYST_AGENT.value: handle_analyst_agent,
+    PhytomniAgents.REVIEW_AGENT.value: handle_review_agent,
+    PhytomniAgents.BRIEF_GENE_AGENT.value: handle_brief_gene_agent,
+    PhytomniAgents.DEEP_GENOME_AGENT.value: handle_deep_genome_agent,
+    PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value: (
         handle_in_silico_research_agent
     ),
-    PhytomniAgents.DIGITALDESIGNAGENT.value: handle_digital_design_agent,
-    PhytomniAgents.GENENETWORKAGENT.value: handle_gene_network_agent,
+    PhytomniAgents.DIGITAL_DESIGN_AGENT.value: handle_digital_design_agent,
+    PhytomniAgents.GENE_NETWORK_AGENT.value: handle_gene_network_agent,
 }
 
 
@@ -750,53 +750,55 @@ async def serve() -> None:
     async def list_tools() -> list[Tool]:
         return [
             Tool(
-                name=PhytomniAgents.CHATAGENT,
-                description=PhytomniAgents.CHATAGENT_DESCRIPTION,
+                name=PhytomniAgents.CHAT_AGENT,
+                description=PhytomniAgents.CHAT_AGENT_DESCRIPTION,
                 inputSchema=ChatAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.KNOWLEDGEAGENT,
-                description=PhytomniAgents.KNOWLEDGEAGENT_DESCRIPTION,
+                name=PhytomniAgents.KNOWLEDGE_AGENT,
+                description=PhytomniAgents.KNOWLEDGE_AGENT_DESCRIPTION,
                 inputSchema=KnowledgeAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.DATAAGENT,
-                description=PhytomniAgents.DATAAGENT_DESCRIPTION,
+                name=PhytomniAgents.DATA_AGENT,
+                description=PhytomniAgents.DATA_AGENT_DESCRIPTION,
                 inputSchema=DataAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.ANALYSTAGENT,
-                description=PhytomniAgents.ANALYSTAGENT_DESCRIPTION,
+                name=PhytomniAgents.ANALYST_AGENT,
+                description=PhytomniAgents.ANALYST_AGENT_DESCRIPTION,
                 inputSchema=AnalystAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.REVIEWAGENT,
-                description=PhytomniAgents.REVIEWAGENT_DESCRIPTION,
+                name=PhytomniAgents.REVIEW_AGENT,
+                description=PhytomniAgents.REVIEW_AGENT_DESCRIPTION,
                 inputSchema=ReviewAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.BRIEFGENEAGENT,
-                description=PhytomniAgents.BRIEFGENEAGENT_DESCRIPTION,
+                name=PhytomniAgents.BRIEF_GENE_AGENT,
+                description=PhytomniAgents.BRIEF_GENE_AGENT_DESCRIPTION,
                 inputSchema=BriefGeneAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.DEEPGENOMEAGENT,
-                description=PhytomniAgents.DEEPGENOMEAGENT_DESCRIPTION,
+                name=PhytomniAgents.DEEP_GENOME_AGENT,
+                description=PhytomniAgents.DEEP_GENOME_AGENT_DESCRIPTION,
                 inputSchema=DeepGenomeAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.INSILICORESEARCHAGENT,
-                description=PhytomniAgents.INSILICORESEARCHAGENT_DESCRIPTION,
+                name=PhytomniAgents.IN_SILICO_RESEARCH_AGENT,
+                description=(
+                    PhytomniAgents.IN_SILICO_RESEARCH_AGENT_DESCRIPTION
+                ),
                 inputSchema=InSilicoResearchAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.DIGITALDESIGNAGENT,
-                description=PhytomniAgents.DIGITALDESIGNAGENT_DESCRIPTION,
+                name=PhytomniAgents.DIGITAL_DESIGN_AGENT,
+                description=PhytomniAgents.DIGITAL_DESIGN_AGENT_DESCRIPTION,
                 inputSchema=DigitalDesignAgent.model_json_schema(),
             ),
             Tool(
-                name=PhytomniAgents.GENENETWORKAGENT,
-                description=PhytomniAgents.GENENETWORKAGENT_DESCRIPTION,
+                name=PhytomniAgents.GENE_NETWORK_AGENT,
+                description=PhytomniAgents.GENE_NETWORK_AGENT_DESCRIPTION,
                 inputSchema=GeneNetworkAgent.model_json_schema(),
             ),
         ]

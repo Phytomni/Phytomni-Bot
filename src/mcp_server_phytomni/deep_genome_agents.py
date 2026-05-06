@@ -119,8 +119,8 @@ SPECIES_CODE_MAP = {
     "vvi": "grape (Vitis vinifera)",
     "zma": "maize (Zea mays)",
 }
-dgc = DeepGenomeConfig()
-sc = SensitiveConfig.load()
+DEEP_GENOME_CONFIG = DeepGenomeConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
 GENE_LOOKUP_CACHE_TTL = 300
 
@@ -260,7 +260,7 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
     "bi_url": "BI_URL",
     "obs_server": "OBS_SERVER",
     "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZT",
+    "part_size": "PART_SIZE",
     "task_num": "TASK_NUM",
     "timeout": "TIMEOUT",
     "retriable_codes": "RETRIABLE_CODES",
@@ -382,8 +382,8 @@ class DeepGenomeAgents:
         knowledge_agent: Knowledge agent for literature retrieval.
         analyst_agent: Analyst agent for submitting and managing tasks.
         checkpointer: LangGraph MemorySaver for state persistence.
-        dgc: Deep genome configuration object.
-        sc: Sensitive configuration settings.
+        DEEP_GENOME_CONFIG: Deep genome configuration object.
+        SENSITIVE_CONFIG: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -404,8 +404,8 @@ class DeepGenomeAgents:
         knowledge_agent,
         analyst_agent,
         checkpointer: Optional[MemorySaver] = None,
-        deepgenome_config=dgc,
-        sensitive_config=sc,
+        deep_genome_config=DEEP_GENOME_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the DeepGenomeAgents.
 
@@ -414,19 +414,19 @@ class DeepGenomeAgents:
             knowledge_agent: Knowledge agent for literature retrieval.
             analyst_agent: Analyst agent for submitting and managing tasks.
             checkpointer: LangGraph MemorySaver for state persistence.
-            deepgenome_config: Deep genome configuration object.
+            deep_genome_config: Deep genome configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
         self.data_agent = data_agent
         self.knowledge_agent = knowledge_agent
         self.analyst_agent = analyst_agent
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.dgc = deepgenome_config
-        self.sc = sensitive_config
+        self.deep_genome_config = deep_genome_config
+        self.sensitive_config = sensitive_config
         self._figure_index = 1
         self._sql_headers = {
             "Content-Type": "application/json",
-            "token": self.sc.BI_TOKEN.get_secret_value(),
+            "token": self.sensitive_config.BI_TOKEN.get_secret_value(),
         }
         self.app = self._build_graph()
 
@@ -842,7 +842,7 @@ class DeepGenomeAgents:
             Dict containing analysis results with image paths, summaries,
             and legends formatted for report integration.
         """
-        deepgenome_out = self.dgc.DEEPGENOME_OUT
+        deepgenome_out = self.deep_genome_config.DEEPGENOME_OUT
         out_path = Path(f"{deepgenome_out}/{gene_id}")
         gene_results_data = state.get(
             "analyst_summaries", {"gene_name": gene_id}
@@ -1266,15 +1266,18 @@ class DeepGenomeAgents:
         # Call KnowledgeAgent to retrieve literature
         knowledge_results = await self.knowledge_agent.arun(
             user_query=user_query,
-            repo_id_dict=self.dgc.REPO_ID_DICT,
+            repo_id_dict=self.deep_genome_config.REPO_ID_DICT,
             is_generate=False,
             is_follow_up=False,
         )
         sorted_docs = sorted(
             knowledge_results, key=lambda x: x["score"], reverse=True
         )
-        if self.dgc.TOP_N is not None and self.dgc.TOP_N > 0:
-            sorted_docs = sorted_docs[: self.dgc.TOP_N]
+        if (
+            self.deep_genome_config.TOP_N is not None
+            and self.deep_genome_config.TOP_N > 0
+        ):
+            sorted_docs = sorted_docs[: self.deep_genome_config.TOP_N]
         print(sorted_docs)
         print("Literature retrieval completed <=")
         return {"knowledge_context": {"literature": sorted_docs}}
@@ -1368,7 +1371,9 @@ class DeepGenomeAgents:
         )
         payload = {"sql": sql, "returnType": "json"}
         gene_homology_response = requests.post(
-            url=self.dgc.BI_URL, json=payload, headers=self._sql_headers
+            url=self.deep_genome_config.BI_URL,
+            json=payload,
+            headers=self._sql_headers,
         ).json()
 
         sql = (
@@ -1380,7 +1385,9 @@ class DeepGenomeAgents:
         )
         payload = {"sql": sql, "returnType": "json"}
         gene_interaction_response = requests.post(
-            url=self.dgc.BI_URL, json=payload, headers=self._sql_headers
+            url=self.deep_genome_config.BI_URL,
+            json=payload,
+            headers=self._sql_headers,
         ).json()
 
         gene_orthologs_set, gene_paralogs_set = set(), set()
@@ -1573,13 +1580,15 @@ class DeepGenomeAgents:
 
         # 构建 goal_description
         goal_description = get_prompt(
-            self.dgc.PROMPT_FILE, goal_path, {"gene_id": gene_id}
+            self.deep_genome_config.PROMPT_FILE,
+            goal_path,
+            {"gene_id": gene_id},
         )
         # 构建 meta
-        meta = get_prompt(self.dgc.PROMPT_FILE, meta_path)
+        meta = get_prompt(self.deep_genome_config.PROMPT_FILE, meta_path)
         # 构建 data_list
         data_list = get_data_list(
-            self.dgc.DEEPGENOME_DATA, analysis_type, species
+            self.deep_genome_config.DEEPGENOME_DATA, analysis_type, species
         )
 
         # 获取计算资源等级
@@ -1587,13 +1596,16 @@ class DeepGenomeAgents:
 
         # 获取输出目录
         if not output_dir:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             output_dir = create_output_dir(
-                user_id=self.dgc.USER_ID or str(uuid1()),
+                user_id=self.deep_genome_config.USER_ID or str(uuid1()),
                 task=f"{analysis_type}_task",
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.dgc.OBS_SERVER,
-                bucket_name=self.dgc.BUCKET_NAME,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.deep_genome_config.OBS_SERVER,
+                bucket_name=self.deep_genome_config.BUCKET_NAME,
             )
 
         print(f"  → 使用 AnalystAgent 提交 {analysis_type} 任务...")
@@ -1656,17 +1668,18 @@ class DeepGenomeAgents:
         )
 
         try:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             deque(
                 download_obs_out(
                     task_dir=gene_id,
                     obs_output_path=obs_output_path,
                     download_path=output_path,
-                    access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                    secret_access_key=(
-                        self.sc.SecretAccessKey.get_secret_value()
-                    ),
-                    obs_server=self.dgc.OBS_SERVER,
-                    bucket_name=self.dgc.BUCKET_NAME,
+                    access_key_id=access_key_id,
+                    secret_access_key=secret_access_key,
+                    obs_server=self.deep_genome_config.OBS_SERVER,
+                    bucket_name=self.deep_genome_config.BUCKET_NAME,
                     target_file_feature=target_file_feature,
                     if_download_all=False,
                 ),
@@ -1746,7 +1759,7 @@ class DeepGenomeAgents:
 
         async def get_gene_symbol() -> List[str]:
             return await _cached_gene_symbol_lookup(
-                bi_url=self.dgc.BI_URL,
+                bi_url=self.deep_genome_config.BI_URL,
                 sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
@@ -1766,7 +1779,7 @@ class DeepGenomeAgents:
     ):
         async def get_gene_annotation() -> Dict:
             return await _cached_gene_annotation_lookup(
-                bi_url=self.dgc.BI_URL,
+                bi_url=self.deep_genome_config.BI_URL,
                 sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
@@ -1791,7 +1804,7 @@ class DeepGenomeAgents:
             Dict with updated orthologs_data including gene_symbol mapping.
         """
         print("=> Retrieving orthologous genes...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         orthologs_species_gene_list = state["orthologs_data"]["gene_list"]
         orthologs_symbol_tasks = [
             self.gene_symbol(
@@ -1832,7 +1845,7 @@ class DeepGenomeAgents:
             Dict with updated paralogs_data including gene_symbol mapping.
         """
         print("=> Retrieving paralogous genes...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         paralogs_species_gene_list = state["paralogs_data"]["gene_list"]
         paralogs_symbol_tasks = [
             self.gene_symbol(
@@ -1873,7 +1886,7 @@ class DeepGenomeAgents:
             Dict with updated interaction_data including gene_symbol mapping.
         """
         print("=> Retrieving interacting genes...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
         interaction_genes = interaction_species_gene_list
         interaction_symbol_tasks = [
@@ -1915,7 +1928,7 @@ class DeepGenomeAgents:
             Dict with orthologs_summary and part1_completed_branches increment.
         """
         print("=> Summarizing orthologous gene network...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         orthologs_species_gene_list = state["orthologs_data"]["gene_list"]
         species_orthologs_gene_symbol_dict = state["orthologs_data"].get(
             "gene_symbol", {}
@@ -1966,7 +1979,7 @@ class DeepGenomeAgents:
             Dict with paralogs_summary and part1_completed_branches increment.
         """
         print("=> Summarizing paralogous gene network...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         paralogs_species_gene_list = state["paralogs_data"]["gene_list"]
         species_paralogs_gene_symbol_dict = state["paralogs_data"].get(
             "gene_symbol", {}
@@ -2017,7 +2030,7 @@ class DeepGenomeAgents:
             Dict with interaction_summary and part1 branch increment.
         """
         print("=> Summarizing interacting gene network...")
-        semaphore = asyncio.Semaphore(self.dgc.MAX_CONCURRENCY)
+        semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
         interaction_genes = interaction_species_gene_list
         species_interaction_gene_symbol_dict = state["interaction_data"].get(
@@ -2100,7 +2113,7 @@ class DeepGenomeAgents:
 
         retrieve_context_list = []
         total_length = 0
-        max_tokens = self.dgc.MAX_TOKENS
+        max_tokens = self.deep_genome_config.MAX_TOKENS
         for i, doc in enumerate(retrieve_results):
             header = f"[document {i+1} begin] {doc['title']}"
             content_field = (
@@ -2135,30 +2148,30 @@ class DeepGenomeAgents:
         }
 
         user_query = get_prompt(
-            self.dgc.PROMPT_FILE,
+            self.deep_genome_config.PROMPT_FILE,
             "user/gene_function_network_anno",
             prompt_vars,
         )
 
         phyto_response = await phyto_chat(
             user_query=user_query,
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         if (
@@ -2205,7 +2218,7 @@ class DeepGenomeAgents:
 
         gene_results_data = state.get("analyst_summaries", {})
         gene_results = get_prompt(
-            self.dgc.PROMPT_FILE,
+            self.deep_genome_config.PROMPT_FILE,
             "template/gene_function_result",
             gene_results_data,
         )
@@ -2231,11 +2244,11 @@ class DeepGenomeAgents:
                     gene_results = gene_results.replace(replace_content, "")
             except KeyError:
                 continue
-        with open(
-            f"{self.dgc.DEEPGENOME_OUT}/{state['gene_id']}_results.md",
-            "w",
-            encoding="utf-8",
-        ) as fo:
+        results_path = (
+            f"{self.deep_genome_config.DEEPGENOME_OUT}/"
+            f"{state['gene_id']}_results.md"
+        )
+        with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(gene_results)
         # print(gene_results)
         return {
@@ -2287,7 +2300,7 @@ class DeepGenomeAgents:
         # 生成推荐实验
         experiment_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_experiment",
                 {
                     "gene_string": gene_string,
@@ -2295,23 +2308,23 @@ class DeepGenomeAgents:
                     "content": part12_str,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         function_experiment = ""
@@ -2390,30 +2403,30 @@ class DeepGenomeAgents:
 
         protocol_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_protocol",
                 {
                     "analysis_sections": part12_str,
                     "protocol_sections": experiment_report,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         protocol_content = ""
@@ -2472,7 +2485,7 @@ class DeepGenomeAgents:
 
         introduction_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_introduction",
                 {
                     "gene_string": gene_string,
@@ -2480,23 +2493,23 @@ class DeepGenomeAgents:
                     "content": content,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         introduction_content = ""
@@ -2554,7 +2567,7 @@ class DeepGenomeAgents:
 
         discussion_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_discussion",
                 {
                     "gene_string": gene_string,
@@ -2562,23 +2575,23 @@ class DeepGenomeAgents:
                     "content": content,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         discussion_content = ""
@@ -2642,7 +2655,7 @@ class DeepGenomeAgents:
 
         summary_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_summary",
                 {
                     "gene_string": gene_string,
@@ -2650,23 +2663,23 @@ class DeepGenomeAgents:
                     "content": content,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         summary_content = ""
@@ -2735,30 +2748,30 @@ class DeepGenomeAgents:
         # 生成 follow-up questions
         follow_up_response = await phyto_chat(
             user_query=get_prompt(
-                self.dgc.PROMPT_FILE,
+                self.deep_genome_config.PROMPT_FILE,
                 "system/follow_up_questions",
                 {
                     "user_query": f"Analyze the gene {gene_id}",
                     "system_response": part0145_str,
                 },
             ),
-            prompt_file=self.dgc.PROMPT_FILE,
-            prompt_path=self.dgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dgc.FREQUENCY_PENALTY,
-            n=self.dgc.N,
-            presence_penalty=self.dgc.PRESENCE_PENALTY,
-            reasoning_effort=self.dgc.REASONING_EFFORT,
-            response_format=self.dgc.RESPONSE_FORMAT,
-            stream=self.dgc.STREAM,
-            temperature=self.dgc.TEMPERATURE,
-            top_p=self.dgc.TOP_P,
-            user=self.dgc.USER,
-            timeout=self.dgc.TIMEOUT,
-            retriable_codes=self.dgc.RETRIABLE_CODES,
-            max_retries=self.dgc.MAX_RETRIES,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            prompt_path=self.deep_genome_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
+            n=self.deep_genome_config.N,
+            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
+            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
+            response_format=self.deep_genome_config.RESPONSE_FORMAT,
+            stream=self.deep_genome_config.STREAM,
+            temperature=self.deep_genome_config.TEMPERATURE,
+            top_p=self.deep_genome_config.TOP_P,
+            user=self.deep_genome_config.USER,
+            timeout=self.deep_genome_config.TIMEOUT,
+            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
+            max_retries=self.deep_genome_config.MAX_RETRIES,
         )
 
         follow_up_content = ""
@@ -2800,14 +2813,14 @@ async def gene_function(
     """Compatibility wrapper around the LangGraph deep genome agent."""
     from .data_agents import DataAgent
 
-    deepgenome_config = copy_config_with_overrides(
-        dgc,
+    deep_genome_config = copy_config_with_overrides(
+        DEEP_GENOME_CONFIG,
         kwargs,
         DEEP_GENOME_CONFIG_FIELD_MAP,
         fixed_updates={"USER_ID": user_id},
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=DEEP_GENOME_SECRET_FIELD_MAP,
@@ -2817,22 +2830,22 @@ async def gene_function(
         "DeepGenomeAgents",
         lambda: DeepGenomeAgents(
             data_agent=DataAgent(
-                data_config=deepgenome_config,
+                data_config=deep_genome_config,
                 sensitive_config=sensitive_config,
             ),
             knowledge_agent=KnowledgeAgent(
-                knowledge_config=deepgenome_config,
+                knowledge_config=deep_genome_config,
                 sensitive_config=sensitive_config,
             ),
             analyst_agent=AnalystAgent(
-                analyst_config=deepgenome_config,
+                analyst_config=deep_genome_config,
                 sensitive_config=sensitive_config,
             ),
-            deepgenome_config=deepgenome_config,
+            deep_genome_config=deep_genome_config,
             sensitive_config=sensitive_config,
         ),
         agent_fingerprint_values(
-            deepgenome_config=deepgenome_config,
+            deep_genome_config=deep_genome_config,
             sensitive_config=sensitive_config,
         ),
     )

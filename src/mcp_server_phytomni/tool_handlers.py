@@ -28,6 +28,7 @@ async def handle_chat_agent(args: Any) -> Any:
     """Execute ChatAgent with default runtime configuration."""
     chat_config = ChatConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await phyto_chat_with_follow(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
@@ -46,11 +47,11 @@ async def handle_chat_agent(args: Any) -> Any:
         top_p=chat_config.TOP_P,
         user=chat_config.USER,
         server_dir=chat_config.TEMP_DIR,
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=chat_config.OBS_SERVER,
         bucket_name=chat_config.BUCKET_NAME,
-        part_size=chat_config.PART_SIZT,
+        part_size=chat_config.PART_SIZE,
         task_num=chat_config.TASK_NUM,
         timeout=chat_config.TIMEOUT,
         retriable_codes=chat_config.RETRIABLE_CODES,
@@ -65,6 +66,7 @@ async def handle_knowledge_agent(args: Any) -> Any:
     """Execute KnowledgeAgent with default runtime configuration."""
     knowledge_config = KnowledgeConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await multi_retrieve_generate(
         user_query=args.user_query,
         retrieve_url=knowledge_config.RETRIEVE_URL,
@@ -94,11 +96,11 @@ async def handle_knowledge_agent(args: Any) -> Any:
         user=knowledge_config.USER,
         obs_file_list=args.obs_file_list,
         server_dir=knowledge_config.TEMP_DIR,
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=knowledge_config.OBS_SERVER,
         bucket_name=knowledge_config.BUCKET_NAME,
-        part_size=knowledge_config.PART_SIZT,
+        part_size=knowledge_config.PART_SIZE,
         task_num=knowledge_config.TASK_NUM,
         max_concurrency=knowledge_config.MAX_CONCURRENCY,
         max_workers=knowledge_config.MAX_WORKERS,
@@ -154,6 +156,7 @@ async def handle_analyst_agent(args: Any) -> Any:
     """Execute AnalystAgent with default runtime configuration."""
     analyst_config = AnalystConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await retrieve_plan_submit(
         goal_description=args.goal_description,
         data_list=args.data_list,
@@ -191,11 +194,11 @@ async def handle_analyst_agent(args: Any) -> Any:
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
         coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=analyst_config.OBS_SERVER,
         bucket_name=analyst_config.BUCKET_NAME,
-        part_size=analyst_config.PART_SIZT,
+        part_size=analyst_config.PART_SIZE,
         task_num=analyst_config.TASK_NUM,
         max_concurrency=analyst_config.MAX_CONCURRENCY,
         max_workers=analyst_config.MAX_WORKERS,
@@ -216,6 +219,7 @@ async def handle_review_agent(args: Any) -> Any:
     """Execute ReviewAgent with default runtime configuration."""
     review_config = ReviewConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await deep_research(
         user_query=args.user_query,
         prompt_file=review_config.PROMPT_FILE,
@@ -244,11 +248,11 @@ async def handle_review_agent(args: Any) -> Any:
         top_n=review_config.TOP_N,
         obs_file_list=args.obs_file_list,
         server_dir=review_config.TEMP_DIR,
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=review_config.OBS_SERVER,
         bucket_name=review_config.BUCKET_NAME,
-        part_size=review_config.PART_SIZT,
+        part_size=review_config.PART_SIZE,
         task_num=review_config.TASK_NUM,
         max_concurrency=review_config.MAX_CONCURRENCY,
         max_workers=review_config.MAX_WORKERS,
@@ -303,6 +307,7 @@ async def handle_deep_genome_agent(args: Any) -> Any:
     """Execute DeepGenomeAgent with default runtime configuration."""
     deep_genome_config = DeepGenomeConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await gene_function(
         species_code=args.species_code,
         gene_id=args.gene_id,
@@ -322,8 +327,8 @@ async def handle_deep_genome_agent(args: Any) -> Any:
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
         coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=deep_genome_config.OBS_SERVER,
         bucket_name=deep_genome_config.BUCKET_NAME,
         analysis_url=deep_genome_config.ANALYSIS_URL,
@@ -369,6 +374,7 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
     """Execute InSilicoResearchAgent with default runtime configuration."""
     in_silico_config = InSilicoResearchConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await in_silico_research(
         user_query=args.user_query,
         data_list=args.data_list,
@@ -401,11 +407,11 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
         coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=in_silico_config.OBS_SERVER,
         bucket_name=in_silico_config.BUCKET_NAME,
-        part_size=in_silico_config.PART_SIZT,
+        part_size=in_silico_config.PART_SIZE,
         task_num=in_silico_config.TASK_NUM,
         max_concurrency=in_silico_config.MAX_CONCURRENCY,
         max_workers=in_silico_config.MAX_WORKERS,
@@ -419,6 +425,7 @@ async def handle_digital_design_agent(args: Any) -> Any:
     """Execute DigitalDesignAgent with default runtime configuration."""
     design_config = DigitalDesignConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await design_module(
         species=args.species,
         gene_id=args.gene_id,
@@ -431,8 +438,8 @@ async def handle_digital_design_agent(args: Any) -> Any:
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
         coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=design_config.OBS_SERVER,
         bucket_name=design_config.BUCKET_NAME,
         analysis_url=design_config.ANALYSIS_URL,
@@ -450,6 +457,7 @@ async def handle_gene_network_agent(args: Any) -> Any:
     """Execute GeneNetworkAgent with default runtime configuration."""
     network_config = GeneNetworkConfig()
     sensitive_config = SensitiveConfig.load()
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return await network_analysis(
         species=args.species,
         to_id=args.to_id,
@@ -461,8 +469,8 @@ async def handle_gene_network_agent(args: Any) -> Any:
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
         coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=sensitive_config.AccessKeyID.get_secret_value(),
-        secret_access_key=sensitive_config.SecretAccessKey.get_secret_value(),
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
         obs_server=network_config.OBS_SERVER,
         bucket_name=network_config.BUCKET_NAME,
         analysis_url=network_config.ANALYSIS_URL,

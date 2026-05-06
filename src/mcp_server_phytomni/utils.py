@@ -38,14 +38,17 @@ from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
 from .func_cache import func_cache
 
-serc = ServerConfig()
-senc = SensitiveConfig.load()
+SERVER_CONFIG = ServerConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
 
 FILE_CACHE_TTL = 3600
 
 
 async def get_token(
-    timeout: float = serc.TIMEOUT, region: str = serc.REGION
+    timeout: float = SERVER_CONFIG.TIMEOUT, region: str = SERVER_CONFIG.REGION
 ) -> str:
     """Obtain an X-Subject-Token for API authentication.
 
@@ -68,16 +71,16 @@ async def get_token(
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        password = senc.USER_PASSWORD.get_secret_value()
+        password = SENSITIVE_CONFIG.USER_PASSWORD.get_secret_value()
         data = {
             "auth": {
                 "identity": {
                     "methods": ["password"],
                     "password": {
                         "user": {
-                            "name": senc.USER_NAME,
+                            "name": SENSITIVE_CONFIG.USER_NAME,
                             "password": password,
-                            "domain": {"name": senc.DOMAIN_NAME},
+                            "domain": {"name": SENSITIVE_CONFIG.DOMAIN_NAME},
                         },
                     },
                 },
@@ -86,7 +89,7 @@ async def get_token(
         }
         try:
             response = await client.post(
-                serc.TOKEN_URL,
+                SERVER_CONFIG.TOKEN_URL,
                 headers={"Content-Type": "application/json"},
                 json=data,
                 timeout=timeout,
@@ -279,13 +282,13 @@ def get_prompt(
 async def download_obs_file(
     obs_file: str,
     server_dir: str,
-    access_key_id: str = senc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
-    obs_server: str = serc.OBS_SERVER,
-    bucket_name: str = serc.BUCKET_NAME,
-    part_size: int = serc.PART_SIZT,
-    task_num: int = serc.TASK_NUM,
-    max_retries: int = serc.MAX_RETRIES,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = SERVER_CONFIG.OBS_SERVER,
+    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
+    part_size: int = SERVER_CONFIG.PART_SIZE,
+    task_num: int = SERVER_CONFIG.TASK_NUM,
+    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
 ) -> str:
     """Download a single file from Object Storage Service (OBS).
 
@@ -364,14 +367,14 @@ async def download_obs_file(
 async def download_obs_list(
     obs_file_list: List[str],
     server_dir: str,
-    access_key_id: str = senc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
-    obs_server: str = serc.OBS_SERVER,
-    bucket_name: str = serc.BUCKET_NAME,
-    part_size: int = serc.PART_SIZT,
-    task_num: int = serc.TASK_NUM,
-    max_retries: int = serc.MAX_RETRIES,
-    max_concurrency: int = serc.MAX_CONCURRENCY,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = SERVER_CONFIG.OBS_SERVER,
+    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
+    part_size: int = SERVER_CONFIG.PART_SIZE,
+    task_num: int = SERVER_CONFIG.TASK_NUM,
+    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
+    max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY,
 ) -> List[str]:
     """Download multiple files from OBS concurrently.
 
@@ -437,7 +440,7 @@ def convert_single_file(server_file: str) -> str:
 
 def convert_multi_files(
     server_file_list: List[str],
-    max_workers: int = serc.MAX_WORKERS,
+    max_workers: int = SERVER_CONFIG.MAX_WORKERS,
 ) -> List[str]:
     """Convert multiple files to Markdown in parallel.
 
@@ -461,15 +464,15 @@ def convert_multi_files(
 async def download_list_convert(
     obs_file_list: List[str],
     server_dir: str,
-    access_key_id: str = senc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = senc.SecretAccessKey.get_secret_value(),
-    obs_server: str = serc.OBS_SERVER,
-    bucket_name: str = serc.BUCKET_NAME,
-    part_size: int = serc.PART_SIZT,
-    task_num: int = serc.TASK_NUM,
-    max_retries: int = serc.MAX_RETRIES,
-    max_concurrency: int = serc.MAX_CONCURRENCY,
-    max_workers: int = serc.MAX_WORKERS,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = SERVER_CONFIG.OBS_SERVER,
+    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
+    part_size: int = SERVER_CONFIG.PART_SIZE,
+    task_num: int = SERVER_CONFIG.TASK_NUM,
+    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
+    max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY,
+    max_workers: int = SERVER_CONFIG.MAX_WORKERS,
     executor: Optional[ProcessPoolExecutor] = None,
 ) -> List[str]:
     """Download, and convert multiple files from OBS in a parallel pipeline.

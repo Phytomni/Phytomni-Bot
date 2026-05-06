@@ -30,8 +30,8 @@ from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt
 
-bgc = BriefGeneConfig()
-sc = SensitiveConfig.load()
+BRIEF_CONFIG = BriefGeneConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 GENE_RETRIEVE_CACHE_TTL = 300
 
 BRIEF_GENE_CONFIG_FIELD_MAP = {
@@ -184,11 +184,11 @@ def _attach_metadata(
 
 async def run_bi_api(
     query_sql: str,
-    bi_url: str = bgc.BI_URL,
-    bi_token: str = sc.BI_TOKEN.get_secret_value(),
-    timeout: float = bgc.TIMEOUT,
-    retriable_codes: List[int] = bgc.RETRIABLE_CODES,
-    max_retries: int = bgc.MAX_RETRIES,
+    bi_url: str = BRIEF_CONFIG.BI_URL,
+    bi_token: str = SENSITIVE_CONFIG.BI_TOKEN.get_secret_value(),
+    timeout: float = BRIEF_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = BRIEF_CONFIG.RETRIABLE_CODES,
+    max_retries: int = BRIEF_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Invoke the BI API to retrieve annotation information."""
     client_timeout = Timeout(timeout, connect=timeout)
@@ -244,7 +244,7 @@ async def gene_retrieve(
     species: str,
     gene_symbol_list: List[str],
     knowledge_agent: KnowledgeAgent,
-    top_n: int = bgc.TOP_N,
+    top_n: int = BRIEF_CONFIG.TOP_N,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Retrieve literature for a gene through the LangGraph KnowledgeAgent."""
@@ -253,7 +253,7 @@ async def gene_retrieve(
         return {"doc_list": [], "total": 10000}
 
     agent_context = agent_fingerprint_values(
-        knowledge_config=knowledge_agent.kc,
+        knowledge_config=knowledge_agent.knowledge_config,
     )
     return await _gene_retrieve_cached(
         species=species,
@@ -405,12 +405,12 @@ class BriefGeneAgent:
     def __init__(
         self,
         checkpointer: Optional[MemorySaver] = None,
-        brief_config: BriefGeneConfig = bgc,
-        sensitive_config: SensitiveConfig = sc,
+        brief_config: BriefGeneConfig = BRIEF_CONFIG,
+        sensitive_config: SensitiveConfig = SENSITIVE_CONFIG,
         knowledge_agent: Optional[KnowledgeAgent] = None,
     ):
-        self.bgc = brief_config
-        self.sc = sensitive_config
+        self.brief_config = brief_config
+        self.sensitive_config = sensitive_config
         self.ka = knowledge_agent or KnowledgeAgent(
             knowledge_config=brief_config,
             sensitive_config=sensitive_config,
@@ -448,11 +448,11 @@ class BriefGeneAgent:
         query_response = await run_bi_api(
             "SELECT * FROM id2multispecies "
             f"WHERE query_id = {_sql_literal(user_query)}",
-            bi_url=self.bgc.BI_URL,
-            bi_token=self.sc.BI_TOKEN.get_secret_value(),
-            timeout=self.bgc.TIMEOUT,
-            retriable_codes=self.bgc.RETRIABLE_CODES,
-            max_retries=self.bgc.MAX_RETRIES,
+            bi_url=self.brief_config.BI_URL,
+            bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
         )
         row = _first_row(query_response)
         if row is None:
@@ -464,20 +464,20 @@ class BriefGeneAgent:
             run_bi_api(
                 "SELECT * FROM id2multispecies "
                 f"WHERE query_id = {_sql_literal(gene_id)}",
-                bi_url=self.bgc.BI_URL,
-                bi_token=self.sc.BI_TOKEN.get_secret_value(),
-                timeout=self.bgc.TIMEOUT,
-                retriable_codes=self.bgc.RETRIABLE_CODES,
-                max_retries=self.bgc.MAX_RETRIES,
+                bi_url=self.brief_config.BI_URL,
+                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                timeout=self.brief_config.TIMEOUT,
+                retriable_codes=self.brief_config.RETRIABLE_CODES,
+                max_retries=self.brief_config.MAX_RETRIES,
             ),
             run_bi_api(
                 "SELECT * FROM species "
                 f"WHERE species_code = {_sql_literal(species_code)}",
-                bi_url=self.bgc.BI_URL,
-                bi_token=self.sc.BI_TOKEN.get_secret_value(),
-                timeout=self.bgc.TIMEOUT,
-                retriable_codes=self.bgc.RETRIABLE_CODES,
-                max_retries=self.bgc.MAX_RETRIES,
+                bi_url=self.brief_config.BI_URL,
+                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                timeout=self.brief_config.TIMEOUT,
+                retriable_codes=self.brief_config.RETRIABLE_CODES,
+                max_retries=self.brief_config.MAX_RETRIES,
             ),
         )
         gene_id_row = _first_row(gene_id_info_response) or {}
@@ -518,11 +518,11 @@ class BriefGeneAgent:
             *[
                 run_bi_api(
                     sql,
-                    bi_url=self.bgc.BI_URL,
-                    bi_token=self.sc.BI_TOKEN.get_secret_value(),
-                    timeout=self.bgc.TIMEOUT,
-                    retriable_codes=self.bgc.RETRIABLE_CODES,
-                    max_retries=self.bgc.MAX_RETRIES,
+                    bi_url=self.brief_config.BI_URL,
+                    bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                    timeout=self.brief_config.TIMEOUT,
+                    retriable_codes=self.brief_config.RETRIABLE_CODES,
+                    max_retries=self.brief_config.MAX_RETRIES,
                 )
                 for sql in annotation_sqls
             ],
@@ -636,8 +636,8 @@ class BriefGeneAgent:
                 species=state["species_all_name"],
                 gene_symbol_list=state["gene_id_list"],
                 knowledge_agent=self.ka,
-                top_n=self.bgc.TOP_N,
-                semaphore=asyncio.Semaphore(self.bgc.MAX_CONCURRENCY),
+                top_n=self.brief_config.TOP_N,
+                semaphore=asyncio.Semaphore(self.brief_config.MAX_CONCURRENCY),
             )
             doc_list = result.get("doc_list", [])
         else:
@@ -649,7 +649,9 @@ class BriefGeneAgent:
             doc_list = result if isinstance(result, list) else []
         return {
             "retrieved_docs": doc_list,
-            "retrieve_context": _format_docs(doc_list, self.bgc.MAX_TOKENS),
+            "retrieve_context": _format_docs(
+                doc_list, self.brief_config.MAX_TOKENS
+            ),
         }
 
     async def generate_node(self, state: BriefGeneAgentState):
@@ -674,11 +676,13 @@ class BriefGeneAgent:
                 "retrieve_results": state["retrieve_context"],
             }
             chat_query = get_prompt(
-                self.bgc.PROMPT_FILE, "user/brief_gene_function", prompt_vars
+                self.brief_config.PROMPT_FILE,
+                "user/brief_gene_function",
+                prompt_vars,
             )
         else:
             chat_query = get_prompt(
-                self.bgc.PROMPT_FILE,
+                self.brief_config.PROMPT_FILE,
                 "user/brief_gene_function_nogeneid",
                 {
                     "user_query": state["user_query"],
@@ -688,23 +692,23 @@ class BriefGeneAgent:
 
         phyto_response = await phyto_chat(
             user_query=chat_query,
-            prompt_file=self.bgc.PROMPT_FILE,
-            prompt_path=self.bgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.bgc.FREQUENCY_PENALTY,
-            n=self.bgc.N,
-            presence_penalty=self.bgc.PRESENCE_PENALTY,
-            reasoning_effort=self.bgc.REASONING_EFFORT,
-            response_format=self.bgc.RESPONSE_FORMAT,
-            stream=self.bgc.STREAM,
-            temperature=self.bgc.TEMPERATURE,
-            top_p=self.bgc.TOP_P,
-            user=self.bgc.USER,
-            timeout=self.bgc.TIMEOUT,
-            retriable_codes=self.bgc.RETRIABLE_CODES,
-            max_retries=self.bgc.MAX_RETRIES,
+            prompt_file=self.brief_config.PROMPT_FILE,
+            prompt_path=self.brief_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.brief_config.FREQUENCY_PENALTY,
+            n=self.brief_config.N,
+            presence_penalty=self.brief_config.PRESENCE_PENALTY,
+            reasoning_effort=self.brief_config.REASONING_EFFORT,
+            response_format=self.brief_config.RESPONSE_FORMAT,
+            stream=self.brief_config.STREAM,
+            temperature=self.brief_config.TEMPERATURE,
+            top_p=self.brief_config.TOP_P,
+            user=self.brief_config.USER,
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
         )
         if phyto_response is None:
             phyto_response = {"choices": [{"message": {}}]}
@@ -719,23 +723,23 @@ class BriefGeneAgent:
         follow_up_questions = await _generate_follow_up(
             user_query=state["user_query"],
             phyto_response=state["final_response"],
-            prompt_file=self.bgc.PROMPT_FILE,
-            prompt_path=self.bgc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.bgc.FREQUENCY_PENALTY,
-            n=self.bgc.N,
-            presence_penalty=self.bgc.PRESENCE_PENALTY,
-            reasoning_effort=self.bgc.REASONING_EFFORT,
-            response_format=self.bgc.RESPONSE_FORMAT,
-            stream=self.bgc.STREAM,
-            temperature=self.bgc.TEMPERATURE,
-            top_p=self.bgc.TOP_P,
-            user=self.bgc.USER,
-            timeout=self.bgc.TIMEOUT,
-            retriable_codes=self.bgc.RETRIABLE_CODES,
-            max_retries=self.bgc.MAX_RETRIES,
+            prompt_file=self.brief_config.PROMPT_FILE,
+            prompt_path=self.brief_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.brief_config.FREQUENCY_PENALTY,
+            n=self.brief_config.N,
+            presence_penalty=self.brief_config.PRESENCE_PENALTY,
+            reasoning_effort=self.brief_config.REASONING_EFFORT,
+            response_format=self.brief_config.RESPONSE_FORMAT,
+            stream=self.brief_config.STREAM,
+            temperature=self.brief_config.TEMPERATURE,
+            top_p=self.brief_config.TOP_P,
+            user=self.brief_config.USER,
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
         )
         final_response = _attach_metadata(
             state["final_response"],
@@ -783,47 +787,49 @@ class BriefGeneAgent:
 
 async def brief_gene_function(
     user_query: str,
-    prompt_file: str = bgc.PROMPT_FILE,
-    prompt_path: str = bgc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = bgc.FREQUENCY_PENALTY,
-    n: int = bgc.N,
-    presence_penalty: float = bgc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = bgc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = bgc.RESPONSE_FORMAT,
-    stream: bool = bgc.STREAM,
-    temperature: float = bgc.TEMPERATURE,
-    top_p: float = bgc.TOP_P,
-    user: str = bgc.USER,
-    retrieve_url: str = bgc.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = bgc.REPO_ID_DICT,
-    page_num: int = bgc.PAGE_NUM,
-    filter_string: Optional[str] = bgc.FILTER_STRING,
-    scope: str = bgc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = bgc.EXTRA_REPO_IDS,
-    rerank_url: str = bgc.RERANK_URL,
-    rerank_batch_size: int = bgc.RERANK_BATCH_SIZE,
-    score_threshold: float = bgc.SCORE_THRESHOLD,
-    top_n: int = bgc.TOP_N,
-    bi_url: str = bgc.BI_URL,
-    bi_token: str = sc.BI_TOKEN.get_secret_value(),
-    max_concurrency: int = bgc.MAX_CONCURRENCY,
-    timeout: float = bgc.TIMEOUT,
-    retriable_codes: List[int] = bgc.RETRIABLE_CODES,
-    max_retries: int = bgc.MAX_RETRIES,
-    max_tokens: int = bgc.MAX_TOKENS,
+    prompt_file: str = BRIEF_CONFIG.PROMPT_FILE,
+    prompt_path: str = BRIEF_CONFIG.PROMPT_PATH,
+    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
+    base_url: str = SENSITIVE_CONFIG.BASE_URL,
+    model: str = SENSITIVE_CONFIG.MODEL_ID,
+    frequency_penalty: float = BRIEF_CONFIG.FREQUENCY_PENALTY,
+    n: int = BRIEF_CONFIG.N,
+    presence_penalty: float = BRIEF_CONFIG.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = BRIEF_CONFIG.REASONING_EFFORT,
+    response_format: Dict[
+        str, Union[str, Dict]
+    ] = BRIEF_CONFIG.RESPONSE_FORMAT,
+    stream: bool = BRIEF_CONFIG.STREAM,
+    temperature: float = BRIEF_CONFIG.TEMPERATURE,
+    top_p: float = BRIEF_CONFIG.TOP_P,
+    user: str = BRIEF_CONFIG.USER,
+    retrieve_url: str = BRIEF_CONFIG.RETRIEVE_URL,
+    repo_id_dict: Optional[Dict[str, int]] = BRIEF_CONFIG.REPO_ID_DICT,
+    page_num: int = BRIEF_CONFIG.PAGE_NUM,
+    filter_string: Optional[str] = BRIEF_CONFIG.FILTER_STRING,
+    scope: str = BRIEF_CONFIG.SCOPE,
+    extra_repo_ids: Optional[List[str]] = BRIEF_CONFIG.EXTRA_REPO_IDS,
+    rerank_url: str = BRIEF_CONFIG.RERANK_URL,
+    rerank_batch_size: int = BRIEF_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = BRIEF_CONFIG.SCORE_THRESHOLD,
+    top_n: int = BRIEF_CONFIG.TOP_N,
+    bi_url: str = BRIEF_CONFIG.BI_URL,
+    bi_token: str = SENSITIVE_CONFIG.BI_TOKEN.get_secret_value(),
+    max_concurrency: int = BRIEF_CONFIG.MAX_CONCURRENCY,
+    timeout: float = BRIEF_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = BRIEF_CONFIG.RETRIABLE_CODES,
+    max_retries: int = BRIEF_CONFIG.MAX_RETRIES,
+    max_tokens: int = BRIEF_CONFIG.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph BriefGeneAgent."""
     arguments = locals().copy()
     brief_config = copy_config_with_overrides(
-        bgc,
+        BRIEF_CONFIG,
         arguments,
         BRIEF_GENE_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         arguments,
         field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
         secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,

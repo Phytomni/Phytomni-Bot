@@ -41,8 +41,8 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
-ddc = DigitalDesignConfig()
-sc = SensitiveConfig.load()
+DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 DIGITAL_DESIGN_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
@@ -96,8 +96,8 @@ class DigitalDesignAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        ddc: Digital design configuration.
-        sc: Sensitive configuration settings.
+        DIGITAL_DESIGN_CONFIG: Digital design configuration.
+        SENSITIVE_CONFIG: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -112,8 +112,8 @@ class DigitalDesignAgents:
         self,
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
-        digital_design_config=ddc,
-        sensitive_config=sc,
+        digital_design_config=DIGITAL_DESIGN_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the DigitalDesignAgents.
 
@@ -125,8 +125,8 @@ class DigitalDesignAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.ddc = digital_design_config
-        self.sc = sensitive_config
+        self.digital_design_config = digital_design_config
+        self.sensitive_config = sensitive_config
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=digital_design_config,
             sensitive_config=sensitive_config,
@@ -201,13 +201,15 @@ class DigitalDesignAgents:
 
         # Build goal_description
         goal_description = get_prompt(
-            self.ddc.PROMPT_FILE, goal_path, {"gene_id": gene_id}
+            self.digital_design_config.PROMPT_FILE,
+            goal_path,
+            {"gene_id": gene_id},
         )
         # Build meta prompt
-        meta = get_prompt(self.ddc.PROMPT_FILE, meta_path)
+        meta = get_prompt(self.digital_design_config.PROMPT_FILE, meta_path)
         # Build data_list
         data_list = get_data_list(
-            self.ddc.DEEPGENOME_DATA, analysis_type, species
+            self.digital_design_config.DEEPGENOME_DATA, analysis_type, species
         )
 
         # Determine compute resource level
@@ -215,13 +217,16 @@ class DigitalDesignAgents:
 
         # Get output directory
         if not output_dir:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             output_dir = create_output_dir(
-                user_id=self.ddc.USER_ID or str(uuid1()),
+                user_id=self.digital_design_config.USER_ID or str(uuid1()),
                 task=f"{analysis_type}_task",
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.ddc.OBS_SERVER,
-                bucket_name=self.ddc.BUCKET_NAME,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.digital_design_config.OBS_SERVER,
+                bucket_name=self.digital_design_config.BUCKET_NAME,
             )
 
         print(f"  → Submitting {analysis_type} task via AnalystAgent...")
@@ -360,13 +365,13 @@ async def design_module(
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph digital design agent."""
     digital_design_config = copy_config_with_overrides(
-        ddc,
+        DIGITAL_DESIGN_CONFIG,
         kwargs,
         DIGITAL_DESIGN_CONFIG_FIELD_MAP,
         fixed_updates={"USER_ID": user_id},
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,

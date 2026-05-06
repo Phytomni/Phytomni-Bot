@@ -33,8 +33,8 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 
-isrc = InSilicoResearchConfig()
-sc = SensitiveConfig.load()
+IN_SILICO_CONFIG = InSilicoResearchConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 
 
 class InSilicoResearchState(TypedDict):
@@ -85,8 +85,8 @@ class InSilicoResearchAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        isrc: In silico research configuration.
-        sc: Sensitive configuration settings.
+        IN_SILICO_CONFIG: In silico research configuration.
+        SENSITIVE_CONFIG: Sensitive configuration settings.
         app: Compiled LangGraph application.
     """
 
@@ -94,8 +94,8 @@ class InSilicoResearchAgents:
         self,
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
-        in_silico_config=isrc,
-        sensitive_config=sc,
+        in_silico_config=IN_SILICO_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the InSilicoResearchAgents.
 
@@ -107,8 +107,8 @@ class InSilicoResearchAgents:
             sensitive_config: Sensitive configuration for credentials.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.isrc = in_silico_config
-        self.sc = sensitive_config
+        self.in_silico_config = in_silico_config
+        self.sensitive_config = sensitive_config
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=in_silico_config,
             sensitive_config=sensitive_config,
@@ -164,18 +164,21 @@ class InSilicoResearchAgents:
         """
         total_length = 0
         if obs_file_list:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             upload_str_list = await download_list_convert(
                 obs_file_list=obs_file_list,
-                server_dir=self.isrc.TEMP_DIR,
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.isrc.OBS_SERVER,
-                bucket_name=self.isrc.BUCKET_NAME,
-                part_size=self.isrc.PART_SIZT,
-                task_num=self.isrc.TASK_NUM,
-                max_retries=self.isrc.MAX_RETRIES,
-                max_concurrency=self.isrc.MAX_CONCURRENCY,
-                max_workers=self.isrc.MAX_WORKERS,
+                server_dir=self.in_silico_config.TEMP_DIR,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.in_silico_config.OBS_SERVER,
+                bucket_name=self.in_silico_config.BUCKET_NAME,
+                part_size=self.in_silico_config.PART_SIZE,
+                task_num=self.in_silico_config.TASK_NUM,
+                max_retries=self.in_silico_config.MAX_RETRIES,
+                max_concurrency=self.in_silico_config.MAX_CONCURRENCY,
+                max_workers=self.in_silico_config.MAX_WORKERS,
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
@@ -183,35 +186,38 @@ class InSilicoResearchAgents:
                     f"[user upload file {i+1} begin]\n"
                     f"{doc}\n[user upload file {i+1} end]"
                 )
-                if total_length + len(fragment) <= self.isrc.MAX_TOKENS:
+                if (
+                    total_length + len(fragment)
+                    <= self.in_silico_config.MAX_TOKENS
+                ):
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
                     break
             upload_context = "\n\n".join(upload_results)
             user_query = get_prompt(
-                self.isrc.PROMPT_FILE,
+                self.in_silico_config.PROMPT_FILE,
                 "user/in_silico_research_goals_file",
                 {"upload_context": upload_context, "paper_text": user_query},
             )
         else:
             user_query = get_prompt(
-                self.isrc.PROMPT_FILE,
+                self.in_silico_config.PROMPT_FILE,
                 "user/in_silico_research_goals",
                 {"paper_text": user_query},
             )
 
         phyto_response = await phyto_chat(
             user_query=user_query,
-            prompt_file=self.isrc.PROMPT_FILE,
-            prompt_path=self.isrc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.isrc.FREQUENCY_PENALTY,
-            n=self.isrc.N,
-            presence_penalty=self.isrc.PRESENCE_PENALTY,
-            reasoning_effort=self.isrc.REASONING_EFFORT,
+            prompt_file=self.in_silico_config.PROMPT_FILE,
+            prompt_path=self.in_silico_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.in_silico_config.FREQUENCY_PENALTY,
+            n=self.in_silico_config.N,
+            presence_penalty=self.in_silico_config.PRESENCE_PENALTY,
+            reasoning_effort=self.in_silico_config.REASONING_EFFORT,
             response_format={
                 "type": "json_schema",
                 "json_schema": {
@@ -229,13 +235,13 @@ class InSilicoResearchAgents:
                     },
                 },
             },
-            stream=self.isrc.STREAM,
-            temperature=self.isrc.TEMPERATURE,
-            top_p=self.isrc.TOP_P,
-            user=self.isrc.USER,
-            timeout=self.isrc.TIMEOUT,
-            retriable_codes=self.isrc.RETRIABLE_CODES,
-            max_retries=self.isrc.MAX_RETRIES,
+            stream=self.in_silico_config.STREAM,
+            temperature=self.in_silico_config.TEMPERATURE,
+            top_p=self.in_silico_config.TOP_P,
+            user=self.in_silico_config.USER,
+            timeout=self.in_silico_config.TIMEOUT,
+            retriable_codes=self.in_silico_config.RETRIABLE_CODES,
+            max_retries=self.in_silico_config.MAX_RETRIES,
         )
         if phyto_response is None:
             return []
@@ -322,13 +328,16 @@ class InSilicoResearchAgents:
             completed_count.
         """
         goals = state.get("goals", [])
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
         output_dir = state.get("output_dir") or create_output_dir(
             user_id=state.get("user_id") or str(uuid1()),
             task="in_silico_research_task",
-            access_key_id=self.sc.AccessKeyID.get_secret_value(),
-            secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-            obs_server=self.isrc.OBS_SERVER,
-            bucket_name=self.isrc.BUCKET_NAME,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.in_silico_config.OBS_SERVER,
+            bucket_name=self.in_silico_config.BUCKET_NAME,
         )
 
         tasks = [
@@ -444,7 +453,7 @@ async def in_silico_research(
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph in-silico research agent."""
     in_silico_config = copy_config_with_overrides(
-        isrc,
+        IN_SILICO_CONFIG,
         kwargs,
         ANALYST_CONFIG_FIELD_MAP,
         fixed_updates={
@@ -453,7 +462,7 @@ async def in_silico_research(
         },
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,

@@ -199,8 +199,8 @@ Expected variables:
 DOMAIN_NAME=your_domain_name
 USER_NAME=your_username
 USER_PASSWORD=your_password
-AccessKeyID=your_access_key_id
-SecretAccessKey=your_secret_access_key
+ACCESS_KEY_ID=your_access_key_id
+SECRET_ACCESS_KEY=your_secret_access_key
 BASE_URL=your_llm_base_url
 MODEL_ID=your_model_id
 API_KEY=your_api_key
@@ -209,6 +209,9 @@ CODER_MODEL=your_coder_model
 CODER_API_KEY=your_coder_api_key
 BI_TOKEN=your_bi_token
 ```
+
+Legacy `AccessKeyID` and `SecretAccessKey` environment names remain accepted
+for compatibility, but new local configuration should use the uppercase names.
 
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, or local virtual environments.

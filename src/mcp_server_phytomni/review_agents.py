@@ -26,8 +26,11 @@ from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt
 
-rc = ReviewConfig()
-sc = SensitiveConfig.load()
+REVIEW_CONFIG = ReviewConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
 
 REVIEW_CONFIG_FIELD_MAP = {
     "prompt_file": "PROMPT_FILE",
@@ -54,7 +57,7 @@ REVIEW_CONFIG_FIELD_MAP = {
     "server_dir": "TEMP_DIR",
     "obs_server": "OBS_SERVER",
     "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZT",
+    "part_size": "PART_SIZE",
     "task_num": "TASK_NUM",
     "max_concurrency": "MAX_CONCURRENCY",
     "max_workers": "MAX_WORKERS",
@@ -69,8 +72,8 @@ REVIEW_SENSITIVE_FIELD_MAP = {
 }
 REVIEW_SECRET_FIELD_MAP = {
     "api_key": "API_KEY",
-    "access_key_id": "AccessKeyID",
-    "secret_access_key": "SecretAccessKey",
+    "access_key_id": "ACCESS_KEY_ID",
+    "secret_access_key": "SECRET_ACCESS_KEY",
 }
 
 CITATION_PATTERN = (
@@ -228,13 +231,13 @@ class DeepResearchAgent:
     def __init__(
         self,
         checkpointer: Optional[MemorySaver] = None,
-        review_config: ReviewConfig = rc,
-        sensitive_config: SensitiveConfig = sc,
+        review_config: ReviewConfig = REVIEW_CONFIG,
+        sensitive_config: SensitiveConfig = SENSITIVE_CONFIG,
         knowledge_agent: Optional[KnowledgeAgent] = None,
     ):
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.rc = review_config
-        self.sc = sensitive_config
+        self.review_config = review_config
+        self.sensitive_config = sensitive_config
         self.ka = knowledge_agent or KnowledgeAgent(
             knowledge_config=review_config,
             sensitive_config=sensitive_config,
@@ -269,24 +272,24 @@ class DeepResearchAgent:
         """Call the configured LLM."""
         return await phyto_chat(
             user_query=prompt,
-            prompt_file=self.rc.PROMPT_FILE,
-            prompt_path=self.rc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.rc.FREQUENCY_PENALTY,
-            n=self.rc.N,
-            presence_penalty=self.rc.PRESENCE_PENALTY,
-            reasoning_effort=self.rc.REASONING_EFFORT,
+            prompt_file=self.review_config.PROMPT_FILE,
+            prompt_path=self.review_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.review_config.FREQUENCY_PENALTY,
+            n=self.review_config.N,
+            presence_penalty=self.review_config.PRESENCE_PENALTY,
+            reasoning_effort=self.review_config.REASONING_EFFORT,
             response_format=response_format_override
-            or self.rc.RESPONSE_FORMAT,
-            stream=self.rc.STREAM,
-            temperature=self.rc.TEMPERATURE,
-            top_p=self.rc.TOP_P,
-            user=self.rc.USER,
-            timeout=self.rc.TIMEOUT,
-            retriable_codes=self.rc.RETRIABLE_CODES,
-            max_retries=self.rc.MAX_RETRIES,
+            or self.review_config.RESPONSE_FORMAT,
+            stream=self.review_config.STREAM,
+            temperature=self.review_config.TEMPERATURE,
+            top_p=self.review_config.TOP_P,
+            user=self.review_config.USER,
+            timeout=self.review_config.TIMEOUT,
+            retriable_codes=self.review_config.RETRIABLE_CODES,
+            max_retries=self.review_config.MAX_RETRIES,
         )
 
     async def plan_node(self, state: DeepResearchState):
@@ -296,18 +299,21 @@ class DeepResearchAgent:
         upload_context = ""
 
         if state["obs_file_list"]:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             upload_str_list = await download_list_convert(
                 obs_file_list=state["obs_file_list"],
-                server_dir=self.rc.TEMP_DIR,
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.rc.OBS_SERVER,
-                bucket_name=self.rc.BUCKET_NAME,
-                part_size=self.rc.PART_SIZT,
-                task_num=self.rc.TASK_NUM,
-                max_retries=self.rc.MAX_RETRIES,
-                max_concurrency=self.rc.MAX_CONCURRENCY,
-                max_workers=self.rc.MAX_WORKERS,
+                server_dir=self.review_config.TEMP_DIR,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.review_config.OBS_SERVER,
+                bucket_name=self.review_config.BUCKET_NAME,
+                part_size=self.review_config.PART_SIZE,
+                task_num=self.review_config.TASK_NUM,
+                max_retries=self.review_config.MAX_RETRIES,
+                max_concurrency=self.review_config.MAX_CONCURRENCY,
+                max_workers=self.review_config.MAX_WORKERS,
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
@@ -315,14 +321,17 @@ class DeepResearchAgent:
                     f"[user upload file {i + 1} begin]\n"
                     f"{doc}\n[user upload file {i + 1} end]"
                 )
-                if total_length + len(fragment) <= self.rc.MAX_TOKENS:
+                if (
+                    total_length + len(fragment)
+                    <= self.review_config.MAX_TOKENS
+                ):
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
                     break
             upload_context = "\n\n".join(upload_results)
             user_query = get_prompt(
-                self.rc.PROMPT_FILE,
+                self.review_config.PROMPT_FILE,
                 "user/deep_research_query_file",
                 {
                     "upload_context": upload_context,
@@ -331,7 +340,7 @@ class DeepResearchAgent:
             )
         else:
             user_query = get_prompt(
-                self.rc.PROMPT_FILE,
+                self.review_config.PROMPT_FILE,
                 "user/deep_research_query",
                 {"user_query": user_query},
             )
@@ -385,9 +394,9 @@ class DeepResearchAgent:
         dimension_params: List[Dict[str, str]] = []
         file_id = 0
         current_length = state["total_length"]
-        dimension_length = (self.rc.MAX_TOKENS - state["total_length"]) / max(
-            1, len(dimensions)
-        )
+        dimension_length = (
+            self.review_config.MAX_TOKENS - state["total_length"]
+        ) / max(1, len(dimensions))
 
         for di, dimension_result in enumerate(results):
             fragments = []
@@ -424,7 +433,7 @@ class DeepResearchAgent:
         draft_tasks = [
             self._chat(
                 get_prompt(
-                    self.rc.PROMPT_FILE,
+                    self.review_config.PROMPT_FILE,
                     "user/deep_research_dimension",
                     param,
                 )
@@ -453,7 +462,7 @@ class DeepResearchAgent:
             review_tasks.append(
                 self._chat(
                     get_prompt(
-                        self.rc.PROMPT_FILE,
+                        self.review_config.PROMPT_FILE,
                         "user/deep_research_review",
                         {
                             "current_subtopic": dimensions[di],
@@ -559,7 +568,7 @@ class DeepResearchAgent:
             if new_knowledge_str.strip():
                 feedback_response = await self._chat(
                     get_prompt(
-                        self.rc.PROMPT_FILE,
+                        self.review_config.PROMPT_FILE,
                         "user/deep_research_feedback",
                         {
                             "existing_draft": draft_content,
@@ -594,7 +603,11 @@ class DeepResearchAgent:
         add_total_length = 0
         query_count = max(1, len(add_query_results))
         add_query_length = max(
-            1, int((self.rc.MAX_TOKENS - len(draft_content)) / query_count)
+            1,
+            int(
+                (self.review_config.MAX_TOKENS - len(draft_content))
+                / query_count
+            ),
         )
         add_blocks = []
 
@@ -654,7 +667,7 @@ class DeepResearchAgent:
                 return
             check_response = await self._chat(
                 get_prompt(
-                    self.rc.PROMPT_FILE,
+                    self.review_config.PROMPT_FILE,
                     "user/deep_research_check",
                     {
                         "input_text": content_to_check,
@@ -679,7 +692,7 @@ class DeepResearchAgent:
             added_len = len(doc_json_str)
             if (
                 len(content_to_check) + current_batch_doc_len + added_len
-                > self.rc.MAX_TOKENS
+                > self.review_config.MAX_TOKENS
             ):
                 await run_citation_check(current_batch_docs)
                 current_batch_docs = {}
@@ -713,7 +726,7 @@ class DeepResearchAgent:
 
         summary_response = await self._chat(
             get_prompt(
-                self.rc.PROMPT_FILE,
+                self.review_config.PROMPT_FILE,
                 "user/deep_research_summary",
                 summary_params,
             )
@@ -729,7 +742,7 @@ class DeepResearchAgent:
         )
         follow_up_response = await self._chat(
             get_prompt(
-                self.rc.PROMPT_FILE,
+                self.review_config.PROMPT_FILE,
                 "system/follow_up_questions",
                 {
                     "user_query": state["original_user_query"],
@@ -785,54 +798,56 @@ class DeepResearchAgent:
 
 async def deep_research(
     user_query: str,
-    prompt_file: str = rc.PROMPT_FILE,
-    prompt_path: str = rc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = rc.FREQUENCY_PENALTY,
-    n: int = rc.N,
-    presence_penalty: float = rc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = rc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = rc.RESPONSE_FORMAT,
-    stream: bool = rc.STREAM,
-    temperature: float = rc.TEMPERATURE,
-    top_p: float = rc.TOP_P,
-    user: str = rc.USER,
-    retrieve_url: str = rc.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = rc.REPO_ID_DICT,
-    page_num: int = rc.PAGE_NUM,
-    filter_string: Optional[str] = rc.FILTER_STRING,
-    scope: str = rc.SCOPE,
-    extra_repo_ids: Optional[List[str]] = rc.EXTRA_REPO_IDS,
-    rerank_url: str = rc.RERANK_URL,
-    rerank_batch_size: int = rc.RERANK_BATCH_SIZE,
-    score_threshold: float = rc.SCORE_THRESHOLD,
-    top_n: int = rc.TOP_N,
+    prompt_file: str = REVIEW_CONFIG.PROMPT_FILE,
+    prompt_path: str = REVIEW_CONFIG.PROMPT_PATH,
+    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
+    base_url: str = SENSITIVE_CONFIG.BASE_URL,
+    model: str = SENSITIVE_CONFIG.MODEL_ID,
+    frequency_penalty: float = REVIEW_CONFIG.FREQUENCY_PENALTY,
+    n: int = REVIEW_CONFIG.N,
+    presence_penalty: float = REVIEW_CONFIG.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = REVIEW_CONFIG.REASONING_EFFORT,
+    response_format: Dict[
+        str, Union[str, Dict]
+    ] = REVIEW_CONFIG.RESPONSE_FORMAT,
+    stream: bool = REVIEW_CONFIG.STREAM,
+    temperature: float = REVIEW_CONFIG.TEMPERATURE,
+    top_p: float = REVIEW_CONFIG.TOP_P,
+    user: str = REVIEW_CONFIG.USER,
+    retrieve_url: str = REVIEW_CONFIG.RETRIEVE_URL,
+    repo_id_dict: Optional[Dict[str, int]] = REVIEW_CONFIG.REPO_ID_DICT,
+    page_num: int = REVIEW_CONFIG.PAGE_NUM,
+    filter_string: Optional[str] = REVIEW_CONFIG.FILTER_STRING,
+    scope: str = REVIEW_CONFIG.SCOPE,
+    extra_repo_ids: Optional[List[str]] = REVIEW_CONFIG.EXTRA_REPO_IDS,
+    rerank_url: str = REVIEW_CONFIG.RERANK_URL,
+    rerank_batch_size: int = REVIEW_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = REVIEW_CONFIG.SCORE_THRESHOLD,
+    top_n: int = REVIEW_CONFIG.TOP_N,
     obs_file_list: Optional[List[str]] = None,
-    server_dir: str = rc.TEMP_DIR,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = rc.OBS_SERVER,
-    bucket_name: str = rc.BUCKET_NAME,
-    part_size: int = rc.PART_SIZT,
-    task_num: int = rc.TASK_NUM,
-    max_concurrency: int = rc.MAX_CONCURRENCY,
-    max_workers: int = rc.MAX_WORKERS,
-    timeout: float = rc.TIMEOUT,
-    retriable_codes: List[int] = rc.RETRIABLE_CODES,
-    max_retries: int = rc.MAX_RETRIES,
-    max_tokens: int = rc.MAX_TOKENS,
+    server_dir: str = REVIEW_CONFIG.TEMP_DIR,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = REVIEW_CONFIG.OBS_SERVER,
+    bucket_name: str = REVIEW_CONFIG.BUCKET_NAME,
+    part_size: int = REVIEW_CONFIG.PART_SIZE,
+    task_num: int = REVIEW_CONFIG.TASK_NUM,
+    max_concurrency: int = REVIEW_CONFIG.MAX_CONCURRENCY,
+    max_workers: int = REVIEW_CONFIG.MAX_WORKERS,
+    timeout: float = REVIEW_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = REVIEW_CONFIG.RETRIABLE_CODES,
+    max_retries: int = REVIEW_CONFIG.MAX_RETRIES,
+    max_tokens: int = REVIEW_CONFIG.MAX_TOKENS,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph DeepResearchAgent."""
     arguments = locals().copy()
     review_config = copy_config_with_overrides(
-        rc,
+        REVIEW_CONFIG,
         arguments,
         REVIEW_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         arguments,
         field_map=REVIEW_SENSITIVE_FIELD_MAP,
         secret_field_map=REVIEW_SECRET_FIELD_MAP,

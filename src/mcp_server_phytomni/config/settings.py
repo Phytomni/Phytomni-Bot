@@ -4,9 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 import os
 from pathlib import Path
+from typing import Annotated
 
 from dotenv import load_dotenv
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _current_dir = Path(__file__).parent
@@ -49,8 +50,8 @@ def generate_env_template() -> None:
 DOMAIN_NAME=your_domain_name
 USER_NAME=your_username
 USER_PASSWORD=your_password
-AccessKeyID=your_AccessKeyID
-SecretAccessKey=your_SecretAccessKey
+ACCESS_KEY_ID=your_access_key_id
+SECRET_ACCESS_KEY=your_secret_access_key
 BASE_URL=your_base_url
 MODEL_ID=your_model_id
 API_KEY=your_api_key
@@ -99,8 +100,19 @@ class SensitiveConfig(BaseSettings):
     DOMAIN_NAME: str
     USER_NAME: str
     USER_PASSWORD: SecretStr
-    AccessKeyID: SecretStr
-    SecretAccessKey: SecretStr
+    ACCESS_KEY_ID: Annotated[
+        SecretStr,
+        Field(validation_alias=AliasChoices("ACCESS_KEY_ID", "AccessKeyID")),
+    ]
+    SECRET_ACCESS_KEY: Annotated[
+        SecretStr,
+        Field(
+            validation_alias=AliasChoices(
+                "SECRET_ACCESS_KEY",
+                "SecretAccessKey",
+            )
+        ),
+    ]
     BASE_URL: str
     MODEL_ID: str
     API_KEY: SecretStr
@@ -127,3 +139,20 @@ class SensitiveConfig(BaseSettings):
         if os.getenv("PHYTOMNI_TESTING") == "1":
             return cls(_env_file=None)  # type: ignore[call-arg]
         return cls()  # type: ignore[call-arg]
+
+    @property
+    def AccessKeyID(self) -> SecretStr:  # pylint: disable=invalid-name
+        """Backward-compatible alias for `ACCESS_KEY_ID`."""
+        return self.ACCESS_KEY_ID
+
+    @property
+    def SecretAccessKey(self) -> SecretStr:  # pylint: disable=invalid-name
+        """Backward-compatible alias for `SECRET_ACCESS_KEY`."""
+        return self.SECRET_ACCESS_KEY
+
+    def obs_credentials(self) -> tuple[str, str]:
+        """Return OBS access and secret access key values."""
+        return (
+            self.ACCESS_KEY_ID.get_secret_value(),
+            self.SECRET_ACCESS_KEY.get_secret_value(),
+        )

@@ -24,7 +24,7 @@ class FakeCompiledGraph:
         self.state = state
         self.config = config
         return {
-            "final_reponse": {
+            "final_response": {
                 "query": state["user_query"],
                 "is_rewrite": state["is_rewrite"],
             }
@@ -62,9 +62,9 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
     assert fake_graph.state == {
         "user_query": "plant height in rice",
         "is_rewrite": False,
-        "retrieve_promopt": None,
+        "retrieve_prompt": None,
         "rewrite_query": None,
-        "final_reponse": None,
+        "final_response": None,
     }
     assert fake_graph.config == {
         "configurable": {"thread_id": "pytest-thread"}

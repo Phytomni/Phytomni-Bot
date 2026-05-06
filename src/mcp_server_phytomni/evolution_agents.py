@@ -12,8 +12,11 @@ from .config.settings import SensitiveConfig
 from .utils import get_prompt, get_token
 import requests
 
-dgc = DeepGenomeConfig()
-sc = SensitiveConfig.load()
+DEEP_GENOME_CONFIG = DeepGenomeConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
 _manager_cache: Dict[str, Any] = {}
 
 
@@ -21,39 +24,39 @@ async def evo_test_analysis(
     query: str,
     species: str,
     gene_id: str,
-    user_id: str = dgc.USER_ID,
+    user_id: str = DEEP_GENOME_CONFIG.USER_ID,
     batch: bool = False,
     enable_auto_select: bool = False,
-    prompt_file: str = dgc.PROMPT_FILE,
-    deepgenome_data: str = dgc.DEEPGENOME_DATA,
-    output_dir: str = dgc.OUTPUT_DIR,
-    model_url: str = sc.CODER_URL,
-    model_name: str = sc.CODER_MODEL,
-    coder_api_key: str = sc.CODER_API_KEY.get_secret_value(),
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = dgc.OBS_SERVER,
-    bucket_name: str = dgc.BUCKET_NAME,
-    analysis_url: str = dgc.ANALYSIS_URL,
-    region: str = dgc.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = dgc.RESOURCE,
-    app_id_dict: Dict[str, str] = dgc.APP_ID,
-    timeout: float = dgc.TIMEOUT,
-    retriable_codes: List[int] = dgc.RETRIABLE_CODES,
-    max_retries: int = dgc.MAX_RETRIES,
-    max_poll: float = dgc.MAX_POLL,
-    prompt_path: str = dgc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = dgc.FREQUENCY_PENALTY,
-    n: int = dgc.N,
-    presence_penalty: float = dgc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = dgc.REASONING_EFFORT,
-    stream: bool = dgc.STREAM,
-    temperature: float = dgc.TEMPERATURE,
-    top_p: float = dgc.TOP_P,
-    user: str = dgc.USER,
+    prompt_file: str = DEEP_GENOME_CONFIG.PROMPT_FILE,
+    deepgenome_data: str = DEEP_GENOME_CONFIG.DEEPGENOME_DATA,
+    output_dir: str = DEEP_GENOME_CONFIG.OUTPUT_DIR,
+    model_url: str = SENSITIVE_CONFIG.CODER_URL,
+    model_name: str = SENSITIVE_CONFIG.CODER_MODEL,
+    coder_api_key: str = SENSITIVE_CONFIG.CODER_API_KEY.get_secret_value(),
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = DEEP_GENOME_CONFIG.OBS_SERVER,
+    bucket_name: str = DEEP_GENOME_CONFIG.BUCKET_NAME,
+    analysis_url: str = DEEP_GENOME_CONFIG.ANALYSIS_URL,
+    region: str = DEEP_GENOME_CONFIG.ANALYSIS_REGION,
+    resource_dict: Dict[str, Dict[str, int]] = DEEP_GENOME_CONFIG.RESOURCE,
+    app_id_dict: Dict[str, str] = DEEP_GENOME_CONFIG.APP_ID,
+    timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = DEEP_GENOME_CONFIG.RETRIABLE_CODES,
+    max_retries: int = DEEP_GENOME_CONFIG.MAX_RETRIES,
+    max_poll: float = DEEP_GENOME_CONFIG.MAX_POLL,
+    prompt_path: str = DEEP_GENOME_CONFIG.PROMPT_PATH,
+    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
+    base_url: str = SENSITIVE_CONFIG.BASE_URL,
+    model: str = SENSITIVE_CONFIG.MODEL_ID,
+    frequency_penalty: float = DEEP_GENOME_CONFIG.FREQUENCY_PENALTY,
+    n: int = DEEP_GENOME_CONFIG.N,
+    presence_penalty: float = DEEP_GENOME_CONFIG.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = DEEP_GENOME_CONFIG.REASONING_EFFORT,
+    stream: bool = DEEP_GENOME_CONFIG.STREAM,
+    temperature: float = DEEP_GENOME_CONFIG.TEMPERATURE,
+    top_p: float = DEEP_GENOME_CONFIG.TOP_P,
+    user: str = DEEP_GENOME_CONFIG.USER,
 ) -> dict:
     async def find_spa_taxid(spa_names):
 

@@ -23,7 +23,7 @@ def test_server_config_has_expected_core_defaults():
 
     assert config.MAX_TOKENS == 65536
     assert config.PROMPT_PATH == "system/ai4ps"
-    assert config.PART_SIZT == 16777216
+    assert config.PART_SIZE == 16777216
     assert Path(config.PROMPT_FILE).name == ".prompts.yaml"
 
 

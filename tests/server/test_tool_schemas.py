@@ -50,18 +50,25 @@ def test_chat_agent_validates_required_fields():
 
 
 def test_public_agent_enum_values_remain_stable():
-    assert server.PhytomniAgents.CHATAGENT.value == "ChatAgent"
-    assert server.PhytomniAgents.KNOWLEDGEAGENT.value == "KnowledgeAgent"
-    assert server.PhytomniAgents.DATAAGENT.value == "DataAgent"
-    assert server.PhytomniAgents.ANALYSTAGENT.value == "AnalystAgent"
-    assert server.PhytomniAgents.REVIEWAGENT.value == "ReviewAgent"
-    assert server.PhytomniAgents.BRIEFGENEAGENT.value == "BriefGeneAgent"
-    assert server.PhytomniAgents.DEEPGENOMEAGENT.value == "DeepGenomeAgent"
+    assert server.PhytomniAgents.CHAT_AGENT.value == "ChatAgent"
+    assert server.PhytomniAgents.KNOWLEDGE_AGENT.value == "KnowledgeAgent"
+    assert server.PhytomniAgents.DATA_AGENT.value == "DataAgent"
+    assert server.PhytomniAgents.ANALYST_AGENT.value == "AnalystAgent"
+    assert server.PhytomniAgents.REVIEW_AGENT.value == "ReviewAgent"
+    assert server.PhytomniAgents.BRIEF_GENE_AGENT.value == "BriefGeneAgent"
+    assert server.PhytomniAgents.DEEP_GENOME_AGENT.value == "DeepGenomeAgent"
     assert (
-        server.PhytomniAgents.INSILICORESEARCHAGENT.value
+        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value
         == "InSilicoResearchAgent"
     )
-    assert server.PhytomniAgents.DIGITALDESIGNAGENT.value == (
+    assert server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value == (
         "DigitalDesignAgent"
     )
-    assert server.PhytomniAgents.GENENETWORKAGENT.value == "GeneNetworkAgent"
+    assert server.PhytomniAgents.GENE_NETWORK_AGENT.value == "GeneNetworkAgent"
+
+
+def test_public_agent_enum_members_use_constant_style_names():
+    assert "CHATAGENT" not in server.PhytomniAgents.__members__
+    assert "INSILICORESEARCHAGENT" not in server.PhytomniAgents.__members__
+    assert "CHAT_AGENT" in server.PhytomniAgents.__members__
+    assert "IN_SILICO_RESEARCH_AGENT" in server.PhytomniAgents.__members__

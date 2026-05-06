@@ -35,8 +35,8 @@ from .utils import get_prompt, get_token
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 
-dc = DataConfig()
-sc = SensitiveConfig.load()
+DATA_CONFIG = DataConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
 
 DATA_CONFIG_FIELD_MAP = {
     "retrieve_url": "RETRIEVE_URL",
@@ -79,15 +79,15 @@ DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 
 async def nl2sql(
     message_content: str,
-    database_url: str = dc.DATABASE_URL,
-    workspace_id: str = dc.WORKSPACE_ID,
-    subject_id: str = dc.SUBJECT_ID,
-    dialog_id: str = dc.DIALOG_ID,
-    need_insight: bool = dc.NEED_INSIGHT,
-    simplify_response: bool = dc.SIMPLIFY_RESPONSE,
-    timeout: float = dc.TIMEOUT,
-    retriable_codes: List[int] = dc.RETRIABLE_CODES,
-    max_retries: int = dc.MAX_RETRIES,
+    database_url: str = DATA_CONFIG.DATABASE_URL,
+    workspace_id: str = DATA_CONFIG.WORKSPACE_ID,
+    subject_id: str = DATA_CONFIG.SUBJECT_ID,
+    dialog_id: str = DATA_CONFIG.DIALOG_ID,
+    need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
+    simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
+    timeout: float = DATA_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = DATA_CONFIG.RETRIABLE_CODES,
+    max_retries: int = DATA_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Convert a natural language query to SQL and execute it."""
     dialog_id = dialog_id if dialog_id else str(uuid1())
@@ -152,39 +152,39 @@ async def nl2sql(
 
 async def rewrite_nl2sql(
     user_query: str,
-    retrieve_url: str = dc.RETRIEVE_URL,
-    data_repo_id: str = dc.DATA_REPO_ID,
-    page_num: int = dc.PAGE_NUM,
-    page_size: int = dc.DATA_PAGE_SIZE,
-    filter_string: Optional[str] = dc.FILTER_STRING,
-    scope: str = dc.SCOPE,
-    rerank_url: str = dc.RERANK_URL,
-    rerank_batch_size: int = dc.RERANK_BATCH_SIZE,
-    score_threshold: float = dc.SCORE_THRESHOLD,
-    prompt_file: str = dc.PROMPT_FILE,
-    prompt_path: str = dc.PROMPT_PATH,
-    api_key: str = sc.API_KEY.get_secret_value(),
-    base_url: str = sc.BASE_URL,
-    model: str = sc.MODEL_ID,
-    frequency_penalty: float = dc.FREQUENCY_PENALTY,
-    n: int = dc.N,
-    presence_penalty: float = dc.PRESENCE_PENALTY,
-    reasoning_effort: Optional[str] = dc.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = dc.RESPONSE_FORMAT,
-    stream: bool = dc.STREAM,
-    temperature: float = dc.TEMPERATURE,
-    top_p: float = dc.TOP_P,
-    user: str = dc.USER,
-    database_url: str = dc.DATABASE_URL,
-    workspace_id: str = dc.WORKSPACE_ID,
-    subject_id: str = dc.SUBJECT_ID,
-    dialog_id: str = dc.DIALOG_ID,
-    need_insight: bool = dc.NEED_INSIGHT,
-    simplify_response: bool = dc.SIMPLIFY_RESPONSE,
-    timeout: float = dc.TIMEOUT,
-    retriable_codes: List[int] = dc.RETRIABLE_CODES,
-    max_retries: int = dc.MAX_RETRIES,
-    max_tokens: int = dc.MAX_TOKENS,
+    retrieve_url: str = DATA_CONFIG.RETRIEVE_URL,
+    data_repo_id: str = DATA_CONFIG.DATA_REPO_ID,
+    page_num: int = DATA_CONFIG.PAGE_NUM,
+    page_size: int = DATA_CONFIG.DATA_PAGE_SIZE,
+    filter_string: Optional[str] = DATA_CONFIG.FILTER_STRING,
+    scope: str = DATA_CONFIG.SCOPE,
+    rerank_url: str = DATA_CONFIG.RERANK_URL,
+    rerank_batch_size: int = DATA_CONFIG.RERANK_BATCH_SIZE,
+    score_threshold: float = DATA_CONFIG.SCORE_THRESHOLD,
+    prompt_file: str = DATA_CONFIG.PROMPT_FILE,
+    prompt_path: str = DATA_CONFIG.PROMPT_PATH,
+    api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
+    base_url: str = SENSITIVE_CONFIG.BASE_URL,
+    model: str = SENSITIVE_CONFIG.MODEL_ID,
+    frequency_penalty: float = DATA_CONFIG.FREQUENCY_PENALTY,
+    n: int = DATA_CONFIG.N,
+    presence_penalty: float = DATA_CONFIG.PRESENCE_PENALTY,
+    reasoning_effort: Optional[str] = DATA_CONFIG.REASONING_EFFORT,
+    response_format: Dict[str, Union[str, Dict]] = DATA_CONFIG.RESPONSE_FORMAT,
+    stream: bool = DATA_CONFIG.STREAM,
+    temperature: float = DATA_CONFIG.TEMPERATURE,
+    top_p: float = DATA_CONFIG.TOP_P,
+    user: str = DATA_CONFIG.USER,
+    database_url: str = DATA_CONFIG.DATABASE_URL,
+    workspace_id: str = DATA_CONFIG.WORKSPACE_ID,
+    subject_id: str = DATA_CONFIG.SUBJECT_ID,
+    dialog_id: str = DATA_CONFIG.DIALOG_ID,
+    need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
+    simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
+    timeout: float = DATA_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = DATA_CONFIG.RETRIABLE_CODES,
+    max_retries: int = DATA_CONFIG.MAX_RETRIES,
+    max_tokens: int = DATA_CONFIG.MAX_TOKENS,
     is_rewrite: bool = True,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent."""
@@ -192,12 +192,12 @@ async def rewrite_nl2sql(
     active_dialog_id = dialog_id or str(uuid1())
     arguments["dialog_id"] = active_dialog_id
     data_config = copy_config_with_overrides(
-        dc,
+        DATA_CONFIG,
         arguments,
         DATA_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         arguments,
         field_map=DATA_SENSITIVE_FIELD_MAP,
         secret_field_map=DATA_SECRET_FIELD_MAP,
@@ -230,16 +230,16 @@ class DataAgentState(TypedDict):
     Attributes:
         user_query: The user's natural language query.
         is_rewrite: Is rewrite query or not.
-        retrieve_promopt: Prompt containing retrieved scenarios.
+        retrieve_prompt: Prompt containing retrieved scenarios.
         rewrite_query: The rewritten query optimized for SQL generation.
-        final_reponse: The final response from the database query execution.
+        final_response: The final response from the database query execution.
     """
 
     user_query: str
     is_rewrite: bool
-    retrieve_promopt: str
+    retrieve_prompt: str
     rewrite_query: str
-    final_reponse: dict
+    final_response: dict
 
 
 class DataAgent:
@@ -259,13 +259,13 @@ class DataAgent:
         checkpointer: A LangGraph checkpointer for state persistence.
                       Defaults to a fresh MemorySaver instance.
         data_config: Configuration for data retrieval and NL2SQL.
-                     Defaults to the global dc instance.
+                     Defaults to the global DATA_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
-                          Defaults to the global sc instance.
+                          Defaults to the global SENSITIVE_CONFIG instance.
 
     Attributes:
-        dc: The data configuration instance.
-        sc: The sensitive configuration instance.
+        DATA_CONFIG: The data configuration instance.
+        SENSITIVE_CONFIG: The sensitive configuration instance.
         checkpointer: The checkpointer for state persistence.
         app: The compiled LangGraph application.
     """
@@ -273,12 +273,12 @@ class DataAgent:
     def __init__(
         self,
         checkpointer: Optional[MemorySaver] = None,
-        data_config=dc,
-        sensitive_config=sc,
+        data_config=DATA_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the DataAgent with configuration and build the graph."""
-        self.dc = data_config
-        self.sc = sensitive_config
+        self.data_config = data_config
+        self.sensitive_config = sensitive_config
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
@@ -324,25 +324,25 @@ class DataAgent:
             state: The current workflow state containing user_query.
 
         Returns:
-            A dictionary containing the retrieve_promopt key with the
+            A dictionary containing the retrieve_prompt key with the
             constructed prompt for the next node.
         """
         user_query = state["user_query"]
         retrieve_response = await retrieve(
             user_query=user_query,
-            retrieve_url=self.dc.RETRIEVE_URL,
-            repo_id=self.dc.DATA_REPO_ID,
-            page_num=self.dc.PAGE_NUM,
-            page_size=self.dc.DATA_PAGE_SIZE,
-            filter_string=self.dc.FILTER_STRING,
-            scope=self.dc.SCOPE,
+            retrieve_url=self.data_config.RETRIEVE_URL,
+            repo_id=self.data_config.DATA_REPO_ID,
+            page_num=self.data_config.PAGE_NUM,
+            page_size=self.data_config.DATA_PAGE_SIZE,
+            filter_string=self.data_config.FILTER_STRING,
+            scope=self.data_config.SCOPE,
             extra_repo_ids=None,
-            rerank_url=self.dc.RERANK_URL,
-            rerank_batch_size=self.dc.RERANK_BATCH_SIZE,
-            score_threshold=self.dc.SCORE_THRESHOLD,
-            timeout=self.dc.TIMEOUT,
-            retriable_codes=self.dc.RETRIABLE_CODES,
-            max_retries=self.dc.MAX_RETRIES,
+            rerank_url=self.data_config.RERANK_URL,
+            rerank_batch_size=self.data_config.RERANK_BATCH_SIZE,
+            score_threshold=self.data_config.SCORE_THRESHOLD,
+            timeout=self.data_config.TIMEOUT,
+            retriable_codes=self.data_config.RETRIABLE_CODES,
+            max_retries=self.data_config.MAX_RETRIES,
         )
 
         retrieve_results = []
@@ -360,7 +360,7 @@ class DataAgent:
                 else doc.get("content", "")
             )
             fragment = f"{header}\n{body} [scenario {i+1} end]"
-            if total_length + len(fragment) <= dc.MAX_TOKENS:
+            if total_length + len(fragment) <= DATA_CONFIG.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
@@ -368,12 +368,12 @@ class DataAgent:
 
         retrieve_context = "\n\n".join(retrieve_results)
         retrieve_prompt = get_prompt(
-            dc.PROMPT_FILE,
+            DATA_CONFIG.PROMPT_FILE,
             "user/database",
             {"scenario_prompts": retrieve_context, "user_query": user_query},
         )
 
-        return {"retrieve_promopt": retrieve_prompt}
+        return {"retrieve_prompt": retrieve_prompt}
 
     async def rewrite_node(self, state: DataAgentState):
         """Rewrite the query using an LLM for better SQL generation.
@@ -383,7 +383,7 @@ class DataAgent:
         to SQL conversion. This improves the accuracy of the resulting SQL.
 
         Args:
-            state: The current workflow state containing retrieve_promopt.
+            state: The current workflow state containing retrieve_prompt.
 
         Returns:
             A dictionary containing the rewrite_query key with the
@@ -393,24 +393,24 @@ class DataAgent:
             McpError: If the phyto_chat service fails to respond.
         """
         phyto_response = await phyto_chat(
-            user_query=state["retrieve_promopt"],
-            prompt_file=self.dc.PROMPT_FILE,
-            prompt_path=self.dc.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.dc.FREQUENCY_PENALTY,
-            n=self.dc.N,
-            presence_penalty=self.dc.PRESENCE_PENALTY,
-            reasoning_effort=self.dc.REASONING_EFFORT,
-            response_format=self.dc.RESPONSE_FORMAT,
-            stream=self.dc.STREAM,
-            temperature=self.dc.TEMPERATURE,
-            top_p=self.dc.TOP_P,
-            user=self.dc.USER,
-            timeout=self.dc.TIMEOUT,
-            retriable_codes=self.dc.RETRIABLE_CODES,
-            max_retries=self.dc.MAX_RETRIES,
+            user_query=state["retrieve_prompt"],
+            prompt_file=self.data_config.PROMPT_FILE,
+            prompt_path=self.data_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.data_config.FREQUENCY_PENALTY,
+            n=self.data_config.N,
+            presence_penalty=self.data_config.PRESENCE_PENALTY,
+            reasoning_effort=self.data_config.REASONING_EFFORT,
+            response_format=self.data_config.RESPONSE_FORMAT,
+            stream=self.data_config.STREAM,
+            temperature=self.data_config.TEMPERATURE,
+            top_p=self.data_config.TOP_P,
+            user=self.data_config.USER,
+            timeout=self.data_config.TIMEOUT,
+            retriable_codes=self.data_config.RETRIABLE_CODES,
+            max_retries=self.data_config.MAX_RETRIES,
         )
 
         if (
@@ -439,36 +439,40 @@ class DataAgent:
             state: The current workflow state containing rewrite_query.
 
         Returns:
-            A dictionary containing the final_reponse key with the
+            A dictionary containing the final_response key with the
             database query results.
         """
-        dialog_id = self.dc.DIALOG_ID
-        client_timeout = Timeout(self.dc.TIMEOUT, connect=self.dc.TIMEOUT)
+        dialog_id = self.data_config.DIALOG_ID
+        client_timeout = Timeout(
+            self.data_config.TIMEOUT, connect=self.data_config.TIMEOUT
+        )
         if state["is_rewrite"]:
             query = state["rewrite_query"]
         else:
             query = state["user_query"]
         response: Any = None
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
-            for attempt in range(self.dc.MAX_RETRIES + 1):
+            for attempt in range(self.data_config.MAX_RETRIES + 1):
                 try:
                     response = await client.post(
-                        self.dc.DATABASE_URL,
+                        self.data_config.DATABASE_URL,
                         headers={
                             "X-Auth-Token": await get_token(),
-                            "X-Workspace-Id": self.dc.WORKSPACE_ID,
+                            "X-Workspace-Id": self.data_config.WORKSPACE_ID,
                             "Content-Type": "application/json",
                         },
                         json={
-                            "subject_id": self.dc.SUBJECT_ID,
+                            "subject_id": self.data_config.SUBJECT_ID,
                             "dialog_id": (
                                 dialog_id if dialog_id else str(uuid1())
                             ),
                             "message_content": query,
-                            "need_insight": self.dc.NEED_INSIGHT,
-                            "simplify_response": self.dc.SIMPLIFY_RESPONSE,
+                            "need_insight": self.data_config.NEED_INSIGHT,
+                            "simplify_response": (
+                                self.data_config.SIMPLIFY_RESPONSE
+                            ),
                         },
-                        timeout=self.dc.TIMEOUT,
+                        timeout=self.data_config.TIMEOUT,
                     )
                     response.raise_for_status()
 
@@ -476,8 +480,9 @@ class DataAgent:
                     if (
                         hasattr(e, "response")
                         and e.response is not None
-                        and e.response.status_code in self.dc.RETRIABLE_CODES
-                        and attempt < self.dc.MAX_RETRIES
+                        and e.response.status_code
+                        in self.data_config.RETRIABLE_CODES
+                        and attempt < self.data_config.MAX_RETRIES
                     ):
                         wait_time = (2**attempt) + uniform(0, 1)
                         await asyncio.sleep(wait_time)
@@ -490,7 +495,7 @@ class DataAgent:
                     ) from e
 
                 except (ConnectError, TimeoutException) as e:
-                    if attempt < self.dc.MAX_RETRIES:
+                    if attempt < self.data_config.MAX_RETRIES:
                         await asyncio.sleep(1.5**attempt)
                         continue
                     raise McpError(
@@ -507,7 +512,7 @@ class DataAgent:
                 )
             )
         print(response.json())
-        return {"final_reponse": response.json()}
+        return {"final_response": response.json()}
 
     async def arun(
         self,
@@ -533,13 +538,13 @@ class DataAgent:
         initial_state = {
             "user_query": user_query,
             "is_rewrite": is_rewrite,
-            "retrieve_promopt": None,
+            "retrieve_prompt": None,
             "rewrite_query": None,
-            "final_reponse": None,
+            "final_response": None,
         }
 
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
 
-        return final_state["final_reponse"]
+        return final_state["final_response"]

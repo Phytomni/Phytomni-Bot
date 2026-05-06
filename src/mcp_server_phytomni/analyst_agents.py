@@ -34,8 +34,11 @@ from .utils import (
     load_json_file,
 )
 
-ac = AnalystConfig()
-sc = SensitiveConfig.load()
+ANALYST_CONFIG = AnalystConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
 
 ANALYST_CONFIG_FIELD_MAP = {
     "analysis_url": "ANALYSIS_URL",
@@ -70,7 +73,7 @@ ANALYST_CONFIG_FIELD_MAP = {
     "server_dir": "TEMP_DIR",
     "obs_server": "OBS_SERVER",
     "bucket_name": "BUCKET_NAME",
-    "part_size": "PART_SIZT",
+    "part_size": "PART_SIZE",
     "task_num": "TASK_NUM",
     "max_concurrency": "MAX_CONCURRENCY",
     "max_workers": "MAX_WORKERS",
@@ -88,8 +91,8 @@ ANALYST_SENSITIVE_FIELD_MAP = {
 ANALYST_SECRET_FIELD_MAP = {
     "api_key": "API_KEY",
     "coder_api_key": "CODER_API_KEY",
-    "access_key_id": "AccessKeyID",
-    "secret_access_key": "SecretAccessKey",
+    "access_key_id": "ACCESS_KEY_ID",
+    "secret_access_key": "SECRET_ACCESS_KEY",
 }
 
 
@@ -164,27 +167,27 @@ class AnalystAgent:
         checkpointer: A LangGraph checkpointer for state persistence.
                       Defaults to a fresh MemorySaver instance.
         analyst_config: Configuration for the analyst agent.
-                        Defaults to the global ac instance.
+                        Defaults to the global ANALYST_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
-                          Defaults to the global sc instance.
+                          Defaults to the global SENSITIVE_CONFIG instance.
 
     Attributes:
         checkpointer: The checkpointer for state persistence.
-        ac: The analyst configuration instance.
-        sc: The sensitive configuration instance.
+        ANALYST_CONFIG: The analyst configuration instance.
+        SENSITIVE_CONFIG: The sensitive configuration instance.
         app: The compiled LangGraph application.
     """
 
     def __init__(
         self,
         checkpointer: Optional[MemorySaver] = None,
-        analyst_config=ac,
-        sensitive_config=sc,
+        analyst_config=ANALYST_CONFIG,
+        sensitive_config=SENSITIVE_CONFIG,
     ):
         """Initialize the AnalystAgent and build the graph."""
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self.ac = analyst_config
-        self.sc = sensitive_config
+        self.analyst_config = analyst_config
+        self.sensitive_config = sensitive_config
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -249,21 +252,21 @@ class AnalystAgent:
             }
         else:
             parse_prompt = get_prompt(
-                self.ac.PROMPT_FILE,
+                self.analyst_config.PROMPT_FILE,
                 "user/split_query",
                 {"user_query": state["query"]},
             )
             phyto_response = await phyto_chat(
                 user_query=parse_prompt,
-                prompt_file=self.ac.PROMPT_FILE,
-                prompt_path=self.ac.PROMPT_PATH,
-                api_key=self.sc.API_KEY.get_secret_value(),
-                base_url=self.sc.BASE_URL,
-                model=self.sc.MODEL_ID,
+                prompt_file=self.analyst_config.PROMPT_FILE,
+                prompt_path=self.analyst_config.PROMPT_PATH,
+                api_key=self.sensitive_config.API_KEY.get_secret_value(),
+                base_url=self.sensitive_config.BASE_URL,
+                model=self.sensitive_config.MODEL_ID,
                 response_format={"type": "json_schema"},
-                timeout=self.ac.TIMEOUT,
-                retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES,
+                timeout=self.analyst_config.TIMEOUT,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                max_retries=self.analyst_config.MAX_RETRIES,
             )
             content = "{}"
             if (
@@ -314,21 +317,23 @@ class AnalystAgent:
                 fails.
         """
         try:
-            species_data = load_json_file(self.ac.PRE_PREPARED_DATA_PATH)
+            species_data = load_json_file(
+                self.analyst_config.PRE_PREPARED_DATA_PATH
+            )
         except (FileNotFoundError, json.JSONDecodeError) as exc:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
                     message=(
                         "Failed to load species data list from "
-                        f"{self.ac.PRE_PREPARED_DATA_PATH}"
+                        f"{self.analyst_config.PRE_PREPARED_DATA_PATH}"
                     ),
                 )
             ) from exc
         data_list = state["data_list"]
         user_data_summary = json.dumps(data_list)
         selection_prompt = get_prompt(
-            self.ac.PROMPT_FILE,
+            self.analyst_config.PROMPT_FILE,
             "user/data_selection",
             {
                 "goal_description": state["goal_description"],
@@ -340,23 +345,23 @@ class AnalystAgent:
         try:
             selection_response = await phyto_chat(
                 user_query=selection_prompt,
-                prompt_file=self.ac.PROMPT_FILE,
-                prompt_path=self.ac.PROMPT_PATH,
-                api_key=self.sc.API_KEY.get_secret_value(),
-                base_url=self.sc.BASE_URL,
-                model=self.sc.MODEL_ID,
-                frequency_penalty=self.ac.FREQUENCY_PENALTY,
-                n=self.ac.N,
-                presence_penalty=self.ac.PRESENCE_PENALTY,
-                reasoning_effort=self.ac.REASONING_EFFORT,
+                prompt_file=self.analyst_config.PROMPT_FILE,
+                prompt_path=self.analyst_config.PROMPT_PATH,
+                api_key=self.sensitive_config.API_KEY.get_secret_value(),
+                base_url=self.sensitive_config.BASE_URL,
+                model=self.sensitive_config.MODEL_ID,
+                frequency_penalty=self.analyst_config.FREQUENCY_PENALTY,
+                n=self.analyst_config.N,
+                presence_penalty=self.analyst_config.PRESENCE_PENALTY,
+                reasoning_effort=self.analyst_config.REASONING_EFFORT,
                 response_format={"type": "json_schema"},
-                stream=self.ac.STREAM,
-                temperature=self.ac.TEMPERATURE,
-                top_p=self.ac.TOP_P,
-                user=self.ac.USER,
-                timeout=self.ac.TIMEOUT,
-                retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES,
+                stream=self.analyst_config.STREAM,
+                temperature=self.analyst_config.TEMPERATURE,
+                top_p=self.analyst_config.TOP_P,
+                user=self.analyst_config.USER,
+                timeout=self.analyst_config.TIMEOUT,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                max_retries=self.analyst_config.MAX_RETRIES,
             )
         except Exception as exc:
             raise McpError(
@@ -427,18 +432,21 @@ class AnalystAgent:
         total_length = 0
         upload_context = ""
         if state["obs_file_list"]:
+            access_key_id, secret_access_key = (
+                self.sensitive_config.obs_credentials()
+            )
             upload_str_list = await download_list_convert(
                 obs_file_list=state["obs_file_list"],
-                server_dir=self.ac.TEMP_DIR,
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.ac.OBS_SERVER,
-                bucket_name=self.ac.BUCKET_NAME,
-                part_size=self.ac.PART_SIZT,
-                task_num=self.ac.TASK_NUM,
-                max_retries=self.ac.MAX_RETRIES,
-                max_concurrency=self.ac.MAX_CONCURRENCY,
-                max_workers=self.ac.MAX_WORKERS,
+                server_dir=self.analyst_config.TEMP_DIR,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.analyst_config.OBS_SERVER,
+                bucket_name=self.analyst_config.BUCKET_NAME,
+                part_size=self.analyst_config.PART_SIZE,
+                task_num=self.analyst_config.TASK_NUM,
+                max_retries=self.analyst_config.MAX_RETRIES,
+                max_concurrency=self.analyst_config.MAX_CONCURRENCY,
+                max_workers=self.analyst_config.MAX_WORKERS,
             )
             upload_results = []
             for i, doc in enumerate(upload_str_list):
@@ -446,7 +454,10 @@ class AnalystAgent:
                     f"[user upload file {i+1} begin]\n"
                     f"{doc}\n[user upload file {i+1} end]"
                 )
-                if total_length + len(fragment) <= self.ac.MAX_TOKENS:
+                if (
+                    total_length + len(fragment)
+                    <= self.analyst_config.MAX_TOKENS
+                ):
                     upload_results.append(fragment)
                     total_length += len(fragment)
                 else:
@@ -454,19 +465,19 @@ class AnalystAgent:
             upload_context = "\n\n".join(upload_results)
         retrieve_response = await multi_retrieve(
             user_query=state["goal_description"],
-            retrieve_url=self.ac.RETRIEVE_URL,
-            repo_id_dict=self.ac.REPO_ID_DICT,
-            page_num=self.ac.PAGE_NUM,
-            filter_string=self.ac.FILTER_STRING,
-            scope=self.ac.SCOPE,
-            extra_repo_ids=self.ac.EXTRA_REPO_IDS,
-            rerank_url=self.ac.RERANK_URL,
-            rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
-            score_threshold=self.ac.SCORE_THRESHOLD,
-            top_n=self.ac.TOP_N,
-            timeout=self.ac.TIMEOUT,
-            retriable_codes=self.ac.RETRIABLE_CODES,
-            max_retries=self.ac.MAX_RETRIES,
+            retrieve_url=self.analyst_config.RETRIEVE_URL,
+            repo_id_dict=self.analyst_config.REPO_ID_DICT,
+            page_num=self.analyst_config.PAGE_NUM,
+            filter_string=self.analyst_config.FILTER_STRING,
+            scope=self.analyst_config.SCOPE,
+            extra_repo_ids=self.analyst_config.EXTRA_REPO_IDS,
+            rerank_url=self.analyst_config.RERANK_URL,
+            rerank_batch_size=self.analyst_config.RERANK_BATCH_SIZE,
+            score_threshold=self.analyst_config.SCORE_THRESHOLD,
+            top_n=self.analyst_config.TOP_N,
+            timeout=self.analyst_config.TIMEOUT,
+            retriable_codes=self.analyst_config.RETRIABLE_CODES,
+            max_retries=self.analyst_config.MAX_RETRIES,
         )
         retrieve_results = []
         for i, doc in enumerate(retrieve_response.get("doc_list", [])):
@@ -482,7 +493,7 @@ class AnalystAgent:
                 else doc.get("content", "")
             )
             fragment = f"{header}\n{body} [document {i+1} end]"
-            if total_length + len(fragment) <= self.ac.MAX_TOKENS:
+            if total_length + len(fragment) <= self.analyst_config.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
             else:
@@ -520,7 +531,7 @@ class AnalystAgent:
         if state.get("plan_feedback"):
             if state["obs_file_list"]:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE,
+                    self.analyst_config.PROMPT_FILE,
                     "user/analysis_retrieve_file_feedback",
                     {
                         "retrieve_results": state["method_context"][
@@ -536,7 +547,7 @@ class AnalystAgent:
                 )
             else:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE,
+                    self.analyst_config.PROMPT_FILE,
                     "user/analysis_retrieve_feedback",
                     {
                         "retrieve_results": state["method_context"][
@@ -550,7 +561,7 @@ class AnalystAgent:
         else:
             if state["obs_file_list"]:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE,
+                    self.analyst_config.PROMPT_FILE,
                     "user/analysis_retrieve_file",
                     {
                         "retrieve_results": state["method_context"][
@@ -564,7 +575,7 @@ class AnalystAgent:
                 )
             else:
                 user_query = get_prompt(
-                    self.ac.PROMPT_FILE,
+                    self.analyst_config.PROMPT_FILE,
                     "user/analysis_retrieve",
                     {
                         "retrieve_results": state["method_context"][
@@ -575,23 +586,23 @@ class AnalystAgent:
                 )
         phyto_response = await phyto_chat(
             user_query=user_query,
-            prompt_file=self.ac.PROMPT_FILE,
-            prompt_path=self.ac.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.ac.FREQUENCY_PENALTY,
-            n=self.ac.N,
-            presence_penalty=self.ac.PRESENCE_PENALTY,
-            reasoning_effort=self.ac.REASONING_EFFORT,
-            response_format=self.ac.RESPONSE_FORMAT,
-            stream=self.ac.STREAM,
-            temperature=self.ac.TEMPERATURE,
-            top_p=self.ac.TOP_P,
-            user=self.ac.USER,
-            timeout=self.ac.TIMEOUT,
-            retriable_codes=self.ac.RETRIABLE_CODES,
-            max_retries=self.ac.MAX_RETRIES,
+            prompt_file=self.analyst_config.PROMPT_FILE,
+            prompt_path=self.analyst_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.analyst_config.FREQUENCY_PENALTY,
+            n=self.analyst_config.N,
+            presence_penalty=self.analyst_config.PRESENCE_PENALTY,
+            reasoning_effort=self.analyst_config.REASONING_EFFORT,
+            response_format=self.analyst_config.RESPONSE_FORMAT,
+            stream=self.analyst_config.STREAM,
+            temperature=self.analyst_config.TEMPERATURE,
+            top_p=self.analyst_config.TOP_P,
+            user=self.analyst_config.USER,
+            timeout=self.analyst_config.TIMEOUT,
+            retriable_codes=self.analyst_config.RETRIABLE_CODES,
+            max_retries=self.analyst_config.MAX_RETRIES,
         )
         content = None
         if (
@@ -636,7 +647,7 @@ class AnalystAgent:
             A dictionary containing plan_feedback.
         """
         check_prompt = get_prompt(
-            self.ac.PROMPT_FILE,
+            self.analyst_config.PROMPT_FILE,
             "user/meta_step_check",
             {
                 "goal_description": state["goal_description"],
@@ -645,28 +656,28 @@ class AnalystAgent:
                 "current_plan": state["plan"],
             },
         )
-        max_retries = self.ac.MAX_RETRIES
+        max_retries = self.analyst_config.MAX_RETRIES
         current_retries = state.get("plan_retries", 0)
         try:
             phyto_response = await phyto_chat(
                 user_query=check_prompt,
-                prompt_file=self.ac.PROMPT_FILE,
-                prompt_path=self.ac.PROMPT_PATH,
-                api_key=self.sc.API_KEY.get_secret_value(),
-                base_url=self.sc.BASE_URL,
-                model=self.sc.MODEL_ID,
-                frequency_penalty=self.ac.FREQUENCY_PENALTY,
-                n=self.ac.N,
-                presence_penalty=self.ac.PRESENCE_PENALTY,
-                reasoning_effort=self.ac.REASONING_EFFORT,
+                prompt_file=self.analyst_config.PROMPT_FILE,
+                prompt_path=self.analyst_config.PROMPT_PATH,
+                api_key=self.sensitive_config.API_KEY.get_secret_value(),
+                base_url=self.sensitive_config.BASE_URL,
+                model=self.sensitive_config.MODEL_ID,
+                frequency_penalty=self.analyst_config.FREQUENCY_PENALTY,
+                n=self.analyst_config.N,
+                presence_penalty=self.analyst_config.PRESENCE_PENALTY,
+                reasoning_effort=self.analyst_config.REASONING_EFFORT,
                 response_format={"type": "json_object"},
-                stream=self.ac.STREAM,
-                temperature=self.ac.TEMPERATURE,
-                top_p=self.ac.TOP_P,
-                user=self.ac.USER,
-                timeout=self.ac.TIMEOUT,
-                retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES,
+                stream=self.analyst_config.STREAM,
+                temperature=self.analyst_config.TEMPERATURE,
+                top_p=self.analyst_config.TOP_P,
+                user=self.analyst_config.USER,
+                timeout=self.analyst_config.TIMEOUT,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                max_retries=self.analyst_config.MAX_RETRIES,
             )
             content = "{}"
             if (
@@ -718,27 +729,29 @@ class AnalystAgent:
             McpError: If parsing the tool extraction response fails.
         """
         tool_extract_prompt = get_prompt(
-            self.ac.PROMPT_FILE, "user/tool_extract", {"plan": state["plan"]}
+            self.analyst_config.PROMPT_FILE,
+            "user/tool_extract",
+            {"plan": state["plan"]},
         )
         phyto_response = await phyto_chat(
             user_query=tool_extract_prompt,
-            prompt_file=self.ac.PROMPT_FILE,
-            prompt_path=self.ac.PROMPT_PATH,
-            api_key=self.sc.API_KEY.get_secret_value(),
-            base_url=self.sc.BASE_URL,
-            model=self.sc.MODEL_ID,
-            frequency_penalty=self.ac.FREQUENCY_PENALTY,
-            n=self.ac.N,
-            presence_penalty=self.ac.PRESENCE_PENALTY,
-            reasoning_effort=self.ac.REASONING_EFFORT,
+            prompt_file=self.analyst_config.PROMPT_FILE,
+            prompt_path=self.analyst_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.analyst_config.FREQUENCY_PENALTY,
+            n=self.analyst_config.N,
+            presence_penalty=self.analyst_config.PRESENCE_PENALTY,
+            reasoning_effort=self.analyst_config.REASONING_EFFORT,
             response_format={"type": "json_object"},
-            stream=self.ac.STREAM,
-            temperature=self.ac.TEMPERATURE,
-            top_p=self.ac.TOP_P,
-            user=self.ac.USER,
-            timeout=self.ac.TIMEOUT,
-            retriable_codes=self.ac.RETRIABLE_CODES,
-            max_retries=self.ac.MAX_RETRIES,
+            stream=self.analyst_config.STREAM,
+            temperature=self.analyst_config.TEMPERATURE,
+            top_p=self.analyst_config.TOP_P,
+            user=self.analyst_config.USER,
+            timeout=self.analyst_config.TIMEOUT,
+            retriable_codes=self.analyst_config.RETRIABLE_CODES,
+            max_retries=self.analyst_config.MAX_RETRIES,
         )
         content = "{}"
         if (
@@ -783,19 +796,19 @@ class AnalystAgent:
             try:
                 tool_usage_info = await retrieve(
                     user_query=tool,
-                    retrieve_url=self.ac.RETRIEVE_URL,
-                    repo_id=self.ac.TOOL_REPO_ID,
-                    page_num=self.ac.TOOL_PAGE_NUM,
-                    page_size=self.ac.TOOL_PAGE_SIZE,
-                    filter_string=self.ac.FILTER_STRING,
-                    scope=self.ac.SCOPE,
-                    extra_repo_ids=self.ac.EXTRA_REPO_IDS,
-                    rerank_url=self.ac.RERANK_URL,
-                    rerank_batch_size=self.ac.RERANK_BATCH_SIZE,
-                    score_threshold=self.ac.SCORE_THRESHOLD,
-                    timeout=self.ac.TIMEOUT,
-                    retriable_codes=self.ac.RETRIABLE_CODES,
-                    max_retries=self.ac.MAX_RETRIES,
+                    retrieve_url=self.analyst_config.RETRIEVE_URL,
+                    repo_id=self.analyst_config.TOOL_REPO_ID,
+                    page_num=self.analyst_config.TOOL_PAGE_NUM,
+                    page_size=self.analyst_config.TOOL_PAGE_SIZE,
+                    filter_string=self.analyst_config.FILTER_STRING,
+                    scope=self.analyst_config.SCOPE,
+                    extra_repo_ids=self.analyst_config.EXTRA_REPO_IDS,
+                    rerank_url=self.analyst_config.RERANK_URL,
+                    rerank_batch_size=self.analyst_config.RERANK_BATCH_SIZE,
+                    score_threshold=self.analyst_config.SCORE_THRESHOLD,
+                    timeout=self.analyst_config.TIMEOUT,
+                    retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                    max_retries=self.analyst_config.MAX_RETRIES,
                 )
             except Exception:
                 tool_usage_info = {"doc_list": []}
@@ -827,10 +840,10 @@ class AnalystAgent:
         Raises:
             McpError: If task submission fails after all retries.
         """
-        timeout = self.ac.TIMEOUT
-        max_retries = self.ac.MAX_RETRIES
+        timeout = self.analyst_config.TIMEOUT
+        max_retries = self.analyst_config.MAX_RETRIES
         client_timeout = Timeout(timeout, connect=timeout)
-        analysis_url = self.ac.ANALYSIS_URL
+        analysis_url = self.analyst_config.ANALYSIS_URL
 
         raw_data_list = state.get("data_list", {})
         processed_data_list = {}
@@ -857,14 +870,17 @@ class AnalystAgent:
         f"### TOOL USAGE\n{tool_usages}"
 
         output_dir = state.get("output_dir")
-        if self.ac.CREATE_DIR:
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
+        if self.analyst_config.CREATE_DIR:
             output_dir = create_output_dir(
-                user_id=self.ac.USER_ID or str(uuid1()),
+                user_id=self.analyst_config.USER_ID or str(uuid1()),
                 task="analysis_agents_task",
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.ac.OBS_SERVER,
-                bucket_name=self.ac.BUCKET_NAME,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.analyst_config.OBS_SERVER,
+                bucket_name=self.analyst_config.BUCKET_NAME,
             )
 
         submit_payload = {
@@ -872,10 +888,10 @@ class AnalystAgent:
             "data_list": processed_data_list,
             "output_dir": output_dir,
             "meta": final_meta,
-            "execute_code": self.ac.EXECUTE_CODE,
-            "model_url": self.sc.CODER_URL,
-            "model_name": self.sc.CODER_MODEL,
-            "api_key": self.sc.CODER_API_KEY.get_secret_value(),
+            "execute_code": self.analyst_config.EXECUTE_CODE,
+            "model_url": self.sensitive_config.CODER_URL,
+            "model_name": self.sensitive_config.CODER_MODEL,
+            "api_key": self.sensitive_config.CODER_API_KEY.get_secret_value(),
         }
 
         json_file = Path(f"{uuid1()}.json")
@@ -885,17 +901,18 @@ class AnalystAgent:
 
             obs_meta_path = upload_analyst_agents_data(
                 analyst_agents_datapath=str(json_file),
-                access_key_id=self.sc.AccessKeyID.get_secret_value(),
-                secret_access_key=self.sc.SecretAccessKey.get_secret_value(),
-                obs_server=self.ac.OBS_SERVER,
-                bucket_name=self.ac.BUCKET_NAME,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                obs_server=self.analyst_config.OBS_SERVER,
+                bucket_name=self.analyst_config.BUCKET_NAME,
             )
         finally:
             if json_file.exists():
                 json_file.unlink()
 
         token = await get_token(
-            timeout=self.ac.TIMEOUT, region=self.ac.ANALYSIS_REGION
+            timeout=self.analyst_config.TIMEOUT,
+            region=self.analyst_config.ANALYSIS_REGION,
         )
         job_headers = {
             "Content-Type": "application/json",
@@ -903,14 +920,18 @@ class AnalystAgent:
         }
 
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
-        job_name = f"{self.ac.TASK_NAME.replace('_', '-')}-{time_stamp}"
-        compute_res = state.get("compute_resource", self.ac.COMPUTE_RESOURCE)
-        resource = self.ac.RESOURCE[compute_res]
+        job_name = (
+            f"{self.analyst_config.TASK_NAME.replace('_', '-')}-{time_stamp}"
+        )
+        compute_res = state.get(
+            "compute_resource", self.analyst_config.COMPUTE_RESOURCE
+        )
+        resource = self.analyst_config.RESOURCE[compute_res]
 
         job_data = {
             "name": job_name,
-            "timeout": self.ac.MAX_POLL,
-            "tool_id": self.ac.APP_ID[compute_res],
+            "timeout": self.analyst_config.MAX_POLL,
+            "tool_id": self.analyst_config.APP_ID[compute_res],
             "tool_type": "app",
             "tasks": [
                 {
@@ -970,7 +991,8 @@ class AnalystAgent:
                     if (
                         hasattr(e, "response")
                         and e.response is not None
-                        and e.response.status_code in self.ac.RETRIABLE_CODES
+                        and e.response.status_code
+                        in self.analyst_config.RETRIABLE_CODES
                         and attempt < max_retries
                     ):
                         wait_time = (2**attempt) + uniform(0, 1)
@@ -1017,16 +1039,16 @@ class AnalystAgent:
         Raises:
             McpError: If the task status request fails.
         """
-        await asyncio.sleep(self.ac.POLL_INTERVAL)
+        await asyncio.sleep(self.analyst_config.POLL_INTERVAL)
         task_id = state["task_id"]
         try:
             status_data = await task_status(
                 task_id,
-                analysis_url=self.ac.ANALYSIS_URL,
-                region=self.ac.ANALYSIS_REGION,
-                timeout=self.ac.TIMEOUT,
-                retriable_codes=self.ac.RETRIABLE_CODES,
-                max_retries=self.ac.MAX_RETRIES,
+                analysis_url=self.analyst_config.ANALYSIS_URL,
+                region=self.analyst_config.ANALYSIS_REGION,
+                timeout=self.analyst_config.TIMEOUT,
+                retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                max_retries=self.analyst_config.MAX_RETRIES,
             )
             current_status = status_data.get("status")
             return {"task_status": current_status}
@@ -1153,24 +1175,24 @@ class AnalystAgent:
         self,
         query: Optional[str],
         goal_description: Optional[str] = None,
-        user: str = ac.USER,
-        user_id: str = ac.USER_ID,
-        is_create_dir: bool = ac.CREATE_DIR,
-        output_dir: str = ac.OUTPUT_DIR,
-        execute_code: bool = ac.EXECUTE_CODE,
+        user: str = ANALYST_CONFIG.USER,
+        user_id: str = ANALYST_CONFIG.USER_ID,
+        is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
+        output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
+        execute_code: bool = ANALYST_CONFIG.EXECUTE_CODE,
         compute_resource: Literal[
             "small", "medium", "large"
-        ] = ac.COMPUTE_RESOURCE,
-        timeout: float = ac.TIMEOUT,
-        max_retries: int = ac.MAX_RETRIES,
-        reasoning_effort: Optional[str] = ac.REASONING_EFFORT,
-        frequency_penalty: float = ac.FREQUENCY_PENALTY,
-        presence_penalty: float = ac.PRESENCE_PENALTY,
-        n: int = ac.N,
-        stream: bool = ac.STREAM,
-        temperature: float = ac.TEMPERATURE,
-        top_p: float = ac.TOP_P,
-        prompt_file: str = ac.PROMPT_FILE,
+        ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
+        timeout: float = ANALYST_CONFIG.TIMEOUT,
+        max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
+        reasoning_effort: Optional[str] = ANALYST_CONFIG.REASONING_EFFORT,
+        frequency_penalty: float = ANALYST_CONFIG.FREQUENCY_PENALTY,
+        presence_penalty: float = ANALYST_CONFIG.PRESENCE_PENALTY,
+        n: int = ANALYST_CONFIG.N,
+        stream: bool = ANALYST_CONFIG.STREAM,
+        temperature: float = ANALYST_CONFIG.TEMPERATURE,
+        top_p: float = ANALYST_CONFIG.TOP_P,
+        prompt_file: str = ANALYST_CONFIG.PROMPT_FILE,
         preset_data_list: Optional[Any] = None,
         obs_file_list: List = [],
         preset_plan: Optional[str] = None,
@@ -1262,7 +1284,7 @@ def _analyst_config_with_overrides(
 ):
     """Build an AnalystConfig copy from compatibility wrapper arguments."""
     return copy_config_with_overrides(
-        ac,
+        ANALYST_CONFIG,
         kwargs,
         ANALYST_CONFIG_FIELD_MAP,
         fixed_updates={
@@ -1277,7 +1299,7 @@ def _analyst_config_with_overrides(
 def _sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
     return copy_sensitive_config_with_overrides(
-        sc,
+        SENSITIVE_CONFIG,
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,
@@ -1287,13 +1309,13 @@ def _sensitive_config_with_overrides(**kwargs: Any):
 async def submit(
     goal_description: str,
     data_list: Any,
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
+    user_id: str = ANALYST_CONFIG.USER_ID,
+    is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
+    output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
     meta: str = "",
     compute_resource: Literal[
         "small", "medium", "large"
-    ] = ac.COMPUTE_RESOURCE,
+    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
     enable_auto_select: bool = True,
     meta_meta: Optional[str] = None,
     **kwargs: Any,
@@ -1335,12 +1357,12 @@ async def submit(
 async def retrieve_plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
-    user_id: str = ac.USER_ID,
-    is_create_dir: bool = ac.CREATE_DIR,
-    output_dir: str = ac.OUTPUT_DIR,
+    user_id: str = ANALYST_CONFIG.USER_ID,
+    is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
+    output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
     compute_resource: Literal[
         "small", "medium", "large"
-    ] = ac.COMPUTE_RESOURCE,
+    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
     meta_meta: Optional[str] = None,
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
@@ -1384,13 +1406,13 @@ async def retrieve_plan_submit(
 
 async def wait_for_completion(
     task_id: str,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
-    poll_interval: float = ac.POLL_INTERVAL,
-    max_poll: float = ac.MAX_POLL,
+    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
+    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
+    timeout: float = ANALYST_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
+    poll_interval: float = ANALYST_CONFIG.POLL_INTERVAL,
+    max_poll: float = ANALYST_CONFIG.MAX_POLL,
 ) -> Dict[str, Any]:
     """Poll a submitted task until it reaches a terminal status."""
     start_time = time.time()
@@ -1427,11 +1449,11 @@ async def wait_for_completion(
 
 async def task_delete(
     task_id: str,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
+    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
+    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
+    timeout: float = ANALYST_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> str:
     """
     Deletes a specified task from the analysis platform.
@@ -1515,11 +1537,11 @@ async def task_delete(
 
 async def task_status(
     task_id: str,
-    analysis_url: str = ac.ANALYSIS_URL,
-    region: str = ac.ANALYSIS_REGION,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
+    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
+    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
+    timeout: float = ANALYST_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> dict:
     """
     Checks the execution status of a specified task.
@@ -1604,14 +1626,14 @@ async def task_status(
 
 async def task_log(
     task_id: str,
-    analysis_url: str = ac.ANALYSIS_URL,
+    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
     compute_resource: Literal[
         "small", "medium", "large"
-    ] = ac.COMPUTE_RESOURCE,
-    region: str = ac.ANALYSIS_REGION,
-    timeout: float = ac.TIMEOUT,
-    retriable_codes: List[int] = ac.RETRIABLE_CODES,
-    max_retries: int = ac.MAX_RETRIES,
+    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
+    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
+    timeout: float = ANALYST_CONFIG.TIMEOUT,
+    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> dict:
     """
     Retrieves the execution log for a specified task.
@@ -1696,10 +1718,10 @@ async def task_log(
 
 def upload_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
+    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
 ) -> str:
     """
     Uploads data to an Object Storage Service (OBS) bucket.
@@ -1754,10 +1776,10 @@ def upload_analyst_agents_data(
 
 def delete_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
+    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
 ) -> str:
     """
     Deletes data from an Object Storage Service (OBS) bucket.
@@ -1869,10 +1891,10 @@ def _get_data_list_cached(
 def create_output_dir(
     user_id: str,
     task: str,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    bucket_name: str = ac.BUCKET_NAME,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
+    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
 ) -> str:
     """Create a unique output directory for analysis tasks in Object Storage
         Service.
@@ -1955,15 +1977,15 @@ def create_output_dir(
 def download_obs_out(
     task_dir: str,
     obs_output_path: str,
-    download_path: str = ac.DOWNLOAD_PATH,
-    access_key_id: str = sc.AccessKeyID.get_secret_value(),
-    secret_access_key: str = sc.SecretAccessKey.get_secret_value(),
-    obs_server: str = ac.OBS_SERVER,
-    target_file_feature: List[str] = ac.TARGET_FILE_FEATURE,
-    bucket_name: str = ac.BUCKET_NAME,
-    marker: Optional[str] = ac.DOWNLOAD_MARKER,
-    max_keys: int = ac.DOWNLOAD_MAX_KEYS,
-    if_download_all: bool = ac.IF_DOWNLOAD_ALL,
+    download_path: str = ANALYST_CONFIG.DOWNLOAD_PATH,
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
+    target_file_feature: List[str] = ANALYST_CONFIG.TARGET_FILE_FEATURE,
+    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
+    marker: Optional[str] = ANALYST_CONFIG.DOWNLOAD_MARKER,
+    max_keys: int = ANALYST_CONFIG.DOWNLOAD_MAX_KEYS,
+    if_download_all: bool = ANALYST_CONFIG.IF_DOWNLOAD_ALL,
 ):
     """Download analysis results from Object Storage Service to local
         filesystem.
