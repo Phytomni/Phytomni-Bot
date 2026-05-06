@@ -14,9 +14,9 @@ digital design workflows for protein engineering applications.
 import operator
 from typing import (
     Annotated,
+    Any,
     Dict,
     List,
-    Any,
     Literal,
     Optional,
     TypedDict,
@@ -24,15 +24,18 @@ from typing import (
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
-from .utils import get_prompt
-from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
-from .analyst_agents import ANALYST_SECRET_FIELD_MAP
-from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
-from .analyst_agents import AnalystAgent, get_data_list, create_output_dir
+from .analyst_agents import (
+    ANALYST_CONFIG_FIELD_MAP,
+    ANALYST_SECRET_FIELD_MAP,
+    ANALYST_SENSITIVE_FIELD_MAP,
+    AnalystAgent,
+    create_output_dir,
+    get_data_list,
+)
 from .config.defaults import DigitalDesignConfig
 from .config.overrides import (
     copy_config_with_overrides,
@@ -40,6 +43,7 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .utils import get_prompt
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()

@@ -4,9 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Key builder for cache key generation using function signature inspection."""
 
+import hashlib
 import inspect
 import pickle
-import hashlib
 
 from .exceptions import CacheConfigError, SerializationError
 

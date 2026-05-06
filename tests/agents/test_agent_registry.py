@@ -6,9 +6,11 @@
 
 from pydantic import BaseModel, SecretStr
 
-from mcp_server_phytomni.agent_registry import agent_fingerprint_values
-from mcp_server_phytomni.agent_registry import clear_agent_registry
-from mcp_server_phytomni.agent_registry import get_cached_agent
+from mcp_server_phytomni.agent_registry import (
+    agent_fingerprint_values,
+    clear_agent_registry,
+    get_cached_agent,
+)
 
 
 class DemoConfig(BaseModel):

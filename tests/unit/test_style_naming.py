@@ -6,6 +6,7 @@
 
 import ast
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -84,3 +85,16 @@ def test_python_files_use_standard_header_and_module_docstring():
                 failures.append(f"{relative_path}: long module docstring")
 
     assert not failures
+
+
+def test_ruff_enforces_import_grouping_and_sorting():
+    root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    ruff_lint = pyproject["tool"]["ruff"]["lint"]
+    assert "I" in ruff_lint["extend-select"]
+    assert pyproject["tool"]["ruff"]["lint"]["isort"] == {
+        "known-first-party": ["mcp_server_phytomni"]
+    }

@@ -18,7 +18,7 @@ from warnings import warn
 from httpx import AsyncClient, HTTPError, Timeout
 from markitdown import MarkItDown
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
+from mcp.types import INTERNAL_ERROR, ErrorData
 from obs import ObsClient
 from yaml import safe_load
 
@@ -162,13 +162,9 @@ def _load_template_cached(
                 )
             current = current[part]
         return current
-    else:
-        if isinstance(data, dict) and len(data) == 1:
-            return next(iter(data.values()))
-        else:
-            raise ValueError(
-                "Must specify template_str for multi-level templates"
-            )
+    if isinstance(data, dict) and len(data) == 1:
+        return next(iter(data.values()))
+    raise ValueError("Must specify template_str for multi-level templates")
 
 
 def load_json_file(file_path: str) -> Any:

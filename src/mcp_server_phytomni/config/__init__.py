@@ -4,9 +4,15 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Configuration exports for non-secret defaults and sensitive settings."""
 
-from .defaults import AnalystConfig, ChatConfig, DataConfig
-from .defaults import DeepGenomeConfig, InSilicoResearchConfig
-from .defaults import KnowledgeConfig, ReviewConfig
+from .defaults import (
+    AnalystConfig,
+    ChatConfig,
+    DataConfig,
+    DeepGenomeConfig,
+    InSilicoResearchConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
 from .settings import SensitiveConfig
 
 __all__ = [

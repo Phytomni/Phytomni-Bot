@@ -59,8 +59,11 @@ README-style prose may wrap the same copyright text across lines.
 
 ## Imports
 
-- Group imports as standard library, third-party packages, then local package
-  imports.
+- Group imports into exactly three top-level sections: Python standard library
+  modules, third-party packages, then local package imports.
+- Separate import sections with one blank line.
+- Sort imports alphabetically inside each section. Let Ruff's `I` rules keep
+  this mechanical ordering consistent.
 - Keep imports at module top level unless a local import is needed to avoid a
   real optional dependency, circular import, or expensive startup side effect.
 - Prefer explicit imports over broad module imports when it improves type

@@ -12,13 +12,20 @@ better performance.
 
 import asyncio
 from random import uniform
-from typing import Any, Dict, List, Optional, Union, TypedDict, Literal
+from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 from uuid import uuid1
 
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
@@ -31,9 +38,6 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt, get_token
-
-from langgraph.graph import StateGraph, END, START
-from langgraph.checkpoint.memory import MemorySaver
 
 DATA_CONFIG = DataConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()

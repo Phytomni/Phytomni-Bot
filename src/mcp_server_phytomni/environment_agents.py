@@ -6,15 +6,13 @@
 """Environment agents for regional vegetation index analysis workflows."""
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import uuid1
-from typing import Optional
 
-from .analyst_agents import get_data_list, create_output_dir, submit
+from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
-
 from .utils import get_prompt, load_text_file
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()

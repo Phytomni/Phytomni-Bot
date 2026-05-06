@@ -9,11 +9,18 @@ from typing import Any
 from .analyst_agents import retrieve_plan_submit
 from .brief_gene_agents import brief_gene_function
 from .chat_agents import phyto_chat_with_follow
-from .config.defaults import AnalystConfig, BriefGeneConfig, ChatConfig
-from .config.defaults import DataConfig, DeepGenomeConfig
-from .config.defaults import DigitalDesignConfig, GeneNetworkConfig
-from .config.defaults import InSilicoResearchConfig, KnowledgeConfig
-from .config.defaults import ReviewConfig
+from .config.defaults import (
+    AnalystConfig,
+    BriefGeneConfig,
+    ChatConfig,
+    DataConfig,
+    DeepGenomeConfig,
+    DigitalDesignConfig,
+    GeneNetworkConfig,
+    InSilicoResearchConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
 from .config.settings import SensitiveConfig
 from .data_agents import rewrite_nl2sql
 from .deep_genome_agents import gene_function

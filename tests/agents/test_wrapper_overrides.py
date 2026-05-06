@@ -11,9 +11,11 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni import digital_design_agents
-from mcp_server_phytomni import gene_network_agents
-from mcp_server_phytomni import in_silico_research_agents
+from mcp_server_phytomni import (
+    digital_design_agents,
+    gene_network_agents,
+    in_silico_research_agents,
+)
 
 pytestmark = pytest.mark.agent
 

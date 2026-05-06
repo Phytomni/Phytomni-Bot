@@ -66,7 +66,10 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-extend-select = ["N"]
+extend-select = ["I", "N"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mcp_server_phytomni"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -125,9 +128,6 @@ disable = [
     "import-outside-toplevel",
     "missing-function-docstring",
     "missing-timeout",
-    "no-else-return",
-    "pointless-statement",
-    "raise-missing-from",
     "too-few-public-methods",
     "too-many-arguments",
     "too-many-boolean-expressions",
@@ -140,8 +140,5 @@ disable = [
     "too-many-public-methods",
     "too-many-return-statements",
     "too-many-statements",
-    "ungrouped-imports",
     "unused-argument",
-    "unspecified-encoding",
-    "wrong-import-order",
 ]

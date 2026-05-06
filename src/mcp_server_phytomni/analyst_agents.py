@@ -7,21 +7,28 @@
 
 import asyncio
 import datetime
-import re
 import json
+import re
 import time
 from pathlib import Path
 from random import uniform
 from traceback import format_exc
-from typing import Any, List, Literal, Dict, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 from uuid import uuid1
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
-from obs import GetObjectHeader, PutObjectHeader, ObsClient
-from langgraph.graph import StateGraph, START
+
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
+from obs import GetObjectHeader, ObsClient, PutObjectHeader
+
 from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import AnalystConfig
@@ -30,9 +37,9 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .func_cache import func_cache
 from .knowledge_agents import multi_retrieve, retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
-from .func_cache import func_cache
 from .utils import (
     download_list_convert,
     file_cache_fingerprint,
@@ -257,53 +264,52 @@ class AnalystAgent:
                 "data_list": state["data_list"],
                 "plan": state.get("plan", None),
             }
+        parse_prompt = get_prompt(
+            self.analyst_config.PROMPT_FILE,
+            "user/split_query",
+            {"user_query": state["query"]},
+        )
+        phyto_response = await phyto_chat(
+            user_query=parse_prompt,
+            prompt_file=self.analyst_config.PROMPT_FILE,
+            prompt_path=self.analyst_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            response_format={"type": "json_schema"},
+            timeout=self.analyst_config.TIMEOUT,
+            retriable_codes=self.analyst_config.RETRIABLE_CODES,
+            max_retries=self.analyst_config.MAX_RETRIES,
+        )
+        content = "{}"
+        if (
+            phyto_response
+            and phyto_response.get("choices")
+            and len(phyto_response["choices"]) > 0
+            and phyto_response["choices"][0].get("message")
+            and phyto_response["choices"][0]["message"].get("content")
+        ):
+            content = phyto_response["choices"][0]["message"]["content"]
+        pattern = r"```json(.*?)```"
+        match = re.search(pattern, content, re.DOTALL)
+        if match:
+            json_string = match.group(1).strip()
+            result = json.loads(json_string)
         else:
-            parse_prompt = get_prompt(
-                self.analyst_config.PROMPT_FILE,
-                "user/split_query",
-                {"user_query": state["query"]},
-            )
-            phyto_response = await phyto_chat(
-                user_query=parse_prompt,
-                prompt_file=self.analyst_config.PROMPT_FILE,
-                prompt_path=self.analyst_config.PROMPT_PATH,
-                api_key=self.sensitive_config.API_KEY.get_secret_value(),
-                base_url=self.sensitive_config.BASE_URL,
-                model=self.sensitive_config.MODEL_ID,
-                response_format={"type": "json_schema"},
-                timeout=self.analyst_config.TIMEOUT,
-                retriable_codes=self.analyst_config.RETRIABLE_CODES,
-                max_retries=self.analyst_config.MAX_RETRIES,
-            )
-            content = "{}"
-            if (
-                phyto_response
-                and phyto_response.get("choices")
-                and len(phyto_response["choices"]) > 0
-                and phyto_response["choices"][0].get("message")
-                and phyto_response["choices"][0]["message"].get("content")
-            ):
-                content = phyto_response["choices"][0]["message"]["content"]
-            pattern = r"```json(.*?)```"
-            match = re.search(pattern, content, re.DOTALL)
-            if match:
-                json_string = match.group(1).strip()
-                result = json.loads(json_string)
-            else:
-                result = json.loads(content)
-            return {
-                "goal_description": (
-                    result["goal_description"]
-                    if result["goal_description"]
-                    else None
-                ),
-                "data_list": (
-                    json.loads(result["data_list"])
-                    if result["data_list"]
-                    else None
-                ),
-                "plan": result["plan"] if result["plan"] else "",
-            }
+            result = json.loads(content)
+        return {
+            "goal_description": (
+                result["goal_description"]
+                if result["goal_description"]
+                else None
+            ),
+            "data_list": (
+                json.loads(result["data_list"])
+                if result["data_list"]
+                else None
+            ),
+            "plan": result["plan"] if result["plan"] else "",
+        }
 
     async def data_select_node(self, state: AnalystAgentsState):
         """Select appropriate data files from the available database.
@@ -716,8 +722,7 @@ class AnalystAgent:
         print("==========================================")
         if decision == "APPROVED" or current_retries >= max_retries:
             return {"plan_feedback": "APPROVED"}
-        else:
-            return {"plan_feedback": feedback}
+        return {"plan_feedback": feedback}
 
     async def tool_extract_node(self, state: AnalystAgentsState) -> dict:
         """Extract required bioinformatics tools from the analysis plan.
@@ -873,8 +878,9 @@ class AnalystAgent:
             "$output_dir)."
         )
 
-        final_meta = f"### EXECUTION PLAN\n{plan}\n\n"
-        f"### TOOL USAGE\n{tool_usages}"
+        final_meta = (
+            f"### EXECUTION PLAN\n{plan}\n\n" f"### TOOL USAGE\n{tool_usages}"
+        )
 
         output_dir = state.get("output_dir")
         access_key_id, secret_access_key = (
@@ -1065,7 +1071,7 @@ class AnalystAgent:
                     code=INTERNAL_ERROR,
                     message=f"Task status request failed: {str(exc)}",
                 )
-            )
+            ) from exc
 
     def route_after_extract(
         self, state: AnalystAgentsState
@@ -1089,8 +1095,7 @@ class AnalystAgent:
             return "data_select_node"
         if state.get("plan"):
             return "tool_extract_node"
-        else:
-            return "method_retrieve_node"
+        return "method_retrieve_node"
 
     def route_after_data_select(
         self, state: AnalystAgentsState

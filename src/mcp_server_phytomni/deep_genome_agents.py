@@ -10,21 +10,24 @@ import operator
 from collections import deque
 from json import loads
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TypedDict, Annotated
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 from uuid import uuid1
-import requests
 
+import requests
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
-from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
-from .analyst_agents import ANALYST_SECRET_FIELD_MAP
-from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
-from .analyst_agents import create_output_dir, download_obs_out
-from .analyst_agents import get_data_list
-from .analyst_agents import AnalystAgent
+from .analyst_agents import (
+    ANALYST_CONFIG_FIELD_MAP,
+    ANALYST_SECRET_FIELD_MAP,
+    ANALYST_SENSITIVE_FIELD_MAP,
+    AnalystAgent,
+    create_output_dir,
+    download_obs_out,
+    get_data_list,
+)
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.overrides import (
@@ -633,12 +636,11 @@ class DeepGenomeAgents:
         use_data = state.get("config_params", {}).get("use_data_agent", True)
         if use_analyst and use_data:
             return ["knowledge_node", "data_node", "prepare_tasks_node"]
-        elif use_analyst and not use_data:
+        if use_analyst and not use_data:
             return ["knowledge_node", "prepare_tasks_node"]
-        elif use_data and not use_analyst:
+        if use_data and not use_analyst:
             return ["knowledge_node", "data_node"]
-        else:
-            return ["knowledge_node"]
+        return ["knowledge_node"]
 
     def route_after_knowledge(self, state: DeepGenomeState):
         """Determine path after knowledge_node completes.
@@ -653,8 +655,7 @@ class DeepGenomeAgents:
         use_data = state.get("config_params", {}).get("use_data_agent", True)
         if use_data:
             return "gene_annotation_node"
-        else:
-            return "gene_summary_node"
+        return "gene_summary_node"
 
     def route_after_gene_summary(self, state: DeepGenomeState):
         """Determine path after gene_summary_node completes.
@@ -671,8 +672,7 @@ class DeepGenomeAgents:
         )
         if use_analyst:
             return "experiment_node"
-        else:
-            return "introduction_node"
+        return "introduction_node"
 
     def route_after_part1(self, state: DeepGenomeState):
         """Determine path after part1_node completes.
@@ -692,8 +692,7 @@ class DeepGenomeAgents:
         )
         if use_analyst:
             return "experiment_node"
-        else:
-            return "introduction_node"
+        return "introduction_node"
 
     def route_after_synthesize(self, state: DeepGenomeState):
         """Determine path after synthesize_node completes.
@@ -708,8 +707,7 @@ class DeepGenomeAgents:
         use_data = state.get("config_params", {}).get("use_data_agent", True)
         if use_data:
             return "experiment_node"
-        else:
-            return "introduction_node"
+        return "introduction_node"
 
     def route_analyst_tasks(self, state: DeepGenomeState):
         """Dispatch analysis tasks in parallel using Send API.
@@ -1697,8 +1695,7 @@ class DeepGenomeAgents:
         }
         if analysis_type in medium_compute_types:
             return "medium"
-        else:
-            return "small"
+        return "small"
 
     async def gene_symbol(
         self,

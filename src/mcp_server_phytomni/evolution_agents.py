@@ -9,15 +9,13 @@ from json import loads
 from typing import Any, Dict, List, Optional
 from uuid import uuid1
 
+import requests
 
-from .analyst_agents import create_output_dir
-from .analyst_agents import get_data_list
-from .analyst_agents import submit
+from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .utils import get_prompt, get_token
-import requests
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -65,6 +63,8 @@ async def evo_test_analysis(
     top_p: float = DEEP_GENOME_CONFIG.TOP_P,
     user: str = DEEP_GENOME_CONFIG.USER,
 ) -> dict:
+    """Run an evolution analysis workflow for a target gene."""
+
     async def find_spa_taxid(spa_names):
 
         result = []

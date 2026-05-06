@@ -13,10 +13,9 @@ from json import loads
 from random import uniform
 from typing import Any, Dict, List, Optional, Union
 
-from httpx import ConnectError, HTTPStatusError
-from httpx import TimeoutException
+from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
+from mcp.types import INTERNAL_ERROR, ErrorData
 from openai import AsyncOpenAI
 
 from .config.defaults import ChatConfig

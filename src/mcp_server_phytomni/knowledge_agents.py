@@ -9,17 +9,21 @@ the retrieved knowledge.
 """
 
 import asyncio
-from random import uniform
 from json import loads
-from typing import List, Dict, Any, Optional, Literal, TypedDict
+from random import uniform
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from httpx import AsyncClient, ConnectError, HTTPStatusError
-from httpx import Timeout, TimeoutException
-from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, INTERNAL_ERROR
-
-from langgraph.graph import StateGraph, END, START
+from httpx import (
+    AsyncClient,
+    ConnectError,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+)
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
@@ -605,8 +609,7 @@ class KnowledgeAgent:
 
         if not is_generate:
             return final_state["retrieved_docs"]
-        else:
-            return final_state["final_response"]
+        return final_state["final_response"]
 
 
 @func_cache(

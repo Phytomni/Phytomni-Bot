@@ -4,12 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """SQLite-based cache storage with WAL mode for concurrency."""
 
+import json
+import logging
+import os
 import sqlite3
 import threading
 import time
-import json
-import os
-import logging
 
 from .exceptions import StorageError
 

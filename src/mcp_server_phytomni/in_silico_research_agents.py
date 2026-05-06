@@ -11,20 +11,22 @@ LangGraph's parallel execution capabilities.
 """
 
 from json import loads
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
+from .analyst_agents import (
+    ANALYST_CONFIG_FIELD_MAP,
+    ANALYST_SECRET_FIELD_MAP,
+    ANALYST_SENSITIVE_FIELD_MAP,
+    AnalystAgent,
+    create_output_dir,
+)
 from .chat_agents import phyto_chat
-from .utils import get_prompt, download_list_convert
-from .analyst_agents import ANALYST_CONFIG_FIELD_MAP
-from .analyst_agents import ANALYST_SECRET_FIELD_MAP
-from .analyst_agents import ANALYST_SENSITIVE_FIELD_MAP
-from .analyst_agents import AnalystAgent, create_output_dir
 from .config.defaults import InSilicoResearchConfig
 from .config.overrides import (
     copy_config_with_overrides,
@@ -32,6 +34,7 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .utils import download_list_convert, get_prompt
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
