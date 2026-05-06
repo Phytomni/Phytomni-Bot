@@ -6,32 +6,26 @@
 """LangGraph agents for plant gene network analysis workflows."""
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict
-from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
 
-from .agent_registry import agent_fingerprint_values, get_cached_agent
+from .analysis_workflow_helpers import (
+    AnalysisAgentCacheSpec,
+    capture_dispatched_analysis,
+    get_configured_analysis_agent,
+    route_analysis_tasks,
+    run_analysis_graph,
+    submit_analyst_analysis,
+)
 from .analyst_agents import (
     ANALYST_CONFIG_FIELD_MAP,
-    ANALYST_SECRET_FIELD_MAP,
-    ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
-    create_output_dir,
     get_data_list,
 )
 from .config.defaults import GeneNetworkConfig
-from .config.overrides import (
-    copy_config_with_overrides,
-    copy_sensitive_config_with_overrides,
-)
 from .config.settings import SensitiveConfig
-from .langgraph_runner import (
-    ainvoke_graph,
-    capture_workflow_boundary,
-    ensure_checkpointer,
-)
+from .langgraph_runner import ensure_checkpointer
 from .utils import get_prompt
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
@@ -150,20 +144,12 @@ class GeneNetworkAgents:
 
     def route_network_tasks(self, state: GeneNetworkState):
         """Dispatch network analysis tasks in parallel using Send API."""
-        tasks = state.get("network_tasks", [])
-        return [
-            Send(
-                "network_node",
-                {
-                    "task_index": i,
-                    "species": state["species"],
-                    "to_id": state["to_id"],
-                    "output_dir": state.get("output_dir"),
-                    **task,
-                },
-            )
-            for i, task in enumerate(tasks)
-        ]
+        return route_analysis_tasks(
+            "network_node",
+            "to_id",
+            "network_tasks",
+            state,
+        )
 
     async def _dispatch_and_wait_analysis(
         self,
@@ -189,43 +175,18 @@ class GeneNetworkAgents:
             to_id,
         )
 
-        # Determine compute resource level
-        compute_resource = self._get_compute_resource(analysis_type)
-
-        # Get output directory
-        if not output_dir:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
-            output_dir = create_output_dir(
-                user_id=self.gene_network_config.USER_ID or str(uuid1()),
-                task=f"{analysis_type}_task",
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.gene_network_config.OBS_SERVER,
-                bucket_name=self.gene_network_config.BUCKET_NAME,
-            )
-
-        print(f"  → Submitting {analysis_type} task via AnalystAgent...")
-
-        # Submit task using AnalystAgent
-        result = await self.analyst_agent.arun(
-            query=None,
-            goal_description=goal_description,
-            preset_data_list=data_list,
-            preset_plan=meta,  # Pass meta as predefined plan
-            output_dir=output_dir,
-            compute_resource=compute_resource,
-            is_auto_select=False,  # Data already preset via data_list
-            is_polling=False,  # Wait for task completion
-            thread_id=f"{to_id}_{analysis_type}_{uuid1()}",
+        return await submit_analyst_analysis(
+            self.analyst_agent,
+            self.gene_network_config,
+            self.sensitive_config,
+            {
+                "analysis_type": analysis_type,
+                "target_id": to_id,
+                "output_dir": output_dir,
+                "prompt_parts": (goal_description, meta, data_list),
+                "compute_resource": self._get_compute_resource(analysis_type),
+            },
         )
-
-        task_id = result.get("task_id")
-        print(f"=>{analysis_type} task completed (task_id: {task_id})")
-
-        # return {"task_id": task_id, "output_dir": result.get("output_dir")}
-        return {"network_task": result}
 
     def _analysis_prompt_parts(
         self,
@@ -278,39 +239,13 @@ class GeneNetworkAgents:
         )
         print(species)
 
-        async def run_task() -> dict[str, Any]:
-            """Dispatch network analysis and return state updates."""
-            result = await self._dispatch_and_wait_analysis(
-                analysis_type=analysis_type,
-                species=species,
-                to_id=to_id,
-                output_dir=state.get("output_dir"),
-            )
-            # Update task_id for the corresponding task
-            task_key = analysis_type.replace("_analysis", "")
-            existing_task_ids: Dict[str, str] = state.get("task_ids", {})
-            raw_task_result = result.get("network_task", {})
-            task_result: Dict[str, Any] = (
-                raw_task_result if isinstance(raw_task_result, dict) else {}
-            )
-            task_id = task_result.get("task_id")
-            if task_id is not None:
-                existing_task_ids[task_key] = str(task_id)
-            return {
-                "task_ids": existing_task_ids,
-                "completed_count": 1,
-                "network_task": task_result,
-            }
-
-        def failure_state(exc: Exception) -> dict[str, Any]:
-            """Preserve partial task progress when dispatch fails."""
-            return {
-                "task_ids": state.get("task_ids", {}),
-                "completed_count": 1,
-                "error": str(exc),
-            }
-
-        return await capture_workflow_boundary(run_task, failure_state)
+        return await capture_dispatched_analysis(
+            state,
+            analysis_type,
+            "to_id",
+            self._dispatch_and_wait_analysis,
+            ("network_task", None),
+        )
 
     async def arun(
         self,
@@ -330,28 +265,13 @@ class GeneNetworkAgents:
         Returns:
             Dict with task_ids on success, or error on failure.
         """
-        initial_state: Dict[str, Any] = {
-            "species": species,
-            "to_id": to_id,
-            "user_id": kwargs.get("user_id"),
-            "batch": kwargs.get("batch", False),
-            "output_dir": kwargs.get("output_dir"),
-            "network_task": {},
-            "network_tasks": [],
-            "task_ids": {},
-            "completed_count": 0,
-            "error": None,
-        }
-
-        result = await ainvoke_graph(
+        return await run_analysis_graph(
             self.app,
-            initial_state,
-            thread_id=kwargs.get("thread_id"),
+            {"species": species, "to_id": to_id},
+            ("network_task", "network_tasks"),
+            kwargs,
+            ("network_task", "error"),
         )
-        return {
-            "network_task": result.get("network_task"),
-            "error": result.get("error"),
-        }
 
 
 async def network_analysis(
@@ -362,27 +282,19 @@ async def network_analysis(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph gene network agent."""
-    gene_network_config = copy_config_with_overrides(
-        GENE_NETWORK_CONFIG,
-        kwargs,
-        GENE_NETWORK_CONFIG_FIELD_MAP,
-        fixed_updates={"USER_ID": user_id},
-    )
-    sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
-        kwargs,
-        field_map=ANALYST_SENSITIVE_FIELD_MAP,
-        secret_field_map=ANALYST_SECRET_FIELD_MAP,
-    )
-    agent = get_cached_agent(
-        "GeneNetworkAgents",
-        lambda: GeneNetworkAgents(
-            gene_network_config=gene_network_config,
-            sensitive_config=sensitive_config,
+    agent = get_configured_analysis_agent(
+        AnalysisAgentCacheSpec(
+            "GeneNetworkAgents",
+            "gene_network_config",
+            GENE_NETWORK_CONFIG,
+            GENE_NETWORK_CONFIG_FIELD_MAP,
+            user_id,
         ),
-        agent_fingerprint_values(
-            gene_network_config=gene_network_config,
-            sensitive_config=sensitive_config,
+        kwargs,
+        SENSITIVE_CONFIG,
+        lambda config, sensitive: GeneNetworkAgents(
+            gene_network_config=config,
+            sensitive_config=sensitive,
         ),
     )
     return await agent.arun(
