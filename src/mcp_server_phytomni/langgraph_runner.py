@@ -35,6 +35,8 @@ SECRET_FIELD_NAMES = frozenset(
 )
 
 
+# Protocol surface is intentionally the single LangGraph async method we use.
+# pylint: disable-next=too-few-public-methods
 class AsyncGraph(Protocol[ResultT_co]):
     """Protocol for the async subset used from compiled LangGraph apps."""
 

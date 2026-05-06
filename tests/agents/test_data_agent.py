@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for the DataAgent wrapper."""
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring, too-few-public-methods
 
 import pytest
 

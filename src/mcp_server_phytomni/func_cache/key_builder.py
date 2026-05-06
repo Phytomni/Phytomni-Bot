@@ -13,7 +13,8 @@ from .exceptions import CacheConfigError, SerializationError
 PICKLE_PROTOCOL = 5
 
 
-class KeyBuilder:
+# Single-purpose cache key builder; public surface is intentionally build_key.
+class KeyBuilder:  # pylint: disable=too-few-public-methods
     """Builds deterministic cache keys from function arguments.
 
     This class inspects a function's signature and generates a SHA256 hash

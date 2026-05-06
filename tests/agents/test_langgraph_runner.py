@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for shared LangGraph runtime helpers."""
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring, too-few-public-methods
 
 from pathlib import Path
 

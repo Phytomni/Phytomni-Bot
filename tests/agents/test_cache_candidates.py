@@ -5,6 +5,7 @@
 """Tests for first-wave low-risk cache integration points."""
 
 # pylint: disable=missing-function-docstring, protected-access
+# pylint: disable=too-few-public-methods
 
 import json
 from types import SimpleNamespace
