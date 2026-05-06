@@ -122,6 +122,102 @@ SPECIES_CODE_MAP = {
 dgc = DeepGenomeConfig()
 sc = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
+GENE_LOOKUP_CACHE_TTL = 300
+
+
+def _post_bi_sql(
+    bi_url: str,
+    sql_headers: Dict[str, str],
+    sql: str,
+) -> Dict[str, Any]:
+    """Run one BI SQL query and return the JSON payload."""
+    return requests.post(
+        url=bi_url,
+        json={"sql": sql, "returnType": "json"},
+        headers=sql_headers,
+    ).json()
+
+
+@func_cache(
+    key_params=["bi_url", "species_code", "gene_id"],
+    ttl=GENE_LOOKUP_CACHE_TTL,
+    exclude_params=["sql_headers"],
+)
+async def _cached_gene_symbol_lookup(
+    bi_url: str,
+    sql_headers: Dict[str, str],
+    species_code: str,
+    gene_id: str,
+) -> List[str]:
+    """Retrieve and cache gene symbols for one species/gene pair."""
+    sql = (
+        "SELECT * FROM id_table WHERE gene_id = "
+        f"'{gene_id}' AND species_code = '{species_code}'"
+    )
+    response = await asyncio.to_thread(
+        _post_bi_sql,
+        bi_url,
+        sql_headers,
+        sql,
+    )
+    gene_symbol_list: List[str] = []
+    if response["data"][0]["symbol"] is not None:
+        cell_raw_value = response["data"][0]["symbol"]
+        if "|" in cell_raw_value:
+            gene_symbol_list.extend(set(cell_raw_value.split("|")))
+        elif "," in cell_raw_value:
+            gene_symbol_list.extend(set(cell_raw_value.split(",")))
+        else:
+            gene_symbol_list.append(cell_raw_value)
+        return gene_symbol_list
+    return []
+
+
+@func_cache(
+    key_params=["bi_url", "species_code", "gene_id"],
+    ttl=GENE_LOOKUP_CACHE_TTL,
+    exclude_params=["sql_headers"],
+)
+async def _cached_gene_annotation_lookup(
+    bi_url: str,
+    sql_headers: Dict[str, str],
+    species_code: str,
+    gene_id: str,
+) -> Dict[str, Any]:
+    """Retrieve and cache gene annotations for one species/gene pair."""
+    sql_list = (
+        "SELECT description FROM annotation_gene_description "
+        f"WHERE gene_id = '{gene_id}' "
+        f"AND species_code = '{species_code}'",
+        "SELECT go_id, go_name FROM annotation_gene_ontology WHERE "
+        f"gene_id = '{gene_id}' "
+        f"AND species_code = '{species_code}'",
+        "SELECT interpro_id, interpro_name "
+        "FROM annotation_gene_interpro "
+        f"WHERE gene_id = '{gene_id}' "
+        f"AND species_code = '{species_code}'",
+        "SELECT mapman, mapman_description "
+        "FROM annotation_gene_mapman "
+        f"WHERE gene_id = '{gene_id}' "
+        f"AND species_code = '{species_code}'",
+    )
+    responses = await asyncio.gather(
+        *(
+            asyncio.to_thread(_post_bi_sql, bi_url, sql_headers, sql)
+            for sql in sql_list
+        )
+    )
+    gene_anno_dict: Dict[str, Any] = {}
+    if responses[0]["data"]:
+        gene_anno_dict.update({"description": responses[0]["data"]})
+    if responses[1]["data"]:
+        gene_anno_dict.update({"go": responses[1]["data"]})
+    if responses[2]["data"]:
+        gene_anno_dict.update({"interpro": responses[2]["data"]})
+    if responses[3]["data"]:
+        gene_anno_dict.update({"mapman": responses[3]["data"]})
+    return gene_anno_dict
+
 
 DEEP_GENOME_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
@@ -1649,26 +1745,12 @@ class DeepGenomeAgents:
         """
 
         async def get_gene_symbol() -> List[str]:
-            sql = (
-                "SELECT * FROM id_table WHERE gene_id = "
-                f"'{gene_id}' AND species_code = '{species_code}'"
+            return await _cached_gene_symbol_lookup(
+                bi_url=self.dgc.BI_URL,
+                sql_headers=self._sql_headers,
+                species_code=species_code,
+                gene_id=gene_id,
             )
-            payload = {"sql": sql, "returnType": "json"}
-            gene_symbol_response = requests.post(
-                url=self.dgc.BI_URL, json=payload, headers=self._sql_headers
-            ).json()
-            gene_symbol_list: List[str] = []
-            if gene_symbol_response["data"][0]["symbol"] is not None:
-                cell_raw_value = gene_symbol_response["data"][0]["symbol"]
-                if "|" in cell_raw_value:
-                    gene_symbol_list.extend(set(cell_raw_value.split("|")))
-                elif "," in cell_raw_value:
-                    gene_symbol_list.extend(set(cell_raw_value.split(",")))
-                else:
-                    gene_symbol_list.append(cell_raw_value)
-                return gene_symbol_list
-            else:
-                return []
 
         if semaphore is not None:
             async with semaphore:
@@ -1683,64 +1765,12 @@ class DeepGenomeAgents:
         semaphore: Optional[asyncio.Semaphore] = None,
     ):
         async def get_gene_annotation() -> Dict:
-            sql_list = (
-                "SELECT description FROM annotation_gene_description "
-                f"WHERE gene_id = '{gene_id}' "
-                f"AND species_code = '{species_code}'",
-                "SELECT go_id, go_name FROM annotation_gene_ontology WHERE "
-                f"gene_id = '{gene_id}' "
-                f"AND species_code = '{species_code}'",
-                "SELECT interpro_id, interpro_name "
-                "FROM annotation_gene_interpro "
-                f"WHERE gene_id = '{gene_id}' "
-                f"AND species_code = '{species_code}'",
-                "SELECT mapman, mapman_description "
-                "FROM annotation_gene_mapman "
-                f"WHERE gene_id = '{gene_id}' "
-                f"AND species_code = '{species_code}'",
+            return await _cached_gene_annotation_lookup(
+                bi_url=self.dgc.BI_URL,
+                sql_headers=self._sql_headers,
+                species_code=species_code,
+                gene_id=gene_id,
             )
-
-            # responses = []
-            # for sql in sql_list:
-            #     response = requests.post(
-            #         url=self.dgc.BI_URL,
-            #         json={
-            #             "sql": sql,
-            #             "returnType": "json"
-            #         },
-            #         headers=self._sql_headers
-            #     ).json()
-            #     responses.append(response)
-            def fetch_annotation(sql: str) -> Dict[str, Any]:
-                return requests.post(
-                    url=self.dgc.BI_URL,
-                    json={"sql": sql, "returnType": "json"},
-                    headers=self._sql_headers,
-                ).json()
-
-            responses = await asyncio.gather(
-                *(asyncio.to_thread(fetch_annotation, sql) for sql in sql_list)
-            )
-            # responses = await asyncio.gather(
-            #     *(requests.post(
-            #         url=self.dgc.BI_URL,
-            #         json={
-            #             "sql": sql,
-            #             "returnType": "json"
-            #         },
-            #         headers=self._sql_headers
-            #     ).json() for sql in sql_list)
-            # )
-            gene_anno_dict = {}
-            if responses[0]["data"]:
-                gene_anno_dict.update({"description": responses[0]["data"]})
-            if responses[1]["data"]:
-                gene_anno_dict.update({"go": responses[1]["data"]})
-            if responses[2]["data"]:
-                gene_anno_dict.update({"interpro": responses[2]["data"]})
-            if responses[3]["data"]:
-                gene_anno_dict.update({"mapman": responses[3]["data"]})
-            return gene_anno_dict
 
         if semaphore is not None:
             async with semaphore:

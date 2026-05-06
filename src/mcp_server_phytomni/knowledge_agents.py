@@ -29,11 +29,13 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .func_cache import func_cache
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import download_list_convert, get_prompt, split_list
 
 kc = KnowledgeConfig()
 sc = SensitiveConfig.load()
+RETRIEVE_CACHE_TTL = 300
 
 KNOWLEDGE_CONFIG_FIELD_MAP = {
     "retrieve_url": "RETRIEVE_URL",
@@ -596,6 +598,22 @@ class KnowledgeAgent:
             return final_state["final_response"]
 
 
+@func_cache(
+    key_params=[
+        "user_query",
+        "retrieve_url",
+        "repo_id",
+        "page_num",
+        "page_size",
+        "filter_string",
+        "scope",
+        "extra_repo_ids",
+        "rerank_url",
+        "rerank_batch_size",
+        "score_threshold",
+    ],
+    ttl=RETRIEVE_CACHE_TTL,
+)
 async def retrieve(
     user_query: str,
     retrieve_url: str = kc.RETRIEVE_URL,
@@ -743,6 +761,23 @@ async def retrieve(
     }
 
 
+@func_cache(
+    key_params=[
+        "user_query",
+        "retrieve_url",
+        "repo_id_dict",
+        "page_num",
+        "filter_string",
+        "scope",
+        "extra_repo_ids",
+        "rerank_url",
+        "rerank_batch_size",
+        "score_threshold",
+        "top_n",
+    ],
+    ttl=RETRIEVE_CACHE_TTL,
+    exclude_params=["semaphore"],
+)
 async def multi_retrieve(
     user_query: str,
     retrieve_url: str = kc.RETRIEVE_URL,

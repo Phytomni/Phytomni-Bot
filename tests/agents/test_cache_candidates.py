@@ -4,11 +4,18 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for first-wave low-risk cache integration points."""
 
+# pylint: disable=protected-access
+
 import json
+from types import SimpleNamespace
 
 import pytest
 
+from mcp_server_phytomni import brief_gene_agents
+from mcp_server_phytomni import deep_genome_agents
+from mcp_server_phytomni import knowledge_agents
 from mcp_server_phytomni.analyst_agents import get_data_list
+from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.deep_genome_agents import network_to_string
 
 pytestmark = pytest.mark.agent
@@ -80,3 +87,241 @@ def test_network_to_string_uses_cache_for_identical_inputs():
         "misses": 1,
         "count": 1,
     }
+
+
+async def test_retrieve_uses_short_ttl_cache(monkeypatch):
+    knowledge_agents.retrieve.cache_clear()
+    calls = {"post": 0, "rerank": 0}
+
+    class FakeResponse:
+        """Minimal retrieve response stub."""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "doc_list": [
+                    {
+                        "chunk_id": "doc-1",
+                        "title": "Leaf",
+                        "content": "content",
+                    }
+                ]
+            }
+
+    class FakeClient:
+        """Minimal async HTTP client stub."""
+
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            del args
+
+        async def post(self, *args, **kwargs):
+            del args, kwargs
+            calls["post"] += 1
+            return FakeResponse()
+
+    async def fake_rerank(**kwargs):
+        del kwargs
+        calls["rerank"] += 1
+        return [{"chunk_id": "doc-1", "score": 0.9}]
+
+    monkeypatch.setattr(knowledge_agents, "AsyncClient", FakeClient)
+    monkeypatch.setattr(knowledge_agents, "rerank", fake_rerank)
+
+    first = await knowledge_agents.retrieve(
+        user_query="leaf growth",
+        retrieve_url="https://example.invalid/retrieve",
+        repo_id="repo",
+        page_num=1,
+        page_size=2,
+        filter_string=None,
+        scope="doc",
+        extra_repo_ids=None,
+        rerank_url="https://example.invalid/rerank",
+        rerank_batch_size=2,
+        score_threshold=0.2,
+    )
+    second = await knowledge_agents.retrieve(
+        user_query="leaf growth",
+        retrieve_url="https://example.invalid/retrieve",
+        repo_id="repo",
+        page_num=1,
+        page_size=2,
+        filter_string=None,
+        scope="doc",
+        extra_repo_ids=None,
+        rerank_url="https://example.invalid/rerank",
+        rerank_batch_size=2,
+        score_threshold=0.2,
+    )
+
+    assert (
+        first
+        == second
+        == {
+            "doc_list": [{"chunk_id": "doc-1", "score": 0.9}],
+            "total": 10000,
+        }
+    )
+    assert calls == {"post": 1, "rerank": 1}
+
+
+async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
+    knowledge_agents.multi_retrieve.cache_clear()
+    calls = {"retrieve": 0}
+
+    async def fake_retrieve(**kwargs):
+        calls["retrieve"] += 1
+        repo_id = kwargs["repo_id"]
+        return {
+            "doc_list": [{"chunk_id": repo_id, "score": 0.8}],
+            "total": 10000,
+        }
+
+    monkeypatch.setattr(knowledge_agents, "retrieve", fake_retrieve)
+
+    first = await knowledge_agents.multi_retrieve(
+        user_query="root growth",
+        retrieve_url="https://example.invalid/retrieve",
+        repo_id_dict={"repo-a": 1, "repo-b": 1},
+        page_num=1,
+        filter_string=None,
+        scope="doc",
+        extra_repo_ids=None,
+        rerank_url="https://example.invalid/rerank",
+        rerank_batch_size=2,
+        score_threshold=0.2,
+        top_n=2,
+    )
+    second = await knowledge_agents.multi_retrieve(
+        user_query="root growth",
+        retrieve_url="https://example.invalid/retrieve",
+        repo_id_dict={"repo-a": 1, "repo-b": 1},
+        page_num=1,
+        filter_string=None,
+        scope="doc",
+        extra_repo_ids=None,
+        rerank_url="https://example.invalid/rerank",
+        rerank_batch_size=2,
+        score_threshold=0.2,
+        top_n=2,
+    )
+
+    assert first == second
+    assert calls["retrieve"] == 2
+
+
+async def test_gene_retrieve_uses_agent_context_cache():
+    brief_gene_agents._gene_retrieve_cached.cache_clear()
+    calls = {"arun": 0}
+
+    class FakeKnowledgeAgent:
+        """Minimal KnowledgeAgent-compatible stub."""
+
+        kc = KnowledgeConfig()
+
+        async def arun(self, **kwargs):
+            calls["arun"] += 1
+            symbol = kwargs["user_query"].splitlines()[-1]
+            return {
+                "doc_list": [
+                    {
+                        "chunk_id": symbol,
+                        "title": symbol,
+                        "content": "gene content",
+                        "score": 0.7,
+                    }
+                ]
+            }
+
+    first = await brief_gene_agents.gene_retrieve(
+        "Arabidopsis thaliana",
+        ["NAC001", "NAC001"],
+        FakeKnowledgeAgent(),
+        top_n=1,
+    )
+    second = await brief_gene_agents.gene_retrieve(
+        "Arabidopsis thaliana",
+        ["NAC001", "NAC001"],
+        FakeKnowledgeAgent(),
+        top_n=1,
+    )
+
+    assert first == second
+    assert calls["arun"] == 1
+
+
+async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
+    deep_genome_agents._cached_gene_symbol_lookup.cache_clear()
+    calls = {"post": 0}
+
+    def fake_post(*args, **kwargs):
+        del args, kwargs
+        calls["post"] += 1
+        return SimpleNamespace(
+            json=lambda: {"data": [{"symbol": "NAC001|NAC002"}]}
+        )
+
+    monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
+
+    first = await deep_genome_agents._cached_gene_symbol_lookup(
+        bi_url="https://example.invalid/bi",
+        sql_headers={"token": "secret-one"},
+        species_code="ath",
+        gene_id="AT1G01010",
+    )
+    second = await deep_genome_agents._cached_gene_symbol_lookup(
+        bi_url="https://example.invalid/bi",
+        sql_headers={"token": "secret-two"},
+        species_code="ath",
+        gene_id="AT1G01010",
+    )
+
+    assert set(first) == {"NAC001", "NAC002"}
+    assert set(second) == {"NAC001", "NAC002"}
+    assert calls["post"] == 1
+
+
+async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
+    deep_genome_agents._cached_gene_annotation_lookup.cache_clear()
+    calls = {"post": 0}
+
+    def fake_post(*args, **kwargs):
+        del args
+        calls["post"] += 1
+        sql = kwargs["json"]["sql"]
+        if "description" in sql:
+            payload = {"data": [{"description": "NAC factor"}]}
+        elif "ontology" in sql:
+            payload = {"data": [{"go_id": "GO:1", "go_name": "binding"}]}
+        elif "interpro" in sql:
+            payload = {"data": [{"interpro_id": "IPR1"}]}
+        else:
+            payload = {"data": [{"mapman": "27.3"}]}
+        return SimpleNamespace(json=lambda: payload)
+
+    monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
+
+    first = await deep_genome_agents._cached_gene_annotation_lookup(
+        bi_url="https://example.invalid/bi",
+        sql_headers={"token": "secret-one"},
+        species_code="ath",
+        gene_id="AT1G01010",
+    )
+    second = await deep_genome_agents._cached_gene_annotation_lookup(
+        bi_url="https://example.invalid/bi",
+        sql_headers={"token": "secret-two"},
+        species_code="ath",
+        gene_id="AT1G01010",
+    )
+
+    assert first == second
+    assert set(first) == {"description", "go", "interpro", "mapman"}
+    assert calls["post"] == 4

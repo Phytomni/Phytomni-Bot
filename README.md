@@ -141,9 +141,13 @@ The default cache database path is `PHYTOMNI_CACHE_DB` when set, otherwise
 template file reads, static JSON/text metadata reads, `get_data_list`, and
 `network_to_string`, all with explicit TTLs and file fingerprints where local
 files are involved. Rendered prompts are not persisted because parameters may
-contain user queries, uploaded document content, or retrieved text. Cache
-database files such as `.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars
-are ignored by git.
+contain user queries, uploaded document content, or retrieved text.
+Second-wave retrieval integrations use short TTLs for knowledge retrieval,
+gene literature retrieval, and DeepGenome BI gene lookup/annotation helpers;
+API tokens, HTTP clients, semaphores, and checkpointers are excluded from
+cache keys. `nl2sql` is not cached by default because `dialog_id` may carry
+session context. Cache database files such as `.func_cache.db*`, `*.sqlite*`,
+and WAL/SHM sidecars are ignored by git.
 
 This is separate from `agent_registry.py`. The registry only reuses in-memory
 agent instances and compiled LangGraph apps for matching non-secret

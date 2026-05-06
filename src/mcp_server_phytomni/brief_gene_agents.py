@@ -25,12 +25,14 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
+from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt
 
 bgc = BriefGeneConfig()
 sc = SensitiveConfig.load()
+GENE_RETRIEVE_CACHE_TTL = 300
 
 BRIEF_GENE_CONFIG_FIELD_MAP = {
     "prompt_file": "PROMPT_FILE",
@@ -246,10 +248,38 @@ async def gene_retrieve(
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Retrieve literature for a gene through the LangGraph KnowledgeAgent."""
-    symbols = _dedupe(gene_symbol_list)
+    symbols = tuple(_dedupe(gene_symbol_list))
     if not symbols:
         return {"doc_list": [], "total": 10000}
 
+    agent_context = agent_fingerprint_values(
+        knowledge_config=knowledge_agent.kc,
+    )
+    return await _gene_retrieve_cached(
+        species=species,
+        symbols=symbols,
+        top_n=top_n,
+        agent_context=agent_context,
+        knowledge_agent=knowledge_agent,
+        semaphore=semaphore,
+    )
+
+
+@func_cache(
+    key_params=["species", "symbols", "top_n", "agent_context"],
+    ttl=GENE_RETRIEVE_CACHE_TTL,
+    exclude_params=["knowledge_agent", "semaphore"],
+)
+async def _gene_retrieve_cached(
+    species: str,
+    symbols: tuple[str, ...],
+    top_n: int,
+    agent_context: Dict[str, Any],
+    knowledge_agent: KnowledgeAgent,
+    semaphore: Optional[asyncio.Semaphore] = None,
+) -> Dict[str, Any]:
+    """Retrieve and cache gene literature for stable gene symbol queries."""
+    del agent_context
     combined_symbols = "\n".join(symbols)
     query_terms = _dedupe([*symbols, combined_symbols])
 
