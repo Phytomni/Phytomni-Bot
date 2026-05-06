@@ -78,13 +78,9 @@ DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 class Nl2SqlRequest:
     """Resolved request settings for one NL2SQL call."""
 
-    message_content: str
     database_url: str
     workspace_id: str
-    subject_id: str
-    dialog_id: str
-    need_insight: bool
-    simplify_response: bool
+    payload_data: Dict[str, Any]
     timeout: float
     retriable_codes: tuple[int, ...]
     max_retries: int
@@ -96,16 +92,20 @@ class Nl2SqlRequest:
         if retriable_codes is None:
             retriable_codes = DATA_CONFIG.RETRIABLE_CODES
         return cls(
-            message_content=message_content,
             database_url=values.get("database_url", DATA_CONFIG.DATABASE_URL),
             workspace_id=values.get("workspace_id", DATA_CONFIG.WORKSPACE_ID),
-            subject_id=values.get("subject_id", DATA_CONFIG.SUBJECT_ID),
-            dialog_id=values.get("dialog_id") or str(uuid1()),
-            need_insight=values.get("need_insight", DATA_CONFIG.NEED_INSIGHT),
-            simplify_response=values.get(
-                "simplify_response",
-                DATA_CONFIG.SIMPLIFY_RESPONSE,
-            ),
+            payload_data={
+                "subject_id": values.get("subject_id", DATA_CONFIG.SUBJECT_ID),
+                "dialog_id": values.get("dialog_id") or str(uuid1()),
+                "message_content": message_content,
+                "need_insight": values.get(
+                    "need_insight", DATA_CONFIG.NEED_INSIGHT
+                ),
+                "simplify_response": values.get(
+                    "simplify_response",
+                    DATA_CONFIG.SIMPLIFY_RESPONSE,
+                ),
+            },
             timeout=values.get("timeout", DATA_CONFIG.TIMEOUT),
             retriable_codes=tuple(retriable_codes),
             max_retries=values.get("max_retries", DATA_CONFIG.MAX_RETRIES),
@@ -113,13 +113,7 @@ class Nl2SqlRequest:
 
     def payload(self) -> Dict[str, Any]:
         """Return the database API JSON payload."""
-        return {
-            "subject_id": self.subject_id,
-            "dialog_id": self.dialog_id,
-            "message_content": self.message_content,
-            "need_insight": self.need_insight,
-            "simplify_response": self.simplify_response,
-        }
+        return dict(self.payload_data)
 
 
 async def nl2sql(

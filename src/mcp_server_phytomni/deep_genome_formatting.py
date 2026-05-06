@@ -5,6 +5,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Formatting helpers for deep genome workflows."""
 
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from .func_cache import func_cache
@@ -96,6 +97,17 @@ ENRICHMENT_SUMMARY_SPECS = (
 )
 
 
+@dataclass(frozen=True)
+class EnrichmentSummarySpec:
+    """Resolved inputs for one enrichment summary line."""
+
+    ids_key: str
+    counts_key: str
+    label: str
+    network_type: str
+    top_n: int
+
+
 def _new_enrichment_maps() -> Dict[str, Dict[str, Any]]:
     """Create mutable annotation id/count maps for one network summary."""
     return {
@@ -164,26 +176,22 @@ def _format_network_gene_line(
 
 def _format_enrichment_summary(
     enrichment_maps: Dict[str, Dict[str, Any]],
-    ids_key: str,
-    counts_key: str,
-    label: str,
-    network_type: str,
-    top_n: int,
+    spec: EnrichmentSummarySpec,
 ) -> str:
     """Format one TOP-N enrichment summary line."""
     sorted_ids = sorted(
-        enrichment_maps[counts_key].items(),
+        enrichment_maps[spec.counts_key].items(),
         key=lambda item: item[1],
         reverse=True,
-    )[:top_n]
+    )[: spec.top_n]
     all_terms = "; ".join(
-        enrichment_maps[ids_key][term_id]
+        enrichment_maps[spec.ids_key][term_id]
         for term_id, _count in sorted_ids
-        if term_id in enrichment_maps[ids_key]
+        if term_id in enrichment_maps[spec.ids_key]
     )
     return (
-        f"{network_type} genes TOP {top_n} "
-        f"{label} enrichment results: {all_terms}\n"
+        f"{spec.network_type} genes TOP {spec.top_n} "
+        f"{spec.label} enrichment results: {all_terms}\n"
     )
 
 
@@ -223,11 +231,13 @@ def network_to_string(
         network_parts.append(
             _format_enrichment_summary(
                 enrichment_maps,
-                ids_key,
-                counts_key,
-                label,
-                network_type,
-                top_n,
+                EnrichmentSummarySpec(
+                    ids_key=ids_key,
+                    counts_key=counts_key,
+                    label=label,
+                    network_type=network_type,
+                    top_n=top_n,
+                ),
             )
         )
     return "".join(network_parts)

@@ -77,16 +77,22 @@ class ObsTransferContext:
 
 def message_content(response: Any) -> str:
     """Return the first assistant message content from an OpenAI-style dict."""
-    if (
-        isinstance(response, dict)
-        and response.get("choices")
-        and isinstance(response["choices"], list)
-        and response["choices"][0]
-        and isinstance(response["choices"][0], dict)
-        and isinstance(response["choices"][0].get("message"), dict)
-    ):
-        return str(response["choices"][0]["message"].get("content", ""))
-    return ""
+    message = first_message(response)
+    return str(message.get("content", "")) if message else ""
+
+
+def first_message(response: Any) -> Optional[dict[str, Any]]:
+    """Return the first OpenAI-style message dictionary if present."""
+    if not isinstance(response, dict):
+        return None
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return None
+    message = choice.get("message")
+    return message if isinstance(message, dict) else None
 
 
 async def retry_http_status_or_raise(

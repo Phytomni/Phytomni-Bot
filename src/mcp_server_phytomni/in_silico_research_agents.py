@@ -10,6 +10,7 @@ papers and execute comprehensive computational research workflows using
 LangGraph's parallel execution capabilities.
 """
 
+from dataclasses import dataclass
 from json import loads
 from typing import Any, Dict, List, Optional, TypedDict
 from uuid import uuid1
@@ -42,6 +43,17 @@ from .utils import download_list_convert, get_prompt
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
+
+
+@dataclass(frozen=True)
+class ResearchTaskContext:
+    """Resolved context for submitting one in-silico research task."""
+
+    goal_description: str
+    context: str
+    data_list: Dict[str, str]
+    output_dir: str
+    task_name: str
 
 
 class InSilicoResearchState(TypedDict):
@@ -256,11 +268,7 @@ class InSilicoResearchAgents:
 
     async def _submit_research_task(
         self,
-        goal_description: str,
-        context: str,
-        data_list: Dict[str, str],
-        output_dir: str,
-        task_name: str,
+        task: ResearchTaskContext,
     ) -> dict:
         """Submit research task using AnalystAgent and wait for completion.
 
@@ -274,19 +282,21 @@ class InSilicoResearchAgents:
         Returns:
             Dict containing task_id and output_dir.
         """
-        print(f"  → Submitting research task via AnalystAgent: {task_name}")
+        print(
+            f"  → Submitting research task via AnalystAgent: {task.task_name}"
+        )
 
         # 使用 AnalystAgent 提交任务
         result = await self.analyst_agent.arun(
             query=None,
-            goal_description=goal_description,
-            preset_data_list=data_list,
-            preset_plan=context,  # Pass context as predefined plan
-            output_dir=output_dir,
+            goal_description=task.goal_description,
+            preset_data_list=task.data_list,
+            preset_plan=task.context,  # Pass context as predefined plan
+            output_dir=task.output_dir,
             compute_resource="medium",
             is_auto_select=False,
             is_polling=False,
-            thread_id=f"{task_name}_{uuid1()}",
+            thread_id=f"{task.task_name}_{uuid1()}",
         )
 
         if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
@@ -295,7 +305,7 @@ class InSilicoResearchAgents:
             )
 
         task_id = result.get("task_id")
-        print(f"  → {task_name} task completed (task_id: {task_id})")
+        print(f"  → {task.task_name} task completed (task_id: {task_id})")
 
         return {"task_id": task_id, "output_dir": result.get("output_dir")}
 
@@ -394,11 +404,13 @@ class InSilicoResearchAgents:
         async def submit_task() -> dict[str, Any]:
             """Submit one research task and return state updates."""
             result = await self._submit_research_task(
-                goal_description=goal_description,
-                context=context,
-                data_list=data_list,
-                output_dir=output_dir,
-                task_name=task_name,
+                ResearchTaskContext(
+                    goal_description=goal_description,
+                    context=context,
+                    data_list=data_list,
+                    output_dir=output_dir,
+                    task_name=task_name,
+                )
             )
             existing_task_ids: Dict[str, str] = state.get("task_ids", {})
             task_id = result.get("task_id")
@@ -420,10 +432,7 @@ class InSilicoResearchAgents:
         self,
         paper_text: str,
         data_list: Dict[str, str],
-        user_id: Optional[str] = None,
-        obs_file_list: Optional[List[str]] = None,
-        output_dir: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Conduct in silico research and return task_ids.
 
@@ -441,9 +450,9 @@ class InSilicoResearchAgents:
         initial_state = {
             "paper_text": paper_text,
             "data_list": data_list,
-            "user_id": user_id,
-            "obs_file_list": obs_file_list or [],
-            "output_dir": output_dir,
+            "user_id": kwargs.get("user_id"),
+            "obs_file_list": kwargs.get("obs_file_list") or [],
+            "output_dir": kwargs.get("output_dir"),
             "goals": [],
             "research_tasks": [],
             "task_ids": {},
@@ -452,7 +461,9 @@ class InSilicoResearchAgents:
         }
 
         result = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app,
+            initial_state,
+            thread_id=kwargs.get("thread_id"),
         )
         return {
             "task_ids": result.get("task_ids"),

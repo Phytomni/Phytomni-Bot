@@ -9,6 +9,7 @@
 import asyncio
 import json
 import re
+from dataclasses import dataclass
 from json import loads
 from typing import Any, Dict, List, Optional, TypedDict, Union
 
@@ -61,6 +62,42 @@ REVIEW_SECRET_FIELD_MAP = {
 CITATION_PATTERN = (
     r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
 )
+
+
+@dataclass(frozen=True)
+class SupplementaryResultContext:
+    """Context used to format supplementary retrieval snippets."""
+
+    subtopic_idx: int
+    add_queries: List[Any]
+    add_query_results: List[Any]
+    add_doc_list: List[Dict[str, Any]]
+    draft_content: str
+
+
+@dataclass
+class RetrievalAccumulator:
+    """Mutable counters for bounded document retrieval."""
+
+    raw_docs: List[Dict[str, Any]]
+    current_length: int
+    file_id: int = 0
+
+
+@dataclass
+class SupplementaryCounters:
+    """Mutable counters for supplementary snippet formatting."""
+
+    file_id: int = 0
+    total_length: int = 0
+
+
+@dataclass(frozen=True)
+class SupplementaryFormatState:
+    """Formatting limits and counters for supplementary snippets."""
+
+    query_length: int
+    counters: SupplementaryCounters
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
@@ -331,53 +368,70 @@ class DeepResearchAgent:
     async def retrieve_node(self, state: DeepResearchState):
         """Retrieve documents for each research dimension."""
         dimensions = state["research_dimensions"]
-        tasks = [
-            self.ka.arun(
-                user_query=dimension,
-                is_generate=False,
-                is_follow_up=False,
-            )
-            for dimension in dimensions
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *[
+                self.ka.arun(
+                    user_query=dimension,
+                    is_generate=False,
+                    is_follow_up=False,
+                )
+                for dimension in dimensions
+            ],
+            return_exceptions=True,
+        )
 
-        all_raw_doc_list: List[Dict[str, Any]] = []
-        dimension_params: List[Dict[str, str]] = []
-        file_id = 0
-        current_length = state["total_length"]
+        accumulator = RetrievalAccumulator(
+            raw_docs=[],
+            current_length=state["total_length"],
+        )
+        dimension_params = []
         dimension_length = (
             self.review_config.MAX_TOKENS - state["total_length"]
         ) / max(1, len(dimensions))
 
-        for di, dimension_result in enumerate(results):
-            fragments = []
-            if not isinstance(dimension_result, BaseException):
-                for doc in dimension_result:
-                    current_doc_id = f"document {file_id + 1:03d}"
-                    doc_copy = doc.copy()
-                    doc_copy["doc_id"] = current_doc_id
-                    fragment = _format_doc_fragment(doc_copy, current_doc_id)
-                    if current_length + len(fragment) <= (
-                        state["total_length"] + dimension_length * (di + 1)
-                    ):
-                        fragments.append(fragment)
-                        all_raw_doc_list.append(doc_copy)
-                        current_length += len(fragment)
-                        file_id += 1
-                    else:
-                        break
+        for index, result in enumerate(results):
+            fragments = self._dimension_fragments(
+                result,
+                accumulator,
+                state["total_length"] + dimension_length * (index + 1),
+            )
             dimension_params.append(
                 {
-                    "subtopic": dimensions[di],
+                    "subtopic": dimensions[index],
                     "knowledge": "\n\n".join(fragments),
                 }
             )
 
         return {
-            "all_raw_doc_list": all_raw_doc_list,
+            "all_raw_doc_list": accumulator.raw_docs,
             "dimension_params": dimension_params,
-            "total_length": current_length,
+            "total_length": accumulator.current_length,
         }
+
+    def _dimension_fragments(
+        self,
+        dimension_result: Any,
+        accumulator: RetrievalAccumulator,
+        length_limit: float,
+    ) -> List[str]:
+        """Format bounded fragments for one research dimension."""
+        fragments: List[str] = []
+        if isinstance(dimension_result, BaseException):
+            return fragments
+
+        for doc in dimension_result:
+            current_doc_id = f"document {accumulator.file_id + 1:03d}"
+            doc_copy = doc.copy()
+            doc_copy["doc_id"] = current_doc_id
+            fragment = _format_doc_fragment(doc_copy, current_doc_id)
+            if accumulator.current_length + len(fragment) <= length_limit:
+                fragments.append(fragment)
+                accumulator.raw_docs.append(doc_copy)
+                accumulator.current_length += len(fragment)
+                accumulator.file_id += 1
+            else:
+                break
+        return fragments
 
     async def draft_node(self, state: DeepResearchState):
         """Create one draft subsection per dimension."""
@@ -510,11 +564,13 @@ class DeepResearchAgent:
                 return_exceptions=True,
             )
             new_knowledge_str = self._format_supplementary_results(
-                subtopic_idx=subtopic_idx,
-                add_queries=add_queries,
-                add_query_results=add_query_results,
-                add_doc_list=add_doc_list,
-                draft_content=draft_content,
+                SupplementaryResultContext(
+                    subtopic_idx=subtopic_idx,
+                    add_queries=add_queries,
+                    add_query_results=add_query_results,
+                    add_doc_list=add_doc_list,
+                    draft_content=draft_content,
+                )
             )
             if new_knowledge_str.strip():
                 feedback_response = await self._chat(
@@ -543,59 +599,78 @@ class DeepResearchAgent:
 
     def _format_supplementary_results(
         self,
-        subtopic_idx: int,
-        add_queries: List[Any],
-        add_query_results: List[Any],
-        add_doc_list: List[Dict[str, Any]],
-        draft_content: str,
+        context: SupplementaryResultContext,
     ) -> str:
         """Format supplementary retrieval snippets for revision."""
-        add_file_id = 0
-        add_total_length = 0
-        query_count = max(1, len(add_query_results))
+        query_count = max(1, len(context.add_query_results))
         add_query_length = max(
             1,
             int(
-                (self.review_config.MAX_TOKENS - len(draft_content))
+                (self.review_config.MAX_TOKENS - len(context.draft_content))
                 / query_count
             ),
         )
-        add_blocks = []
-
-        for add_num, add_result in enumerate(add_query_results):
-            if isinstance(add_result, Exception) or not add_result:
-                continue
-
-            query = str(add_queries[add_num])
-            fragments = []
-            valid_doc_count = 0
-            for doc in add_result:
-                if valid_doc_count >= 3:
-                    break
-                current_doc_id = (
-                    f"add document S{subtopic_idx + 1}-{add_file_id + 1:03d}"
+        format_state = SupplementaryFormatState(
+            query_length=add_query_length,
+            counters=SupplementaryCounters(),
+        )
+        add_blocks = [
+            block
+            for add_num, add_result in enumerate(context.add_query_results)
+            if (
+                block := self._format_supplementary_query(
+                    context,
+                    add_result,
+                    add_num,
+                    format_state,
                 )
-                doc_copy = doc.copy()
-                doc_copy["doc_id"] = current_doc_id
-                fragment = _format_doc_fragment(doc_copy, current_doc_id)
-                if len(fragment) > add_query_length:
-                    continue
-                if add_total_length + len(fragment) <= (
-                    add_query_length * (add_num + 1)
-                ):
-                    add_doc_list.append(doc_copy)
-                    fragments.append(fragment)
-                    add_total_length += len(fragment)
-                    add_file_id += 1
-                    valid_doc_count += 1
-                else:
-                    break
-            if fragments:
-                add_blocks.append(
-                    f"### Supplementary Direction {add_num + 1}: {query}\n\n"
-                    + "\n\n".join(fragments)
-                )
+            )
+        ]
         return "\n\n---\n\n".join(add_blocks)
+
+    def _format_supplementary_query(
+        self,
+        context: SupplementaryResultContext,
+        add_result: Any,
+        add_num: int,
+        format_state: SupplementaryFormatState,
+    ) -> str:
+        """Format snippets for one supplementary query."""
+        if isinstance(add_result, Exception) or not add_result:
+            return ""
+
+        counters = format_state.counters
+        query = str(context.add_queries[add_num])
+        fragments = []
+        valid_doc_count = 0
+        for doc in add_result:
+            if valid_doc_count >= 3:
+                break
+            current_doc_id = (
+                "add document "
+                f"S{context.subtopic_idx + 1}-{counters.file_id + 1:03d}"
+            )
+            doc_copy = doc.copy()
+            doc_copy["doc_id"] = current_doc_id
+            fragment = _format_doc_fragment(doc_copy, current_doc_id)
+            if len(fragment) > format_state.query_length:
+                continue
+            if counters.total_length + len(fragment) <= (
+                format_state.query_length * (add_num + 1)
+            ):
+                context.add_doc_list.append(doc_copy)
+                fragments.append(fragment)
+                counters.total_length += len(fragment)
+                counters.file_id += 1
+                valid_doc_count += 1
+            else:
+                break
+        if not fragments:
+            return ""
+        return (
+            f"### Supplementary Direction {add_num + 1}: {query}\n\n"
+            + "\n\n".join(fragments)
+        )
 
     async def _audit_citations(
         self,

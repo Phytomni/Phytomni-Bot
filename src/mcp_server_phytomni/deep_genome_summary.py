@@ -7,13 +7,12 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 
 READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
 
-@dataclass(frozen=True)
-class ImageSummarySpec:
+class ImageSummarySpec(NamedTuple):
     """File matching and output keys for one image summary group."""
 
     analysis_type: str

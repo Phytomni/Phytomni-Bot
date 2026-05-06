@@ -55,6 +55,16 @@ DIGITAL_DESIGN_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
 }
+DIGITAL_DESIGN_TEMPLATE_PATHS = {
+    "protein_design_analysis": (
+        "user/protein_design_analysis",
+        "user/protein_design_analysis_meta",
+    ),
+    "promoter_design_analysis": (
+        "user/promoter_design_analysis",
+        "user/promoter_design_analysis_meta",
+    ),
+}
 
 
 class DigitalDesignState(TypedDict):
@@ -193,31 +203,10 @@ class DigitalDesignAgents:
         Returns:
             Dict containing task_id and output_dir.
         """
-        goal_template_map = {
-            "protein_design_analysis": "user/protein_design_analysis",
-            "promoter_design_analysis": "user/promoter_design_analysis",
-        }
-        meta_template_map = {
-            "protein_design_analysis": "user/protein_design_analysis_meta",
-            "promoter_design_analysis": "user/promoter_design_analysis_meta",
-        }
-
-        goal_path = goal_template_map.get(analysis_type)
-        meta_path = meta_template_map.get(analysis_type)
-        if not goal_path:
-            raise ValueError(f"Unknown analysis type: {analysis_type}")
-
-        # Build goal_description
-        goal_description = get_prompt(
-            self.digital_design_config.PROMPT_FILE,
-            goal_path,
-            {"gene_id": gene_id},
-        )
-        # Build meta prompt
-        meta = get_prompt(self.digital_design_config.PROMPT_FILE, meta_path)
-        # Build data_list
-        data_list = get_data_list(
-            self.digital_design_config.DEEPGENOME_DATA, analysis_type, species
+        goal_description, meta, data_list = self._analysis_prompt_parts(
+            analysis_type,
+            species,
+            gene_id,
         )
 
         # Determine compute resource level
@@ -256,6 +245,30 @@ class DigitalDesignAgents:
         print(f"=>{analysis_type} task completed (task_id: {task_id})")
 
         return {"submit_result": result}
+
+    def _analysis_prompt_parts(
+        self,
+        analysis_type: str,
+        species: str,
+        gene_id: str,
+    ) -> tuple[str, str, Any]:
+        """Return goal, meta, and data list for one design analysis."""
+        paths = DIGITAL_DESIGN_TEMPLATE_PATHS.get(analysis_type)
+        if paths is None:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+        goal_path, meta_path = paths
+        goal_description = get_prompt(
+            self.digital_design_config.PROMPT_FILE,
+            goal_path,
+            {"gene_id": gene_id},
+        )
+        meta = get_prompt(self.digital_design_config.PROMPT_FILE, meta_path)
+        data_list = get_data_list(
+            self.digital_design_config.DEEPGENOME_DATA,
+            analysis_type,
+            species,
+        )
+        return goal_description, meta, data_list
 
     def _get_compute_resource(
         self, analysis_type: str
@@ -331,10 +344,7 @@ class DigitalDesignAgents:
         self,
         species: str,
         gene_id: str,
-        user_id: Optional[str] = None,
-        batch: bool = False,
-        output_dir: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Submit protein design tasks and return task_ids.
 
@@ -351,9 +361,9 @@ class DigitalDesignAgents:
         initial_state: Dict[str, Any] = {
             "species": species,
             "gene_id": gene_id,
-            "user_id": user_id,
-            "batch": batch,
-            "output_dir": output_dir,
+            "user_id": kwargs.get("user_id"),
+            "batch": kwargs.get("batch", False),
+            "output_dir": kwargs.get("output_dir"),
             "design_task_result": [],
             "design_tasks": [],
             "task_ids": {},
@@ -362,7 +372,9 @@ class DigitalDesignAgents:
         }
 
         result = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app,
+            initial_state,
+            thread_id=kwargs.get("thread_id"),
         )
         return {
             "design_task_result": result.get("design_task_result"),

@@ -40,6 +40,12 @@ GENE_NETWORK_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
 }
+GENE_NETWORK_TEMPLATE_PATHS = {
+    "gene_network_analysis": (
+        "user/gene_network_analysis",
+        "user/gene_network_analysis_meta",
+    )
+}
 
 
 class GeneNetworkState(TypedDict):
@@ -177,27 +183,10 @@ class GeneNetworkAgents:
         Returns:
             Dict containing task_id and output_dir.
         """
-        goal_template_map = {
-            "gene_network_analysis": "user/gene_network_analysis"
-        }
-        meta_template_map = {
-            "gene_network_analysis": "user/gene_network_analysis_meta"
-        }
-
-        goal_path = goal_template_map.get(analysis_type)
-        meta_path = meta_template_map.get(analysis_type)
-        if not goal_path:
-            raise ValueError(f"Unknown analysis type: {analysis_type}")
-
-        # Build goal_description
-        goal_description = get_prompt(
-            self.gene_network_config.PROMPT_FILE, goal_path, {"to_id": to_id}
-        )
-        # Build meta prompt
-        meta = get_prompt(self.gene_network_config.PROMPT_FILE, meta_path)
-        # Build data_list
-        data_list = get_data_list(
-            self.gene_network_config.DEEPGENOME_DATA, analysis_type, species
+        goal_description, meta, data_list = self._analysis_prompt_parts(
+            analysis_type,
+            species,
+            to_id,
         )
 
         # Determine compute resource level
@@ -237,6 +226,30 @@ class GeneNetworkAgents:
 
         # return {"task_id": task_id, "output_dir": result.get("output_dir")}
         return {"network_task": result}
+
+    def _analysis_prompt_parts(
+        self,
+        analysis_type: str,
+        species: str,
+        to_id: str,
+    ) -> tuple[str, str, Any]:
+        """Return goal, meta, and data list for one network analysis."""
+        paths = GENE_NETWORK_TEMPLATE_PATHS.get(analysis_type)
+        if paths is None:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+        goal_path, meta_path = paths
+        goal_description = get_prompt(
+            self.gene_network_config.PROMPT_FILE,
+            goal_path,
+            {"to_id": to_id},
+        )
+        meta = get_prompt(self.gene_network_config.PROMPT_FILE, meta_path)
+        data_list = get_data_list(
+            self.gene_network_config.DEEPGENOME_DATA,
+            analysis_type,
+            species,
+        )
+        return goal_description, meta, data_list
 
     def _get_compute_resource(
         self, _analysis_type: str
@@ -303,10 +316,7 @@ class GeneNetworkAgents:
         self,
         species: str,
         to_id: str,
-        user_id: Optional[str] = None,
-        batch: bool = False,
-        output_dir: Optional[str] = None,
-        thread_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Submit a gene network analysis task and return task_id.
 
@@ -323,9 +333,9 @@ class GeneNetworkAgents:
         initial_state: Dict[str, Any] = {
             "species": species,
             "to_id": to_id,
-            "user_id": user_id,
-            "batch": batch,
-            "output_dir": output_dir,
+            "user_id": kwargs.get("user_id"),
+            "batch": kwargs.get("batch", False),
+            "output_dir": kwargs.get("output_dir"),
             "network_task": {},
             "network_tasks": [],
             "task_ids": {},
@@ -334,7 +344,9 @@ class GeneNetworkAgents:
         }
 
         result = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app,
+            initial_state,
+            thread_id=kwargs.get("thread_id"),
         )
         return {
             "network_task": result.get("network_task"),

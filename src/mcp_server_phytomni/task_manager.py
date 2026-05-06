@@ -7,7 +7,8 @@ SQLite database and functions for interacting with a remote task server."""
 
 import sqlite3
 import uuid
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict
 
 from httpx import (
     AsyncClient,
@@ -20,6 +21,18 @@ from httpx import (
 from .utils import retry_http_status_or_raise, retry_network_or_raise
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
+
+
+@dataclass(frozen=True)
+class RemoteTaskRequest:
+    """Resolved request data for a remote task-manager call."""
+
+    url: str
+    data: Dict[str, str]
+    timeout: float
+    retriable_codes: tuple[int, ...]
+    max_retries: int
+    message: str
 
 
 class TaskManager:
@@ -104,12 +117,7 @@ class TaskManager:
 
 async def create_task(
     url,
-    server_id: str,
-    server_status: str,
-    tool_name: str,
-    timeout: float = 60,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = 5,
+    **kwargs: Any,
 ):
     """Creates a task on a remote server.
 
@@ -137,55 +145,24 @@ async def create_task(
     Raises:
         McpError: If the request fails after all retries.
     """
-    if retriable_codes is None:
-        retriable_codes = list(DEFAULT_RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-    data = {
-        "server_id": server_id,
-        "server_status": server_status,
-        "tool_name": tool_name,
-    }
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    url,
-                    data=data,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response.json()
-
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
-                    message="Failed to rerank",
-                ):
-                    continue
-
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                ):
-                    continue
+    request = RemoteTaskRequest(
+        url=url,
+        data={
+            "server_id": kwargs["server_id"],
+            "server_status": kwargs["server_status"],
+            "tool_name": kwargs["tool_name"],
+        },
+        timeout=kwargs.get("timeout", 60),
+        retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
+        max_retries=kwargs.get("max_retries", 5),
+        message="Failed to create task",
+    )
+    return await _post_remote_task(request)
 
 
 async def update_task(
     url,
-    server_id: str,
-    server_status: str,
-    server_file_path: str,
-    tool_result: str,
-    timeout: float = 60,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = 5,
+    **kwargs: Any,
 ):
     """Updates a task on a remote server.
 
@@ -214,24 +191,39 @@ async def update_task(
     Raises:
         McpError: If the request fails after all retries.
     """
-    if retriable_codes is None:
-        retriable_codes = list(DEFAULT_RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-    data = {
-        "server_id": server_id,
-        "server_status": server_status,
-        "server_file_path": server_file_path,
-        "tool_result": tool_result,
-    }
-    client_timeout = Timeout(timeout, connect=timeout)
+    request = RemoteTaskRequest(
+        url=url,
+        data={
+            "server_id": kwargs["server_id"],
+            "server_status": kwargs["server_status"],
+            "server_file_path": kwargs["server_file_path"],
+            "tool_result": kwargs["tool_result"],
+        },
+        timeout=kwargs.get("timeout", 60),
+        retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
+        max_retries=kwargs.get("max_retries", 5),
+        message="Failed to update task",
+    )
+    return await _post_remote_task(request)
+
+
+def _retriable_codes(value: Any) -> tuple[int, ...]:
+    """Return retryable status codes from an override or defaults."""
+    if value is None:
+        return DEFAULT_RETRIABLE_CODES
+    return tuple(value)
+
+
+async def _post_remote_task(request: RemoteTaskRequest):
+    """Post one remote task-manager request with retry handling."""
+    client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
+        for attempt in range(request.max_retries + 1):
             try:
                 response = await client.post(
-                    url,
-                    data=data,
-                    timeout=timeout,
+                    request.url,
+                    data=request.data,
+                    timeout=request.timeout,
                 )
                 response.raise_for_status()
                 return response.json()
@@ -240,9 +232,9 @@ async def update_task(
                 if await retry_http_status_or_raise(
                     exc,
                     attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
-                    message="Failed to rerank",
+                    max_retries=request.max_retries,
+                    retriable_codes=request.retriable_codes,
+                    message=request.message,
                 ):
                     continue
 
@@ -250,6 +242,7 @@ async def update_task(
                 if await retry_network_or_raise(
                     exc,
                     attempt=attempt,
-                    max_retries=max_retries,
+                    max_retries=request.max_retries,
                 ):
                     continue
+    return None

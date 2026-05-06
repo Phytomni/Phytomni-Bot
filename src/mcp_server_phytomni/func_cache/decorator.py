@@ -292,8 +292,8 @@ class CacheRuntime:
         try:
             return loads(cached, self.options.compress)
         except CacheError:
-            self.log_corrupted_entry(cache_key)
-            self.delete_corrupted(cache_key)
+            self._log_corrupted_entry(cache_key)
+            self._delete_corrupted(cache_key)
             return _CACHE_MISS
 
     async def deserialize_cached_async(self, cache_key: str, cached: Any):
@@ -303,18 +303,18 @@ class CacheRuntime:
         try:
             return loads(cached, self.options.compress)
         except CacheError:
-            self.log_corrupted_entry(cache_key)
-            await self.delete_corrupted_async(cache_key)
+            self._log_corrupted_entry(cache_key)
+            await self._delete_corrupted_async(cache_key)
             return _CACHE_MISS
 
-    def delete_corrupted(self, cache_key: str) -> None:
+    def _delete_corrupted(self, cache_key: str) -> None:
         """Delete one corrupted cache entry, ignoring storage failures."""
         try:
             self.storage.delete_entry(self.key_builder.func_id, cache_key)
         except CacheError:
             pass
 
-    async def delete_corrupted_async(self, cache_key: str) -> None:
+    async def _delete_corrupted_async(self, cache_key: str) -> None:
         """Delete one corrupted cache entry without blocking the loop."""
         try:
             await asyncio.to_thread(
@@ -325,7 +325,7 @@ class CacheRuntime:
         except CacheError:
             pass
 
-    def log_corrupted_entry(self, cache_key: str) -> None:
+    def _log_corrupted_entry(self, cache_key: str) -> None:
         """Log a corrupted cache entry warning."""
         logger.warning(
             "Cache deserialization failed, removing corrupted entry: %s:%s",

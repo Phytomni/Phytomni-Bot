@@ -49,17 +49,15 @@ async def test_design_module_applies_config_and_secret_overrides(
             self,
             species: str,
             gene_id: str,
-            user_id: str | None = None,
-            batch: bool = False,
-            output_dir: str | None = None,
+            **kwargs: Any,
         ) -> dict[str, Any]:
             """Verify arun."""
             captured["run"] = {
                 "species": species,
                 "gene_id": gene_id,
-                "user_id": user_id,
-                "batch": batch,
-                "output_dir": output_dir,
+                "user_id": kwargs.get("user_id"),
+                "batch": kwargs.get("batch", False),
+                "output_dir": kwargs.get("output_dir"),
             }
             return {"design": "ok"}
 
@@ -117,17 +115,15 @@ async def test_network_analysis_applies_config_and_secret_overrides(
             self,
             species: str,
             to_id: str,
-            user_id: str | None = None,
-            batch: bool = False,
-            output_dir: str | None = None,
+            **kwargs: Any,
         ) -> dict[str, Any]:
             """Verify arun."""
             captured["run"] = {
                 "species": species,
                 "to_id": to_id,
-                "user_id": user_id,
-                "batch": batch,
-                "output_dir": output_dir,
+                "user_id": kwargs.get("user_id"),
+                "batch": kwargs.get("batch", False),
+                "output_dir": kwargs.get("output_dir"),
             }
             return {"network": "ok"}
 
@@ -183,17 +179,15 @@ async def test_in_silico_research_applies_config_and_secret_overrides(
             self,
             paper_text: str,
             data_list: dict[str, str],
-            user_id: str | None = None,
-            obs_file_list: list[str] | None = None,
-            output_dir: str | None = None,
+            **kwargs: Any,
         ) -> dict[str, Any]:
             """Verify arun."""
             captured["run"] = {
                 "paper_text": paper_text,
                 "data_list": data_list,
-                "user_id": user_id,
-                "obs_file_list": obs_file_list,
-                "output_dir": output_dir,
+                "user_id": kwargs.get("user_id"),
+                "obs_file_list": kwargs.get("obs_file_list"),
+                "output_dir": kwargs.get("output_dir"),
             }
             return {"research": "ok"}
 

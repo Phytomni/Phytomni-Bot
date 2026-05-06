@@ -94,7 +94,8 @@ def test_network_to_string_uses_cache_for_identical_inputs():
 
 async def test_retrieve_uses_short_ttl_cache(monkeypatch):
     """Verify retrieve uses short ttl cache."""
-    knowledge_agents.retrieve.cache_clear()
+    retrieve_cache_clear = getattr(knowledge_agents.retrieve, "cache_clear")
+    retrieve_cache_clear()
     calls = {"post": 0, "rerank": 0}
 
     class FakeResponse:
@@ -186,7 +187,11 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
 
 async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
     """Verify multi retrieve uses short ttl cache."""
-    knowledge_agents.multi_retrieve.cache_clear()
+    multi_retrieve_cache_clear = getattr(
+        knowledge_agents.multi_retrieve,
+        "cache_clear",
+    )
+    multi_retrieve_cache_clear()
     calls = {"retrieve": 0}
 
     async def fake_retrieve(**kwargs):
