@@ -36,82 +36,76 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .data_agents import DataAgent
+from .deep_genome_formatting import SPECIES_CODE_MAP, network_to_string
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import get_prompt, message_content, parse_follow_up_questions
 
-SPECIES_CODE_MAP = {
-    "ach": "kiwi (Actinidia chinensis)",
-    "aco": "pineapple (Ananas comosus)",
-    "aly": "Arabidopsis lyrata",
-    "aof": "garden (Asparagus officinalis)",
-    "ata": "rough-spike (Aegilops tauschii)",
-    "ath": "thale (Arabidopsis thaliana)",
-    "atr": "Amborella trichopoda",
-    "bdi": "Brachypodium distachyon",
-    "bna": "oilseed (Brassica napus)",
-    "bol": "Brassica oleracea",
-    "bra": "Brassica rapa",
-    "bvu": "suger (Beta vulgaris)",
-    "can": "pepper (Capsicum annuum)",
-    "cav": "Corylus avellana",
-    "cbr": "Chara braunii",
-    "ccan": "coffee (Coffea canephora)",
-    "ccl": "citrus (Citrus clementina)",
-    "cla": "watermelon (Citrullus lanatus)",
-    "cme": "muskmelon (Cucumis melo)",
-    "cqu": "quinoa (Chenopodium quinoa)",
-    "cre": "Chlamydomonas reinhardtii",
-    "csa": "cucumber (Cucumis sativus)",
-    "dca": "carrot (Daucus carota)",
-    "dex": "white (Digitaria exilis)",
-    "ecu": "weeping (Eragrostis curvula)",
-    "egr": "Eucalyptus grandis",
-    "esa": "saltwater (Eutrema salsugineum)",
-    "ghi": "upland (Gossypium hirsutum)",
-    "gma": "soybean (Glycine max)",
-    "gra": "cotton (Gossypium raimondii)",
-    "han": "sunflower (Helianthus annuus)",
-    "hvu": "barley (Hordeum vulgare)",
-    "lpe": "Lolium perenne",
-    "lsa": "lettuce (Lactuca sativa)",
-    "mac": "banana (Musa acuminata)",
-    "mes": "cassava (Manihot esculenta)",
-    "mpo": "liverwort (Marchantia polymorpha)",
-    "mtr": "barrel (Medicago truncatula)",
-    "obr": "wild (Oryza brachyantha)",
-    "oeu": "common (Olea europaea)",
-    "osa": "rice (Oryza sativa)",
-    "pha": "Hall's (Panicum hallii)",
-    "ppa": "Physcomitrium patens",
-    "ppe": "peach (Prunus persica)",
-    "psa": "garden (Pisum sativum)",
-    "pso": "opium (Papaver somniferum)",
-    "ptr": "black (Populus trichocarpa)",
-    "pvu": "common (Phaseolus vulgaris)",
-    "qlo": "Quercus lobata",
-    "rch": "rose (Rosa chinensis)",
-    "sbi": "sorghum (Sorghum bicolor)",
-    "sce": "rye (Secale cereale)",
-    "sit": "foxtail (Setaria italica)",
-    "sly": "tomato (Solanum lycopersicum)",
-    "smo": "Selaginella moellendorffii",
-    "ssp": "sugarcane (Saccharum spontaneum)",
-    "stu": "potato (Solanum tuberosum)",
-    "svi": "green (Setaria viridis)",
-    "tae": "wheat (Triticum aestivum)",
-    "tca": "cacao (Theobroma cacao)",
-    "tdi": "emmer (Triticum dicoccoides)",
-    "tpr": "red (Trifolium pratense)",
-    "ttu": "durum (Triticum turgidum)",
-    "vvi": "grape (Vitis vinifera)",
-    "zma": "maize (Zea mays)",
-}
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
 GENE_LOOKUP_CACHE_TTL = 300
+
+ANALYSIS_GOAL_TEMPLATE_MAP = {
+    "evolution_analysis": "user/evolution_analysis",
+    "haplotypes_analysis": "user/haplotypes_analysis",
+    "fst_analysis": "user/fst_analysis",
+    "enrichment_analysis": "user/enrichment_analysis",
+    "protein_structure_analysis": "user/structure_analysis",
+    "promoter_analysis": "user/promoter_analysis",
+    "gene_expression_tissues": "user/gene_expression_tissues",
+    "gene_expression_cultivars": "user/gene_expression_cultivars",
+    "gene_expression_genotypes": "user/gene_expression_genotypes",
+    "gene_expression_treatments": "user/gene_expression_treatments",
+    "single_cell_analysis": "user/single_cell_analysis",
+    "smep_analysis": "user/smep_analysis",
+    "smoc_analysis": "user/smoc_analysis",
+    "epic_analysis": "user/epic_analysis",
+    "gene_expression_analysis": "user/gene_expression_analysis",
+}
+
+ANALYSIS_META_TEMPLATE_MAP = {
+    "evolution_analysis": "user/evolution_analysis_meta",
+    "haplotypes_analysis": "user/haplotypes_analysis_meta",
+    "fst_analysis": "user/fst_analysis_meta",
+    "enrichment_analysis": "user/enrichment_analysis_meta",
+    "protein_structure_analysis": "user/structure_analysis_meta",
+    "promoter_analysis": "user/promoter_analysis_meta",
+    "gene_expression_tissues": "user/gene_expression_analysis_meta",
+    "gene_expression_cultivars": "user/gene_expression_analysis_meta",
+    "gene_expression_genotypes": "user/gene_expression_analysis_meta",
+    "gene_expression_treatments": "user/gene_expression_analysis_meta",
+    "single_cell_analysis": "user/single_cell_analysis_meta",
+    "smep_analysis": "user/smep_analysis_meta",
+    "smoc_analysis": "user/smoc_analysis_meta",
+    "epic_analysis": "user/epic_analysis_meta",
+    "gene_expression_analysis": "user/gene_expression_analysis_meta",
+}
+
+ANALYSIS_TARGET_FILE_FEATURE_MAP = {
+    "evolution_analysis": [".md", ".png", ".summary", ".legend"],
+    "haplotypes_analysis": [".png", ".summary", ".legend"],
+    "fst_analysis": [".png"],
+    "enrichment_analysis": [".png", ".summary", ".legend"],
+    "protein_structure_analysis": ["sample_0.cif", ".summary", ".legend"],
+    "promoter_analysis": ["motif_all_logo.png", ".summary", ".legend"],
+    "gene_expression_tissues": [".png", ".summary", ".legend"],
+    "gene_expression_cultivars": [".png", ".summary", ".legend"],
+    "gene_expression_genotypes": [".png", ".summary", ".legend"],
+    "gene_expression_treatments": [".png", ".summary", ".legend"],
+    "single_cell_analysis": [".png", ".summary", ".legend"],
+    "smep_analysis": [".png", ".summary", ".legend"],
+    "smoc_analysis": [".png", ".summary", ".legend"],
+    "epic_analysis": [".png", ".summary", ".legend"],
+    "gene_expression_analysis": [".png", ".summary", ".legend"],
+}
+
+DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
+MEDIUM_COMPUTE_ANALYSIS_TYPES = {
+    "protein_structure_analysis",
+    "evolution_analysis",
+}
 
 
 def _post_bi_sql(
@@ -1532,44 +1526,9 @@ class DeepGenomeAgents:
             Dict containing task_id and output_path.
         """
         # 根据 analysis_type 获取对应的 prompt 和 data_list
-        goal_template_map = {
-            "evolution_analysis": "user/evolution_analysis",
-            "haplotypes_analysis": "user/haplotypes_analysis",
-            "fst_analysis": "user/fst_analysis",
-            "enrichment_analysis": "user/enrichment_analysis",
-            "protein_structure_analysis": "user/structure_analysis",
-            "promoter_analysis": "user/promoter_analysis",
-            "gene_expression_tissues": "user/gene_expression_tissues",
-            "gene_expression_cultivars": "user/gene_expression_cultivars",
-            "gene_expression_genotypes": "user/gene_expression_genotypes",
-            "gene_expression_treatments": "user/gene_expression_treatments",
-            "single_cell_analysis": "user/single_cell_analysis",
-            "smep_analysis": "user/smep_analysis",
-            "smoc_analysis": "user/smoc_analysis",
-            "epic_analysis": "user/epic_analysis",
-            "gene_expression_analysis": "user/gene_expression_analysis",
-        }
-        meta_template_map = {
-            "evolution_analysis": "user/evolution_analysis_meta",
-            "haplotypes_analysis": "user/haplotypes_analysis_meta",
-            "fst_analysis": "user/fst_analysis_meta",
-            "enrichment_analysis": "user/enrichment_analysis_meta",
-            "protein_structure_analysis": "user/structure_analysis_meta",
-            "promoter_analysis": "user/promoter_analysis_meta",
-            "gene_expression_tissues": "user/gene_expression_analysis_meta",
-            "gene_expression_cultivars": "user/gene_expression_analysis_meta",
-            "gene_expression_genotypes": "user/gene_expression_analysis_meta",
-            "gene_expression_treatments": "user/gene_expression_analysis_meta",
-            "single_cell_analysis": "user/single_cell_analysis_meta",
-            "smep_analysis": "user/smep_analysis_meta",
-            "smoc_analysis": "user/smoc_analysis_meta",
-            "epic_analysis": "user/epic_analysis_meta",
-            "gene_expression_analysis": "user/gene_expression_analysis_meta",
-        }
-
-        goal_path = goal_template_map.get(analysis_type)
-        meta_path = meta_template_map.get(analysis_type)
-        if not goal_path:
+        goal_path = ANALYSIS_GOAL_TEMPLATE_MAP.get(analysis_type)
+        meta_path = ANALYSIS_META_TEMPLATE_MAP.get(analysis_type)
+        if not goal_path or not meta_path:
             raise ValueError(f"Unknown analysis type: {analysis_type}")
 
         # 构建 goal_description
@@ -1634,31 +1593,9 @@ class DeepGenomeAgents:
             if "/obs/phytomni/" in output_path
             else output_path
         )
-
-        # 针对不同分析类型设置不同的目标文件特征
-        target_file_feature_map = {
-            "evolution_analysis": [".md", ".png", ".summary", ".legend"],
-            "haplotypes_analysis": [".png", ".summary", ".legend"],
-            "fst_analysis": [".png"],
-            "enrichment_analysis": [".png", ".summary", ".legend"],
-            "protein_structure_analysis": [
-                "sample_0.cif",
-                ".summary",
-                ".legend",
-            ],
-            "promoter_analysis": ["motif_all_logo.png", ".summary", ".legend"],
-            "gene_expression_tissues": [".png", ".summary", ".legend"],
-            "gene_expression_cultivars": [".png", ".summary", ".legend"],
-            "gene_expression_genotypes": [".png", ".summary", ".legend"],
-            "gene_expression_treatments": [".png", ".summary", ".legend"],
-            "single_cell_analysis": [".png", ".summary", ".legend"],
-            "smep_analysis": [".png", ".summary", ".legend"],
-            "smoc_analysis": [".png", ".summary", ".legend"],
-            "epic_analysis": [".png", ".summary", ".legend"],
-            "gene_expression_analysis": [".png", ".summary", ".legend"],
-        }
-        target_file_feature = target_file_feature_map.get(
-            analysis_type, [".png", ".summary", ".legend"]
+        target_file_feature = ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
+            analysis_type,
+            DEFAULT_TARGET_FILE_FEATURE,
         )
 
         try:
@@ -1700,11 +1637,7 @@ class DeepGenomeAgents:
         Returns:
             String: "medium" or "small" based on analysis type.
         """
-        medium_compute_types = {
-            "protein_structure_analysis",
-            "evolution_analysis",
-        }
-        if analysis_type in medium_compute_types:
+        if analysis_type in MEDIUM_COMPUTE_ANALYSIS_TYPES:
             return "medium"
         return "small"
 
@@ -2828,128 +2761,3 @@ async def gene_function(
         config_params=kwargs.get("config_params"),
         thread_id=kwargs.get("thread_id"),
     )
-
-
-@func_cache(
-    key_params=[
-        "gene_network_list",
-        "species_gene_symbol_dict",
-        "species_gene_anno_dict",
-        "network_type",
-        "top_n",
-    ],
-    ttl=3600,
-)
-def network_to_string(
-    gene_network_list: list,
-    species_gene_symbol_dict: dict,
-    species_gene_anno_dict: dict,
-    network_type: str,
-    top_n: int = 10,
-):
-    """Formats gene network information into a string.
-
-    This function takes a list of genes in a network and their associated
-    symbols and annotations, and formats this information into a model-readable
-    string. The string includes the description of each gene and a summary of
-    the top N enriched GO, InterPro, and MapMan terms for the entire network.
-
-    Args:
-        gene_network_list (list): A list of tuples, where each tuple
-                                  represents a gene in the network and
-                                  contains the species code and gene ID.
-        species_gene_symbol_dict (dict): A dictionary mapping a
-                                         (species_code, gene_id) tuple to a
-                                         list of gene symbols.
-        species_gene_anno_dict (dict): A dictionary mapping a
-                                       (species_code, gene_id) tuple to a
-                                       dictionary of gene annotations.
-        network_type (str): The type of the network (e.g., "Orthologous",
-                            "Paralogous"). This is used in the output string.
-        top_n (int, optional): The number of top enriched terms to include in
-                               the summary.
-
-    Returns:
-        str: A formatted string containing the gene network information, or a
-             string indicating that no genes of the specified network type
-             were found.
-    """
-    if gene_network_list:
-        network_string = ""
-        go_id_dict: Dict[str, Any] = {}
-        ip_id_dict: Dict[str, Any] = {}
-        mm_id_dict: Dict[str, Any] = {}
-        go_count_dict: Dict[str, int] = {}
-        ip_count_dict: Dict[str, int] = {}
-        mm_count_dict: Dict[str, int] = {}
-        for species_gene in gene_network_list:
-            if species_gene in species_gene_symbol_dict:
-                symbol_string = "|".join(
-                    species_gene_symbol_dict[species_gene]
-                ).replace("\n", "|")
-            else:
-                symbol_string = species_gene[1]
-            if species_gene in species_gene_anno_dict:
-                gene_anno = species_gene_anno_dict[species_gene]
-                if "description" in gene_anno:
-                    description_string = gene_anno["description"]
-                else:
-                    description_string = ""
-                if "go" in gene_anno:
-                    for go_list in gene_anno["go"]:
-                        go_id_dict.update(
-                            {go_list["go_id"]: go_list["go_name"]}
-                        )
-                        if go_list["go_id"] in go_count_dict:
-                            go_count_dict[go_list["go_id"]] += 1
-                        else:
-                            go_count_dict.update({go_list["go_id"]: 1})
-                if "interpro" in gene_anno:
-                    for ip_list in gene_anno["interpro"]:
-                        ip_id_dict.update(
-                            {ip_list["interpro_id"]: ip_list["interpro_name"]}
-                        )
-                        if ip_list["interpro_id"] in ip_count_dict:
-                            ip_count_dict[ip_list["interpro_id"]] += 1
-                        else:
-                            ip_count_dict.update({ip_list["interpro_id"]: 1})
-                if "mapman" in gene_anno:
-                    for mm_list in gene_anno["mapman"]:
-                        mm_id_dict.update(
-                            {mm_list["mapman"]: mm_list["mapman_description"]}
-                        )
-                        if mm_list["mapman"] in mm_count_dict:
-                            mm_count_dict[mm_list["mapman"]] += 1
-                        else:
-                            mm_count_dict.update({mm_list["mapman"]: 1})
-            else:
-                description_string = ""
-            if description_string:
-                network_string += f"{SPECIES_CODE_MAP[species_gene[0]]}: "
-                network_string += f"{symbol_string}: {description_string}\n"
-        go_sorted_ids = sorted(
-            go_count_dict.items(), key=lambda x: x[1], reverse=True
-        )[:top_n]
-        go_all_string = "; ".join(
-            [go_id_dict[id] for id, count in go_sorted_ids if id in go_id_dict]
-        )
-        network_string += f"{network_type} genes TOP {top_n} "
-        network_string += f"GO enrichment results: {go_all_string}\n"
-        ip_sorted_ids = sorted(
-            ip_count_dict.items(), key=lambda x: x[1], reverse=True
-        )[:top_n]
-        ip_all_string = "; ".join(
-            [ip_id_dict[id] for id, count in ip_sorted_ids if id in ip_id_dict]
-        )
-        network_string += f"{network_type} genes TOP {top_n} "
-        network_string += f"InterPro enrichment results: {ip_all_string}\n"
-        mm_sorted_ids = sorted(
-            mm_count_dict.items(), key=lambda x: x[1], reverse=True
-        )[:top_n]
-        mm_all_string = "; ".join(
-            [mm_id_dict[id] for id, count in mm_sorted_ids if id in mm_id_dict]
-        )
-        network_string += f"{network_type} genes TOP {top_n} "
-        network_string += f"MapMan enrichment results: {mm_all_string}\n"
-        return network_string
-    return f"No {network_type} genes"
