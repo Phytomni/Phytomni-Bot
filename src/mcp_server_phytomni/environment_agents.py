@@ -9,6 +9,11 @@ import re
 from typing import Any
 from uuid import uuid1
 
+from .agent_option_helpers import (
+    SubmitKwargsSpec,
+    build_chat_kwargs,
+    build_submit_kwargs,
+)
 from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
@@ -22,91 +27,23 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 )
 
 
-def _resource_dict(value: Any, default: dict) -> dict:
-    """Return a copied nested resource dictionary."""
-    source = default if value is None else value
-    return {key: dict(item) for key, item in source.items()}
-
-
 def _environment_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return chat kwargs for environment code extraction."""
-    retriable_codes = kwargs.get("retriable_codes")
-    return {
-        "prompt_file": kwargs.get(
-            "prompt_file", ENVIRONMENT_CONFIG.PROMPT_FILE
-        ),
-        "prompt_path": kwargs.get(
-            "prompt_path", ENVIRONMENT_CONFIG.PROMPT_PATH
-        ),
-        "api_key": kwargs.get(
-            "api_key", SENSITIVE_CONFIG.API_KEY.get_secret_value()
-        ),
-        "base_url": kwargs.get("base_url", SENSITIVE_CONFIG.BASE_URL),
-        "model": kwargs.get("model", SENSITIVE_CONFIG.MODEL_ID),
-        "frequency_penalty": kwargs.get(
-            "frequency_penalty", ENVIRONMENT_CONFIG.FREQUENCY_PENALTY
-        ),
-        "n": kwargs.get("n", ENVIRONMENT_CONFIG.N),
-        "presence_penalty": kwargs.get(
-            "presence_penalty", ENVIRONMENT_CONFIG.PRESENCE_PENALTY
-        ),
-        "reasoning_effort": kwargs.get(
-            "reasoning_effort", ENVIRONMENT_CONFIG.REASONING_EFFORT
-        ),
-        "stream": kwargs.get("stream", ENVIRONMENT_CONFIG.STREAM),
-        "temperature": kwargs.get(
-            "temperature", ENVIRONMENT_CONFIG.TEMPERATURE
-        ),
-        "top_p": kwargs.get("top_p", ENVIRONMENT_CONFIG.TOP_P),
-        "user": kwargs.get("user", ENVIRONMENT_CONFIG.USER),
-        "timeout": kwargs.get("timeout", ENVIRONMENT_CONFIG.TIMEOUT),
-        "retriable_codes": (
-            list(ENVIRONMENT_CONFIG.RETRIABLE_CODES)
-            if retriable_codes is None
-            else list(retriable_codes)
-        ),
-        "max_retries": kwargs.get(
-            "max_retries", ENVIRONMENT_CONFIG.MAX_RETRIES
-        ),
-    }
+    return build_chat_kwargs(kwargs, ENVIRONMENT_CONFIG, SENSITIVE_CONFIG)
 
 
 def _environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return Analyst submit kwargs for the environment workflow."""
-    return {
-        "execute_code": True,
-        "model_url": kwargs.get("model_url", SENSITIVE_CONFIG.CODER_URL),
-        "model_name": kwargs.get("model_name", SENSITIVE_CONFIG.CODER_MODEL),
-        "coder_api_key": kwargs.get(
-            "coder_api_key", SENSITIVE_CONFIG.CODER_API_KEY.get_secret_value()
+    return build_submit_kwargs(
+        kwargs,
+        ENVIRONMENT_CONFIG,
+        SENSITIVE_CONFIG,
+        (DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY),
+        SubmitKwargsSpec(
+            task_name="environment-agents-vci-task",
+            compute_resource="large",
         ),
-        "access_key_id": kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
-        "secret_access_key": kwargs.get(
-            "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
-        ),
-        "obs_server": kwargs.get("obs_server", ENVIRONMENT_CONFIG.OBS_SERVER),
-        "bucket_name": kwargs.get(
-            "bucket_name", ENVIRONMENT_CONFIG.BUCKET_NAME
-        ),
-        "analysis_url": kwargs.get(
-            "analysis_url", ENVIRONMENT_CONFIG.ANALYSIS_URL
-        ),
-        "region": kwargs.get("region", ENVIRONMENT_CONFIG.ANALYSIS_REGION),
-        "task_name": "environment-agents-vci-task",
-        "resource_dict": _resource_dict(
-            kwargs.get("resource_dict"), ENVIRONMENT_CONFIG.RESOURCE
-        ),
-        "app_id_dict": dict(
-            kwargs.get("app_id_dict") or ENVIRONMENT_CONFIG.APP_ID
-        ),
-        "compute_resource": "large",
-        "timeout": kwargs.get("timeout", ENVIRONMENT_CONFIG.TIMEOUT),
-        "retriable_codes": _environment_chat_kwargs(kwargs)["retriable_codes"],
-        "max_retries": kwargs.get(
-            "max_retries", ENVIRONMENT_CONFIG.MAX_RETRIES
-        ),
-        "max_poll": kwargs.get("max_poll", ENVIRONMENT_CONFIG.MAX_POLL),
-    }
+    )
 
 
 async def _environment_region_codes(
