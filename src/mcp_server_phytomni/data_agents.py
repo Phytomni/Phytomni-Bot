@@ -196,9 +196,42 @@ async def rewrite_nl2sql(
     is_rewrite: bool = True,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent."""
-    arguments = locals().copy()
     active_dialog_id = dialog_id or str(uuid1())
-    arguments["dialog_id"] = active_dialog_id
+    arguments = {
+        "retrieve_url": retrieve_url,
+        "data_repo_id": data_repo_id,
+        "page_num": page_num,
+        "page_size": page_size,
+        "filter_string": filter_string,
+        "scope": scope,
+        "rerank_url": rerank_url,
+        "rerank_batch_size": rerank_batch_size,
+        "score_threshold": score_threshold,
+        "prompt_file": prompt_file,
+        "prompt_path": prompt_path,
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model,
+        "frequency_penalty": frequency_penalty,
+        "n": n,
+        "presence_penalty": presence_penalty,
+        "reasoning_effort": reasoning_effort,
+        "response_format": response_format,
+        "stream": stream,
+        "temperature": temperature,
+        "top_p": top_p,
+        "user": user,
+        "database_url": database_url,
+        "workspace_id": workspace_id,
+        "subject_id": subject_id,
+        "dialog_id": active_dialog_id,
+        "need_insight": need_insight,
+        "simplify_response": simplify_response,
+        "timeout": timeout,
+        "retriable_codes": retriable_codes,
+        "max_retries": max_retries,
+        "max_tokens": max_tokens,
+    }
     data_config = copy_config_with_overrides(
         DATA_CONFIG,
         arguments,

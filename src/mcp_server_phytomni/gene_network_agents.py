@@ -235,13 +235,14 @@ class GeneNetworkAgents:
         return {"network_task": result}
 
     def _get_compute_resource(
-        self, analysis_type: str
+        self, _analysis_type: str
     ) -> Literal["small", "medium", "large"]:
         """Determine compute resource level based on analysis type."""
         return "small"
 
     async def prepare_tasks(self, state: GeneNetworkState) -> dict:
         """Prepare the list of network analysis tasks."""
+        _ = state
         tasks = [{"analysis_type": "gene_network_analysis"}]
         return {"network_tasks": tasks, "task_ids": {}, "completed_count": 0}
 

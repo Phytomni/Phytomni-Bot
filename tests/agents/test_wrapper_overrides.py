@@ -27,6 +27,8 @@ def _no_cache(
     factory: Callable[[], Any],
     fingerprint_values: Any = None,
 ) -> Any:
+    cache_identity = (name, fingerprint_values)
+    assert cache_identity[0]
     return factory()
 
 

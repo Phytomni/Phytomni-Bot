@@ -20,12 +20,18 @@ class GrantingStorage:
     def __init__(self):
         self.acquired_owner = None
         self.released_owner = None
+        self.acquired_key = None
+        self.released_key = None
+        self.lock_expire = None
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
+        self.acquired_key = (func_id, key_hash)
         self.acquired_owner = owner
+        self.lock_expire = lock_expire
         return True
 
     def release_lock(self, func_id, key_hash, owner):
+        self.released_key = (func_id, key_hash)
         self.released_owner = owner
 
 
@@ -34,9 +40,11 @@ class BlockingStorage:
 
     def __init__(self):
         self.calls = 0
+        self.last_attempt = None
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
         self.calls += 1
+        self.last_attempt = (func_id, key_hash, owner, lock_expire)
         return False
 
 
@@ -48,6 +56,8 @@ def test_lock_manager_releases_with_current_owner():
     lock_manager.release("func", "key")
 
     assert storage.released_owner == storage.acquired_owner
+    assert storage.released_key == storage.acquired_key
+    assert storage.lock_expire == 300
 
 
 def test_lock_manager_times_out_when_lock_is_not_granted():
@@ -58,3 +68,7 @@ def test_lock_manager_times_out_when_lock_is_not_granted():
         lock_manager.acquire("func", "key")
 
     assert storage.calls == 1
+    assert storage.last_attempt is not None
+    func_id, key_hash, owner, lock_expire = storage.last_attempt
+    assert (func_id, key_hash, lock_expire) == ("func", "key", 300)
+    assert owner

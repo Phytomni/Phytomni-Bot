@@ -30,6 +30,7 @@ def test_func_cache_reuses_result_and_exposes_info(tmp_path):
     )
     def double(value, noise=None):
         calls["count"] += 1
+        calls["noise"] = noise
         return {"value": value * 2, "call": calls["count"]}
 
     first = double(2, noise="leaf")
@@ -114,6 +115,8 @@ def test_func_cache_exclude_params_can_skip_clients(tmp_path):
     )
     def fetch(value, client=None):
         calls["count"] += 1
+        if client is not None:
+            client(value)
         return {"value": value, "call": calls["count"]}
 
     first = fetch("leaf", client=lambda value: value)
@@ -153,6 +156,7 @@ async def test_func_cache_supports_async_round_trip(tmp_path):
     )
     async def double(value, noise=None):
         calls["count"] += 1
+        calls["noise"] = noise
         await asyncio.sleep(0)
         return {"value": value * 2, "call": calls["count"]}
 

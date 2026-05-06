@@ -484,6 +484,9 @@ async def download_list_convert(
         A list of strings, each containing the Markdown content of a
         processed file.
     """
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+
     # semaphore = asyncio.Semaphore(max_concurrency)
     should_shutdown = executor is None
     if should_shutdown:

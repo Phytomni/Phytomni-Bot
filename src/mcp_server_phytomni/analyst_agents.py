@@ -1249,6 +1249,34 @@ class AnalystAgent:
             compute_resource on success, or the initial state with
             task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
         """
+        # Public wrappers bind these compatibility options into the cached
+        # agent config. Direct arun callers may still pass them, so keep the
+        # state-level overrides explicit without mutating shared config.
+        compatibility_config = copy_config_with_overrides(
+            self.analyst_config,
+            {
+                "user": user,
+                "execute_code": execute_code,
+                "timeout": timeout,
+                "max_retries": max_retries,
+                "reasoning_effort": reasoning_effort,
+                "frequency_penalty": frequency_penalty,
+                "presence_penalty": presence_penalty,
+                "n": n,
+                "stream": stream,
+                "temperature": temperature,
+                "top_p": top_p,
+                "prompt_file": prompt_file,
+            },
+            ANALYST_CONFIG_FIELD_MAP,
+            fixed_updates={
+                "USER_ID": user_id,
+                "CREATE_DIR": is_create_dir,
+                "OUTPUT_DIR": output_dir,
+                "COMPUTE_RESOURCE": compute_resource,
+            },
+        )
+
         if obs_file_list is None:
             obs_file_list = []
         else:
@@ -1259,8 +1287,8 @@ class AnalystAgent:
             "goal_description": goal_description,
             "obs_file_list": obs_file_list,
             "data_list": preset_data_list or {},
-            "output_dir": output_dir,
-            "compute_resource": compute_resource,
+            "output_dir": compatibility_config.OUTPUT_DIR,
+            "compute_resource": compatibility_config.COMPUTE_RESOURCE,
             "method_context": None,
             "plan": preset_plan,
             "plan_feedback": None,

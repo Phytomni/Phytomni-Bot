@@ -264,6 +264,7 @@ class DigitalDesignAgents:
 
     async def prepare_tasks(self, state: DigitalDesignState) -> dict:
         """Prepare the list of design tasks."""
+        _ = state
         tasks = [
             {"analysis_type": "protein_design_analysis"},
             {"analysis_type": "promoter_design_analysis"},

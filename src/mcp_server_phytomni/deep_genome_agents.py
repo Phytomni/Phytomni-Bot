@@ -742,6 +742,7 @@ class DeepGenomeAgents:
         Returns:
             END to terminate Send instances.
         """
+        _ = state
         return END
 
     async def run_analyst_node(self, state: DeepGenomeState) -> dict:
@@ -1335,6 +1336,7 @@ class DeepGenomeAgents:
         Returns:
             Dict with summary_context.
         """
+        _ = state
         print("Summary ...")
         return {"summary_context": "111"}
 
