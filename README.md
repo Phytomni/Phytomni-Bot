@@ -333,7 +333,9 @@ The test suite currently includes unit coverage for:
 - shared LangGraph runner and agent registry behavior,
 - wrapper override propagation for digital design, gene network, and
   in-silico research entrypoints,
-- a minimal `DataAgent` fake-graph smoke test.
+- offline fake-graph smoke tests for Data, Knowledge, BriefGene, Review,
+  InSilicoResearch, GeneNetwork, DigitalDesign, Analyst, and DeepGenome
+  agents.
 
 ### Lint and Type Checks
 
