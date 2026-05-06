@@ -7,31 +7,22 @@
 
 from __future__ import annotations
 
-from json import loads
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 from .chat_agents import phyto_chat
 from .deep_genome_formatting import SPECIES_CODE_MAP
-from .utils import get_prompt, message_content, parse_follow_up_questions
+from .utils import (
+    get_prompt,
+    message_content,
+    parse_follow_up_questions,
+    parse_json_list_fragment,
+)
 from .workflow_mixins import WorkflowMixinBase
 
 if TYPE_CHECKING:
     from .deep_genome_agents import DeepGenomeState
 else:
     DeepGenomeState = dict[str, Any]
-
-
-def _extract_json_array(text: str) -> List[Any]:
-    """Extract a JSON array from model output."""
-    start_index = text.find("[")
-    end_index = text.rfind("]") + 1
-    if start_index == -1 or end_index <= start_index:
-        return []
-    try:
-        parsed = loads(text[start_index:end_index])
-    except (ValueError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
 
 
 def _state_gene_string(state: "DeepGenomeState") -> str:
@@ -141,7 +132,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             user_query=self._experiment_prompt(state, part12_str),
             **self._chat_kwargs(),
         )
-        experiment_list = _extract_json_array(
+        experiment_list = parse_json_list_fragment(
             message_content(experiment_response)
         )
         experiments_str = await self._experiment_protocols(experiment_list)
@@ -175,7 +166,10 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             },
         )
 
-    async def _experiment_protocols(self: Any, experiments: List[Any]) -> str:
+    async def _experiment_protocols(
+        self: Any,
+        experiments: list[Any],
+    ) -> str:
         """Retrieve protocol sections for recommended experiments."""
         sections = []
         for index, experiment in enumerate(experiments):

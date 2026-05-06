@@ -136,18 +136,6 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint.messages_control]
 disable = [
-    # Stage 7.10 reviewed: only legacy duplication/complexity categories
-    # remain global. New lint waivers must be local and documented.
+    # Stage 8 remaining debt: keep only until duplicate-code is refactored.
     "duplicate-code",
-    "too-many-arguments",
-    "too-many-boolean-expressions",
-    "too-many-branches",
-    "too-many-instance-attributes",
-    "too-many-lines",
-    "too-many-locals",
-    "too-many-nested-blocks",
-    "too-many-positional-arguments",
-    "too-many-public-methods",
-    "too-many-return-statements",
-    "too-many-statements",
 ]

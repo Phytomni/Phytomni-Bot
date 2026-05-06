@@ -216,7 +216,7 @@ def format_retrieved_doc_context(
 ) -> tuple[str, int]:
     """Format retrieved documents as bounded prompt context."""
     fragments = (
-        _format_retrieved_doc_fragment(doc, index)
+        format_retrieved_doc_fragment(doc, index)
         for index, doc in enumerate(docs)
     )
     return join_limited_fragments(
@@ -226,11 +226,13 @@ def format_retrieved_doc_context(
     )
 
 
-def _format_retrieved_doc_fragment(
+def format_retrieved_doc_fragment(
     doc: Mapping[str, Any],
     index: int,
+    label: str = "document",
 ) -> str:
-    header = f"[document {index + 1} begin] {doc['title']}"
+    """Format one retrieved document fragment for prompt context."""
+    header = f"[{label} {index + 1} begin] {doc['title']}"
     content_field = (
         doc.get("big_content")
         if "big_content" in doc
@@ -241,7 +243,7 @@ def _format_retrieved_doc_fragment(
         if doc.get("subtitle")
         else doc.get("content", "")
     )
-    return f"{header}\n{body} [document {index + 1} end]"
+    return f"{header}\n{body} [{label} {index + 1} end]"
 
 
 async def get_token(

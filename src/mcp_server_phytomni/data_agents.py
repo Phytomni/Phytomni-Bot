@@ -39,6 +39,7 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
+    format_retrieved_doc_fragment,
     get_prompt,
     get_token,
     retry_http_status_or_raise,
@@ -331,18 +332,7 @@ class DataAgent:
         retrieve_results = []
         total_length = 0
         for i, doc in enumerate(retrieve_response.get("doc_list", [])):
-            header = f"[scenario {i+1} begin] {doc['title']}"
-            content_field = (
-                doc.get("big_content")
-                if "big_content" in doc
-                else doc.get("content", "")
-            )
-            body = (
-                f"{doc['subtitle']}\n{content_field}"
-                if doc.get("subtitle")
-                else doc.get("content", "")
-            )
-            fragment = f"{header}\n{body} [scenario {i+1} end]"
+            fragment = format_retrieved_doc_fragment(doc, i, label="scenario")
             if total_length + len(fragment) <= DATA_CONFIG.MAX_TOKENS:
                 retrieve_results.append(fragment)
                 total_length += len(fragment)
