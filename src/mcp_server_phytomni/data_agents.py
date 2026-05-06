@@ -10,6 +10,7 @@ and to first rewrite the natural language query using a language model for
 better performance.
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, TypedDict
 from uuid import uuid1
 
@@ -73,46 +74,73 @@ DATA_SENSITIVE_FIELD_MAP = {
 DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 
 
+@dataclass(frozen=True)
+class Nl2SqlRequest:
+    """Resolved request settings for one NL2SQL call."""
+
+    message_content: str
+    database_url: str
+    workspace_id: str
+    subject_id: str
+    dialog_id: str
+    need_insight: bool
+    simplify_response: bool
+    timeout: float
+    retriable_codes: tuple[int, ...]
+    max_retries: int
+
+    @classmethod
+    def from_kwargs(cls, message_content: str, values: Dict[str, Any]):
+        """Build request settings from keyword-compatible overrides."""
+        retriable_codes = values.get("retriable_codes")
+        if retriable_codes is None:
+            retriable_codes = DATA_CONFIG.RETRIABLE_CODES
+        return cls(
+            message_content=message_content,
+            database_url=values.get("database_url", DATA_CONFIG.DATABASE_URL),
+            workspace_id=values.get("workspace_id", DATA_CONFIG.WORKSPACE_ID),
+            subject_id=values.get("subject_id", DATA_CONFIG.SUBJECT_ID),
+            dialog_id=values.get("dialog_id") or str(uuid1()),
+            need_insight=values.get("need_insight", DATA_CONFIG.NEED_INSIGHT),
+            simplify_response=values.get(
+                "simplify_response",
+                DATA_CONFIG.SIMPLIFY_RESPONSE,
+            ),
+            timeout=values.get("timeout", DATA_CONFIG.TIMEOUT),
+            retriable_codes=tuple(retriable_codes),
+            max_retries=values.get("max_retries", DATA_CONFIG.MAX_RETRIES),
+        )
+
+    def payload(self) -> Dict[str, Any]:
+        """Return the database API JSON payload."""
+        return {
+            "subject_id": self.subject_id,
+            "dialog_id": self.dialog_id,
+            "message_content": self.message_content,
+            "need_insight": self.need_insight,
+            "simplify_response": self.simplify_response,
+        }
+
+
 async def nl2sql(
     message_content: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Convert a natural language query to SQL and execute it."""
-    database_url = kwargs.get("database_url", DATA_CONFIG.DATABASE_URL)
-    workspace_id = kwargs.get("workspace_id", DATA_CONFIG.WORKSPACE_ID)
-    subject_id = kwargs.get("subject_id", DATA_CONFIG.SUBJECT_ID)
-    dialog_id = kwargs.get("dialog_id", DATA_CONFIG.DIALOG_ID)
-    need_insight = kwargs.get("need_insight", DATA_CONFIG.NEED_INSIGHT)
-    simplify_response = kwargs.get(
-        "simplify_response", DATA_CONFIG.SIMPLIFY_RESPONSE
-    )
-    timeout = kwargs.get("timeout", DATA_CONFIG.TIMEOUT)
-    retriable_codes = kwargs.get("retriable_codes")
-    max_retries = kwargs.get("max_retries", DATA_CONFIG.MAX_RETRIES)
-    if retriable_codes is None:
-        retriable_codes = list(DATA_CONFIG.RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-    dialog_id = dialog_id if dialog_id else str(uuid1())
-    client_timeout = Timeout(timeout, connect=timeout)
+    request = Nl2SqlRequest.from_kwargs(message_content, kwargs)
+    client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
+        for attempt in range(request.max_retries + 1):
             try:
                 response = await client.post(
-                    database_url,
+                    request.database_url,
                     headers={
                         "X-Auth-Token": await get_token(),
-                        "X-Workspace-Id": workspace_id,
+                        "X-Workspace-Id": request.workspace_id,
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "subject_id": subject_id,
-                        "dialog_id": dialog_id,
-                        "message_content": message_content,
-                        "need_insight": need_insight,
-                        "simplify_response": simplify_response,
-                    },
-                    timeout=timeout,
+                    json=request.payload(),
+                    timeout=request.timeout,
                 )
                 response.raise_for_status()
                 return response.json()
@@ -121,8 +149,8 @@ async def nl2sql(
                 if await retry_http_status_or_raise(
                     exc,
                     attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
+                    max_retries=request.max_retries,
+                    retriable_codes=request.retriable_codes,
                     message="Failed to query SQL database",
                 ):
                     continue
@@ -131,7 +159,7 @@ async def nl2sql(
                 if await retry_network_or_raise(
                     exc,
                     attempt=attempt,
-                    max_retries=max_retries,
+                    max_retries=request.max_retries,
                 ):
                     continue
 

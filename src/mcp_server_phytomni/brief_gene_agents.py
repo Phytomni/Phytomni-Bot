@@ -7,7 +7,8 @@
 """Brief gene function summaries from BI annotations and literature RAG."""
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, TypedDict
 
 from httpx import (
     AsyncClient,
@@ -63,6 +64,16 @@ BRIEF_GENE_SECRET_FIELD_MAP = {
     "api_key": "API_KEY",
     "bi_token": "BI_TOKEN",
 }
+
+
+@dataclass(frozen=True)
+class GeneRetrieveRequest:
+    """Cache-key-safe options for one gene literature retrieval request."""
+
+    species: str
+    symbols: tuple[str, ...]
+    top_n: int
+    agent_context: tuple[tuple[str, Any], ...]
 
 
 def _sql_literal(value: str) -> str:
@@ -137,15 +148,89 @@ def _attach_metadata(
     return attach_message_payload(phyto_response, payload)
 
 
+def _safe_rows(results: List[Any], index: int) -> List[Dict[str, Any]]:
+    """Return BI response rows for one gather result index."""
+    result = results[index]
+    if isinstance(result, Exception):
+        return []
+    return _response_data(result)
+
+
+def _go_annotation_string(go_rows: List[Dict[str, Any]]) -> str:
+    """Format selected GO annotations."""
+    core_rows = [
+        row
+        for row in go_rows
+        if str(row.get("is_propagated_from_child_term")) == "0"
+    ] or [
+        row
+        for row in go_rows
+        if str(row.get("is_propagated_from_child_term")) == "1"
+    ]
+    return (
+        " ; ".join(
+            _dedupe(
+                [
+                    f"{row.get('go_id')} ({row.get('go_name')})"
+                    for row in core_rows
+                    if row.get("go_id") or row.get("go_name")
+                ]
+            )
+        )
+        or "No annotation available."
+    )
+
+
+def _mapman_annotation_string(mapman_rows: List[Dict[str, Any]]) -> str:
+    """Format MapMan descriptions while skipping uninformative entries."""
+    invalid_keywords = ["not assigned", "unknown", "not annotate"]
+    return (
+        " ; ".join(
+            _dedupe(
+                [
+                    str(row.get("mapman_description", "")).strip()
+                    for row in mapman_rows
+                    if row.get("mapman_description")
+                    and not any(
+                        keyword
+                        in str(row.get("mapman_description", "")).lower()
+                        for keyword in invalid_keywords
+                    )
+                ]
+            )
+        )
+        or "No annotation available."
+    )
+
+
+def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
+    """Format InterPro annotation names."""
+    return (
+        " ; ".join(
+            _dedupe(
+                [
+                    str(row.get("interpro_name", "")).strip()
+                    for row in interpro_rows
+                    if row.get("interpro_name")
+                ]
+            )
+        )
+        or "No annotation available."
+    )
+
+
 async def run_bi_api(
     query_sql: str,
-    bi_url: str = BRIEF_CONFIG.BI_URL,
-    bi_token: str = SENSITIVE_CONFIG.BI_TOKEN.get_secret_value(),
-    timeout: float = BRIEF_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = BRIEF_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Invoke the BI API to retrieve annotation information."""
+    bi_url = kwargs.get("bi_url", BRIEF_CONFIG.BI_URL)
+    bi_token = kwargs.get(
+        "bi_token", SENSITIVE_CONFIG.BI_TOKEN.get_secret_value()
+    )
+    timeout = kwargs.get("timeout", BRIEF_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", BRIEF_CONFIG.MAX_RETRIES)
     if retriable_codes is None:
         retriable_codes = list(BRIEF_CONFIG.RETRIABLE_CODES)
     else:
@@ -196,10 +281,11 @@ async def gene_retrieve(
     species: str,
     gene_symbol_list: List[str],
     knowledge_agent: KnowledgeAgent,
-    top_n: int = BRIEF_CONFIG.TOP_N,
-    semaphore: Optional[asyncio.Semaphore] = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Retrieve literature for a gene through the LangGraph KnowledgeAgent."""
+    top_n = kwargs.get("top_n", BRIEF_CONFIG.TOP_N)
+    semaphore = kwargs.get("semaphore")
     symbols = tuple(_dedupe(gene_symbol_list))
     if not symbols:
         return {"doc_list": [], "total": 10000}
@@ -207,38 +293,37 @@ async def gene_retrieve(
     agent_context = agent_fingerprint_values(
         knowledge_config=knowledge_agent.knowledge_config,
     )
-    return await _gene_retrieve_cached(
+    request = GeneRetrieveRequest(
         species=species,
         symbols=symbols,
         top_n=top_n,
-        agent_context=agent_context,
+        agent_context=tuple(sorted(agent_context.items())),
+    )
+    return await _gene_retrieve_cached(
+        request=request,
         knowledge_agent=knowledge_agent,
         semaphore=semaphore,
     )
 
 
 @func_cache(
-    key_params=["species", "symbols", "top_n", "agent_context"],
+    key_params=["request"],
     ttl=GENE_RETRIEVE_CACHE_TTL,
     exclude_params=["knowledge_agent", "semaphore"],
 )
 async def _gene_retrieve_cached(
-    species: str,
-    symbols: tuple[str, ...],
-    top_n: int,
-    agent_context: Dict[str, Any],
+    request: GeneRetrieveRequest,
     knowledge_agent: KnowledgeAgent,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
     """Retrieve and cache gene literature for stable gene symbol queries."""
-    del agent_context
-    combined_symbols = "\n".join(symbols)
-    query_terms = _dedupe([*symbols, combined_symbols])
+    combined_symbols = "\n".join(request.symbols)
+    query_terms = _dedupe([*request.symbols, combined_symbols])
 
     async def make_gene_retrieve() -> Dict[str, Any]:
         tasks = [
             knowledge_agent.arun(
-                user_query=f"{species}\n{symbol}",
+                user_query=f"{request.species}\n{symbol}",
                 is_generate=False,
                 is_follow_up=False,
             )
@@ -262,8 +347,8 @@ async def _gene_retrieve_cached(
         sorted_docs = sorted(
             merged_docs, key=lambda item: item.get("score", 0), reverse=True
         )
-        if top_n is not None and top_n > 0:
-            sorted_docs = sorted_docs[:top_n]
+        if request.top_n is not None and request.top_n > 0:
+            sorted_docs = sorted_docs[: request.top_n]
         return {"doc_list": sorted_docs, "total": 10000}
 
     if semaphore is not None:
@@ -280,25 +365,10 @@ def clear_gene_retrieve_cache() -> None:
 async def _generate_follow_up(
     user_query: str,
     phyto_response: Dict[str, Any],
-    prompt_file: str,
-    prompt_path: str,
-    api_key: str,
-    base_url: str,
-    model: str,
-    frequency_penalty: float,
-    n: int,
-    presence_penalty: float,
-    reasoning_effort: Optional[str],
-    response_format: Dict[str, Union[str, Dict]],
-    stream: bool,
-    temperature: float,
-    top_p: float,
-    user: str,
-    timeout: float,
-    retriable_codes: List[int],
-    max_retries: int,
+    **kwargs: Any,
 ) -> List[str]:
     """Generate follow-up questions for a brief gene response."""
+    prompt_file = kwargs.get("prompt_file", BRIEF_CONFIG.PROMPT_FILE)
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
             prompt_file,
@@ -308,23 +378,7 @@ async def _generate_follow_up(
                 "system_response": message_content(phyto_response),
             },
         ),
-        prompt_file=prompt_file,
-        prompt_path=prompt_path,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        frequency_penalty=frequency_penalty,
-        n=n,
-        presence_penalty=presence_penalty,
-        reasoning_effort=reasoning_effort,
-        response_format=response_format,
-        stream=stream,
-        temperature=temperature,
-        top_p=top_p,
-        user=user,
-        timeout=timeout,
-        retriable_codes=retriable_codes,
-        max_retries=max_retries,
+        **kwargs,
     )
     return parse_follow_up_questions(message_content(follow_up_response))
 
@@ -486,11 +540,7 @@ class BriefGeneAgent:
             return_exceptions=True,
         )
 
-        id_rows = (
-            _response_data(annotation_responses[0])
-            if not isinstance(annotation_responses[0], Exception)
-            else []
-        )
+        id_rows = _safe_rows(annotation_responses, 0)
         gene_symbols = _split_symbols(
             str(id_rows[0].get("symbol", "")) if id_rows else ""
         )
@@ -498,80 +548,15 @@ class BriefGeneAgent:
             [state["user_query"], state["gene_id"], *gene_symbols]
         )
 
-        structure_rows = (
-            _response_data(annotation_responses[1])
-            if not isinstance(annotation_responses[1], Exception)
-            else []
-        )
+        structure_rows = _safe_rows(annotation_responses, 1)
         structure_row = structure_rows[0] if structure_rows else {}
 
-        go_rows = (
-            _response_data(annotation_responses[2])
-            if not isinstance(annotation_responses[2], Exception)
-            else []
+        go_string = _go_annotation_string(_safe_rows(annotation_responses, 2))
+        kegg_string = _mapman_annotation_string(
+            _safe_rows(annotation_responses, 3)
         )
-        core_go_rows = [
-            row
-            for row in go_rows
-            if str(row.get("is_propagated_from_child_term")) == "0"
-        ] or [
-            row
-            for row in go_rows
-            if str(row.get("is_propagated_from_child_term")) == "1"
-        ]
-        go_string = (
-            " ; ".join(
-                _dedupe(
-                    [
-                        f"{row.get('go_id')} ({row.get('go_name')})"
-                        for row in core_go_rows
-                        if row.get("go_id") or row.get("go_name")
-                    ]
-                )
-            )
-            or "No annotation available."
-        )
-
-        mapman_rows = (
-            _response_data(annotation_responses[3])
-            if not isinstance(annotation_responses[3], Exception)
-            else []
-        )
-        invalid_keywords = ["not assigned", "unknown", "not annotate"]
-        kegg_string = (
-            " ; ".join(
-                _dedupe(
-                    [
-                        str(row.get("mapman_description", "")).strip()
-                        for row in mapman_rows
-                        if row.get("mapman_description")
-                        and not any(
-                            keyword
-                            in str(row.get("mapman_description", "")).lower()
-                            for keyword in invalid_keywords
-                        )
-                    ]
-                )
-            )
-            or "No annotation available."
-        )
-
-        interpro_rows = (
-            _response_data(annotation_responses[4])
-            if not isinstance(annotation_responses[4], Exception)
-            else []
-        )
-        interpro_string = (
-            " ; ".join(
-                _dedupe(
-                    [
-                        str(row.get("interpro_name", "")).strip()
-                        for row in interpro_rows
-                        if row.get("interpro_name")
-                    ]
-                )
-            )
-            or "No annotation available."
+        interpro_string = _interpro_annotation_string(
+            _safe_rows(annotation_responses, 4)
         )
 
         return {

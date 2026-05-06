@@ -8,20 +8,10 @@ It includes functions for retrieving, reranking, and generating text based on
 the retrieved knowledge.
 """
 
-import asyncio
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from httpx import (
-    AsyncClient,
-    ConnectError,
-    HTTPStatusError,
-    Timeout,
-    TimeoutException,
-)
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
@@ -35,7 +25,7 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .func_cache import func_cache
+from .knowledge_retrieval import multi_retrieve, rerank, retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
     download_list_convert,
@@ -44,9 +34,6 @@ from .utils import (
     get_prompt,
     message_content,
     parse_follow_up_questions,
-    retry_http_status_or_raise,
-    retry_network_or_raise,
-    split_list,
 )
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
@@ -70,6 +57,14 @@ KNOWLEDGE_SECRET_FIELD_MAP = {
     "access_key_id": "ACCESS_KEY_ID",
     "secret_access_key": "SECRET_ACCESS_KEY",
 }
+__all__ = [
+    "KnowledgeAgent",
+    "multi_retrieve",
+    "multi_retrieve_generate",
+    "rerank",
+    "retrieve",
+    "retrieve_generate",
+]
 
 
 class KnowledgeAgentState(TypedDict):
@@ -486,11 +481,7 @@ class KnowledgeAgent:
     async def arun(
         self,
         user_query: str,
-        obs_file_list: Optional[List[str]] = None,
-        repo_id_dict: Optional[Dict[str, int]] = None,
-        is_generate: bool = True,
-        is_follow_up: bool = True,
-        thread_id: Optional[str] = None,
+        **kwargs: Any,
     ):
         """Execute the KnowledgeAgent workflow.
 
@@ -512,6 +503,10 @@ class KnowledgeAgent:
             The final response dictionary containing the LLM response
             and optionally the doc_list and follow_up_questions.
         """
+        obs_file_list = kwargs.get("obs_file_list")
+        repo_id_dict = kwargs.get("repo_id_dict")
+        is_generate = kwargs.get("is_generate", True)
+        is_follow_up = kwargs.get("is_follow_up", True)
         initial_state = {
             "user_query": user_query,
             "obs_file_list": obs_file_list or [],
@@ -527,435 +522,14 @@ class KnowledgeAgent:
         }
 
         final_state = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app,
+            initial_state,
+            thread_id=kwargs.get("thread_id"),
         )
 
         if not is_generate:
             return final_state["retrieved_docs"]
         return final_state["final_response"]
-
-
-@func_cache(
-    key_params=[
-        "user_query",
-        "retrieve_url",
-        "repo_id",
-        "page_num",
-        "page_size",
-        "filter_string",
-        "scope",
-        "extra_repo_ids",
-        "rerank_url",
-        "rerank_batch_size",
-        "score_threshold",
-    ],
-    ttl=RETRIEVE_CACHE_TTL,
-)
-async def retrieve(
-    user_query: str,
-    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL,
-    repo_id: str = KNOWLEDGE_CONFIG.REPO_ID,
-    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM,
-    page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE,
-    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING,
-    scope: str = KNOWLEDGE_CONFIG.SCOPE,
-    extra_repo_ids: Optional[List[str]] = KNOWLEDGE_CONFIG.EXTRA_REPO_IDS,
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
-    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
-) -> Dict[str, Any]:
-    """Retrieve and rerank documents from a knowledge base.
-
-    This function queries a knowledge base service, retrieves documents based
-    on the user query, and then reranks them to improve relevance. It supports
-    searching within document content, keywords, or both. The function also
-    includes a retry mechanism for transient network or server errors.
-
-    Args:
-        user_query: The user's natural language query.
-        retrieve_url: The URL of the retrieval service.
-        repo_id: The ID of the primary knowledge repository to search.
-        page_num: The page number for pagination of retrieval results.
-        page_size: The number of documents to retrieve per page. This also
-                   serves as the `top_n` parameter for the reranking process.
-        filter_string: An optional string for metadata filtering.
-        scope: The search scope, which can be 'doc', 'keyword', or 'both'.
-        extra_repo_ids: An optional list of additional repository IDs to
-                        include in the search.
-        rerank_url: The URL of the reranking service.
-        rerank_batch_size: The batch size for reranking documents.
-        score_threshold: The minimum relevance score to include documents in
-                         the final result.
-        timeout: The timeout for each API call in seconds.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retries for failed requests.
-
-    Returns:
-        A dictionary containing the reranked list of documents and a total
-        count. The dictionary has 'doc_list' and 'total' keys.
-
-    Raises:
-        McpError: If the API call to the retrieval or reranking service fails
-                  after all retries.
-        ValueError: If an unsupported `scope` value is provided.
-    """
-    if retriable_codes is None:
-        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-
-    async def make_retrieve_request(client, scope):
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    retrieve_url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "repo_id": repo_id,
-                        "content": user_query,
-                        "page_num": page_num,
-                        "page_size": page_size,
-                        "filter_string": filter_string,
-                        "scope": scope,
-                        "extra_repo_ids": extra_repo_ids,
-                    },
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response.json()["doc_list"]
-
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
-                    message="Failed to retrieve knowledge base",
-                ):
-                    continue
-
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                ):
-                    continue
-
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        if scope in ("doc", "keyword"):
-            doc_list = await make_retrieve_request(client, scope)
-        elif scope == "both":
-            tasks = [
-                make_retrieve_request(client, scope)
-                for scope in ["doc", "keyword"]
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            doc_list = []
-            for each_result in results:
-                if isinstance(each_result, Exception):
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Retrieval failed: {str(each_result)}",
-                        )
-                    ) from each_result
-                if each_result is not None and isinstance(each_result, list):
-                    doc_list.extend(each_result)
-        else:
-            raise ValueError(
-                "Invalid scope value. Must be 'doc', 'keyword', or 'both'."
-            )
-
-    if doc_list is None:
-        doc_list = []
-    elif not isinstance(doc_list, list):
-        doc_list = list(doc_list)
-
-    return {
-        "doc_list": await rerank(
-            user_query=user_query,
-            doc_list=doc_list,
-            rerank_url=rerank_url,
-            top_n=page_size,
-            rerank_batch_size=rerank_batch_size,
-            score_threshold=score_threshold,
-            timeout=timeout,
-            retriable_codes=retriable_codes,
-            max_retries=max_retries,
-        ),
-        "total": 10000,
-    }
-
-
-@func_cache(
-    key_params=[
-        "user_query",
-        "retrieve_url",
-        "repo_id_dict",
-        "page_num",
-        "filter_string",
-        "scope",
-        "extra_repo_ids",
-        "rerank_url",
-        "rerank_batch_size",
-        "score_threshold",
-        "top_n",
-    ],
-    ttl=RETRIEVE_CACHE_TTL,
-    exclude_params=["semaphore"],
-)
-async def multi_retrieve(
-    user_query: str,
-    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = None,
-    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM,
-    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING,
-    scope: str = KNOWLEDGE_CONFIG.SCOPE,
-    extra_repo_ids: Optional[List[str]] = KNOWLEDGE_CONFIG.EXTRA_REPO_IDS,
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
-    top_n: int = KNOWLEDGE_CONFIG.TOP_N,
-    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
-    semaphore: Optional[asyncio.Semaphore] = None,
-) -> Dict[str, Any]:
-    """Concurrently retrieve and rerank documents from multiple repositories.
-
-    This function calls the `retrieve` function for each repository specified
-    in `repo_id_dict`. It then merges the results, sorts them by relevance
-    score, and returns the top N documents. A semaphore can be used to limit
-    the concurrency of the retrieval operations.
-
-    Args:
-        user_query: The user's natural language query.
-        retrieve_url: The URL of the retrieval service.
-        repo_id_dict: A dictionary mapping repository IDs to their page sizes.
-        page_num: The page number for pagination of retrieval results.
-        filter_string: An optional string for metadata filtering.
-        scope: The search scope, which can be 'doc', 'keyword', or 'both'.
-        extra_repo_ids: An optional list of additional repository IDs to
-                        include in the search.
-        rerank_url: The URL of the reranking service.
-        rerank_batch_size: The batch size for reranking documents.
-        score_threshold: The minimum relevance score to include documents in
-                         the final result.
-        top_n: The total number of top-scoring documents to return.
-        timeout: The timeout for each API call in seconds.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retries for failed requests.
-        semaphore: An optional semaphore to limit concurrency.
-
-    Returns:
-        A dictionary containing the merged and sorted list of documents and a
-        total count. The dictionary has 'doc_list' and 'total' keys.
-
-    Raises:
-        McpError: If any of the underlying `retrieve` operations fail.
-    """
-    if repo_id_dict is None:
-        repo_id_dict = dict(KNOWLEDGE_CONFIG.REPO_ID_DICT)
-    else:
-        repo_id_dict = dict(repo_id_dict)
-    if retriable_codes is None:
-        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-
-    async def make_multi_retrieve():
-        try:
-            tasks = [
-                retrieve(
-                    user_query=user_query,
-                    retrieve_url=retrieve_url,
-                    repo_id=repo_id,
-                    page_num=page_num,
-                    page_size=page_size,
-                    filter_string=filter_string,
-                    scope=scope,
-                    extra_repo_ids=extra_repo_ids,
-                    rerank_url=rerank_url,
-                    rerank_batch_size=rerank_batch_size,
-                    score_threshold=score_threshold,
-                    timeout=timeout,
-                    retriable_codes=retriable_codes,
-                    max_retries=max_retries,
-                )
-                for repo_id, page_size in repo_id_dict.items()
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            merged_docs = []
-            for result in results:
-                if isinstance(result, dict) and "doc_list" in result:
-                    merged_docs.extend(result["doc_list"])
-            sorted_docs = sorted(
-                merged_docs, key=lambda x: x["score"], reverse=True
-            )
-            if top_n is not None and top_n > 0:
-                sorted_docs = sorted_docs[:top_n]
-            return {
-                "doc_list": sorted_docs,
-                "total": 10000,
-            }
-        except (
-            ValueError,
-            TypeError,
-            HTTPStatusError,
-            ConnectError,
-            TimeoutException,
-        ) as e:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Multi-retrieve operation failed: {str(e)}",
-                )
-            ) from e
-
-    if semaphore is not None:
-        async with semaphore:
-            return await make_multi_retrieve()
-    else:
-        return await make_multi_retrieve()
-
-
-async def rerank(
-    user_query: str,
-    doc_list: List[Dict[str, Any]],
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL,
-    top_n: int = KNOWLEDGE_CONFIG.TOP_N,
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
-    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
-) -> list:
-    """Rerank a list of documents based on a user query.
-
-    This function sends a list of documents to a reranking service to obtain
-    relevance scores. It processes documents in batches and filters the
-    results based on a score threshold.
-
-    Args:
-        user_query: The user's natural language query.
-        doc_list: A list of document dictionaries to be reranked.
-        rerank_url: The URL of the reranking service.
-        top_n: The number of top-scoring documents to return.
-        rerank_batch_size: The batch size for reranking documents.
-        score_threshold: The minimum relevance score to include documents in
-                         the final result.
-        timeout: The timeout for each API call in seconds.
-        retriable_codes: A list of HTTP status codes that trigger a retry.
-        max_retries: The maximum number of retries for failed requests.
-
-    Returns:
-        A list of reranked document dictionaries, sorted by score in
-        descending order.
-
-    Raises:
-        McpError: If the API call to the reranking service fails after all
-                  retries.
-    """
-    if retriable_codes is None:
-        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
-    else:
-        retriable_codes = list(retriable_codes)
-
-    async def make_rerank_request(client, docs_batch):
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    rerank_url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "query": user_query,
-                        "ranking_order": ["title", "content"],
-                        "docs": docs_batch,
-                        "top_n": top_n,
-                    },
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response.json()["rank_result"]
-
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
-                    message="Failed to rerank",
-                ):
-                    continue
-
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                ):
-                    continue
-
-    docs, id_doc_dict = [], {}
-    for doc in doc_list:
-        if doc["chunk_id"] not in id_doc_dict:
-            if "big_content" in doc:
-                docs.append(
-                    {
-                        "id": doc["chunk_id"],
-                        "title": doc["title"],
-                        "content": doc["big_content"],
-                    }
-                )
-                id_doc_dict.update({doc["chunk_id"]: doc})
-            elif "content" in doc:
-                docs.append(
-                    {
-                        "id": doc["chunk_id"],
-                        "title": doc["title"],
-                        "content": doc["content"],
-                    }
-                )
-                id_doc_dict.update({doc["chunk_id"]: doc})
-
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        if len(docs) > rerank_batch_size:
-            chunks = split_list(docs, rerank_batch_size)
-            tasks = [make_rerank_request(client, chunk) for chunk in chunks]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            all_results: List[Dict[str, Any]] = []
-            for result in results:
-                if isinstance(result, BaseException):
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message=f"Reranking failed: {str(result)}",
-                        )
-                    ) from result
-                if isinstance(result, list):
-                    all_results.extend(result)
-            rank_docs = sorted(
-                all_results, key=lambda x: x["score"], reverse=True
-            )[:top_n]
-        else:
-            rank_docs = await make_rerank_request(client, docs)
-
-    if rank_docs is None:
-        rank_docs = []
-    elif not isinstance(rank_docs, list):
-        rank_docs = list(rank_docs)
-
-    return [
-        {**id_doc_dict[doc["id"]].copy(), "score": doc["score"]}
-        for doc in rank_docs
-        if doc["score"] >= score_threshold
-    ]
 
 
 def _knowledge_config_with_overrides(**kwargs: Any):

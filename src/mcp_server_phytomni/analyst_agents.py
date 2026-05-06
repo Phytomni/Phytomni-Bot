@@ -10,6 +10,7 @@ import datetime
 import json
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from traceback import format_exc
 from typing import Any, Dict, List, Literal, Optional, TypedDict
@@ -91,6 +92,45 @@ ANALYST_SECRET_FIELD_MAP = {
     "access_key_id": "ACCESS_KEY_ID",
     "secret_access_key": "SECRET_ACCESS_KEY",
 }
+
+
+@dataclass(frozen=True)
+class ObsDownloadOptions:
+    """Resolved options for downloading analyst results from OBS."""
+
+    download_path: str
+    access_key_id: str
+    secret_access_key: str
+    obs_server: str
+    target_file_feature: tuple[str, ...]
+    bucket_name: str
+    marker: Optional[str]
+    max_keys: int
+    if_download_all: bool
+
+    @classmethod
+    def from_kwargs(cls, values: Dict[str, Any]):
+        """Build options from keyword-compatible overrides."""
+        target_file_feature = values.get("target_file_feature")
+        if target_file_feature is None:
+            target_file_feature = ANALYST_CONFIG.TARGET_FILE_FEATURE
+        return cls(
+            download_path=values.get(
+                "download_path", ANALYST_CONFIG.DOWNLOAD_PATH
+            ),
+            access_key_id=values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+            secret_access_key=values.get(
+                "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+            ),
+            obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
+            target_file_feature=tuple(target_file_feature),
+            bucket_name=values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME),
+            marker=values.get("marker", ANALYST_CONFIG.DOWNLOAD_MARKER),
+            max_keys=values.get("max_keys", ANALYST_CONFIG.DOWNLOAD_MAX_KEYS),
+            if_download_all=values.get(
+                "if_download_all", ANALYST_CONFIG.IF_DOWNLOAD_ALL
+            ),
+        )
 
 
 class AnalystAgentsState(TypedDict):
@@ -809,67 +849,51 @@ class AnalystAgent:
         Raises:
             McpError: If task submission fails after all retries.
         """
-        timeout = self.analyst_config.TIMEOUT
-        max_retries = self.analyst_config.MAX_RETRIES
-        client_timeout = Timeout(timeout, connect=timeout)
-        analysis_url = self.analyst_config.ANALYSIS_URL
-
-        raw_data_list = state.get("data_list", {})
-        processed_data_list = {}
-        for k, v in raw_data_list.items():
-            if isinstance(k, str) and k.startswith("obs://"):
-                new_key = "/obs/" + k[6:].lstrip("/")
-                processed_data_list[new_key] = v
-            else:
-                processed_data_list[k] = v
-
-        plan = state.get("plan", "")
-        tool_usages = state.get("tool_usages", "")
-        plan += (
-            "\nnext step, summarize each of the generated result files "
-            "(including images, result files, etc.) into a json file (named "
-            "`result_files.json`) and save it, with the key of the file "
-            "being the absolute path of the generated result and the value "
-            "being a detailed description of the file.\nlast step, compress "
-            "the output folder into a zip file (zip -r $output_dir.zip "
-            "$output_dir)."
+        output_dir = self._submit_output_dir(state)
+        obs_meta_path = self._upload_submit_meta(state, output_dir)
+        job_headers = await self._submit_headers()
+        job_name, job_data = self._submit_job_data(
+            state,
+            obs_meta_path,
+        )
+        return await self._post_submit_job(
+            job_headers,
+            job_data,
+            job_name,
+            output_dir,
         )
 
-        final_meta = (
-            f"### EXECUTION PLAN\n{plan}\n\n" f"### TOOL USAGE\n{tool_usages}"
-        )
-
-        output_dir = state.get("output_dir")
+    def _submit_output_dir(self, state: AnalystAgentsState) -> str:
+        """Return an existing or newly created submit output directory."""
+        output_dir = str(state.get("output_dir") or "")
+        if not self.analyst_config.CREATE_DIR:
+            return output_dir
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
-        if self.analyst_config.CREATE_DIR:
-            output_dir = create_output_dir(
-                user_id=self.analyst_config.USER_ID or str(uuid1()),
-                task="analysis_agents_task",
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.analyst_config.OBS_SERVER,
-                bucket_name=self.analyst_config.BUCKET_NAME,
-            )
+        return create_output_dir(
+            user_id=self.analyst_config.USER_ID or str(uuid1()),
+            task="analysis_agents_task",
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.analyst_config.OBS_SERVER,
+            bucket_name=self.analyst_config.BUCKET_NAME,
+        )
 
-        submit_payload = {
-            "goal_description": state.get("goal_description"),
-            "data_list": processed_data_list,
-            "output_dir": output_dir,
-            "meta": final_meta,
-            "execute_code": self.analyst_config.EXECUTE_CODE,
-            "model_url": self.sensitive_config.CODER_URL,
-            "model_name": self.sensitive_config.CODER_MODEL,
-            "api_key": self.sensitive_config.CODER_API_KEY.get_secret_value(),
-        }
-
+    def _upload_submit_meta(
+        self,
+        state: AnalystAgentsState,
+        output_dir: str,
+    ) -> str:
+        """Write submit metadata temporarily and upload it to OBS."""
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
         json_file = Path(f"{uuid1()}.json")
         try:
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(submit_payload, f)
-
-            obs_meta_path = upload_analyst_agents_data(
+            with open(json_file, "w", encoding="utf-8") as file_obj:
+                json.dump(self._submit_payload(state, output_dir), file_obj)
+            return upload_analyst_agents_data(
                 analyst_agents_datapath=str(json_file),
                 access_key_id=access_key_id,
                 secret_access_key=secret_access_key,
@@ -880,15 +904,65 @@ class AnalystAgent:
             if json_file.exists():
                 json_file.unlink()
 
+    def _submit_payload(
+        self,
+        state: AnalystAgentsState,
+        output_dir: str,
+    ) -> Dict[str, Any]:
+        """Build the metadata payload consumed by the compute task."""
+        return {
+            "goal_description": state.get("goal_description"),
+            "data_list": self._processed_data_list(state),
+            "output_dir": output_dir,
+            "meta": self._submit_meta(state),
+            "execute_code": self.analyst_config.EXECUTE_CODE,
+            "model_url": self.sensitive_config.CODER_URL,
+            "model_name": self.sensitive_config.CODER_MODEL,
+            "api_key": self.sensitive_config.CODER_API_KEY.get_secret_value(),
+        }
+
+    @staticmethod
+    def _processed_data_list(state: AnalystAgentsState) -> Dict[Any, Any]:
+        """Normalize OBS URL keys for the analysis platform."""
+        processed_data_list = {}
+        for key, value in state.get("data_list", {}).items():
+            if isinstance(key, str) and key.startswith("obs://"):
+                processed_data_list["/obs/" + key[6:].lstrip("/")] = value
+            else:
+                processed_data_list[key] = value
+        return processed_data_list
+
+    @staticmethod
+    def _submit_meta(state: AnalystAgentsState) -> str:
+        """Return the final submit plan and tool usage metadata."""
+        plan = state.get("plan", "") + (
+            "\nnext step, summarize each of the generated result files "
+            "(including images, result files, etc.) into a json file (named "
+            "`result_files.json`) and save it, with the key of the file "
+            "being the absolute path of the generated result and the value "
+            "being a detailed description of the file.\nlast step, compress "
+            "the output folder into a zip file (zip -r $output_dir.zip "
+            "$output_dir)."
+        )
+        return (
+            f"### EXECUTION PLAN\n{plan}\n\n"
+            f"### TOOL USAGE\n{state.get('tool_usages', '')}"
+        )
+
+    async def _submit_headers(self) -> Dict[str, str]:
+        """Return authenticated submit headers."""
         token = await get_token(
             timeout=self.analyst_config.TIMEOUT,
             region=self.analyst_config.ANALYSIS_REGION,
         )
-        job_headers = {
-            "Content-Type": "application/json",
-            "X-Auth-Token": token,
-        }
+        return {"Content-Type": "application/json", "X-Auth-Token": token}
 
+    def _submit_job_data(
+        self,
+        state: AnalystAgentsState,
+        obs_meta_path: str,
+    ) -> tuple[str, Dict[str, Any]]:
+        """Build analysis platform job name and payload."""
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
         job_name = (
             f"{self.analyst_config.TASK_NAME.replace('_', '-')}-{time_stamp}"
@@ -897,8 +971,7 @@ class AnalystAgent:
             "compute_resource", self.analyst_config.COMPUTE_RESOURCE
         )
         resource = self.analyst_config.RESOURCE[compute_res]
-
-        job_data = {
+        return job_name, {
             "name": job_name,
             "timeout": self.analyst_config.MAX_POLL,
             "tool_id": self.analyst_config.APP_ID[compute_res],
@@ -928,6 +1001,19 @@ class AnalystAgent:
             ],
             "automatic": True,
         }
+
+    async def _post_submit_job(
+        self,
+        job_headers: Dict[str, str],
+        job_data: Dict[str, Any],
+        job_name: str,
+        output_dir: str,
+    ) -> Dict[str, Any]:
+        """Submit the job payload to the analysis platform with retries."""
+        timeout = self.analyst_config.TIMEOUT
+        max_retries = self.analyst_config.MAX_RETRIES
+        client_timeout = Timeout(timeout, connect=timeout)
+        analysis_url = self.analyst_config.ANALYSIS_URL
 
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
             for attempt in range(max_retries + 1):
@@ -1132,31 +1218,7 @@ class AnalystAgent:
     async def arun(
         self,
         query: Optional[str],
-        goal_description: Optional[str] = None,
-        user: str = ANALYST_CONFIG.USER,
-        user_id: str = ANALYST_CONFIG.USER_ID,
-        is_create_dir: bool = ANALYST_CONFIG.CREATE_DIR,
-        output_dir: str = ANALYST_CONFIG.OUTPUT_DIR,
-        execute_code: bool = ANALYST_CONFIG.EXECUTE_CODE,
-        compute_resource: Literal[
-            "small", "medium", "large"
-        ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
-        timeout: float = ANALYST_CONFIG.TIMEOUT,
-        max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
-        reasoning_effort: Optional[str] = ANALYST_CONFIG.REASONING_EFFORT,
-        frequency_penalty: float = ANALYST_CONFIG.FREQUENCY_PENALTY,
-        presence_penalty: float = ANALYST_CONFIG.PRESENCE_PENALTY,
-        n: int = ANALYST_CONFIG.N,
-        stream: bool = ANALYST_CONFIG.STREAM,
-        temperature: float = ANALYST_CONFIG.TEMPERATURE,
-        top_p: float = ANALYST_CONFIG.TOP_P,
-        prompt_file: str = ANALYST_CONFIG.PROMPT_FILE,
-        preset_data_list: Optional[Any] = None,
-        obs_file_list: Optional[List[str]] = None,
-        preset_plan: Optional[str] = None,
-        thread_id: Optional[str] = None,
-        is_auto_select: bool = True,
-        is_polling: bool = True,
+        **kwargs: Any,
     ) -> dict:
         """Execute the AnalystAgent workflow.
 
@@ -1198,21 +1260,49 @@ class AnalystAgent:
         # Public wrappers bind these compatibility options into the cached
         # agent config. Direct arun callers may still pass them, so keep the
         # state-level overrides explicit without mutating shared config.
+        user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
+        is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
+        output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
+        compute_resource = kwargs.get(
+            "compute_resource",
+            ANALYST_CONFIG.COMPUTE_RESOURCE,
+        )
         compatibility_config = copy_config_with_overrides(
             self.analyst_config,
             {
-                "user": user,
-                "execute_code": execute_code,
-                "timeout": timeout,
-                "max_retries": max_retries,
-                "reasoning_effort": reasoning_effort,
-                "frequency_penalty": frequency_penalty,
-                "presence_penalty": presence_penalty,
-                "n": n,
-                "stream": stream,
-                "temperature": temperature,
-                "top_p": top_p,
-                "prompt_file": prompt_file,
+                "user": kwargs.get("user", ANALYST_CONFIG.USER),
+                "execute_code": kwargs.get(
+                    "execute_code",
+                    ANALYST_CONFIG.EXECUTE_CODE,
+                ),
+                "timeout": kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT),
+                "max_retries": kwargs.get(
+                    "max_retries",
+                    ANALYST_CONFIG.MAX_RETRIES,
+                ),
+                "reasoning_effort": kwargs.get(
+                    "reasoning_effort",
+                    ANALYST_CONFIG.REASONING_EFFORT,
+                ),
+                "frequency_penalty": kwargs.get(
+                    "frequency_penalty",
+                    ANALYST_CONFIG.FREQUENCY_PENALTY,
+                ),
+                "presence_penalty": kwargs.get(
+                    "presence_penalty",
+                    ANALYST_CONFIG.PRESENCE_PENALTY,
+                ),
+                "n": kwargs.get("n", ANALYST_CONFIG.N),
+                "stream": kwargs.get("stream", ANALYST_CONFIG.STREAM),
+                "temperature": kwargs.get(
+                    "temperature",
+                    ANALYST_CONFIG.TEMPERATURE,
+                ),
+                "top_p": kwargs.get("top_p", ANALYST_CONFIG.TOP_P),
+                "prompt_file": kwargs.get(
+                    "prompt_file",
+                    ANALYST_CONFIG.PROMPT_FILE,
+                ),
             },
             ANALYST_CONFIG_FIELD_MAP,
             fixed_updates={
@@ -1223,6 +1313,7 @@ class AnalystAgent:
             },
         )
 
+        obs_file_list = kwargs.get("obs_file_list")
         if obs_file_list is None:
             obs_file_list = []
         else:
@@ -1230,13 +1321,13 @@ class AnalystAgent:
 
         initial_state = {
             "query": query,
-            "goal_description": goal_description,
+            "goal_description": kwargs.get("goal_description"),
             "obs_file_list": obs_file_list,
-            "data_list": preset_data_list or {},
+            "data_list": kwargs.get("preset_data_list") or {},
             "output_dir": compatibility_config.OUTPUT_DIR,
             "compute_resource": compatibility_config.COMPUTE_RESOURCE,
             "method_context": None,
-            "plan": preset_plan,
+            "plan": kwargs.get("preset_plan"),
             "plan_feedback": None,
             "plan_retries": 0,
             "extracted_tools": [],
@@ -1244,14 +1335,16 @@ class AnalystAgent:
             "job_name": None,
             "task_id": None,
             "task_status": None,
-            "is_polling": is_polling,
-            "is_auto_select": is_auto_select,
+            "is_polling": kwargs.get("is_polling", True),
+            "is_auto_select": kwargs.get("is_auto_select", True),
         }
 
         async def run_graph() -> dict[str, Any]:
             """Invoke the analyst graph and return public result fields."""
             final_state = await ainvoke_graph(
-                self.app, initial_state, thread_id=thread_id
+                self.app,
+                initial_state,
+                thread_id=kwargs.get("thread_id"),
             )
             return {
                 "task_id": final_state["task_id"],
@@ -1404,15 +1497,16 @@ async def retrieve_plan_submit(
 
 async def wait_for_completion(
     task_id: str,
-    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
-    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
-    timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
-    poll_interval: float = ANALYST_CONFIG.POLL_INTERVAL,
-    max_poll: float = ANALYST_CONFIG.MAX_POLL,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Poll a submitted task until it reaches a terminal status."""
+    analysis_url = kwargs.get("analysis_url", ANALYST_CONFIG.ANALYSIS_URL)
+    region = kwargs.get("region", ANALYST_CONFIG.ANALYSIS_REGION)
+    timeout = kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", ANALYST_CONFIG.MAX_RETRIES)
+    poll_interval = kwargs.get("poll_interval", ANALYST_CONFIG.POLL_INTERVAL)
+    max_poll = kwargs.get("max_poll", ANALYST_CONFIG.MAX_POLL)
     if retriable_codes is None:
         retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
     else:
@@ -1451,11 +1545,7 @@ async def wait_for_completion(
 
 async def task_delete(
     task_id: str,
-    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
-    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
-    timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> str:
     """
     Deletes a specified task from the analysis platform.
@@ -1478,6 +1568,11 @@ async def task_delete(
     Raises:
         McpError: If the task deletion fails after all retries.
     """
+    analysis_url = kwargs.get("analysis_url", ANALYST_CONFIG.ANALYSIS_URL)
+    region = kwargs.get("region", ANALYST_CONFIG.ANALYSIS_REGION)
+    timeout = kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", ANALYST_CONFIG.MAX_RETRIES)
     if retriable_codes is None:
         retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
     else:
@@ -1533,11 +1628,7 @@ async def task_delete(
 
 async def task_status(
     task_id: str,
-    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
-    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
-    timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> dict:
     """
     Checks the execution status of a specified task.
@@ -1561,6 +1652,11 @@ async def task_status(
     Raises:
         McpError: If checking the task status fails after all retries.
     """
+    analysis_url = kwargs.get("analysis_url", ANALYST_CONFIG.ANALYSIS_URL)
+    region = kwargs.get("region", ANALYST_CONFIG.ANALYSIS_REGION)
+    timeout = kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", ANALYST_CONFIG.MAX_RETRIES)
     if retriable_codes is None:
         retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
     else:
@@ -1616,14 +1712,7 @@ async def task_status(
 
 async def task_log(
     task_id: str,
-    analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
-    compute_resource: Literal[
-        "small", "medium", "large"
-    ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
-    region: str = ANALYST_CONFIG.ANALYSIS_REGION,
-    timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: Optional[List[int]] = None,
-    max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> dict:
     """
     Retrieves the execution log for a specified task.
@@ -1646,6 +1735,14 @@ async def task_log(
     Raises:
         McpError: If fetching the task log fails after all retries.
     """
+    analysis_url = kwargs.get("analysis_url", ANALYST_CONFIG.ANALYSIS_URL)
+    compute_resource = kwargs.get(
+        "compute_resource", ANALYST_CONFIG.COMPUTE_RESOURCE
+    )
+    region = kwargs.get("region", ANALYST_CONFIG.ANALYSIS_REGION)
+    timeout = kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT)
+    retriable_codes = kwargs.get("retriable_codes")
+    max_retries = kwargs.get("max_retries", ANALYST_CONFIG.MAX_RETRIES)
     if retriable_codes is None:
         retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
     else:
@@ -1872,14 +1969,7 @@ def _get_data_list_cached(
     return data_list
 
 
-def create_output_dir(
-    user_id: str,
-    task: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
-    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
-) -> str:
+def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     """Create a unique output directory for analysis tasks in Object Storage
         Service.
 
@@ -1932,6 +2022,12 @@ def create_output_dir(
         as an empty placeholder in OBS and can be used immediately for
         storing analysis results.
     """
+    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
+    secret_access_key = kwargs.get(
+        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+    )
+    obs_server = kwargs.get("obs_server", ANALYST_CONFIG.OBS_SERVER)
+    bucket_name = kwargs.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
     obs_client = ObsClient(
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
@@ -1958,19 +2054,109 @@ def create_output_dir(
         raise OSError(f"Put File Failed\n{format_exc()}") from exc
 
 
-def download_obs_out(
-    task_dir: str,
+def _download_output_path(task_dir: str, download_path: str) -> Path:
+    """Create and return the local output path for OBS downloads."""
+    output_path = Path(f"{download_path}/{task_dir}")
+    output_path.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def _obs_client(
+    access_key_id: str,
+    secret_access_key: str,
+    obs_server: str,
+) -> ObsClient:
+    """Create an OBS client from resolved credentials."""
+    return ObsClient(
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        server=obs_server,
+    )
+
+
+def _list_obs_object_keys(
+    obs_client: ObsClient,
+    options: ObsDownloadOptions,
     obs_output_path: str,
-    download_path: str = ANALYST_CONFIG.DOWNLOAD_PATH,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
-    target_file_feature: Optional[List[str]] = None,
-    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
-    marker: Optional[str] = ANALYST_CONFIG.DOWNLOAD_MARKER,
-    max_keys: int = ANALYST_CONFIG.DOWNLOAD_MAX_KEYS,
-    if_download_all: bool = ANALYST_CONFIG.IF_DOWNLOAD_ALL,
 ):
+    """Yield downloadable object keys from a paginated OBS listing."""
+    marker = options.marker
+    while True:
+        file_response = obs_client.listObjects(
+            bucketName=options.bucket_name,
+            prefix=obs_output_path,
+            marker=marker,
+            max_keys=options.max_keys,
+            encoding_type="url",
+        )
+        file_body = _valid_obs_file_body(file_response)
+        if file_body and hasattr(file_body, "contents"):
+            for content in file_body.contents:
+                object_key = content.key
+                if not object_key.endswith("/"):
+                    yield object_key
+        if not _is_truncated_listing(file_body):
+            break
+        marker = getattr(file_body, "next_marker", None)
+
+
+def _valid_obs_file_body(file_response: Any):
+    """Return a successful OBS list body or raise an OSError."""
+    file_status = getattr(file_response, "status", None)
+    if file_status is not None and file_status < 300:
+        return getattr(file_response, "body", None)
+    request_id = getattr(file_response, "requestId", "unknown")
+    error_code = getattr(file_response, "errorCode", "unknown")
+    error_message = getattr(file_response, "errorMessage", "unknown")
+    raise OSError(
+        "Get File List Failed\n"
+        f"requestId: {request_id}\n"
+        f"errorCode: {error_code}\n"
+        f"errorMessage: {error_message}"
+    )
+
+
+def _is_truncated_listing(file_body: Any) -> bool:
+    """Return whether the OBS list response has another page."""
+    return (
+        file_body
+        and hasattr(file_body, "is_truncated")
+        and file_body.is_truncated is True
+    )
+
+
+def _should_download_object(
+    output_file: str,
+    options: ObsDownloadOptions,
+) -> bool:
+    """Return whether one listed OBS object should be downloaded."""
+    return options.if_download_all or any(
+        output_file.endswith(suffix) for suffix in options.target_file_feature
+    )
+
+
+def _download_obs_object(
+    obs_client: ObsClient,
+    headers: GetObjectHeader,
+    options: ObsDownloadOptions,
+    object_key: str,
+    output_path: Path,
+) -> str:
+    """Download one OBS object and return a status message."""
+    output_file = object_key.split("/")[-1]
+    download_response = obs_client.getObject(
+        bucketName=options.bucket_name,
+        objectKey=object_key,
+        downloadPath=str(output_path / output_file),
+        headers=headers,
+    )
+    download_status = getattr(download_response, "status", None)
+    if download_status is not None and download_status > 300:
+        return f"{output_file} download failed."
+    return f"{output_file} download succeed."
+
+
+def download_obs_out(task_dir: str, obs_output_path: str, **kwargs: Any):
     """Download analysis results from Object Storage Service to local
         filesystem.
 
@@ -2035,79 +2221,28 @@ def download_obs_out(
         transfers. Large directories are handled through pagination to manage
         memory usage efficiently.
     """
-    if target_file_feature is None:
-        target_file_feature = list(ANALYST_CONFIG.TARGET_FILE_FEATURE)
-    else:
-        target_file_feature = list(target_file_feature)
-    output_path = Path(f"{download_path}/{task_dir}")
-    output_path.mkdir(parents=True, exist_ok=True)
+    options = ObsDownloadOptions.from_kwargs(kwargs)
+    output_path = _download_output_path(task_dir, options.download_path)
     headers = GetObjectHeader()
     headers.if_modified_since = "date"
-    obs_client = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
+    obs_client = _obs_client(
+        access_key_id=options.access_key_id,
+        secret_access_key=options.secret_access_key,
+        obs_server=options.obs_server,
     )
     try:
-        while True:
-            file_response = obs_client.listObjects(
-                bucketName=bucket_name,
-                prefix=obs_output_path,
-                marker=marker,
-                max_keys=max_keys,
-                encoding_type="url",
+        for object_key in _list_obs_object_keys(
+            obs_client, options, obs_output_path
+        ):
+            output_file = object_key.split("/")[-1]
+            if not _should_download_object(output_file, options):
+                continue
+            yield _download_obs_object(
+                obs_client,
+                headers,
+                options,
+                object_key,
+                output_path,
             )
-            file_status = getattr(file_response, "status", None)
-            if file_status is not None and file_status < 300:
-                file_body = getattr(file_response, "body", None)
-                if file_body and hasattr(file_body, "contents"):
-                    for content in file_body.contents:
-                        obj_file = content.key
-                        if obj_file.endswith("/"):
-                            continue
-                        output_file = obj_file.split("/")[-1]
-                        if not if_download_all and not any(
-                            output_file.endswith(suffix)
-                            for suffix in target_file_feature
-                        ):
-                            continue
-                        full_path = str(output_path / output_file)
-                        download_response = obs_client.getObject(
-                            bucketName=bucket_name,
-                            objectKey=obj_file,
-                            downloadPath=full_path,
-                            headers=headers,
-                        )
-                        download_status = getattr(
-                            download_response, "status", None
-                        )
-                        if (
-                            download_status is not None
-                            and download_status > 300
-                        ):
-                            yield f"{output_file} download failed."
-                            continue
-                        yield f"{output_file} download succeed."
-                        continue
-                if (
-                    file_body
-                    and hasattr(file_body, "is_truncated")
-                    and file_body.is_truncated is True
-                ):
-                    marker = getattr(file_body, "next_marker", None)
-                else:
-                    break
-            else:
-                request_id = getattr(file_response, "requestId", "unknown")
-                error_code = getattr(file_response, "errorCode", "unknown")
-                error_message = getattr(
-                    file_response, "errorMessage", "unknown"
-                )
-                raise OSError(
-                    "Get File List Failed\n"
-                    f"requestId: {request_id}\n"
-                    f"errorCode: {error_code}\n"
-                    f"errorMessage: {error_message}"
-                )
     except Exception as exc:
         raise OSError(f"Download File Failed\n{format_exc()}") from exc

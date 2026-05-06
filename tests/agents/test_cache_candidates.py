@@ -13,6 +13,7 @@ from mcp_server_phytomni import (
     brief_gene_agents,
     deep_genome_agents,
     knowledge_agents,
+    knowledge_retrieval,
 )
 from mcp_server_phytomni.analyst_agents import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
@@ -142,8 +143,8 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    monkeypatch.setattr(knowledge_agents, "AsyncClient", FakeClient)
-    monkeypatch.setattr(knowledge_agents, "rerank", fake_rerank)
+    monkeypatch.setattr(knowledge_retrieval, "AsyncClient", FakeClient)
+    monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_agents.retrieve(
         user_query="leaf growth",
@@ -197,7 +198,7 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
             "total": 10000,
         }
 
-    monkeypatch.setattr(knowledge_agents, "retrieve", fake_retrieve)
+    monkeypatch.setattr(knowledge_retrieval, "retrieve", fake_retrieve)
 
     first = await knowledge_agents.multi_retrieve(
         user_query="root growth",
