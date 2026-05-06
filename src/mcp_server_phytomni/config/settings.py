@@ -2,6 +2,8 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+"""Sensitive environment settings and local .env loading helpers."""
+
 import os
 from pathlib import Path
 from typing import Annotated

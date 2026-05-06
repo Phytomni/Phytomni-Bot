@@ -1,5 +1,5 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """This module provides functions for interacting with a database using
@@ -309,6 +309,7 @@ class DataAgent:
     def route_start(
         self, state: DataAgentState
     ) -> Literal["retrieve_node", "search_node"]:
+        """Choose whether the workflow should rewrite before SQL search."""
         if state["is_rewrite"]:
             return "retrieve_node"
         return "search_node"

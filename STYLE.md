@@ -48,9 +48,13 @@ Every Python source and test file should start with this header:
 ```python
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 ```
 
 Place the module docstring immediately after the copyright and author lines.
+Author names use `name (email)` on the first line and aligned continuation
+lines for additional authors.
 README-style prose may wrap the same copyright text across lines.
 
 ## Imports

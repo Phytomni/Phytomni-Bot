@@ -2,29 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Function result caching decorator with SQLite persistence.
-
-This module provides a caching decorator that stores sync and async function
-results in an SQLite database, supporting TTL, compression, and distributed
-locking for concurrent access control.
-
-Key Features:
-    - TTL-based cache expiration
-    - Optional zlib compression for large results
-    - Distributed lock management to prevent cache stampedes
-    - Per-function cache isolation via unique func_id
-    - Parameter exclusion for clients, sessions, and secrets
-    - Automatic cleanup of expired entries and stale locks
-
-Usage:
-    @func_cache(ttl=3600)
-    def expensive_function(arg1, arg2):
-        ...
-
-    # Access cache info
-    expensive_function.cache_info()
-    expensive_function.cache_clear()
-"""
+"""SQLite-backed function result caching with TTL and lock helpers."""
 
 from .decorator import func_cache
 from .storage import Storage

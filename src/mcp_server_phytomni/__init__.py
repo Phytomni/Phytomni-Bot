@@ -2,35 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Phytomni MCP Server - A comprehensive plant science research platform.
-
-This package provides Model Context Protocol (MCP) server implementation for
-advanced plant science research capabilities. It offers specialized AI agents
-for various biological analysis tasks including gene function analysis,
-literature research, bioinformatics workflows, and data management.
-
-Key Components:
-    - Chat agents for interactive research assistance
-    - Knowledge agents for literature retrieval and RAG systems
-    - Data agents for natural language to SQL queries
-    - Analyst agents for bioinformatics workflow management
-    - Deep genome agents for comprehensive gene function analysis
-    - Review agents for systematic literature research
-    - Task management system for workflow orchestration
-    - Utility functions for data processing and integration
-
-The platform integrates with cloud storage (OBS), language models, and
-specialized biological databases to provide a complete research environment
-for plant scientists.
-
-Authors:
-    xieshang (xieshang0608@gmail.com)
-    guxiaofeng (guxiaofeng@caas.cn)
-
-Copyright:
-    Biotechnology Research Institute, Chinese Academy of Agricultural Sciences
-    2024-2026. All rights reserved.
-"""
+"""Public package exports for Phytomni MCP server agents and utilities."""
 
 from .analyst_agents import create_output_dir, get_data_list
 from .analyst_agents import retrieve_plan_submit, wait_for_completion

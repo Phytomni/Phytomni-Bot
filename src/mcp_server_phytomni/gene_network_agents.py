@@ -1,23 +1,9 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
-# Author: maoyc_0316@163.com
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph-based gene network agents for plant bioinformatics research.
-
-This module provides specialized agents for analyzing gene networks in plant
-genomics, focusing on identifying and characterizing relationships between
-genes and their regulatory networks. It leverages computational analysis
-workflows to examine gene interactions, co-expression patterns, and functional
-associations.
-
-Key functionalities include:
-- Network topology analysis and visualization
-- Gene interaction prediction and validation
-- Co-expression network construction
-- Functional module identification
-- Integration with plant-specific databases and resources
-"""
+"""LangGraph agents for plant gene network analysis workflows."""
 
 from typing import Dict, List, Any, Literal, Optional, TypedDict
 from uuid import uuid1

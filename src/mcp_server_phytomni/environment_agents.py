@@ -1,15 +1,9 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
-# Author: maoyc_0316@163.com
+# Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides functions for protein design and computational
-structural analysis.
-
-It includes functions that leverage computational biology and bioinformatics
-tools to analyze protein structures, predict protein properties, and perform
-digital design workflows for protein engineering applications.
-"""
+"""Environment agents for regional vegetation index analysis workflows."""
 
 import re
 from typing import Dict, List
@@ -66,6 +60,7 @@ async def region_vci_analysis(
     top_p: float = ENVIRONMENT_CONFIG.TOP_P,
     user: str = ENVIRONMENT_CONFIG.USER,
 ) -> dict:
+    """Run a regional VCI analysis workflow and return task results."""
     region_info = load_text_file(region_code)
     prompt = get_prompt(
         prompt_file,

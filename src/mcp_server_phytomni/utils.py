@@ -2,19 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""A collection of utility functions for shared services.
-
-This module provides a variety of helper functions that support other modules
-within the application. These utilities include functionalities such as:
-- Authenticating and retrieving API tokens.
-- Loading and rendering text-based templates from YAML files.
-- Asynchronously downloading files from an Object Storage Service (OBS) with
-  concurrency control and retry mechanisms.
-- Converting various file formats to Markdown.
-- Orchestrating complex asynchronous workflows that involve downloading and
-  processing multiple files.
-- Splitting lists into smaller chunks for batch processing.
-"""
+"""Shared helpers for tokens, prompts, OBS downloads, and cached file reads."""
 
 import asyncio
 import json

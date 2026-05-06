@@ -1,24 +1,9 @@
 # Copyright (c) Biotechnology Research Institute,
-# Chinese Academy of Agricultural Sciences. 2024-2025. All rights reserved.
-# Author: maoyc_0316@163.com
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides a suite of asynchronous functions for analyzing gene
-function and related biological processes in plant genomes.
-
-Key functionalities include:
-- Retrieving gene network information (orthologs, paralogs, interactions).
-- Fetching gene symbols and annotations (description, GO terms, InterPro,
-  MapMan).
-- Summarizing gene networks into human-readable strings.
-- Retrieving documents related to gene symbols from literature repositories.
-- Performing a comprehensive gene function analysis by orchestrating the
-  above operations and using a large language model to generate a summary.
-- Submitting and monitoring various types of specialized gene analysis tasks
-  (e.g., evolution analysis, protein structure prediction,
-   expression analysis).
-- Downloading and summarizing results from completed analysis tasks.
-"""
+"""Deep genome agents for gene profile, annotation, and workflow synthesis."""
 
 import asyncio
 import operator
@@ -275,8 +260,8 @@ DEEP_GENOME_SECRET_FIELD_MAP = {
 }
 
 
-# 定义字典合并函数，确保并行写入 raw_analyst_data 时安全合并
 def update_dict(left: dict, right: dict) -> dict:
+    """Merge two branch result dictionaries for LangGraph reducers."""
     merged = (left or {}).copy()
     merged.update(right or {})
     return merged
@@ -2192,6 +2177,7 @@ class DeepGenomeAgents:
         }
 
     async def run_report_synthesizer(self, state: DeepGenomeState):
+        """Generate the report after all analysis branches finish."""
         # 🛡️ Barrier: 等待所有 analyst_node 完成后才执行汇总
         completed = state.get("analysis_completed_branches", 0)
         total_expected = len(state.get("analysis_tasks", []))

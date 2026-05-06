@@ -38,7 +38,9 @@ SECRET_FIELD_NAMES = frozenset(
 class AsyncGraph(Protocol[ResultT_co]):
     """Protocol for the async subset used from compiled LangGraph apps."""
 
-    def ainvoke(self, *args: Any, **kwargs: Any) -> Awaitable[ResultT_co]: ...
+    def ainvoke(self, *args: Any, **kwargs: Any) -> Awaitable[ResultT_co]:
+        """Invoke a compiled graph asynchronously."""
+        raise NotImplementedError
 
 
 def ensure_thread_id(thread_id: Optional[str] = None) -> str:

@@ -124,7 +124,6 @@ disable = [
     "duplicate-code",
     "import-outside-toplevel",
     "missing-function-docstring",
-    "missing-module-docstring",
     "missing-timeout",
     "no-else-return",
     "pointless-statement",
