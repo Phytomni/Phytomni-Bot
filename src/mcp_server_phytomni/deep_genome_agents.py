@@ -39,7 +39,11 @@ from .data_agents import DataAgent
 from .deep_genome_formatting import SPECIES_CODE_MAP, network_to_string
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .langgraph_runner import (
+    ainvoke_graph,
+    capture_workflow_boundary,
+    ensure_checkpointer,
+)
 from .utils import get_prompt, message_content, parse_follow_up_questions
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
@@ -774,7 +778,8 @@ class DeepGenomeAgents:
             f"[Analyst-{task_index}] Executing: {analysis_type} for {gene_id}"
         )
 
-        try:
+        async def run_analysis() -> dict[str, Any]:
+            """Dispatch one analysis branch and return state updates."""
             result = await self._dispatch_and_wait_analysis(
                 analysis_type=analysis_type,
                 species=species,
@@ -800,18 +805,21 @@ class DeepGenomeAgents:
                 "analyst_summaries": sub_summary,
                 "analysis_completed_branches": 1,
             }
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: preserve branch failure details in state.
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Preserve branch failure details in state."""
             return {
                 "raw_analyst_data": {
                     f"task_{task_index}": {
                         "status": "failed",
                         "analysis_type": analysis_type,
-                        "error": str(e),
+                        "error": str(exc),
                     }
                 },
                 "analysis_completed_branches": 1,
             }
+
+        return await capture_workflow_boundary(run_analysis, failure_state)
 
     def _generate_sub_summary(
         self, analysis_type: str, gene_id: str, state: DeepGenomeState

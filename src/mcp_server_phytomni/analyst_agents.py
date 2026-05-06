@@ -43,7 +43,11 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .func_cache import func_cache
 from .knowledge_agents import multi_retrieve, retrieve
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .langgraph_runner import (
+    ainvoke_graph,
+    capture_workflow_boundary,
+    ensure_checkpointer,
+)
 from .utils import (
     download_list_convert,
     file_cache_fingerprint,
@@ -1254,7 +1258,8 @@ class AnalystAgent:
             "is_auto_select": is_auto_select,
         }
 
-        try:
+        async def run_graph() -> dict[str, Any]:
+            """Invoke the analyst graph and return public result fields."""
             final_state = await ainvoke_graph(
                 self.app, initial_state, thread_id=thread_id
             )
@@ -1264,13 +1269,16 @@ class AnalystAgent:
                 "job_name": final_state["job_name"],
                 "compute_resource": final_state["compute_resource"],
             }
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: return graph failures as agent state.
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Return graph failures as agent state."""
             return {
                 **initial_state,
                 "task_status": "FAILED_AT_AGENT_LEVEL",
-                "error_detail": str(e),
+                "error_detail": str(exc),
             }
+
+        return await capture_workflow_boundary(run_graph, failure_state)
 
 
 def _analyst_config_with_overrides(

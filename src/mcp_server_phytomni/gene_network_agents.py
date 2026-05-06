@@ -27,7 +27,11 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .langgraph_runner import (
+    ainvoke_graph,
+    capture_workflow_boundary,
+    ensure_checkpointer,
+)
 from .utils import get_prompt
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
@@ -260,7 +264,9 @@ class GeneNetworkAgents:
             f"[Network-{task_index}] 🚀 Executing: {analysis_type} for {to_id}"
         )
         print(species)
-        try:
+
+        async def run_task() -> dict[str, Any]:
+            """Dispatch network analysis and return state updates."""
             result = await self._dispatch_and_wait_analysis(
                 analysis_type=analysis_type,
                 species=species,
@@ -282,13 +288,16 @@ class GeneNetworkAgents:
                 "completed_count": 1,
                 "network_task": task_result,
             }
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: preserve partial task progress on failure.
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Preserve partial task progress when dispatch fails."""
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,
-                "error": str(e),
+                "error": str(exc),
             }
+
+        return await capture_workflow_boundary(run_task, failure_state)
 
     async def arun(
         self,

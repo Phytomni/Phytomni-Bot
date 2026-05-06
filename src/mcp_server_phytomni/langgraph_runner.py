@@ -7,14 +7,13 @@
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, Protocol, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 from uuid import uuid1
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
-ResultT_co = TypeVar("ResultT_co", covariant=True)
 GraphT = TypeVar("GraphT")
 
 SECRET_FIELD_NAMES = frozenset(
@@ -33,16 +32,6 @@ SECRET_FIELD_NAMES = frozenset(
         "token",
     }
 )
-
-
-# Protocol surface is intentionally the single LangGraph async method we use.
-# pylint: disable-next=too-few-public-methods
-class AsyncGraph(Protocol[ResultT_co]):
-    """Protocol for the async subset used from compiled LangGraph apps."""
-
-    def ainvoke(self, *args: Any, **kwargs: Any) -> Awaitable[ResultT_co]:
-        """Invoke a compiled graph asynchronously."""
-        raise NotImplementedError
 
 
 def ensure_thread_id(thread_id: Optional[str] = None) -> str:
@@ -70,7 +59,7 @@ def ensure_checkpointer(
 
 
 async def ainvoke_graph(
-    app: AsyncGraph[Any],
+    app: Any,
     initial_state: Any,
     thread_id: Optional[str] = None,
 ) -> Any:
@@ -79,6 +68,17 @@ async def ainvoke_graph(
         initial_state,
         config=build_runnable_config(thread_id),
     )
+
+
+async def capture_workflow_boundary(
+    action: Callable[[], Awaitable[dict[str, Any]]],
+    failure_result: Callable[[Exception], dict[str, Any]],
+) -> dict[str, Any]:
+    """Run a workflow action and convert graph/node failures to state."""
+    try:
+        return await action()
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return failure_result(exc)
 
 
 def config_fingerprint(values: Optional[Mapping[str, Any]] = None) -> str:

@@ -38,6 +38,7 @@ def test_key_params_ignore_unselected_arguments():
     second_key = key_builder.build_key((1,), {"beta": 99, "gamma": "root"})
 
     assert first_key == second_key
+    assert key_builder.selected_params() == ("alpha",)
 
 
 def test_exclude_params_omit_infrastructure_arguments():

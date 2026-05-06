@@ -42,7 +42,11 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .langgraph_runner import (
+    ainvoke_graph,
+    capture_workflow_boundary,
+    ensure_checkpointer,
+)
 from .utils import get_prompt
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
@@ -286,7 +290,8 @@ class DigitalDesignAgents:
         )
         design_task_result = state.get("design_task_result", [])
 
-        try:
+        async def run_task() -> dict[str, Any]:
+            """Dispatch design analysis and return state updates."""
             result = await self._dispatch_and_wait_analysis(
                 analysis_type=analysis_type,
                 species=species,
@@ -311,13 +316,16 @@ class DigitalDesignAgents:
                 "task_ids": existing_task_ids,
                 "completed_count": 1,
             }
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: preserve partial task progress on failure.
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Preserve partial task progress when dispatch fails."""
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,
-                "error": str(e),
+                "error": str(exc),
             }
+
+        return await capture_workflow_boundary(run_task, failure_state)
 
     async def arun(
         self,

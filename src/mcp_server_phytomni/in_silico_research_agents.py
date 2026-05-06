@@ -33,7 +33,11 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .langgraph_runner import (
+    ainvoke_graph,
+    capture_workflow_boundary,
+    ensure_checkpointer,
+)
 from .utils import download_list_convert, get_prompt
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
@@ -312,14 +316,19 @@ class InSilicoResearchAgents:
         obs_file_list = state.get("obs_file_list", [])
 
         print("  → Extracting research goals from paper...")
-        try:
+
+        async def extract_goals() -> dict[str, Any]:
+            """Extract goals and return the success state."""
             goals = await self._extract_goals(paper_text, obs_file_list)
             print(f"  → Extracted {len(goals)} research goals")
             return {"goals": goals, "error": None}
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: store node failures in state for callers.
-            print(f"  → Goal extraction failed: {str(e)}")
-            return {"goals": [], "error": str(e)}
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Store goal extraction failures in workflow state."""
+            print(f"  → Goal extraction failed: {str(exc)}")
+            return {"goals": [], "error": str(exc)}
+
+        return await capture_workflow_boundary(extract_goals, failure_state)
 
     async def prepare_tasks(self, state: InSilicoResearchState) -> dict:
         """Prepare the list of research tasks from extracted goals.
@@ -382,7 +391,8 @@ class InSilicoResearchAgents:
 
         print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
 
-        try:
+        async def submit_task() -> dict[str, Any]:
+            """Submit one research task and return state updates."""
             result = await self._submit_research_task(
                 goal_description=goal_description,
                 context=context,
@@ -395,13 +405,16 @@ class InSilicoResearchAgents:
             if task_id is not None:
                 existing_task_ids[task_name] = str(task_id)
             return {"task_ids": existing_task_ids, "completed_count": 1}
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            # Workflow boundary: preserve partial task progress on failure.
+
+        def failure_state(exc: Exception) -> dict[str, Any]:
+            """Preserve partial task progress when submit fails."""
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,
-                "error": str(e),
+                "error": str(exc),
             }
+
+        return await capture_workflow_boundary(submit_task, failure_state)
 
     async def arun(
         self,
