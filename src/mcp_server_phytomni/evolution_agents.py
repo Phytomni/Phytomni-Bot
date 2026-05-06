@@ -65,9 +65,9 @@ async def evo_test_analysis(
 ) -> dict:
     """Run an evolution analysis workflow for a target gene."""
 
-    async def find_spa_taxid(spa_names):
+    async def find_spa_taxid(spa_names: str) -> List[str]:
 
-        result = []
+        result: List[str] = []
         repo_id = "4a533117-9416-4e8b-b7cc-27b448a90095"
         endpoint = "http://1.95.74.240:8000"
         url = f"{endpoint}/v1/koosearch/repos/{repo_id}/faqs"
@@ -78,7 +78,11 @@ async def evo_test_analysis(
         params = {"question": spa_names, "page_size": 10, "page_num": 1}
         proxy: Any = {"http": None, "https": None}
         response = requests.get(
-            url, headers=headers, params=params, proxies=proxy
+            url,
+            headers=headers,
+            params=params,
+            proxies=proxy,
+            timeout=timeout,
         )
         if response.status_code == 200:
             response_taxid_data = response.json()

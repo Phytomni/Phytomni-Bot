@@ -5,6 +5,7 @@
 """Tests for repository naming and header conventions."""
 
 import ast
+import configparser
 import re
 import tomllib
 from pathlib import Path
@@ -98,3 +99,19 @@ def test_ruff_enforces_import_grouping_and_sorting():
     assert pyproject["tool"]["ruff"]["lint"]["isort"] == {
         "known-first-party": ["mcp_server_phytomni"]
     }
+
+
+def test_flake8_uses_black_compatible_style_without_init_ignores():
+    root = Path(__file__).resolve().parents[2]
+    parser = configparser.ConfigParser()
+    parser.read(root / ".flake8", encoding="utf-8")
+
+    flake8_config = parser["flake8"]
+    ignored_rules = {
+        rule.strip()
+        for rule in flake8_config["extend-ignore"].split(",")
+        if rule.strip()
+    }
+
+    assert ignored_rules == {"E203", "W503"}
+    assert "per-file-ignores" not in flake8_config

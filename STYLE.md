@@ -75,6 +75,10 @@ README-style prose may wrap the same copyright text across lines.
 - Keep the configured line length at 79.
 - Let `black`, `ruff`, `flake8`, `mypy`, `pyright`, and `pylint` define the
   automated baseline.
+- Flake8 ignores `E203` and `W503` intentionally to stay compatible with
+  Black formatting; these are project style rules, not temporary debt.
+- `__init__.py` re-exports should be explicit through `__all__` and must not
+  rely on broad per-file `F401` ignores.
 - Ruff's `N` rules are enabled to enforce PEP 8 naming conventions.
 - New lint disables must be narrow, documented, and treated as temporary unless
   the rule is intentionally incompatible with public API stability.

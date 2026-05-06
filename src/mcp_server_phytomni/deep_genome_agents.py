@@ -117,12 +117,14 @@ def _post_bi_sql(
     bi_url: str,
     sql_headers: Dict[str, str],
     sql: str,
+    timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
     """Run one BI SQL query and return the JSON payload."""
     return requests.post(
         url=bi_url,
         json={"sql": sql, "returnType": "json"},
         headers=sql_headers,
+        timeout=timeout,
     ).json()
 
 
@@ -136,6 +138,7 @@ async def _cached_gene_symbol_lookup(
     sql_headers: Dict[str, str],
     species_code: str,
     gene_id: str,
+    timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
 ) -> List[str]:
     """Retrieve and cache gene symbols for one species/gene pair."""
     sql = (
@@ -147,6 +150,7 @@ async def _cached_gene_symbol_lookup(
         bi_url,
         sql_headers,
         sql,
+        timeout,
     )
     gene_symbol_list: List[str] = []
     if response["data"][0]["symbol"] is not None:
@@ -171,6 +175,7 @@ async def _cached_gene_annotation_lookup(
     sql_headers: Dict[str, str],
     species_code: str,
     gene_id: str,
+    timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
     """Retrieve and cache gene annotations for one species/gene pair."""
     sql_list = (
@@ -191,7 +196,7 @@ async def _cached_gene_annotation_lookup(
     )
     responses = await asyncio.gather(
         *(
-            asyncio.to_thread(_post_bi_sql, bi_url, sql_headers, sql)
+            asyncio.to_thread(_post_bi_sql, bi_url, sql_headers, sql, timeout)
             for sql in sql_list
         )
     )
@@ -1357,6 +1362,7 @@ class DeepGenomeAgents:
             url=self.deep_genome_config.BI_URL,
             json=payload,
             headers=self._sql_headers,
+            timeout=self.deep_genome_config.TIMEOUT,
         ).json()
 
         sql = (
@@ -1371,6 +1377,7 @@ class DeepGenomeAgents:
             url=self.deep_genome_config.BI_URL,
             json=payload,
             headers=self._sql_headers,
+            timeout=self.deep_genome_config.TIMEOUT,
         ).json()
 
         gene_orthologs_set, gene_paralogs_set = set(), set()
@@ -1745,6 +1752,7 @@ class DeepGenomeAgents:
                 sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
+                timeout=self.deep_genome_config.TIMEOUT,
             )
 
         if semaphore is not None:
@@ -1765,6 +1773,7 @@ class DeepGenomeAgents:
                 sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
+                timeout=self.deep_genome_config.TIMEOUT,
             )
 
         if semaphore is not None:

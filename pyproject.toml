@@ -141,7 +141,6 @@ disable = [
     "duplicate-code",
     "import-outside-toplevel",
     "missing-function-docstring",
-    "missing-timeout",
     "too-few-public-methods",
     "too-many-arguments",
     "too-many-boolean-expressions",

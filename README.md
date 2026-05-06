@@ -342,6 +342,8 @@ The test suite currently includes unit coverage for:
 - shared LangGraph runner and agent registry behavior,
 - wrapper override propagation for digital design, gene network, and
   in-silico research entrypoints,
+- offline mock-LLM smoke tests for ChatAgent upload context and follow-up
+  question handling,
 - offline fake-graph smoke tests for Data, Knowledge, BriefGene, Review,
   InSilicoResearch, GeneNetwork, DigitalDesign, Analyst, and DeepGenome
   agents.
