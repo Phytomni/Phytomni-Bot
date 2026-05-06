@@ -318,6 +318,11 @@ Equivalent explicit form:
 uv run pytest -m "not integration and not network"
 ```
 
+Tests are grouped by directory and automatically marked as `unit`, `server`,
+`agent`, or `integration`. `integration` tests stay skipped unless
+`PHYTOMNI_RUN_INTEGRATION=1` is set. Tests marked `network` stay skipped unless
+`PHYTOMNI_ALLOW_NETWORK=1` is set.
+
 The test suite currently includes unit coverage for:
 
 - `func_cache` serializer, key builder, storage, lock, and decorator behavior,

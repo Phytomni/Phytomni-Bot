@@ -82,6 +82,9 @@ README-style prose may wrap the same copyright text across lines.
 ## Tests
 
 - Default pytest tests must run offline and without real secrets.
+- Place tests under `tests/unit`, `tests/server`, `tests/agents`, or
+  `tests/integration`; pytest applies matching layer markers during collection.
 - Mark real external-service tests with `integration` or `network`.
+- Running `integration` or `network` tests requires explicit environment opt-in.
 - Add focused tests when renaming internal keys, moving wrappers, changing
   cache keys, or changing LangGraph execution flow.

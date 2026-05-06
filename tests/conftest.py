@@ -9,9 +9,19 @@ from __future__ import annotations
 import os
 import socket
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+TEST_ROOT = Path(__file__).resolve().parent
+TEST_LAYER_MARKERS = {
+    "unit": "unit",
+    "server": "server",
+    "agents": "agent",
+    "integration": "integration",
+}
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 _TEST_ENV = {
     "DOMAIN_NAME": "pytest-domain",
@@ -36,6 +46,55 @@ def _install_test_environment() -> None:
 
 
 _install_test_environment()
+
+
+def _env_flag_enabled(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.lower() in TRUTHY_ENV_VALUES
+
+
+def _layer_marker_for_item(item: pytest.Item) -> str | None:
+    try:
+        relative_path = Path(item.path).resolve().relative_to(TEST_ROOT)
+    except ValueError:
+        return None
+
+    if not relative_path.parts:
+        return None
+
+    return TEST_LAYER_MARKERS.get(relative_path.parts[0])
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Apply repository test layer markers and external-service guards."""
+    allow_integration = _env_flag_enabled("PHYTOMNI_RUN_INTEGRATION")
+    allow_network = _env_flag_enabled("PHYTOMNI_ALLOW_NETWORK")
+
+    for item in items:
+        layer_marker = _layer_marker_for_item(item)
+        if layer_marker is not None:
+            item.add_marker(getattr(pytest.mark, layer_marker))
+
+        if item.get_closest_marker("integration") and not allow_integration:
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=(
+                        "Set PHYTOMNI_RUN_INTEGRATION=1 to run integration "
+                        "tests that may need real external services."
+                    )
+                )
+            )
+
+        if item.get_closest_marker("network") and not allow_network:
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=(
+                        "Set PHYTOMNI_ALLOW_NETWORK=1 to run tests that may "
+                        "perform external network calls."
+                    )
+                )
+            )
 
 
 @pytest.fixture(autouse=True)
