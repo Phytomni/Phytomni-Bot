@@ -13,7 +13,7 @@ class CacheConfigError(CacheError):
     """Raised when cache configuration is invalid."""
 
 
-class LockTimeout(CacheError):
+class LockTimeoutError(CacheError):
     """Raised when lock acquisition times out."""
 
 

@@ -66,7 +66,3 @@ def test_sensitive_config_accepts_legacy_obs_env(monkeypatch):
         config.SECRET_ACCESS_KEY.get_secret_value()
         == "legacy-secret-access-key"
     )
-    assert config.AccessKeyID.get_secret_value() == "legacy-access-key-id"
-    assert (
-        config.SecretAccessKey.get_secret_value() == "legacy-secret-access-key"
-    )

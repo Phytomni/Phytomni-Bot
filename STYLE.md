@@ -11,6 +11,7 @@ planned and tested.
 - Agent implementation modules keep the `*_agents.py` suffix.
 - Test files use `test_*.py`; shared pytest helpers live in `conftest.py`.
 - Classes, Pydantic models, and exceptions use `PascalCase`.
+- Exception classes that represent errors end with `Error`.
 - Functions, methods, fixtures, and variables use `snake_case`.
 - Constants and enum member names use `UPPER_SNAKE_CASE`.
 - Enum values that are part of the MCP API remain backward compatible.
@@ -67,6 +68,7 @@ README-style prose may wrap the same copyright text across lines.
 - Keep the configured line length at 79.
 - Let `black`, `ruff`, `flake8`, `mypy`, `pyright`, and `pylint` define the
   automated baseline.
+- Ruff's `N` rules are enabled to enforce PEP 8 naming conventions.
 - New lint disables must be narrow, documented, and treated as temporary unless
   the rule is intentionally incompatible with public API stability.
 

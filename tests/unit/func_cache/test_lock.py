@@ -6,7 +6,7 @@
 
 import pytest
 
-from mcp_server_phytomni.func_cache.exceptions import LockTimeout
+from mcp_server_phytomni.func_cache.exceptions import LockTimeoutError
 from mcp_server_phytomni.func_cache.lock import LockManager
 
 pytestmark = pytest.mark.unit
@@ -52,7 +52,7 @@ def test_lock_manager_times_out_when_lock_is_not_granted():
     storage = BlockingStorage()
     lock_manager = LockManager(storage, lock_timeout=0, lock_expire=300)
 
-    with pytest.raises(LockTimeout, match="Failed to acquire lock"):
+    with pytest.raises(LockTimeoutError, match="Failed to acquire lock"):
         lock_manager.acquire("func", "key")
 
     assert storage.calls == 1

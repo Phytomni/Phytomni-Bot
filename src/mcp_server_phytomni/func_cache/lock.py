@@ -8,7 +8,7 @@ import os
 import threading
 import time
 
-from .exceptions import LockTimeout, StorageError
+from .exceptions import LockTimeoutError, StorageError
 
 
 class LockManager:
@@ -54,7 +54,7 @@ class LockManager:
                 acquire and release a lock across thread-pool calls.
 
         Raises:
-            LockTimeout: If lock cannot be acquired within timeout.
+            LockTimeoutError: If lock cannot be acquired within timeout.
         """
         lock_owner = owner or self.owner()
         deadline = time.time() + self.lock_timeout
@@ -69,7 +69,7 @@ class LockManager:
                 pass
 
             if time.time() >= deadline:
-                raise LockTimeout(
+                raise LockTimeoutError(
                     f"Failed to acquire lock ({self.lock_timeout}s): "
                     f"{func_id}:{key_hash}"
                 )

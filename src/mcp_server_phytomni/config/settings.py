@@ -140,16 +140,6 @@ class SensitiveConfig(BaseSettings):
             return cls(_env_file=None)  # type: ignore[call-arg]
         return cls()  # type: ignore[call-arg]
 
-    @property
-    def AccessKeyID(self) -> SecretStr:  # pylint: disable=invalid-name
-        """Backward-compatible alias for `ACCESS_KEY_ID`."""
-        return self.ACCESS_KEY_ID
-
-    @property
-    def SecretAccessKey(self) -> SecretStr:  # pylint: disable=invalid-name
-        """Backward-compatible alias for `SECRET_ACCESS_KEY`."""
-        return self.SECRET_ACCESS_KEY
-
     def obs_credentials(self) -> tuple[str, str]:
         """Return OBS access and secret access key values."""
         return (
