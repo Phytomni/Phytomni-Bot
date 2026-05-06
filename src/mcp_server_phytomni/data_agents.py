@@ -25,6 +25,7 @@ from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    NL2SQL_CONFIG_FIELD_MAP,
     RETRY_CONFIG_FIELD_MAP,
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
@@ -56,12 +57,7 @@ DATA_CONFIG_FIELD_MAP = {
     "score_threshold": "SCORE_THRESHOLD",
     **CHAT_COMPLETION_CONFIG_FIELD_MAP,
     **RETRY_CONFIG_FIELD_MAP,
-    "database_url": "DATABASE_URL",
-    "workspace_id": "WORKSPACE_ID",
-    "subject_id": "SUBJECT_ID",
-    "dialog_id": "DIALOG_ID",
-    "need_insight": "NEED_INSIGHT",
-    "simplify_response": "SIMPLIFY_RESPONSE",
+    **NL2SQL_CONFIG_FIELD_MAP,
 }
 DATA_SENSITIVE_FIELD_MAP = {
     "base_url": "BASE_URL",

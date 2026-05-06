@@ -369,6 +369,9 @@ In restricted local sandboxes, `uv run --no-sync ...` can be used to reuse an
 already installed environment when plain `uv run` tries to rebuild the package
 or access a read-only uv cache.
 
+Pylint now runs without global rule disables. Local Pylint waivers are guarded
+by the style tests and are reserved for documented framework boundaries.
+
 ### CI
 
 `.github/workflows/lint.yml` runs:

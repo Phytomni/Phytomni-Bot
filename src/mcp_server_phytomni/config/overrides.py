@@ -56,6 +56,15 @@ RETRY_CONFIG_FIELD_MAP = {
     "max_retries": "MAX_RETRIES",
 }
 
+NL2SQL_CONFIG_FIELD_MAP = {
+    "database_url": "DATABASE_URL",
+    "workspace_id": "WORKSPACE_ID",
+    "subject_id": "SUBJECT_ID",
+    "dialog_id": "DIALOG_ID",
+    "need_insight": "NEED_INSIGHT",
+    "simplify_response": "SIMPLIFY_RESPONSE",
+}
+
 
 def collect_mapped_overrides(
     values: Mapping[str, Any],

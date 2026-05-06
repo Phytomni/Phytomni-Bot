@@ -80,21 +80,20 @@ README-style prose may wrap the same copyright text across lines.
 - `__init__.py` re-exports should be explicit through `__all__` and must not
   rely on broad per-file `F401` ignores.
 - Ruff's `N` rules are enabled to enforce PEP 8 naming conventions.
-- New lint disables must be narrow, documented, and treated as temporary unless
-  the rule is intentionally incompatible with public API stability.
+- Do not add global Pylint disables. Local disables are limited to documented
+  compatibility boundaries that cannot be expressed cleanly in code.
 
 ## Lint Waivers
 
-- Global Pylint disables are restricted to the reviewed legacy duplication and
-  complexity categories listed in `tests/unit/test_style_naming.py`.
+- Global Pylint disables are not allowed.
 - Do not add new global lint/type waivers for correctness, import, naming,
   docstring, mutable-default, exception, or unused-argument rules.
 - Local waivers must sit beside the compatibility boundary they protect and
   include a short reason when the intent is not obvious.
+- The only current local Pylint waiver is the LangGraph boundary exception
+  listed in `tests/unit/test_style_naming.py`.
 - Test-only style exceptions, such as pytest function docstrings, must remain
   under `tests/`.
-- Remaining global duplication/complexity disables are tracked legacy debt;
-  new code should reduce that list rather than depend on it.
 
 ## Tests
 

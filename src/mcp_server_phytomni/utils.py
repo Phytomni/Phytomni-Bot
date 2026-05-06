@@ -218,12 +218,13 @@ async def request_response_with_retries(
                 attempt += 1
                 continue
         except (ConnectError, TimeoutException) as exc:
-            if await retry_network_or_raise(
+            retry_network = await retry_network_or_raise(
                 exc,
                 attempt=attempt,
                 max_retries=retry.max_retries,
                 message=retry.network_message,
-            ):
+            )
+            if retry_network:
                 attempt += 1
                 continue
         attempt += 1
@@ -309,6 +310,31 @@ def format_upload_context(
         max_tokens=max_tokens,
         initial_length=initial_length,
     )
+
+
+async def download_upload_context(
+    obs_file_list: list[str],
+    config: Any,
+    sensitive_config: Any,
+) -> tuple[str, int]:
+    """Download OBS uploads and format them as bounded prompt context."""
+    if not obs_file_list:
+        return "", 0
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    upload_texts = await download_list_convert(
+        obs_file_list=obs_file_list,
+        server_dir=config.TEMP_DIR,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=config.OBS_SERVER,
+        bucket_name=config.BUCKET_NAME,
+        part_size=config.PART_SIZE,
+        task_num=config.TASK_NUM,
+        max_retries=config.MAX_RETRIES,
+        max_concurrency=config.MAX_CONCURRENCY,
+        max_workers=config.MAX_WORKERS,
+    )
+    return format_upload_context(upload_texts, max_tokens=config.MAX_TOKENS)
 
 
 def format_retrieved_doc_context(

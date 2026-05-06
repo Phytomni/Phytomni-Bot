@@ -39,7 +39,7 @@ from .langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
-from .utils import download_list_convert, get_prompt
+from .utils import download_upload_context, get_prompt
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -181,39 +181,12 @@ class InSilicoResearchAgents:
         Returns:
             List of research goal dictionaries with 'goal' and 'context' keys.
         """
-        total_length = 0
         if obs_file_list:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
+            upload_context, _ = await download_upload_context(
+                obs_file_list,
+                self.in_silico_config,
+                self.sensitive_config,
             )
-            upload_str_list = await download_list_convert(
-                obs_file_list=obs_file_list,
-                server_dir=self.in_silico_config.TEMP_DIR,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.in_silico_config.OBS_SERVER,
-                bucket_name=self.in_silico_config.BUCKET_NAME,
-                part_size=self.in_silico_config.PART_SIZE,
-                task_num=self.in_silico_config.TASK_NUM,
-                max_retries=self.in_silico_config.MAX_RETRIES,
-                max_concurrency=self.in_silico_config.MAX_CONCURRENCY,
-                max_workers=self.in_silico_config.MAX_WORKERS,
-            )
-            upload_results = []
-            for i, doc in enumerate(upload_str_list):
-                fragment = (
-                    f"[user upload file {i+1} begin]\n"
-                    f"{doc}\n[user upload file {i+1} end]"
-                )
-                if (
-                    total_length + len(fragment)
-                    <= self.in_silico_config.MAX_TOKENS
-                ):
-                    upload_results.append(fragment)
-                    total_length += len(fragment)
-                else:
-                    break
-            upload_context = "\n\n".join(upload_results)
             user_query = get_prompt(
                 self.in_silico_config.PROMPT_FILE,
                 "user/in_silico_research_goals_file",

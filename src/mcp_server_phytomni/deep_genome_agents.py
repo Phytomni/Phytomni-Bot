@@ -21,6 +21,7 @@ from .analyst_agents import (
 from .config.defaults import DeepGenomeConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    NL2SQL_CONFIG_FIELD_MAP,
     RETRIEVAL_CONFIG_FIELD_MAP,
     RETRY_CONFIG_FIELD_MAP,
     copy_config_with_overrides,
@@ -58,11 +59,7 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
     "epic_type": "EPIC_TYPE",
     "create_task_url": "CREATE_TASK_URL",
     "update_task_url": "UPDATE_TASK_URL",
-    "database_url": "DATABASE_URL",
-    "workspace_id": "WORKSPACE_ID",
-    "subject_id": "SUBJECT_ID",
-    "dialog_id": "DIALOG_ID",
-    "need_insight": "NEED_INSIGHT",
+    **NL2SQL_CONFIG_FIELD_MAP,
     "prompt_file": "PROMPT_FILE",
     "deepgenome_data": "DEEPGENOME_DATA",
     "output_dir": "OUTPUT_DIR",

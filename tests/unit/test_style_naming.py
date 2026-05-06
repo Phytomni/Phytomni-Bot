@@ -26,27 +26,11 @@ AUTHOR_FIRST_LINE_PATTERN = re.compile(
 AUTHOR_CONTINUATION_PATTERN = re.compile(
     r"^#         [A-Za-z0-9_.-]+ \([^@\s)]+@[^@\s)]+\.[^@\s)]+\)$"
 )
-ALLOWED_GLOBAL_PYLINT_DISABLES = {
-    "duplicate-code",
-    "too-many-arguments",
-    "too-many-boolean-expressions",
-    "too-many-branches",
-    "too-many-instance-attributes",
-    "too-many-lines",
-    "too-many-locals",
-    "too-many-nested-blocks",
-    "too-many-positional-arguments",
-    "too-many-public-methods",
-    "too-many-return-statements",
-    "too-many-statements",
-}
-RESOLVED_GLOBAL_PYLINT_DISABLES = {
-    "broad-exception-caught",
-    "dangerous-default-value",
-    "import-outside-toplevel",
-    "missing-function-docstring",
-    "too-few-public-methods",
-    "unused-argument",
+PYLINT_DISABLE_MARKER = "".join(("pylint:", " disable="))
+ALLOWED_LOCAL_PYLINT_DISABLES = {
+    "src/mcp_server_phytomni/langgraph_runner.py": {
+        "broad-exception-caught",
+    },
 }
 
 
@@ -151,7 +135,9 @@ def test_function_docstring_waiver_is_removed_from_tests():
     )
 
     pylint_disable = set(
-        pyproject["tool"]["pylint"]["messages_control"]["disable"]
+        pyproject["tool"]["pylint"]
+        .get("messages_control", {})
+        .get("disable", [])
     )
     assert "missing-function-docstring" not in pylint_disable
 
@@ -159,7 +145,7 @@ def test_function_docstring_waiver_is_removed_from_tests():
     for path in (root / "tests").rglob("*.py"):
         for line in path.read_text(encoding="utf-8").splitlines():
             if (
-                "pylint: disable=" in line
+                PYLINT_DISABLE_MARKER in line
                 and "missing-function-docstring" in line
             ):
                 violations.append(path.relative_to(root).as_posix())
@@ -167,16 +153,47 @@ def test_function_docstring_waiver_is_removed_from_tests():
     assert not violations
 
 
-def test_global_pylint_disables_are_reviewed_legacy_only():
-    """Verify global pylint disables are reviewed legacy only."""
+def test_global_pylint_disables_are_not_reintroduced():
+    """Verify global pylint disables are not reintroduced."""
     root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads(
         (root / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    pylint_disable = set(
-        pyproject["tool"]["pylint"]["messages_control"]["disable"]
+    pylint_disable = (
+        pyproject["tool"]["pylint"]
+        .get("messages_control", {})
+        .get("disable", [])
     )
 
-    assert not pylint_disable - ALLOWED_GLOBAL_PYLINT_DISABLES
-    assert not pylint_disable & RESOLVED_GLOBAL_PYLINT_DISABLES
+    assert pylint_disable == []
+
+
+def test_local_pylint_disables_are_langgraph_boundary_only():
+    """Verify local pylint disables stay limited to LangGraph boundaries."""
+    root = Path(__file__).resolve().parents[2]
+    violations = []
+
+    for base in (root / "src", root / "tests"):
+        for path in base.rglob("*.py"):
+            relative_path = path.relative_to(root).as_posix()
+            allowed_rules = ALLOWED_LOCAL_PYLINT_DISABLES.get(
+                relative_path, set()
+            )
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if PYLINT_DISABLE_MARKER not in line:
+                    continue
+                disabled_rules = {
+                    rule.strip()
+                    for rule in line.split(PYLINT_DISABLE_MARKER, 1)[1].split(
+                        ","
+                    )
+                    if rule.strip()
+                }
+                if disabled_rules - allowed_rules:
+                    violations.append(f"{relative_path}:{line_number}")
+
+    assert not violations

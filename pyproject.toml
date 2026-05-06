@@ -133,9 +133,3 @@ output = "coverage.xml"
 [tool.pylint.main]
 py-version = "3.12"
 ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
-
-[tool.pylint.messages_control]
-disable = [
-    # Stage 8 remaining debt: keep only until duplicate-code is refactored.
-    "duplicate-code",
-]

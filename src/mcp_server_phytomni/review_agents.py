@@ -31,7 +31,7 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
-    download_list_convert,
+    download_upload_context,
     get_prompt,
     message_content,
     parse_follow_up_questions,
@@ -289,37 +289,11 @@ class DeepResearchAgent:
         upload_context = ""
 
         if state["obs_file_list"]:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
+            upload_context, total_length = await download_upload_context(
+                state["obs_file_list"],
+                self.review_config,
+                self.sensitive_config,
             )
-            upload_str_list = await download_list_convert(
-                obs_file_list=state["obs_file_list"],
-                server_dir=self.review_config.TEMP_DIR,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.review_config.OBS_SERVER,
-                bucket_name=self.review_config.BUCKET_NAME,
-                part_size=self.review_config.PART_SIZE,
-                task_num=self.review_config.TASK_NUM,
-                max_retries=self.review_config.MAX_RETRIES,
-                max_concurrency=self.review_config.MAX_CONCURRENCY,
-                max_workers=self.review_config.MAX_WORKERS,
-            )
-            upload_results = []
-            for i, doc in enumerate(upload_str_list):
-                fragment = (
-                    f"[user upload file {i + 1} begin]\n"
-                    f"{doc}\n[user upload file {i + 1} end]"
-                )
-                if (
-                    total_length + len(fragment)
-                    <= self.review_config.MAX_TOKENS
-                ):
-                    upload_results.append(fragment)
-                    total_length += len(fragment)
-                else:
-                    break
-            upload_context = "\n\n".join(upload_results)
             user_query = get_prompt(
                 self.review_config.PROMPT_FILE,
                 "user/deep_research_query_file",

@@ -27,9 +27,8 @@ from .knowledge_agents import multi_retrieve, retrieve
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
-    download_list_convert,
+    download_upload_context,
     format_retrieved_doc_context,
-    format_upload_context,
     get_prompt,
     get_token,
     load_json_file,
@@ -247,29 +246,11 @@ class AnalystGraphMixin(WorkflowMixinBase):
             A dictionary containing the method_context with upload_context
             and retrieve_context.
         """
-        total_length = 0
-        upload_context = ""
-        if state["obs_file_list"]:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
-            upload_texts = await download_list_convert(
-                obs_file_list=state["obs_file_list"],
-                server_dir=self.analyst_config.TEMP_DIR,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.analyst_config.OBS_SERVER,
-                bucket_name=self.analyst_config.BUCKET_NAME,
-                part_size=self.analyst_config.PART_SIZE,
-                task_num=self.analyst_config.TASK_NUM,
-                max_retries=self.analyst_config.MAX_RETRIES,
-                max_concurrency=self.analyst_config.MAX_CONCURRENCY,
-                max_workers=self.analyst_config.MAX_WORKERS,
-            )
-            upload_context, total_length = format_upload_context(
-                upload_texts,
-                max_tokens=self.analyst_config.MAX_TOKENS,
-            )
+        upload_context, total_length = await download_upload_context(
+            state["obs_file_list"],
+            self.analyst_config,
+            self.sensitive_config,
+        )
         retrieve_response = await multi_retrieve(
             user_query=state["goal_description"],
             retrieve_url=self.analyst_config.RETRIEVE_URL,
