@@ -318,6 +318,15 @@ Equivalent explicit form:
 uv run pytest -m "not integration and not network"
 ```
 
+Coverage report form used by CI:
+
+```bash
+uv run pytest \
+  --cov=mcp_server_phytomni \
+  --cov-report=term-missing \
+  --cov-report=xml
+```
+
 Tests are grouped by directory and automatically marked as `unit`, `server`,
 `agent`, or `integration`. `integration` tests stay skipped unless
 `PHYTOMNI_RUN_INTEGRATION=1` is set. Tests marked `network` stay skipped unless
@@ -348,7 +357,10 @@ uv run flake8 src tests --count --statistics
 uv run mypy src
 pyright src
 PYTHONPATH=src uv run pylint --persistent=no src tests
-uv run pytest
+uv run pytest \
+  --cov=mcp_server_phytomni \
+  --cov-report=term-missing \
+  --cov-report=xml
 ```
 
 In restricted local sandboxes, `uv run --no-sync ...` can be used to reuse an
@@ -365,7 +377,7 @@ or access a read-only uv cache.
 - `mypy src`
 - `pyright src`
 - `pylint --persistent=no $(git ls-files '*.py')`
-- `pytest`
+- `pytest --cov=mcp_server_phytomni`
 
 ## Repository Hygiene
 
@@ -406,6 +418,7 @@ Development dependencies include:
 - `pylint`
 - `pytest`
 - `pytest-asyncio`
+- `pytest-cov`
 
 ## Troubleshooting
 

@@ -65,3 +65,36 @@ def test_test_files_live_in_named_pytest_layers():
     ]
 
     assert bad_paths == []
+
+
+def test_pytest_coverage_reporting_is_configured_for_ci():
+    pyproject = _pyproject()
+    optional_dev = pyproject["project"]["optional-dependencies"]["dev"]
+    group_dev = pyproject["dependency-groups"]["dev"]
+    coverage_config = pyproject["tool"]["coverage"]
+
+    assert any(dep.startswith("pytest-cov") for dep in optional_dev)
+    assert any(dep.startswith("pytest-cov") for dep in group_dev)
+    assert coverage_config["run"] == {
+        "branch": True,
+        "relative_files": True,
+        "source": ["mcp_server_phytomni"],
+    }
+    assert coverage_config["report"] == {
+        "show_missing": True,
+        "skip_covered": False,
+    }
+    assert coverage_config["xml"] == {"output": "coverage.xml"}
+
+
+def test_ci_pytest_job_writes_coverage_report():
+    workflow = (_project_root() / ".github/workflows/lint.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Run offline tests with coverage" in workflow
+    assert "--cov=mcp_server_phytomni" in workflow
+    assert "--cov-report=term-missing" in workflow
+    assert "--cov-report=xml" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "coverage.xml" in workflow

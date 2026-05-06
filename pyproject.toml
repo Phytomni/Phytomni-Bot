@@ -30,6 +30,7 @@ dev = [
     "pylint>=4.0.5",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
 ]
 
@@ -42,6 +43,7 @@ dev = [
     "pylint>=4.0.5",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
 ]
 
@@ -113,6 +115,18 @@ markers = [
     "integration: tests that may require configured external services.",
     "network: tests that may perform real network, OBS, or LLM calls.",
 ]
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["mcp_server_phytomni"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.coverage.xml]
+output = "coverage.xml"
 
 [tool.pylint.main]
 py-version = "3.12"
