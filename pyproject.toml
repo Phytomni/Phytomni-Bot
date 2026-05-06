@@ -136,8 +136,8 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint.messages_control]
 disable = [
-    # Legacy/public API shape kept for compatibility; phase 4 will refactor
-    # these with narrower scopes instead of changing signatures in phase 1.
+    # Stage 7.10 reviewed: only legacy duplication/complexity categories
+    # remain global. New lint waivers must be local and documented.
     "duplicate-code",
     "too-many-arguments",
     "too-many-boolean-expressions",

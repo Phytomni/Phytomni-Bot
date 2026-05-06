@@ -83,6 +83,19 @@ README-style prose may wrap the same copyright text across lines.
 - New lint disables must be narrow, documented, and treated as temporary unless
   the rule is intentionally incompatible with public API stability.
 
+## Lint Waivers
+
+- Global Pylint disables are restricted to the reviewed legacy duplication and
+  complexity categories listed in `tests/unit/test_style_naming.py`.
+- Do not add new global lint/type waivers for correctness, import, naming,
+  docstring, mutable-default, exception, or unused-argument rules.
+- Local waivers must sit beside the compatibility boundary they protect and
+  include a short reason when the intent is not obvious.
+- Test-only style exceptions, such as pytest function docstrings, must remain
+  under `tests/`.
+- Remaining global duplication/complexity disables are tracked legacy debt;
+  new code should reduce that list rather than depend on it.
+
 ## Tests
 
 - Default pytest tests must run offline and without real secrets.

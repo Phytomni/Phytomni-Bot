@@ -28,6 +28,28 @@ AUTHOR_FIRST_LINE_PATTERN = re.compile(
 AUTHOR_CONTINUATION_PATTERN = re.compile(
     r"^#         [A-Za-z0-9_.-]+ \([^@\s)]+@[^@\s)]+\.[^@\s)]+\)$"
 )
+ALLOWED_GLOBAL_PYLINT_DISABLES = {
+    "duplicate-code",
+    "too-many-arguments",
+    "too-many-boolean-expressions",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements",
+}
+RESOLVED_GLOBAL_PYLINT_DISABLES = {
+    "broad-exception-caught",
+    "dangerous-default-value",
+    "import-outside-toplevel",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "unused-argument",
+}
 
 
 def test_python_file_names_follow_snake_case():
@@ -141,3 +163,17 @@ def test_function_docstring_waiver_is_test_only():
                 violations.append(relative_path)
 
     assert not violations
+
+
+def test_global_pylint_disables_are_reviewed_legacy_only():
+    root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    pylint_disable = set(
+        pyproject["tool"]["pylint"]["messages_control"]["disable"]
+    )
+
+    assert not pylint_disable - ALLOWED_GLOBAL_PYLINT_DISABLES
+    assert not pylint_disable & RESOLVED_GLOBAL_PYLINT_DISABLES
