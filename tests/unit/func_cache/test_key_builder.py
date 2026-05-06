@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for deterministic cache key construction."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 
 from mcp_server_phytomni.func_cache.exceptions import (

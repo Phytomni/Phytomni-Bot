@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for sensitive settings loading in offline mode."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 
 from mcp_server_phytomni.config import settings

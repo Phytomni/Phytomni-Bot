@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for public wrapper override propagation."""
 
+# pylint: disable=missing-function-docstring
+
 from __future__ import annotations
 
 from collections.abc import Callable

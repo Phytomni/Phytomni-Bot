@@ -139,7 +139,6 @@ disable = [
     # Legacy/public API shape kept for compatibility; phase 4 will refactor
     # these with narrower scopes instead of changing signatures in phase 1.
     "duplicate-code",
-    "missing-function-docstring",
     "too-few-public-methods",
     "too-many-arguments",
     "too-many-boolean-expressions",

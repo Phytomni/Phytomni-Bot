@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for MCP tool parameter schemas."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 from pydantic import ValidationError
 

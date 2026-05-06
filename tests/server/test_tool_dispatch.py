@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for MCP tool dispatch routing."""
 
+# pylint: disable=missing-function-docstring
+
 from __future__ import annotations
 
 from json import loads

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for non-secret default configuration models."""
 
+# pylint: disable=missing-function-docstring
+
 from pathlib import Path
 
 import pytest

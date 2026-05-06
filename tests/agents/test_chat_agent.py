@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for ChatAgent service helpers."""
 
+# pylint: disable=missing-function-docstring
+
 from __future__ import annotations
 
 from typing import Any

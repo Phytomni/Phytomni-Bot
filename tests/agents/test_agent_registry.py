@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for shared agent registry helpers."""
 
+# pylint: disable=missing-function-docstring
+
 from pydantic import BaseModel, SecretStr
 
 from mcp_server_phytomni.agent_registry import (

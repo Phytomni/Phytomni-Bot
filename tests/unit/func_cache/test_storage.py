@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for SQLite-backed func_cache storage."""
 
+# pylint: disable=missing-function-docstring
+
 import time
 
 import pytest

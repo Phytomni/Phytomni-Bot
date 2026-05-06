@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for repository pytest layer conventions."""
 
+# pylint: disable=missing-function-docstring
+
 import tomllib
 from pathlib import Path
 

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for YAML prompt loading and rendering helpers."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 
 from mcp_server_phytomni.utils import (

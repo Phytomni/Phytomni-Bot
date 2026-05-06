@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline fake-graph smoke tests for LangGraph agents."""
 
+# pylint: disable=missing-function-docstring
+
 from __future__ import annotations
 
 from typing import Any

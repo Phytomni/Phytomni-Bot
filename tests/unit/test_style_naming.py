@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for repository naming and header conventions."""
 
+# pylint: disable=missing-function-docstring
+
 import ast
 import configparser
 import re
@@ -115,3 +117,27 @@ def test_flake8_uses_black_compatible_style_without_init_ignores():
 
     assert ignored_rules == {"E203", "W503"}
     assert "per-file-ignores" not in flake8_config
+
+
+def test_function_docstring_waiver_is_test_only():
+    root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    pylint_disable = set(
+        pyproject["tool"]["pylint"]["messages_control"]["disable"]
+    )
+    assert "missing-function-docstring" not in pylint_disable
+
+    violations = []
+    for base in (root / "src", root / "tests"):
+        for path in base.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if "missing-function-docstring" not in text:
+                continue
+            relative_path = path.relative_to(root).as_posix()
+            if not relative_path.startswith("tests/"):
+                violations.append(relative_path)
+
+    assert not violations

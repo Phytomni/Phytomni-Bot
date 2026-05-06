@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for config override helpers."""
 
+# pylint: disable=missing-function-docstring
+
 from typing import Optional
 
 from pydantic import BaseModel, SecretStr

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the func_cache decorator."""
 
+# pylint: disable=missing-function-docstring
+
 import asyncio
 
 import pytest

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for the DataAgent wrapper."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 
 from mcp_server_phytomni.config.defaults import DataConfig

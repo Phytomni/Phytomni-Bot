@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for list chunking utilities."""
 
+# pylint: disable=missing-function-docstring
+
 import pytest
 
 from mcp_server_phytomni.utils import split_list

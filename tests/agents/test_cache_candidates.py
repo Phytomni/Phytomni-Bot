@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for first-wave low-risk cache integration points."""
 
-# pylint: disable=protected-access
+# pylint: disable=missing-function-docstring, protected-access
 
 import json
 from types import SimpleNamespace
