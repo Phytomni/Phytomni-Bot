@@ -63,11 +63,16 @@ async def _find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
         "X-Auth-Token": await get_token(),
         "Content-Type": "application/json",
     }
+    request_params: dict[str, str | int] = {
+        "question": spa_names,
+        "page_size": 10,
+        "page_num": 1,
+    }
     disabled_proxies: Any = {"http": None, "https": None}
     response = requests.get(
         url,
         headers=headers,
-        params={"question": spa_names, "page_size": 10, "page_num": 1},
+        params=request_params,
         proxies=disabled_proxies,
         timeout=timeout,
     )

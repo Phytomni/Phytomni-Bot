@@ -6,7 +6,7 @@
 
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, SecretStr
@@ -138,9 +138,10 @@ class SensitiveConfig(BaseSettings):
             ValidationError: If any required fields are missing or invalid
         """
         load_env_file()
+        settings_cls = cast(Any, cls)
         if os.getenv("PHYTOMNI_TESTING") == "1":
-            return cls(_env_file=None)  # type: ignore[call-arg]
-        return cls()  # type: ignore[call-arg]
+            return settings_cls(_env_file=None)
+        return settings_cls()
 
     def obs_credentials(self) -> tuple[str, str]:
         """Return OBS access and secret access key values."""
