@@ -16,10 +16,7 @@ from uuid import uuid1
 
 from httpx import (
     AsyncClient,
-    ConnectError,
-    HTTPStatusError,
     Timeout,
-    TimeoutException,
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -28,14 +25,15 @@ from .analyst_storage import create_output_dir, upload_analyst_agents_data
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
 from .utils import (
+    JsonPostRequest,
+    JsonPostRetry,
     download_list_convert,
     format_retrieved_doc_context,
     format_upload_context,
     get_prompt,
     get_token,
     load_json_file,
-    retry_http_status_or_raise,
-    retry_network_or_raise,
+    request_response_with_retries,
 )
 from .workflow_mixins import WorkflowMixinBase
 
@@ -800,50 +798,34 @@ class AnalystGraphMixin(WorkflowMixinBase):
         analysis_url = self.analyst_config.ANALYSIS_URL
 
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await client.post(
-                        analysis_url,
-                        headers=job_headers,
-                        json=job_data,
-                    )
-                    if response.status_code == 201:
-                        print("===================Submit===================")
-                        print(f"Job_Name: {job_name}")
-                        print(f"Task_id: {json.loads(response.text)['id']}")
-                        print(f"Output_Dir: {output_dir}")
-                        print("Task_Status: RUNNING")
-                        print("============================================")
-                        return {
-                            "task_id": json.loads(response.text)["id"],
-                            "task_status": "PENDING",
-                            "job_name": job_name,
-                            "output_dir": output_dir,
-                        }
-                    raise McpError(
-                        ErrorData(
-                            code=INTERNAL_ERROR,
-                            message="Failed to submit task",
-                        )
-                    )
-
-                except HTTPStatusError as exc:
-                    if await retry_http_status_or_raise(
-                        exc,
-                        attempt=attempt,
-                        max_retries=max_retries,
-                        retriable_codes=self.analyst_config.RETRIABLE_CODES,
-                        message="Failed to submit task",
-                    ):
-                        continue
-
-                except (ConnectError, TimeoutException) as exc:
-                    if await retry_network_or_raise(
-                        exc,
-                        attempt=attempt,
-                        max_retries=max_retries,
-                    ):
-                        continue
+            response = await request_response_with_retries(
+                client,
+                JsonPostRequest(
+                    url=analysis_url,
+                    headers=job_headers,
+                    json_body=job_data,
+                ),
+                JsonPostRetry(
+                    timeout=timeout,
+                    max_retries=max_retries,
+                    retriable_codes=self.analyst_config.RETRIABLE_CODES,
+                    message="Failed to submit task",
+                ),
+            )
+            if response is not None and response.status_code == 201:
+                payload = response.json()
+                print("===================Submit===================")
+                print(f"Job_Name: {job_name}")
+                print(f"Task_id: {payload['id']}")
+                print(f"Output_Dir: {output_dir}")
+                print("Task_Status: RUNNING")
+                print("============================================")
+                return {
+                    "task_id": payload["id"],
+                    "task_status": "PENDING",
+                    "job_name": job_name,
+                    "output_dir": output_dir,
+                }
 
         raise McpError(
             ErrorData(

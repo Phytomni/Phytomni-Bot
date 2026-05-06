@@ -12,10 +12,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from httpx import (
     AsyncClient,
-    ConnectError,
-    HTTPStatusError,
     Timeout,
-    TimeoutException,
 )
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -37,12 +34,13 @@ from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
+    JsonPostRequest,
+    JsonPostRetry,
     attach_message_payload,
     get_prompt,
     message_content,
     parse_follow_up_questions,
-    retry_http_status_or_raise,
-    retry_network_or_raise,
+    post_json_with_retries,
 )
 
 BRIEF_CONFIG = BriefGeneConfig()
@@ -237,37 +235,26 @@ async def run_bi_api(
         retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(
-                    bi_url,
-                    headers={
-                        "Content-Type": "application/json",
-                        "token": bi_token,
-                    },
-                    json={"sql": query_sql, "returnType": "json"},
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data if isinstance(data, dict) else {}
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
-                    message="Failed to query BI API",
-                ):
-                    continue
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=max_retries,
-                    message="BI API network error",
-                ):
-                    continue
+        data = await post_json_with_retries(
+            client,
+            JsonPostRequest(
+                url=bi_url,
+                headers={
+                    "Content-Type": "application/json",
+                    "token": bi_token,
+                },
+                json_body={"sql": query_sql, "returnType": "json"},
+            ),
+            JsonPostRetry(
+                timeout=timeout,
+                max_retries=max_retries,
+                retriable_codes=retriable_codes,
+                message="Failed to query BI API",
+                network_message="BI API network error",
+            ),
+        )
+        if isinstance(data, dict):
+            return data
 
     raise McpError(
         ErrorData(

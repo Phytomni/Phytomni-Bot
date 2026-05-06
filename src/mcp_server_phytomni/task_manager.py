@@ -12,13 +12,10 @@ from typing import Any, Dict
 
 from httpx import (
     AsyncClient,
-    ConnectError,
-    HTTPStatusError,
     Timeout,
-    TimeoutException,
 )
 
-from .utils import retry_http_status_or_raise, retry_network_or_raise
+from .utils import JsonPostRequest, JsonPostRetry, post_json_with_retries
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
@@ -218,31 +215,13 @@ async def _post_remote_task(request: RemoteTaskRequest):
     """Post one remote task-manager request with retry handling."""
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(request.max_retries + 1):
-            try:
-                response = await client.post(
-                    request.url,
-                    data=request.data,
-                    timeout=request.timeout,
-                )
-                response.raise_for_status()
-                return response.json()
-
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=request.max_retries,
-                    retriable_codes=request.retriable_codes,
-                    message=request.message,
-                ):
-                    continue
-
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=request.max_retries,
-                ):
-                    continue
-    return None
+        return await post_json_with_retries(
+            client,
+            JsonPostRequest(url=request.url, data=request.data),
+            JsonPostRetry(
+                timeout=request.timeout,
+                max_retries=request.max_retries,
+                retriable_codes=request.retriable_codes,
+                message=request.message,
+            ),
+        )

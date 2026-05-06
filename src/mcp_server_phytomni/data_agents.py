@@ -14,13 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, TypedDict
 from uuid import uuid1
 
-from httpx import (
-    AsyncClient,
-    ConnectError,
-    HTTPStatusError,
-    Timeout,
-    TimeoutException,
-)
+from httpx import AsyncClient, Timeout
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
@@ -39,11 +33,12 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
+    JsonPostRequest,
+    JsonPostRetry,
     format_retrieved_doc_fragment,
     get_prompt,
     get_token,
-    retry_http_status_or_raise,
-    retry_network_or_raise,
+    post_json_with_retries,
 )
 
 DATA_CONFIG = DataConfig()
@@ -125,38 +120,26 @@ async def nl2sql(
     request = Nl2SqlRequest.from_kwargs(message_content, kwargs)
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        for attempt in range(request.max_retries + 1):
-            try:
-                response = await client.post(
-                    request.database_url,
-                    headers={
-                        "X-Auth-Token": await get_token(),
-                        "X-Workspace-Id": request.workspace_id,
-                        "Content-Type": "application/json",
-                    },
-                    json=request.payload(),
-                    timeout=request.timeout,
-                )
-                response.raise_for_status()
-                return response.json()
-
-            except HTTPStatusError as exc:
-                if await retry_http_status_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=request.max_retries,
-                    retriable_codes=request.retriable_codes,
-                    message="Failed to query SQL database",
-                ):
-                    continue
-
-            except (ConnectError, TimeoutException) as exc:
-                if await retry_network_or_raise(
-                    exc,
-                    attempt=attempt,
-                    max_retries=request.max_retries,
-                ):
-                    continue
+        result = await post_json_with_retries(
+            client,
+            JsonPostRequest(
+                url=request.database_url,
+                headers={
+                    "X-Auth-Token": await get_token(),
+                    "X-Workspace-Id": request.workspace_id,
+                    "Content-Type": "application/json",
+                },
+                json_body=request.payload(),
+            ),
+            JsonPostRetry(
+                timeout=request.timeout,
+                max_retries=request.max_retries,
+                retriable_codes=request.retriable_codes,
+                message="Failed to query SQL database",
+            ),
+        )
+        if isinstance(result, dict):
+            return result
 
     raise McpError(
         ErrorData(
@@ -423,58 +406,41 @@ class DataAgent:
             query = state["rewrite_query"]
         else:
             query = state["user_query"]
-        response: Any = None
+        payload = {
+            "subject_id": self.data_config.SUBJECT_ID,
+            "dialog_id": dialog_id if dialog_id else str(uuid1()),
+            "message_content": query,
+            "need_insight": self.data_config.NEED_INSIGHT,
+            "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
+        }
         async with AsyncClient(timeout=client_timeout, verify=False) as client:
-            for attempt in range(self.data_config.MAX_RETRIES + 1):
-                try:
-                    response = await client.post(
-                        self.data_config.DATABASE_URL,
-                        headers={
-                            "X-Auth-Token": await get_token(),
-                            "X-Workspace-Id": self.data_config.WORKSPACE_ID,
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "subject_id": self.data_config.SUBJECT_ID,
-                            "dialog_id": (
-                                dialog_id if dialog_id else str(uuid1())
-                            ),
-                            "message_content": query,
-                            "need_insight": self.data_config.NEED_INSIGHT,
-                            "simplify_response": (
-                                self.data_config.SIMPLIFY_RESPONSE
-                            ),
-                        },
-                        timeout=self.data_config.TIMEOUT,
-                    )
-                    response.raise_for_status()
-
-                except HTTPStatusError as exc:
-                    if await retry_http_status_or_raise(
-                        exc,
-                        attempt=attempt,
-                        max_retries=self.data_config.MAX_RETRIES,
-                        retriable_codes=self.data_config.RETRIABLE_CODES,
-                        message="Failed to query SQL database",
-                    ):
-                        continue
-
-                except (ConnectError, TimeoutException) as exc:
-                    if await retry_network_or_raise(
-                        exc,
-                        attempt=attempt,
-                        max_retries=self.data_config.MAX_RETRIES,
-                    ):
-                        continue
-        if response is None:
+            result = await post_json_with_retries(
+                client,
+                JsonPostRequest(
+                    url=self.data_config.DATABASE_URL,
+                    headers={
+                        "X-Auth-Token": await get_token(),
+                        "X-Workspace-Id": self.data_config.WORKSPACE_ID,
+                        "Content-Type": "application/json",
+                    },
+                    json_body=payload,
+                ),
+                JsonPostRetry(
+                    timeout=self.data_config.TIMEOUT,
+                    max_retries=self.data_config.MAX_RETRIES,
+                    retriable_codes=self.data_config.RETRIABLE_CODES,
+                    message="Failed to query SQL database",
+                ),
+            )
+        if result is None:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
                     message="No response received from SQL database",
                 )
             )
-        print(response.json())
-        return {"final_response": response.json()}
+        print(result)
+        return {"final_response": result}
 
     async def arun(
         self,

@@ -21,8 +21,9 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from .config.defaults import KnowledgeConfig
 from .func_cache import func_cache
 from .utils import (
-    retry_http_status_or_raise,
-    retry_network_or_raise,
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
     split_list,
 )
 
@@ -330,33 +331,21 @@ async def _retrieve_scope_docs(
     scope: str,
 ) -> Any:
     """Retrieve docs for a single knowledge-base scope."""
-    for attempt in range(options.max_retries + 1):
-        try:
-            response = await client.post(
-                options.retrieve_url,
-                headers={"Content-Type": "application/json"},
-                json=options.payload(user_query, scope),
-                timeout=options.timeout,
-            )
-            response.raise_for_status()
-            return response.json()["doc_list"]
-        except HTTPStatusError as exc:
-            if await retry_http_status_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=options.max_retries,
-                retriable_codes=options.retriable_codes,
-                message="Failed to retrieve knowledge base",
-            ):
-                continue
-        except (ConnectError, TimeoutException) as exc:
-            if await retry_network_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=options.max_retries,
-            ):
-                continue
-    return []
+    result = await post_json_with_retries(
+        client,
+        JsonPostRequest(
+            url=options.retrieve_url,
+            headers={"Content-Type": "application/json"},
+            json_body=options.payload(user_query, scope),
+        ),
+        JsonPostRetry(
+            timeout=options.timeout,
+            max_retries=options.max_retries,
+            retriable_codes=options.retriable_codes,
+            message="Failed to retrieve knowledge base",
+        ),
+    )
+    return result.get("doc_list", []) if isinstance(result, dict) else []
 
 
 async def _retrieve_both_scopes(
@@ -484,38 +473,26 @@ async def _rerank_batch(
     options: RerankOptions,
 ):
     """Send one rerank request batch."""
-    for attempt in range(options.max_retries + 1):
-        try:
-            response = await client.post(
-                options.rerank_url,
-                headers={"Content-Type": "application/json"},
-                json={
-                    "query": user_query,
-                    "ranking_order": ["title", "content"],
-                    "docs": docs_batch,
-                    "top_n": options.top_n,
-                },
-                timeout=options.timeout,
-            )
-            response.raise_for_status()
-            return response.json()["rank_result"]
-        except HTTPStatusError as exc:
-            if await retry_http_status_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=options.max_retries,
-                retriable_codes=options.retriable_codes,
-                message="Failed to rerank",
-            ):
-                continue
-        except (ConnectError, TimeoutException) as exc:
-            if await retry_network_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=options.max_retries,
-            ):
-                continue
-    return []
+    result = await post_json_with_retries(
+        client,
+        JsonPostRequest(
+            url=options.rerank_url,
+            headers={"Content-Type": "application/json"},
+            json_body={
+                "query": user_query,
+                "ranking_order": ["title", "content"],
+                "docs": docs_batch,
+                "top_n": options.top_n,
+            },
+        ),
+        JsonPostRetry(
+            timeout=options.timeout,
+            max_retries=options.max_retries,
+            retriable_codes=options.retriable_codes,
+            message="Failed to rerank",
+        ),
+    )
+    return result.get("rank_result", []) if isinstance(result, dict) else []
 
 
 def _collect_rank_results(

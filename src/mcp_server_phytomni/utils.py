@@ -23,6 +23,7 @@ from httpx import (
     ConnectError,
     HTTPError,
     HTTPStatusError,
+    Response,
     Timeout,
     TimeoutException,
 )
@@ -73,6 +74,60 @@ class ObsTransferContext:
     download: ObsDownloadOptions
     max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY
     max_workers: int = SERVER_CONFIG.MAX_WORKERS
+
+
+@dataclass(frozen=True)
+class JsonPostRequest:
+    """HTTP request payload for retry helpers."""
+
+    url: str
+    method: str = "POST"
+    headers: Mapping[str, str] | None = None
+    json_body: Any = None
+    data: Any = None
+
+
+@dataclass(frozen=True)
+class JsonPostRetry:
+    """Retry policy and error messages for JSON POST calls."""
+
+    timeout: float
+    max_retries: int
+    retriable_codes: Iterable[int]
+    message: str
+    network_message: str = "Network error"
+
+
+async def _send_retry_request(
+    client: AsyncClient,
+    request: JsonPostRequest,
+    timeout: float,
+) -> Response:
+    """Send one HTTP request using the common retry payload."""
+    method = request.method.upper()
+    headers = dict(request.headers or {})
+    if method == "GET":
+        return await client.get(
+            request.url,
+            headers=headers,
+            timeout=timeout,
+        )
+    if method == "POST":
+        return await client.post(
+            request.url,
+            json=request.json_body,
+            data=request.data,
+            headers=headers,
+            timeout=timeout,
+        )
+    return await client.request(
+        method,
+        request.url,
+        json=request.json_body,
+        data=request.data,
+        headers=headers,
+        timeout=timeout,
+    )
 
 
 def message_content(response: Any) -> str:
@@ -136,6 +191,53 @@ async def retry_network_or_raise(
             message=f"{message}: {str(exc)}",
         )
     ) from exc
+
+
+async def request_response_with_retries(
+    client: AsyncClient,
+    request: JsonPostRequest,
+    retry: JsonPostRetry,
+) -> Response | None:
+    """Request with shared HTTP/network retry handling and return response."""
+    attempt = 0
+    while attempt <= retry.max_retries:
+        try:
+            response = await _send_retry_request(
+                client, request, retry.timeout
+            )
+            response.raise_for_status()
+            return response
+        except HTTPStatusError as exc:
+            if await retry_http_status_or_raise(
+                exc,
+                attempt=attempt,
+                max_retries=retry.max_retries,
+                retriable_codes=retry.retriable_codes,
+                message=retry.message,
+            ):
+                attempt += 1
+                continue
+        except (ConnectError, TimeoutException) as exc:
+            if await retry_network_or_raise(
+                exc,
+                attempt=attempt,
+                max_retries=retry.max_retries,
+                message=retry.network_message,
+            ):
+                attempt += 1
+                continue
+        attempt += 1
+    return None
+
+
+async def post_json_with_retries(
+    client: AsyncClient,
+    request: JsonPostRequest,
+    retry: JsonPostRetry,
+) -> Any:
+    """POST with shared HTTP/network retry handling and return JSON."""
+    response = await request_response_with_retries(client, request, retry)
+    return response.json() if response is not None else None
 
 
 def parse_json_list_fragment(text: str) -> List[Any]:
