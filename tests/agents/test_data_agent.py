@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for the DataAgent wrapper."""
 
-# pylint: disable=missing-function-docstring, too-few-public-methods
-
 import pytest
 
 from mcp_server_phytomni.config.defaults import DataConfig
@@ -19,10 +17,12 @@ class FakeCompiledGraph:
     """Minimal async graph stand-in used to inspect DataAgent invocation."""
 
     def __init__(self):
+        """Verify init  ."""
         self.state = None
         self.config = None
 
     async def ainvoke(self, state, config=None):
+        """Verify ainvoke."""
         self.state = state
         self.config = config
         return {
@@ -32,8 +32,13 @@ class FakeCompiledGraph:
             }
         }
 
+    def snapshot(self):
+        """Return captured invocation details."""
+        return {"state": self.state, "config": self.config}
+
 
 def test_data_agent_routes_start_by_rewrite_flag():
+    """Verify data agent routes start by rewrite flag."""
     agent = DataAgent(
         data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),
@@ -44,6 +49,7 @@ def test_data_agent_routes_start_by_rewrite_flag():
 
 
 async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
+    """Verify data agent arun invokes compiled graph with thread id."""
     agent = DataAgent(
         data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),

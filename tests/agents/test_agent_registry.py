@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for shared agent registry helpers."""
 
-# pylint: disable=missing-function-docstring
-
 from pydantic import BaseModel, SecretStr
 
 from mcp_server_phytomni.agent_registry import (
@@ -30,10 +28,12 @@ class DemoSensitiveConfig(BaseModel):
 
 
 def test_agent_registry_reuses_agent_for_matching_fingerprint():
+    """Verify agent registry reuses agent for matching fingerprint."""
     clear_agent_registry()
     created = 0
 
     def factory() -> object:
+        """Verify factory."""
         nonlocal created
         created += 1
         return object()
@@ -51,6 +51,7 @@ def test_agent_registry_reuses_agent_for_matching_fingerprint():
 
 
 def test_agent_fingerprint_values_dump_pydantic_models():
+    """Verify agent fingerprint values dump pydantic models."""
     fingerprint = agent_fingerprint_values(
         config=DemoConfig(MODEL="alpha"),
         nested={"items": [DemoConfig(MODEL="beta", COUNT=2)]},
@@ -63,6 +64,7 @@ def test_agent_fingerprint_values_dump_pydantic_models():
 
 
 def test_agent_registry_omits_secret_fields_from_cache_key():
+    """Verify agent registry omits secret fields from cache key."""
     clear_agent_registry()
 
     try:

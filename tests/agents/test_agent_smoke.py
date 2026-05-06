@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline fake-graph smoke tests for LangGraph agents."""
 
-# pylint: disable=missing-function-docstring, too-few-public-methods
-
 from __future__ import annotations
 
 from typing import Any
@@ -41,6 +39,7 @@ class FakeCompiledGraph:
     """Minimal async graph stand-in used to inspect agent invocation."""
 
     def __init__(self, final_state: dict[str, Any]):
+        """Verify init  ."""
         self.final_state = final_state
         self.state: dict[str, Any] | None = None
         self.config: dict[str, Any] | None = None
@@ -50,20 +49,28 @@ class FakeCompiledGraph:
         state: dict[str, Any],
         config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Verify ainvoke."""
         self.state = state
         self.config = config
         return {**state, **self.final_state}
 
+    def snapshot(self) -> dict[str, Any]:
+        """Return captured invocation details."""
+        return {"state": self.state, "config": self.config}
+
 
 def _thread_config(thread_id: str) -> dict[str, dict[str, str]]:
+    """Verify thread config."""
     return {"configurable": {"thread_id": thread_id}}
 
 
 def _sensitive_config() -> SensitiveConfig:
+    """Verify sensitive config."""
     return SensitiveConfig.load()
 
 
 async def test_knowledge_agent_arun_invokes_graph_with_initial_state():
+    """Verify knowledge agent arun invokes graph with initial state."""
     agent = KnowledgeAgent(
         knowledge_config=KnowledgeConfig(),
         sensitive_config=_sensitive_config(),
@@ -90,6 +97,7 @@ async def test_knowledge_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_brief_gene_agent_arun_invokes_graph_with_initial_state():
+    """Verify brief gene agent arun invokes graph with initial state."""
     agent = BriefGeneAgent(
         brief_config=BriefGeneConfig(),
         sensitive_config=_sensitive_config(),
@@ -115,6 +123,7 @@ async def test_brief_gene_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_review_agent_arun_invokes_graph_with_initial_state():
+    """Verify review agent arun invokes graph with initial state."""
     agent = DeepResearchAgent(
         review_config=ReviewConfig(),
         sensitive_config=_sensitive_config(),
@@ -141,6 +150,7 @@ async def test_review_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
+    """Verify in silico agent arun invokes graph with initial state."""
     agent = InSilicoResearchAgents(
         analyst_agent=object(),
         in_silico_config=InSilicoResearchConfig(),
@@ -181,6 +191,7 @@ async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
+    """Verify gene network agent arun invokes graph with initial state."""
     agent = GeneNetworkAgents(
         analyst_agent=object(),
         gene_network_config=GeneNetworkConfig(),
@@ -211,6 +222,7 @@ async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
+    """Verify digital design agent arun invokes graph with initial state."""
     agent = DigitalDesignAgents(
         analyst_agent=object(),
         digital_design_config=DigitalDesignConfig(),
@@ -244,6 +256,7 @@ async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_analyst_agent_arun_invokes_graph_with_initial_state():
+    """Verify analyst agent arun invokes graph with initial state."""
     agent = AnalystAgent(
         analyst_config=AnalystConfig(),
         sensitive_config=_sensitive_config(),
@@ -294,6 +307,7 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
 
 
 async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
+    """Verify deep genome agent arun invokes graph with initial state."""
     agent = DeepGenomeAgents(
         data_agent=object(),
         knowledge_agent=object(),

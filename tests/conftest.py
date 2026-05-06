@@ -41,6 +41,7 @@ _TEST_ENV = {
 
 
 def _install_test_environment() -> None:
+    """Verify install test environment."""
     os.environ["PHYTOMNI_TESTING"] = "1"
     for name, value in _TEST_ENV.items():
         os.environ[name] = value
@@ -50,11 +51,13 @@ _install_test_environment()
 
 
 def _env_flag_enabled(name: str) -> bool:
+    """Verify env flag enabled."""
     value = os.environ.get(name, "")
     return value.lower() in TRUTHY_ENV_VALUES
 
 
 def _layer_marker_for_item(item: pytest.Item) -> str | None:
+    """Verify layer marker for item."""
     try:
         relative_path = Path(item.path).resolve().relative_to(TEST_ROOT)
     except ValueError:
@@ -109,6 +112,7 @@ def block_external_http(
         return
 
     def blocked_create_connection(*args: Any, **kwargs: Any) -> Any:
+        """Verify blocked create connection."""
         raise RuntimeError(
             "External network access is disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."
@@ -117,12 +121,14 @@ def block_external_http(
     monkeypatch.setattr(socket, "create_connection", blocked_create_connection)
 
     def blocked_request(*args: Any, **kwargs: Any) -> Any:
+        """Verify blocked request."""
         raise RuntimeError(
             "HTTP requests are disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."
         )
 
     async def blocked_async_request(*args: Any, **kwargs: Any) -> Any:
+        """Verify blocked async request."""
         raise RuntimeError(
             "HTTP requests are disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."

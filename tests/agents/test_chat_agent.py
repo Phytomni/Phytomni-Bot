@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for ChatAgent service helpers."""
 
-# pylint: disable=missing-function-docstring, too-few-public-methods
-
 from __future__ import annotations
 
 from typing import Any
@@ -21,9 +19,11 @@ class FakeChatCompletion:
     """Small OpenAI response stand-in with the model_dump contract."""
 
     def __init__(self, content: str = "ok"):
+        """Verify init  ."""
         self.content = content
 
     def model_dump(self) -> dict[str, Any]:
+        """Verify model dump."""
         return {
             "choices": [
                 {
@@ -35,13 +35,19 @@ class FakeChatCompletion:
             ]
         }
 
+    def message_content(self) -> str:
+        """Return the fake assistant message content."""
+        return self.content
+
 
 async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify phyto chat converts uploads and builds openai request."""
     captured: dict[str, Any] = {}
 
     async def fake_download_list_convert(**kwargs: Any) -> list[str]:
+        """Verify fake download list convert."""
         captured["download"] = kwargs
         return ["converted paper text"]
 
@@ -50,6 +56,7 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         prompt_path: str,
         params: dict[str, Any] | None = None,
     ) -> str:
+        """Verify fake get prompt."""
         captured["prompt"] = {
             "prompt_file": prompt_file,
             "prompt_path": prompt_path,
@@ -61,13 +68,19 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         """Capture OpenAI completion kwargs."""
 
         async def create(self, **kwargs: Any) -> FakeChatCompletion:
+            """Verify create."""
             captured["completion"] = kwargs
             return FakeChatCompletion("chat answer")
+
+        def last_payload(self) -> dict[str, Any]:
+            """Return the latest captured completion payload."""
+            return captured.get("completion", {})
 
     class FakeAsyncOpenAI:
         """Minimal AsyncOpenAI-compatible client."""
 
         def __init__(self, api_key: str, base_url: str):
+            """Verify init  ."""
             captured["client"] = {
                 "api_key": api_key,
                 "base_url": base_url,
@@ -77,6 +90,14 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
                 (),
                 {"completions": FakeCompletions()},
             )()
+
+        def client_settings(self) -> dict[str, str]:
+            """Return captured client connection settings."""
+            return captured["client"]
+
+        def completion_client(self) -> Any:
+            """Return the fake completions client."""
+            return self.chat.completions
 
     monkeypatch.setattr(
         chat_agents, "download_list_convert", fake_download_list_convert
@@ -121,9 +142,11 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
 async def test_phyto_chat_with_follow_attaches_follow_up_questions(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify phyto chat with follow attaches follow up questions."""
     calls: list[dict[str, Any]] = []
 
     async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        """Verify fake phyto chat."""
         calls.append(kwargs)
         content = (
             "main answer"
@@ -137,6 +160,7 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
         prompt_path: str,
         params: dict[str, Any] | None = None,
     ) -> str:
+        """Verify fake get prompt."""
         assert prompt_file == "prompts.yaml"
         assert prompt_path == "system/follow_up_questions"
         assert params == {

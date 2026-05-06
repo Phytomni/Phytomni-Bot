@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for MCP tool parameter schemas."""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 from pydantic import ValidationError
 
@@ -29,6 +27,7 @@ TOOL_MODELS = [
 
 
 def test_tool_models_generate_object_json_schemas():
+    """Verify tool models generate object json schemas."""
     for model in TOOL_MODELS:
         schema = model.model_json_schema()
 
@@ -39,6 +38,7 @@ def test_tool_models_generate_object_json_schemas():
 
 
 def test_chat_agent_validates_required_fields():
+    """Verify chat agent validates required fields."""
     arguments = server.ChatAgent(
         user_query="What is photosynthesis?",
         obs_file_list=[],
@@ -52,6 +52,7 @@ def test_chat_agent_validates_required_fields():
 
 
 def test_public_agent_enum_values_remain_stable():
+    """Verify public agent enum values remain stable."""
     assert server.PhytomniAgents.CHAT_AGENT.value == "ChatAgent"
     assert server.PhytomniAgents.KNOWLEDGE_AGENT.value == "KnowledgeAgent"
     assert server.PhytomniAgents.DATA_AGENT.value == "DataAgent"
@@ -70,6 +71,7 @@ def test_public_agent_enum_values_remain_stable():
 
 
 def test_public_agent_enum_members_use_constant_style_names():
+    """Verify public agent enum members use constant style names."""
     assert "CHATAGENT" not in server.PhytomniAgents.__members__
     assert "INSILICORESEARCHAGENT" not in server.PhytomniAgents.__members__
     assert "CHAT_AGENT" in server.PhytomniAgents.__members__

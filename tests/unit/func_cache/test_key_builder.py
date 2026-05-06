@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for deterministic cache key construction."""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from mcp_server_phytomni.func_cache.exceptions import (
@@ -18,10 +16,12 @@ pytestmark = pytest.mark.unit
 
 
 def sample_function(alpha, beta=2, *, gamma=None):
+    """Verify sample function."""
     return alpha, beta, gamma
 
 
 def test_build_key_is_stable_across_call_styles():
+    """Verify build key is stable across call styles."""
     key_builder = KeyBuilder(sample_function)
 
     positional_key = key_builder.build_key((1,), {"gamma": "leaf"})
@@ -31,6 +31,7 @@ def test_build_key_is_stable_across_call_styles():
 
 
 def test_key_params_ignore_unselected_arguments():
+    """Verify key params ignore unselected arguments."""
     key_builder = KeyBuilder(sample_function, key_params=["alpha"])
 
     first_key = key_builder.build_key((1,), {"beta": 2, "gamma": "leaf"})
@@ -40,6 +41,7 @@ def test_key_params_ignore_unselected_arguments():
 
 
 def test_exclude_params_omit_infrastructure_arguments():
+    """Verify exclude params omit infrastructure arguments."""
     key_builder = KeyBuilder(
         sample_function,
         exclude_params=["gamma"],
@@ -53,6 +55,7 @@ def test_exclude_params_omit_infrastructure_arguments():
 
 
 def test_key_params_and_exclude_params_cannot_overlap():
+    """Verify key params and exclude params cannot overlap."""
     with pytest.raises(CacheConfigError, match="both included and excluded"):
         KeyBuilder(
             sample_function,
@@ -62,11 +65,13 @@ def test_key_params_and_exclude_params_cannot_overlap():
 
 
 def test_invalid_key_param_raises_config_error():
+    """Verify invalid key param raises config error."""
     with pytest.raises(CacheConfigError, match="does not exist"):
         KeyBuilder(sample_function, key_params=["missing"])
 
 
 def test_unserializable_argument_raises_serialization_error():
+    """Verify unserializable argument raises serialization error."""
     key_builder = KeyBuilder(sample_function)
 
     with pytest.raises(SerializationError, match="Failed to build cache key"):

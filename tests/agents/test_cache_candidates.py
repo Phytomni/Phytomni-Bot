@@ -4,9 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for first-wave low-risk cache integration points."""
 
-# pylint: disable=missing-function-docstring, protected-access
-# pylint: disable=too-few-public-methods
-
 import json
 from types import SimpleNamespace
 
@@ -25,6 +22,7 @@ pytestmark = pytest.mark.agent
 
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):
+    """Verify get data list tracks config file changes."""
     data_file = tmp_path / "species_data.json"
     data_file.write_text(
         json.dumps({"analysis": {"ath": ["first"]}}),
@@ -45,6 +43,7 @@ def test_get_data_list_tracks_config_file_changes(tmp_path):
 
 
 def test_network_to_string_uses_cache_for_identical_inputs():
+    """Verify network to string uses cache for identical inputs."""
     network_to_string.cache_clear()
 
     gene_network_list = [("ath", "AT1G01010")]
@@ -93,6 +92,7 @@ def test_network_to_string_uses_cache_for_identical_inputs():
 
 
 async def test_retrieve_uses_short_ttl_cache(monkeypatch):
+    """Verify retrieve uses short ttl cache."""
     knowledge_agents.retrieve.cache_clear()
     calls = {"post": 0, "rerank": 0}
 
@@ -100,9 +100,11 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
         """Minimal retrieve response stub."""
 
         def raise_for_status(self):
+            """Verify raise for status."""
             return None
 
         def json(self):
+            """Verify json."""
             return {
                 "doc_list": [
                     {
@@ -117,20 +119,25 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
         """Minimal async HTTP client stub."""
 
         def __init__(self, *args, **kwargs):
+            """Verify init  ."""
             del args, kwargs
 
         async def __aenter__(self):
+            """Verify aenter  ."""
             return self
 
         async def __aexit__(self, *args):
+            """Verify aexit  ."""
             del args
 
         async def post(self, *args, **kwargs):
+            """Verify post."""
             del args, kwargs
             calls["post"] += 1
             return FakeResponse()
 
     async def fake_rerank(**kwargs):
+        """Verify fake rerank."""
         del kwargs
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
@@ -177,10 +184,12 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
 
 
 async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
+    """Verify multi retrieve uses short ttl cache."""
     knowledge_agents.multi_retrieve.cache_clear()
     calls = {"retrieve": 0}
 
     async def fake_retrieve(**kwargs):
+        """Verify fake retrieve."""
         calls["retrieve"] += 1
         repo_id = kwargs["repo_id"]
         return {
@@ -222,7 +231,8 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
 
 
 async def test_gene_retrieve_uses_agent_context_cache():
-    brief_gene_agents._gene_retrieve_cached.cache_clear()
+    """Verify gene retrieve uses agent context cache."""
+    brief_gene_agents.clear_gene_retrieve_cache()
     calls = {"arun": 0}
 
     class FakeKnowledgeAgent:
@@ -231,6 +241,7 @@ async def test_gene_retrieve_uses_agent_context_cache():
         knowledge_config = KnowledgeConfig()
 
         async def arun(self, **kwargs):
+            """Verify arun."""
             calls["arun"] += 1
             symbol = kwargs["user_query"].splitlines()[-1]
             return {
@@ -243,6 +254,10 @@ async def test_gene_retrieve_uses_agent_context_cache():
                     }
                 ]
             }
+
+        def config_snapshot(self):
+            """Return the fake knowledge configuration."""
+            return self.knowledge_config
 
     first = await brief_gene_agents.gene_retrieve(
         "Arabidopsis thaliana",
@@ -262,10 +277,12 @@ async def test_gene_retrieve_uses_agent_context_cache():
 
 
 async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
-    deep_genome_agents._cached_gene_symbol_lookup.cache_clear()
+    """Verify deep genome gene symbol lookup uses cache."""
+    deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     def fake_post(*args, **kwargs):
+        """Verify fake post."""
         del args, kwargs
         calls["post"] += 1
         return SimpleNamespace(
@@ -274,13 +291,14 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
 
     monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
 
-    first = await deep_genome_agents._cached_gene_symbol_lookup(
+    lookup_symbol = getattr(deep_genome_agents, "_cached_gene_symbol_lookup")
+    first = await lookup_symbol(
         bi_url="https://example.invalid/bi",
         sql_headers={"token": "secret-one"},
         species_code="ath",
         gene_id="AT1G01010",
     )
-    second = await deep_genome_agents._cached_gene_symbol_lookup(
+    second = await lookup_symbol(
         bi_url="https://example.invalid/bi",
         sql_headers={"token": "secret-two"},
         species_code="ath",
@@ -293,10 +311,12 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
 
 
 async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
-    deep_genome_agents._cached_gene_annotation_lookup.cache_clear()
+    """Verify deep genome gene annotation lookup uses cache."""
+    deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     def fake_post(*args, **kwargs):
+        """Verify fake post."""
         del args
         calls["post"] += 1
         sql = kwargs["json"]["sql"]
@@ -312,13 +332,17 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
 
     monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
 
-    first = await deep_genome_agents._cached_gene_annotation_lookup(
+    lookup_annotation = getattr(
+        deep_genome_agents,
+        "_cached_gene_annotation_lookup",
+    )
+    first = await lookup_annotation(
         bi_url="https://example.invalid/bi",
         sql_headers={"token": "secret-one"},
         species_code="ath",
         gene_id="AT1G01010",
     )
-    second = await deep_genome_agents._cached_gene_annotation_lookup(
+    second = await lookup_annotation(
         bi_url="https://example.invalid/bi",
         sql_headers={"token": "secret-two"},
         species_code="ath",

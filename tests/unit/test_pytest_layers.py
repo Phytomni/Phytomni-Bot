@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for repository pytest layer conventions."""
 
-# pylint: disable=missing-function-docstring
-
 import tomllib
 from pathlib import Path
 
@@ -32,16 +30,19 @@ EXPECTED_MARKER_PREFIXES = {
 
 
 def _project_root() -> Path:
+    """Verify project root."""
     return Path(__file__).resolve().parents[2]
 
 
 def _pyproject() -> dict:
+    """Verify pyproject."""
     return tomllib.loads(
         (_project_root() / "pyproject.toml").read_text(encoding="utf-8")
     )
 
 
 def test_pytest_default_run_is_offline_and_strict():
+    """Verify pytest default run is offline and strict."""
     pytest_options = _pyproject()["tool"]["pytest"]["ini_options"]
 
     assert pytest_options["testpaths"] == ["tests"]
@@ -52,6 +53,7 @@ def test_pytest_default_run_is_offline_and_strict():
 
 
 def test_pytest_layer_markers_are_registered():
+    """Verify pytest layer markers are registered."""
     markers = set(_pyproject()["tool"]["pytest"]["ini_options"]["markers"])
     marker_prefixes = {marker.split(" ", maxsplit=1)[0] for marker in markers}
 
@@ -59,6 +61,7 @@ def test_pytest_layer_markers_are_registered():
 
 
 def test_test_files_live_in_named_pytest_layers():
+    """Verify test files live in named pytest layers."""
     tests_root = _project_root() / "tests"
     bad_paths = [
         path.relative_to(tests_root).as_posix()
@@ -70,6 +73,7 @@ def test_test_files_live_in_named_pytest_layers():
 
 
 def test_pytest_coverage_reporting_is_configured_for_ci():
+    """Verify pytest coverage reporting is configured for ci."""
     pyproject = _pyproject()
     optional_dev = pyproject["project"]["optional-dependencies"]["dev"]
     group_dev = pyproject["dependency-groups"]["dev"]
@@ -90,6 +94,7 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
 
 
 def test_ci_pytest_job_writes_coverage_report():
+    """Verify ci pytest job writes coverage report."""
     workflow = (_project_root() / ".github/workflows/lint.yml").read_text(
         encoding="utf-8"
     )

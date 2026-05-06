@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for OpenAI-style response helpers."""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from mcp_server_phytomni.utils import (
@@ -21,6 +19,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_message_content_reads_first_assistant_message():
+    """Verify message content reads first assistant message."""
     response = {
         "choices": [
             {
@@ -36,11 +35,13 @@ def test_message_content_reads_first_assistant_message():
 
 
 def test_message_content_returns_empty_string_for_invalid_shape():
+    """Verify message content returns empty string for invalid shape."""
     assert message_content({"choices": []}) == ""
     assert message_content(None) == ""
 
 
 def test_parse_json_list_fragment_reads_embedded_list():
+    """Verify parse json list fragment reads embedded list."""
     assert parse_json_list_fragment('prefix ["a", "b"] suffix') == [
         "a",
         "b",
@@ -48,10 +49,12 @@ def test_parse_json_list_fragment_reads_embedded_list():
 
 
 def test_parse_follow_up_questions_rejects_non_list():
+    """Verify parse follow up questions rejects non list."""
     assert parse_follow_up_questions('{"question": "next"}') == []
 
 
 def test_attach_message_payload_creates_missing_message_shape():
+    """Verify attach message payload creates missing message shape."""
     response = attach_message_payload(
         {"choices": [{}]},
         {"follow_up_questions": ["next"], "total": 1},
@@ -64,6 +67,7 @@ def test_attach_message_payload_creates_missing_message_shape():
 
 
 def test_format_upload_context_respects_length_limit():
+    """Verify format upload context respects length limit."""
     context, total_length = format_upload_context(
         ["first", "second"],
         max_tokens=80,
@@ -77,6 +81,7 @@ def test_format_upload_context_respects_length_limit():
 
 
 def test_format_retrieved_doc_context_preserves_existing_shape():
+    """Verify format retrieved doc context preserves existing shape."""
     context, total_length = format_retrieved_doc_context(
         [
             {

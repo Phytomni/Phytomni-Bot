@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for public wrapper override propagation."""
 
-# pylint: disable=missing-function-docstring, too-few-public-methods
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -27,6 +25,7 @@ def _no_cache(
     factory: Callable[[], Any],
     fingerprint_values: Any = None,
 ) -> Any:
+    """Verify no cache."""
     cache_identity = (name, fingerprint_values)
     assert cache_identity[0]
     return factory()
@@ -35,12 +34,14 @@ def _no_cache(
 async def test_design_module_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify design module applies config and secret overrides."""
     captured: dict[str, Any] = {}
 
     class FakeDigitalDesignAgents:
         """Fake workflow that records constructor and run arguments."""
 
         def __init__(self, digital_design_config, sensitive_config):
+            """Verify init  ."""
             captured["config"] = digital_design_config
             captured["sensitive"] = sensitive_config
 
@@ -52,6 +53,7 @@ async def test_design_module_applies_config_and_secret_overrides(
             batch: bool = False,
             output_dir: str | None = None,
         ) -> dict[str, Any]:
+            """Verify arun."""
             captured["run"] = {
                 "species": species,
                 "gene_id": gene_id,
@@ -60,6 +62,10 @@ async def test_design_module_applies_config_and_secret_overrides(
                 "output_dir": output_dir,
             }
             return {"design": "ok"}
+
+        def captured_config(self) -> Any:
+            """Return the recorded config object."""
+            return captured["config"]
 
     monkeypatch.setattr(
         digital_design_agents,
@@ -96,12 +102,14 @@ async def test_design_module_applies_config_and_secret_overrides(
 async def test_network_analysis_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify network analysis applies config and secret overrides."""
     captured: dict[str, Any] = {}
 
     class FakeGeneNetworkAgents:
         """Fake workflow that records constructor and run arguments."""
 
         def __init__(self, gene_network_config, sensitive_config):
+            """Verify init  ."""
             captured["config"] = gene_network_config
             captured["sensitive"] = sensitive_config
 
@@ -113,6 +121,7 @@ async def test_network_analysis_applies_config_and_secret_overrides(
             batch: bool = False,
             output_dir: str | None = None,
         ) -> dict[str, Any]:
+            """Verify arun."""
             captured["run"] = {
                 "species": species,
                 "to_id": to_id,
@@ -121,6 +130,10 @@ async def test_network_analysis_applies_config_and_secret_overrides(
                 "output_dir": output_dir,
             }
             return {"network": "ok"}
+
+        def captured_config(self) -> Any:
+            """Return the recorded config object."""
+            return captured["config"]
 
     monkeypatch.setattr(
         gene_network_agents,
@@ -155,12 +168,14 @@ async def test_network_analysis_applies_config_and_secret_overrides(
 async def test_in_silico_research_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify in silico research applies config and secret overrides."""
     captured: dict[str, Any] = {}
 
     class FakeInSilicoResearchAgents:
         """Fake workflow that records constructor and run arguments."""
 
         def __init__(self, in_silico_config, sensitive_config):
+            """Verify init  ."""
             captured["config"] = in_silico_config
             captured["sensitive"] = sensitive_config
 
@@ -172,6 +187,7 @@ async def test_in_silico_research_applies_config_and_secret_overrides(
             obs_file_list: list[str] | None = None,
             output_dir: str | None = None,
         ) -> dict[str, Any]:
+            """Verify arun."""
             captured["run"] = {
                 "paper_text": paper_text,
                 "data_list": data_list,
@@ -180,6 +196,10 @@ async def test_in_silico_research_applies_config_and_secret_overrides(
                 "output_dir": output_dir,
             }
             return {"research": "ok"}
+
+        def captured_config(self) -> Any:
+            """Return the recorded config object."""
+            return captured["config"]
 
     monkeypatch.setattr(
         in_silico_research_agents,

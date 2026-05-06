@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for list chunking utilities."""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from mcp_server_phytomni.utils import split_list
@@ -14,6 +12,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_split_list_preserves_order_and_respects_max_size():
+    """Verify split list preserves order and respects max size."""
     values = list(range(10))
 
     chunks = split_list(values, max_size=4)
@@ -24,8 +23,10 @@ def test_split_list_preserves_order_and_respects_max_size():
 
 
 def test_split_list_handles_empty_input():
+    """Verify split list handles empty input."""
     assert not split_list([])
 
 
 def test_split_list_uses_single_chunk_when_input_fits():
+    """Verify split list uses single chunk when input fits."""
     assert split_list(["ath", "osa"], max_size=128) == [["ath", "osa"]]

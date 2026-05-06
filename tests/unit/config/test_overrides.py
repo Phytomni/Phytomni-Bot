@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for config override helpers."""
 
-# pylint: disable=missing-function-docstring
-
 from typing import Optional
 
 from pydantic import BaseModel, SecretStr
@@ -35,6 +33,7 @@ class DemoSensitiveConfig(BaseModel):
 
 
 def test_collect_mapped_overrides_skips_none_but_keeps_falsy_values():
+    """Verify collect mapped overrides skips none but keeps falsy values."""
     updates = collect_mapped_overrides(
         {
             "name": "",
@@ -54,6 +53,7 @@ def test_collect_mapped_overrides_skips_none_but_keeps_falsy_values():
 
 
 def test_copy_config_with_overrides_keeps_base_for_none_values():
+    """Verify copy config with overrides keeps base for none values."""
     config = copy_config_with_overrides(
         DemoConfig(),
         {"name": "custom", "optional": None},
@@ -67,6 +67,7 @@ def test_copy_config_with_overrides_keeps_base_for_none_values():
 
 
 def test_copy_sensitive_config_keeps_secret_fields_separate():
+    """Verify copy sensitive config keeps secret fields separate."""
     config = copy_sensitive_config_with_overrides(
         DemoSensitiveConfig(),
         {
@@ -84,6 +85,7 @@ def test_copy_sensitive_config_keeps_secret_fields_separate():
 
 
 def test_copy_sensitive_config_accepts_existing_secretstr():
+    """Verify copy sensitive config accepts existing secretstr."""
     secret = SecretStr("existing-secret")
     config = copy_sensitive_config_with_overrides(
         DemoSensitiveConfig(),

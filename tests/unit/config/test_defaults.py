@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for non-secret default configuration models."""
 
-# pylint: disable=missing-function-docstring
-
 from pathlib import Path
 
 import pytest
@@ -21,6 +19,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_server_config_has_expected_core_defaults():
+    """Verify server config has expected core defaults."""
     config = ServerConfig()
 
     assert config.MAX_TOKENS == 65536
@@ -30,6 +29,7 @@ def test_server_config_has_expected_core_defaults():
 
 
 def test_config_inheritance_keeps_agent_defaults_available():
+    """Verify config inheritance keeps agent defaults available."""
     chat_config = ChatConfig()
     knowledge_config = KnowledgeConfig()
     data_config = DataConfig()

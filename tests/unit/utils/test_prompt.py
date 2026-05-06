@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for YAML prompt loading and rendering helpers."""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from mcp_server_phytomni.utils import (
@@ -20,6 +18,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_load_template_reads_nested_yaml_path(tmp_path):
+    """Verify load template reads nested yaml path."""
     template_file = tmp_path / "prompts.yaml"
     template_file.write_text(
         "system:\n  greeting: 'Hello {{ name }}'\n",
@@ -32,6 +31,7 @@ def test_load_template_reads_nested_yaml_path(tmp_path):
 
 
 def test_load_template_reads_single_top_level_value(tmp_path):
+    """Verify load template reads single top level value."""
     template_file = tmp_path / "prompts.yaml"
     template_file.write_text("only: plain text\n", encoding="utf-8")
 
@@ -39,6 +39,7 @@ def test_load_template_reads_single_top_level_value(tmp_path):
 
 
 def test_load_template_raises_for_missing_nested_path(tmp_path):
+    """Verify load template raises for missing nested path."""
     template_file = tmp_path / "prompts.yaml"
     template_file.write_text("system:\n  greeting: hello\n", encoding="utf-8")
 
@@ -47,6 +48,7 @@ def test_load_template_raises_for_missing_nested_path(tmp_path):
 
 
 def test_render_template_stringifies_values_and_warns_on_missing_key():
+    """Verify render template stringifies values and warns on missing key."""
     with pytest.warns(UserWarning, match="Missing parameter 'missing'"):
         rendered = render_template(
             "Hello {{ name }} {{ count }} {{ missing }}",
@@ -57,6 +59,7 @@ def test_render_template_stringifies_values_and_warns_on_missing_key():
 
 
 def test_get_prompt_loads_and_renders_template(tmp_path):
+    """Verify get prompt loads and renders template."""
     template_file = tmp_path / "prompts.yaml"
     template_file.write_text(
         "user:\n  database: 'Query: {{ user_query }}'\n",
@@ -73,6 +76,7 @@ def test_get_prompt_loads_and_renders_template(tmp_path):
 
 
 def test_load_template_cache_key_tracks_file_changes(tmp_path):
+    """Verify load template cache key tracks file changes."""
     template_file = tmp_path / "prompts.yaml"
     template_file.write_text("only: first\n", encoding="utf-8")
 
@@ -84,6 +88,7 @@ def test_load_template_cache_key_tracks_file_changes(tmp_path):
 
 
 def test_load_json_file_cache_key_tracks_file_changes(tmp_path):
+    """Verify load json file cache key tracks file changes."""
     json_file = tmp_path / "data.json"
     json_file.write_text('{"value": 1}', encoding="utf-8")
 
@@ -98,6 +103,7 @@ def test_load_json_file_cache_key_tracks_file_changes(tmp_path):
 
 
 def test_load_text_file_cache_key_tracks_file_changes(tmp_path):
+    """Verify load text file cache key tracks file changes."""
     text_file = tmp_path / "region.json"
     text_file.write_text('{"region": "old"}', encoding="utf-8")
 

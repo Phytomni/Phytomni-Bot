@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for SQLite-backed func_cache storage."""
 
-# pylint: disable=missing-function-docstring
-
 import time
 
 import pytest
@@ -17,12 +15,14 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(name="cache_storage")
 def cache_storage_fixture(tmp_path):
+    """Verify cache storage fixture."""
     cache_storage = Storage(str(tmp_path / "func_cache.sqlite"))
     yield cache_storage
     cache_storage.close()
 
 
 def test_storage_get_set_count_and_ttl_expiration(cache_storage):
+    """Verify storage get set count and ttl expiration."""
     cache_storage.set("func", "key", b"value")
 
     assert cache_storage.get("func", "key") == b"value"
@@ -35,12 +35,14 @@ def test_storage_get_set_count_and_ttl_expiration(cache_storage):
 
 
 def test_storage_metadata_round_trip(cache_storage):
+    """Verify storage metadata round trip."""
     cache_storage.set_meta("func", ["alpha", "beta"], compress=True)
 
     assert cache_storage.get_meta("func") == (["alpha", "beta"], True)
 
 
 def test_storage_lock_lifecycle(cache_storage):
+    """Verify storage lock lifecycle."""
     assert cache_storage.try_acquire_lock("func", "key", "owner-1", 60)
     assert not cache_storage.try_acquire_lock("func", "key", "owner-2", 60)
 
@@ -50,6 +52,7 @@ def test_storage_lock_lifecycle(cache_storage):
 
 
 def test_storage_can_replace_expired_lock(cache_storage):
+    """Verify storage can replace expired lock."""
     assert cache_storage.try_acquire_lock("func", "key", "stale-owner", 0.001)
 
     time.sleep(0.002)

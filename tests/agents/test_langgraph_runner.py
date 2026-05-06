@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for shared LangGraph runtime helpers."""
 
-# pylint: disable=missing-function-docstring, too-few-public-methods
-
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -26,26 +24,35 @@ class FakeGraph:
     """Small async graph stand-in used to inspect runner behavior."""
 
     def __init__(self):
+        """Verify init  ."""
         self.initial_state = None
         self.config = None
 
     async def ainvoke(self, initial_state, config=None):
+        """Verify ainvoke."""
         self.initial_state = initial_state
         self.config = config
         return {"final": initial_state["value"]}
 
+    def snapshot(self):
+        """Return captured invocation details."""
+        return {"initial_state": self.initial_state, "config": self.config}
+
 
 def test_ensure_thread_id_keeps_existing_value():
+    """Verify ensure thread id keeps existing value."""
     assert ensure_thread_id("thread-1") == "thread-1"
 
 
 def test_build_runnable_config_uses_thread_id():
+    """Verify build runnable config uses thread id."""
     assert build_runnable_config("thread-1") == {
         "configurable": {"thread_id": "thread-1"}
     }
 
 
 def test_ensure_thread_id_generates_value_when_missing():
+    """Verify ensure thread id generates value when missing."""
     first = ensure_thread_id()
     second = ensure_thread_id("")
 
@@ -55,6 +62,7 @@ def test_ensure_thread_id_generates_value_when_missing():
 
 
 def test_ensure_checkpointer_creates_fresh_instances():
+    """Verify ensure checkpointer creates fresh instances."""
     first = ensure_checkpointer()
     second = ensure_checkpointer()
 
@@ -63,6 +71,7 @@ def test_ensure_checkpointer_creates_fresh_instances():
 
 
 async def test_ainvoke_graph_passes_standard_config():
+    """Verify ainvoke graph passes standard config."""
     graph = FakeGraph()
 
     result = await ainvoke_graph(graph, {"value": "ok"}, thread_id="thread-1")
@@ -73,6 +82,7 @@ async def test_ainvoke_graph_passes_standard_config():
 
 
 def test_config_fingerprint_is_stable_and_omits_secret_fields():
+    """Verify config fingerprint is stable and omits secret fields."""
     left = config_fingerprint(
         {
             "model": "demo",
@@ -97,10 +107,12 @@ def test_config_fingerprint_is_stable_and_omits_secret_fields():
 
 
 def test_graph_registry_reuses_by_name_and_fingerprint():
+    """Verify graph registry reuses by name and fingerprint."""
     registry: GraphRegistry[object] = GraphRegistry()
     created = 0
 
     def factory():
+        """Verify factory."""
         nonlocal created
         created += 1
         return object()
@@ -116,6 +128,7 @@ def test_graph_registry_reuses_by_name_and_fingerprint():
 
 
 def test_graph_registry_can_clear_one_name_or_all():
+    """Verify graph registry can clear one name or all."""
     registry: GraphRegistry[object] = GraphRegistry()
     registry.get_or_create("data", object, {"model": "demo"})
     registry.get_or_create("knowledge", object, {"model": "demo"})
@@ -130,6 +143,7 @@ def test_graph_registry_can_clear_one_name_or_all():
 
 
 def test_agent_sources_use_shared_runner_for_graph_invocation():
+    """Verify agent sources use shared runner for graph invocation."""
     agent_files = sorted(PACKAGE_DIR.glob("*_agents.py"))
     source_by_name = {
         agent_file.name: agent_file.read_text(encoding="utf-8")

@@ -207,6 +207,12 @@ async def _cached_gene_annotation_lookup(
     return gene_anno_dict
 
 
+def clear_gene_lookup_caches() -> None:
+    """Clear cached gene symbol and annotation lookup results."""
+    _cached_gene_symbol_lookup.cache_clear()
+    _cached_gene_annotation_lookup.cache_clear()
+
+
 DEEP_GENOME_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "batch": "BATCH",

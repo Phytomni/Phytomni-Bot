@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for MCP tool dispatch routing."""
 
-# pylint: disable=missing-function-docstring
-
 from __future__ import annotations
 
 from json import loads
@@ -22,6 +20,7 @@ pytestmark = pytest.mark.server
 
 
 def test_tool_dispatch_tables_cover_public_agents():
+    """Verify tool dispatch tables cover public agents."""
     expected_names = {
         server.PhytomniAgents.CHAT_AGENT.value,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,
@@ -46,9 +45,11 @@ def test_tool_dispatch_tables_cover_public_agents():
 async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Verify dispatch tool validates calls handler and wraps json."""
     captured: dict[str, Any] = {}
 
     async def fake_handler(args: Any) -> dict[str, Any]:
+        """Verify fake handler."""
         captured["args"] = args
         return {
             "answer": args.user_query,
@@ -73,6 +74,7 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
 
 
 async def test_dispatch_tool_rejects_unknown_tool():
+    """Verify dispatch tool rejects unknown tool."""
     with pytest.raises(McpError) as exc_info:
         await server.dispatch_tool("UnknownAgent", {})
 
@@ -81,6 +83,7 @@ async def test_dispatch_tool_rejects_unknown_tool():
 
 
 async def test_dispatch_tool_rejects_invalid_arguments():
+    """Verify dispatch tool rejects invalid arguments."""
     with pytest.raises(McpError) as exc_info:
         await server.dispatch_tool(
             server.PhytomniAgents.CHAT_AGENT.value,

@@ -297,6 +297,11 @@ async def _gene_retrieve_cached(
     return await make_gene_retrieve()
 
 
+def clear_gene_retrieve_cache() -> None:
+    """Clear cached gene literature retrieval results for tests/admin."""
+    _gene_retrieve_cached.cache_clear()
+
+
 async def _generate_follow_up(
     user_query: str,
     phyto_response: Dict[str, Any],

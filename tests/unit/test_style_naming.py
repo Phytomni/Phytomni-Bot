@@ -4,8 +4,6 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for repository naming and header conventions."""
 
-# pylint: disable=missing-function-docstring
-
 import ast
 import configparser
 import re
@@ -53,6 +51,7 @@ RESOLVED_GLOBAL_PYLINT_DISABLES = {
 
 
 def test_python_file_names_follow_snake_case():
+    """Verify python file names follow snake case."""
     root = Path(__file__).resolve().parents[2]
     bad_names = [
         path.relative_to(root).as_posix()
@@ -65,6 +64,7 @@ def test_python_file_names_follow_snake_case():
 
 
 def test_python_files_use_standard_header_and_module_docstring():
+    """Verify python files use standard header and module docstring."""
     root = Path(__file__).resolve().parents[2]
     failures = []
 
@@ -113,6 +113,7 @@ def test_python_files_use_standard_header_and_module_docstring():
 
 
 def test_ruff_enforces_import_grouping_and_sorting():
+    """Verify ruff enforces import grouping and sorting."""
     root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads(
         (root / "pyproject.toml").read_text(encoding="utf-8")
@@ -126,6 +127,7 @@ def test_ruff_enforces_import_grouping_and_sorting():
 
 
 def test_flake8_uses_black_compatible_style_without_init_ignores():
+    """Verify flake8 uses black compatible style without init ignores."""
     root = Path(__file__).resolve().parents[2]
     parser = configparser.ConfigParser()
     parser.read(root / ".flake8", encoding="utf-8")
@@ -141,7 +143,8 @@ def test_flake8_uses_black_compatible_style_without_init_ignores():
     assert "per-file-ignores" not in flake8_config
 
 
-def test_function_docstring_waiver_is_test_only():
+def test_function_docstring_waiver_is_removed_from_tests():
+    """Verify function docstring waivers do not return to tests."""
     root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads(
         (root / "pyproject.toml").read_text(encoding="utf-8")
@@ -153,19 +156,19 @@ def test_function_docstring_waiver_is_test_only():
     assert "missing-function-docstring" not in pylint_disable
 
     violations = []
-    for base in (root / "src", root / "tests"):
-        for path in base.rglob("*.py"):
-            text = path.read_text(encoding="utf-8")
-            if "missing-function-docstring" not in text:
-                continue
-            relative_path = path.relative_to(root).as_posix()
-            if not relative_path.startswith("tests/"):
-                violations.append(relative_path)
+    for path in (root / "tests").rglob("*.py"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if (
+                "pylint: disable=" in line
+                and "missing-function-docstring" in line
+            ):
+                violations.append(path.relative_to(root).as_posix())
 
     assert not violations
 
 
 def test_global_pylint_disables_are_reviewed_legacy_only():
+    """Verify global pylint disables are reviewed legacy only."""
     root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads(
         (root / "pyproject.toml").read_text(encoding="utf-8")
