@@ -31,7 +31,7 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 
 async def phyto_chat_with_follow(
     user_query: str,
-    obs_file_list: List[str] = [],
+    obs_file_list: Optional[List[str]] = None,
     prompt_file: str = CHAT_CONFIG.PROMPT_FILE,
     prompt_path: str = CHAT_CONFIG.PROMPT_PATH,
     api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
@@ -41,7 +41,7 @@ async def phyto_chat_with_follow(
     n: int = CHAT_CONFIG.N,
     presence_penalty: float = CHAT_CONFIG.PRESENCE_PENALTY,
     reasoning_effort: Optional[str] = CHAT_CONFIG.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = CHAT_CONFIG.RESPONSE_FORMAT,
+    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
     stream: bool = CHAT_CONFIG.STREAM,
     temperature: float = CHAT_CONFIG.TEMPERATURE,
     top_p: float = CHAT_CONFIG.TOP_P,
@@ -54,7 +54,7 @@ async def phyto_chat_with_follow(
     part_size: int = CHAT_CONFIG.PART_SIZE,
     task_num: int = CHAT_CONFIG.TASK_NUM,
     timeout: float = CHAT_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = CHAT_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = CHAT_CONFIG.MAX_RETRIES,
     max_concurrency: int = CHAT_CONFIG.MAX_CONCURRENCY,
     max_workers: int = CHAT_CONFIG.MAX_WORKERS,
@@ -140,6 +140,19 @@ async def phyto_chat_with_follow(
             ...     obs_file_list=files
             ... )
     """
+    if obs_file_list is None:
+        obs_file_list = []
+    else:
+        obs_file_list = list(obs_file_list)
+    if response_format is None:
+        response_format = dict(CHAT_CONFIG.RESPONSE_FORMAT)
+    else:
+        response_format = dict(response_format)
+    if retriable_codes is None:
+        retriable_codes = list(CHAT_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
+
     phyto_response = await phyto_chat(
         user_query=user_query,
         obs_file_list=obs_file_list,
@@ -255,7 +268,7 @@ async def phyto_chat_with_follow(
 
 async def phyto_chat(
     user_query: str,
-    obs_file_list: List[str] = [],
+    obs_file_list: Optional[List[str]] = None,
     prompt_file: str = CHAT_CONFIG.PROMPT_FILE,
     prompt_path: str = CHAT_CONFIG.PROMPT_PATH,
     api_key: str = SENSITIVE_CONFIG.API_KEY.get_secret_value(),
@@ -265,7 +278,7 @@ async def phyto_chat(
     n: int = CHAT_CONFIG.N,
     presence_penalty: float = CHAT_CONFIG.PRESENCE_PENALTY,
     reasoning_effort: Optional[str] = CHAT_CONFIG.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = CHAT_CONFIG.RESPONSE_FORMAT,
+    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
     stream: bool = CHAT_CONFIG.STREAM,
     temperature: float = CHAT_CONFIG.TEMPERATURE,
     top_p: float = CHAT_CONFIG.TOP_P,
@@ -278,7 +291,7 @@ async def phyto_chat(
     part_size: int = CHAT_CONFIG.PART_SIZE,
     task_num: int = CHAT_CONFIG.TASK_NUM,
     timeout: float = CHAT_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = CHAT_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = CHAT_CONFIG.MAX_RETRIES,
     max_concurrency: int = CHAT_CONFIG.MAX_CONCURRENCY,
     max_workers: int = CHAT_CONFIG.MAX_WORKERS,
@@ -364,6 +377,19 @@ async def phyto_chat(
             ...     obs_file_list=files
             ... )
     """
+    if obs_file_list is None:
+        obs_file_list = []
+    else:
+        obs_file_list = list(obs_file_list)
+    if response_format is None:
+        response_format = dict(CHAT_CONFIG.RESPONSE_FORMAT)
+    else:
+        response_format = dict(response_format)
+    if retriable_codes is None:
+        retriable_codes = list(CHAT_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
+
     if obs_file_list:
         upload_str_list = await download_list_convert(
             obs_file_list=obs_file_list,

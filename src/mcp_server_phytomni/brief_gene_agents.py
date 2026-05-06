@@ -193,10 +193,14 @@ async def run_bi_api(
     bi_url: str = BRIEF_CONFIG.BI_URL,
     bi_token: str = SENSITIVE_CONFIG.BI_TOKEN.get_secret_value(),
     timeout: float = BRIEF_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = BRIEF_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = BRIEF_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Invoke the BI API to retrieve annotation information."""
+    if retriable_codes is None:
+        retriable_codes = list(BRIEF_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -802,15 +806,13 @@ async def brief_gene_function(
     n: int = BRIEF_CONFIG.N,
     presence_penalty: float = BRIEF_CONFIG.PRESENCE_PENALTY,
     reasoning_effort: Optional[str] = BRIEF_CONFIG.REASONING_EFFORT,
-    response_format: Dict[
-        str, Union[str, Dict]
-    ] = BRIEF_CONFIG.RESPONSE_FORMAT,
+    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
     stream: bool = BRIEF_CONFIG.STREAM,
     temperature: float = BRIEF_CONFIG.TEMPERATURE,
     top_p: float = BRIEF_CONFIG.TOP_P,
     user: str = BRIEF_CONFIG.USER,
     retrieve_url: str = BRIEF_CONFIG.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = BRIEF_CONFIG.REPO_ID_DICT,
+    repo_id_dict: Optional[Dict[str, int]] = None,
     page_num: int = BRIEF_CONFIG.PAGE_NUM,
     filter_string: Optional[str] = BRIEF_CONFIG.FILTER_STRING,
     scope: str = BRIEF_CONFIG.SCOPE,
@@ -823,7 +825,7 @@ async def brief_gene_function(
     bi_token: str = SENSITIVE_CONFIG.BI_TOKEN.get_secret_value(),
     max_concurrency: int = BRIEF_CONFIG.MAX_CONCURRENCY,
     timeout: float = BRIEF_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = BRIEF_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = BRIEF_CONFIG.MAX_RETRIES,
     max_tokens: int = BRIEF_CONFIG.MAX_TOKENS,
 ) -> Dict[str, Any]:

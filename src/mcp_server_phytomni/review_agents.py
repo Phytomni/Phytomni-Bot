@@ -808,15 +808,13 @@ async def deep_research(
     n: int = REVIEW_CONFIG.N,
     presence_penalty: float = REVIEW_CONFIG.PRESENCE_PENALTY,
     reasoning_effort: Optional[str] = REVIEW_CONFIG.REASONING_EFFORT,
-    response_format: Dict[
-        str, Union[str, Dict]
-    ] = REVIEW_CONFIG.RESPONSE_FORMAT,
+    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
     stream: bool = REVIEW_CONFIG.STREAM,
     temperature: float = REVIEW_CONFIG.TEMPERATURE,
     top_p: float = REVIEW_CONFIG.TOP_P,
     user: str = REVIEW_CONFIG.USER,
     retrieve_url: str = REVIEW_CONFIG.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = REVIEW_CONFIG.REPO_ID_DICT,
+    repo_id_dict: Optional[Dict[str, int]] = None,
     page_num: int = REVIEW_CONFIG.PAGE_NUM,
     filter_string: Optional[str] = REVIEW_CONFIG.FILTER_STRING,
     scope: str = REVIEW_CONFIG.SCOPE,
@@ -836,7 +834,7 @@ async def deep_research(
     max_concurrency: int = REVIEW_CONFIG.MAX_CONCURRENCY,
     max_workers: int = REVIEW_CONFIG.MAX_WORKERS,
     timeout: float = REVIEW_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = REVIEW_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = REVIEW_CONFIG.MAX_RETRIES,
     max_tokens: int = REVIEW_CONFIG.MAX_TOKENS,
 ) -> Dict[str, Any]:

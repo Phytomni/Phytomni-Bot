@@ -44,10 +44,10 @@ async def evo_test_analysis(
     bucket_name: str = DEEP_GENOME_CONFIG.BUCKET_NAME,
     analysis_url: str = DEEP_GENOME_CONFIG.ANALYSIS_URL,
     region: str = DEEP_GENOME_CONFIG.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = DEEP_GENOME_CONFIG.RESOURCE,
-    app_id_dict: Dict[str, str] = DEEP_GENOME_CONFIG.APP_ID,
+    resource_dict: Optional[Dict[str, Dict[str, int]]] = None,
+    app_id_dict: Optional[Dict[str, str]] = None,
     timeout: float = DEEP_GENOME_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = DEEP_GENOME_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = DEEP_GENOME_CONFIG.MAX_RETRIES,
     max_poll: float = DEEP_GENOME_CONFIG.MAX_POLL,
     prompt_path: str = DEEP_GENOME_CONFIG.PROMPT_PATH,
@@ -64,6 +64,23 @@ async def evo_test_analysis(
     user: str = DEEP_GENOME_CONFIG.USER,
 ) -> dict:
     """Run an evolution analysis workflow for a target gene."""
+    if resource_dict is None:
+        resource_dict = {
+            key: dict(value)
+            for key, value in DEEP_GENOME_CONFIG.RESOURCE.items()
+        }
+    else:
+        resource_dict = {
+            key: dict(value) for key, value in resource_dict.items()
+        }
+    if app_id_dict is None:
+        app_id_dict = dict(DEEP_GENOME_CONFIG.APP_ID)
+    else:
+        app_id_dict = dict(app_id_dict)
+    if retriable_codes is None:
+        retriable_codes = list(DEEP_GENOME_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
 
     async def find_spa_taxid(spa_names: str) -> List[str]:
 

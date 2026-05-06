@@ -641,7 +641,7 @@ async def retrieve(
     rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
     score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
     timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Retrieve and rerank documents from a knowledge base.
@@ -679,6 +679,10 @@ async def retrieve(
                   after all retries.
         ValueError: If an unsupported `scope` value is provided.
     """
+    if retriable_codes is None:
+        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
 
     async def make_retrieve_request(client, scope):
         for attempt in range(max_retries + 1):
@@ -795,7 +799,7 @@ async def retrieve(
 async def multi_retrieve(
     user_query: str,
     retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL,
-    repo_id_dict: Optional[Dict[str, int]] = KNOWLEDGE_CONFIG.REPO_ID_DICT,
+    repo_id_dict: Optional[Dict[str, int]] = None,
     page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM,
     filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING,
     scope: str = KNOWLEDGE_CONFIG.SCOPE,
@@ -805,7 +809,7 @@ async def multi_retrieve(
     score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
     top_n: int = KNOWLEDGE_CONFIG.TOP_N,
     timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
@@ -842,8 +846,14 @@ async def multi_retrieve(
     Raises:
         McpError: If any of the underlying `retrieve` operations fail.
     """
-    if not repo_id_dict:
-        repo_id_dict = KNOWLEDGE_CONFIG.REPO_ID_DICT
+    if repo_id_dict is None:
+        repo_id_dict = dict(KNOWLEDGE_CONFIG.REPO_ID_DICT)
+    else:
+        repo_id_dict = dict(repo_id_dict)
+    if retriable_codes is None:
+        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
 
     async def make_multi_retrieve():
         try:
@@ -909,7 +919,7 @@ async def rerank(
     rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE,
     score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD,
     timeout: float = KNOWLEDGE_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = KNOWLEDGE_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES,
 ) -> list:
     """Rerank a list of documents based on a user query.
@@ -938,6 +948,10 @@ async def rerank(
         McpError: If the API call to the reranking service fails after all
                   retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
 
     async def make_rerank_request(client, docs_batch):
         for attempt in range(max_retries + 1):

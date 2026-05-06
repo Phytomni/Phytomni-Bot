@@ -139,7 +139,6 @@ disable = [
     # Legacy/public API shape kept for compatibility; phase 4 will refactor
     # these with narrower scopes instead of changing signatures in phase 1.
     "broad-exception-caught",
-    "dangerous-default-value",
     "duplicate-code",
     "import-outside-toplevel",
     "missing-function-docstring",

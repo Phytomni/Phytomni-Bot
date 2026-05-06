@@ -9,7 +9,7 @@ import asyncio
 import sqlite3
 import uuid
 from random import uniform
-from typing import List
+from typing import List, Optional
 
 from httpx import (
     AsyncClient,
@@ -20,6 +20,8 @@ from httpx import (
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+
+DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
 
 class TaskManager:
@@ -108,7 +110,7 @@ async def create_task(
     server_status: str,
     tool_name: str,
     timeout: float = 60,
-    retriable_codes: List[int] = [429, 500, 502, 503, 504],
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = 5,
 ):
     """Creates a task on a remote server.
@@ -137,6 +139,10 @@ async def create_task(
     Raises:
         McpError: If the request fails after all retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(DEFAULT_RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     data = {
         "server_id": server_id,
         "server_status": server_status,
@@ -189,7 +195,7 @@ async def update_task(
     server_file_path: str,
     tool_result: str,
     timeout: float = 60,
-    retriable_codes: List[int] = [429, 500, 502, 503, 504],
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = 5,
 ):
     """Updates a task on a remote server.
@@ -219,6 +225,10 @@ async def update_task(
     Raises:
         McpError: If the request fails after all retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(DEFAULT_RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     data = {
         "server_id": server_id,
         "server_status": server_status,

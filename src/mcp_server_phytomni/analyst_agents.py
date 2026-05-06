@@ -1206,7 +1206,7 @@ class AnalystAgent:
         top_p: float = ANALYST_CONFIG.TOP_P,
         prompt_file: str = ANALYST_CONFIG.PROMPT_FILE,
         preset_data_list: Optional[Any] = None,
-        obs_file_list: List = [],
+        obs_file_list: Optional[List[str]] = None,
         preset_plan: Optional[str] = None,
         thread_id: Optional[str] = None,
         is_auto_select: bool = True,
@@ -1249,6 +1249,11 @@ class AnalystAgent:
             compute_resource on success, or the initial state with
             task_status "FAILED_AT_AGENT_LEVEL" and error_detail on failure.
         """
+        if obs_file_list is None:
+            obs_file_list = []
+        else:
+            obs_file_list = list(obs_file_list)
+
         initial_state = {
             "query": query,
             "goal_description": goal_description,
@@ -1421,12 +1426,16 @@ async def wait_for_completion(
     analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
     region: str = ANALYST_CONFIG.ANALYSIS_REGION,
     timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
     poll_interval: float = ANALYST_CONFIG.POLL_INTERVAL,
     max_poll: float = ANALYST_CONFIG.MAX_POLL,
 ) -> Dict[str, Any]:
     """Poll a submitted task until it reaches a terminal status."""
+    if retriable_codes is None:
+        retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     start_time = time.time()
     while (time.time() - start_time) < max_poll:
         status_data = await task_status(
@@ -1464,7 +1473,7 @@ async def task_delete(
     analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
     region: str = ANALYST_CONFIG.ANALYSIS_REGION,
     timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> str:
     """
@@ -1488,6 +1497,10 @@ async def task_delete(
     Raises:
         McpError: If the task deletion fails after all retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -1552,7 +1565,7 @@ async def task_status(
     analysis_url: str = ANALYST_CONFIG.ANALYSIS_URL,
     region: str = ANALYST_CONFIG.ANALYSIS_REGION,
     timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> dict:
     """
@@ -1577,6 +1590,10 @@ async def task_status(
     Raises:
         McpError: If checking the task status fails after all retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -1644,7 +1661,7 @@ async def task_log(
     ] = ANALYST_CONFIG.COMPUTE_RESOURCE,
     region: str = ANALYST_CONFIG.ANALYSIS_REGION,
     timeout: float = ANALYST_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = ANALYST_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = ANALYST_CONFIG.MAX_RETRIES,
 ) -> dict:
     """
@@ -1668,6 +1685,10 @@ async def task_log(
     Raises:
         McpError: If fetching the task log fails after all retries.
     """
+    if retriable_codes is None:
+        retriable_codes = list(ANALYST_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         for attempt in range(max_retries + 1):
@@ -1993,7 +2014,7 @@ def download_obs_out(
     access_key_id: str = DEFAULT_ACCESS_KEY_ID,
     secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
-    target_file_feature: List[str] = ANALYST_CONFIG.TARGET_FILE_FEATURE,
+    target_file_feature: Optional[List[str]] = None,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     marker: Optional[str] = ANALYST_CONFIG.DOWNLOAD_MARKER,
     max_keys: int = ANALYST_CONFIG.DOWNLOAD_MAX_KEYS,
@@ -2063,6 +2084,10 @@ def download_obs_out(
         transfers. Large directories are handled through pagination to manage
         memory usage efficiently.
     """
+    if target_file_feature is None:
+        target_file_feature = list(ANALYST_CONFIG.TARGET_FILE_FEATURE)
+    else:
+        target_file_feature = list(target_file_feature)
     output_path = Path(f"{download_path}/{task_dir}")
     output_path.mkdir(parents=True, exist_ok=True)
     headers = GetObjectHeader()

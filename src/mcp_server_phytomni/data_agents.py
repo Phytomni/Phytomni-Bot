@@ -90,10 +90,14 @@ async def nl2sql(
     need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
     simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
     timeout: float = DATA_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = DATA_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = DATA_CONFIG.MAX_RETRIES,
 ) -> Dict[str, Any]:
     """Convert a natural language query to SQL and execute it."""
+    if retriable_codes is None:
+        retriable_codes = list(DATA_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
     dialog_id = dialog_id if dialog_id else str(uuid1())
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -174,7 +178,7 @@ async def rewrite_nl2sql(
     n: int = DATA_CONFIG.N,
     presence_penalty: float = DATA_CONFIG.PRESENCE_PENALTY,
     reasoning_effort: Optional[str] = DATA_CONFIG.REASONING_EFFORT,
-    response_format: Dict[str, Union[str, Dict]] = DATA_CONFIG.RESPONSE_FORMAT,
+    response_format: Optional[Dict[str, Union[str, Dict]]] = None,
     stream: bool = DATA_CONFIG.STREAM,
     temperature: float = DATA_CONFIG.TEMPERATURE,
     top_p: float = DATA_CONFIG.TOP_P,
@@ -186,7 +190,7 @@ async def rewrite_nl2sql(
     need_insight: bool = DATA_CONFIG.NEED_INSIGHT,
     simplify_response: bool = DATA_CONFIG.SIMPLIFY_RESPONSE,
     timeout: float = DATA_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = DATA_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = DATA_CONFIG.MAX_RETRIES,
     max_tokens: int = DATA_CONFIG.MAX_TOKENS,
     is_rewrite: bool = True,

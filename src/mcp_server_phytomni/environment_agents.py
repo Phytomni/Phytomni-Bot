@@ -39,10 +39,10 @@ async def region_vci_analysis(
     bucket_name: str = ENVIRONMENT_CONFIG.BUCKET_NAME,
     analysis_url: str = ENVIRONMENT_CONFIG.ANALYSIS_URL,
     region: str = ENVIRONMENT_CONFIG.ANALYSIS_REGION,
-    resource_dict: Dict[str, Dict[str, int]] = ENVIRONMENT_CONFIG.RESOURCE,
-    app_id_dict: Dict[str, str] = ENVIRONMENT_CONFIG.APP_ID,
+    resource_dict: Optional[Dict[str, Dict[str, int]]] = None,
+    app_id_dict: Optional[Dict[str, str]] = None,
     timeout: float = ENVIRONMENT_CONFIG.TIMEOUT,
-    retriable_codes: List[int] = ENVIRONMENT_CONFIG.RETRIABLE_CODES,
+    retriable_codes: Optional[List[int]] = None,
     max_retries: int = ENVIRONMENT_CONFIG.MAX_RETRIES,
     max_poll: float = ENVIRONMENT_CONFIG.MAX_POLL,
     prompt_path: str = ENVIRONMENT_CONFIG.PROMPT_PATH,
@@ -59,6 +59,24 @@ async def region_vci_analysis(
     user: str = ENVIRONMENT_CONFIG.USER,
 ) -> dict:
     """Run a regional VCI analysis workflow and return task results."""
+    if resource_dict is None:
+        resource_dict = {
+            key: dict(value)
+            for key, value in ENVIRONMENT_CONFIG.RESOURCE.items()
+        }
+    else:
+        resource_dict = {
+            key: dict(value) for key, value in resource_dict.items()
+        }
+    if app_id_dict is None:
+        app_id_dict = dict(ENVIRONMENT_CONFIG.APP_ID)
+    else:
+        app_id_dict = dict(app_id_dict)
+    if retriable_codes is None:
+        retriable_codes = list(ENVIRONMENT_CONFIG.RETRIABLE_CODES)
+    else:
+        retriable_codes = list(retriable_codes)
+
     region_info = load_text_file(region_code)
     prompt = get_prompt(
         prompt_file,
