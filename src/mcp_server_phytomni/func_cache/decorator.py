@@ -10,6 +10,7 @@ import functools
 import inspect
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,12 +29,375 @@ DEFAULT_CACHE_DB_ENV = "PHYTOMNI_CACHE_DB"
 DEFAULT_CACHE_DB_PATH = Path(".cache") / "phytomni" / "func_cache.sqlite"
 
 
+@dataclass(frozen=True)
+class CacheOptions:
+    """Resolved options for one cached function."""
+
+    key_params: Any = None
+    db_path: Any = None
+    ttl: Any = None
+    compress: bool = False
+    lock_timeout: int = 10
+    lock_expire: int = 300
+    exclude_params: Any = None
+
+    @classmethod
+    def from_kwargs(cls, key_params: Any, kwargs: dict[str, Any]):
+        """Build options while preserving keyword compatibility."""
+        allowed = {
+            "db_path",
+            "ttl",
+            "compress",
+            "lock_timeout",
+            "lock_expire",
+            "exclude_params",
+        }
+        unknown = sorted(set(kwargs) - allowed)
+        if unknown:
+            joined = ", ".join(unknown)
+            raise TypeError(f"Unknown func_cache option(s): {joined}")
+        return cls(key_params=key_params, **kwargs)
+
+
+@dataclass
+class CacheStats:
+    """Mutable hit/miss counters for a cached function."""
+
+    hits: int = 0
+    misses: int = 0
+
+
+class CacheRuntime:
+    """Runtime state and operations for one decorated function."""
+
+    def __init__(self, func: Any, options: CacheOptions):
+        """Initialize cache storage, key builder, and lock manager."""
+        self.func = func
+        self.options = options
+        self.db_path = _resolve_db_path(options.db_path)
+        self.storage = Storage.get_instance(self.db_path)
+        self.key_builder = KeyBuilder(
+            func,
+            key_params=options.key_params,
+            exclude_params=options.exclude_params,
+        )
+        self.lock_manager = LockManager(
+            self.storage,
+            options.lock_timeout,
+            options.lock_expire,
+        )
+        self.stats = CacheStats()
+        _register_storage_close(self.db_path, self.storage)
+        _check_and_update_meta(
+            self.storage,
+            self.key_builder.func_id,
+            self.key_builder.key_params,
+            options.compress,
+        )
+
+    def call(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
+        """Return a cached sync result or execute the wrapped function."""
+        cache_key = self.build_cache_key(args, kwargs)
+        if cache_key is None:
+            return self.func(*args, **kwargs)
+
+        cached = self.read_cached(cache_key)
+        if cached is not _CACHE_MISS:
+            self.stats.hits += 1
+            return cached
+
+        return self.compute_locked(cache_key, args, kwargs)
+
+    async def call_async(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
+        """Return a cached async result or execute the wrapped coroutine."""
+        cache_key = self.build_cache_key(args, kwargs)
+        if cache_key is None:
+            return await self.func(*args, **kwargs)
+
+        cached = await self.read_cached_async(cache_key)
+        if cached is not _CACHE_MISS:
+            self.stats.hits += 1
+            return cached
+
+        return await self.compute_locked_async(cache_key, args, kwargs)
+
+    def build_cache_key(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
+        """Build a cache key or return None when caching is unsafe."""
+        try:
+            return self.key_builder.build_key(args, kwargs)
+        except CacheError as exc:
+            logger.warning("Cache key build failed, falling back: %s", exc)
+            return None
+
+    def read_cached(self, cache_key: str):
+        """Return cached value or a miss sentinel."""
+        try:
+            cached = self.storage.get(self.key_builder.func_id, cache_key)
+        except CacheError as exc:
+            logger.warning("Cache read error, falling back: %s", exc)
+            return _CACHE_MISS
+        return self.deserialize_cached(cache_key, cached)
+
+    async def read_cached_async(self, cache_key: str):
+        """Return cached async value or a miss sentinel."""
+        try:
+            cached = await asyncio.to_thread(
+                self.storage.get,
+                self.key_builder.func_id,
+                cache_key,
+            )
+        except CacheError as exc:
+            logger.warning("Cache read error, falling back: %s", exc)
+            return _CACHE_MISS
+        return await self.deserialize_cached_async(cache_key, cached)
+
+    def write_cached(self, cache_key: str, result: Any) -> None:
+        """Serialize and store a cache value."""
+        try:
+            value = dumps(result, self.options.compress)
+            self.storage.set(
+                self.key_builder.func_id,
+                cache_key,
+                value,
+                self.options.ttl,
+            )
+        except CacheError as exc:
+            logger.warning("Cache write failed: %s", exc)
+
+    async def write_cached_async(self, cache_key: str, result: Any) -> None:
+        """Serialize and store an async cache value."""
+        try:
+            value = dumps(result, self.options.compress)
+            await asyncio.to_thread(
+                self.storage.set,
+                self.key_builder.func_id,
+                cache_key,
+                value,
+                self.options.ttl,
+            )
+        except CacheError as exc:
+            logger.warning("Cache write failed: %s", exc)
+
+    def compute_locked(
+        self,
+        cache_key: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ):
+        """Compute a sync cache miss under a database lock."""
+        if not self.acquire_lock(cache_key):
+            self.stats.misses += 1
+            return self.func(*args, **kwargs)
+        try:
+            return self.compute_after_lock(cache_key, args, kwargs)
+        finally:
+            self.release_lock(cache_key)
+
+    async def compute_locked_async(
+        self,
+        cache_key: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ):
+        """Compute an async cache miss under a database lock."""
+        owner = self.lock_manager.owner(f"async:{id(asyncio.current_task())}")
+        if not await self.acquire_lock_async(cache_key, owner):
+            self.stats.misses += 1
+            return await self.func(*args, **kwargs)
+        try:
+            return await self.compute_after_lock_async(cache_key, args, kwargs)
+        finally:
+            await self.release_lock_async(cache_key, owner)
+
+    def compute_after_lock(
+        self,
+        cache_key: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ):
+        """Double-check cache after lock, then compute and store."""
+        cached = self.read_cached(cache_key)
+        if cached is not _CACHE_MISS:
+            self.stats.hits += 1
+            return cached
+
+        self.stats.misses += 1
+        result = self.func(*args, **kwargs)
+        self.write_cached(cache_key, result)
+        return result
+
+    async def compute_after_lock_async(
+        self,
+        cache_key: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ):
+        """Double-check async cache after lock, then compute and store."""
+        cached = await self.read_cached_async(cache_key)
+        if cached is not _CACHE_MISS:
+            self.stats.hits += 1
+            return cached
+
+        self.stats.misses += 1
+        result = await self.func(*args, **kwargs)
+        await self.write_cached_async(cache_key, result)
+        return result
+
+    def acquire_lock(self, cache_key: str) -> bool:
+        """Acquire a sync lock, returning False on cache lock failures."""
+        try:
+            self.lock_manager.acquire(self.key_builder.func_id, cache_key)
+            return True
+        except CacheError as exc:
+            logger.warning("Failed to acquire lock, falling back: %s", exc)
+            return False
+
+    async def acquire_lock_async(self, cache_key: str, owner: str) -> bool:
+        """Acquire an async lock, returning False on cache lock failures."""
+        try:
+            await asyncio.to_thread(
+                self.lock_manager.acquire,
+                self.key_builder.func_id,
+                cache_key,
+                owner,
+            )
+            return True
+        except CacheError as exc:
+            logger.warning("Failed to acquire lock, falling back: %s", exc)
+            return False
+
+    def release_lock(self, cache_key: str) -> None:
+        """Release a sync lock, ignoring cleanup failures."""
+        try:
+            self.lock_manager.release(self.key_builder.func_id, cache_key)
+        except CacheError:
+            pass
+
+    async def release_lock_async(self, cache_key: str, owner: str) -> None:
+        """Release an async lock, ignoring cleanup failures."""
+        try:
+            await asyncio.to_thread(
+                self.lock_manager.release,
+                self.key_builder.func_id,
+                cache_key,
+                owner,
+            )
+        except CacheError:
+            pass
+
+    def deserialize_cached(self, cache_key: str, cached: Any):
+        """Deserialize cached bytes or remove a corrupted entry."""
+        if cached is None:
+            return _CACHE_MISS
+        try:
+            return loads(cached, self.options.compress)
+        except CacheError:
+            self.log_corrupted_entry(cache_key)
+            self.delete_corrupted(cache_key)
+            return _CACHE_MISS
+
+    async def deserialize_cached_async(self, cache_key: str, cached: Any):
+        """Deserialize async cached bytes or remove a corrupted entry."""
+        if cached is None:
+            return _CACHE_MISS
+        try:
+            return loads(cached, self.options.compress)
+        except CacheError:
+            self.log_corrupted_entry(cache_key)
+            await self.delete_corrupted_async(cache_key)
+            return _CACHE_MISS
+
+    def delete_corrupted(self, cache_key: str) -> None:
+        """Delete one corrupted cache entry, ignoring storage failures."""
+        try:
+            self.storage.delete_entry(self.key_builder.func_id, cache_key)
+        except CacheError:
+            pass
+
+    async def delete_corrupted_async(self, cache_key: str) -> None:
+        """Delete one corrupted cache entry without blocking the loop."""
+        try:
+            await asyncio.to_thread(
+                self.storage.delete_entry,
+                self.key_builder.func_id,
+                cache_key,
+            )
+        except CacheError:
+            pass
+
+    def log_corrupted_entry(self, cache_key: str) -> None:
+        """Log a corrupted cache entry warning."""
+        logger.warning(
+            "Cache deserialization failed, removing corrupted entry: %s:%s",
+            self.key_builder.func_id,
+            cache_key,
+        )
+
+    def cache_clear(self) -> None:
+        """Clear all cache entries and locks for the decorated function."""
+        try:
+            self.storage.delete_func(self.key_builder.func_id)
+            self.storage.cleanup_func_locks(self.key_builder.func_id)
+        except CacheError as exc:
+            logger.warning("Failed to clear cache: %s", exc)
+
+    def cache_info(self) -> dict[str, int]:
+        """Return cache statistics for the decorated function."""
+        try:
+            count = self.storage.count(self.key_builder.func_id)
+        except CacheError:
+            count = -1
+        return {
+            "hits": self.stats.hits,
+            "misses": self.stats.misses,
+            "count": count,
+        }
+
+
 def default_cache_db_path():
     """Return the default SQLite path for function result cache storage."""
     env_path = os.getenv(DEFAULT_CACHE_DB_ENV)
     if env_path:
         return env_path
     return str(DEFAULT_CACHE_DB_PATH)
+
+
+def func_cache(key_params=None, **kwargs):
+    """Decorator that caches function results to SQLite storage.
+
+    Args:
+        key_params: List of parameter names to include in cache key. If None,
+            all non-excluded parameters are used.
+        **kwargs: Keyword-compatible cache options: db_path, ttl, compress,
+            lock_timeout, lock_expire, and exclude_params.
+
+    Returns:
+        A decorator function that wraps the target function with caching.
+    """
+    options = CacheOptions.from_kwargs(key_params, kwargs)
+
+    def decorator(func):
+        runtime = CacheRuntime(func, options)
+
+        @functools.wraps(func)
+        def wrapper(*args, **wrapper_kwargs):
+            """Wrapper for sync cache lookup, execution, and storage."""
+            return runtime.call(args, wrapper_kwargs)
+
+        @functools.wraps(func)
+        async def async_wrapper(*args, **wrapper_kwargs):
+            """Wrapper for async cache lookup, execution, and storage."""
+            return await runtime.call_async(args, wrapper_kwargs)
+
+        target_wrapper = (
+            async_wrapper if inspect.iscoroutinefunction(func) else wrapper
+        )
+        c_wrapper = cast(Any, target_wrapper)
+        c_wrapper.cache_clear = runtime.cache_clear
+        c_wrapper.cache_info = runtime.cache_info
+        return c_wrapper
+
+    return decorator
 
 
 def _resolve_db_path(db_path):
@@ -43,277 +407,13 @@ def _resolve_db_path(db_path):
     return default_cache_db_path()
 
 
-def func_cache(
-    key_params=None,
-    db_path=None,
-    ttl=None,
-    compress=False,
-    lock_timeout=10,
-    lock_expire=300,
-    exclude_params=None,
-):
-    """Decorator that caches function results to SQLite storage.
-
-    This decorator wraps a function to cache its results based on the
-    function's arguments. Cache entries are stored in an SQLite database
-    with optional TTL, compression, and distributed locking. Synchronous and
-    asynchronous target functions are both supported.
-
-    Args:
-        key_params: List of parameter names to include in cache key. If None,
-            all non-excluded parameters are used.
-        db_path: Path to the SQLite database file. If None, the decorator uses
-            PHYTOMNI_CACHE_DB or `.cache/phytomni/func_cache.sqlite`.
-        ttl: Time-to-live in seconds for cache entries. If None, entries
-            persist until explicitly cleared.
-        compress: Whether to compress cached values using zlib.
-        lock_timeout: Maximum seconds to wait for lock acquisition on cache
-            miss.
-        lock_expire: Seconds before a lock is considered expired and can be
-            stolen.
-        exclude_params: Parameters to omit from the key, such as secrets,
-            clients, sessions, and LangGraph checkpointers.
-
-    Returns:
-        A decorator function that wraps the target function with caching.
-    """
-
-    def decorator(func):
-        resolved_db_path = _resolve_db_path(db_path)
-        storage = Storage.get_instance(resolved_db_path)
-        kb = KeyBuilder(
-            func,
-            key_params=key_params,
-            exclude_params=exclude_params,
-        )
-        lock_mgr = LockManager(storage, lock_timeout, lock_expire)
-
-        db_abs = os.path.abspath(resolved_db_path)
-        if db_abs not in _atexit_registered:
-            atexit.register(storage.close)
-            _atexit_registered.add(db_abs)
-
-        _check_and_update_meta(storage, kb.func_id, kb.key_params, compress)
-
-        hits = 0
-        misses = 0
-
-        def build_cache_key(args, kwargs):
-            """Build a cache key or return None when caching is unsafe."""
-            try:
-                return kb.build_key(args, kwargs)
-            except CacheError as e:
-                logger.warning("Cache key build failed, falling back: %s", e)
-                return None
-
-        def delete_corrupted(cache_key):
-            """Delete one corrupted cache entry, ignoring storage failures."""
-            try:
-                storage.delete_entry(kb.func_id, cache_key)
-            except CacheError:
-                pass
-
-        def read_cached(cache_key):
-            """Return cached value or a miss sentinel."""
-            try:
-                cached = storage.get(kb.func_id, cache_key)
-            except CacheError as e:
-                logger.warning("Cache read error, falling back: %s", e)
-                return _CACHE_MISS
-
-            if cached is not None:
-                try:
-                    return loads(cached, compress)
-                except CacheError:
-                    logger.warning(
-                        "Cache deserialization failed, removing corrupted "
-                        "entry: %s:%s",
-                        kb.func_id,
-                        cache_key,
-                    )
-                    delete_corrupted(cache_key)
-            return _CACHE_MISS
-
-        def write_cached(cache_key, result):
-            """Serialize and store a cache value."""
-            try:
-                value = dumps(result, compress)
-                storage.set(kb.func_id, cache_key, value, ttl)
-            except CacheError as e:
-                logger.warning("Cache write failed: %s", e)
-
-        async def delete_corrupted_async(cache_key):
-            """Delete one corrupted cache entry without blocking the loop."""
-            try:
-                await asyncio.to_thread(
-                    storage.delete_entry,
-                    kb.func_id,
-                    cache_key,
-                )
-            except CacheError:
-                pass
-
-        async def read_cached_async(cache_key):
-            """Return cached async value or a miss sentinel."""
-            try:
-                cached = await asyncio.to_thread(
-                    storage.get,
-                    kb.func_id,
-                    cache_key,
-                )
-            except CacheError as e:
-                logger.warning("Cache read error, falling back: %s", e)
-                return _CACHE_MISS
-
-            if cached is not None:
-                try:
-                    return loads(cached, compress)
-                except CacheError:
-                    logger.warning(
-                        "Cache deserialization failed, removing corrupted "
-                        "entry: %s:%s",
-                        kb.func_id,
-                        cache_key,
-                    )
-                    await delete_corrupted_async(cache_key)
-            return _CACHE_MISS
-
-        async def write_cached_async(cache_key, result):
-            """Serialize and store an async cache value."""
-            try:
-                value = dumps(result, compress)
-                await asyncio.to_thread(
-                    storage.set,
-                    kb.func_id,
-                    cache_key,
-                    value,
-                    ttl,
-                )
-            except CacheError as e:
-                logger.warning("Cache write failed: %s", e)
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            """Wrapper for cache lookup, execution, and storage."""
-            nonlocal hits, misses
-
-            cache_key = build_cache_key(args, kwargs)
-            if cache_key is None:
-                return func(*args, **kwargs)
-
-            result = read_cached(cache_key)
-            if result is not _CACHE_MISS:
-                hits += 1
-                return result
-
-            # ── Cache miss → Acquire lock ──
-            locked = False
-            try:
-                lock_mgr.acquire(kb.func_id, cache_key)
-                locked = True
-            except CacheError as e:
-                logger.warning("Failed to acquire lock, falling back: %s", e)
-                misses += 1
-                return func(*args, **kwargs)
-
-            try:
-                # ── Double-check read ──
-                result = read_cached(cache_key)
-                if result is not _CACHE_MISS:
-                    hits += 1
-                    return result
-
-                # ── Execute original function ──
-                misses += 1
-                result = func(*args, **kwargs)
-
-                # ── Write to cache ──
-                write_cached(cache_key, result)
-
-                return result
-            finally:
-                if locked:
-                    try:
-                        lock_mgr.release(kb.func_id, cache_key)
-                    except CacheError:
-                        pass
-
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            """Async wrapper for cache lookup, execution, and storage."""
-            nonlocal hits, misses
-
-            cache_key = build_cache_key(args, kwargs)
-            if cache_key is None:
-                return await func(*args, **kwargs)
-
-            result = await read_cached_async(cache_key)
-            if result is not _CACHE_MISS:
-                hits += 1
-                return result
-
-            owner = lock_mgr.owner(f"async:{id(asyncio.current_task())}")
-            locked = False
-            try:
-                await asyncio.to_thread(
-                    lock_mgr.acquire,
-                    kb.func_id,
-                    cache_key,
-                    owner,
-                )
-                locked = True
-            except CacheError as e:
-                logger.warning("Failed to acquire lock, falling back: %s", e)
-                misses += 1
-                return await func(*args, **kwargs)
-
-            try:
-                result = await read_cached_async(cache_key)
-                if result is not _CACHE_MISS:
-                    hits += 1
-                    return result
-
-                misses += 1
-                result = await func(*args, **kwargs)
-                await write_cached_async(cache_key, result)
-                return result
-            finally:
-                if locked:
-                    try:
-                        await asyncio.to_thread(
-                            lock_mgr.release,
-                            kb.func_id,
-                            cache_key,
-                            owner,
-                        )
-                    except CacheError:
-                        pass
-
-        def cache_clear():
-            """Clear all cache entries and locks for the decorated function."""
-            try:
-                storage.delete_func(kb.func_id)
-                storage.cleanup_func_locks(kb.func_id)
-            except CacheError as e:
-                logger.warning("Failed to clear cache: %s", e)
-
-        def cache_info():
-            """Return cache statistics for the decorated function."""
-            try:
-                count = storage.count(kb.func_id)
-            except CacheError:
-                count = -1
-            return {"hits": hits, "misses": misses, "count": count}
-
-        target_wrapper = (
-            async_wrapper if inspect.iscoroutinefunction(func) else wrapper
-        )
-        c_wrapper = cast(Any, target_wrapper)
-        c_wrapper.cache_clear = cache_clear
-        c_wrapper.cache_info = cache_info
-        return c_wrapper
-
-    return decorator
+def _register_storage_close(db_path: str, storage: Storage) -> None:
+    """Register one storage close hook per absolute database path."""
+    db_abs = os.path.abspath(db_path)
+    if db_abs in _atexit_registered:
+        return
+    atexit.register(storage.close)
+    _atexit_registered.add(db_abs)
 
 
 def _check_and_update_meta(storage, func_id, key_params, compress):
@@ -322,22 +422,57 @@ def _check_and_update_meta(storage, func_id, key_params, compress):
         meta = storage.get_meta(func_id)
         if meta is None:
             storage.set_meta(func_id, key_params, compress)
-        else:
-            old_params, old_compress = meta
-            if old_params != key_params or old_compress != compress:
-                changes = []
-                if old_params != key_params:
-                    changes.append(f"key_params: {old_params} → {key_params}")
-                if old_compress != compress:
-                    changes.append(f"compress: {old_compress} → {compress}")
-                logger.warning(
-                    "Detected cache config change for %s: %s, "
-                    "automatically clearing old cache",
-                    func_id,
-                    "; ".join(changes),
-                )
-                storage.delete_func(func_id)
-                storage.cleanup_func_locks(func_id)
-                storage.set_meta(func_id, key_params, compress)
-    except CacheError as e:
-        logger.warning("Metadata check failed: %s", e)
+            return
+
+        old_params, old_compress = meta
+        if old_params == key_params and old_compress == compress:
+            return
+
+        _clear_changed_cache(
+            storage,
+            func_id,
+            _cache_config_changes(
+                old_params,
+                key_params,
+                old_compress,
+                compress,
+            ),
+            key_params,
+            compress,
+        )
+    except CacheError as exc:
+        logger.warning("Metadata check failed: %s", exc)
+
+
+def _cache_config_changes(
+    old_params,
+    key_params,
+    old_compress,
+    compress,
+) -> list[str]:
+    """Return readable cache metadata changes."""
+    changes = []
+    if old_params != key_params:
+        changes.append(f"key_params: {old_params} -> {key_params}")
+    if old_compress != compress:
+        changes.append(f"compress: {old_compress} -> {compress}")
+    return changes
+
+
+def _clear_changed_cache(
+    storage,
+    func_id,
+    changes: list[str],
+    key_params,
+    compress,
+) -> None:
+    """Clear cache entries after metadata changes and persist new metadata."""
+    logger.warning(
+        "Detected cache config change for %s: %s, "
+        "automatically clearing old cache",
+        func_id,
+        "; ".join(changes),
+    )
+    storage.delete_func(func_id)
+    storage.cleanup_func_locks(func_id)
+    storage.set_meta(func_id, key_params, compress)

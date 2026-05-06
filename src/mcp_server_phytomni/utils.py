@@ -8,6 +8,7 @@ import asyncio
 import json
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
 from random import uniform
@@ -42,6 +43,36 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 )
 
 FILE_CACHE_TTL = 3600
+
+
+@dataclass(frozen=True)
+class ObsCredentials:
+    """OBS credential pair for transfer helpers."""
+
+    access_key_id: str = DEFAULT_ACCESS_KEY_ID
+    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY
+
+
+@dataclass(frozen=True)
+class ObsDownloadOptions:
+    """OBS endpoint and retry options for file downloads."""
+
+    obs_server: str = SERVER_CONFIG.OBS_SERVER
+    bucket_name: str = SERVER_CONFIG.BUCKET_NAME
+    part_size: int = SERVER_CONFIG.PART_SIZE
+    task_num: int = SERVER_CONFIG.TASK_NUM
+    max_retries: int = SERVER_CONFIG.MAX_RETRIES
+
+
+@dataclass(frozen=True)
+class ObsTransferContext:
+    """Resolved OBS transfer settings used across download helpers."""
+
+    server_dir: str
+    credentials: ObsCredentials
+    download: ObsDownloadOptions
+    max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY
+    max_workers: int = SERVER_CONFIG.MAX_WORKERS
 
 
 def message_content(response: Any) -> str:
@@ -438,13 +469,7 @@ def get_prompt(
 async def download_obs_file(
     obs_file: str,
     server_dir: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = SERVER_CONFIG.OBS_SERVER,
-    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
-    part_size: int = SERVER_CONFIG.PART_SIZE,
-    task_num: int = SERVER_CONFIG.TASK_NUM,
-    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
+    **kwargs: Any,
 ) -> str:
     """Download a single file from Object Storage Service (OBS).
 
@@ -455,14 +480,7 @@ async def download_obs_file(
     Args:
         obs_file: The object key (path) of the file in the OBS bucket.
         server_dir: The local directory where the file will be downloaded.
-        access_key_id: The access key ID for OBS authentication.
-        secret_access_key: The secret access key for OBS authentication.
-        obs_server: The server endpoint for the OBS.
-        bucket_name: The name of the OBS bucket.
-        part_size: The size of each part for multipart downloads.
-        task_num: The number of concurrent tasks for multipart downloads.
-        max_retries: The maximum number of retry attempts for a failed
-            download.
+        **kwargs: Keyword-compatible OBS transfer overrides.
 
     Returns:
         The local path to the downloaded file.
@@ -470,67 +488,133 @@ async def download_obs_file(
     Raises:
         OSError: If the file download fails after all retry attempts.
     """
+    context = _obs_transfer_context(server_dir, kwargs)
     user_name = obs_file.split("/")[-2]
-    server_path = Path(server_dir) / user_name / str(uuid1())
+    server_path = Path(context.server_dir) / user_name / str(uuid1())
     server_path.mkdir(parents=True, exist_ok=True)
     server_file = str(server_path / Path(obs_file).name)
 
+    obs_client = ObsClient(
+        access_key_id=context.credentials.access_key_id,
+        secret_access_key=context.credentials.secret_access_key,
+        server=context.download.obs_server,
+    )
+    object_key = _obs_object_key(obs_file, context.download.bucket_name)
+    return await _download_obs_file_with_retry(
+        obs_client,
+        object_key,
+        server_file,
+        context,
+    )
+
+
+def _obs_transfer_context(
+    server_dir: str,
+    values: Mapping[str, Any],
+) -> ObsTransferContext:
+    """Build an OBS transfer context from keyword-compatible overrides."""
+    transfer_context = values.get("transfer_context")
+    if transfer_context is not None:
+        return transfer_context
+    return ObsTransferContext(
+        server_dir=server_dir,
+        credentials=ObsCredentials(
+            access_key_id=values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+            secret_access_key=values.get(
+                "secret_access_key",
+                DEFAULT_SECRET_ACCESS_KEY,
+            ),
+        ),
+        download=ObsDownloadOptions(
+            obs_server=values.get("obs_server", SERVER_CONFIG.OBS_SERVER),
+            bucket_name=values.get("bucket_name", SERVER_CONFIG.BUCKET_NAME),
+            part_size=values.get("part_size", SERVER_CONFIG.PART_SIZE),
+            task_num=values.get("task_num", SERVER_CONFIG.TASK_NUM),
+            max_retries=values.get("max_retries", SERVER_CONFIG.MAX_RETRIES),
+        ),
+        max_concurrency=values.get(
+            "max_concurrency",
+            SERVER_CONFIG.MAX_CONCURRENCY,
+        ),
+        max_workers=values.get("max_workers", SERVER_CONFIG.MAX_WORKERS),
+    )
+
+
+def _obs_object_key(obs_file: str, bucket_name: str) -> str:
+    """Normalize accepted OBS path forms to an object key."""
     object_key = obs_file
     if object_key.startswith(f"obs://{bucket_name}/"):
-        object_key = object_key[len(f"obs://{bucket_name}/") :]
-    elif object_key.startswith(f"/obs/{bucket_name}/"):
-        object_key = object_key[len(f"/obs/{bucket_name}/") :]
-    elif object_key.startswith(f"/{bucket_name}/"):
-        object_key = object_key[len(f"/{bucket_name}/") :]
-    elif object_key.startswith("/"):
-        object_key = object_key[1:]
+        return object_key[len(f"obs://{bucket_name}/") :]
+    if object_key.startswith(f"/obs/{bucket_name}/"):
+        return object_key[len(f"/obs/{bucket_name}/") :]
+    if object_key.startswith(f"/{bucket_name}/"):
+        return object_key[len(f"/{bucket_name}/") :]
+    if object_key.startswith("/"):
+        return object_key[1:]
+    return object_key
 
-    obs_client = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
-    )
-    loop = asyncio.get_event_loop()
-    for attempt in range(max_retries + 1):
+
+async def _download_obs_file_with_retry(
+    obs_client: ObsClient,
+    object_key: str,
+    server_file: str,
+    context: ObsTransferContext,
+) -> str:
+    """Download one OBS object with retry and backoff."""
+    for attempt in range(context.download.max_retries + 1):
         try:
-            download_response = await loop.run_in_executor(
-                None,
-                lambda: obs_client.downloadFile(
-                    bucketName=bucket_name,
-                    objectKey=object_key,
-                    downloadFile=server_file,
-                    partSize=part_size,
-                    taskNum=task_num,
-                    enableCheckpoint=True,
-                ),
+            download_response = await _download_obs_file_once(
+                obs_client,
+                object_key,
+                server_file,
+                context,
             )
             if download_response.status < 300:
                 return server_file
-            raise OSError(
-                f"Download File Failed\n"
-                f"requestId: {download_response.requestId}\n"
-                f"errorCode: {download_response.errorCode}\n"
-                f"errorMessage: {download_response.errorMessage}"
-            )
+            raise _obs_download_error(download_response)
         except Exception as exc:
-            if attempt < max_retries:
+            if attempt < context.download.max_retries:
                 await asyncio.sleep(1.5**attempt)
                 continue
             raise OSError(f"Download File Failed\n{format_exc()}") from exc
     return server_file
 
 
+async def _download_obs_file_once(
+    obs_client: ObsClient,
+    object_key: str,
+    server_file: str,
+    context: ObsTransferContext,
+):
+    """Run one blocking OBS download in the default executor."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: obs_client.downloadFile(
+            bucketName=context.download.bucket_name,
+            objectKey=object_key,
+            downloadFile=server_file,
+            partSize=context.download.part_size,
+            taskNum=context.download.task_num,
+            enableCheckpoint=True,
+        ),
+    )
+
+
+def _obs_download_error(download_response: Any) -> OSError:
+    """Build an OSError from an OBS download response."""
+    return OSError(
+        "Download File Failed\n"
+        f"requestId: {download_response.requestId}\n"
+        f"errorCode: {download_response.errorCode}\n"
+        f"errorMessage: {download_response.errorMessage}"
+    )
+
+
 async def download_obs_list(
     obs_file_list: List[str],
     server_dir: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = SERVER_CONFIG.OBS_SERVER,
-    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
-    part_size: int = SERVER_CONFIG.PART_SIZE,
-    task_num: int = SERVER_CONFIG.TASK_NUM,
-    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
-    max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY,
+    **kwargs: Any,
 ) -> List[str]:
     """Download multiple files from OBS concurrently.
 
@@ -541,32 +625,20 @@ async def download_obs_list(
         obs_file_list: A list of object keys (paths) for the files to be
             downloaded from OBS.
         server_dir: The local directory where the files will be downloaded.
-        access_key_id: The access key ID for OBS authentication.
-        secret_access_key: The secret access key for OBS authentication.
-        obs_server: The server endpoint for the OBS.
-        bucket_name: The name of the OBS bucket.
-        part_size: The size of each part for multipart downloads.
-        task_num: The number of concurrent tasks for multipart downloads.
-        max_retries: The maximum number of retries for each failed download.
-        max_concurrency: The maximum number of files to download in parallel.
+        **kwargs: Keyword-compatible OBS transfer overrides.
 
     Returns:
         A list of local paths to the downloaded files.
     """
-    semaphore = asyncio.Semaphore(max_concurrency)
+    context = _obs_transfer_context(server_dir, kwargs)
+    semaphore = asyncio.Semaphore(context.max_concurrency)
 
     async def download_with_semaphore(obs_file: str) -> str:
         async with semaphore:
             return await download_obs_file(
                 obs_file=obs_file,
-                server_dir=server_dir,
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=obs_server,
-                bucket_name=bucket_name,
-                part_size=part_size,
-                task_num=task_num,
-                max_retries=max_retries,
+                server_dir=context.server_dir,
+                transfer_context=context,
             )
 
     tasks = [download_with_semaphore(obs_file) for obs_file in obs_file_list]
@@ -620,16 +692,8 @@ def convert_multi_files(
 async def download_list_convert(
     obs_file_list: List[str],
     server_dir: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = SERVER_CONFIG.OBS_SERVER,
-    bucket_name: str = SERVER_CONFIG.BUCKET_NAME,
-    part_size: int = SERVER_CONFIG.PART_SIZE,
-    task_num: int = SERVER_CONFIG.TASK_NUM,
-    max_retries: int = SERVER_CONFIG.MAX_RETRIES,
-    max_concurrency: int = SERVER_CONFIG.MAX_CONCURRENCY,
-    max_workers: int = SERVER_CONFIG.MAX_WORKERS,
     executor: Optional[ProcessPoolExecutor] = None,
+    **kwargs: Any,
 ) -> List[str]:
     """Download, and convert multiple files from OBS in a parallel pipeline.
 
@@ -640,79 +704,48 @@ async def download_list_convert(
     Args:
         obs_file_list: A list of object keys for the files in OBS.
         server_dir: The local directory for temporary file storage.
-        access_key_id: The access key ID for OBS authentication.
-        secret_access_key: The secret access key for OBS authentication.
-        obs_server: The server endpoint for the OBS.
-        bucket_name: The name of the OBS bucket.
-        part_size: The size of each part for multipart downloads.
-        task_num: The number of concurrent tasks for multipart downloads.
-        max_retries: The maximum number of retries for each failed operation.
-        max_concurrency: The maximum number of files to download in parallel.
-        max_workers: The maximum number of processes for file conversion.
         executor: An optional existing `ProcessPoolExecutor` to reuse for
             conversions. If None, a new one is created and managed.
+        **kwargs: Keyword-compatible OBS transfer overrides.
 
     Returns:
         A list of strings, each containing the Markdown content of a
         processed file.
     """
-    if max_concurrency < 1:
+    context = _obs_transfer_context(server_dir, kwargs)
+    if context.max_concurrency < 1:
         raise ValueError("max_concurrency must be at least 1")
 
-    # semaphore = asyncio.Semaphore(max_concurrency)
     should_shutdown = executor is None
-    if should_shutdown:
-        executor = ProcessPoolExecutor(max_workers=max_workers)
-
-    # Legacy: concurrent download and convert using asyncio.gather
-    # async def download_and_convert(obs_file: str) -> str:
-    #     async with semaphore:
-    #         server_file = await download_obs_file(
-    #             obs_file=obs_file,
-    #             server_dir=server_dir,
-    #             access_key_id=access_key_id,
-    #             secret_access_key=secret_access_key,
-    #             obs_server=obs_server,
-    #             bucket_name=bucket_name,
-    #             part_size=part_size,
-    #             task_num=task_num,
-    #             max_retries=max_retries,
-    #         )
-    #         loop = asyncio.get_event_loop()
-    #         result = await loop.run_in_executor(
-    #             executor, convert_single_file, server_file)
-    #         return result
-
-    # Default: sequential download and convert (more stable)
-    async def download_and_convert(obs_file: str) -> str:
-        server_file = await download_obs_file(
-            obs_file=obs_file,
-            server_dir=server_dir,
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=obs_server,
-            bucket_name=bucket_name,
-            part_size=part_size,
-            task_num=task_num,
-            max_retries=max_retries,
-        )
-        result = convert_single_file(server_file)
-        return result
+    active_executor = executor or ProcessPoolExecutor(
+        max_workers=context.max_workers
+    )
 
     try:
-        # Legacy (concurrent):
-        # tasks = [download_and_convert(obs_file)
-        #          for obs_file in obs_file_list]
-        # return await asyncio.gather(*tasks)
-
-        # Default (sequential):
-        result = [
-            await download_and_convert(obs_file) for obs_file in obs_file_list
+        return [
+            await _download_and_convert(obs_file, context, active_executor)
+            for obs_file in obs_file_list
         ]
-        return result
     finally:
-        if should_shutdown and executor is not None:
-            executor.shutdown(wait=True)
+        if should_shutdown:
+            active_executor.shutdown(wait=True)
+
+
+async def _download_and_convert(
+    obs_file: str,
+    context: ObsTransferContext,
+    executor: ProcessPoolExecutor,
+) -> str:
+    """Download one OBS file and convert it to Markdown."""
+    server_file = await download_obs_file(
+        obs_file=obs_file,
+        server_dir=context.server_dir,
+        transfer_context=context,
+    )
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        executor, convert_single_file, server_file
+    )
 
 
 def split_list(lst: List, max_size: int = 128) -> List[List]:

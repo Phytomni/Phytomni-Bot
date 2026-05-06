@@ -102,22 +102,20 @@ def copy_sensitive_config_with_overrides(
     field_map: Optional[FieldMap] = None,
     secret_field_map: Optional[FieldMap] = None,
     fixed_updates: Optional[Mapping[str, Any]] = None,
-    skip_none: bool = True,
 ) -> ConfigT:
     """Return a sensitive config copy with secret fields kept separate."""
-    updates = _collect_fixed_updates(fixed_updates, skip_none=skip_none)
+    updates = _collect_fixed_updates(fixed_updates, skip_none=True)
     updates.update(
         collect_mapped_overrides(
             values,
             field_map or {},
-            skip_none=skip_none,
         )
     )
     updates.update(
         _collect_secret_overrides(
             values,
             secret_field_map or {},
-            skip_none=skip_none,
+            skip_none=True,
         )
     )
     return base_config.model_copy(update=updates)
