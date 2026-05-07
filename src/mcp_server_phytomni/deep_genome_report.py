@@ -35,7 +35,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
     async def _run_report_synthesizer(self: Any, state: DeepGenomeState):
         """Generate the report after all analysis branches finish."""
-        # 🛡️ Barrier: 等待所有 analyst_node 完成后才执行汇总
         completed = state.get("analysis_completed_branches", 0)
         total_expected = len(state.get("analysis_tasks", []))
 
@@ -271,7 +270,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             "use_analyst_agent", True
         )
 
-        # 构建内容字符串
         part12_str = state.get("part12_combined") or ""
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
@@ -505,7 +503,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                 f"{summary_report}\n\n"
             )
 
-        # 生成 follow-up questions
         follow_up_response = await phyto_chat(
             user_query=get_prompt(
                 self.deep_genome_config.PROMPT_FILE,

@@ -327,7 +327,6 @@ class KnowledgeAgent:
             max_retries=self.knowledge_config.MAX_RETRIES,
         )
 
-        # 将 doc_list 挂载到大模型返回的 message 中
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],
             "total": 10000,
@@ -412,7 +411,6 @@ class KnowledgeAgent:
             message_content(follow_up_response)
         )
 
-        # 更新最终返回值
         phyto_response["choices"][0]["message"].update(
             {"follow_up_questions": follow_up_list}
         )

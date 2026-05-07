@@ -286,7 +286,6 @@ class DeepGenomeAgents(
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
 
-        # 使用单一节点，通过 Send API 动态派发
         workflow.add_node("analyst_node", self._run_analyst_node)
 
         workflow.add_node("experiment_node", self._run_report_experiment)
@@ -324,34 +323,28 @@ class DeepGenomeAgents(
         workflow.add_edge("paralogs_annotation_node", "part1_node")
         workflow.add_edge("interaction_annotation_node", "part1_node")
 
-        # 使用 Send API 动态派发分析任务
         workflow.add_conditional_edges(
             "prepare_tasks_node", self._route_analyst_tasks, ["analyst_node"]
         )
-        # Send 实例完成后结束
         workflow.add_conditional_edges(
             "analyst_node", self._route_after_analyst, [END]
         )
-        # prepare_tasks_node 完成后直接到 synthesize_node 作为 barrier
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
-        # synthesize_node 完成后进入实验节点
         workflow.add_conditional_edges(
             "synthesize_node",
             self._route_after_synthesize,
             ["experiment_node", "introduction_node"],
         )
 
-        # part1_node 通过条件边决定后续节点
         workflow.add_conditional_edges(
             "part1_node",
             self._route_after_part1,
             [
                 "experiment_node",
                 "introduction_node",
-            ],  # introduction_node 只在 use_analyst=False 时触发
+            ],
         )
 
-        # 报告节点线性连接
         workflow.add_edge("experiment_node", "protocol_node")
         workflow.add_edge("protocol_node", "introduction_node")
         workflow.add_edge("introduction_node", "discussion_node")
@@ -404,10 +397,8 @@ class DeepGenomeAgents(
             "species_code": species_code,
             "gene_id": gene_id,
             "config_params": config_params,
-            # Initialize barrier counters
             "part1_completed_branches": 0,
             "experiment_completed_branches": 0,
-            # Initialize empty context
             "knowledge_context": {},
             "orthologs_data": {},
             "paralogs_data": {},
@@ -430,10 +421,9 @@ class DeepGenomeAgents(
             "report_triggered": False,
         }
 
-        # 测试模式：跳过 analyst 任务，直接使用预准备的数据
         mock_analyst_data = kwargs.get("mock_analyst_data")
         if kwargs.get("test_mode", False) and mock_analyst_data:
-            print("🧪 [测试模式] 使用预准备的分析师数据")
+            print("[TEST MODE] Using pre-prepared analyst data")
             task_count = len(mock_analyst_data.get("analysis_tasks", []))
             initial_state.update(
                 {
@@ -444,11 +434,11 @@ class DeepGenomeAgents(
                         "analyst_summaries", {}
                     ),
                     "synthesize_report": mock_analyst_data.get(
-                        "synthesize_report", "这是预生成的综合分析报告。"
+                        "synthesize_report", "This is a pre-generated synthesis report."
                     ),
-                    "experiment_completed_branches": 2,  # 直接设为目标值，跳过等待
-                    "analysis_completed_branches": task_count,  # 模拟已完成
-                    "skip_synthesize": True,  # 跳过 synthesize_node
+                    "experiment_completed_branches": 2,
+                    "analysis_completed_branches": task_count,
+                    "skip_synthesize": True,
                 }
             )
             print(f"skip_synthesize: {initial_state['skip_synthesize']}")

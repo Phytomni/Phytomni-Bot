@@ -259,7 +259,6 @@ class InSilicoResearchAgents:
             f"  → Submitting research task via AnalystAgent: {task.task_name}"
         )
 
-        # 使用 AnalystAgent 提交任务
         result = await self.analyst_agent.arun(
             query=None,
             goal_description=task.goal_description,

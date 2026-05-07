@@ -343,10 +343,8 @@ class AnalystAgent(AnalystGraphMixin):
         """
         feedback = state.get("plan_feedback")
 
-        # 如果节点返回了 "APPROVED"，说明通过检查
         if feedback == "APPROVED":
             return "tool_extract_node"
-        # 否则带着 feedback 回到 plan_node 重写
         return "plan_node"
 
     def route_after_submit(

@@ -294,7 +294,6 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 gene_id=gene_id,
             )
 
-            # 直接生成子总结
             sub_summary = self._generate_sub_summary(
                 analysis_type=analysis_type,
                 gene_id=gene_id,
@@ -635,7 +634,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             gene_id=gene_id,
             output_dir=resolved_output_dir,
         )
-        print(f"  → 使用 AnalystAgent 提交 {analysis_type} 任务...")
+        print(f"  -> Submitting {analysis_type} task via AnalystAgent...")
 
         result = await self._submit_analysis_task(context)
         self._raise_if_agent_failed(result)
@@ -644,9 +643,9 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         output_path = result.get("output_dir")
         if not isinstance(output_path, str):
             raise RuntimeError("AnalystAgent returned no output directory")
-        print(f"  → {analysis_type} 任务完成 (task_id: {task_id})")
+        print(f"  -> {analysis_type} task completed (task_id: {task_id})")
 
-        print(f"  → 准备 {analysis_type} 结果...")
+        print(f"  -> Preparing {analysis_type} results...")
         results_dir = self._download_analysis_result(context, output_path)
         return {
             "task_id": task_id,
