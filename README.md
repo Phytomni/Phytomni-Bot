@@ -496,6 +496,8 @@ When changing dependencies:
 - update `project.dependencies` for runtime packages,
 - keep `[project.optional-dependencies].dev` and `[dependency-groups].dev`
   version-aligned for development tools,
+- preserve compatibility with Python 3.12, 3.13, and 3.14 unless the
+  supported range is explicitly changed,
 - run `uv sync --extra dev --group dev`,
 - run `uv pip check --python .venv/bin/python`,
 - run the full lint, type, test, YAML, and JSON gates before committing.

@@ -91,6 +91,8 @@ README-style prose may wrap the same copyright text across lines.
 
 - Use Python 3.12-compatible syntax. Do not use Python 3.13/3.14-only
   syntax while 3.12 remains supported.
+- Changes to runtime dependencies, typing behavior, or syntax must keep the
+  Python 3.12, 3.13, and 3.14 CI matrix green.
 - Keep the configured line length at 79.
 - Let `black`, `ruff`, `flake8`, `mypy`, `pyright`, and `pylint` define the
   automated baseline.
