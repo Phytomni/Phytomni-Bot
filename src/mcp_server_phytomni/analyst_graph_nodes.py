@@ -10,7 +10,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict
 from uuid import uuid1
 
@@ -21,7 +20,7 @@ from httpx import (
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from .analyst_storage import create_output_dir, upload_analyst_agents_data
+from .analyst_storage import create_output_dir, upload_analyst_agents_content
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
 from .utils import (
@@ -648,24 +647,19 @@ class AnalystGraphMixin(WorkflowMixinBase):
         state: AnalystAgentsState,
         output_dir: str,
     ) -> str:
-        """Write submit metadata temporarily and upload it to OBS."""
+        """Upload submit metadata content to OBS storage."""
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
-        json_file = Path(f"{uuid1()}.json")
-        try:
-            with open(json_file, "w", encoding="utf-8") as file_obj:
-                json.dump(self._submit_payload(state, output_dir), file_obj)
-            return upload_analyst_agents_data(
-                analyst_agents_datapath=str(json_file),
-                access_key_id=access_key_id,
-                secret_access_key=secret_access_key,
-                obs_server=self.analyst_config.OBS_SERVER,
-                bucket_name=self.analyst_config.BUCKET_NAME,
-            )
-        finally:
-            if json_file.exists():
-                json_file.unlink()
+        object_name = f"{uuid1()}.json"
+        return upload_analyst_agents_content(
+            content=json.dumps(self._submit_payload(state, output_dir)),
+            object_name=object_name,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.analyst_config.OBS_SERVER,
+            bucket_name=self.analyst_config.BUCKET_NAME,
+        )
 
     def _submit_payload(
         self: Any,
