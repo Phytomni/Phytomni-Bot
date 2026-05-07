@@ -216,6 +216,29 @@ for compatibility, but new local configuration should use the uppercase names.
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, or local virtual environments.
 
+### OBSFS Storage
+
+The storage helpers prefer the obsfs mount at `/obs/phytomni` for OBS-backed
+file operations. When that mount or an individual filesystem operation is not
+usable, the code falls back to the existing OBS SDK path and credentials.
+There is no feature flag to enable obsfs; availability is detected at runtime.
+
+When obsfs is available, uploaded documents are converted directly from the
+mounted source path, generated Analyst metadata is written directly under
+`/obs/phytomni/agent_data/tmp_data/`, and DeepGenome reads completed Analyst
+result directories in place instead of downloading them to a local staging
+directory.
+
+For root or sudo-enabled runtime checks:
+
+```bash
+sudo stat /obs/phytomni
+sudo test -r /obs/phytomni && sudo test -w /obs/phytomni
+```
+
+If those checks fail, normal execution should still work through the OBS SDK
+fallback as long as the configured OBS credentials are valid.
+
 ## Running the Server
 
 After editable installation:

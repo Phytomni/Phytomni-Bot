@@ -317,9 +317,10 @@ def build_sub_summary(
     deepgenome_out: str,
     data: Optional[Dict[str, Any]],
     figure_index: int,
-    results_dir: Optional[str] = None,
+    **kwargs: Any,
 ) -> SummaryBuildResult:
     """Build one DeepGenome analyst sub-summary."""
+    results_dir = kwargs.get("results_dir")
     gene_results_data = data if data is not None else {"gene_name": gene_id}
     out_path = Path(results_dir) if results_dir else Path(deepgenome_out)
     if results_dir is None:

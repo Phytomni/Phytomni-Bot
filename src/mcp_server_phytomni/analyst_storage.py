@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from traceback import format_exc
-from typing import Any, Dict, NamedTuple, Optional
+from typing import Any, Dict, Mapping, NamedTuple, Optional
 from uuid import uuid1
 
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
@@ -92,13 +92,26 @@ class ObsDownloadOptions:
         )
 
 
+def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
+    """Build OBS access options from keyword-compatible values."""
+    return ObsAccessOptions(
+        access_key_id=values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+        secret_access_key=values.get(
+            "secret_access_key",
+            DEFAULT_SECRET_ACCESS_KEY,
+        ),
+        obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
+        bucket_name=values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME),
+    )
+
+
 def upload_analyst_agents_data(
     analyst_agents_datapath: str,
     access_key_id: str = DEFAULT_ACCESS_KEY_ID,
     secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
-    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    **kwargs: Any,
 ) -> str:
     """
     Uploads data to an Object Storage Service (OBS) bucket.
@@ -121,6 +134,13 @@ def upload_analyst_agents_data(
     Raises:
         OSError: If the file upload to OBS fails.
     """
+    access = ObsAccessOptions(
+        access_key_id,
+        secret_access_key,
+        obs_server,
+        bucket_name,
+    )
+    obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     object_file = Path(analyst_agents_datapath).name
     object_key = f"agent_data/tmp_data/{object_file}"
     try:
@@ -134,39 +154,31 @@ def upload_analyst_agents_data(
         return _upload_file_sdk(
             analyst_agents_datapath,
             object_key,
-            access_key_id,
-            secret_access_key,
-            obs_server,
-            bucket_name,
+            access,
         )
 
 
 def upload_analyst_agents_content(
     content: str,
     object_name: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
-    obs_server: str = ANALYST_CONFIG.OBS_SERVER,
-    bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
-    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    **kwargs: Any,
 ) -> str:
     """Upload generated analyst metadata content to OBS storage."""
+    access = _obs_access_from_values(kwargs)
+    obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     object_key = f"agent_data/tmp_data/{object_name}"
     try:
         return _upload_content_obsfs(
             content,
             object_key,
-            bucket_name,
+            access.bucket_name,
             obsfs_mount_root,
         )
     except OSError:
         return _upload_content_sdk(
             content,
             object_key,
-            access_key_id,
-            secret_access_key,
-            obs_server,
-            bucket_name,
+            access,
         )
 
 
@@ -201,22 +213,19 @@ def _upload_content_obsfs(
 def _upload_file_sdk(
     file_path: str,
     object_key: str,
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-    bucket_name: str,
+    access: ObsAccessOptions,
 ) -> str:
     """Upload one local file through the OBS SDK fallback."""
     obsclient = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
+        access_key_id=access.access_key_id,
+        secret_access_key=access.secret_access_key,
+        server=access.obs_server,
     )
     try:
         headers = PutObjectHeader()
         headers.contentType = "text/plain"
         response = obsclient.putFile(
-            bucketName=bucket_name,
+            bucketName=access.bucket_name,
             objectKey=object_key,
             file_path=file_path,
             metadata={"meta1": "value1", "meta2": "value2"},
@@ -224,7 +233,7 @@ def _upload_file_sdk(
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"{bucket_name}:/{object_key}"
+            return f"{access.bucket_name}:/{object_key}"
         raise OSError(
             "Put File Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
@@ -238,26 +247,23 @@ def _upload_file_sdk(
 def _upload_content_sdk(
     content: str,
     object_key: str,
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-    bucket_name: str,
+    access: ObsAccessOptions,
 ) -> str:
     """Upload generated content through the OBS SDK fallback."""
     obsclient = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
+        access_key_id=access.access_key_id,
+        secret_access_key=access.secret_access_key,
+        server=access.obs_server,
     )
     try:
         response = obsclient.putContent(
-            bucketName=bucket_name,
+            bucketName=access.bucket_name,
             objectKey=object_key,
             content=content,
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"{bucket_name}:/{object_key}"
+            return f"{access.bucket_name}:/{object_key}"
         raise OSError(
             "Put Content Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
@@ -274,7 +280,7 @@ def delete_analyst_agents_data(
     secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
-    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    **kwargs: Any,
 ) -> str:
     """
     Deletes data from an Object Storage Service (OBS) bucket.
@@ -296,6 +302,13 @@ def delete_analyst_agents_data(
     Raises:
         OSError: If the file deletion from OBS fails.
     """
+    access = ObsAccessOptions(
+        access_key_id,
+        secret_access_key,
+        obs_server,
+        bucket_name,
+    )
+    obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     try:
         return _delete_analyst_data_obsfs(
             analyst_agents_datapath,
@@ -305,10 +318,7 @@ def delete_analyst_agents_data(
     except OSError:
         return _delete_analyst_data_sdk(
             analyst_agents_datapath,
-            access_key_id,
-            secret_access_key,
-            obs_server,
-            bucket_name,
+            access,
         )
 
 
@@ -330,23 +340,20 @@ def _delete_analyst_data_obsfs(
 
 def _delete_analyst_data_sdk(
     analyst_agents_datapath: str,
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-    bucket_name: str,
+    access: ObsAccessOptions,
 ) -> str:
     """Delete one analyst storage path through the OBS SDK fallback."""
     obsclient = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
+        access_key_id=access.access_key_id,
+        secret_access_key=access.secret_access_key,
+        server=access.obs_server,
     )
     try:
         object_key = normalize_obs_object_key(
             analyst_agents_datapath,
-            bucket_name,
+            access.bucket_name,
         )
-        response = obsclient.deleteObject(bucket_name, object_key)
+        response = obsclient.deleteObject(access.bucket_name, object_key)
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
             delete_marker = getattr(response, "body", {}).get(
@@ -499,10 +506,12 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     except OSError:
         return _create_output_dir_sdk(
             output_dir,
-            access_key_id,
-            secret_access_key,
-            obs_server,
-            bucket_name,
+            ObsAccessOptions(
+                access_key_id,
+                secret_access_key,
+                obs_server,
+                bucket_name,
+            ),
         )
 
 
@@ -519,24 +528,23 @@ def _create_output_dir_obsfs(
 
 def _create_output_dir_sdk(
     output_dir: str,
-    access_key_id: str,
-    secret_access_key: str,
-    obs_server: str,
-    bucket_name: str,
+    access: ObsAccessOptions,
 ) -> str:
     """Create an output directory through the OBS SDK fallback."""
     obs_client = ObsClient(
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        server=obs_server,
+        access_key_id=access.access_key_id,
+        secret_access_key=access.secret_access_key,
+        server=access.obs_server,
     )
     try:
         response = obs_client.putContent(
-            bucketName=bucket_name, objectKey=output_dir, content=None
+            bucketName=access.bucket_name,
+            objectKey=output_dir,
+            content=None,
         )
         status_code = getattr(response, "status", None)
         if status_code is not None and status_code < 300:
-            return f"/obs/{bucket_name}/{output_dir}"
+            return f"/obs/{access.bucket_name}/{output_dir}"
         raise OSError(
             f"Put File Failed\n"
             f"requestId: {getattr(response, 'requestId', 'unknown')}\n"

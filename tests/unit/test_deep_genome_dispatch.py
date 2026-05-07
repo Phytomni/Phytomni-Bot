@@ -27,6 +27,10 @@ class FakeSensitiveConfig:
         """Return fake OBS credentials."""
         return "access-key", "secret-key"
 
+    def is_test_config(self) -> bool:
+        """Return whether this is a fake test config."""
+        return True
+
 
 class DispatchHarness(DeepGenomeDispatchMixin):
     """Small concrete harness for private dispatch helper tests."""
@@ -72,7 +76,9 @@ def test_download_analysis_result_uses_readable_obsfs_dir(
         output_dir="/obs/phytomni/results/GeneA",
     )
 
-    assert harness._download_analysis_result(
+    download_analysis_result = getattr(harness, "_download_analysis_result")
+
+    assert download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
     ) == str(result_dir)
@@ -104,7 +110,9 @@ def test_download_analysis_result_falls_back_to_sdk_download(
         output_dir="/obs/phytomni/results/GeneA",
     )
 
-    result = harness._download_analysis_result(
+    download_analysis_result = getattr(harness, "_download_analysis_result")
+
+    result = download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
     )

@@ -31,6 +31,10 @@ class FakeMarkItDown:
             text_content=Path(file_path).read_text(encoding="utf-8")
         )
 
+    def converter_name(self) -> str:
+        """Return the fake converter name."""
+        return "fake-markitdown"
+
 
 def test_convert_single_file_preserves_obsfs_source_when_cleanup_false(
     tmp_path,
@@ -121,6 +125,14 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         def __init__(self, **kwargs: Any):
             captured["client"] = kwargs
 
+        def client_settings(self) -> dict[str, Any]:
+            """Return captured constructor settings."""
+            return captured["client"]
+
+        def client_name(self) -> str:
+            """Return a fake client name."""
+            return "fake-obs-client"
+
     async def fake_download_with_retry(
         obs_client: FakeObsClient,
         object_key: str,
@@ -162,6 +174,14 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
 
         def __init__(self, **kwargs: Any):
             del kwargs
+
+        def client_settings(self) -> dict[str, Any]:
+            """Return fake constructor settings."""
+            return {}
+
+        def client_name(self) -> str:
+            """Return a fake client name."""
+            return "fake-obs-client"
 
     async def fake_download_with_retry(
         obs_client: FakeObsClient,

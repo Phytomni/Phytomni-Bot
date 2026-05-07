@@ -139,11 +139,13 @@ def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
             captured["client"] = kwargs
 
         def __getattr__(self, name: str):
+            """Map OBS SDK camelCase methods to lint-friendly fakes."""
             if name == "putContent":
                 return self.put_content
             raise AttributeError(name)
 
         def put_content(self, **kwargs: Any):
+            """Capture putContent fallback arguments."""
             captured["put_content"] = kwargs
             return SimpleNamespace(status=200, requestId="request-id")
 
@@ -177,6 +179,7 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             del kwargs
 
         def __getattr__(self, name: str):
+            """Map OBS SDK camelCase methods to lint-friendly fakes."""
             if name == "listObjects":
                 return self.list_objects
             if name == "getObject":
@@ -184,6 +187,7 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             raise AttributeError(name)
 
         def list_objects(self, **kwargs: Any):
+            """Return one listed object for SDK fallback."""
             assert kwargs["prefix"] == "results"
             body = SimpleNamespace(
                 contents=[SimpleNamespace(key="results/keep.txt")],
@@ -192,6 +196,7 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             return SimpleNamespace(status=200, body=body)
 
         def get_object(self, **kwargs: Any):
+            """Write one fake downloaded object."""
             Path(kwargs["downloadPath"]).write_text("sdk", encoding="utf-8")
             return SimpleNamespace(status=200)
 
