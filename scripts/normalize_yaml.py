@@ -8,8 +8,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import textwrap
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -67,9 +67,10 @@ def manage_yaml_path(file_path: str, yaml_path: str, prompt_text: str) -> None:
     target_key = keys[-1]
     parent_keys = keys[:-1]
 
+    yaml_file = Path(file_path)
     data: dict[str, Any] = {}
-    if os.path.exists(file_path):
-        data = _read_yaml(file_path)
+    if yaml_file.exists():
+        data = _read_yaml(yaml_file)
 
     current = data
     for key in parent_keys:
@@ -79,7 +80,7 @@ def manage_yaml_path(file_path: str, yaml_path: str, prompt_text: str) -> None:
 
     current[target_key] = prompt_text
 
-    _write_yaml(file_path, _sort_and_process_recursive(data))
+    _write_yaml(yaml_file, _sort_and_process_recursive(data))
 
 
 def sort_yaml_content(file_path: str) -> None:
@@ -88,20 +89,21 @@ def sort_yaml_content(file_path: str) -> None:
     Args:
         file_path: Path to the YAML file.
     """
-    if not os.path.exists(file_path):
+    yaml_file = Path(file_path)
+    if not yaml_file.exists():
         return
 
-    data = _read_yaml(file_path)
+    data = _read_yaml(yaml_file)
 
     if not data:
         return
 
-    _write_yaml(file_path, _sort_and_process_recursive(data))
+    _write_yaml(yaml_file, _sort_and_process_recursive(data))
 
 
-def _read_yaml(file_path: str) -> dict[str, Any]:
+def _read_yaml(file_path: Path) -> dict[str, Any]:
     """Read a YAML file into memory as text, then parse it."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with file_path.open("r", encoding="utf-8") as f:
         raw_content = f.read()
 
     data = yaml.safe_load(raw_content) or {}
@@ -112,9 +114,9 @@ def _read_yaml(file_path: str) -> dict[str, Any]:
     return data
 
 
-def _write_yaml(file_path: str, data: dict[str, Any]) -> None:
+def _write_yaml(file_path: Path, data: dict[str, Any]) -> None:
     """Write processed YAML data with deterministic formatting."""
-    with open(file_path, "w", encoding="utf-8") as f:
+    with file_path.open("w", encoding="utf-8") as f:
         yaml.dump(
             _prepare_for_dump(data),
             f,

@@ -10,6 +10,7 @@ import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 from .exceptions import StorageError
 
@@ -39,7 +40,7 @@ class Storage:
     @classmethod
     def get_instance(cls, db_path):
         """Get or create a Storage singleton for the given database path."""
-        db_path = os.path.abspath(db_path)
+        db_path = str(Path(db_path).resolve())
         with cls._instances_lock:
             if db_path not in cls._instances:
                 cls._instances[db_path] = cls(db_path)
@@ -50,14 +51,11 @@ class Storage:
         self.db_path = db_path
         self._local = threading.local()
         self._pid = os.getpid()
-        parent = os.path.dirname(self.db_path)
-        if parent:
-            try:
-                os.makedirs(parent, exist_ok=True)
-            except OSError as e:
-                raise StorageError(
-                    f"Failed to create cache directory: {e}"
-                ) from e
+        parent = Path(self.db_path).parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise StorageError(f"Failed to create cache directory: {e}") from e
         self._init_db()
 
     def _get_conn(self):

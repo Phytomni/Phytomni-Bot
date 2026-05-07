@@ -409,7 +409,7 @@ def _resolve_db_path(db_path):
 
 def _register_storage_close(db_path: str, storage: Storage) -> None:
     """Register one storage close hook per absolute database path."""
-    db_abs = os.path.abspath(db_path)
+    db_abs = str(Path(db_path).resolve())
     if db_abs in _atexit_registered:
         return
     atexit.register(storage.close)
