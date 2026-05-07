@@ -77,9 +77,7 @@ def test_build_sub_summary_reads_explicit_results_dir(tmp_path):
     assert result.data["tissue_summary"] == (
         "Figure 7 shows mounted tissue expression."
     )
-    assert result.data["tissue_legend"] == (
-        "Figure 7. Mounted tissue legend."
-    )
+    assert result.data["tissue_legend"] == ("Figure 7. Mounted tissue legend.")
     assert not (gene_dir / "GeneA_tissues.summary").exists()
 
 

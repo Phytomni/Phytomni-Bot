@@ -434,7 +434,8 @@ class DeepGenomeAgents(
                         "analyst_summaries", {}
                     ),
                     "synthesize_report": mock_analyst_data.get(
-                        "synthesize_report", "This is a pre-generated synthesis report."
+                        "synthesize_report",
+                        "This is a pre-generated synthesis report.",
                     ),
                     "experiment_completed_branches": 2,
                     "analysis_completed_branches": task_count,

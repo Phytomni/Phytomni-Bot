@@ -36,8 +36,7 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
     )
 
     assert result.startswith(
-        "/obs/phytomni/agent_data/user_data/user-a/output/"
-        "analysis_task_"
+        "/obs/phytomni/agent_data/user_data/user-a/output/" "analysis_task_"
     )
     object_key = analyst_storage.normalize_obs_object_key(
         result,
@@ -58,9 +57,9 @@ def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     )
 
     assert result == "phytomni:/agent_data/tmp_data/submit.json"
-    assert (
-        root / "agent_data" / "tmp_data" / "submit.json"
-    ).read_text(encoding="utf-8") == '{"ok": true}'
+    assert (root / "agent_data" / "tmp_data" / "submit.json").read_text(
+        encoding="utf-8"
+    ) == '{"ok": true}'
 
 
 def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
@@ -76,9 +75,9 @@ def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
     )
 
     assert result == "phytomni:/agent_data/tmp_data/source.json"
-    assert (
-        root / "agent_data" / "tmp_data" / "source.json"
-    ).read_text(encoding="utf-8") == "payload"
+    assert (root / "agent_data" / "tmp_data" / "source.json").read_text(
+        encoding="utf-8"
+    ) == "payload"
 
 
 def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
@@ -119,9 +118,9 @@ def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
     )
 
     assert statuses == ["keep.txt download succeed."]
-    assert (
-        tmp_path / "downloads" / "task-1" / "keep.txt"
-    ).read_text(encoding="utf-8") == "keep"
+    assert (tmp_path / "downloads" / "task-1" / "keep.txt").read_text(
+        encoding="utf-8"
+    ) == "keep"
     assert not (tmp_path / "downloads" / "task-1" / "skip.log").exists()
 
 
@@ -214,6 +213,6 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
     )
 
     assert statuses == ["keep.txt download succeed."]
-    assert (
-        tmp_path / "downloads" / "task-1" / "keep.txt"
-    ).read_text(encoding="utf-8") == "sdk"
+    assert (tmp_path / "downloads" / "task-1" / "keep.txt").read_text(
+        encoding="utf-8"
+    ) == "sdk"

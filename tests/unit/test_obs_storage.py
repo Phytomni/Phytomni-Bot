@@ -66,11 +66,14 @@ def test_obsfs_bucket_root_resolves_bucket_under_mount(tmp_path):
 
 def test_obsfs_path_for_joins_safe_object_key(tmp_path):
     """Verify OBS paths map to local obsfs paths."""
-    assert obsfs_path_for(
-        "obs://phytomni/agent_data/file.txt",
-        "phytomni",
-        tmp_path,
-    ) == tmp_path / "phytomni" / "agent_data" / "file.txt"
+    assert (
+        obsfs_path_for(
+            "obs://phytomni/agent_data/file.txt",
+            "phytomni",
+            tmp_path,
+        )
+        == tmp_path / "phytomni" / "agent_data" / "file.txt"
+    )
 
 
 def test_obsfs_bucket_available_tracks_mount_root(tmp_path):
