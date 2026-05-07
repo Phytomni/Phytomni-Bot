@@ -113,6 +113,20 @@ README-style prose may wrap the same copyright text across lines.
 - Test-only style exceptions, such as pytest function docstrings, must remain
   under `tests/`.
 
+## Dependency Policy
+
+- Do not commit `uv.lock` for this repository.
+- Runtime and development dependency lower bounds live in `pyproject.toml`.
+- Keep dependency specifiers as lower bounds (`>=`) unless a specific package
+  needs a documented upper bound or exact pin for compatibility.
+- CI resolves dependencies from `pyproject.toml` and the configured official
+  PyPI index.
+- When upgrading dependencies, update all affected `project.dependencies`,
+  `[project.optional-dependencies].dev`, and `[dependency-groups].dev` entries.
+- The two dev dependency lists must stay version-aligned.
+- After dependency changes, run the full quality gates and
+  `uv pip check --python .venv/bin/python` before committing.
+
 ## Tests
 
 - Default pytest tests must run offline and without real secrets.

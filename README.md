@@ -477,6 +477,26 @@ Development dependencies include:
 
 CI also installs Node-based `jsonlint` with npm for tracked JSON validation.
 
+### Dependency Policy
+
+This repository does not commit `uv.lock`. The lock file may exist locally, but
+it stays ignored and must not be staged.
+
+CI installs from `pyproject.toml` using the configured official PyPI index.
+Dependency specifiers should stay as lower bounds (`>=`) unless a specific
+package needs a documented compatibility pin. Because CI does not use a
+committed lock file, dependency upgrades must update the relevant lower bounds
+in `pyproject.toml`.
+
+When changing dependencies:
+
+- update `project.dependencies` for runtime packages,
+- keep `[project.optional-dependencies].dev` and `[dependency-groups].dev`
+  version-aligned for development tools,
+- run `uv sync --extra dev --group dev`,
+- run `uv pip check --python .venv/bin/python`,
+- run the full lint, type, test, YAML, and JSON gates before committing.
+
 ## Troubleshooting
 
 ### Missing `.env`
