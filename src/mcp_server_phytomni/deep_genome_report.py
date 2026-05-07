@@ -178,7 +178,9 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             protocol_response = await self._agents.knowledge_agent.arun(
                 user_query=experiment,
                 repo_id_dict={
-                    DEEP_GENOME_CONFIG.PROTOCOL_REPO_ID: DEEP_GENOME_CONFIG.PROTOCOL_PAGE_SIZE
+                    DEEP_GENOME_CONFIG.PROTOCOL_REPO_ID: (
+                        DEEP_GENOME_CONFIG.PROTOCOL_PAGE_SIZE
+                    )
                 },
                 is_generate=True,
                 is_follow_up=False,

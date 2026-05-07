@@ -35,9 +35,10 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
         obsfs_mount_root=str(tmp_path),
     )
 
-    assert result.startswith(
-        "/obs/phytomni/agent_data/user_data/user-a/output/" "analysis_task_"
+    expected_prefix = (
+        "/obs/phytomni/agent_data/user_data/user-a/output/analysis_task_"
     )
+    assert result.startswith(expected_prefix)
     object_key = analyst_storage.normalize_obs_object_key(
         result,
         "phytomni",

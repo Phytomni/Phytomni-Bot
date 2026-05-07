@@ -317,7 +317,7 @@ async def _gene_retrieve_cached(
             for symbol in query_terms
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        merged_docs = []
+        merged_docs: list[dict[str, Any]] = []
         for result in results:
             if isinstance(result, dict):
                 docs = result.get("doc_list", [])
