@@ -36,6 +36,11 @@ from yaml import safe_load
 from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
 from .func_cache import func_cache
+from .obs_storage import (
+    DEFAULT_OBSFS_MOUNT_ROOT,
+    normalize_obs_object_key,
+    obsfs_path_for,
+)
 
 SERVER_CONFIG = ServerConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -60,6 +65,7 @@ class ObsDownloadOptions:
 
     obs_server: str = SERVER_CONFIG.OBS_SERVER
     bucket_name: str = SERVER_CONFIG.BUCKET_NAME
+    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT
     part_size: int = SERVER_CONFIG.PART_SIZE
     task_num: int = SERVER_CONFIG.TASK_NUM
     max_retries: int = SERVER_CONFIG.MAX_RETRIES
@@ -96,6 +102,14 @@ class JsonPostRetry:
     retriable_codes: Iterable[int]
     message: str
     network_message: str = "Network error"
+
+
+@dataclass(frozen=True)
+class ResolvedObsFile:
+    """Local file path plus cleanup behavior for one OBS source file."""
+
+    file_path: str
+    cleanup: bool
 
 
 async def _send_retry_request(
@@ -625,23 +639,8 @@ async def download_obs_file(
         OSError: If the file download fails after all retry attempts.
     """
     context = _obs_transfer_context(server_dir, kwargs)
-    user_name = obs_file.split("/")[-2]
-    server_path = Path(context.server_dir) / user_name / str(uuid1())
-    server_path.mkdir(parents=True, exist_ok=True)
-    server_file = str(server_path / Path(obs_file).name)
-
-    obs_client = ObsClient(
-        access_key_id=context.credentials.access_key_id,
-        secret_access_key=context.credentials.secret_access_key,
-        server=context.download.obs_server,
-    )
-    object_key = _obs_object_key(obs_file, context.download.bucket_name)
-    return await _download_obs_file_with_retry(
-        obs_client,
-        object_key,
-        server_file,
-        context,
-    )
+    resolved_file = await _resolve_obs_file(obs_file, context)
+    return resolved_file.file_path
 
 
 def _obs_transfer_context(
@@ -664,6 +663,10 @@ def _obs_transfer_context(
         download=ObsDownloadOptions(
             obs_server=values.get("obs_server", SERVER_CONFIG.OBS_SERVER),
             bucket_name=values.get("bucket_name", SERVER_CONFIG.BUCKET_NAME),
+            obsfs_mount_root=values.get(
+                "obsfs_mount_root",
+                DEFAULT_OBSFS_MOUNT_ROOT,
+            ),
             part_size=values.get("part_size", SERVER_CONFIG.PART_SIZE),
             task_num=values.get("task_num", SERVER_CONFIG.TASK_NUM),
             max_retries=values.get("max_retries", SERVER_CONFIG.MAX_RETRIES),
@@ -678,16 +681,72 @@ def _obs_transfer_context(
 
 def _obs_object_key(obs_file: str, bucket_name: str) -> str:
     """Normalize accepted OBS path forms to an object key."""
-    object_key = obs_file
-    if object_key.startswith(f"obs://{bucket_name}/"):
-        return object_key[len(f"obs://{bucket_name}/") :]
-    if object_key.startswith(f"/obs/{bucket_name}/"):
-        return object_key[len(f"/obs/{bucket_name}/") :]
-    if object_key.startswith(f"/{bucket_name}/"):
-        return object_key[len(f"/{bucket_name}/") :]
-    if object_key.startswith("/"):
-        return object_key[1:]
-    return object_key
+    return normalize_obs_object_key(obs_file, bucket_name)
+
+
+async def _resolve_obs_file(
+    obs_file: str,
+    context: ObsTransferContext,
+) -> ResolvedObsFile:
+    """Return an obsfs source file or a downloaded temporary file."""
+    obsfs_file = _obsfs_source_file(obs_file, context)
+    if obsfs_file is not None:
+        return ResolvedObsFile(file_path=str(obsfs_file), cleanup=False)
+    return ResolvedObsFile(
+        file_path=await _download_obs_file_from_sdk(obs_file, context),
+        cleanup=True,
+    )
+
+
+def _obsfs_source_file(
+    obs_file: str,
+    context: ObsTransferContext,
+) -> Path | None:
+    """Return a readable obsfs path for a source file when available."""
+    try:
+        source_path = obsfs_path_for(
+            obs_file,
+            context.download.bucket_name,
+            context.download.obsfs_mount_root,
+        )
+        if source_path.is_file():
+            return source_path
+    except OSError:
+        return None
+    return None
+
+
+async def _download_obs_file_from_sdk(
+    obs_file: str,
+    context: ObsTransferContext,
+) -> str:
+    """Download one OBS object to the temporary directory using the SDK."""
+    user_name = _temp_download_group(obs_file)
+    server_path = Path(context.server_dir) / user_name / str(uuid1())
+    server_path.mkdir(parents=True, exist_ok=True)
+    server_file = str(server_path / Path(obs_file).name)
+
+    obs_client = ObsClient(
+        access_key_id=context.credentials.access_key_id,
+        secret_access_key=context.credentials.secret_access_key,
+        server=context.download.obs_server,
+    )
+    object_key = _obs_object_key(obs_file, context.download.bucket_name)
+    return await _download_obs_file_with_retry(
+        obs_client,
+        object_key,
+        server_file,
+        context,
+    )
+
+
+def _temp_download_group(obs_file: str) -> str:
+    """Return a stable temporary subdirectory name for an OBS source path."""
+    object_key = str(obs_file).rstrip("/")
+    parts = [part for part in object_key.split("/") if part]
+    if len(parts) >= 2:
+        return parts[-2]
+    return "uploads"
 
 
 async def _download_obs_file_with_retry(
@@ -781,14 +840,16 @@ async def download_obs_list(
     return await asyncio.gather(*tasks)
 
 
-def convert_single_file(server_file: str) -> str:
+def convert_single_file(server_file: str, cleanup: bool = True) -> str:
     """Convert a single file to Markdown format.
 
     This function uses the `MarkItDown` library to convert a file (e.g., PDF,
-    DOCX) into Markdown text. The original file is deleted after conversion.
+    DOCX) into Markdown text. Temporary SDK downloads are deleted after
+    conversion, while obsfs source files can be preserved.
 
     Args:
         server_file: The local path to the file to be converted.
+        cleanup: Whether to delete the file after conversion.
 
     Returns:
         A string containing the Markdown content of the converted file.
@@ -798,7 +859,8 @@ def convert_single_file(server_file: str) -> str:
     )
     result = md_instance.convert(server_file)
     server_path = Path(server_file)
-    server_path.unlink()
+    if cleanup:
+        server_path.unlink()
     return result.text_content
 
 
@@ -873,14 +935,13 @@ async def _download_and_convert(
     executor: ProcessPoolExecutor,
 ) -> str:
     """Download one OBS file and convert it to Markdown."""
-    server_file = await download_obs_file(
-        obs_file=obs_file,
-        server_dir=context.server_dir,
-        transfer_context=context,
-    )
+    source_file = await _resolve_obs_file(obs_file, context)
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        executor, convert_single_file, server_file
+        executor,
+        convert_single_file,
+        source_file.file_path,
+        source_file.cleanup,
     )
 
 
