@@ -64,6 +64,8 @@ build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 79
+# Keep formatting on the lowest supported syntax target. Running Black on
+# Python 3.12 cannot safely parse py313/py314 target output.
 target-version = ["py312"]
 exclude = '''
 /(
