@@ -22,6 +22,12 @@ from .storage import Storage
 
 logger = logging.getLogger(__name__)
 
+
+def _log_warning(message: str) -> None:
+    """Log a preformatted warning message."""
+    logger.warning(message)
+
+
 _atexit_registered = set()
 _CACHE_MISS = object()
 
@@ -126,7 +132,7 @@ class CacheRuntime:
         try:
             return self.key_builder.build_key(args, kwargs)
         except CacheError as exc:
-            logger.warning("Cache key build failed, falling back: %s", exc)
+            _log_warning(f"Cache key build failed, falling back: {exc}")
             return None
 
     def read_cached(self, cache_key: str):
@@ -134,7 +140,7 @@ class CacheRuntime:
         try:
             cached = self.storage.get(self.key_builder.func_id, cache_key)
         except CacheError as exc:
-            logger.warning("Cache read error, falling back: %s", exc)
+            _log_warning(f"Cache read error, falling back: {exc}")
             return _CACHE_MISS
         return self.deserialize_cached(cache_key, cached)
 
@@ -147,7 +153,7 @@ class CacheRuntime:
                 cache_key,
             )
         except CacheError as exc:
-            logger.warning("Cache read error, falling back: %s", exc)
+            _log_warning(f"Cache read error, falling back: {exc}")
             return _CACHE_MISS
         return await self.deserialize_cached_async(cache_key, cached)
 
@@ -162,7 +168,7 @@ class CacheRuntime:
                 self.options.ttl,
             )
         except CacheError as exc:
-            logger.warning("Cache write failed: %s", exc)
+            _log_warning(f"Cache write failed: {exc}")
 
     async def write_cached_async(self, cache_key: str, result: Any) -> None:
         """Serialize and store an async cache value."""
@@ -176,7 +182,7 @@ class CacheRuntime:
                 self.options.ttl,
             )
         except CacheError as exc:
-            logger.warning("Cache write failed: %s", exc)
+            _log_warning(f"Cache write failed: {exc}")
 
     def compute_locked(
         self,
@@ -249,7 +255,7 @@ class CacheRuntime:
             self.lock_manager.acquire(self.key_builder.func_id, cache_key)
             return True
         except CacheError as exc:
-            logger.warning("Failed to acquire lock, falling back: %s", exc)
+            _log_warning(f"Failed to acquire lock, falling back: {exc}")
             return False
 
     async def acquire_lock_async(self, cache_key: str, owner: str) -> bool:
@@ -263,7 +269,7 @@ class CacheRuntime:
             )
             return True
         except CacheError as exc:
-            logger.warning("Failed to acquire lock, falling back: %s", exc)
+            _log_warning(f"Failed to acquire lock, falling back: {exc}")
             return False
 
     def release_lock(self, cache_key: str) -> None:
@@ -327,10 +333,9 @@ class CacheRuntime:
 
     def _log_corrupted_entry(self, cache_key: str) -> None:
         """Log a corrupted cache entry warning."""
-        logger.warning(
-            "Cache deserialization failed, removing corrupted entry: %s:%s",
-            self.key_builder.func_id,
-            cache_key,
+        _log_warning(
+            "Cache deserialization failed, removing corrupted entry: "
+            f"{self.key_builder.func_id}:{cache_key}",
         )
 
     def cache_clear(self) -> None:
@@ -339,7 +344,7 @@ class CacheRuntime:
             self.storage.delete_func(self.key_builder.func_id)
             self.storage.cleanup_func_locks(self.key_builder.func_id)
         except CacheError as exc:
-            logger.warning("Failed to clear cache: %s", exc)
+            _log_warning(f"Failed to clear cache: {exc}")
 
     def cache_info(self) -> dict[str, int]:
         """Return cache statistics for the decorated function."""
@@ -441,7 +446,7 @@ def _check_and_update_meta(storage, func_id, key_params, compress):
             compress,
         )
     except CacheError as exc:
-        logger.warning("Metadata check failed: %s", exc)
+        _log_warning(f"Metadata check failed: {exc}")
 
 
 def _cache_config_changes(
@@ -467,11 +472,10 @@ def _clear_changed_cache(
     compress,
 ) -> None:
     """Clear cache entries after metadata changes and persist new metadata."""
-    logger.warning(
-        "Detected cache config change for %s: %s, "
+    changes_text = "; ".join(changes)
+    _log_warning(
+        f"Detected cache config change for {func_id}: {changes_text}, "
         "automatically clearing old cache",
-        func_id,
-        "; ".join(changes),
     )
     storage.delete_func(func_id)
     storage.cleanup_func_locks(func_id)
