@@ -8,12 +8,10 @@
 from __future__ import annotations
 
 import shutil
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from traceback import format_exc
 from typing import Any, Dict, Mapping, NamedTuple, Optional
-from uuid import uuid1
 
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
@@ -27,6 +25,7 @@ from .obs_storage import (
     obsfs_bucket_available,
     obsfs_path_for,
 )
+from .path_policy import RunIdentity, task_output_key
 from .utils import file_cache_fingerprint, load_json_file
 
 ANALYST_CONFIG = AnalystConfig()
@@ -433,9 +432,9 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     """Create a unique output directory for analysis tasks in Object Storage
         Service.
 
-    This function generates a timestamped, user-specific directory structure
-    in OBS for storing analysis results. The directory path includes user ID,
-    task type, timestamp, and a unique identifier to prevent conflicts.
+    This function generates a run-scoped, user-specific directory structure
+    in OBS for storing analysis results. The directory path includes the user
+    ID, UTC date, run ID, task type, and output marker.
 
     Args:
         user_id: Unique identifier for the user requesting the analysis.
@@ -453,7 +452,7 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     Returns:
         The full OBS path to the created output directory in the format:
         '/obs/{bucket_name}/agent_data/user_data/'
-        '{user_id}/output/{task}_{timestamp}_{uuid}/'
+        '{user_id}/runs/{date}/{run_id}/{task}/output/'
 
     Raises:
         OSError: If the directory creation fails due to OBS connectivity
@@ -467,7 +466,7 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
             ... )
             >>> print(output_path)
             '/obs/phytomni/agent_data/user_data/'
-            'user123/output/gene_analysis_1640995200_abc123/'
+            'user123/runs/20260507/run-id/gene_analysis/output/'
 
         Custom configuration:
             >>> output_path = create_output_dir(
@@ -477,10 +476,10 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
             ... )
 
     Note:
-        The generated directory path includes a timestamp and UUID to ensure
-        uniqueness across multiple analysis runs. The directory is created
-        as an empty placeholder in OBS and can be used immediately for
-        storing analysis results.
+        The generated directory path includes a run ID to ensure uniqueness
+        across multiple analysis runs. The directory is created as an empty
+        placeholder in OBS and can be used immediately for storing analysis
+        results.
     """
     access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
     secret_access_key = kwargs.get(
@@ -492,10 +491,10 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
         "obsfs_mount_root",
         DEFAULT_OBSFS_MOUNT_ROOT,
     )
-    output_dir = (
-        f"agent_data/user_data/{user_id}/output/"
-        f"{task}_{int(time.time())}_{uuid1()}/"
-    )
+    run_identity = kwargs.get("run_identity")
+    if not isinstance(run_identity, RunIdentity):
+        run_identity = RunIdentity.create(user_id=user_id, scope=task)
+    output_dir = task_output_key(run_identity, task)
     try:
         _create_output_dir_obsfs(
             output_dir,

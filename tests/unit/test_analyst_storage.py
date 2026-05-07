@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni import analyst_storage
+from mcp_server_phytomni.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
 
@@ -27,18 +28,25 @@ def _obsfs_root(tmp_path: Path) -> Path:
 def test_create_output_dir_prefers_obsfs(tmp_path):
     """Verify output directories are created through obsfs first."""
     root = _obsfs_root(tmp_path)
+    run_identity = RunIdentity.create(
+        "user-a",
+        "analysis_task",
+        IdFactory(token_factory=lambda _: "abc12345"),
+    )
 
     result = analyst_storage.create_output_dir(
         "user-a",
         "analysis_task",
         bucket_name="phytomni",
         obsfs_mount_root=str(tmp_path),
+        run_identity=run_identity,
     )
 
-    expected_prefix = (
-        "/obs/phytomni/agent_data/user_data/user-a/output/analysis_task_"
+    assert result == (
+        f"/obs/phytomni/agent_data/user_data/user-a/runs/"
+        f"{run_identity.date_stamp}/{run_identity.run_id}/"
+        "analysis_task/output/"
     )
-    assert result.startswith(expected_prefix)
     object_key = analyst_storage.normalize_obs_object_key(
         result,
         "phytomni",
