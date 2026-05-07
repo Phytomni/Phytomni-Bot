@@ -165,7 +165,13 @@ def upload_analyst_agents_content(
     """Upload generated analyst metadata content to OBS storage."""
     access = _obs_access_from_values(kwargs)
     obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
-    object_key = f"agent_data/tmp_data/{object_name}"
+    object_key = kwargs.get("object_key")
+    if object_key is None:
+        object_key = f"agent_data/tmp_data/{object_name}"
+    else:
+        object_key = normalize_obs_object_key(
+            str(object_key), access.bucket_name
+        )
     try:
         return _upload_content_obsfs(
             content,
@@ -512,6 +518,28 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
                 bucket_name,
             ),
         )
+
+
+def ensure_run_output_dir(
+    config: Any,
+    sensitive_config: Any,
+    task: str,
+    run_identity: RunIdentity,
+    output_dir: str | None = None,
+) -> str:
+    """Return an existing output dir or create one under a run identity."""
+    if output_dir:
+        return output_dir
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    return create_output_dir(
+        user_id=run_identity.user_id,
+        task=task,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=config.OBS_SERVER,
+        bucket_name=config.BUCKET_NAME,
+        run_identity=run_identity,
+    )
 
 
 def _create_output_dir_obsfs(

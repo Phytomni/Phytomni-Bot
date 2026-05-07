@@ -10,17 +10,21 @@ from __future__ import annotations
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
-from uuid import uuid1
 
 import requests
 from langgraph.graph import END
 from langgraph.types import Send
 
-from .analyst_storage import create_output_dir, download_obs_out, get_data_list
+from .analyst_storage import (
+    download_obs_out,
+    ensure_run_output_dir,
+    get_data_list,
+)
 from .deep_genome_formatting import SPECIES_CODE_MAP
 from .deep_genome_summary import build_sub_summary
 from .langgraph_runner import capture_workflow_boundary
 from .obs_storage import normalize_obs_object_key, obsfs_path_for
+from .path_policy import RunIdentity
 from .utils import get_prompt
 from .workflow_mixins import WorkflowMixinBase
 
@@ -624,9 +628,14 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         Returns:
             Dict containing task_id and output_path.
         """
+        run_identity = RunIdentity.create(
+            user_id=self.deep_genome_config.USER_ID,
+            scope=analysis_type,
+        )
         resolved_output_dir: str = self._ensure_analysis_output_dir(
             analysis_type,
             output_dir,
+            run_identity,
         )
         context = AnalysisDispatchContext(
             analysis_type=analysis_type,
@@ -636,7 +645,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         print(f"  -> Submitting {analysis_type} task via AnalystAgent...")
 
-        result = await self._submit_analysis_task(context)
+        result = await self._submit_analysis_task(context, run_identity)
         self._raise_if_agent_failed(result)
 
         task_id = result.get("task_id")
@@ -683,25 +692,21 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         self: Any,
         analysis_type: str,
         output_dir: Optional[str],
+        run_identity: RunIdentity,
     ) -> str:
         """Return an existing or newly created analysis output directory."""
-        if output_dir:
-            return output_dir
-        access_key_id, secret_access_key = (
-            self.sensitive_config.obs_credentials()
-        )
-        return create_output_dir(
-            user_id=self.deep_genome_config.USER_ID or str(uuid1()),
-            task=f"{analysis_type}_task",
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=self.deep_genome_config.OBS_SERVER,
-            bucket_name=self.deep_genome_config.BUCKET_NAME,
+        return ensure_run_output_dir(
+            self.deep_genome_config,
+            self.sensitive_config,
+            f"{analysis_type}_task",
+            run_identity,
+            output_dir,
         )
 
     async def _submit_analysis_task(
         self: Any,
         context: AnalysisDispatchContext,
+        run_identity: RunIdentity,
     ) -> dict:
         """Submit one resolved analysis task to AnalystAgent."""
         goal_description, data_list, meta, compute_resource = (
@@ -716,7 +721,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             compute_resource=compute_resource,
             is_auto_select=False,
             is_polling=True,
-            thread_id=(f"{context.gene_id}_{context.analysis_type}_{uuid1()}"),
+            thread_id=run_identity.scoped_id(
+                "thread",
+                context.gene_id,
+                context.analysis_type,
+            ),
         )
 
     @staticmethod

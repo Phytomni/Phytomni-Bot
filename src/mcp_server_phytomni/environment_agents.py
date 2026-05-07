@@ -7,7 +7,6 @@
 
 import re
 from typing import Any
-from uuid import uuid1
 
 from .agent_option_helpers import (
     SubmitKwargsSpec,
@@ -18,6 +17,7 @@ from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
+from .path_policy import RunIdentity
 from .utils import get_prompt, load_text_file
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()
@@ -78,8 +78,12 @@ def _environment_output_dir(
     user_id: str | None, kwargs: dict[str, Any]
 ) -> str:
     """Create the output directory for a non-batch VCI task."""
+    run_identity = RunIdentity.create(
+        user_id=user_id,
+        scope="vci_analysis_task",
+    )
     return create_output_dir(
-        user_id or str(uuid1()),
+        run_identity.user_id,
         "vci_analysis_task",
         access_key_id=kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
         secret_access_key=kwargs.get(
@@ -87,6 +91,7 @@ def _environment_output_dir(
         ),
         obs_server=kwargs.get("obs_server", ENVIRONMENT_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", ENVIRONMENT_CONFIG.BUCKET_NAME),
+        run_identity=run_identity,
     )
 
 

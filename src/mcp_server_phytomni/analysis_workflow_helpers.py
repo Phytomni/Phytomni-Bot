@@ -6,7 +6,6 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid1
 
 from langgraph.types import Send
 
@@ -21,6 +20,7 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .langgraph_runner import ainvoke_graph, capture_workflow_boundary
+from .path_policy import RunIdentity
 
 
 @dataclass(frozen=True)
@@ -61,18 +61,24 @@ def ensure_analysis_output_dir(
     sensitive_config: Any,
     analysis_type: str,
     output_dir: str | None,
+    run_identity: RunIdentity | None = None,
 ) -> str:
     """Return an existing or newly created analysis output directory."""
     if output_dir:
         return output_dir
+    identity = run_identity or RunIdentity.create(
+        user_id=config.USER_ID,
+        scope=analysis_type,
+    )
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
     return create_output_dir(
-        user_id=config.USER_ID or str(uuid1()),
+        user_id=identity.user_id,
         task=f"{analysis_type}_task",
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
         obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
+        run_identity=identity,
     )
 
 
@@ -85,11 +91,16 @@ async def submit_analyst_analysis(
     """Submit one prepared analysis task through AnalystAgent."""
     analysis_type = str(request["analysis_type"])
     target_id = str(request["target_id"])
+    run_identity = RunIdentity.create(
+        user_id=config.USER_ID,
+        scope=analysis_type,
+    )
     output_dir = ensure_analysis_output_dir(
         config,
         sensitive_config,
         analysis_type,
         request.get("output_dir"),
+        run_identity,
     )
     goal_description, meta, data_list = request["prompt_parts"]
     print(f"  → Submitting {analysis_type} task via AnalystAgent...")
@@ -102,7 +113,11 @@ async def submit_analyst_analysis(
         compute_resource=request["compute_resource"],
         is_auto_select=False,
         is_polling=False,
-        thread_id=f"{target_id}_{analysis_type}_{uuid1()}",
+        thread_id=run_identity.scoped_id(
+            "thread",
+            target_id,
+            analysis_type,
+        ),
     )
     print(
         f"=>{analysis_type} task completed "

@@ -7,7 +7,6 @@
 
 from json import loads
 from typing import Any, Dict, List
-from uuid import uuid1
 
 import requests
 
@@ -20,6 +19,7 @@ from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
+from .path_policy import RunIdentity
 from .utils import get_prompt, get_token
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
@@ -117,8 +117,12 @@ async def _target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
 
 def _evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
     """Create the output directory for a non-batch evolution task."""
+    run_identity = RunIdentity.create(
+        user_id=user_id,
+        scope="evolution_agents_task",
+    )
     return create_output_dir(
-        user_id=user_id or str(uuid1()),
+        user_id=run_identity.user_id,
         task="evolution_agents_task",
         access_key_id=kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
         secret_access_key=kwargs.get(
@@ -126,6 +130,7 @@ def _evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
         ),
         obs_server=kwargs.get("obs_server", DEEP_GENOME_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", DEEP_GENOME_CONFIG.BUCKET_NAME),
+        run_identity=run_identity,
     )
 
 

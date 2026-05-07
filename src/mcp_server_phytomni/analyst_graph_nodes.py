@@ -11,7 +11,6 @@ import datetime
 import json
 import re
 from typing import TYPE_CHECKING, Any, Dict
-from uuid import uuid1
 
 from httpx import (
     AsyncClient,
@@ -20,9 +19,13 @@ from httpx import (
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from .analyst_storage import create_output_dir, upload_analyst_agents_content
+from .analyst_storage import (
+    ensure_run_output_dir,
+    upload_analyst_agents_content,
+)
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
+from .path_policy import RunIdentity, task_tmp_key
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
@@ -611,8 +614,13 @@ class AnalystGraphMixin(WorkflowMixinBase):
         Raises:
             McpError: If task submission fails after all retries.
         """
-        output_dir = self._submit_output_dir(state)
-        obs_meta_path = self._upload_submit_meta(state, output_dir)
+        run_identity = self._submit_run_identity()
+        output_dir = self._submit_output_dir(state, run_identity)
+        obs_meta_path = self._upload_submit_meta(
+            state,
+            output_dir,
+            run_identity,
+        )
         job_headers = await self._submit_headers()
         job_name, job_data = self._submit_job_data(
             state,
@@ -625,36 +633,49 @@ class AnalystGraphMixin(WorkflowMixinBase):
             output_dir,
         )
 
-    def _submit_output_dir(self: Any, state: AnalystAgentsState) -> str:
+    def _submit_run_identity(self: Any) -> RunIdentity:
+        """Return the shared run identity for one submit request."""
+        return RunIdentity.create(
+            user_id=self.analyst_config.USER_ID,
+            scope="analysis_agents_task",
+        )
+
+    def _submit_output_dir(
+        self: Any,
+        state: AnalystAgentsState,
+        run_identity: RunIdentity,
+    ) -> str:
         """Return an existing or newly created submit output directory."""
         output_dir = str(state.get("output_dir") or "")
         if not self.analyst_config.CREATE_DIR:
             return output_dir
-        access_key_id, secret_access_key = (
-            self.sensitive_config.obs_credentials()
-        )
-        return create_output_dir(
-            user_id=self.analyst_config.USER_ID or str(uuid1()),
-            task="analysis_agents_task",
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
-            obs_server=self.analyst_config.OBS_SERVER,
-            bucket_name=self.analyst_config.BUCKET_NAME,
+        return ensure_run_output_dir(
+            self.analyst_config,
+            self.sensitive_config,
+            "analysis_agents_task",
+            run_identity,
+            output_dir,
         )
 
     def _upload_submit_meta(
         self: Any,
         state: AnalystAgentsState,
         output_dir: str,
+        run_identity: RunIdentity,
     ) -> str:
         """Upload submit metadata content to OBS storage."""
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
-        object_name = f"{uuid1()}.json"
+        object_name = "submit.json"
         return upload_analyst_agents_content(
             content=json.dumps(self._submit_payload(state, output_dir)),
             object_name=object_name,
+            object_key=task_tmp_key(
+                run_identity,
+                "analysis_agents_task",
+                object_name,
+            ),
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=self.analyst_config.OBS_SERVER,

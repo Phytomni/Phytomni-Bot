@@ -13,7 +13,6 @@ LangGraph's parallel execution capabilities.
 from dataclasses import dataclass
 from json import loads
 from typing import Any, Dict, List, Optional, TypedDict
-from uuid import uuid1
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -39,6 +38,7 @@ from .langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from .path_policy import RunIdentity
 from .utils import download_upload_context, get_prompt
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
@@ -54,6 +54,7 @@ class ResearchTaskContext:
     data_list: Dict[str, str]
     output_dir: str
     task_name: str
+    thread_id: str
 
 
 class InSilicoResearchState(TypedDict):
@@ -88,6 +89,7 @@ class InSilicoResearchState(TypedDict):
     goal_description: str
     context: str
     task_name: str
+    thread_id: str
     task_index: Optional[int]  # Current task index
     task_ids: Dict[str, str]  # Mapping of task names to task IDs
     completed_count: int  # Counter for completed tasks
@@ -268,7 +270,7 @@ class InSilicoResearchAgents:
             compute_resource="medium",
             is_auto_select=False,
             is_polling=False,
-            thread_id=f"{task.task_name}_{uuid1()}",
+            thread_id=task.thread_id,
         )
 
         if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
@@ -323,16 +325,21 @@ class InSilicoResearchAgents:
             completed_count.
         """
         goals = state.get("goals", [])
+        run_identity = RunIdentity.create(
+            user_id=state.get("user_id"),
+            scope="in_silico_research_task",
+        )
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
         output_dir = state.get("output_dir") or create_output_dir(
-            user_id=state.get("user_id") or str(uuid1()),
+            user_id=run_identity.user_id,
             task="in_silico_research_task",
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=self.in_silico_config.OBS_SERVER,
             bucket_name=self.in_silico_config.BUCKET_NAME,
+            run_identity=run_identity,
         )
 
         tasks = [
@@ -340,6 +347,7 @@ class InSilicoResearchAgents:
                 "goal_description": goal["goal"],
                 "context": goal["context"],
                 "task_name": f"research_goal_{i}",
+                "thread_id": run_identity.scoped_id("thread", i),
             }
             for i, goal in enumerate(goals)
         ]
@@ -367,6 +375,7 @@ class InSilicoResearchAgents:
         context = state["context"]
         task_name = state["task_name"]
         data_list = state.get("data_list", {})
+        thread_id = state.get("thread_id", task_name)
         output_dir = state.get("output_dir")
         if output_dir is None:
             raise ValueError("output_dir is required for research tasks")
@@ -382,6 +391,7 @@ class InSilicoResearchAgents:
                     data_list=data_list,
                     output_dir=output_dir,
                     task_name=task_name,
+                    thread_id=thread_id,
                 )
             )
             existing_task_ids: Dict[str, str] = state.get("task_ids", {})

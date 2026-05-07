@@ -71,6 +71,26 @@ def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     ) == '{"ok": true}'
 
 
+def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
+    """Verify generated metadata can be written under a run-scoped key."""
+    root = _obsfs_root(tmp_path)
+    object_key = (
+        "agent_data/user_data/user-a/runs/20260507/run-1/"
+        "analysis_agents_task/tmp/submit.json"
+    )
+
+    result = analyst_storage.upload_analyst_agents_content(
+        '{"ok": true}',
+        "submit.json",
+        object_key=object_key,
+        bucket_name="phytomni",
+        obsfs_mount_root=str(tmp_path),
+    )
+
+    assert result == f"phytomni:/{object_key}"
+    assert (root / object_key).read_text(encoding="utf-8") == '{"ok": true}'
+
+
 def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
     """Verify local metadata files are copied through obsfs."""
     root = _obsfs_root(tmp_path)
