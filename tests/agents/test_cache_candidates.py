@@ -279,6 +279,14 @@ async def test_gene_retrieve_uses_agent_context_cache():
     )
 
     assert first == second
+    assert first["doc_list"] == [
+        {
+            "chunk_id": "NAC001",
+            "title": "NAC001",
+            "content": "gene content",
+            "score": 0.7,
+        }
+    ]
     assert calls["arun"] == 1
 
 

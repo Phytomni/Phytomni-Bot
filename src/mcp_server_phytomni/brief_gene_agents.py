@@ -319,8 +319,13 @@ async def _gene_retrieve_cached(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         merged_docs = []
         for result in results:
-            if isinstance(result, list):
-                merged_docs.extend(result)
+            if isinstance(result, dict):
+                docs = result.get("doc_list", [])
+            elif isinstance(result, list):
+                docs = result
+            else:
+                continue
+            merged_docs.extend(doc for doc in docs if isinstance(doc, dict))
         sorted_docs = sorted(
             merged_docs, key=lambda item: item.get("score", 0), reverse=True
         )
