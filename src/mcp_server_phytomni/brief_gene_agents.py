@@ -318,19 +318,9 @@ async def _gene_retrieve_cached(
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         merged_docs = []
-        seen = set()
         for result in results:
-            if not isinstance(result, dict):
-                continue
-            for doc in result.get("doc_list", []):
-                doc_key = doc.get("chunk_id") or (
-                    doc.get("title"),
-                    doc.get("content"),
-                )
-                if doc_key in seen:
-                    continue
-                seen.add(doc_key)
-                merged_docs.append(doc)
+            if isinstance(result, list):
+                merged_docs.extend(result)
         sorted_docs = sorted(
             merged_docs, key=lambda item: item.get("score", 0), reverse=True
         )

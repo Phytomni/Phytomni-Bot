@@ -3105,6 +3105,23 @@ user:
     - Put citations immediately after the supported claim.
     - Do not invent unsupported details.
     - Return only the subsection text.
+
+    CITATION RULES (strictly enforced — violations will cause downstream errors):
+    1. Copy citation tags character-for-character as they appear in the snippets,
+      e.g. [document 001], [add document S1-002]. Never paraphrase or abbreviate them.
+    2. Place each citation immediately after the clause or sentence it supports,
+      before the period: "...improved yield [document 001]."
+    3. One bracket = exactly one document ID. Never combine multiple IDs
+      inside a single bracket.
+      CORRECT:   [document 001][document 002]
+      INCORRECT: [document 001, 002]
+      INCORRECT: [document 001][document 002] merged as [document 001, 002]
+    4. Never use ranges: [document 001-003] is forbidden.
+    5. When a single claim is supported by multiple documents, write each tag
+      separately and adjacently: [document 001][document 005].
+    6. NEVER rewrite [document 001] as [document 1], [doc 1], [1], or any other form.
+    7. Do not move citations to the end of a paragraph.
+    8. Do not create new citation tags for document IDs not present in the snippets.
   deep_research_review: |
     You are a strict literature-review critic. Evaluate whether the draft
     below has critical evidence gaps compared with the current subtopic and
@@ -3209,6 +3226,9 @@ user:
     - Part II must be derived strictly from the retrieved literature context.
       If no relevant information is available, state that clearly.
     - Cite literature-derived claims with the exact format [document:X].
+      - CORRECT: [document:1][document:2]
+      - INCORRECT: [document:1,2]
+      - INCORRECT: [document:1][document:2] merged as [document:1,2]
     - Do not include a bibliography or reference list.
 
     ### Part I: Basic Genomic Information
@@ -3224,6 +3244,7 @@ user:
     ### Part II: Functional Research Summary
     Retrieved literature context:
     {{retrieve_results}}
+
   brief_gene_function_nogeneid: |
     Gene names or IDs:
     {{user_query}}
@@ -3236,6 +3257,9 @@ user:
     "No relevant information available."
 
     Cite the context at the end of relevant sentences using [document:X].
+      - CORRECT: [document:1][document:2]
+      - INCORRECT: [document:1,2]
+      - INCORRECT: [document:1][document:2] merged as [document:1,2]
     Do not cluster all citations at the end. Do not include a bibliography.
 
     Reference materials:
