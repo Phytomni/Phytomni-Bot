@@ -21,8 +21,8 @@ The package lives under `src/mcp_server_phytomni`. The main MCP entrypoint is
   a non-secret agent registry where safe.
 - `func_cache` provides a tested SQLite-backed sync/async cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
-- CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, and
-  default offline `pytest`.
+- CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
+  offline `pytest`, `yamllint`, and `jsonlint`.
 
 ## Available MCP Tools
 
@@ -55,6 +55,7 @@ src/mcp_server_phytomni/
     defaults.py              Non-secret defaults and agent config classes
     settings.py              Environment and secret loading
     overrides.py             Wrapper argument to config override helpers
+    .prompts.yaml            Prompt templates
     species_data_list.json   Species metadata
     region_map.json          Region metadata
   func_cache/                SQLite-backed function cache package
@@ -386,6 +387,10 @@ uv run pytest \
   --cov=mcp_server_phytomni \
   --cov-report=term-missing \
   --cov-report=xml
+uv run yamllint .
+git ls-files '*.json' | while IFS= read -r file; do
+  jsonlint "$file" --quiet
+done
 ```
 
 In restricted local sandboxes, `uv run --no-sync ...` can be used to reuse an
@@ -394,6 +399,25 @@ or access a read-only uv cache.
 
 Pylint now runs without global rule disables. Local Pylint waivers are guarded
 by the style tests and are reserved for documented framework boundaries.
+
+### Config Normalization
+
+Prompt YAML and static JSON metadata are kept in deterministic, lint-friendly
+formats. Normalize prompt YAML after editing nested prompt content:
+
+```bash
+python scripts/normalize_yaml.py sort \
+  src/mcp_server_phytomni/config/.prompts.yaml
+```
+
+Normalize all config JSON files, or pass explicit JSON paths:
+
+```bash
+python scripts/normalize_json.py
+python scripts/normalize_json.py \
+  src/mcp_server_phytomni/config/species_data_list.json \
+  src/mcp_server_phytomni/config/region_map.json
+```
 
 ### CI
 
@@ -406,6 +430,8 @@ by the style tests and are reserved for documented framework boundaries.
 - `pyright src`
 - `pylint --persistent=no $(git ls-files '*.py')`
 - `pytest --cov=mcp_server_phytomni`
+- `yamllint .`
+- `jsonlint "$file" --quiet` for every tracked JSON file
 
 ## Repository Hygiene
 
@@ -447,6 +473,9 @@ Development dependencies include:
 - `pytest`
 - `pytest-asyncio`
 - `pytest-cov`
+- `yamllint`
+
+CI also installs Node-based `jsonlint` with npm for tracked JSON validation.
 
 ## Troubleshooting
 
@@ -479,8 +508,9 @@ This project is licensed under the terms specified in [LICENSE](LICENSE).
 ## Authors
 
 - Shang Xie <xieshang0608@gmail.com>
-- Xiaofeng Gu <guxiaofeng@caas.cn>
 - Yichao Mao <maoyc_0316@163.com>
+- Hu Li <lihu0628@qq.com>
+- Xiaofeng Gu <guxiaofeng@caas.cn>
 
 Copyright (c) Biotechnology Research Institute, Chinese Academy of
 Agricultural Sciences. 2024-2026. All rights reserved.
