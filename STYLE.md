@@ -89,7 +89,8 @@ README-style prose may wrap the same copyright text across lines.
 
 ## Formatting
 
-- Use Python 3.12 syntax.
+- Use Python 3.12-compatible syntax. Do not use Python 3.13/3.14-only
+  syntax while 3.12 remains supported.
 - Keep the configured line length at 79.
 - Let `black`, `ruff`, `flake8`, `mypy`, `pyright`, and `pylint` define the
   automated baseline.

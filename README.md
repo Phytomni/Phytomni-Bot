@@ -1,7 +1,7 @@
 # Phytomni-Bot
 
-Phytomni-Bot is a Python 3.12 Model Context Protocol (MCP) server for
-plant science research. It exposes a set of domain-specific tools for chat,
+Phytomni-Bot is a Python 3.12-3.14 Model Context Protocol (MCP) server
+for plant science research. It exposes a set of domain-specific tools for chat,
 literature retrieval, natural-language SQL, bioinformatics workflow
 orchestration, review generation, gene function analysis, in-silico research
 decomposition, gene networks, and digital design.
@@ -159,7 +159,7 @@ submissions, uploads, downloads, or polling results.
 
 ### Requirements
 
-- Python `>=3.12`
+- Python `>=3.12,<3.15`
 - Linux is the primary supported runtime environment.
 - `uv` is recommended for local development.
 
@@ -171,6 +171,9 @@ source .venv/bin/activate
 uv pip install -e .
 uv pip install -e ".[dev]"
 ```
+
+Python 3.12 remains the default local example, while Python 3.13 and 3.14
+are also supported and covered by CI compatibility checks.
 
 The project also keeps `dependency-groups.dev` for uv-oriented workflows, but
 the CI and standard editable install path use `[project.optional-dependencies]`
