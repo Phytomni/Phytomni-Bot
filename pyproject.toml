@@ -60,6 +60,15 @@ build-backend = "hatchling.build"
 [tool.black]
 line-length = 79
 target-version = ["py312"]
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.ruff_cache
+  | \.venv
+)/
+'''
 
 [tool.ruff]
 line-length = 79

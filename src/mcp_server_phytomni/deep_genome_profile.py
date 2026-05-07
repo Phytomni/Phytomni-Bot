@@ -60,13 +60,7 @@ async def _cached_gene_symbol_lookup(
         "SELECT * FROM id_table WHERE gene_id = "
         f"'{gene_id}' AND species_code = '{species_code}'"
     )
-    response = await asyncio.to_thread(
-        _post_bi_sql,
-        bi_url,
-        sql_headers,
-        sql,
-        timeout,
-    )
+    response = _post_bi_sql(bi_url, sql_headers, sql, timeout)
     gene_symbol_list: List[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
@@ -109,12 +103,9 @@ async def _cached_gene_annotation_lookup(
         f"WHERE gene_id = '{gene_id}' "
         f"AND species_code = '{species_code}'",
     )
-    responses = await asyncio.gather(
-        *(
-            asyncio.to_thread(_post_bi_sql, bi_url, sql_headers, sql, timeout)
-            for sql in sql_list
-        )
-    )
+    responses = [
+        _post_bi_sql(bi_url, sql_headers, sql, timeout) for sql in sql_list
+    ]
     gene_anno_dict: Dict[str, Any] = {}
     if responses[0]["data"]:
         gene_anno_dict.update({"description": responses[0]["data"]})

@@ -28,7 +28,7 @@ def _log_warning(message: str) -> None:
     logger.warning(message)
 
 
-_atexit_registered = set()
+_atexit_registered: set[str] = set()
 _CACHE_MISS = object()
 
 DEFAULT_CACHE_DB_ENV = "PHYTOMNI_CACHE_DB"
@@ -80,8 +80,8 @@ class CacheRuntime:
         """Initialize cache storage, key builder, and lock manager."""
         self.func = func
         self.options = options
-        self.db_path = _resolve_db_path(options.db_path)
-        self.storage = Storage.get_instance(self.db_path)
+        db_path = _resolve_db_path(options.db_path)
+        self.storage = Storage.get_instance(db_path)
         self.key_builder = KeyBuilder(
             func,
             key_params=options.key_params,
@@ -93,7 +93,8 @@ class CacheRuntime:
             options.lock_expire,
         )
         self.stats = CacheStats()
-        _register_storage_close(self.db_path, self.storage)
+        self._async_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        _register_storage_close(db_path, self.storage)
         _check_and_update_meta(
             self.storage,
             self.key_builder.func_id,
@@ -147,11 +148,7 @@ class CacheRuntime:
     async def read_cached_async(self, cache_key: str):
         """Return cached async value or a miss sentinel."""
         try:
-            cached = await asyncio.to_thread(
-                self.storage.get,
-                self.key_builder.func_id,
-                cache_key,
-            )
+            cached = self.storage.get(self.key_builder.func_id, cache_key)
         except CacheError as exc:
             _log_warning(f"Cache read error, falling back: {exc}")
             return _CACHE_MISS
@@ -174,8 +171,7 @@ class CacheRuntime:
         """Serialize and store an async cache value."""
         try:
             value = dumps(result, self.options.compress)
-            await asyncio.to_thread(
-                self.storage.set,
+            self.storage.set(
                 self.key_builder.func_id,
                 cache_key,
                 value,
@@ -206,14 +202,28 @@ class CacheRuntime:
         kwargs: dict[str, Any],
     ):
         """Compute an async cache miss under a database lock."""
-        owner = self.lock_manager.owner(f"async:{id(asyncio.current_task())}")
-        if not await self.acquire_lock_async(cache_key, owner):
-            self.stats.misses += 1
-            return await self.func(*args, **kwargs)
-        try:
-            return await self.compute_after_lock_async(cache_key, args, kwargs)
-        finally:
-            await self.release_lock_async(cache_key, owner)
+        async with self.async_lock_for_key(cache_key):
+            owner = self.lock_manager.owner(
+                f"async:{id(asyncio.current_task())}"
+            )
+            if not await self.acquire_lock_async(cache_key, owner):
+                self.stats.misses += 1
+                return await self.func(*args, **kwargs)
+            try:
+                return await self.compute_after_lock_async(
+                    cache_key, args, kwargs
+                )
+            finally:
+                await self.release_lock_async(cache_key, owner)
+
+    def async_lock_for_key(self, cache_key: str) -> asyncio.Lock:
+        """Return the event-loop-local lock for one async cache key."""
+        loop_key = (id(asyncio.get_running_loop()), cache_key)
+        lock = self._async_locks.get(loop_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._async_locks[loop_key] = lock
+        return lock
 
     def compute_after_lock(
         self,
@@ -261,11 +271,8 @@ class CacheRuntime:
     async def acquire_lock_async(self, cache_key: str, owner: str) -> bool:
         """Acquire an async lock, returning False on cache lock failures."""
         try:
-            await asyncio.to_thread(
-                self.lock_manager.acquire,
-                self.key_builder.func_id,
-                cache_key,
-                owner,
+            self.lock_manager.acquire(
+                self.key_builder.func_id, cache_key, owner
             )
             return True
         except CacheError as exc:
@@ -282,11 +289,8 @@ class CacheRuntime:
     async def release_lock_async(self, cache_key: str, owner: str) -> None:
         """Release an async lock, ignoring cleanup failures."""
         try:
-            await asyncio.to_thread(
-                self.lock_manager.release,
-                self.key_builder.func_id,
-                cache_key,
-                owner,
+            self.lock_manager.release(
+                self.key_builder.func_id, cache_key, owner
             )
         except CacheError:
             pass
@@ -321,13 +325,9 @@ class CacheRuntime:
             pass
 
     async def _delete_corrupted_async(self, cache_key: str) -> None:
-        """Delete one corrupted cache entry without blocking the loop."""
+        """Delete one corrupted cache entry, ignoring storage failures."""
         try:
-            await asyncio.to_thread(
-                self.storage.delete_entry,
-                self.key_builder.func_id,
-                cache_key,
-            )
+            self.storage.delete_entry(self.key_builder.func_id, cache_key)
         except CacheError:
             pass
 
