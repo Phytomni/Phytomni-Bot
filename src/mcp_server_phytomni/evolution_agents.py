@@ -56,9 +56,9 @@ def _evolution_submit_kwargs(
 
 async def _find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
     """Return taxonomy ids for a target species name."""
-    repo_id = "4a533117-9416-4e8b-b7cc-27b448a90095"
-    endpoint = "http://1.95.74.240:8000"
-    url = f"{endpoint}/v1/koosearch/repos/{repo_id}/faqs"
+    url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
+        repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
+    )
     headers = {
         "X-Auth-Token": await get_token(),
         "Content-Type": "application/json",

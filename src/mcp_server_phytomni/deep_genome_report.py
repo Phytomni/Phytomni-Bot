@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .chat_agents import phyto_chat
+from .config.defaults import DeepGenomeConfig
 from .deep_genome_formatting import SPECIES_CODE_MAP
 from .utils import (
     get_prompt,
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from .deep_genome_agents import DeepGenomeState
 else:
     DeepGenomeState = dict[str, Any]
+
+DEEP_GENOME_CONFIG = DeepGenomeConfig()
 
 
 def _state_gene_string(state: "DeepGenomeState") -> str:
@@ -174,7 +177,9 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         for index, experiment in enumerate(experiments):
             protocol_response = await self._agents.knowledge_agent.arun(
                 user_query=experiment,
-                repo_id_dict={"44ad28b5-5c3b-4a02-8e8c-7fb4903424cb": 128},
+                repo_id_dict={
+                    DEEP_GENOME_CONFIG.PROTOCOL_REPO_ID: DEEP_GENOME_CONFIG.PROTOCOL_PAGE_SIZE
+                },
                 is_generate=True,
                 is_follow_up=False,
             )

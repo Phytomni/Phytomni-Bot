@@ -308,6 +308,9 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     BATCH: bool = True
     EPIC_TYPE: str = "6mA"
     PROTOCOL_REPO_ID: str = "44ad28b5-5c3b-4a02-8e8c-7fb4903424cb"
+    PROTOCOL_PAGE_SIZE: int = 128
+    SPA_REPO_ID: str = "4a533117-9416-4e8b-b7cc-27b448a90095"
+    SPA_FAQ_URL: str = "http://1.95.74.240:8000/v1/koosearch/repos/{repo_id}/faqs"
 
 
 class DigitalDesignConfig(AnalystConfig):
