@@ -32,6 +32,9 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
         "broad-exception-caught",
     },
 }
+ALLOWED_UUID4_CALLERS = {
+    "src/mcp_server_phytomni/task_manager.py",
+}
 
 
 def test_python_file_names_follow_snake_case():
@@ -195,5 +198,36 @@ def test_local_pylint_disables_are_langgraph_boundary_only():
                 }
                 if disabled_rules - allowed_rules:
                     violations.append(f"{relative_path}:{line_number}")
+
+    assert not violations
+
+
+def test_runtime_ids_do_not_use_direct_uuid_generation():
+    """Verify runtime paths and threads use path_policy instead of UUIDs."""
+    root = Path(__file__).resolve().parents[2]
+    direct_uuid4_pattern = re.compile(r"(?<![.\w])uuid4\(")
+    violations = []
+
+    for path in (root / "src").rglob("*.py"):
+        relative_path = path.relative_to(root).as_posix()
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if "uuid1(" in line or "from uuid import uuid1" in line:
+                violations.append(f"{relative_path}:{line_number}: uuid1")
+            if (
+                "uuid.uuid4(" in line
+                and relative_path not in ALLOWED_UUID4_CALLERS
+            ):
+                violations.append(f"{relative_path}:{line_number}: uuid4")
+            if "from uuid import uuid4" in line:
+                violations.append(
+                    f"{relative_path}:{line_number}: uuid4 import"
+                )
+            if direct_uuid4_pattern.search(line):
+                violations.append(
+                    f"{relative_path}:{line_number}: direct uuid4"
+                )
 
     assert not violations

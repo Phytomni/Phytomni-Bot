@@ -28,6 +28,24 @@ planned and tested.
 - Keep request and response schemas JSON-schema friendly.
 - Internal state keys may be renamed only with focused tests around the owning
   agent workflow.
+- Preserve caller-provided IDs and explicit `output_dir` values unless a
+  migration explicitly changes them.
+
+## Runtime IDs And Paths
+
+- Runtime IDs that affect task directories, OBS object keys, temporary
+  directories, LangGraph thread IDs, or dialog IDs must be created through
+  `path_policy.py`.
+- Use one `RunIdentity` per workflow and pass it through child submissions so
+  user, run, metadata, temporary, and output paths share one traceable layout.
+- Use `IdFactory` for standalone generated IDs, such as default thread or
+  dialog IDs that do not own output paths.
+- Missing users use the shared `anonymous` fallback. Do not call `uuid1()` or
+  `uuid4()` to invent a runtime `user_id`.
+- Direct UUID generation is limited to non-path platform, repository,
+  workspace, app, or storage identifiers with a focused reason. The current
+  SQLite task row ID in `task_manager.py` is the only allowed source-tree
+  exception.
 
 ## Docstrings
 
