@@ -48,6 +48,41 @@ def test_build_sub_summary_loads_expression_outputs(tmp_path):
     assert result.data["tissue_legend"] == "Figure 3. Tissue legend."
 
 
+def test_build_sub_summary_reads_explicit_results_dir(tmp_path):
+    """Verify result summaries can read from an explicit result directory."""
+    out_dir, gene_dir = _gene_dir(tmp_path)
+    obsfs_dir = tmp_path / "obsfs" / "GeneA-results"
+    obsfs_dir.mkdir(parents=True)
+    (obsfs_dir / "GeneA_tissues.png").write_text("", encoding="utf-8")
+    (obsfs_dir / "GeneA_tissues.summary").write_text(
+        "Figure 1 shows mounted tissue expression.",
+        encoding="utf-8",
+    )
+    (obsfs_dir / "GeneA_tissues.legend").write_text(
+        "Figure 1. Mounted tissue legend.",
+        encoding="utf-8",
+    )
+
+    result = build_sub_summary(
+        analysis_type="gene_expression_tissues",
+        gene_id="GeneA",
+        deepgenome_out=str(out_dir),
+        data={"gene_name": "GeneA"},
+        figure_index=7,
+        results_dir=str(obsfs_dir),
+    )
+
+    assert result.figure_index == 8
+    assert result.data["tissue_path"] == "GeneA/GeneA_tissues.png"
+    assert result.data["tissue_summary"] == (
+        "Figure 7 shows mounted tissue expression."
+    )
+    assert result.data["tissue_legend"] == (
+        "Figure 7. Mounted tissue legend."
+    )
+    assert not (gene_dir / "GeneA_tissues.summary").exists()
+
+
 def test_build_sub_summary_keeps_domain_text_unrenumbered(tmp_path):
     """Verify evolution domain text preserves original figure labels."""
     out_dir, gene_dir = _gene_dir(tmp_path)

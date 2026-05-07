@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
 from uuid import uuid1
 
@@ -19,6 +20,7 @@ from .analyst_storage import create_output_dir, download_obs_out, get_data_list
 from .deep_genome_formatting import SPECIES_CODE_MAP
 from .deep_genome_summary import build_sub_summary
 from .langgraph_runner import capture_workflow_boundary
+from .obs_storage import normalize_obs_object_key, obsfs_path_for
 from .utils import get_prompt
 from .workflow_mixins import WorkflowMixinBase
 
@@ -297,6 +299,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 analysis_type=analysis_type,
                 gene_id=gene_id,
                 state=state,
+                results_dir=result.get("results_dir"),
             )
 
             return {
@@ -328,7 +331,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         return await capture_workflow_boundary(run_analysis, failure_state)
 
     def _generate_sub_summary(
-        self: Any, analysis_type: str, gene_id: str, state: DeepGenomeState
+        self: Any,
+        analysis_type: str,
+        gene_id: str,
+        state: DeepGenomeState,
+        results_dir: Optional[str] = None,
     ) -> dict:
         """Generate sub-summary for a specific analysis type."""
         result = build_sub_summary(
@@ -337,6 +344,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             deepgenome_out=self.deep_genome_config.DEEPGENOME_OUT,
             data=state.get("analyst_summaries"),
             figure_index=self._figure_index,
+            results_dir=results_dir,
         )
         self._figure_index = result.figure_index
         return result.data
@@ -638,11 +646,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             raise RuntimeError("AnalystAgent returned no output directory")
         print(f"  → {analysis_type} 任务完成 (task_id: {task_id})")
 
-        print(f"  → 下载 {analysis_type} 结果...")
-        self._download_analysis_result(context, output_path)
+        print(f"  → 准备 {analysis_type} 结果...")
+        results_dir = self._download_analysis_result(context, output_path)
         return {
             "task_id": task_id,
             "output_path": output_path,
+            "results_dir": results_dir,
             "status": "completed",
         }
 
@@ -723,12 +732,17 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         self: Any,
         context: AnalysisDispatchContext,
         output_path: str,
-    ) -> None:
-        """Download result files for one completed analysis task."""
-        obs_output_path = (
-            output_path.split("/obs/phytomni/")[-1]
-            if "/obs/phytomni/" in output_path
-            else output_path
+    ) -> str:
+        """Return a readable result directory, downloading only if needed."""
+        obsfs_result_dir = self._obsfs_analysis_result_dir(output_path)
+        if obsfs_result_dir is not None:
+            return obsfs_result_dir
+        obs_output_path = normalize_obs_object_key(
+            output_path,
+            self.deep_genome_config.BUCKET_NAME,
+        )
+        local_results_dir = (
+            Path(self.deep_genome_config.DEEPGENOME_OUT) / context.gene_id
         )
         target_file_feature = ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
             context.analysis_type,
@@ -742,7 +756,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 download_obs_out(
                     task_dir=context.gene_id,
                     obs_output_path=obs_output_path,
-                    download_path=output_path,
+                    download_path=self.deep_genome_config.DEEPGENOME_OUT,
                     access_key_id=access_key_id,
                     secret_access_key=secret_access_key,
                     obs_server=self.deep_genome_config.OBS_SERVER,
@@ -754,6 +768,23 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             )
         except OSError as exc:
             print(f"  Warning: Failed to download results (continuing): {exc}")
+        return str(local_results_dir)
+
+    def _obsfs_analysis_result_dir(self: Any, output_path: str) -> str | None:
+        """Return the obsfs result directory when it is directly readable."""
+        try:
+            obsfs_path = obsfs_path_for(
+                output_path,
+                self.deep_genome_config.BUCKET_NAME,
+            )
+            if obsfs_path.is_dir():
+                return str(obsfs_path)
+        except OSError:
+            return None
+        local_path = Path(output_path)
+        if local_path.is_dir():
+            return str(local_path)
+        return None
 
     def _get_compute_resource(self: Any, analysis_type: str) -> str:
         """Determine compute resource level based on analysis type.
