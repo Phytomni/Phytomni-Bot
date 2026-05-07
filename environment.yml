@@ -1,3 +1,4 @@
+---
 name: phytomni-bot
 channels:
   - conda-forge
@@ -17,7 +18,7 @@ dependencies:
 
   # Pip packages
   - pip:
-    - esdk-obs-python>=3.26.2
-    - langchain-core>=1.3.2
-    - langgraph>=1.1.10
-    - markitdown[all]>=0.1.5
+      - esdk-obs-python>=3.26.2
+      - langchain-core>=1.3.2
+      - langgraph>=1.1.10
+      - markitdown[all]>=0.1.5

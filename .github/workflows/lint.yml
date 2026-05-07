@@ -1,8 +1,25 @@
+---
 name: Lint
 
-on: [push, pull_request]
+"on": [push, pull_request]
 
 jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install --system -e ".[dev]"
+      - name: Lint YAML files with yamllint
+        run: uv run yamllint .
+
   black:
     runs-on: ubuntu-latest
     steps:
