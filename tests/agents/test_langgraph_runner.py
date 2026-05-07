@@ -59,6 +59,8 @@ def test_ensure_thread_id_generates_value_when_missing():
     assert first
     assert second
     assert first != second
+    assert "-thread-" in first
+    assert "-thread-" in second
 
 
 def test_ensure_checkpointer_creates_fresh_instances():

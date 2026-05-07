@@ -8,7 +8,6 @@
 import asyncio
 import time
 from typing import Any, Dict, List, Literal, Optional, TypedDict
-from uuid import uuid1
 
 from httpx import AsyncClient, Timeout
 from langgraph.checkpoint.memory import MemorySaver
@@ -42,6 +41,7 @@ from .langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from .path_policy import RunIdentity
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
@@ -559,6 +559,20 @@ def _sensitive_config_with_overrides(**kwargs: Any):
     )
 
 
+def _submit_user_and_thread_id(
+    user_id: Any,
+    scope: str,
+    operation: str,
+) -> tuple[str, str]:
+    """Return compatible user IDs and run-scoped fallback thread IDs."""
+    if user_id:
+        resolved_user_id = str(user_id)
+        return resolved_user_id, resolved_user_id
+
+    run_identity = RunIdentity.create(user_id=None, scope=scope)
+    return run_identity.user_id, run_identity.scoped_id("thread", operation)
+
+
 async def submit(
     goal_description: str,
     data_list: Any,
@@ -566,7 +580,11 @@ async def submit(
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based AnalystAgent."""
     user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
-    user_id = user_id or str(uuid1())
+    user_id, thread_id = _submit_user_and_thread_id(
+        user_id,
+        "analyst-submit",
+        "submit",
+    )
     is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
     output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
     meta = kwargs.get("meta", "")
@@ -602,7 +620,7 @@ async def submit(
         compute_resource=compute_resource,
         preset_data_list=data_list,
         preset_plan=meta + (meta_meta or ""),
-        thread_id=user_id,
+        thread_id=thread_id,
         is_auto_select=enable_auto_select,
         is_polling=False,
     )
@@ -616,7 +634,11 @@ async def retrieve_plan_submit(
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based AnalystAgent."""
     user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
-    user_id = user_id or str(uuid1())
+    user_id, thread_id = _submit_user_and_thread_id(
+        user_id,
+        "analyst-retrieve-plan-submit",
+        "retrieve-plan-submit",
+    )
     is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
     output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
     compute_resource = kwargs.get(
@@ -650,7 +672,7 @@ async def retrieve_plan_submit(
         compute_resource=compute_resource,
         preset_data_list=data_list,
         obs_file_list=obs_file_list or [],
-        thread_id=user_id,
+        thread_id=thread_id,
         is_auto_select=True,
         is_polling=False,
     )

@@ -15,7 +15,6 @@ from random import uniform
 from re import sub
 from traceback import format_exc
 from typing import Any, List, Mapping, Optional
-from uuid import uuid1
 from warnings import warn
 
 from httpx import (
@@ -41,6 +40,7 @@ from .obs_storage import (
     normalize_obs_object_key,
     obsfs_path_for,
 )
+from .path_policy import RunIdentity
 
 SERVER_CONFIG = ServerConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -722,7 +722,13 @@ async def _download_obs_file_from_sdk(
 ) -> str:
     """Download one OBS object to the temporary directory using the SDK."""
     user_name = _temp_download_group(obs_file)
-    server_path = Path(context.server_dir) / user_name / str(uuid1())
+    run_identity = RunIdentity.create(user_id=user_name, scope="obs-download")
+    server_path = (
+        Path(context.server_dir)
+        / run_identity.user_id
+        / run_identity.date_stamp
+        / run_identity.run_id
+    )
     server_path.mkdir(parents=True, exist_ok=True)
     server_file = str(server_path / Path(obs_file).name)
 

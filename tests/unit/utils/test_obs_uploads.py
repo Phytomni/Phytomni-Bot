@@ -160,6 +160,10 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
     assert captured["object_key"] == "agent_data/paper.pdf"
     assert Path(result).read_text(encoding="utf-8") == "downloaded"
     assert str(result).startswith(str(tmp_path / "temp"))
+    result_path = Path(result)
+    assert result_path.parent.parent.parent == tmp_path / "temp" / "agent_data"
+    assert result_path.parent.parent.name.isdigit()
+    assert "-obs-download-agent_data-" in result_path.parent.name
 
 
 async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
@@ -217,3 +221,6 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
     assert result == ["converted paper"]
     assert captured["cleanup"] is True
     assert str(captured["file_path"]).startswith(str(tmp_path / "temp"))
+    file_path = Path(captured["file_path"])
+    assert file_path.parent.parent.parent == tmp_path / "temp" / "agent_data"
+    assert file_path.parent.parent.name.isdigit()

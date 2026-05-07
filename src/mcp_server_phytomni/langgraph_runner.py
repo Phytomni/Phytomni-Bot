@@ -8,11 +8,12 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Generic, Optional, TypeVar
-from uuid import uuid1
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
+
+from .path_policy import IdFactory
 
 GraphT = TypeVar("GraphT")
 
@@ -38,7 +39,7 @@ def ensure_thread_id(thread_id: Optional[str] = None) -> str:
     """Return an existing thread id or create a new one."""
     if thread_id:
         return thread_id
-    return str(uuid1())
+    return IdFactory().new_id("thread")
 
 
 def build_runnable_config(thread_id: Optional[str] = None) -> RunnableConfig:

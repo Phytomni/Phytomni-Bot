@@ -12,7 +12,6 @@ better performance.
 
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, TypedDict
-from uuid import uuid1
 
 from httpx import AsyncClient, Timeout
 from langgraph.checkpoint.memory import MemorySaver
@@ -33,6 +32,7 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
 from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .path_policy import IdFactory
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
@@ -66,6 +66,11 @@ DATA_SENSITIVE_FIELD_MAP = {
 DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 
 
+def _default_dialog_id() -> str:
+    """Return a generated dialog ID for caller-omitted NL2SQL sessions."""
+    return IdFactory().new_id("dialog")
+
+
 @dataclass(frozen=True)
 class Nl2SqlRequest:
     """Resolved request settings for one NL2SQL call."""
@@ -88,7 +93,7 @@ class Nl2SqlRequest:
             workspace_id=values.get("workspace_id", DATA_CONFIG.WORKSPACE_ID),
             payload_data={
                 "subject_id": values.get("subject_id", DATA_CONFIG.SUBJECT_ID),
-                "dialog_id": values.get("dialog_id") or str(uuid1()),
+                "dialog_id": values.get("dialog_id") or _default_dialog_id(),
                 "message_content": message_content,
                 "need_insight": values.get(
                     "need_insight", DATA_CONFIG.NEED_INSIGHT
@@ -151,7 +156,7 @@ async def rewrite_nl2sql(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent."""
-    active_dialog_id = kwargs.get("dialog_id") or str(uuid1())
+    active_dialog_id = kwargs.get("dialog_id") or _default_dialog_id()
     arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
         DATA_CONFIG,
@@ -404,7 +409,7 @@ class DataAgent:
             query = state["user_query"]
         payload = {
             "subject_id": self.data_config.SUBJECT_ID,
-            "dialog_id": dialog_id if dialog_id else str(uuid1()),
+            "dialog_id": dialog_id if dialog_id else _default_dialog_id(),
             "message_content": query,
             "need_insight": self.data_config.NEED_INSIGHT,
             "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
