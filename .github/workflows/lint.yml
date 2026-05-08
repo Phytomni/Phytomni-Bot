@@ -4,6 +4,21 @@ name: Lint
 "on": [push, pull_request]
 
 jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Scan tracked content for secrets
+        run: python3 scripts/scan_secrets.py --all
+      - name: Compile Python sources
+        run: python -m compileall src tests scripts
+      - name: Check committed whitespace
+        run: git diff-tree --check --no-commit-id --root -r HEAD
+
   black:
     runs-on: ubuntu-latest
     steps:
@@ -50,7 +65,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with flake8
-        run: flake8 src tests
+        run: flake8 src tests scripts
 
   mypy:
     runs-on: ubuntu-latest
@@ -70,7 +85,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Type check with mypy
-        run: mypy --python-version ${{ matrix.python-version }} src
+        run: mypy --python-version ${{ matrix.python-version }} src scripts
 
   pyright:
     runs-on: ubuntu-latest
@@ -92,7 +107,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Type check with pyright
-        run: pyright --pythonversion ${{ matrix.python-version }} src
+        run: pyright --pythonversion ${{ matrix.python-version }} src scripts
 
   pylint:
     runs-on: ubuntu-latest

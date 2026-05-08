@@ -45,7 +45,9 @@ def _rewrite_json_file(file_path: Path) -> None:
 def _parse_cli_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
-        description="Normalize JSON files with sorted keys and two-space indent."
+        description=(
+            "Normalize JSON files with sorted keys and two-space indent."
+        )
     )
     parser.add_argument(
         "paths",
