@@ -10,6 +10,7 @@ from .analyst_agents import (
     retrieve_plan_submit,
     wait_for_completion,
 )
+from .auth.iam import get_token
 from .brief_gene_agents import brief_gene_function
 from .chat_agents import phyto_chat, phyto_chat_with_follow
 from .data_agents import nl2sql, rewrite_nl2sql
@@ -23,7 +24,7 @@ from .knowledge_agents import (
 )
 from .review_agents import deep_research
 from .runtime.task_manager import TaskManager, create_task, update_task
-from .utils import download_list_convert, get_prompt, get_token, split_list
+from .utils import download_list_convert, get_prompt, split_list
 
 __all__ = [
     "create_output_dir",

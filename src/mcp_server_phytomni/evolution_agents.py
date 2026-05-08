@@ -16,11 +16,12 @@ from .agent_option_helpers import (
     build_submit_kwargs,
 )
 from .analyst_agents import create_output_dir, get_data_list, submit
+from .auth.iam import get_token
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
 from .path_policy import RunIdentity
-from .utils import get_prompt, get_token
+from .utils import get_prompt
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()

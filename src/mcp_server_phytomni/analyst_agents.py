@@ -25,6 +25,7 @@ from .analyst_storage import (
     get_data_list,
     upload_analyst_agents_data,
 )
+from .auth.iam import get_token
 from .config.defaults import AnalystConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -45,7 +46,6 @@ from .runtime.langgraph_runner import (
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
-    get_token,
     request_response_with_retries,
 )
 

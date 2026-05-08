@@ -12,16 +12,10 @@ from pathlib import Path
 from traceback import format_exc
 from typing import Any, List, Mapping, Optional
 
-from httpx import (
-    AsyncClient,
-    HTTPError,
-    Timeout,
-)
 from markitdown import MarkItDown
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
 from obs import ObsClient
 
+from .auth.iam import get_token
 from .common.docs import (
     format_retrieved_doc_context,
     format_retrieved_doc_fragment,
@@ -165,64 +159,6 @@ async def download_upload_context(
         max_workers=config.MAX_WORKERS,
     )
     return format_upload_context(upload_texts, max_tokens=config.MAX_TOKENS)
-
-
-async def get_token(
-    timeout: float = SERVER_CONFIG.TIMEOUT, region: str = SERVER_CONFIG.REGION
-) -> str:
-    """Obtain an X-Subject-Token for API authentication.
-
-    This function authenticates with the IAM service using credentials from
-    the application's settings and retrieves a temporary token for authorizing
-    subsequent API requests.
-
-    Args:
-        timeout: The total request timeout in seconds. This controls both the
-            connection and response phases.
-        region: The geographical region for the authentication scope.
-
-    Returns:
-        A string containing the X-Subject-Token for use in authorization
-        headers. The token's validity period is determined by the IAM service.
-
-    Raises:
-        McpError: If the token request fails due to network issues, invalid
-            credentials, or IAM service unavailability.
-    """
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
-        password = SENSITIVE_CONFIG.USER_PASSWORD.get_secret_value()
-        data = {
-            "auth": {
-                "identity": {
-                    "methods": ["password"],
-                    "password": {
-                        "user": {
-                            "name": SENSITIVE_CONFIG.USER_NAME,
-                            "password": password,
-                            "domain": {"name": SENSITIVE_CONFIG.DOMAIN_NAME},
-                        },
-                    },
-                },
-                "scope": {"project": {"name": region}},
-            },
-        }
-        try:
-            response = await client.post(
-                SERVER_CONFIG.TOKEN_URL,
-                headers={"Content-Type": "application/json"},
-                json=data,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            return response.headers["X-Subject-Token"]
-        except HTTPError as e:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Failed to get token: {str(e)}",
-                )
-            ) from e
 
 
 async def download_obs_file(

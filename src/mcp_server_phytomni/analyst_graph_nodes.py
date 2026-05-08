@@ -23,6 +23,7 @@ from .analyst_storage import (
     ensure_run_output_dir,
     upload_analyst_agents_content,
 )
+from .auth.iam import get_token
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
 from .path_policy import RunIdentity, task_tmp_key
@@ -33,7 +34,6 @@ from .utils import (
     download_upload_context,
     format_retrieved_doc_context,
     get_prompt,
-    get_token,
     load_json_file,
     request_response_with_retries,
 )

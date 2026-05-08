@@ -19,6 +19,7 @@ from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from .auth.iam import get_token
 from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.overrides import (
@@ -38,7 +39,6 @@ from .utils import (
     JsonPostRetry,
     format_retrieved_doc_fragment,
     get_prompt,
-    get_token,
     post_json_with_retries,
 )
 
