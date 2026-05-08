@@ -19,6 +19,18 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel
 
+from .mcp.handlers import (
+    handle_analyst_agent,
+    handle_brief_gene_agent,
+    handle_chat_agent,
+    handle_data_agent,
+    handle_deep_genome_agent,
+    handle_digital_design_agent,
+    handle_gene_network_agent,
+    handle_in_silico_research_agent,
+    handle_knowledge_agent,
+    handle_review_agent,
+)
 from .mcp.schemas import (
     AnalystAgent,
     BriefGeneAgent,
@@ -31,18 +43,6 @@ from .mcp.schemas import (
     KnowledgeAgent,
     PhytomniAgents,
     ReviewAgent,
-)
-from .tool_handlers import (
-    handle_analyst_agent,
-    handle_brief_gene_agent,
-    handle_chat_agent,
-    handle_data_agent,
-    handle_deep_genome_agent,
-    handle_digital_design_agent,
-    handle_gene_network_agent,
-    handle_in_silico_research_agent,
-    handle_knowledge_agent,
-    handle_review_agent,
 )
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
