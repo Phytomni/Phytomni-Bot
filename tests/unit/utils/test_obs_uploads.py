@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for obsfs-first upload download and conversion helpers."""
+"""Tests for obsfs-first upload download and conversion helpers.
+
+Covers direct obsfs conversion, SDK temporary-file cleanup, OBS download
+fallback, and download-list conversion cleanup flags.
+"""
 
 from __future__ import annotations
 
@@ -19,20 +23,35 @@ pytestmark = pytest.mark.unit
 
 
 class FakeMarkItDown:
-    """Small MarkItDown stand-in that reads plain text files."""
+    """Small MarkItDown stand-in that reads plain text files.
+
+    Attributes:
+        No state is required; file text is read during conversion.
+    """
 
     def __init__(self, **kwargs: Any):
         """Capture constructor compatibility without external services."""
         del kwargs
 
     def convert(self, file_path: str):
-        """Return file text through the MarkItDown result shape."""
+        """Return file text through the MarkItDown result shape.
+
+        Args:
+            file_path: Local file path to read.
+
+        Returns:
+            Object with text_content matching the file contents.
+        """
         return SimpleNamespace(
             text_content=Path(file_path).read_text(encoding="utf-8")
         )
 
     def converter_name(self) -> str:
-        """Return the fake converter name."""
+        """Return the fake converter name.
+
+        Returns:
+            Stable fake converter name.
+        """
         return "fake-markitdown"
 
 
@@ -40,7 +59,12 @@ def test_convert_single_file_preserves_obsfs_source_when_cleanup_false(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify conversion can leave obsfs source files in place."""
+    """Verify conversion can leave obsfs source files in place.
+
+    Args:
+        tmp_path: Temporary source-file directory.
+        monkeypatch: Pytest monkeypatch fixture used to replace MarkItDown.
+    """
     source_file = tmp_path / "paper.txt"
     source_file.write_text("paper text", encoding="utf-8")
     monkeypatch.setattr(downloads, "MarkItDown", FakeMarkItDown)
@@ -56,7 +80,12 @@ def test_convert_single_file_removes_sdk_temp_when_cleanup_true(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify SDK temporary downloads still get removed after conversion."""
+    """Verify SDK temporary downloads still get removed after conversion.
+
+    Args:
+        tmp_path: Temporary source-file directory.
+        monkeypatch: Pytest monkeypatch fixture used to replace MarkItDown.
+    """
     source_file = tmp_path / "paper.txt"
     source_file.write_text("paper text", encoding="utf-8")
     monkeypatch.setattr(downloads, "MarkItDown", FakeMarkItDown)
@@ -69,7 +98,11 @@ def test_convert_single_file_removes_sdk_temp_when_cleanup_true(
 
 
 async def test_download_obs_file_returns_obsfs_source_when_available(tmp_path):
-    """Verify obsfs files are returned directly instead of staged locally."""
+    """Verify obsfs files are returned directly instead of staged locally.
+
+    Args:
+        tmp_path: Temporary obsfs mount root and temp directory.
+    """
     obsfs_file = tmp_path / "phytomni" / "uploads" / "paper.txt"
     obsfs_file.parent.mkdir(parents=True)
     obsfs_file.write_text("paper text", encoding="utf-8")
@@ -87,13 +120,30 @@ async def test_download_list_convert_passes_obsfs_source_without_cleanup(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify upload conversion reads obsfs files in place."""
+    """Verify upload conversion reads obsfs files in place.
+
+    Args:
+        tmp_path: Temporary obsfs mount root and temp directory.
+        monkeypatch: Pytest monkeypatch fixture used to replace conversion.
+
+    Returns:
+        None after source path and cleanup assertions pass.
+    """
     obsfs_file = tmp_path / "phytomni" / "uploads" / "paper.txt"
     obsfs_file.parent.mkdir(parents=True)
     obsfs_file.write_text("paper text", encoding="utf-8")
     captured: list[tuple[str, bool]] = []
 
     def fake_convert(file_path: str, cleanup: bool = True) -> str:
+        """Capture conversion cleanup behavior.
+
+        Args:
+            file_path: Source file path passed to conversion.
+            cleanup: Whether conversion should delete the source file.
+
+        Returns:
+            Static converted text.
+        """
         captured.append((file_path, cleanup))
         return "converted paper"
 
@@ -116,21 +166,41 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify unavailable obsfs paths still use the SDK download path."""
+    """Verify unavailable obsfs paths still use the SDK download path.
+
+    Args:
+        tmp_path: Temporary download root.
+        monkeypatch: Pytest monkeypatch fixture used to replace OBS client.
+
+    Returns:
+        None after SDK temp path assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeObsClient:
-        """Minimal OBS client constructor stand-in."""
+        """Minimal OBS client constructor stand-in.
+
+        Attributes:
+            Captured constructor settings are stored externally.
+        """
 
         def __init__(self, **kwargs: Any):
             captured["client"] = kwargs
 
         def client_settings(self) -> dict[str, Any]:
-            """Return captured constructor settings."""
+            """Return captured constructor settings.
+
+            Returns:
+                Captured OBS client kwargs.
+            """
             return captured["client"]
 
         def client_name(self) -> str:
-            """Return a fake client name."""
+            """Return a fake client name.
+
+            Returns:
+                Stable fake client name.
+            """
             return "fake-obs-client"
 
     async def fake_download_with_retry(
@@ -139,6 +209,17 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         server_file: str,
         context: downloads.ObsTransferContext,
     ) -> str:
+        """Write a fake SDK download file.
+
+        Args:
+            obs_client: Fake OBS client instance.
+            object_key: Normalized OBS object key.
+            server_file: Local download target path.
+            context: OBS transfer context.
+
+        Returns:
+            Local path to the fake downloaded file.
+        """
         del obs_client, context
         captured["object_key"] = object_key
         Path(server_file).write_text("downloaded", encoding="utf-8")
@@ -170,21 +251,41 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify fallback SDK downloads are converted with cleanup enabled."""
+    """Verify fallback SDK downloads are converted with cleanup enabled.
+
+    Args:
+        tmp_path: Temporary download root.
+        monkeypatch: Pytest monkeypatch fixture used to replace helpers.
+
+    Returns:
+        None after cleanup flag assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeObsClient:
-        """Minimal OBS client constructor stand-in."""
+        """Minimal OBS client constructor stand-in.
+
+        Attributes:
+            No instance attributes are needed for this fake.
+        """
 
         def __init__(self, **kwargs: Any):
             del kwargs
 
         def client_settings(self) -> dict[str, Any]:
-            """Return fake constructor settings."""
+            """Return fake constructor settings.
+
+            Returns:
+                Empty constructor settings.
+            """
             return {}
 
         def client_name(self) -> str:
-            """Return a fake client name."""
+            """Return a fake client name.
+
+            Returns:
+                Stable fake client name.
+            """
             return "fake-obs-client"
 
     async def fake_download_with_retry(
@@ -193,11 +294,31 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
         server_file: str,
         context: downloads.ObsTransferContext,
     ) -> str:
+        """Write a fake SDK download file.
+
+        Args:
+            obs_client: Fake OBS client instance.
+            object_key: Normalized OBS object key.
+            server_file: Local download target path.
+            context: OBS transfer context.
+
+        Returns:
+            Local path to the fake downloaded file.
+        """
         del obs_client, object_key, context
         Path(server_file).write_text("downloaded", encoding="utf-8")
         return server_file
 
     def fake_convert(file_path: str, cleanup: bool = True) -> str:
+        """Capture SDK conversion cleanup behavior.
+
+        Args:
+            file_path: Source file path passed to conversion.
+            cleanup: Whether conversion should delete the source file.
+
+        Returns:
+            Static converted text.
+        """
         captured["file_path"] = file_path
         captured["cleanup"] = cleanup
         return "converted paper"

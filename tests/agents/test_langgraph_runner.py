@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for shared LangGraph runtime helpers."""
+"""Tests for shared LangGraph runtime helpers.
+
+Covers thread config helpers, checkpointer creation, graph invocation,
+fingerprint secret omission, graph registry reuse, and source-boundary checks.
+"""
 
 from pathlib import Path
 
@@ -31,13 +35,25 @@ class FakeGraph:
         self.config = None
 
     async def ainvoke(self, initial_state, config=None):
-        """Verify ainvoke."""
+        """Capture graph invocation and return final state.
+
+        Args:
+            initial_state: Initial state passed to the graph.
+            config: Optional LangGraph runnable config.
+
+        Returns:
+            Final state payload derived from the initial value.
+        """
         self.initial_state = initial_state
         self.config = config
         return {"final": initial_state["value"]}
 
     def snapshot(self):
-        """Return captured invocation details."""
+        """Return captured invocation details.
+
+        Returns:
+            Last initial state and config captured by ainvoke.
+        """
         return {"initial_state": self.initial_state, "config": self.config}
 
 
@@ -111,12 +127,20 @@ def test_config_fingerprint_is_stable_and_omits_secret_fields():
 
 
 def test_graph_registry_reuses_by_name_and_fingerprint():
-    """Verify graph registry reuses by name and fingerprint."""
+    """Verify graph registry reuses by name and fingerprint.
+
+    Returns:
+        None after registry identity assertions pass.
+    """
     registry: GraphRegistry[object] = GraphRegistry()
     created = 0
 
     def factory():
-        """Verify factory."""
+        """Create a distinct object and count factory calls.
+
+        Returns:
+            New object instance for the registry cache.
+        """
         nonlocal created
         created += 1
         return object()

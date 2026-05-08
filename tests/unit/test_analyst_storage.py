@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for analyst storage obsfs-first behavior."""
+"""Tests for analyst storage obsfs-first behavior.
+
+Covers output directory creation, OBS content/file upload, deletion, download
+filtering, and SDK fallback paths when obsfs is unavailable.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +32,11 @@ def _obsfs_root(tmp_path: Path) -> Path:
 
 
 def test_create_output_dir_prefers_obsfs(tmp_path):
-    """Verify output directories are created through obsfs first."""
+    """Verify output directories are created through obsfs first.
+
+    Args:
+        tmp_path: Temporary obsfs mount root.
+    """
     root = _obsfs_root(tmp_path)
     run_identity = RunIdentity.create(
         "user-a",
@@ -57,7 +65,11 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
 
 
 def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
-    """Verify generated metadata content is written through obsfs."""
+    """Verify generated metadata content is written through obsfs.
+
+    Args:
+        tmp_path: Temporary obsfs mount root.
+    """
     root = _obsfs_root(tmp_path)
 
     result = analyst_storage.upload_analyst_agents_content(
@@ -74,7 +86,11 @@ def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
 
 
 def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
-    """Verify generated metadata can be written under a run-scoped key."""
+    """Verify generated metadata can be written under a run-scoped key.
+
+    Args:
+        tmp_path: Temporary obsfs mount root.
+    """
     root = _obsfs_root(tmp_path)
     object_key = (
         "agent_data/user_data/user-a/runs/20260507/run-1/"
@@ -94,7 +110,11 @@ def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
 
 
 def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
-    """Verify local metadata files are copied through obsfs."""
+    """Verify local metadata files are copied through obsfs.
+
+    Args:
+        tmp_path: Temporary obsfs mount root and source-file directory.
+    """
     root = _obsfs_root(tmp_path)
     source_file = tmp_path / "source.json"
     source_file.write_text("payload", encoding="utf-8")
@@ -112,7 +132,11 @@ def test_upload_analyst_agents_data_prefers_obsfs_copy(tmp_path):
 
 
 def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
-    """Verify delete removes files through obsfs first."""
+    """Verify delete removes files through obsfs first.
+
+    Args:
+        tmp_path: Temporary obsfs mount root.
+    """
     root = _obsfs_root(tmp_path)
     target_file = root / "agent_data" / "tmp_data" / "delete.json"
     target_file.parent.mkdir(parents=True)
@@ -129,7 +153,11 @@ def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
 
 
 def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
-    """Verify result downloads copy matching files from obsfs first."""
+    """Verify result downloads copy matching files from obsfs first.
+
+    Args:
+        tmp_path: Temporary obsfs mount root and download directory.
+    """
     root = _obsfs_root(tmp_path)
     result_dir = root / "results"
     result_dir.mkdir()
@@ -159,11 +187,23 @@ def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify content uploads fall back to the OBS SDK."""
+    """Verify content uploads fall back to the OBS SDK.
+
+    Args:
+        tmp_path: Temporary path with no mounted obsfs bucket.
+        monkeypatch: Pytest monkeypatch fixture used to replace ObsClient.
+
+    Returns:
+        None after SDK upload assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeObsClient:
-        """Minimal OBS client for putContent fallback."""
+        """Minimal OBS client for putContent fallback.
+
+        Attributes:
+            Captured client and upload calls are stored externally.
+        """
 
         def __init__(self, **kwargs: Any):
             captured["client"] = kwargs
@@ -175,7 +215,14 @@ def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
             raise AttributeError(name)
 
         def put_content(self, **kwargs: Any):
-            """Capture putContent fallback arguments."""
+            """Capture putContent fallback arguments.
+
+            Args:
+                **kwargs: OBS SDK putContent keyword arguments.
+
+            Returns:
+                Successful OBS response stand-in.
+            """
             captured["put_content"] = kwargs
             return SimpleNamespace(status=200, requestId="request-id")
 
@@ -200,10 +247,22 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify result downloads fall back to OBS SDK listing and getObject."""
+    """Verify result downloads fall back to OBS SDK listing and getObject.
+
+    Args:
+        tmp_path: Temporary path with no mounted obsfs bucket.
+        monkeypatch: Pytest monkeypatch fixture used to replace ObsClient.
+
+    Returns:
+        None after SDK download assertions pass.
+    """
 
     class FakeObsClient:
-        """Minimal OBS client for list/get fallback."""
+        """Minimal OBS client for list/get fallback.
+
+        Attributes:
+            No instance attributes are needed for the fake download client.
+        """
 
         def __init__(self, **kwargs: Any):
             del kwargs
@@ -217,7 +276,14 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             raise AttributeError(name)
 
         def list_objects(self, **kwargs: Any):
-            """Return one listed object for SDK fallback."""
+            """Return one listed object for SDK fallback.
+
+            Args:
+                **kwargs: OBS SDK listObjects keyword arguments.
+
+            Returns:
+                Successful listObjects response stand-in.
+            """
             assert kwargs["prefix"] == "results"
             body = SimpleNamespace(
                 contents=[SimpleNamespace(key="results/keep.txt")],
@@ -226,7 +292,14 @@ def test_download_obs_out_falls_back_to_sdk_when_obsfs_missing(
             return SimpleNamespace(status=200, body=body)
 
         def get_object(self, **kwargs: Any):
-            """Write one fake downloaded object."""
+            """Write one fake downloaded object.
+
+            Args:
+                **kwargs: OBS SDK getObject keyword arguments.
+
+            Returns:
+                Successful getObject response stand-in.
+            """
             Path(kwargs["downloadPath"]).write_text("sdk", encoding="utf-8")
             return SimpleNamespace(status=200)
 

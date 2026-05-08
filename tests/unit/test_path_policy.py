@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for shared runtime ID and path policy helpers."""
+"""Tests for shared runtime ID and path policy helpers.
+
+Covers deterministic run identities, shared task path keys, default user id
+resolution, path-segment rejection, and readable slug generation.
+"""
 
 from __future__ import annotations
 
@@ -88,7 +92,11 @@ def test_resolve_user_id_defaults_to_anonymous():
     ],
 )
 def test_safe_path_segment_rejects_path_values(value: str):
-    """Verify path-like values cannot become path segments."""
+    """Verify path-like values cannot become path segments.
+
+    Args:
+        value: Unsafe path-like value expected to fail.
+    """
     with pytest.raises(PathPolicyError):
         safe_path_segment(value, "fallback")
 

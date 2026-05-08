@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for SQLite-backed func_cache storage."""
+"""Tests for SQLite-backed func_cache storage.
+
+Covers value storage, TTL expiration, metadata round trips, lock lifecycle,
+and replacement of expired locks.
+"""
 
 import time
 
@@ -15,14 +19,22 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(name="cache_storage")
 def cache_storage_fixture(tmp_path):
-    """Verify cache storage fixture."""
+    """Create a temporary SQLite cache storage.
+
+    Args:
+        tmp_path: Temporary directory for the SQLite database.
+    """
     cache_storage = Storage(str(tmp_path / "func_cache.sqlite"))
     yield cache_storage
     cache_storage.close()
 
 
 def test_storage_get_set_count_and_ttl_expiration(cache_storage):
-    """Verify storage get set count and ttl expiration."""
+    """Verify storage get, set, count, and TTL expiration.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
     cache_storage.set("func", "key", b"value")
 
     assert cache_storage.get("func", "key") == b"value"
@@ -35,14 +47,22 @@ def test_storage_get_set_count_and_ttl_expiration(cache_storage):
 
 
 def test_storage_metadata_round_trip(cache_storage):
-    """Verify storage metadata round trip."""
+    """Verify storage metadata round trip.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
     cache_storage.set_meta("func", ["alpha", "beta"], compress=True)
 
     assert cache_storage.get_meta("func") == (["alpha", "beta"], True)
 
 
 def test_storage_lock_lifecycle(cache_storage):
-    """Verify storage lock lifecycle."""
+    """Verify storage lock lifecycle.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
     assert cache_storage.try_acquire_lock("func", "key", "owner-1", 60)
     assert not cache_storage.try_acquire_lock("func", "key", "owner-2", 60)
 
@@ -52,7 +72,11 @@ def test_storage_lock_lifecycle(cache_storage):
 
 
 def test_storage_can_replace_expired_lock(cache_storage):
-    """Verify storage can replace expired lock."""
+    """Verify storage can replace expired lock.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
     assert cache_storage.try_acquire_lock("func", "key", "stale-owner", 0.001)
 
     time.sleep(0.002)

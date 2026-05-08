@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for public wrapper override propagation."""
+"""Tests for public wrapper override propagation.
+
+Covers design, network, and in-silico wrapper config overrides, secret
+overrides, cached-agent bypassing, and forwarded run arguments.
+"""
 
 from __future__ import annotations
 
@@ -35,11 +39,22 @@ def _no_cache(
 async def test_design_module_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify design module applies config and secret overrides."""
+    """Verify design_module applies config and secret overrides.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace agent cache.
+
+    Returns:
+        None after wrapper override assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeDigitalDesignAgents:
-        """Fake workflow that records constructor and run arguments."""
+        """Fake workflow that records constructor and run arguments.
+
+        Attributes:
+            Constructor and run inputs are stored in the outer captured dict.
+        """
 
         def __init__(self, digital_design_config, sensitive_config):
             """Verify init  ."""
@@ -52,7 +67,16 @@ async def test_design_module_applies_config_and_secret_overrides(
             gene_id: str,
             **kwargs: Any,
         ) -> dict[str, Any]:
-            """Verify arun."""
+            """Capture design run arguments.
+
+            Args:
+                species: Species forwarded by design_module.
+                gene_id: Target gene forwarded by design_module.
+                **kwargs: Additional wrapper options forwarded to arun.
+
+            Returns:
+                Minimal design result payload.
+            """
             captured["run"] = {
                 "species": species,
                 "gene_id": gene_id,
@@ -63,7 +87,11 @@ async def test_design_module_applies_config_and_secret_overrides(
             return {"design": "ok"}
 
         def captured_config(self) -> Any:
-            """Return the recorded config object."""
+            """Return the recorded config object.
+
+            Returns:
+                Captured DigitalDesignConfig-like object.
+            """
             return captured["config"]
 
     monkeypatch.setattr(
@@ -101,11 +129,22 @@ async def test_design_module_applies_config_and_secret_overrides(
 async def test_network_analysis_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify network analysis applies config and secret overrides."""
+    """Verify network_analysis applies config and secret overrides.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace agent cache.
+
+    Returns:
+        None after wrapper override assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeGeneNetworkAgents:
-        """Fake workflow that records constructor and run arguments."""
+        """Fake workflow that records constructor and run arguments.
+
+        Attributes:
+            Constructor and run inputs are stored in the outer captured dict.
+        """
 
         def __init__(self, gene_network_config, sensitive_config):
             """Verify init  ."""
@@ -118,7 +157,16 @@ async def test_network_analysis_applies_config_and_secret_overrides(
             to_id: str,
             **kwargs: Any,
         ) -> dict[str, Any]:
-            """Verify arun."""
+            """Capture network run arguments.
+
+            Args:
+                species: Species forwarded by network_analysis.
+                to_id: Target id forwarded by network_analysis.
+                **kwargs: Additional wrapper options forwarded to arun.
+
+            Returns:
+                Minimal network result payload.
+            """
             captured["run"] = {
                 "species": species,
                 "to_id": to_id,
@@ -129,7 +177,11 @@ async def test_network_analysis_applies_config_and_secret_overrides(
             return {"network": "ok"}
 
         def captured_config(self) -> Any:
-            """Return the recorded config object."""
+            """Return the recorded config object.
+
+            Returns:
+                Captured GeneNetworkConfig-like object.
+            """
             return captured["config"]
 
     monkeypatch.setattr(
@@ -165,11 +217,22 @@ async def test_network_analysis_applies_config_and_secret_overrides(
 async def test_in_silico_research_applies_config_and_secret_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify in silico research applies config and secret overrides."""
+    """Verify in_silico_research applies config and secret overrides.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace agent cache.
+
+    Returns:
+        None after wrapper override assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeInSilicoResearchAgents:
-        """Fake workflow that records constructor and run arguments."""
+        """Fake workflow that records constructor and run arguments.
+
+        Attributes:
+            Constructor and run inputs are stored in the outer captured dict.
+        """
 
         def __init__(self, in_silico_config, sensitive_config):
             """Verify init  ."""
@@ -182,7 +245,16 @@ async def test_in_silico_research_applies_config_and_secret_overrides(
             data_list: dict[str, str],
             **kwargs: Any,
         ) -> dict[str, Any]:
-            """Verify arun."""
+            """Capture research run arguments.
+
+            Args:
+                paper_text: Paper text forwarded by in_silico_research.
+                data_list: Data list forwarded by in_silico_research.
+                **kwargs: Additional wrapper options forwarded to arun.
+
+            Returns:
+                Minimal research result payload.
+            """
             captured["run"] = {
                 "paper_text": paper_text,
                 "data_list": data_list,
@@ -193,7 +265,11 @@ async def test_in_silico_research_applies_config_and_secret_overrides(
             return {"research": "ok"}
 
         def captured_config(self) -> Any:
-            """Return the recorded config object."""
+            """Return the recorded config object.
+
+            Returns:
+                Captured InSilicoResearchConfig-like object.
+            """
             return captured["config"]
 
     monkeypatch.setattr(

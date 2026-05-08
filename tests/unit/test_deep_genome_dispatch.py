@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for DeepGenome analyst result dispatch helpers."""
+"""Tests for DeepGenome analyst result dispatch helpers.
+
+Covers obsfs result reuse, SDK download fallback, dispatch context handling,
+and the small harness used to exercise private download helpers.
+"""
 
 from __future__ import annotations
 
@@ -26,16 +30,29 @@ class FakeSensitiveConfig:
     """Minimal sensitive config for OBS credential access."""
 
     def obs_credentials(self) -> tuple[str, str]:
-        """Return fake OBS credentials."""
+        """Return fake OBS credentials.
+
+        Returns:
+            Access key id and secret access key pair.
+        """
         return "access-key", "secret-key"
 
     def is_test_config(self) -> bool:
-        """Return whether this is a fake test config."""
+        """Return whether this is a fake test config.
+
+        Returns:
+            True because this config is only used in tests.
+        """
         return True
 
 
 class DispatchHarness(DeepGenomeDispatchMixin):
-    """Small concrete harness for private dispatch helper tests."""
+    """Small concrete harness for private dispatch helper tests.
+
+    Attributes:
+        deep_genome_config: Minimal config namespace used by dispatch helpers.
+        sensitive_config: Fake sensitive config with OBS credentials.
+    """
 
     def __init__(self, deepgenome_out: str):
         """Initialize fake DeepGenome config."""
@@ -51,12 +68,23 @@ def test_download_analysis_result_uses_readable_obsfs_dir(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify readable obsfs result directories are used in place."""
+    """Verify readable obsfs result directories are used in place.
+
+    Args:
+        tmp_path: Temporary directory used as fake obsfs and output root.
+        monkeypatch: Pytest monkeypatch fixture used to replace I/O helpers.
+    """
     harness = DispatchHarness(str(tmp_path / "local-out"))
     result_dir = tmp_path / "obsfs-result"
     result_dir.mkdir()
 
     def fail_download(*args: Any, **kwargs: Any):
+        """Fail if SDK download fallback is called.
+
+        Args:
+            *args: Ignored fallback positional arguments.
+            **kwargs: Ignored fallback keyword arguments.
+        """
         del args, kwargs
         raise AssertionError("download_obs_out should not be called")
 
@@ -90,11 +118,22 @@ def test_download_analysis_result_falls_back_to_sdk_download(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify unavailable obsfs directories trigger SDK result download."""
+    """Verify unavailable obsfs directories trigger SDK result download.
+
+    Args:
+        tmp_path: Temporary directory used as local output root.
+        monkeypatch: Pytest monkeypatch fixture used to replace download.
+    """
     captured: dict[str, Any] = {}
     harness = DispatchHarness(str(tmp_path / "deep-out"))
 
     def fake_download_obs_out(*args: Any, **kwargs: Any):
+        """Capture SDK download fallback arguments.
+
+        Args:
+            *args: Positional download arguments.
+            **kwargs: Keyword download arguments.
+        """
         captured["args"] = args
         captured["kwargs"] = kwargs
         yield "keep.txt download succeed."

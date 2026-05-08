@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for first-wave low-risk cache integration points."""
+"""Tests for first-wave low-risk cache integration points.
+
+Covers config-file cache invalidation, retrieval TTL caches, gene literature
+cache keys, and DeepGenome BI lookup cache behavior.
+"""
 
 import json
 from types import SimpleNamespace
@@ -24,7 +28,11 @@ pytestmark = pytest.mark.agent
 
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):
-    """Verify get data list tracks config file changes."""
+    """Verify get_data_list tracks config file changes.
+
+    Args:
+        tmp_path: Temporary directory used for mutable metadata JSON.
+    """
     data_file = tmp_path / "species_data.json"
     data_file.write_text(
         json.dumps({"analysis": {"ath": ["first"]}}),
@@ -94,7 +102,14 @@ def test_network_to_string_uses_cache_for_identical_inputs():
 
 
 async def test_retrieve_uses_short_ttl_cache(monkeypatch):
-    """Verify retrieve uses short ttl cache."""
+    """Verify retrieve uses short ttl cache.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
+
+    Returns:
+        None after cache hit/miss assertions pass.
+    """
     retrieve_cache_clear = getattr(knowledge_retrieval.retrieve, "cache_clear")
     retrieve_cache_clear()
     calls = {"post": 0, "rerank": 0}
@@ -103,11 +118,19 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
         """Minimal retrieve response stub."""
 
         def raise_for_status(self):
-            """Verify raise for status."""
+            """No-op successful status check.
+
+            Returns:
+                None to indicate success.
+            """
             return None
 
         def json(self):
-            """Verify json."""
+            """Return a minimal retrieval JSON payload.
+
+            Returns:
+                Retrieval response payload with one document.
+            """
             return {
                 "doc_list": [
                     {
@@ -119,7 +142,11 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
             }
 
     class FakeClient:
-        """Minimal async HTTP client stub."""
+        """Minimal async HTTP client stub.
+
+        Attributes:
+            No instance attributes are required; calls are tracked externally.
+        """
 
         def __init__(self, *args, **kwargs):
             """Verify init  ."""
@@ -134,13 +161,28 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
             del args
 
         async def post(self, *args, **kwargs):
-            """Verify post."""
+            """Return the fake retrieval response and count the call.
+
+            Args:
+                *args: Ignored request positional arguments.
+                **kwargs: Ignored request keyword arguments.
+
+            Returns:
+                Fake response containing retrieval documents.
+            """
             del args, kwargs
             calls["post"] += 1
             return FakeResponse()
 
     async def fake_rerank(**kwargs):
-        """Verify fake rerank."""
+        """Return a deterministic rerank result.
+
+        Args:
+            **kwargs: Ignored rerank request options.
+
+        Returns:
+            One scored document entry.
+        """
         del kwargs
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
@@ -187,7 +229,14 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
 
 
 async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
-    """Verify multi retrieve uses short ttl cache."""
+    """Verify multi_retrieve uses short ttl cache.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace retrieval.
+
+    Returns:
+        None after cache hit/miss assertions pass.
+    """
     multi_retrieve_cache_clear = getattr(
         knowledge_retrieval.multi_retrieve,
         "cache_clear",
@@ -196,7 +245,14 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
     calls = {"retrieve": 0}
 
     async def fake_retrieve(**kwargs):
-        """Verify fake retrieve."""
+        """Return one document keyed by repo id.
+
+        Args:
+            **kwargs: Retrieval options including repo_id.
+
+        Returns:
+            Minimal retrieval payload for one repository.
+        """
         calls["retrieve"] += 1
         repo_id = kwargs["repo_id"]
         return {
@@ -238,7 +294,11 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
 
 
 async def test_gene_retrieve_uses_agent_context_cache():
-    """Verify gene retrieve uses agent context cache."""
+    """Verify gene_retrieve uses agent context cache.
+
+    Returns:
+        None after repeated retrieval uses one underlying agent call.
+    """
     brief_gene_agents.clear_gene_retrieve_cache()
     calls = {"arun": 0}
 
@@ -248,7 +308,14 @@ async def test_gene_retrieve_uses_agent_context_cache():
         knowledge_config = KnowledgeConfig()
 
         async def arun(self, **kwargs):
-            """Verify arun."""
+            """Return a document for the requested symbol.
+
+            Args:
+                **kwargs: KnowledgeAgent run arguments including user_query.
+
+            Returns:
+                Retrieval payload containing one gene document.
+            """
             calls["arun"] += 1
             symbol = kwargs["user_query"].splitlines()[-1]
             return {
@@ -263,7 +330,11 @@ async def test_gene_retrieve_uses_agent_context_cache():
             }
 
         def config_snapshot(self):
-            """Return the fake knowledge configuration."""
+            """Return the fake knowledge configuration.
+
+            Returns:
+                KnowledgeConfig used for cache fingerprinting.
+            """
             return self.knowledge_config
 
     first = await brief_gene_agents.gene_retrieve(
@@ -292,12 +363,27 @@ async def test_gene_retrieve_uses_agent_context_cache():
 
 
 async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
-    """Verify deep genome gene symbol lookup uses cache."""
+    """Verify deep genome gene symbol lookup uses cache.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace requests.post.
+
+    Returns:
+        None after repeated lookup shares one BI request.
+    """
     deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     def fake_post(*args, **kwargs):
-        """Verify fake post."""
+        """Return fake symbol rows from BI.
+
+        Args:
+            *args: Ignored request positional arguments.
+            **kwargs: Ignored request keyword arguments.
+
+        Returns:
+            Object exposing a json method with symbol rows.
+        """
         del args, kwargs
         calls["post"] += 1
         return SimpleNamespace(
@@ -326,12 +412,27 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
 
 
 async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
-    """Verify deep genome gene annotation lookup uses cache."""
+    """Verify deep genome gene annotation lookup uses cache.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace requests.post.
+
+    Returns:
+        None after repeated lookup reuses cached annotation rows.
+    """
     deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     def fake_post(*args, **kwargs):
-        """Verify fake post."""
+        """Return fake annotation rows selected by SQL text.
+
+        Args:
+            *args: Ignored request positional arguments.
+            **kwargs: Request keyword arguments containing JSON SQL.
+
+        Returns:
+            Object exposing a json method with annotation rows.
+        """
         del args
         calls["post"] += 1
         sql = kwargs["json"]["sql"]

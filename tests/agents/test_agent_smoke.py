@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Offline fake-graph smoke tests for LangGraph agents."""
+"""Offline fake-graph smoke tests for LangGraph agents.
+
+Covers agent arun entrypoints by replacing compiled graphs with fakes and
+asserting initial state and LangGraph thread config construction.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +40,13 @@ pytestmark = pytest.mark.agent
 
 
 class FakeCompiledGraph:
-    """Minimal async graph stand-in used to inspect agent invocation."""
+    """Minimal async graph stand-in used to inspect agent invocation.
+
+    Attributes:
+        final_state: Values merged into the returned graph state.
+        state: Last initial state passed to ainvoke.
+        config: Last runnable config passed to ainvoke.
+    """
 
     def __init__(self, final_state: dict[str, Any]):
         """Verify init  ."""
@@ -49,13 +59,25 @@ class FakeCompiledGraph:
         state: dict[str, Any],
         config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Verify ainvoke."""
+        """Capture invocation state and return merged final state.
+
+        Args:
+            state: Initial graph state supplied by the agent.
+            config: Optional LangGraph runnable config.
+
+        Returns:
+            State merged with the configured final_state.
+        """
         self.state = state
         self.config = config
         return {**state, **self.final_state}
 
     def snapshot(self) -> dict[str, Any]:
-        """Return captured invocation details."""
+        """Return captured invocation details.
+
+        Returns:
+            Last state and config captured by ainvoke.
+        """
         return {"state": self.state, "config": self.config}
 
 

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for func_cache serialization helpers."""
+"""Tests for func_cache serialization helpers.
+
+Covers pickle round trips, optional compression, and wrapped errors for
+invalid serialized or compressed payloads.
+"""
 
 import pytest
 
@@ -14,7 +18,11 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("compress", [False, True])
 def test_dumps_and_loads_round_trip(compress):
-    """Verify dumps and loads round trip."""
+    """Verify dumps and loads round trip.
+
+    Args:
+        compress: Whether to use compressed serialization.
+    """
     payload = {
         "species": "arabidopsis thaliana",
         "genes": ["AT1G01010", "AT1G01020"],

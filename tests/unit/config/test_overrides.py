@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for config override helpers."""
+"""Tests for config override helpers.
+
+Covers mapped override collection, public config copies, sensitive config
+copies, and SecretStr override preservation.
+"""
 
 from typing import Optional
 
@@ -16,7 +20,14 @@ from mcp_server_phytomni.config.overrides import (
 
 
 class DemoConfig(BaseModel):
-    """Tiny config model used to test Pydantic model_copy behavior."""
+    """Tiny config model used to test Pydantic model_copy behavior.
+
+    Attributes:
+        NAME: String setting overridden by mapped kwargs.
+        COUNT: Integer setting overridden by fixed updates.
+        FLAG: Boolean setting used to verify falsy values survive.
+        OPTIONAL_VALUE: Optional setting used to verify None is skipped.
+    """
 
     NAME: str = "base"
     COUNT: int = 1
@@ -25,7 +36,13 @@ class DemoConfig(BaseModel):
 
 
 class DemoSensitiveConfig(BaseModel):
-    """Tiny sensitive config model used to test SecretStr handling."""
+    """Tiny sensitive config model used to test SecretStr handling.
+
+    Attributes:
+        BASE_URL: Non-secret endpoint override.
+        MODEL_ID: Non-secret model id override.
+        API_KEY: Secret API key override.
+    """
 
     BASE_URL: str = "https://base.example"
     MODEL_ID: str = "base-model"

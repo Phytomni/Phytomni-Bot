@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for shared agent registry helpers."""
+"""Tests for shared agent registry helpers.
+
+Covers cache reuse, Pydantic fingerprint dumping, and secret-field omission in
+agent registry cache keys.
+"""
 
 from pydantic import BaseModel, SecretStr
 
@@ -14,26 +18,44 @@ from mcp_server_phytomni.runtime.agent_registry import (
 
 
 class DemoConfig(BaseModel):
-    """Small config model used to test fingerprint dumping."""
+    """Small config model used to test fingerprint dumping.
+
+    Attributes:
+        MODEL: Model identifier included in fingerprints.
+        COUNT: Integer option included in fingerprints.
+    """
 
     MODEL: str
     COUNT: int = 1
 
 
 class DemoSensitiveConfig(BaseModel):
-    """Small sensitive config model used to test secret omission."""
+    """Small sensitive config model used to test secret omission.
+
+    Attributes:
+        API_KEY: Secret field omitted from fingerprints.
+        BASE_URL: Non-secret field retained in fingerprints.
+    """
 
     API_KEY: SecretStr
     BASE_URL: str
 
 
 def test_agent_registry_reuses_agent_for_matching_fingerprint():
-    """Verify agent registry reuses agent for matching fingerprint."""
+    """Verify agent registry reuses agent for matching fingerprint.
+
+    Returns:
+        None after cache identity assertions pass.
+    """
     clear_agent_registry()
     created = 0
 
     def factory() -> object:
-        """Verify factory."""
+        """Create a distinct object and count factory calls.
+
+        Returns:
+            New object instance for the registry cache.
+        """
         nonlocal created
         created += 1
         return object()

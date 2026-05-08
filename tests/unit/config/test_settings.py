@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for sensitive settings loading in offline mode."""
+"""Tests for sensitive settings loading in offline mode.
+
+Covers environment-only loading, secret repr masking, uppercase OBS variables,
+and legacy OBS environment variable fallback.
+"""
 
 import pytest
 
@@ -15,7 +19,12 @@ def test_sensitive_config_load_uses_environment_without_real_env_file(
     monkeypatch,
     tmp_path,
 ):
-    """Verify sensitive config load uses environment without real env file."""
+    """Verify SensitiveConfig loads environment without a real env file.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to adjust env/path state.
+        tmp_path: Temporary directory used for a missing .env path.
+    """
     monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "missing.env")
     monkeypatch.setenv("API_KEY", "override-api-key")
 
@@ -40,7 +49,11 @@ def test_sensitive_config_masks_secret_repr():
 
 
 def test_sensitive_config_prefers_uppercase_obs_env(monkeypatch):
-    """Verify sensitive config prefers uppercase obs env."""
+    """Verify SensitiveConfig prefers uppercase OBS env.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to set env vars.
+    """
     monkeypatch.setenv("ACCESS_KEY_ID", "uppercase-access-key-id")
     monkeypatch.setenv("SECRET_ACCESS_KEY", "uppercase-secret-access-key")
     monkeypatch.setenv("AccessKeyID", "legacy-access-key-id")
@@ -57,7 +70,11 @@ def test_sensitive_config_prefers_uppercase_obs_env(monkeypatch):
 
 
 def test_sensitive_config_accepts_legacy_obs_env(monkeypatch):
-    """Verify sensitive config accepts legacy obs env."""
+    """Verify SensitiveConfig accepts legacy OBS env.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to set env vars.
+    """
     monkeypatch.delenv("ACCESS_KEY_ID", raising=False)
     monkeypatch.delenv("SECRET_ACCESS_KEY", raising=False)
     monkeypatch.setenv("AccessKeyID", "legacy-access-key-id")

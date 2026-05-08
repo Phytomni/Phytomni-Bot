@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for the repository secret scanner."""
+"""Tests for the repository secret scanner.
+
+Covers loading the scanner script, detecting token assignments, allowing
+placeholder values, and reporting tracked sensitive paths.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,11 @@ from types import ModuleType
 
 
 def load_secret_scanner() -> ModuleType:
-    """Load the scanner script as a module."""
+    """Load the scanner script as a module.
+
+    Returns:
+        Imported scan_secrets module object.
+    """
     script_path = Path(__file__).parents[2] / "scripts" / "scan_secrets.py"
     spec = importlib.util.spec_from_file_location("scan_secrets", script_path)
     if spec is None or spec.loader is None:

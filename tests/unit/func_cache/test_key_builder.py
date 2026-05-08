@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for deterministic cache key construction."""
+"""Tests for deterministic cache key construction.
+
+Covers stable key generation, selected key params, excluded infrastructure
+arguments, config errors, and serialization failures.
+"""
 
 import pytest
 
@@ -16,7 +20,16 @@ pytestmark = pytest.mark.unit
 
 
 def sample_function(alpha, beta=2, *, gamma=None):
-    """Verify sample function."""
+    """Return arguments for cache-key construction tests.
+
+    Args:
+        alpha: Required positional-or-keyword argument.
+        beta: Optional positional-or-keyword argument.
+        gamma: Optional keyword-only argument.
+
+    Returns:
+        Tuple of received argument values.
+    """
     return alpha, beta, gamma
 
 

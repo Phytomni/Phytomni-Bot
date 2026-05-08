@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for func_cache lock orchestration."""
+"""Tests for func_cache lock orchestration.
+
+Covers lock acquisition/release owner tracking and timeout behavior through
+small fake storage implementations.
+"""
 
 import pytest
 
@@ -24,14 +28,30 @@ class GrantingStorage:
         self.lock_expire = None
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
-        """Verify try acquire lock."""
+        """Record acquisition inputs and grant the lock.
+
+        Args:
+            func_id: Function cache identifier.
+            key_hash: Cache key hash.
+            owner: Lock owner token.
+            lock_expire: Lock expiry seconds.
+
+        Returns:
+            True to grant the lock.
+        """
         self.acquired_key = (func_id, key_hash)
         self.acquired_owner = owner
         self.lock_expire = lock_expire
         return True
 
     def release_lock(self, func_id, key_hash, owner):
-        """Verify release lock."""
+        """Record release inputs.
+
+        Args:
+            func_id: Function cache identifier.
+            key_hash: Cache key hash.
+            owner: Lock owner token.
+        """
         self.released_key = (func_id, key_hash)
         self.released_owner = owner
 
@@ -46,13 +66,29 @@ class BlockingStorage:
         self.last_release = None
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
-        """Verify try acquire lock."""
+        """Record acquisition inputs and deny the lock.
+
+        Args:
+            func_id: Function cache identifier.
+            key_hash: Cache key hash.
+            owner: Lock owner token.
+            lock_expire: Lock expiry seconds.
+
+        Returns:
+            False to deny the lock.
+        """
         self.calls += 1
         self.last_attempt = (func_id, key_hash, owner, lock_expire)
         return False
 
     def release_lock(self, func_id, key_hash, owner):
-        """Record unexpected release attempts."""
+        """Record unexpected release attempts.
+
+        Args:
+            func_id: Function cache identifier.
+            key_hash: Cache key hash.
+            owner: Lock owner token.
+        """
         self.last_release = (func_id, key_hash, owner)
 
 

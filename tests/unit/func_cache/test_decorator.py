@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for the func_cache decorator."""
+"""Tests for the func_cache decorator.
+
+Covers sync and async cache hits, TTL expiry, exception handling, default cache
+paths, excluded parameters, corrupted values, and concurrent miss locking.
+"""
 
 import asyncio
 
@@ -19,7 +23,14 @@ pytestmark = pytest.mark.unit
 
 
 def test_func_cache_reuses_result_and_exposes_info(tmp_path):
-    """Verify func cache reuses result and exposes info."""
+    """Verify func_cache reuses result and exposes info.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after cache info assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(
@@ -28,7 +39,15 @@ def test_func_cache_reuses_result_and_exposes_info(tmp_path):
         ttl=60,
     )
     def double(value, noise=None):
-        """Verify double."""
+        """Return doubled value while counting calls.
+
+        Args:
+            value: Numeric value to double.
+            noise: Ignored value outside the cache key.
+
+        Returns:
+            Payload containing doubled value and call count.
+        """
         calls["count"] += 1
         calls["noise"] = noise
         return {"value": value * 2, "call": calls["count"]}
@@ -47,12 +66,23 @@ def test_func_cache_reuses_result_and_exposes_info(tmp_path):
 
 
 def test_func_cache_respects_zero_ttl(tmp_path):
-    """Verify func cache respects zero ttl."""
+    """Verify func_cache respects zero ttl.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after recomputation assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(db_path=str(tmp_path / "ttl.sqlite"), ttl=0)
     def next_value():
-        """Verify next value."""
+        """Return a monotonically increasing value.
+
+        Returns:
+            Next call count.
+        """
         calls["count"] += 1
         return calls["count"]
 
@@ -61,12 +91,23 @@ def test_func_cache_respects_zero_ttl(tmp_path):
 
 
 def test_func_cache_does_not_cache_exceptions(tmp_path):
-    """Verify func cache does not cache exceptions."""
+    """Verify func_cache does not cache exceptions.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after retry assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(db_path=str(tmp_path / "exceptions.sqlite"))
     def flaky_value():
-        """Verify flaky value."""
+        """Raise once and then return ok.
+
+        Returns:
+            Static success marker after the first failure.
+        """
         calls["count"] += 1
         if calls["count"] == 1:
             raise ValueError("boom")
@@ -83,13 +124,28 @@ def test_func_cache_default_db_path_uses_environment(
     monkeypatch,
     tmp_path,
 ):
-    """Verify func cache default db path uses environment."""
+    """Verify func_cache default db path uses environment.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to set env vars.
+        tmp_path: Temporary directory for the configured cache path.
+
+    Returns:
+        None after cache path assertions pass.
+    """
     db_path = tmp_path / "nested" / "env-cache.sqlite"
     monkeypatch.setenv("PHYTOMNI_CACHE_DB", str(db_path))
 
     @func_cache()
     def identity(value):
-        """Verify identity."""
+        """Return the received value.
+
+        Args:
+            value: Value to return.
+
+        Returns:
+            Received value.
+        """
         return value
 
     assert default_cache_db_path() == str(db_path)
@@ -101,13 +157,28 @@ def test_func_cache_default_db_path_uses_project_cache_dir(
     monkeypatch,
     tmp_path,
 ):
-    """Verify func cache default db path uses project cache dir."""
+    """Verify func_cache default db path uses project cache dir.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to clear env and chdir.
+        tmp_path: Temporary project root.
+
+    Returns:
+        None after project cache path assertions pass.
+    """
     monkeypatch.delenv("PHYTOMNI_CACHE_DB", raising=False)
     monkeypatch.chdir(tmp_path)
 
     @func_cache()
     def identity(value):
-        """Verify identity."""
+        """Return the received value.
+
+        Args:
+            value: Value to return.
+
+        Returns:
+            Received value.
+        """
         return value
 
     assert identity("root") == "root"
@@ -115,7 +186,14 @@ def test_func_cache_default_db_path_uses_project_cache_dir(
 
 
 def test_func_cache_exclude_params_can_skip_clients(tmp_path):
-    """Verify func cache exclude params can skip clients."""
+    """Verify func_cache exclude params can skip clients.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after excluded-client cache assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(
@@ -123,7 +201,15 @@ def test_func_cache_exclude_params_can_skip_clients(tmp_path):
         exclude_params=["client"],
     )
     def fetch(value, client=None):
-        """Verify fetch."""
+        """Return a cached payload while optionally calling a client.
+
+        Args:
+            value: Cache-key value.
+            client: Optional infrastructure callback excluded from the key.
+
+        Returns:
+            Payload containing value and call count.
+        """
         calls["count"] += 1
         if client is not None:
             client(value)
@@ -137,13 +223,27 @@ def test_func_cache_exclude_params_can_skip_clients(tmp_path):
 
 
 def test_func_cache_deletes_corrupted_values_and_recomputes(tmp_path):
-    """Verify func cache deletes corrupted values and recomputes."""
+    """Verify func_cache deletes corrupted values and recomputes.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after recomputation assertions pass.
+    """
     calls = {"count": 0}
     db_path = tmp_path / "corrupted.sqlite"
 
     @func_cache(db_path=str(db_path), key_params=["value"])
     def cached_value(value):
-        """Verify cached value."""
+        """Return a cached payload for corruption tests.
+
+        Args:
+            value: Cache-key value.
+
+        Returns:
+            Payload containing value and call count.
+        """
         calls["count"] += 1
         return {"value": value, "call": calls["count"]}
 
@@ -160,7 +260,14 @@ def test_func_cache_deletes_corrupted_values_and_recomputes(tmp_path):
 
 
 async def test_func_cache_supports_async_round_trip(tmp_path):
-    """Verify func cache supports async round trip."""
+    """Verify func_cache supports async round trip.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after async cache assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(
@@ -168,7 +275,15 @@ async def test_func_cache_supports_async_round_trip(tmp_path):
         key_params=["value"],
     )
     async def double(value, noise=None):
-        """Verify double."""
+        """Return doubled value asynchronously while counting calls.
+
+        Args:
+            value: Numeric value to double.
+            noise: Ignored value outside the cache key.
+
+        Returns:
+            Payload containing doubled value and call count.
+        """
         calls["count"] += 1
         calls["noise"] = noise
         await asyncio.sleep(0)
@@ -183,12 +298,23 @@ async def test_func_cache_supports_async_round_trip(tmp_path):
 
 
 async def test_func_cache_async_does_not_cache_exceptions(tmp_path):
-    """Verify func cache async does not cache exceptions."""
+    """Verify func_cache async does not cache exceptions.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after async retry assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(db_path=str(tmp_path / "async-exceptions.sqlite"))
     async def flaky_value():
-        """Verify flaky value."""
+        """Raise once and then return ok asynchronously.
+
+        Returns:
+            Static success marker after the first failure.
+        """
         calls["count"] += 1
         if calls["count"] == 1:
             raise ValueError("boom")
@@ -202,7 +328,14 @@ async def test_func_cache_async_does_not_cache_exceptions(tmp_path):
 
 
 async def test_func_cache_async_concurrent_miss_runs_once(tmp_path):
-    """Verify func cache async concurrent miss runs once."""
+    """Verify func_cache async concurrent miss runs once.
+
+    Args:
+        tmp_path: Temporary directory for the cache database.
+
+    Returns:
+        None after concurrent cache assertions pass.
+    """
     calls = {"count": 0}
 
     @func_cache(
@@ -211,7 +344,14 @@ async def test_func_cache_async_concurrent_miss_runs_once(tmp_path):
         lock_timeout=1,
     )
     async def expensive(value):
-        """Verify expensive."""
+        """Return a delayed payload while counting calls.
+
+        Args:
+            value: Cache-key value.
+
+        Returns:
+            Payload containing value and call count.
+        """
         calls["count"] += 1
         await asyncio.sleep(0.05)
         return {"value": value, "call": calls["count"]}

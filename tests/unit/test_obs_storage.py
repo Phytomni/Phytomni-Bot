@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for obsfs-first OBS storage helpers."""
+"""Tests for obsfs-first OBS storage helpers.
+
+Covers OBS path normalization, safe local obsfs paths, bucket availability,
+public path formatting, and SDK fallback behavior.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +44,12 @@ def test_normalize_obs_object_key_accepts_public_path_forms(
     obs_path: str,
     expected: str,
 ):
-    """Verify accepted OBS path forms normalize to object keys."""
+    """Verify accepted OBS path forms normalize to object keys.
+
+    Args:
+        obs_path: Public OBS path form under test.
+        expected: Expected normalized object key.
+    """
     assert normalize_obs_object_key(obs_path, "phytomni") == expected
 
 
@@ -54,18 +63,30 @@ def test_normalize_obs_object_key_accepts_public_path_forms(
     ],
 )
 def test_normalize_obs_object_key_rejects_unsafe_paths(obs_path: str):
-    """Verify unsafe OBS paths cannot escape the bucket root."""
+    """Verify unsafe OBS paths cannot escape the bucket root.
+
+    Args:
+        obs_path: Unsafe OBS path form expected to fail.
+    """
     with pytest.raises(ObsPathError):
         normalize_obs_object_key(obs_path, "phytomni")
 
 
 def test_obsfs_bucket_root_resolves_bucket_under_mount(tmp_path):
-    """Verify obsfs bucket roots are resolved under the mount root."""
+    """Verify obsfs bucket roots are resolved under the mount root.
+
+    Args:
+        tmp_path: Temporary mount root path.
+    """
     assert obsfs_bucket_root("phytomni", tmp_path) == tmp_path / "phytomni"
 
 
 def test_obsfs_path_for_joins_safe_object_key(tmp_path):
-    """Verify OBS paths map to local obsfs paths."""
+    """Verify OBS paths map to local obsfs paths.
+
+    Args:
+        tmp_path: Temporary mount root path.
+    """
     assert (
         obsfs_path_for(
             "obs://phytomni/agent_data/file.txt",
@@ -77,7 +98,11 @@ def test_obsfs_path_for_joins_safe_object_key(tmp_path):
 
 
 def test_obsfs_bucket_available_tracks_mount_root(tmp_path):
-    """Verify obsfs availability checks the bucket directory."""
+    """Verify obsfs availability checks the bucket directory.
+
+    Args:
+        tmp_path: Temporary mount root path.
+    """
     assert not obsfs_bucket_available("phytomni", tmp_path)
 
     (tmp_path / "phytomni").mkdir()
@@ -86,7 +111,11 @@ def test_obsfs_bucket_available_tracks_mount_root(tmp_path):
 
 
 def test_obsfs_path_exists_returns_false_for_missing_root(tmp_path):
-    """Verify path existence handles missing obsfs roots."""
+    """Verify path existence handles missing obsfs roots.
+
+    Args:
+        tmp_path: Temporary mount root path.
+    """
     assert not obsfs_path_exists("agent_data/file.txt", "phytomni", tmp_path)
 
 
@@ -103,10 +132,19 @@ def test_public_path_formatters_preserve_legacy_shapes():
 
 
 def test_obsfs_or_sdk_returns_obsfs_result_without_fallback():
-    """Verify successful obsfs actions do not call the fallback."""
+    """Verify successful obsfs actions do not call the fallback.
+
+    Returns:
+        None after obsfs-first result assertions pass.
+    """
     called = {"sdk": False}
 
     def sdk_action():
+        """Record unexpected SDK fallback use.
+
+        Returns:
+            SDK fallback marker.
+        """
         called["sdk"] = True
         return "sdk"
 
@@ -118,6 +156,7 @@ def test_obsfs_or_sdk_falls_back_on_io_errors():
     """Verify I/O failures use the SDK fallback action."""
 
     def obsfs_action():
+        """Raise an I/O error to force fallback."""
         raise PermissionError("mount denied")
 
     assert obsfs_or_sdk(obsfs_action, lambda: "sdk") == "sdk"

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for DeepGenome analyst result summary helpers."""
+"""Tests for DeepGenome analyst result summary helpers.
+
+Covers expression, explicit output directory, evolution domain, SMEP default,
+and protein structure summary loading behavior.
+"""
 
 import pytest
 
@@ -20,7 +24,11 @@ def _gene_dir(tmp_path):
 
 
 def test_build_sub_summary_loads_expression_outputs(tmp_path):
-    """Verify expression summaries load paths and replace figure labels."""
+    """Verify expression summaries load paths and replace figure labels.
+
+    Args:
+        tmp_path: Temporary DeepGenome output directory root.
+    """
     out_dir, gene_dir = _gene_dir(tmp_path)
     (gene_dir / "GeneA_tissues.png").write_text("", encoding="utf-8")
     (gene_dir / "GeneA_tissues.summary").write_text(
@@ -49,7 +57,11 @@ def test_build_sub_summary_loads_expression_outputs(tmp_path):
 
 
 def test_build_sub_summary_reads_explicit_results_dir(tmp_path):
-    """Verify result summaries can read from an explicit result directory."""
+    """Verify result summaries can read from an explicit result directory.
+
+    Args:
+        tmp_path: Temporary directory for default and explicit outputs.
+    """
     out_dir, gene_dir = _gene_dir(tmp_path)
     obsfs_dir = tmp_path / "obsfs" / "GeneA-results"
     obsfs_dir.mkdir(parents=True)
@@ -82,7 +94,11 @@ def test_build_sub_summary_reads_explicit_results_dir(tmp_path):
 
 
 def test_build_sub_summary_keeps_domain_text_unrenumbered(tmp_path):
-    """Verify evolution domain text preserves original figure labels."""
+    """Verify evolution domain text preserves original figure labels.
+
+    Args:
+        tmp_path: Temporary DeepGenome output directory root.
+    """
     out_dir, gene_dir = _gene_dir(tmp_path)
     (gene_dir / "GeneA_tree.png").write_text("", encoding="utf-8")
     (gene_dir / "GeneA_tree.summary").write_text(
@@ -120,7 +136,11 @@ def test_build_sub_summary_keeps_domain_text_unrenumbered(tmp_path):
 
 
 def test_build_sub_summary_preserves_smep_empty_default(tmp_path):
-    """Verify SMEP missing files keep the historical empty summary default."""
+    """Verify SMEP missing files keep the historical empty summary default.
+
+    Args:
+        tmp_path: Temporary DeepGenome output directory root.
+    """
     out_dir, _ = _gene_dir(tmp_path)
 
     result = build_sub_summary(
@@ -138,7 +158,11 @@ def test_build_sub_summary_preserves_smep_empty_default(tmp_path):
 
 
 def test_build_sub_summary_loads_protein_structure_blocks(tmp_path):
-    """Verify protein structures include CIF references and renumbered text."""
+    """Verify protein structures include CIF references and renumbered text.
+
+    Args:
+        tmp_path: Temporary DeepGenome output directory root.
+    """
     out_dir, gene_dir = _gene_dir(tmp_path)
     (gene_dir / "GeneA_seed_101_sample_0.cif").write_text(
         "structure",

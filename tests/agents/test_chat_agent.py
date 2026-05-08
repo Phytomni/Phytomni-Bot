@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Offline smoke tests for ChatAgent service helpers."""
+"""Offline smoke tests for ChatAgent service helpers.
+
+Covers upload conversion, prompt loading, OpenAI request construction, and
+follow-up question attachment without external network calls.
+"""
 
 from __future__ import annotations
 
@@ -16,14 +20,22 @@ pytestmark = pytest.mark.agent
 
 
 class FakeChatCompletion:
-    """Small OpenAI response stand-in with the model_dump contract."""
+    """Small OpenAI response stand-in with the model_dump contract.
+
+    Attributes:
+        content: Assistant message content returned by the fake response.
+    """
 
     def __init__(self, content: str = "ok"):
         """Verify init  ."""
         self.content = content
 
     def model_dump(self) -> dict[str, Any]:
-        """Verify model dump."""
+        """Return a Chat Completions-style payload.
+
+        Returns:
+            Minimal response dictionary with assistant content.
+        """
         return {
             "choices": [
                 {
@@ -36,18 +48,36 @@ class FakeChatCompletion:
         }
 
     def message_content(self) -> str:
-        """Return the fake assistant message content."""
+        """Return the fake assistant message content.
+
+        Returns:
+            Stored assistant message content.
+        """
         return self.content
 
 
 async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify phyto chat converts uploads and builds openai request."""
+    """Verify phyto_chat converts uploads and builds OpenAI request.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace I/O clients.
+
+    Returns:
+        None after request payload assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     async def fake_download_list_convert(**kwargs: Any) -> list[str]:
-        """Verify fake download list convert."""
+        """Capture upload conversion kwargs and return converted text.
+
+        Args:
+            **kwargs: Upload conversion keyword arguments.
+
+        Returns:
+            Converted file text fragments.
+        """
         captured["download"] = kwargs
         return ["converted paper text"]
 
@@ -56,7 +86,16 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         prompt_path: str,
         params: dict[str, Any] | None = None,
     ) -> str:
-        """Verify fake get prompt."""
+        """Capture prompt lookup arguments and return a system prompt.
+
+        Args:
+            prompt_file: Prompt YAML file path.
+            prompt_path: Prompt key path.
+            params: Optional prompt rendering parameters.
+
+        Returns:
+            Static system prompt text.
+        """
         captured["prompt"] = {
             "prompt_file": prompt_file,
             "prompt_path": prompt_path,
@@ -68,16 +107,31 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         """Capture OpenAI completion kwargs."""
 
         async def create(self, **kwargs: Any) -> FakeChatCompletion:
-            """Verify create."""
+            """Capture completion kwargs and return a fake completion.
+
+            Args:
+                **kwargs: Chat completion request keyword arguments.
+
+            Returns:
+                Fake chat completion response.
+            """
             captured["completion"] = kwargs
             return FakeChatCompletion("chat answer")
 
         def last_payload(self) -> dict[str, Any]:
-            """Return the latest captured completion payload."""
+            """Return the latest captured completion payload.
+
+            Returns:
+                Captured completion request payload.
+            """
             return captured.get("completion", {})
 
     class FakeAsyncOpenAI:
-        """Minimal AsyncOpenAI-compatible client."""
+        """Minimal AsyncOpenAI-compatible client.
+
+        Attributes:
+            chat: Fake chat namespace with a completions client.
+        """
 
         def __init__(self, api_key: str, base_url: str):
             """Verify init  ."""
@@ -92,11 +146,19 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
             )()
 
         def client_settings(self) -> dict[str, str]:
-            """Return captured client connection settings."""
+            """Return captured client connection settings.
+
+            Returns:
+                Captured api_key and base_url values.
+            """
             return captured["client"]
 
         def completion_client(self) -> Any:
-            """Return the fake completions client."""
+            """Return the fake completions client.
+
+            Returns:
+                Fake completions client instance.
+            """
             return self.chat.completions
 
     monkeypatch.setattr(
@@ -142,11 +204,25 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
 async def test_phyto_chat_with_follow_attaches_follow_up_questions(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify phyto chat with follow attaches follow up questions."""
+    """Verify phyto_chat_with_follow attaches follow-up questions.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace chat helpers.
+
+    Returns:
+        None after follow-up payload assertions pass.
+    """
     calls: list[dict[str, Any]] = []
 
     async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
-        """Verify fake phyto chat."""
+        """Return main answer on first call and follow-ups on second.
+
+        Args:
+            **kwargs: Chat helper keyword arguments.
+
+        Returns:
+            Fake chat completion payload.
+        """
         calls.append(kwargs)
         content = (
             "main answer"
@@ -160,7 +236,16 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
         prompt_path: str,
         params: dict[str, Any] | None = None,
     ) -> str:
-        """Verify fake get prompt."""
+        """Validate follow-up prompt rendering arguments.
+
+        Args:
+            prompt_file: Prompt YAML file path.
+            prompt_path: Prompt key path.
+            params: Prompt rendering parameters.
+
+        Returns:
+            Static follow-up prompt text.
+        """
         assert prompt_file == "prompts.yaml"
         assert prompt_path == "system/follow_up_questions"
         assert params == {

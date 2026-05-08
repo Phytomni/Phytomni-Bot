@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Offline smoke tests for the DataAgent wrapper."""
+"""Offline smoke tests for the DataAgent wrapper.
+
+Covers graph routing, NL2SQL dialog id policy, DataAgent graph invocation, and
+legacy rewrite_nl2sql wrapper thread-id compatibility.
+"""
 
 from typing import Any
 
@@ -26,7 +30,15 @@ class FakeCompiledGraph:
         self.config = None
 
     async def ainvoke(self, state, config=None):
-        """Verify ainvoke."""
+        """Capture DataAgent graph invocation and return final response.
+
+        Args:
+            state: Initial DataAgent workflow state.
+            config: Optional LangGraph runnable config.
+
+        Returns:
+            Final graph state containing the response payload.
+        """
         self.state = state
         self.config = config
         return {
@@ -37,7 +49,11 @@ class FakeCompiledGraph:
         }
 
     def snapshot(self):
-        """Return captured invocation details."""
+        """Return captured invocation details.
+
+        Returns:
+            Last state and config captured by ainvoke.
+        """
         return {"state": self.state, "config": self.config}
 
 
@@ -103,11 +119,23 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
 async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify wrapper keeps dialog ID and graph thread ID aligned."""
+    """Verify wrapper keeps dialog ID and graph thread ID aligned.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace the agent and
+            cache.
+
+    Returns:
+        None after wrapper config and run assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     class FakeDataAgent:
-        """Fake workflow that records constructor and run arguments."""
+        """Fake workflow that records constructor and run arguments.
+
+        Attributes:
+            Constructor and run inputs are stored in the outer captured dict.
+        """
 
         def __init__(self, data_config, sensitive_config):
             """Capture resolved wrapper configuration."""
@@ -120,7 +148,16 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             is_rewrite: bool = True,
             thread_id: str | None = None,
         ) -> dict[str, object]:
-            """Capture the graph invocation."""
+            """Capture the graph invocation.
+
+            Args:
+                user_query: Query forwarded by the wrapper.
+                is_rewrite: Whether rewrite mode is enabled.
+                thread_id: Thread id derived from dialog id.
+
+            Returns:
+                Minimal success payload.
+            """
             captured["run"] = {
                 "user_query": user_query,
                 "is_rewrite": is_rewrite,
@@ -129,11 +166,24 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             return {"ok": True}
 
         def captured_config(self) -> Any:
-            """Return captured config for lint-friendly fake shape."""
+            """Return captured config for lint-friendly fake shape.
+
+            Returns:
+                Captured DataConfig-like object.
+            """
             return captured["config"]
 
     def no_cache(name, factory, fingerprint_values=None):
-        """Return a fresh fake agent."""
+        """Return a fresh fake agent.
+
+        Args:
+            name: Ignored cache name.
+            factory: Factory used to create the fake agent.
+            fingerprint_values: Ignored cache fingerprint values.
+
+        Returns:
+            New fake agent instance from ``factory``.
+        """
         del name, fingerprint_values
         return factory()
 
