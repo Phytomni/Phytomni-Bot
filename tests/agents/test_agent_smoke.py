@@ -12,6 +12,7 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.brief_gene_agents import BriefGeneAgent
 from mcp_server_phytomni.config.defaults import (
     AnalystConfig,
@@ -30,7 +31,6 @@ from mcp_server_phytomni.gene_network_agents import GeneNetworkAgents
 from mcp_server_phytomni.in_silico_research_agents import (
     InSilicoResearchAgents,
 )
-from mcp_server_phytomni.review_agents import DeepResearchAgent
 
 pytestmark = pytest.mark.agent
 
