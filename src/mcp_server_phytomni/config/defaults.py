@@ -280,6 +280,10 @@ class BriefGeneConfig(KnowledgeConfig):
     This agent combines direct BI database annotation lookup with literature
     retrieval, so it inherits the knowledge retrieval and chat defaults while
     adding the BI API endpoint.
+
+    Attributes:
+        BI_URL: BI API endpoint used for direct gene annotation lookup.
+        TOP_N: Maximum number of literature retrieval results to keep.
     """
 
     BI_URL: str = "https://phytomni.cn/api/data"
@@ -290,6 +294,9 @@ class GeneNetworkConfig(AnalystConfig):
     """Configuration settings specific to gene network tasks.
 
     Inherits settings from `AnalystConfig`.
+
+    Attributes:
+        DEEPGENOME_DATA: Static species metadata file used for task prompts.
     """
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
@@ -324,6 +331,9 @@ class DigitalDesignConfig(AnalystConfig):
     """Configuration settings specific to digital design tasks.
 
     Inherits settings from `AnalystConfig`.
+
+    Attributes:
+        DEEPGENOME_DATA: Static species metadata file used for task prompts.
     """
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
@@ -340,6 +350,10 @@ class EnvironmentConfig(AnalystConfig):
     """Configuration settings specific to digital design tasks.
 
     Inherits settings from `AnalystConfig`.
+
+    Attributes:
+        ENVIRONMENT_DATA: Static environment metadata file.
+        REGION_CODE: Static region metadata file.
     """
 
     ENVIRONMENT_DATA: str = str(PRE_PREPARED_DATA_PATH)
