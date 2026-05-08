@@ -5,36 +5,54 @@
 """Shared helpers for tokens, prompts, OBS downloads, and cached file reads."""
 
 import asyncio
-import json
-from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
-from random import uniform
-from re import sub
 from traceback import format_exc
 from typing import Any, List, Mapping, Optional
-from warnings import warn
 
 from httpx import (
     AsyncClient,
-    ConnectError,
     HTTPError,
-    HTTPStatusError,
-    Response,
     Timeout,
-    TimeoutException,
 )
 from markitdown import MarkItDown
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 from obs import ObsClient
-from yaml import safe_load
 
+from .common.docs import (
+    format_retrieved_doc_context,
+    format_retrieved_doc_fragment,
+    format_upload_context,
+)
+from .common.http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
+    request_response_with_retries,
+    retry_http_status_or_raise,
+    retry_network_or_raise,
+)
+from .common.prompts import (
+    file_cache_fingerprint,
+    get_prompt,
+    load_json_file,
+    load_template,
+    load_text_file,
+    render_template,
+)
+from .common.responses import (
+    attach_message_payload,
+    first_message,
+    join_limited_fragments,
+    message_content,
+    parse_follow_up_questions,
+    parse_json_list_fragment,
+)
 from .config.defaults import ServerConfig
 from .config.settings import SensitiveConfig
-from .func_cache import func_cache
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,
@@ -48,7 +66,41 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
     SENSITIVE_CONFIG.obs_credentials()
 )
 
-FILE_CACHE_TTL = 3600
+__all__ = [
+    "JsonPostRequest",
+    "JsonPostRetry",
+    "ObsCredentials",
+    "ObsDownloadOptions",
+    "ObsTransferContext",
+    "ResolvedObsFile",
+    "attach_message_payload",
+    "convert_multi_files",
+    "convert_single_file",
+    "download_list_convert",
+    "download_obs_file",
+    "download_obs_list",
+    "download_upload_context",
+    "file_cache_fingerprint",
+    "first_message",
+    "format_retrieved_doc_context",
+    "format_retrieved_doc_fragment",
+    "format_upload_context",
+    "get_prompt",
+    "get_token",
+    "join_limited_fragments",
+    "load_json_file",
+    "load_template",
+    "load_text_file",
+    "message_content",
+    "parse_follow_up_questions",
+    "parse_json_list_fragment",
+    "post_json_with_retries",
+    "render_template",
+    "request_response_with_retries",
+    "retry_http_status_or_raise",
+    "retry_network_or_raise",
+    "split_list",
+]
 
 
 @dataclass(frozen=True)
@@ -83,247 +135,11 @@ class ObsTransferContext:
 
 
 @dataclass(frozen=True)
-class JsonPostRequest:
-    """HTTP request payload for retry helpers."""
-
-    url: str
-    method: str = "POST"
-    headers: Mapping[str, str] | None = None
-    json_body: Any = None
-    data: Any = None
-
-
-@dataclass(frozen=True)
-class JsonPostRetry:
-    """Retry policy and error messages for JSON POST calls."""
-
-    timeout: float
-    max_retries: int
-    retriable_codes: Iterable[int]
-    message: str
-    network_message: str = "Network error"
-
-
-@dataclass(frozen=True)
 class ResolvedObsFile:
     """Local file path plus cleanup behavior for one OBS source file."""
 
     file_path: str
     cleanup: bool
-
-
-async def _send_retry_request(
-    client: AsyncClient,
-    request: JsonPostRequest,
-    timeout: float,
-) -> Response:
-    """Send one HTTP request using the common retry payload."""
-    method = request.method.upper()
-    headers = dict(request.headers or {})
-    if method == "GET":
-        return await client.get(
-            request.url,
-            headers=headers,
-            timeout=timeout,
-        )
-    if method == "POST":
-        return await client.post(
-            request.url,
-            json=request.json_body,
-            data=request.data,
-            headers=headers,
-            timeout=timeout,
-        )
-    return await client.request(
-        method,
-        request.url,
-        json=request.json_body,
-        data=request.data,
-        headers=headers,
-        timeout=timeout,
-    )
-
-
-def message_content(response: Any) -> str:
-    """Return the first assistant message content from an OpenAI-style dict."""
-    message = first_message(response)
-    return str(message.get("content", "")) if message else ""
-
-
-def first_message(response: Any) -> Optional[dict[str, Any]]:
-    """Return the first OpenAI-style message dictionary if present."""
-    if not isinstance(response, dict):
-        return None
-    choices = response.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    choice = choices[0]
-    if not isinstance(choice, dict):
-        return None
-    message = choice.get("message")
-    return message if isinstance(message, dict) else None
-
-
-async def retry_http_status_or_raise(
-    exc: HTTPStatusError,
-    *,
-    attempt: int,
-    max_retries: int,
-    retriable_codes: Iterable[int],
-    message: str,
-) -> bool:
-    """Sleep for a retriable HTTP status error or raise an MCP error."""
-    if (
-        exc.response is not None
-        and exc.response.status_code in retriable_codes
-        and attempt < max_retries
-    ):
-        await asyncio.sleep((2**attempt) + uniform(0, 1))
-        return True
-    raise McpError(
-        ErrorData(
-            code=INTERNAL_ERROR,
-            message=f"{message}: {str(exc)}",
-        )
-    ) from exc
-
-
-async def retry_network_or_raise(
-    exc: ConnectError | TimeoutException,
-    *,
-    attempt: int,
-    max_retries: int,
-    message: str = "Network error",
-) -> bool:
-    """Sleep for a retriable network error or raise an MCP error."""
-    if attempt < max_retries:
-        await asyncio.sleep(1.5**attempt)
-        return True
-    raise McpError(
-        ErrorData(
-            code=INTERNAL_ERROR,
-            message=f"{message}: {str(exc)}",
-        )
-    ) from exc
-
-
-async def request_response_with_retries(
-    client: AsyncClient,
-    request: JsonPostRequest,
-    retry: JsonPostRetry,
-) -> Response | None:
-    """Request with shared HTTP/network retry handling and return response."""
-    attempt = 0
-    while attempt <= retry.max_retries:
-        try:
-            response = await _send_retry_request(
-                client, request, retry.timeout
-            )
-            response.raise_for_status()
-            return response
-        except HTTPStatusError as exc:
-            if await retry_http_status_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=retry.max_retries,
-                retriable_codes=retry.retriable_codes,
-                message=retry.message,
-            ):
-                attempt += 1
-                continue
-        except (ConnectError, TimeoutException) as exc:
-            retry_network = await retry_network_or_raise(
-                exc,
-                attempt=attempt,
-                max_retries=retry.max_retries,
-                message=retry.network_message,
-            )
-            if retry_network:
-                attempt += 1
-                continue
-        attempt += 1
-    return None
-
-
-async def post_json_with_retries(
-    client: AsyncClient,
-    request: JsonPostRequest,
-    retry: JsonPostRetry,
-) -> Any:
-    """POST with shared HTTP/network retry handling and return JSON."""
-    response = await request_response_with_retries(client, request, retry)
-    return response.json() if response is not None else None
-
-
-def parse_json_list_fragment(text: str) -> List[Any]:
-    """Parse a JSON list embedded in model output text."""
-    if not text:
-        return []
-    start_index = text.find("[")
-    end_index = text.rfind("]") + 1
-    if start_index == -1 or end_index <= start_index:
-        return []
-    try:
-        parsed = json.loads(text[start_index:end_index])
-    except (ValueError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def parse_follow_up_questions(text: str) -> List[str]:
-    """Parse follow-up questions from a JSON list embedded in model output."""
-    return parse_json_list_fragment(text)
-
-
-def attach_message_payload(
-    phyto_response: dict[str, Any],
-    payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Attach payload fields to the first assistant message."""
-    if not isinstance(phyto_response, dict) or "choices" not in phyto_response:
-        phyto_response = {"choices": [{"message": {}}]}
-    if not phyto_response["choices"]:
-        phyto_response["choices"].append({"message": {}})
-    if "message" not in phyto_response["choices"][0]:
-        phyto_response["choices"][0]["message"] = {}
-
-    phyto_response["choices"][0]["message"].update(dict(payload))
-    return phyto_response
-
-
-def join_limited_fragments(
-    fragments: Iterable[str],
-    max_tokens: int,
-    initial_length: int = 0,
-) -> tuple[str, int]:
-    """Join fragments until their combined length reaches the limit."""
-    selected_fragments = []
-    total_length = initial_length
-    for fragment in fragments:
-        if total_length + len(fragment) <= max_tokens:
-            selected_fragments.append(fragment)
-            total_length += len(fragment)
-        else:
-            break
-    return "\n\n".join(selected_fragments), total_length
-
-
-def format_upload_context(
-    upload_texts: Iterable[str],
-    max_tokens: int,
-    initial_length: int = 0,
-) -> tuple[str, int]:
-    """Format uploaded file texts as bounded prompt context."""
-    fragments = (
-        f"[user upload file {index + 1} begin]\n"
-        f"{text}\n[user upload file {index + 1} end]"
-        for index, text in enumerate(upload_texts)
-    )
-    return join_limited_fragments(
-        fragments,
-        max_tokens=max_tokens,
-        initial_length=initial_length,
-    )
 
 
 async def download_upload_context(
@@ -349,43 +165,6 @@ async def download_upload_context(
         max_workers=config.MAX_WORKERS,
     )
     return format_upload_context(upload_texts, max_tokens=config.MAX_TOKENS)
-
-
-def format_retrieved_doc_context(
-    docs: Iterable[Mapping[str, Any]],
-    max_tokens: int,
-    initial_length: int = 0,
-) -> tuple[str, int]:
-    """Format retrieved documents as bounded prompt context."""
-    fragments = (
-        format_retrieved_doc_fragment(doc, index)
-        for index, doc in enumerate(docs)
-    )
-    return join_limited_fragments(
-        fragments,
-        max_tokens=max_tokens,
-        initial_length=initial_length,
-    )
-
-
-def format_retrieved_doc_fragment(
-    doc: Mapping[str, Any],
-    index: int,
-    label: str = "document",
-) -> str:
-    """Format one retrieved document fragment for prompt context."""
-    header = f"[{label} {index + 1} begin] {doc['title']}"
-    content_field = (
-        doc.get("big_content")
-        if "big_content" in doc
-        else doc.get("content", "")
-    )
-    body = (
-        f"{doc['subtitle']}\n{content_field}"
-        if doc.get("subtitle")
-        else doc.get("content", "")
-    )
-    return f"{header}\n{body} [{label} {index + 1} end]"
 
 
 async def get_token(
@@ -444,176 +223,6 @@ async def get_token(
                     message=f"Failed to get token: {str(e)}",
                 )
             ) from e
-
-
-def load_template(
-    template_file: str,
-    template_str: Optional[str] = None,
-) -> str:
-    """Load a template string from a YAML file.
-
-    This function reads a YAML file and extracts a specific template string.
-    It supports navigating nested structures within the YAML file using a
-    slash-separated path.
-
-    Args:
-        template_file: The path to the YAML template file. Must be a valid
-            file path with read permissions.
-        template_str: A nested path (e.g., "prompts/analysis") to locate the
-            template within the YAML file. Required for hierarchical files.
-
-    Returns:
-        The final template string from the specified location in the YAML.
-
-    Raises:
-        FileNotFoundError: If the `template_file` path is invalid.
-        KeyError: If the `template_str` path does not exist in the YAML.
-        ValueError: If the YAML is multi-level and `template_str` is not
-            provided.
-    """
-    template_path = Path(template_file)
-    if not template_path.is_file():
-        raise FileNotFoundError(f"Template file not found: {template_file}")
-    file_path, mtime_ns, size = file_cache_fingerprint(template_file)
-    return _load_template_cached(
-        file_path,
-        template_str,
-        mtime_ns,
-        size,
-    )
-
-
-def file_cache_fingerprint(file_path: str) -> tuple[str, int, int]:
-    """Return a stable file cache fingerprint for read-only local files."""
-    path = Path(file_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"File not found: {file_path}")
-    stat = path.stat()
-    return str(path.resolve()), stat.st_mtime_ns, stat.st_size
-
-
-@func_cache(
-    key_params=["template_file", "template_str", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
-def _load_template_cached(
-    template_file: str,
-    template_str: Optional[str],
-    mtime_ns: int,
-    size: int,
-) -> str:
-    """Load a template string from disk using a file-aware cache key."""
-    del mtime_ns, size
-    with open(template_file, "r", encoding="utf-8") as f:
-        data = safe_load(f)
-    if template_str:
-        current = data
-        for part in template_str.split("/"):
-            if part not in current:
-                raise KeyError(
-                    f"Path '{part}' not found in template structure"
-                )
-            current = current[part]
-        return current
-    if isinstance(data, dict) and len(data) == 1:
-        return next(iter(data.values()))
-    raise ValueError("Must specify template_str for multi-level templates")
-
-
-def load_json_file(file_path: str) -> Any:
-    """Load a JSON file through the shared file-aware cache."""
-    cache_path, mtime_ns, size = file_cache_fingerprint(file_path)
-    return _load_json_file_cached(cache_path, mtime_ns, size)
-
-
-@func_cache(
-    key_params=["file_path", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
-def _load_json_file_cached(file_path: str, mtime_ns: int, size: int) -> Any:
-    """Load JSON from disk using a file-aware cache key."""
-    del mtime_ns, size
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_text_file(file_path: str) -> str:
-    """Load a text file through the shared file-aware cache."""
-    cache_path, mtime_ns, size = file_cache_fingerprint(file_path)
-    return _load_text_file_cached(cache_path, mtime_ns, size)
-
-
-@func_cache(
-    key_params=["file_path", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
-def _load_text_file_cached(file_path: str, mtime_ns: int, size: int) -> str:
-    """Load text from disk using a file-aware cache key."""
-    del mtime_ns, size
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def render_template(
-    template: str, parameters: Optional[Mapping[str, Any]] = None
-) -> str:
-    """Replace placeholders in a template string with provided values.
-
-    This function finds all placeholders in the format `{{parameter}}` within
-    the template string and substitutes them with corresponding values from the
-    `parameters` dictionary. If a placeholder does not have a corresponding key
-    in the `parameters` dictionary, it will be left as is with a warning.
-
-    Args:
-        template: The template string containing placeholders.
-        parameters: A dictionary where keys match placeholder names and values
-            are the substitution content. Values will be stringified.
-
-    Returns:
-        The fully rendered template with all available placeholders replaced.
-        Missing parameters will remain as placeholders.
-    """
-    if parameters is None:
-        parameters = {}
-    pattern = r"\{\{([^}]+)\}\}"
-
-    def replacer(match):
-        param_name = match.group(1).strip()
-        if param_name not in parameters:
-            warn(f"Missing parameter '{param_name}' in template")
-            return ""
-        return str(parameters[param_name])
-
-    return sub(pattern, replacer, template)
-
-
-def get_prompt(
-    template_file: str,
-    template_str: Optional[str] = None,
-    parameters: Optional[Mapping[str, Any]] = None,
-) -> str:
-    """Generate a complete prompt from a template file and parameters.
-
-    This function combines `load_template` and `render_template` into a single
-    workflow. It first loads a template from a YAML file and then populates it
-    with the provided parameters.
-
-    Args:
-        template_file: The path to the YAML template file.
-        template_str: The nested path to the specific template within the file.
-        parameters: A dictionary of key-value pairs for placeholder
-            substitution.
-
-    Returns:
-        The final, rendered prompt string ready for use.
-
-    Raises:
-        Exceptions from both `load_template` and `render_template`.
-    """
-    if parameters is None:
-        parameters = {}
-    template = load_template(template_file, template_str)
-    return render_template(template, parameters)
 
 
 async def download_obs_file(

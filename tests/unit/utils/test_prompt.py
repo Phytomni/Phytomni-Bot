@@ -6,7 +6,7 @@
 
 import pytest
 
-from mcp_server_phytomni.utils import (
+from mcp_server_phytomni.common.prompts import (
     get_prompt,
     load_json_file,
     load_template,

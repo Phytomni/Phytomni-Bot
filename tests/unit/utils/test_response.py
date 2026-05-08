@@ -6,10 +6,12 @@
 
 import pytest
 
-from mcp_server_phytomni.utils import (
-    attach_message_payload,
+from mcp_server_phytomni.common.docs import (
     format_retrieved_doc_context,
     format_upload_context,
+)
+from mcp_server_phytomni.common.responses import (
+    attach_message_payload,
     message_content,
     parse_follow_up_questions,
     parse_json_list_fragment,
