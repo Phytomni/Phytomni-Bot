@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Knowledge agent package exports."""
+"""Knowledge agent package exports.
+
+This package exposes the LangGraph-backed `KnowledgeAgent`, retrieval and
+reranking helpers, and compatibility wrappers for RAG-style answers.
+"""
 
 from .agent import (
     KnowledgeAgent,

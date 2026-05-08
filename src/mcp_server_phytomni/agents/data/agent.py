@@ -68,7 +68,16 @@ async def rewrite_nl2sql(
     is_rewrite: bool = True,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph-based DataAgent."""
+    """Compatibility wrapper around the LangGraph-based DataAgent.
+
+    Args:
+        user_query: Natural-language database question.
+        is_rewrite: Whether to retrieve scenarios and rewrite before NL2SQL.
+        **kwargs: Keyword-compatible config and sensitive overrides.
+
+    Returns:
+        Final DataAgent response dictionary from the LangGraph workflow.
+    """
     active_dialog_id = kwargs.get("dialog_id") or _default_dialog_id()
     arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
@@ -189,7 +198,14 @@ class DataAgent:
     def route_start(
         self, state: DataAgentState
     ) -> Literal["retrieve_node", "search_node"]:
-        """Choose whether the workflow should rewrite before SQL search."""
+        """Choose whether the workflow should rewrite before SQL search.
+
+        Args:
+            state: Current DataAgent workflow state.
+
+        Returns:
+            Name of the first graph node to execute.
+        """
         if state["is_rewrite"]:
             return "retrieve_node"
         return "search_node"

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Cached knowledge retrieval and reranking helpers."""
+"""Cached knowledge retrieval and reranking helpers.
+
+This module exposes retrieval option models plus `retrieve`,
+`multi_retrieve`, and `rerank` for cached document search and reranking.
+"""
 
 import asyncio
 from dataclasses import dataclass
@@ -33,7 +37,13 @@ RETRIEVE_CACHE_TTL = 300
 
 @dataclass(frozen=True)
 class RetryOptions:
-    """HTTP retry settings shared by retrieval requests."""
+    """HTTP retry settings shared by retrieval requests.
+
+    Attributes:
+        timeout: HTTP timeout in seconds.
+        retriable_codes: HTTP status codes that trigger retries.
+        max_retries: Maximum retry attempts.
+    """
 
     timeout: float = KNOWLEDGE_CONFIG.TIMEOUT
     retriable_codes: tuple[int, ...] = tuple(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
@@ -42,7 +52,16 @@ class RetryOptions:
 
 @dataclass(frozen=True)
 class RetrievePayloadOptions:
-    """Payload settings for one repository retrieval request."""
+    """Payload settings for one repository retrieval request.
+
+    Attributes:
+        repo_id: Repository ID to search.
+        page_num: Page number requested from the retrieval service.
+        page_size: Number of documents requested from one repository.
+        filter_string: Optional metadata filter expression.
+        scope: Retrieval scope, such as doc, keyword, or both.
+        extra_repo_ids: Optional extra repository IDs included in search.
+    """
 
     repo_id: str = KNOWLEDGE_CONFIG.REPO_ID
     page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
@@ -54,7 +73,14 @@ class RetrievePayloadOptions:
 
 @dataclass(frozen=True)
 class MultiRetrievePayloadOptions:
-    """Payload settings for multi-repository retrieval."""
+    """Payload settings for multi-repository retrieval.
+
+    Attributes:
+        page_num: Page number requested from the retrieval service.
+        filter_string: Optional metadata filter expression.
+        scope: Retrieval scope, such as doc, keyword, or both.
+        extra_repo_ids: Optional extra repository IDs included in search.
+    """
 
     page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
     filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING
@@ -64,7 +90,16 @@ class MultiRetrievePayloadOptions:
 
 @dataclass(frozen=True)
 class RetrieveOptions:
-    """Resolved options for one retrieval request."""
+    """Resolved options for one retrieval request.
+
+    Attributes:
+        retrieve_url: Retrieval service endpoint URL.
+        payload_options: Repository and payload settings.
+        rerank_url: Rerank service endpoint URL.
+        rerank_batch_size: Maximum docs per rerank request.
+        score_threshold: Minimum accepted rerank score.
+        retry_options: HTTP retry settings.
+    """
 
     retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL
     payload_options: RetrievePayloadOptions = RetrievePayloadOptions()
@@ -75,7 +110,14 @@ class RetrieveOptions:
 
     @classmethod
     def from_kwargs(cls, values: Dict[str, Any]):
-        """Build options from keyword-compatible overrides."""
+        """Build options from keyword-compatible overrides.
+
+        Args:
+            values: Keyword-compatible retrieval and retry overrides.
+
+        Returns:
+            Resolved retrieval options.
+        """
         options = dict(values)
         if options.get("retriable_codes") is None:
             options.pop("retriable_codes", None)
@@ -120,31 +162,59 @@ class RetrieveOptions:
 
     @property
     def page_size(self) -> int:
-        """Return the retrieval page size."""
+        """Return the retrieval page size.
+
+        Returns:
+            Number of documents requested from one repository.
+        """
         return self.payload_options.page_size
 
     @property
     def scope(self) -> str:
-        """Return the retrieval scope."""
+        """Return the retrieval scope.
+
+        Returns:
+            Retrieval scope such as doc, keyword, or both.
+        """
         return self.payload_options.scope
 
     @property
     def timeout(self) -> float:
-        """Return the HTTP timeout."""
+        """Return the HTTP timeout.
+
+        Returns:
+            HTTP timeout in seconds.
+        """
         return self.retry_options.timeout
 
     @property
     def retriable_codes(self) -> tuple[int, ...]:
-        """Return retryable HTTP status codes."""
+        """Return retryable HTTP status codes.
+
+        Returns:
+            HTTP status codes that trigger retries.
+        """
         return self.retry_options.retriable_codes
 
     @property
     def max_retries(self) -> int:
-        """Return max HTTP retry attempts."""
+        """Return max HTTP retry attempts.
+
+        Returns:
+            Maximum retry attempts for retrieval and rerank calls.
+        """
         return self.retry_options.max_retries
 
     def payload(self, user_query: str, scope: str) -> Dict[str, Any]:
-        """Return the HTTP JSON payload for one retrieve scope."""
+        """Return the HTTP JSON payload for one retrieve scope.
+
+        Args:
+            user_query: User query to send to the retrieval service.
+            scope: Retrieval scope for this payload.
+
+        Returns:
+            JSON payload for one retrieval service request.
+        """
         return {
             "repo_id": self.payload_options.repo_id,
             "content": user_query,
@@ -158,7 +228,17 @@ class RetrieveOptions:
 
 @dataclass(frozen=True)
 class MultiRetrieveOptions:
-    """Resolved options for multiple repository retrieval."""
+    """Resolved options for multiple repository retrieval.
+
+    Attributes:
+        retrieve_url: Retrieval service endpoint URL.
+        payload_options: Multi-repository payload settings.
+        rerank_url: Rerank service endpoint URL.
+        rerank_batch_size: Maximum docs per rerank request.
+        score_threshold: Minimum accepted rerank score.
+        top_n: Maximum number of merged documents to keep.
+        retry_options: HTTP retry settings.
+    """
 
     retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL
     payload_options: MultiRetrievePayloadOptions = (
@@ -172,7 +252,14 @@ class MultiRetrieveOptions:
 
     @classmethod
     def from_kwargs(cls, values: Dict[str, Any]):
-        """Build options from keyword-compatible overrides."""
+        """Build options from keyword-compatible overrides.
+
+        Args:
+            values: Keyword-compatible multi-retrieval and retry overrides.
+
+        Returns:
+            Resolved multi-retrieval options.
+        """
         options = dict(values)
         if options.get("retriable_codes") is None:
             options.pop("retriable_codes", None)
@@ -216,21 +303,41 @@ class MultiRetrieveOptions:
 
     @property
     def timeout(self) -> float:
-        """Return the HTTP timeout."""
+        """Return the HTTP timeout.
+
+        Returns:
+            HTTP timeout in seconds.
+        """
         return self.retry_options.timeout
 
     @property
     def retriable_codes(self) -> tuple[int, ...]:
-        """Return retryable HTTP status codes."""
+        """Return retryable HTTP status codes.
+
+        Returns:
+            HTTP status codes that trigger retries.
+        """
         return self.retry_options.retriable_codes
 
     @property
     def max_retries(self) -> int:
-        """Return max HTTP retry attempts."""
+        """Return max HTTP retry attempts.
+
+        Returns:
+            Maximum retry attempts for retrieval and rerank calls.
+        """
         return self.retry_options.max_retries
 
     def retrieve_kwargs(self, repo_id: str, page_size: int) -> Dict[str, Any]:
-        """Return keyword arguments for a single retrieve call."""
+        """Return keyword arguments for a single retrieve call.
+
+        Args:
+            repo_id: Repository ID to search.
+            page_size: Number of documents requested from the repository.
+
+        Returns:
+            Keyword arguments accepted by `retrieve`.
+        """
         return {
             "retrieve_url": self.retrieve_url,
             "repo_id": repo_id,
@@ -250,7 +357,17 @@ class MultiRetrieveOptions:
 
 @dataclass(frozen=True)
 class RerankOptions:
-    """Resolved options for one rerank request."""
+    """Resolved options for one rerank request.
+
+    Attributes:
+        rerank_url: Rerank service endpoint URL.
+        top_n: Maximum number of ranked documents to keep.
+        rerank_batch_size: Maximum docs per rerank request.
+        score_threshold: Minimum accepted rerank score.
+        timeout: HTTP timeout in seconds.
+        retriable_codes: HTTP status codes that trigger retries.
+        max_retries: Maximum retry attempts.
+    """
 
     rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL
     top_n: int = KNOWLEDGE_CONFIG.TOP_N
@@ -262,7 +379,14 @@ class RerankOptions:
 
     @classmethod
     def from_kwargs(cls, values: Dict[str, Any]):
-        """Build options from keyword-compatible overrides."""
+        """Build options from keyword-compatible overrides.
+
+        Args:
+            values: Keyword-compatible rerank and retry overrides.
+
+        Returns:
+            Resolved rerank options.
+        """
         options = dict(values)
         if options.get("retriable_codes") is None:
             options.pop("retriable_codes", None)
@@ -298,7 +422,15 @@ async def _retrieve_cached(
 
 
 async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
-    """Keyword-compatible cached knowledge-base retrieval."""
+    """Keyword-compatible cached knowledge-base retrieval.
+
+    Args:
+        user_query: Query text to search in the knowledge base.
+        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
+
+    Returns:
+        Dictionary with retrieved document list and total count.
+    """
     options = RetrieveOptions.from_kwargs(kwargs)
     return await _retrieve_cached(user_query, options)
 
@@ -414,7 +546,17 @@ async def multi_retrieve(
     semaphore: Optional[asyncio.Semaphore] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Keyword-compatible cached retrieval from multiple repositories."""
+    """Keyword-compatible cached retrieval from multiple repositories.
+
+    Args:
+        user_query: Query text to search across repositories.
+        repo_id_dict: Optional mapping of repository IDs to page sizes.
+        semaphore: Optional semaphore limiting concurrent multi-retrieval.
+        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
+
+    Returns:
+        Dictionary with merged document list and total count.
+    """
     if repo_id_dict is None:
         repo_id_dict = dict(KNOWLEDGE_CONFIG.REPO_ID_DICT)
     options = MultiRetrieveOptions.from_kwargs(kwargs)
@@ -432,7 +574,16 @@ async def rerank(
     doc_list: List[Dict[str, Any]],
     **kwargs: Any,
 ) -> list:
-    """Rerank a list of documents based on a user query."""
+    """Rerank a list of documents based on a user query.
+
+    Args:
+        user_query: Query text used for reranking.
+        doc_list: Documents to rerank.
+        **kwargs: Keyword-compatible rerank and retry overrides.
+
+    Returns:
+        Documents sorted by rerank score and filtered by threshold.
+    """
     options = RerankOptions.from_kwargs(kwargs)
     docs, id_doc_dict = _rerank_docs(doc_list)
     async with AsyncClient(

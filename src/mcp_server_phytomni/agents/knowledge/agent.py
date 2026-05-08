@@ -560,7 +560,19 @@ async def multi_retrieve_generate(
     is_follow_up: bool = True,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph-based KnowledgeAgent."""
+    """Compatibility wrapper around the LangGraph-based KnowledgeAgent.
+
+    Args:
+        user_query: User question or instruction for retrieval generation.
+        obs_file_list: Optional OBS paths for uploaded context files.
+        repo_id_dict: Optional mapping of repository IDs to page sizes.
+        is_generate: Whether to generate an answer after retrieval.
+        is_follow_up: Whether to generate follow-up questions.
+        **kwargs: Keyword-compatible config and sensitive overrides.
+
+    Returns:
+        KnowledgeAgent final response or retrieved documents.
+    """
     knowledge_config = _knowledge_config_with_overrides(**kwargs)
     sensitive_config = _knowledge_sensitive_config_with_overrides(**kwargs)
     agent = get_cached_agent(
@@ -590,7 +602,18 @@ async def retrieve_generate(
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper for single-repository retrieve and generate."""
+    """Compatibility wrapper for single-repository retrieve and generate.
+
+    Args:
+        user_query: User question or instruction for retrieval generation.
+        repo_id: Repository ID to search.
+        page_size: Number of documents requested from the repository.
+        obs_file_list: Optional OBS paths for uploaded context files.
+        **kwargs: Keyword-compatible config and sensitive overrides.
+
+    Returns:
+        KnowledgeAgent final response for the selected repository.
+    """
     return await multi_retrieve_generate(
         user_query=user_query,
         obs_file_list=obs_file_list or [],

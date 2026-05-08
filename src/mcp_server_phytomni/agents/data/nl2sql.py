@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Natural-language SQL request helpers."""
+"""Natural-language SQL request helpers.
+
+This module exposes `Nl2SqlRequest`, `nl2sql`, and
+`execute_nl2sql_request` for preparing authenticated database API calls.
+"""
 
 from dataclasses import dataclass
 from typing import Any, Dict
@@ -30,7 +34,16 @@ def _default_dialog_id() -> str:
 
 @dataclass(frozen=True)
 class Nl2SqlRequest:
-    """Resolved request settings for one NL2SQL call."""
+    """Resolved request settings for one NL2SQL call.
+
+    Attributes:
+        database_url: DataArts NLQ endpoint URL.
+        workspace_id: Workspace ID sent in the request headers.
+        payload_data: JSON payload body for the database API.
+        timeout: Request timeout in seconds.
+        retriable_codes: HTTP status codes that trigger retries.
+        max_retries: Maximum retry attempts for the request.
+    """
 
     database_url: str
     workspace_id: str
@@ -41,7 +54,15 @@ class Nl2SqlRequest:
 
     @classmethod
     def from_kwargs(cls, message_content: str, values: Dict[str, Any]):
-        """Build request settings from keyword-compatible overrides."""
+        """Build request settings from keyword-compatible overrides.
+
+        Args:
+            message_content: Natural-language query sent to the NL2SQL API.
+            values: Keyword-compatible overrides for request settings.
+
+        Returns:
+            Resolved NL2SQL request settings.
+        """
         retriable_codes = values.get("retriable_codes")
         if retriable_codes is None:
             retriable_codes = DATA_CONFIG.RETRIABLE_CODES
@@ -66,7 +87,11 @@ class Nl2SqlRequest:
         )
 
     def payload(self) -> Dict[str, Any]:
-        """Return the database API JSON payload."""
+        """Return the database API JSON payload.
+
+        Returns:
+            Copy of the request payload body sent to the NL2SQL API.
+        """
         return dict(self.payload_data)
 
 
@@ -74,7 +99,18 @@ async def nl2sql(
     message_content: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Convert a natural language query to SQL and execute it."""
+    """Convert a natural language query to SQL and execute it.
+
+    Args:
+        message_content: Natural-language database question.
+        **kwargs: Keyword-compatible request and retry overrides.
+
+    Returns:
+        Raw dictionary response from the NL2SQL service.
+
+    Raises:
+        McpError: If the request does not produce a dictionary response.
+    """
     request = Nl2SqlRequest.from_kwargs(message_content, kwargs)
     result = await execute_nl2sql_request(request)
     if isinstance(result, dict):
@@ -89,7 +125,14 @@ async def nl2sql(
 
 
 async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
-    """Execute one resolved NL2SQL request and return the raw response."""
+    """Execute one resolved NL2SQL request and return the raw response.
+
+    Args:
+        request: Resolved NL2SQL request settings.
+
+    Returns:
+        Raw JSON response returned by the database API retry helper.
+    """
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         return await post_json_with_retries(
