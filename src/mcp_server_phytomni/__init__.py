@@ -5,6 +5,8 @@
 """Public package exports for Phytomni MCP server agents and utilities."""
 
 from .agents.chat.service import phyto_chat, phyto_chat_with_follow
+from .agents.data.agent import rewrite_nl2sql
+from .agents.data.nl2sql import nl2sql
 from .agents.knowledge.agent import (
     multi_retrieve_generate,
     response_to_string,
@@ -19,7 +21,6 @@ from .analyst_agents import (
 )
 from .auth.iam import get_token
 from .brief_gene_agents import brief_gene_function
-from .data_agents import nl2sql, rewrite_nl2sql
 from .deep_genome_agents import gene_function
 from .in_silico_research_agents import in_silico_research
 from .review_agents import deep_research

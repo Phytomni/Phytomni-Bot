@@ -11,6 +11,7 @@ from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 import requests
 from langgraph.graph import END, START, StateGraph
 
+from .agents.data.agent import DataAgent
 from .agents.knowledge.agent import KnowledgeAgent
 from .analyst_agents import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -28,7 +29,6 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .data_agents import DataAgent
 from .deep_genome_dispatch import DeepGenomeDispatchMixin
 from .deep_genome_formatting import network_to_string
 from .deep_genome_profile import (

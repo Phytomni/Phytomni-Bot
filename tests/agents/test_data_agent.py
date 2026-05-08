@@ -4,11 +4,15 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for the DataAgent wrapper."""
 
+from typing import Any
+
 import pytest
 
+from mcp_server_phytomni.agents.data import agent as data_agent_module
+from mcp_server_phytomni.agents.data.agent import DataAgent
+from mcp_server_phytomni.agents.data.nl2sql import Nl2SqlRequest
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
-from mcp_server_phytomni.data_agents import DataAgent, Nl2SqlRequest
 
 pytestmark = pytest.mark.agent
 
@@ -93,4 +97,59 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
     }
     assert fake_graph.config == {
         "configurable": {"thread_id": "pytest-thread"}
+    }
+
+
+async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify wrapper keeps dialog ID and graph thread ID aligned."""
+    captured: dict[str, Any] = {}
+
+    class FakeDataAgent:
+        """Fake workflow that records constructor and run arguments."""
+
+        def __init__(self, data_config, sensitive_config):
+            """Capture resolved wrapper configuration."""
+            captured["config"] = data_config
+            captured["sensitive"] = sensitive_config
+
+        async def arun(
+            self,
+            user_query: str,
+            is_rewrite: bool = True,
+            thread_id: str | None = None,
+        ) -> dict[str, object]:
+            """Capture the graph invocation."""
+            captured["run"] = {
+                "user_query": user_query,
+                "is_rewrite": is_rewrite,
+                "thread_id": thread_id,
+            }
+            return {"ok": True}
+
+        def captured_config(self) -> Any:
+            """Return captured config for lint-friendly fake shape."""
+            return captured["config"]
+
+    def no_cache(name, factory, fingerprint_values=None):
+        """Return a fresh fake agent."""
+        del name, fingerprint_values
+        return factory()
+
+    monkeypatch.setattr(data_agent_module, "DataAgent", FakeDataAgent)
+    monkeypatch.setattr(data_agent_module, "get_cached_agent", no_cache)
+
+    result = await data_agent_module.rewrite_nl2sql(
+        "plant height in rice",
+        is_rewrite=False,
+        dialog_id="dialog-1",
+    )
+
+    assert result == {"ok": True}
+    assert captured["config"].DIALOG_ID == "dialog-1"
+    assert captured["run"] == {
+        "user_query": "plant height in rice",
+        "is_rewrite": False,
+        "thread_id": "dialog-1",
     }

@@ -7,6 +7,7 @@
 from typing import Any
 
 from ..agents.chat.service import phyto_chat_with_follow
+from ..agents.data.agent import rewrite_nl2sql
 from ..agents.knowledge.agent import multi_retrieve_generate
 from ..analyst_agents import retrieve_plan_submit
 from ..brief_gene_agents import brief_gene_function
@@ -23,7 +24,6 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
-from ..data_agents import rewrite_nl2sql
 from ..deep_genome_agents import gene_function
 from ..digital_design_agents import design_module
 from ..gene_network_agents import network_analysis
