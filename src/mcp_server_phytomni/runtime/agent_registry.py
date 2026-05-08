@@ -43,6 +43,9 @@ def clear_agent_registry(name: Optional[str] = None) -> None:
 
     Args:
         name: Optional agent name to clear (clears all if None).
+
+    Returns:
+        None. Matching cached agents are removed from the registry.
     """
     _AGENT_REGISTRY.clear(name)
 

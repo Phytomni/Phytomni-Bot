@@ -142,7 +142,11 @@ def config_fingerprint(values: Optional[Mapping[str, Any]] = None) -> str:
 
 @dataclass
 class GraphRegistry(Generic[GraphT]):
-    """Cache compiled graphs by an explicit non-secret fingerprint."""
+    """Cache compiled graphs by an explicit non-secret fingerprint.
+
+    Attributes:
+        _graphs: Mapping of graph names and fingerprints to compiled graphs.
+    """
 
     _graphs: dict[tuple[str, str], GraphT] = field(default_factory=dict)
 
@@ -168,7 +172,15 @@ class GraphRegistry(Generic[GraphT]):
         return self._graphs[key]
 
     def clear(self, name: Optional[str] = None) -> None:
-        """Clear all cached graphs, or only entries for one graph name."""
+        """Clear all cached graphs, or only entries for one graph name.
+
+        Args:
+            name: Optional graph name to clear. When omitted, all entries are
+                removed.
+
+        Returns:
+            None. Matching cached graphs are removed from the registry.
+        """
         if name is None:
             self._graphs.clear()
             return
@@ -178,7 +190,11 @@ class GraphRegistry(Generic[GraphT]):
                 del self._graphs[key]
 
     def count(self) -> int:
-        """Return the number of cached graph entries."""
+        """Return the number of cached graph entries.
+
+        Returns:
+            Number of graph entries currently stored in the registry.
+        """
         return len(self._graphs)
 
 

@@ -175,6 +175,14 @@ def render_template(
     pattern = r"\{\{([^}]+)\}\}"
 
     def replacer(match):
+        """Return a replacement value for one template placeholder.
+
+        Args:
+            match: Regular expression match for a `{{placeholder}}` token.
+
+        Returns:
+            Replacement text from parameters, or an empty string when missing.
+        """
         param_name = match.group(1).strip()
         if param_name not in parameters:
             warn(f"Missing parameter '{param_name}' in template")

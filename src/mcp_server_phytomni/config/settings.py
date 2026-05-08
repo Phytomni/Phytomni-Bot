@@ -51,6 +51,9 @@ def generate_env_template() -> None:
 
     Creates a template file containing all required environment variables
     with placeholder values and example formatting.
+
+    Returns:
+        None. The template file is created only when it does not exist.
     """
     template = """# Required configuration (⚠️ remove comments)
 DOMAIN_NAME=your_domain_name
@@ -148,7 +151,12 @@ class SensitiveConfig(BaseSettings):
         return settings_cls()
 
     def obs_credentials(self) -> tuple[str, str]:
-        """Return OBS access and secret access key values."""
+        """Return OBS access and secret access key values.
+
+        Returns:
+            Tuple containing the plain OBS access key ID and secret access
+            key values.
+        """
         return (
             self.ACCESS_KEY_ID.get_secret_value(),
             self.SECRET_ACCESS_KEY.get_secret_value(),
