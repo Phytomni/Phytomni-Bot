@@ -20,12 +20,12 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .agents.chat.service import phyto_chat
+from .agents.knowledge.retrieval import multi_retrieve, retrieve
 from .analyst_storage import (
     ensure_run_output_dir,
     upload_analyst_agents_content,
 )
 from .auth.iam import get_token
-from .knowledge_agents import multi_retrieve, retrieve
 from .runtime.workflow_mixins import WorkflowMixinBase
 from .storage.downloads import download_upload_context
 from .storage.path_policy import RunIdentity, task_tmp_key

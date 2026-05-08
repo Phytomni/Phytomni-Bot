@@ -12,7 +12,6 @@ import pytest
 from mcp_server_phytomni import (
     brief_gene_agents,
     deep_genome_agents,
-    knowledge_agents,
 )
 from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
@@ -96,7 +95,7 @@ def test_network_to_string_uses_cache_for_identical_inputs():
 
 async def test_retrieve_uses_short_ttl_cache(monkeypatch):
     """Verify retrieve uses short ttl cache."""
-    retrieve_cache_clear = getattr(knowledge_agents.retrieve, "cache_clear")
+    retrieve_cache_clear = getattr(knowledge_retrieval.retrieve, "cache_clear")
     retrieve_cache_clear()
     calls = {"post": 0, "rerank": 0}
 
@@ -149,7 +148,7 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
     monkeypatch.setattr(knowledge_retrieval, "AsyncClient", FakeClient)
     monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
-    first = await knowledge_agents.retrieve(
+    first = await knowledge_retrieval.retrieve(
         user_query="leaf growth",
         retrieve_url="https://example.invalid/retrieve",
         repo_id="repo",
@@ -162,7 +161,7 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
         rerank_batch_size=2,
         score_threshold=0.2,
     )
-    second = await knowledge_agents.retrieve(
+    second = await knowledge_retrieval.retrieve(
         user_query="leaf growth",
         retrieve_url="https://example.invalid/retrieve",
         repo_id="repo",
@@ -190,7 +189,7 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
 async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
     """Verify multi retrieve uses short ttl cache."""
     multi_retrieve_cache_clear = getattr(
-        knowledge_agents.multi_retrieve,
+        knowledge_retrieval.multi_retrieve,
         "cache_clear",
     )
     multi_retrieve_cache_clear()
@@ -207,7 +206,7 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
 
     monkeypatch.setattr(knowledge_retrieval, "retrieve", fake_retrieve)
 
-    first = await knowledge_agents.multi_retrieve(
+    first = await knowledge_retrieval.multi_retrieve(
         user_query="root growth",
         retrieve_url="https://example.invalid/retrieve",
         repo_id_dict={"repo-a": 1, "repo-b": 1},
@@ -220,7 +219,7 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
         score_threshold=0.2,
         top_n=2,
     )
-    second = await knowledge_agents.multi_retrieve(
+    second = await knowledge_retrieval.multi_retrieve(
         user_query="root growth",
         retrieve_url="https://example.invalid/retrieve",
         repo_id_dict={"repo-a": 1, "repo-b": 1},

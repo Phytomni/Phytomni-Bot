@@ -5,6 +5,12 @@
 """Public package exports for Phytomni MCP server agents and utilities."""
 
 from .agents.chat.service import phyto_chat, phyto_chat_with_follow
+from .agents.knowledge.agent import (
+    multi_retrieve_generate,
+    response_to_string,
+    retrieve_generate,
+)
+from .agents.knowledge.retrieval import multi_retrieve
 from .analyst_agents import (
     create_output_dir,
     get_data_list,
@@ -16,12 +22,6 @@ from .brief_gene_agents import brief_gene_function
 from .data_agents import nl2sql, rewrite_nl2sql
 from .deep_genome_agents import gene_function
 from .in_silico_research_agents import in_silico_research
-from .knowledge_agents import (
-    multi_retrieve,
-    multi_retrieve_generate,
-    response_to_string,
-    retrieve_generate,
-)
 from .review_agents import deep_research
 from .runtime.task_manager import TaskManager, create_task, update_task
 from .storage.downloads import download_list_convert

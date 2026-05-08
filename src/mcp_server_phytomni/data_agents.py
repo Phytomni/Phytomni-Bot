@@ -20,6 +20,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from .agents.chat.service import phyto_chat
+from .agents.knowledge.retrieval import retrieve
 from .auth.iam import get_token
 from .config.defaults import DataConfig
 from .config.overrides import (
@@ -30,7 +31,6 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .knowledge_agents import retrieve
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .storage.path_policy import IdFactory

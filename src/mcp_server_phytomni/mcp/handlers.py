@@ -7,6 +7,7 @@
 from typing import Any
 
 from ..agents.chat.service import phyto_chat_with_follow
+from ..agents.knowledge.agent import multi_retrieve_generate
 from ..analyst_agents import retrieve_plan_submit
 from ..brief_gene_agents import brief_gene_function
 from ..config.defaults import (
@@ -27,7 +28,6 @@ from ..deep_genome_agents import gene_function
 from ..digital_design_agents import design_module
 from ..gene_network_agents import network_analysis
 from ..in_silico_research_agents import in_silico_research
-from ..knowledge_agents import multi_retrieve_generate
 from ..review_agents import deep_research
 
 

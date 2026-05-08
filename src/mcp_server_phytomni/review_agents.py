@@ -17,6 +17,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from .agents.chat.service import phyto_chat
+from .agents.knowledge.agent import KnowledgeAgent
 from .config.defaults import ReviewConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -27,7 +28,6 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .knowledge_agents import KnowledgeAgent
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .storage.downloads import download_upload_context
