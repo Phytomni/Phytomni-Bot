@@ -9,11 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_server_phytomni import (
-    brief_gene_agents,
-    deep_genome_agents,
-)
+from mcp_server_phytomni import deep_genome_agents
 from mcp_server_phytomni.agents.analyst.storage import get_data_list
+from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agents
 from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
 )

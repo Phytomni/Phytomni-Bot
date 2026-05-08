@@ -6,6 +6,7 @@
 
 from .agents.analyst.agent import retrieve_plan_submit, wait_for_completion
 from .agents.analyst.storage import create_output_dir, get_data_list
+from .agents.brief_gene.agent import brief_gene_function
 from .agents.chat.service import phyto_chat, phyto_chat_with_follow
 from .agents.data.agent import rewrite_nl2sql
 from .agents.data.nl2sql import nl2sql
@@ -17,7 +18,6 @@ from .agents.knowledge.agent import (
 from .agents.knowledge.retrieval import multi_retrieve
 from .agents.review.agent import deep_research
 from .auth.iam import get_token
-from .brief_gene_agents import brief_gene_function
 from .deep_genome_agents import gene_function
 from .in_silico_research_agents import in_silico_research
 from .runtime.task_manager import TaskManager, create_task, update_task

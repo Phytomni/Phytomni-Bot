@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
+from mcp_server_phytomni.agents.brief_gene.agent import BriefGeneAgent
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
-from mcp_server_phytomni.brief_gene_agents import BriefGeneAgent
 from mcp_server_phytomni.config.defaults import (
     AnalystConfig,
     BriefGeneConfig,
