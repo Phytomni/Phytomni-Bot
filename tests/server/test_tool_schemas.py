@@ -7,22 +7,22 @@
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_phytomni import server
+from mcp_server_phytomni.mcp import schemas
 
 pytestmark = pytest.mark.server
 
 
 TOOL_MODELS = [
-    server.ChatAgent,
-    server.KnowledgeAgent,
-    server.DataAgent,
-    server.AnalystAgent,
-    server.DeepGenomeAgent,
-    server.ReviewAgent,
-    server.BriefGeneAgent,
-    server.InSilicoResearchAgent,
-    server.DigitalDesignAgent,
-    server.GeneNetworkAgent,
+    schemas.ChatAgent,
+    schemas.KnowledgeAgent,
+    schemas.DataAgent,
+    schemas.AnalystAgent,
+    schemas.DeepGenomeAgent,
+    schemas.ReviewAgent,
+    schemas.BriefGeneAgent,
+    schemas.InSilicoResearchAgent,
+    schemas.DigitalDesignAgent,
+    schemas.GeneNetworkAgent,
 ]
 
 
@@ -39,7 +39,7 @@ def test_tool_models_generate_object_json_schemas():
 
 def test_chat_agent_validates_required_fields():
     """Verify chat agent validates required fields."""
-    arguments = server.ChatAgent(
+    arguments = schemas.ChatAgent(
         user_query="What is photosynthesis?",
         obs_file_list=[],
     )
@@ -48,7 +48,7 @@ def test_chat_agent_validates_required_fields():
     assert arguments.obs_file_list == []
 
     with pytest.raises(ValidationError):
-        server.ChatAgent(user_query="missing file list")
+        schemas.ChatAgent(user_query="missing file list")
 
 
 @pytest.mark.parametrize(
@@ -68,7 +68,7 @@ def test_chat_agent_validates_required_fields():
 )
 def test_public_agent_enum_values_remain_stable(member_name, value):
     """Verify public agent enum values remain stable."""
-    assert server.PhytomniAgents[member_name].value == value
+    assert schemas.PhytomniAgents[member_name].value == value
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_public_agent_enum_values_remain_stable(member_name, value):
 )
 def test_public_agent_enum_members_use_constant_style_names(member_name):
     """Verify public agent enum members use constant style names."""
-    assert member_name in server.PhytomniAgents.__members__
+    assert member_name in schemas.PhytomniAgents.__members__
 
 
 @pytest.mark.parametrize(
@@ -86,4 +86,4 @@ def test_public_agent_enum_members_use_constant_style_names(member_name):
 )
 def test_public_agent_enum_omits_legacy_member_names(member_name):
     """Verify public agent enum omits legacy member names."""
-    assert member_name not in server.PhytomniAgents.__members__
+    assert member_name not in schemas.PhytomniAgents.__members__
