@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Format Phytomni MCP tool responses for client-facing consumers."""
+"""Format Phytomni MCP tool responses for client-facing consumers.
+
+This module exposes `FormattedToolResult`, `FieldMapper`,
+`ReferenceResolver`, and `format_tool_result`. Private helpers normalize
+tool-specific payloads, citations, task metadata, and JSON output.
+"""
 
 import json
 import re
@@ -18,7 +23,14 @@ _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
 
 @dataclass(frozen=True)
 class FormattedToolResult:
-    """Normalized client-facing representation of one tool response."""
+    """Normalized client-facing representation of one tool response.
+
+    Attributes:
+        answer: Client-facing answer text or serialized JSON payload.
+        follow_up_questions: Suggested follow-up questions.
+        metadata: Additional structured metadata for task-style responses.
+        references: Normalized cited references for retrieval-style tools.
+    """
 
     answer: str
     follow_up_questions: tuple[str, ...] = ()
@@ -34,7 +46,18 @@ def format_tool_result(
     field_mapper: FieldMapper | None = None,
     reference_resolver: ReferenceResolver | None = None,
 ) -> FormattedToolResult:
-    """Format one MCP tool payload using the registered tool name."""
+    """Format one MCP tool payload using the registered tool name.
+
+    Args:
+        tool_name: Public MCP tool name or legacy alias.
+        payload: Raw decoded MCP payload to normalize.
+        arguments: Optional original tool arguments used by some formatters.
+        field_mapper: Optional mapper for DataAgent table headers.
+        reference_resolver: Optional resolver for cited document metadata.
+
+    Returns:
+        Normalized client-facing result for the selected tool.
+    """
     normalized_name = _normalize_tool_name(tool_name)
     content = _payload_mapping(payload)
     if normalized_name == "ChatAgent":

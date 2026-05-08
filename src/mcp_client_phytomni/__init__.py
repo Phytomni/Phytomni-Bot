@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Client helpers for interacting with the Phytomni MCP server."""
+"""Client helpers for interacting with the Phytomni MCP server.
+
+The package re-exports `PhytomniMcpClient`, `PhytomniToolRouter`, response
+models, command helpers, and tool-result formatting helpers for applications
+that call Phytomni MCP tools over stdio.
+"""
 
 from .client import (
     McpToolResponse,

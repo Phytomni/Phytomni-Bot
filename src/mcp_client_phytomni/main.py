@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Command-line entrypoint for the Phytomni MCP client."""
+"""Command-line entrypoint for the Phytomni MCP client.
+
+This module exposes `main` for the installed CLI. Private helpers build the
+argument parser, parse JSON tool arguments, list MCP tools, and call a
+selected tool through `PhytomniMcpClient`.
+"""
 
 import argparse
 import asyncio
@@ -13,7 +18,11 @@ from .client import PhytomniMcpClient, server_command_from_target
 
 
 def main() -> None:
-    """Run the command-line client."""
+    """Run the command-line client.
+
+    Returns:
+        None. Parsed command output is printed to stdout.
+    """
     asyncio.run(_main())
 
 

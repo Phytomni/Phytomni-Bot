@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Async client helpers for calling Phytomni MCP tools."""
+"""Async client helpers for calling Phytomni MCP tools.
+
+This module provides command parsing helpers, raw and formatted response
+models, `PhytomniMcpClient` for stdio MCP sessions, and
+`PhytomniToolRouter` for OpenAI-assisted tool selection.
+"""
 
 import json
 import os
@@ -35,7 +40,13 @@ class ToolCallError(RuntimeError):
 
 @dataclass(frozen=True)
 class ServerCommand:
-    """Command used to start an MCP server subprocess."""
+    """Command used to start an MCP server subprocess.
+
+    Attributes:
+        command: Executable used to launch the server process.
+        args: Arguments passed to the executable.
+        env: Optional environment mapping for the server subprocess.
+    """
 
     command: str
     args: tuple[str, ...]
@@ -44,7 +55,15 @@ class ServerCommand:
 
 @dataclass(frozen=True)
 class McpToolResponse:
-    """Raw and formatted response from one MCP tool call."""
+    """Raw and formatted response from one MCP tool call.
+
+    Attributes:
+        tool_name: Public MCP tool name that was called.
+        arguments: Tool arguments sent to the server.
+        raw_text: Text content returned by the MCP server.
+        raw_payload: JSON-decoded payload when decoding succeeds.
+        formatted: Client-facing normalized response.
+    """
 
     tool_name: str
     arguments: Mapping[str, Any]
@@ -55,7 +74,13 @@ class McpToolResponse:
 
 @dataclass(frozen=True)
 class RoutedQueryResult:
-    """Result returned after optional LLM tool routing."""
+    """Result returned after optional LLM tool routing.
+
+    Attributes:
+        answer: Final answer shown to the client user.
+        tool_response: MCP tool response when a tool was selected.
+        follow_up_questions: Suggested follow-up questions from the tool.
+    """
 
     answer: str
     tool_response: McpToolResponse | None = None
@@ -68,7 +93,16 @@ def server_command_from_target(
     python_executable: str = sys.executable,
     env: Mapping[str, str] | None = None,
 ) -> ServerCommand:
-    """Build a server command from a Python file, JS file, or module name."""
+    """Build a server command from a Python file, JS file, or module name.
+
+    Args:
+        target: Python file, JavaScript file, or Python module name to run.
+        python_executable: Python executable used for Python targets.
+        env: Optional environment mapping for the server process.
+
+    Returns:
+        Server command suitable for `PhytomniMcpClient`.
+    """
     if target.endswith(".py"):
         return ServerCommand(python_executable, (target,), env)
     if target.endswith(".js"):
@@ -77,7 +111,14 @@ def server_command_from_target(
 
 
 def parse_tool_payload(text: str) -> Any:
-    """Parse MCP text content into JSON when possible."""
+    """Parse MCP text content into JSON when possible.
+
+    Args:
+        text: Raw text content returned by an MCP tool.
+
+    Returns:
+        JSON-decoded content when possible, otherwise the original text.
+    """
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -85,7 +126,14 @@ def parse_tool_payload(text: str) -> Any:
 
 
 class PhytomniMcpClient:
-    """Manage a stdio MCP session with the Phytomni server."""
+    """Manage a stdio MCP session with the Phytomni server.
+
+    Attributes:
+        command: Server subprocess command used by `connect`.
+        field_mapper: Optional mapper for DataAgent table headers.
+        reference_resolver: Optional resolver for cited document metadata.
+        session: Active MCP client session after `connect` succeeds.
+    """
 
     def __init__(
         self,
@@ -101,7 +149,11 @@ class PhytomniMcpClient:
         self.session: ClientSession | None = None
 
     async def __aenter__(self) -> "PhytomniMcpClient":
-        """Connect the MCP session for context-manager use."""
+        """Connect the MCP session for context-manager use.
+
+        Returns:
+            The connected client instance.
+        """
         await self.connect()
         return self
 
@@ -111,12 +163,25 @@ class PhytomniMcpClient:
         exc: BaseException | None,
         traceback: Any,
     ) -> None:
-        """Close the MCP session when leaving a context manager."""
+        """Close the MCP session when leaving a context manager.
+
+        Args:
+            exc_type: Exception type raised inside the context, if any.
+            exc: Exception instance raised inside the context, if any.
+            traceback: Traceback raised inside the context, if any.
+
+        Returns:
+            None. Owned transports are closed before returning.
+        """
         del exc_type, exc, traceback
         await self.close()
 
     async def connect(self) -> None:
-        """Start the configured MCP server and initialize a client session."""
+        """Start the configured MCP server and initialize a client session.
+
+        Returns:
+            None. The active session is stored on `session`.
+        """
         if self.session is not None:
             return
 
@@ -139,18 +204,34 @@ class PhytomniMcpClient:
         await self.session.initialize()
 
     async def connect_to_server(self, server_script_path: str) -> None:
-        """Compatibility wrapper for older callers."""
+        """Compatibility wrapper for older callers.
+
+        Args:
+            server_script_path: Python file, JavaScript file, or module name
+                passed through `server_command_from_target`.
+
+        Returns:
+            None. The client connects using the resolved command.
+        """
         self.command = server_command_from_target(server_script_path)
         await self.connect()
 
     async def list_tools(self) -> tuple[Tool, ...]:
-        """Return tools exposed by the connected MCP server."""
+        """Return tools exposed by the connected MCP server.
+
+        Returns:
+            Tuple of MCP tool definitions reported by the server.
+        """
         session = self._require_session()
         response = await session.list_tools()
         return tuple(response.tools)
 
     async def openai_tools(self) -> list[dict[str, Any]]:
-        """Return MCP tools in OpenAI Chat Completions tool format."""
+        """Return MCP tools in OpenAI Chat Completions tool format.
+
+        Returns:
+            List of OpenAI function-tool dictionaries derived from MCP tools.
+        """
         return [
             {
                 "type": "function",
@@ -170,7 +251,19 @@ class PhytomniMcpClient:
         *,
         read_timeout_seconds: int = DEFAULT_TOOL_TIMEOUT_SECONDS,
     ) -> McpToolResponse:
-        """Call one MCP tool and return raw plus formatted output."""
+        """Call one MCP tool and return raw plus formatted output.
+
+        Args:
+            tool_name: Public MCP tool name to call.
+            arguments: JSON-schema-compatible arguments for the tool.
+            read_timeout_seconds: Timeout used by the MCP client call.
+
+        Returns:
+            Raw MCP response plus a normalized formatted representation.
+
+        Raises:
+            ToolCallError: If the MCP tool returns an error result.
+        """
         session = self._require_session()
         result = await session.call_tool(
             tool_name,
@@ -198,7 +291,11 @@ class PhytomniMcpClient:
         )
 
     async def close(self) -> None:
-        """Close all transports owned by the client."""
+        """Close all transports owned by the client.
+
+        Returns:
+            None. The stored session reference is cleared.
+        """
         await self._exit_stack.aclose()
         self.session = None
 
@@ -210,7 +307,13 @@ class PhytomniMcpClient:
 
 
 class PhytomniToolRouter:
-    """Route natural-language queries to MCP tools with an OpenAI model."""
+    """Route natural-language queries to MCP tools with an OpenAI model.
+
+    Attributes:
+        mcp_client: Connected MCP client used to list and call tools.
+        openai_client: OpenAI-compatible async client used for routing.
+        model: Model identifier used for routing completions.
+    """
 
     def __init__(
         self,
@@ -232,7 +335,21 @@ class PhytomniToolRouter:
         base_url_var: str = "BASE_URL_CLIENT",
         model_var: str = "MODEL_CLIENT",
     ) -> "PhytomniToolRouter":
-        """Create a router from client-specific environment variables."""
+        """Create a router from client-specific environment variables.
+
+        Args:
+            mcp_client: Connected MCP client used by the router.
+            api_key_var: Environment variable containing the OpenAI API key.
+            base_url_var: Environment variable containing the optional base
+                URL for an OpenAI-compatible endpoint.
+            model_var: Environment variable containing the routing model ID.
+
+        Returns:
+            Router configured with an `AsyncOpenAI` client.
+
+        Raises:
+            RuntimeError: If required API key or model variables are missing.
+        """
         api_key = os.getenv(api_key_var)
         model = os.getenv(model_var)
         if not api_key:
@@ -259,7 +376,22 @@ class PhytomniToolRouter:
         history: Sequence[Mapping[str, Any]] = (),
         forced_tool: str | None = None,
     ) -> RoutedQueryResult:
-        """Route a query through the model, then call the selected MCP tool."""
+        """Route a query through the model, then call the selected MCP tool.
+
+        Args:
+            query: Natural-language user query to route.
+            history: Prior chat messages included before the current query.
+            forced_tool: Optional MCP tool name to force through OpenAI
+                `tool_choice`.
+
+        Returns:
+            Answer text with optional MCP tool response and follow-up
+            questions.
+
+        Raises:
+            ToolCallError: If OpenAI returns an unsupported custom tool call
+                or the selected MCP tool reports an error.
+        """
         messages = [dict(message) for message in history]
         messages.append({"role": "user", "content": query})
 
