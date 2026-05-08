@@ -10,5 +10,7 @@ cd "$repo_root"
 
 git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
+chmod +x .githooks/pre-push
+chmod +x scripts/validate_local.sh
 
 printf '%s\n' "Installed Git hooks from .githooks"
