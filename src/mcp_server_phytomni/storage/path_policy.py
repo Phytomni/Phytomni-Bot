@@ -29,7 +29,12 @@ class PathPolicyError(ValueError):
 
 
 class IdFactory:
-    """Factory for traceable runtime IDs without UUID-shaped path segments."""
+    """Factory for traceable runtime IDs without UUID-shaped path segments.
+
+    Attributes:
+        _now: Callable returning the current datetime.
+        _token_factory: Callable returning random token text.
+    """
 
     def __init__(
         self,
@@ -128,7 +133,13 @@ class IdFactory:
 
 @dataclass(frozen=True)
 class RunIdentity:
-    """Identity shared by all generated paths for one workflow run."""
+    """Identity shared by all generated paths for one workflow run.
+
+    Attributes:
+        user_id: Sanitized user identifier used in run paths.
+        run_id: Traceable run identifier shared across workflow outputs.
+        created_at: UTC timestamp used for date-stamped path layout.
+    """
 
     user_id: str
     run_id: str

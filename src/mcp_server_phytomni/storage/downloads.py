@@ -53,7 +53,12 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ObsCredentials:
-    """OBS credential pair for transfer helpers."""
+    """OBS credential pair for transfer helpers.
+
+    Attributes:
+        access_key_id: Access key ID used by the OBS SDK fallback.
+        secret_access_key: Secret access key used by the OBS SDK fallback.
+    """
 
     access_key_id: str = DEFAULT_ACCESS_KEY_ID
     secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY
@@ -61,7 +66,16 @@ class ObsCredentials:
 
 @dataclass(frozen=True)
 class ObsDownloadOptions:
-    """OBS endpoint and retry options for file downloads."""
+    """OBS endpoint and retry options for file downloads.
+
+    Attributes:
+        obs_server: OBS service endpoint for SDK fallback downloads.
+        bucket_name: Default bucket used for object-key normalization.
+        obsfs_mount_root: Local obsfs mount root used before SDK fallback.
+        part_size: Multipart download part size.
+        task_num: Multipart download worker count for the OBS SDK.
+        max_retries: Maximum retry attempts for SDK downloads.
+    """
 
     obs_server: str = SERVER_CONFIG.OBS_SERVER
     bucket_name: str = SERVER_CONFIG.BUCKET_NAME
@@ -73,7 +87,15 @@ class ObsDownloadOptions:
 
 @dataclass(frozen=True)
 class ObsTransferContext:
-    """Resolved OBS transfer settings used across download helpers."""
+    """Resolved OBS transfer settings used across download helpers.
+
+    Attributes:
+        server_dir: Local temporary directory for SDK downloads.
+        credentials: OBS credential values for SDK fallback.
+        download: OBS endpoint, bucket, mount, and retry options.
+        max_concurrency: Maximum concurrent OBS downloads.
+        max_workers: Maximum process workers for document conversion.
+    """
 
     server_dir: str
     credentials: ObsCredentials
@@ -84,7 +106,12 @@ class ObsTransferContext:
 
 @dataclass(frozen=True)
 class ResolvedObsFile:
-    """Local file path plus cleanup behavior for one OBS source file."""
+    """Local file path plus cleanup behavior for one OBS source file.
+
+    Attributes:
+        file_path: Local file path resolved through obsfs or SDK download.
+        cleanup: Whether conversion should delete the local file afterward.
+    """
 
     file_path: str
     cleanup: bool
@@ -95,7 +122,16 @@ async def download_upload_context(
     config: Any,
     sensitive_config: Any,
 ) -> tuple[str, int]:
-    """Download OBS uploads and format them as bounded prompt context."""
+    """Download OBS uploads and format them as bounded prompt context.
+
+    Args:
+        obs_file_list: OBS paths for uploaded user context files.
+        config: Runtime config with OBS, temporary path, and token limits.
+        sensitive_config: Sensitive config that provides OBS credentials.
+
+    Returns:
+        Formatted upload context and the resulting character length.
+    """
     if not obs_file_list:
         return "", 0
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -334,6 +370,14 @@ async def download_obs_list(
     semaphore = asyncio.Semaphore(context.max_concurrency)
 
     async def download_with_semaphore(obs_file: str) -> str:
+        """Download one OBS file while holding the concurrency semaphore.
+
+        Args:
+            obs_file: OBS path to download.
+
+        Returns:
+            Local path to the downloaded or obsfs-resolved file.
+        """
         async with semaphore:
             return await download_obs_file(
                 obs_file=obs_file,
