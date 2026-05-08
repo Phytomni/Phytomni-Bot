@@ -13,7 +13,9 @@ from mcp_server_phytomni import (
     brief_gene_agents,
     deep_genome_agents,
     knowledge_agents,
-    knowledge_retrieval,
+)
+from mcp_server_phytomni.agents.knowledge import (
+    retrieval as knowledge_retrieval,
 )
 from mcp_server_phytomni.analyst_agents import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
