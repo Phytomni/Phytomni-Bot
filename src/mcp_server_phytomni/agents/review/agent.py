@@ -4,7 +4,12 @@
 #         maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph-based deep research and literature review generation."""
+"""LangGraph-based deep research and literature review generation.
+
+Exports DeepResearchAgent, its workflow state, citation/retrieval formatting
+models, and the deep_research compatibility wrapper used for literature
+review generation with optional uploaded-file context.
+"""
 
 import asyncio
 import json
@@ -69,7 +74,15 @@ CITATION_PATTERN = (
 
 @dataclass(frozen=True)
 class SupplementaryResultContext:
-    """Context used to format supplementary retrieval snippets."""
+    """Context used to format supplementary retrieval snippets.
+
+    Attributes:
+        subtopic_idx: Index of the revised research dimension.
+        add_queries: Supplementary search queries requested by review.
+        add_query_results: Retrieval results for supplementary queries.
+        add_doc_list: Mutable list that receives accepted new documents.
+        draft_content: Draft content used to size supplementary snippets.
+    """
 
     subtopic_idx: int
     add_queries: List[Any]
@@ -80,7 +93,13 @@ class SupplementaryResultContext:
 
 @dataclass
 class RetrievalAccumulator:
-    """Mutable counters for bounded document retrieval."""
+    """Mutable counters for bounded document retrieval.
+
+    Attributes:
+        raw_docs: Accepted raw documents with internal doc ids.
+        current_length: Current prompt-context length.
+        file_id: Next sequential base document id.
+    """
 
     raw_docs: List[Dict[str, Any]]
     current_length: int
@@ -89,7 +108,12 @@ class RetrievalAccumulator:
 
 @dataclass
 class SupplementaryCounters:
-    """Mutable counters for supplementary snippet formatting."""
+    """Mutable counters for supplementary snippet formatting.
+
+    Attributes:
+        file_id: Next sequential supplementary document id.
+        total_length: Current supplementary snippet length.
+    """
 
     file_id: int = 0
     total_length: int = 0
@@ -97,7 +121,12 @@ class SupplementaryCounters:
 
 @dataclass(frozen=True)
 class SupplementaryFormatState:
-    """Formatting limits and counters for supplementary snippets."""
+    """Formatting limits and counters for supplementary snippets.
+
+    Attributes:
+        query_length: Per-query snippet length budget.
+        counters: Mutable supplementary document counters.
+    """
 
     query_length: int
     counters: SupplementaryCounters
@@ -200,7 +229,24 @@ def _renumber_citations(
 
 
 class DeepResearchState(TypedDict):
-    """State schema for the deep research LangGraph workflow."""
+    """State schema for the deep research LangGraph workflow.
+
+    Attributes:
+        original_user_query: Initial user research question.
+        user_query: Prompt-expanded research question after file handling.
+        obs_file_list: Uploaded OBS files used as input context.
+        upload_context: Text extracted from uploaded files.
+        total_length: Current accumulated prompt context length.
+        research_dimensions: Planned research dimensions.
+        all_raw_doc_list: Retrieved documents with base citation ids.
+        dimension_params: Prompt params for per-dimension drafting.
+        draft_contents: Draft subsection text for each dimension.
+        review_contents: Critique JSON/text for each draft.
+        revised_reports: Revised subsection payloads.
+        add_doc_list: Supplementary documents added during revision.
+        summary_content: Combined review text before post-processing.
+        final_response: Chat-completions-style final response payload.
+    """
 
     original_user_query: str
     user_query: str
@@ -219,7 +265,15 @@ class DeepResearchState(TypedDict):
 
 
 class DeepResearchAgent:
-    """LangGraph-based deep research agent from the lihu branch logic."""
+    """LangGraph-based deep research agent from the lihu branch logic.
+
+    Attributes:
+        checkpointer: LangGraph checkpointer used by the compiled graph.
+        review_config: Public config for retrieval, upload, and chat defaults.
+        sensitive_config: Sensitive config with model and OBS credentials.
+        ka: KnowledgeAgent used for literature retrieval.
+        app: Compiled LangGraph application.
+    """
 
     def __init__(
         self,
@@ -286,7 +340,16 @@ class DeepResearchAgent:
         )
 
     async def plan_node(self, state: DeepResearchState):
-        """Process uploaded files and decompose the topic into dimensions."""
+        """Process uploaded files and decompose the topic into dimensions.
+
+        Args:
+            state: Current workflow state containing the original query and
+                optional uploaded OBS files.
+
+        Returns:
+            State updates containing expanded query text, upload context, token
+            length, and planned research dimensions.
+        """
         user_query = state["original_user_query"]
         total_length = 0
         upload_context = ""
@@ -343,7 +406,16 @@ class DeepResearchAgent:
         }
 
     async def retrieve_node(self, state: DeepResearchState):
-        """Retrieve documents for each research dimension."""
+        """Retrieve documents for each research dimension.
+
+        Args:
+            state: Current workflow state with planned research dimensions and
+                upload context length.
+
+        Returns:
+            State updates containing raw documents, per-dimension prompt
+            parameters, and accumulated context length.
+        """
         dimensions = state["research_dimensions"]
         results = await asyncio.gather(
             *[
@@ -411,7 +483,14 @@ class DeepResearchAgent:
         return fragments
 
     async def draft_node(self, state: DeepResearchState):
-        """Create one draft subsection per dimension."""
+        """Create one draft subsection per dimension.
+
+        Args:
+            state: Current workflow state with per-dimension prompt params.
+
+        Returns:
+            State update containing one draft string per dimension.
+        """
         draft_tasks = [
             self._chat(
                 get_prompt(
@@ -437,7 +516,14 @@ class DeepResearchAgent:
         }
 
     async def review_node(self, state: DeepResearchState):
-        """Critique each draft and request supplementary search queries."""
+        """Critique each draft and request supplementary search queries.
+
+        Args:
+            state: Current workflow state with dimensions and draft text.
+
+        Returns:
+            State update containing critique payloads for each draft.
+        """
         dimensions = state["research_dimensions"]
         review_tasks = []
         for di, draft_text in enumerate(state["draft_contents"]):
@@ -473,7 +559,15 @@ class DeepResearchAgent:
         }
 
     async def revise_node(self, state: DeepResearchState):
-        """Revise each draft using critique-driven supplementary retrieval."""
+        """Revise each draft using critique-driven supplementary retrieval.
+
+        Args:
+            state: Current workflow state with drafts, critiques, and raw docs.
+
+        Returns:
+            State updates containing revised subsection payloads and
+            supplementary document metadata.
+        """
         revised_tasks = [
             self._feedback_rag(
                 subtopic_idx=idx,
@@ -707,7 +801,14 @@ class DeepResearchAgent:
         return content_to_check
 
     async def summary_node(self, state: DeepResearchState):
-        """Synthesize the revised subsections into a final report."""
+        """Synthesize the revised subsections into a final report.
+
+        Args:
+            state: Current workflow state with revised subsection payloads.
+
+        Returns:
+            State update containing the combined review text.
+        """
         summary_params: Dict[str, str] = {
             "user_query": state["original_user_query"]
         }
@@ -738,7 +839,15 @@ class DeepResearchAgent:
         return {"summary_content": content or "No summary generated"}
 
     async def post_process_node(self, state: DeepResearchState):
-        """Renumber citations and attach references and follow-ups."""
+        """Renumber citations and attach references and follow-ups.
+
+        Args:
+            state: Current workflow state with summary text and document lists.
+
+        Returns:
+            State update containing the final response payload with formatted
+            citations, ordered references, total count, and follow-ups.
+        """
         formatted_text, ordered_doc_list = _renumber_citations(
             state["summary_content"],
             [*state["all_raw_doc_list"], *state["add_doc_list"]],
@@ -776,7 +885,17 @@ class DeepResearchAgent:
         obs_file_list: Optional[List[str]] = None,
         thread_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Execute the DeepResearchAgent workflow."""
+        """Execute the DeepResearchAgent workflow.
+
+        Args:
+            user_query: Research question to expand into a literature review.
+            obs_file_list: Optional OBS files to include as source context.
+            thread_id: Optional LangGraph checkpoint thread id.
+
+        Returns:
+            Chat-completions-style final response payload with review text,
+            ordered references, and follow-up questions.
+        """
         initial_state: DeepResearchState = {
             "original_user_query": user_query,
             "user_query": "",
@@ -804,7 +923,17 @@ async def deep_research(
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph DeepResearchAgent."""
+    """Run the LangGraph deep research review workflow.
+
+    Args:
+        user_query: Research question to expand into a literature review.
+        obs_file_list: Optional OBS files to include as source context.
+        **kwargs: Optional chat, retrieval, upload, retry, credential, and
+            cache-fingerprint overrides.
+
+    Returns:
+        Chat-completions-style final response payload from DeepResearchAgent.
+    """
     review_config = copy_config_with_overrides(
         REVIEW_CONFIG,
         kwargs,

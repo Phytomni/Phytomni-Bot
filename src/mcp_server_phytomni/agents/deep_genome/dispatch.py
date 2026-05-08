@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dispatch and analysis nodes for the DeepGenome workflow."""
+"""Dispatch and analysis nodes for the DeepGenome workflow.
+
+Exports AnalysisDispatchContext and DeepGenomeDispatchMixin. The mixin routes
+LangGraph branches, prepares Analyst task prompts, dispatches deep analyses,
+downloads OBS results, and builds analyst sub-summaries.
+"""
 
 from __future__ import annotations
 
@@ -95,7 +100,14 @@ MEDIUM_COMPUTE_ANALYSIS_TYPES = {
 
 
 class AnalysisDispatchContext(NamedTuple):
-    """Resolved request context for one deep analysis task."""
+    """Resolved request context for one deep analysis task.
+
+    Attributes:
+        analysis_type: DeepGenome analysis task type.
+        species: Display species name used in prompts.
+        gene_id: Target gene identifier.
+        output_dir: OBS output directory for task results.
+    """
 
     analysis_type: str
     species: str

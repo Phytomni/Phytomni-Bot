@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Profile and network nodes for the DeepGenome workflow."""
+"""Profile and network nodes for the DeepGenome workflow.
+
+Exports DeepGenomeProfileMixin plus cache helpers for gene symbols and
+annotations. The mixin retrieves BI annotation/network data, literature
+context, and Part 1 profile summaries.
+"""
 
 from __future__ import annotations
 

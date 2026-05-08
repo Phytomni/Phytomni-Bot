@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Deep genome agent package exports."""
+"""Deep genome agent package exports.
+
+Re-exports DeepGenomeAgents, state/dependency/context types, dispatch/profile
+and report mixins, gene lookup cache helpers, network formatting utilities,
+sub-summary builders, and the public gene_function wrapper.
+"""
 
 from .agent import (
     DeepGenomeAgentDeps,

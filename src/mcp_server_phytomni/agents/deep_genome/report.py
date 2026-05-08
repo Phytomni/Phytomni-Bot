@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Report synthesis nodes for the DeepGenome workflow."""
+"""Report synthesis nodes for the DeepGenome workflow.
+
+Exports DeepGenomeReportMixin, which combines Part 1 profiles, analyst
+summaries, recommended experiments, protocols, discussion, summary sections,
+and follow-up questions into the final report state.
+"""
 
 from __future__ import annotations
 

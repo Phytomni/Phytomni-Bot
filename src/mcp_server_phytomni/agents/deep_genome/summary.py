@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Helpers for loading DeepGenome analyst result summaries."""
+"""Helpers for loading DeepGenome analyst result summaries.
+
+Exports summary spec/result types, SubSummaryBuilder, and build_sub_summary.
+The builder reads downloaded analyst files, normalizes image/table labels, and
+returns report data plus the next figure index.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +18,21 @@ READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
 
 class ImageSummarySpec(NamedTuple):
-    """File matching and output keys for one image summary group."""
+    """File matching and output keys for one image summary group.
+
+    Attributes:
+        analysis_type: Analysis task type handled by this spec.
+        image_pattern: Glob pattern for the primary image.
+        image_key: Output data key for the image path.
+        summary_pattern: Glob or format pattern for the summary file.
+        summary_key: Output data key for the summary text.
+        legend_pattern: Glob or format pattern for the legend file.
+        legend_key: Output data key for the legend text.
+        missing_summary: Summary value used when files are absent.
+        replace_summary_figure: Whether to rewrite summary figure labels.
+        fixed_summary: Whether summary_pattern is formatted directly.
+        fixed_legend: Whether legend_pattern is formatted directly.
+    """
 
     analysis_type: str
     image_pattern: str
@@ -30,14 +49,27 @@ class ImageSummarySpec(NamedTuple):
 
 @dataclass
 class SummaryBuildResult:
-    """DeepGenome summary data and next figure index."""
+    """DeepGenome summary data and next figure index.
+
+    Attributes:
+        data: Updated report data dictionary.
+        figure_index: Next figure index after loaded assets are counted.
+    """
 
     data: Dict[str, Any]
     figure_index: int
 
 
 class SubSummaryBuilder:
-    """Load DeepGenome analysis files into the report summary dictionary."""
+    """Load DeepGenome analysis files into the report summary dictionary.
+
+    Attributes:
+        gene_id: Target gene identifier used in result paths.
+        out_path: Local directory containing downloaded analysis results.
+        data: Mutable report data dictionary.
+        figure_index: Current figure index used for label rewriting.
+        handlers: Mapping from analysis type to loader callable.
+    """
 
     def __init__(
         self,
@@ -64,7 +96,14 @@ class SubSummaryBuilder:
         )
 
     def build(self, analysis_type: str) -> SummaryBuildResult:
-        """Load result files for the requested analysis type."""
+        """Load result files for the requested analysis type.
+
+        Args:
+            analysis_type: DeepGenome analysis type to summarize.
+
+        Returns:
+            Updated report data and next figure index.
+        """
         handler = self.handlers.get(analysis_type)
         if handler is not None:
             handler()
@@ -82,7 +121,11 @@ class SubSummaryBuilder:
         return load_spec
 
     def load_image_summary(self, spec: ImageSummarySpec) -> None:
-        """Load a standard image + summary + legend result group."""
+        """Load a standard image, summary, and legend result group.
+
+        Args:
+            spec: File patterns and data keys for the result group.
+        """
         try:
             image_name = self.first_match(spec.image_pattern)
             self.data[spec.image_key] = f"{self.gene_id}/{image_name}"
@@ -180,7 +223,15 @@ class SubSummaryBuilder:
             self.data["protein_structures"] = "None Results"
 
     def structure_block(self, structure_path: Path) -> str:
-        """Return one protein structure markdown block."""
+        """Return one protein structure markdown block.
+
+        Args:
+            structure_path: CIF file path for one predicted structure.
+
+        Returns:
+            Markdown block containing structure image/link text, legend, and
+            summary content.
+        """
         structure_file = f"{self.gene_id}/{structure_path.name}"
         structure_start = structure_path.name.split(".cif")[0]
         legend = self.read_text(
@@ -196,19 +247,40 @@ class SubSummaryBuilder:
         return f"![3D Structure]({structure_file})\n{legend}\n{summary}\n"
 
     def summary_name(self, spec: ImageSummarySpec) -> str:
-        """Return the summary file name for a spec."""
+        """Return the summary file name for a spec.
+
+        Args:
+            spec: Image summary spec that defines summary matching behavior.
+
+        Returns:
+            Resolved summary file name.
+        """
         if spec.fixed_summary:
             return spec.summary_pattern.format(gene_id=self.gene_id)
         return self.first_match(spec.summary_pattern)
 
     def legend_name(self, spec: ImageSummarySpec) -> str:
-        """Return the legend file name for a spec."""
+        """Return the legend file name for a spec.
+
+        Args:
+            spec: Image summary spec that defines legend matching behavior.
+
+        Returns:
+            Resolved legend file name.
+        """
         if spec.fixed_legend:
             return spec.legend_pattern.format(gene_id=self.gene_id)
         return self.first_match(spec.legend_pattern)
 
     def first_match(self, pattern: str) -> str:
-        """Return the first matching file name for a pattern."""
+        """Return the first matching file name for a pattern.
+
+        Args:
+            pattern: Glob pattern searched recursively under ``out_path``.
+
+        Returns:
+            Name of the first matching file.
+        """
         return next(self.out_path.rglob(pattern)).name
 
     def read_text(
@@ -218,7 +290,16 @@ class SubSummaryBuilder:
         replace_figure: bool,
         replace_table: bool = False,
     ) -> str:
-        """Read a text file and replace figure/table labels when requested."""
+        """Read a text file and replace figure/table labels when requested.
+
+        Args:
+            file_name: Relative file name to read under ``out_path``.
+            replace_figure: Whether to replace ``Figure 1`` labels.
+            replace_table: Whether to replace ``Table 1`` labels.
+
+        Returns:
+            Text content with optional figure or table label replacement.
+        """
         content = (self.out_path / file_name).read_text(encoding="utf-8")
         label = f"Figure {self.figure_index}"
         if replace_table:
@@ -319,7 +400,19 @@ def build_sub_summary(
     figure_index: int,
     **kwargs: Any,
 ) -> SummaryBuildResult:
-    """Build one DeepGenome analyst sub-summary."""
+    """Build one DeepGenome analyst sub-summary.
+
+    Args:
+        analysis_type: Analysis type whose result files should be loaded.
+        gene_id: Target gene identifier.
+        deepgenome_out: Default DeepGenome output directory.
+        data: Existing report data dictionary, if any.
+        figure_index: Current figure index before loading this summary.
+        **kwargs: Optional results_dir override for tests or custom outputs.
+
+    Returns:
+        Updated summary data and next figure index.
+    """
     results_dir = kwargs.get("results_dir")
     gene_results_data = data if data is not None else {"gene_name": gene_id}
     out_path = Path(results_dir) if results_dir else Path(deepgenome_out)

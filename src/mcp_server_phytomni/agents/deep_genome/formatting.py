@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Formatting helpers for deep genome workflows."""
+"""Formatting helpers for deep genome workflows.
+
+Exports species display-name maps, enrichment summary specs, and
+network_to_string for converting gene-network rows and annotations into
+prompt-ready report text.
+"""
 
 from dataclasses import dataclass
 from typing import Any, Dict
@@ -99,7 +104,15 @@ ENRICHMENT_SUMMARY_SPECS = (
 
 @dataclass(frozen=True)
 class EnrichmentSummarySpec:
-    """Resolved inputs for one enrichment summary line."""
+    """Resolved inputs for one enrichment summary line.
+
+    Attributes:
+        ids_key: Enrichment map key that stores term names by id.
+        counts_key: Enrichment map key that stores term counts.
+        label: Human-readable annotation source label.
+        network_type: Network category shown in the output sentence.
+        top_n: Maximum number of enriched terms to include.
+    """
 
     ids_key: str
     counts_key: str
@@ -212,7 +225,20 @@ def network_to_string(
     network_type: str,
     top_n: int = 10,
 ):
-    """Formats gene network information into a string."""
+    """Format gene network information into report-ready text.
+
+    Args:
+        gene_network_list: Species/gene tuples in the network.
+        species_gene_symbol_dict: Mapping from species/gene tuples to symbols.
+        species_gene_anno_dict: Mapping from species/gene tuples to
+            annotation records.
+        network_type: Human-readable network type label.
+        top_n: Number of enriched GO, InterPro, and MapMan terms to include.
+
+    Returns:
+        Formatted network gene descriptions and enrichment summaries, or a
+        no-results message when the network is empty.
+    """
     if not gene_network_list:
         return f"No {network_type} genes"
 

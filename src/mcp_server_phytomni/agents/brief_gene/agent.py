@@ -4,7 +4,12 @@
 #         maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Brief gene function summaries from BI annotations and literature RAG."""
+"""Brief gene function summaries from BI annotations and literature RAG.
+
+Exports BI query helpers, cached literature retrieval, BriefGeneAgent state
+and graph nodes, cache clearing utilities, and the brief_gene_function wrapper
+used by MCP handlers.
+"""
 
 import asyncio
 from dataclasses import dataclass
@@ -71,7 +76,14 @@ BRIEF_GENE_SECRET_FIELD_MAP = {
 
 @dataclass(frozen=True)
 class GeneRetrieveRequest:
-    """Cache-key-safe options for one gene literature retrieval request."""
+    """Cache-key-safe options for one gene literature retrieval request.
+
+    Attributes:
+        species: Species display name included in retrieval queries.
+        symbols: Deduplicated gene symbols and identifiers to retrieve.
+        top_n: Maximum number of retrieved documents to retain.
+        agent_context: Stable KnowledgeAgent fingerprint entries.
+    """
 
     species: str
     symbols: tuple[str, ...]
@@ -226,7 +238,19 @@ async def run_bi_api(
     query_sql: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Invoke the BI API to retrieve annotation information."""
+    """Invoke the BI API to retrieve annotation information.
+
+    Args:
+        query_sql: SQL statement sent to the BI endpoint.
+        **kwargs: Optional bi_url, bi_token, timeout, retriable_codes, and
+            max_retries overrides.
+
+    Returns:
+        BI API JSON payload.
+
+    Raises:
+        McpError: If the BI API request fails after all retries.
+    """
     bi_url = kwargs.get("bi_url", BRIEF_CONFIG.BI_URL)
     bi_token = kwargs.get(
         "bi_token", SENSITIVE_CONFIG.BI_TOKEN.get_secret_value()
@@ -275,7 +299,17 @@ async def gene_retrieve(
     knowledge_agent: KnowledgeAgent,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Retrieve literature for a gene through the LangGraph KnowledgeAgent."""
+    """Retrieve literature for a gene through the LangGraph KnowledgeAgent.
+
+    Args:
+        species: Species display name used to qualify retrieval queries.
+        gene_symbol_list: Candidate gene symbols and identifiers.
+        knowledge_agent: KnowledgeAgent used for retrieval.
+        **kwargs: Optional top_n and semaphore overrides.
+
+    Returns:
+        Retrieval payload containing ``doc_list`` and ``total``.
+    """
     top_n = kwargs.get("top_n", BRIEF_CONFIG.TOP_N)
     semaphore = kwargs.get("semaphore")
     symbols = tuple(_dedupe(gene_symbol_list))
@@ -371,7 +405,32 @@ async def _generate_follow_up(
 
 
 class BriefGeneAgentState(TypedDict):
-    """State schema for the brief gene LangGraph workflow."""
+    """State schema for the brief gene LangGraph workflow.
+
+    Attributes:
+        user_query: Original gene identifier or free-text query.
+        gene_found: Whether the BI id table resolved the query.
+        gene_id: Canonical resolved gene id.
+        query_id_version: Identifier type for the original query.
+        gene_id_version: Identifier type for the canonical gene id.
+        species_code: Resolved species code.
+        species_latin_name: Resolved Latin species name.
+        species_english_name: Resolved English species name.
+        species_all_name: Combined display species string.
+        gene_name_symbol_list: Symbols from the BI id table.
+        gene_id_list: Deduplicated gene ids and symbols for retrieval.
+        gene_chr: Chromosome from structure annotation.
+        gene_start: Start coordinate from structure annotation.
+        gene_end: End coordinate from structure annotation.
+        gene_strand: Strand from structure annotation.
+        go_string: Formatted GO annotation summary.
+        kegg_string: Formatted MapMan/KEGG-like annotation summary.
+        interpro_string: Formatted InterPro annotation summary.
+        retrieved_docs: Documents retrieved from the knowledge agent.
+        retrieve_context: Prompt-ready retrieved document context.
+        follow_up_questions: Suggested follow-up questions.
+        final_response: Chat-completions-style final response payload.
+    """
 
     user_query: str
     gene_found: bool
@@ -398,7 +457,15 @@ class BriefGeneAgentState(TypedDict):
 
 
 class BriefGeneAgent:
-    """LangGraph-based agent for brief gene function analysis."""
+    """LangGraph-based agent for brief gene function analysis.
+
+    Attributes:
+        brief_config: Public config for BI, retrieval, and chat defaults.
+        sensitive_config: Sensitive config with model and BI credentials.
+        ka: KnowledgeAgent used for literature retrieval.
+        checkpointer: LangGraph checkpointer used by the compiled graph.
+        app: Compiled LangGraph application.
+    """
 
     def __init__(
         self,
@@ -435,13 +502,28 @@ class BriefGeneAgent:
         return workflow.compile(checkpointer=self.checkpointer)
 
     def route_after_judge(self, state: BriefGeneAgentState) -> str:
-        """Route to annotation lookup only when BI found the gene."""
+        """Route to annotation lookup only when BI found the gene.
+
+        Args:
+            state: Current workflow state after query judging.
+
+        Returns:
+            Next node name for annotation lookup or direct retrieval.
+        """
         if state["gene_found"]:
             return "fetch_annotation_node"
         return "retrieve_node"
 
     async def query_judge_node(self, state: BriefGeneAgentState):
-        """Check whether the query is known to the BI gene ID table."""
+        """Check whether the query is known to the BI gene ID table.
+
+        Args:
+            state: Current workflow state containing the user query.
+
+        Returns:
+            State updates containing gene resolution and species metadata, or
+            ``gene_found=False`` when BI has no match.
+        """
         user_query = state["user_query"]
         query_response = await run_bi_api(
             "SELECT * FROM id2multispecies "
@@ -499,7 +581,15 @@ class BriefGeneAgent:
         }
 
     async def fetch_annotation_node(self, state: BriefGeneAgentState):
-        """Fetch gene annotation from BI database tables."""
+        """Fetch gene annotation from BI database tables.
+
+        Args:
+            state: Current workflow state containing the resolved gene id.
+
+        Returns:
+            State updates containing symbols, coordinates, and formatted
+            annotation strings.
+        """
         gene_id_literal = _sql_literal(state["gene_id"])
         annotation_sqls = [
             f"SELECT * FROM id_table WHERE gene_id = {gene_id_literal}",
@@ -559,7 +649,14 @@ class BriefGeneAgent:
         }
 
     async def retrieve_node(self, state: BriefGeneAgentState):
-        """Retrieve gene literature through the LangGraph KnowledgeAgent."""
+        """Retrieve gene literature through the LangGraph KnowledgeAgent.
+
+        Args:
+            state: Current workflow state with gene resolution metadata.
+
+        Returns:
+            State updates containing retrieved documents and prompt context.
+        """
         if state["gene_found"]:
             result = await gene_retrieve(
                 species=state["species_all_name"],
@@ -584,7 +681,14 @@ class BriefGeneAgent:
         }
 
     async def generate_node(self, state: BriefGeneAgentState):
-        """Generate the brief gene function report."""
+        """Generate the brief gene function report.
+
+        Args:
+            state: Current workflow state with annotations and retrieval text.
+
+        Returns:
+            State update containing the initial final response payload.
+        """
         if state["gene_found"]:
             prompt_vars = {
                 "user_query": state["user_query"],
@@ -648,7 +752,15 @@ class BriefGeneAgent:
         }
 
     async def follow_up_node(self, state: BriefGeneAgentState):
-        """Generate follow-up questions for the final report."""
+        """Generate follow-up questions for the final report.
+
+        Args:
+            state: Current workflow state with the generated response.
+
+        Returns:
+            State updates containing follow-up questions and enriched final
+            response metadata.
+        """
         follow_up_questions = await _generate_follow_up(
             user_query=state["user_query"],
             phyto_response=state["final_response"],
@@ -683,7 +795,16 @@ class BriefGeneAgent:
     async def arun(
         self, user_query: str, thread_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Execute the BriefGeneAgent workflow."""
+        """Execute the BriefGeneAgent workflow.
+
+        Args:
+            user_query: Gene identifier, symbol, or free-text query.
+            thread_id: Optional LangGraph checkpoint thread id.
+
+        Returns:
+            Chat-completions-style final response payload with content,
+            references, and follow-up questions.
+        """
         initial_state: BriefGeneAgentState = {
             "user_query": user_query,
             "gene_found": False,
@@ -718,7 +839,16 @@ async def brief_gene_function(
     user_query: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph BriefGeneAgent."""
+    """Run the LangGraph brief gene function workflow.
+
+    Args:
+        user_query: Gene identifier, symbol, or free-text query.
+        **kwargs: Optional chat, retrieval, BI, retry, credential, and
+            cache-fingerprint overrides.
+
+    Returns:
+        Chat-completions-style final response payload from BriefGeneAgent.
+    """
     brief_config = copy_config_with_overrides(
         BRIEF_CONFIG,
         kwargs,

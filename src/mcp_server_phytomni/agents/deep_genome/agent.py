@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Deep genome agents for gene profile, annotation, and workflow synthesis."""
+"""Deep genome agents for gene profile, annotation, and synthesis.
+
+Exports DeepGenomeAgents, workflow state and dependency types, cache
+management helpers, network formatting re-exports, and the gene_function
+compatibility wrapper used by MCP handlers.
+"""
 
 import operator
 from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
@@ -92,7 +97,15 @@ DEEP_GENOME_SECRET_FIELD_MAP = {
 
 
 def update_dict(left: dict, right: dict) -> dict:
-    """Merge two branch result dictionaries for LangGraph reducers."""
+    """Merge two branch result dictionaries for LangGraph reducers.
+
+    Args:
+        left: Current reducer dictionary.
+        right: Incoming branch result dictionary.
+
+    Returns:
+        Merged dictionary where incoming values override existing keys.
+    """
     merged = (left or {}).copy()
     merged.update(right or {})
     return merged
@@ -174,7 +187,13 @@ class DeepGenomeState(TypedDict):
 
 
 class DeepGenomeAgentDeps(NamedTuple):
-    """External agents used by the DeepGenome workflow."""
+    """External agents used by the DeepGenome workflow.
+
+    Attributes:
+        data_agent: DataAgent used for network and annotation queries.
+        knowledge_agent: KnowledgeAgent used for literature retrieval.
+        analyst_agent: AnalystAgent used for deep analysis task dispatch.
+    """
 
     data_agent: DataAgent
     knowledge_agent: KnowledgeAgent
@@ -461,7 +480,19 @@ async def gene_function(
     user_id: Optional[str] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph deep genome agent."""
+    """Run the LangGraph deep genome analysis workflow.
+
+    Args:
+        species_code: Three-letter species code for the target gene.
+        gene_id: Target gene identifier to analyze.
+        user_id: Optional user id fixed into runtime path configuration.
+        **kwargs: Optional config, credential, retrieval, BI, OBS, task,
+            cache, thread_id, and config_params overrides.
+
+    Returns:
+        Final DeepGenome workflow state containing reports, task outputs, and
+        follow-up analysis fields.
+    """
     deep_genome_config = copy_config_with_overrides(
         DEEP_GENOME_CONFIG,
         kwargs,
