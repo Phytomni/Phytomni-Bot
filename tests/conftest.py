@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shared pytest fixtures for offline, secret-free test execution."""
+"""Shared pytest fixtures for offline, secret-free test execution.
+
+Defines layer marker hooks, fake secret environment setup, environment flag
+helpers, and the autouse HTTP blocker fixture used by repository tests.
+"""
 
 from __future__ import annotations
 
@@ -71,7 +75,11 @@ def _layer_marker_for_item(item: pytest.Item) -> str | None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Apply repository test layer markers and external-service guards."""
+    """Apply repository test layer markers and external-service guards.
+
+    Args:
+        items: Collected pytest items to mark or skip.
+    """
     allow_integration = _env_flag_enabled("PHYTOMNI_RUN_INTEGRATION")
     allow_network = _env_flag_enabled("PHYTOMNI_ALLOW_NETWORK")
 
@@ -106,13 +114,29 @@ def block_external_http(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ) -> Iterator[None]:
-    """Block accidental HTTP calls unless a test opts into `network`."""
+    """Block accidental HTTP calls unless a test opts into ``network``.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace network APIs.
+        request: Current pytest fixture request.
+
+    Returns:
+        Iterator that yields once while outbound HTTP is blocked.
+    """
     if request.node.get_closest_marker("network"):
         yield
         return
 
     def blocked_create_connection(*args: Any, **kwargs: Any) -> Any:
-        """Verify blocked create connection."""
+        """Raise for socket connection attempts in offline tests.
+
+        Args:
+            *args: Ignored positional socket arguments.
+            **kwargs: Ignored keyword socket arguments.
+
+        Returns:
+            Never returns; always raises RuntimeError.
+        """
         raise RuntimeError(
             "External network access is disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."
@@ -121,14 +145,30 @@ def block_external_http(
     monkeypatch.setattr(socket, "create_connection", blocked_create_connection)
 
     def blocked_request(*args: Any, **kwargs: Any) -> Any:
-        """Verify blocked request."""
+        """Raise for sync HTTP requests in offline tests.
+
+        Args:
+            *args: Ignored positional HTTP arguments.
+            **kwargs: Ignored keyword HTTP arguments.
+
+        Returns:
+            Never returns; always raises RuntimeError.
+        """
         raise RuntimeError(
             "HTTP requests are disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."
         )
 
     async def blocked_async_request(*args: Any, **kwargs: Any) -> Any:
-        """Verify blocked async request."""
+        """Raise for async HTTP requests in offline tests.
+
+        Args:
+            *args: Ignored positional HTTP arguments.
+            **kwargs: Ignored keyword HTTP arguments.
+
+        Returns:
+            Never returns; always raises RuntimeError.
+        """
         raise RuntimeError(
             "HTTP requests are disabled for default pytest runs. "
             "Mark the test with @pytest.mark.network to opt in."

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for MCP client result formatting helpers."""
+"""Tests for MCP client result formatting helpers.
+
+Covers citation rewriting, document deduplication, follow-up extraction, and
+caller-provided field mapping in formatted MCP client results.
+"""
 
 import json
 

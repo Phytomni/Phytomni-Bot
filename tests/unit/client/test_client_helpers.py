@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for MCP client lifecycle helpers."""
+"""Tests for MCP client lifecycle helpers.
+
+Covers server target parsing for module and file targets, plus raw JSON/text
+tool payload parsing used by the CLI client.
+"""
 
 import sys
 

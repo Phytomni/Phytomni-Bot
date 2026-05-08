@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for MCP tool dispatch routing."""
+"""Tests for MCP tool dispatch routing.
+
+Covers dispatch table completeness, argument validation, handler invocation,
+JSON wrapping, and invalid tool or argument error behavior.
+"""
 
 from __future__ import annotations
 
@@ -45,11 +49,25 @@ def test_tool_dispatch_tables_cover_public_agents():
 async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify dispatch tool validates calls handler and wraps json."""
+    """Verify dispatch validates arguments, calls handler, and wraps JSON.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to swap dispatch handler.
+
+    Returns:
+        None after assertions pass.
+    """
     captured: dict[str, Any] = {}
 
     async def fake_handler(args: Any) -> dict[str, Any]:
-        """Verify fake handler."""
+        """Capture validated handler arguments and return a payload.
+
+        Args:
+            args: Validated tool argument model passed by dispatch_tool.
+
+        Returns:
+            Minimal JSON-serializable handler payload.
+        """
         captured["args"] = args
         return {
             "answer": args.user_query,

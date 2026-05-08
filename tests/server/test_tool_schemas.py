@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for MCP tool parameter schemas."""
+"""Tests for MCP tool parameter schemas.
+
+Covers generated JSON schema shape, ChatAgent field validation, stable public
+agent enum values, constant-style enum names, and omitted legacy names.
+"""
 
 import pytest
 from pydantic import ValidationError
@@ -67,7 +71,12 @@ def test_chat_agent_validates_required_fields():
     ],
 )
 def test_public_agent_enum_values_remain_stable(member_name, value):
-    """Verify public agent enum values remain stable."""
+    """Verify public agent enum values remain stable.
+
+    Args:
+        member_name: Enum member name under test.
+        value: Expected public MCP tool name.
+    """
     assert schemas.PhytomniAgents[member_name].value == value
 
 
@@ -76,7 +85,11 @@ def test_public_agent_enum_values_remain_stable(member_name, value):
     ["CHAT_AGENT", "IN_SILICO_RESEARCH_AGENT"],
 )
 def test_public_agent_enum_members_use_constant_style_names(member_name):
-    """Verify public agent enum members use constant style names."""
+    """Verify public agent enum members use constant style names.
+
+    Args:
+        member_name: Constant-style enum member expected to exist.
+    """
     assert member_name in schemas.PhytomniAgents.__members__
 
 
@@ -85,5 +98,9 @@ def test_public_agent_enum_members_use_constant_style_names(member_name):
     ["CHATAGENT", "INSILICORESEARCHAGENT"],
 )
 def test_public_agent_enum_omits_legacy_member_names(member_name):
-    """Verify public agent enum omits legacy member names."""
+    """Verify public agent enum omits legacy member names.
+
+    Args:
+        member_name: Legacy enum member name expected to be absent.
+    """
     assert member_name not in schemas.PhytomniAgents.__members__
