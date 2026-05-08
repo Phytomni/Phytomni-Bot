@@ -3,7 +3,11 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Environment agents for regional vegetation index analysis workflows."""
+"""Environment agents for regional vegetation index analysis workflows.
+
+This module exposes `region_vci_analysis` and private helpers for extracting
+region codes, building prompts, and submitting VCI tasks.
+"""
 
 import re
 from typing import Any
@@ -101,7 +105,17 @@ async def region_vci_analysis(
     batch: bool = False,
     **kwargs: Any,
 ) -> dict:
-    """Run a regional VCI analysis workflow and return task results."""
+    """Run a regional VCI analysis workflow and return task results.
+
+    Args:
+        query: Natural-language region analysis request.
+        batch: Whether to reuse the provided output directory.
+        **kwargs: Keyword-compatible chat, OBS, and submit overrides.
+
+    Returns:
+        Dictionary containing the submitted VCI analysis task, or None when
+        region code extraction fails.
+    """
     user_id = kwargs.get("user_id", ENVIRONMENT_CONFIG.USER_ID)
     prompt_file = kwargs.get("prompt_file", ENVIRONMENT_CONFIG.PROMPT_FILE)
     environment_data = kwargs.get(

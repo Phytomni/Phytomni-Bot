@@ -3,12 +3,11 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides LangGraph-based workflow for protein design
-and computational structural analysis.
+"""LangGraph workflow for digital design task submission.
 
-It includes functions that leverage computational biology and bioinformatics
-tools to analyze protein structures, predict protein properties, and perform
-digital design workflows for protein engineering applications.
+This module exposes `DigitalDesignState`, `DigitalDesignAgents`, and
+`design_module`. It prepares protein and promoter design tasks, dispatches
+them through AnalystAgent, and returns submitted task metadata.
 """
 
 import operator
@@ -163,7 +162,14 @@ class DigitalDesignAgents:
         return workflow.compile(checkpointer=self.checkpointer)
 
     def route_design_tasks(self, state: DigitalDesignState):
-        """Dispatch design tasks in parallel using Send API."""
+        """Dispatch design tasks in parallel using Send API.
+
+        Args:
+            state: Current digital design workflow state.
+
+        Returns:
+            LangGraph Send commands for each configured design task.
+        """
         return route_analysis_tasks(
             "design_node",
             "gene_id",
@@ -242,7 +248,14 @@ class DigitalDesignAgents:
         return "small"
 
     async def prepare_tasks(self, state: DigitalDesignState) -> dict:
-        """Prepare the list of design tasks."""
+        """Prepare the list of design tasks.
+
+        Args:
+            state: Current digital design workflow state.
+
+        Returns:
+            State update with design tasks and counters initialized.
+        """
         _ = state
         tasks = [
             {"analysis_type": "protein_design_analysis"},
@@ -254,6 +267,12 @@ class DigitalDesignAgents:
         """Execute a single design task dispatched via Send API.
 
         This node is called dynamically for each task in the design_tasks list.
+
+        Args:
+            state: Current state for one dispatched design task.
+
+        Returns:
+            State update with submitted task metadata or error details.
         """
         task_index = state.get("task_index")
         gene_id = state["gene_id"]
@@ -305,7 +324,18 @@ async def design_module(
     batch: bool = True,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph digital design agent."""
+    """Compatibility wrapper around the LangGraph digital design agent.
+
+    Args:
+        species: Target species name.
+        gene_id: Target gene identifier.
+        user_id: Optional user identifier for output paths.
+        batch: Whether to reuse provided output directories.
+        **kwargs: Keyword-compatible analysis and sensitive overrides.
+
+    Returns:
+        Digital design task submission result.
+    """
     agent = get_configured_analysis_agent(
         AnalysisAgentCacheSpec(
             "DigitalDesignAgents",

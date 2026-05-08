@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph agents for plant gene network analysis workflows."""
+"""LangGraph agents for plant gene network analysis workflows.
+
+This module exposes `GeneNetworkState`, `GeneNetworkAgents`, and
+`network_analysis`. It prepares trait-associated network tasks, dispatches
+them through AnalystAgent, and returns submitted task metadata.
+"""
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
@@ -142,7 +147,14 @@ class GeneNetworkAgents:
         return workflow.compile(checkpointer=self.checkpointer)
 
     def route_network_tasks(self, state: GeneNetworkState):
-        """Dispatch network analysis tasks in parallel using Send API."""
+        """Dispatch network analysis tasks in parallel using Send API.
+
+        Args:
+            state: Current gene network workflow state.
+
+        Returns:
+            LangGraph Send commands for each configured network task.
+        """
         return route_analysis_tasks(
             "network_node",
             "to_id",
@@ -218,7 +230,14 @@ class GeneNetworkAgents:
         return "small"
 
     async def prepare_tasks(self, state: GeneNetworkState) -> dict:
-        """Prepare the list of network analysis tasks."""
+        """Prepare the list of network analysis tasks.
+
+        Args:
+            state: Current gene network workflow state.
+
+        Returns:
+            State update with network tasks and counters initialized.
+        """
         _ = state
         tasks = [{"analysis_type": "gene_network_analysis"}]
         return {"network_tasks": tasks, "task_ids": {}, "completed_count": 0}
@@ -227,6 +246,12 @@ class GeneNetworkAgents:
         """Execute a single network analysis task dispatched via Send API.
 
         This node is called dynamically for each network task.
+
+        Args:
+            state: Current state for one dispatched network task.
+
+        Returns:
+            State update with submitted task metadata or error details.
         """
         task_index = state.get("task_index")
         species = state["species"]
@@ -280,7 +305,18 @@ async def network_analysis(
     batch: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph gene network agent."""
+    """Compatibility wrapper around the LangGraph gene network agent.
+
+    Args:
+        species: Target species name.
+        to_id: Trait Ontology identifier for the target phenotype.
+        user_id: Optional user identifier for output paths.
+        batch: Whether to reuse provided output directories.
+        **kwargs: Keyword-compatible analysis and sensitive overrides.
+
+    Returns:
+        Gene network task submission result.
+    """
     agent = get_configured_analysis_agent(
         AnalysisAgentCacheSpec(
             "GeneNetworkAgents",

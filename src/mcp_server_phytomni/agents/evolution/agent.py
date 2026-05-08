@@ -3,7 +3,11 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Evolution analysis helpers built on Phytomni analyst workflows."""
+"""Evolution analysis helpers built on Phytomni analyst workflows.
+
+This module exposes `evo_test_analysis` and private helpers for taxonomy
+lookup, target extraction, output directory creation, and task submission.
+"""
 
 from json import loads
 from typing import Any, Dict, List
@@ -144,7 +148,20 @@ async def evo_test_analysis(
     enable_auto_select: bool = False,
     **kwargs: Any,
 ) -> dict:
-    """Run an evolution analysis workflow for a target gene."""
+    """Run an evolution analysis workflow for a target gene.
+
+    Args:
+        query: Natural-language evolution analysis request.
+        species: Source species used to select prepared data.
+        gene_id: Target gene identifier for the analysis prompt.
+        batch: Whether to reuse the provided output directory.
+        enable_auto_select: Whether AnalystAgent may auto-select tools.
+        **kwargs: Keyword-compatible chat, OBS, and submit overrides.
+
+    Returns:
+        Dictionary containing the submitted evolution task, or None when
+        taxonomy extraction fails.
+    """
     user_id = kwargs.get("user_id", DEEP_GENOME_CONFIG.USER_ID)
     prompt_file = kwargs.get("prompt_file", DEEP_GENOME_CONFIG.PROMPT_FILE)
     deepgenome_data = kwargs.get(

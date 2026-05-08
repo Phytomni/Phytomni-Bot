@@ -50,7 +50,16 @@ SENSITIVE_CONFIG = SensitiveConfig.load()
 
 @dataclass(frozen=True)
 class ResearchTaskContext:
-    """Resolved context for submitting one in-silico research task."""
+    """Resolved context for submitting one in-silico research task.
+
+    Attributes:
+        goal_description: Research objective submitted to AnalystAgent.
+        context: Supporting plan or context for the task.
+        data_list: Input datasets for the research task.
+        output_dir: Output directory for generated results.
+        task_name: Stable task label derived from the goal index.
+        thread_id: LangGraph thread ID for the child AnalystAgent run.
+    """
 
     goal_description: str
     context: str
@@ -159,7 +168,14 @@ class InSilicoResearchAgents:
         return workflow.compile(checkpointer=self.checkpointer)
 
     def route_research_tasks(self, state: InSilicoResearchState):
-        """Dispatch research tasks in parallel using Send API."""
+        """Dispatch research tasks in parallel using Send API.
+
+        Args:
+            state: Current in-silico research workflow state.
+
+        Returns:
+            LangGraph Send commands for each extracted research task.
+        """
         tasks = state.get("research_tasks", [])
         return [
             Send(
@@ -305,13 +321,24 @@ class InSilicoResearchAgents:
         print("  → Extracting research goals from paper...")
 
         async def extract_goals() -> dict[str, Any]:
-            """Extract goals and return the success state."""
+            """Extract goals and return the success state.
+
+            Returns:
+                State update containing extracted goals and no error.
+            """
             goals = await self._extract_goals(paper_text, obs_file_list)
             print(f"  → Extracted {len(goals)} research goals")
             return {"goals": goals, "error": None}
 
         def failure_state(exc: Exception) -> dict[str, Any]:
-            """Store goal extraction failures in workflow state."""
+            """Store goal extraction failures in workflow state.
+
+            Args:
+                exc: Exception raised during goal extraction.
+
+            Returns:
+                Failure state update with an empty goals list.
+            """
             print(f"  → Goal extraction failed: {str(exc)}")
             return {"goals": [], "error": str(exc)}
 
@@ -386,7 +413,11 @@ class InSilicoResearchAgents:
         print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
 
         async def submit_task() -> dict[str, Any]:
-            """Submit one research task and return state updates."""
+            """Submit one research task and return state updates.
+
+            Returns:
+                State update containing task IDs and completion increment.
+            """
             result = await self._submit_research_task(
                 ResearchTaskContext(
                     goal_description=goal_description,
@@ -404,7 +435,14 @@ class InSilicoResearchAgents:
             return {"task_ids": existing_task_ids, "completed_count": 1}
 
         def failure_state(exc: Exception) -> dict[str, Any]:
-            """Preserve partial task progress when submit fails."""
+            """Preserve partial task progress when submit fails.
+
+            Args:
+                exc: Exception raised during task submission.
+
+            Returns:
+                Failure state update preserving known task IDs.
+            """
             return {
                 "task_ids": state.get("task_ids", {}),
                 "completed_count": 1,
@@ -465,7 +503,19 @@ async def in_silico_research(
     output_dir: Optional[str] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph in-silico research agent."""
+    """Compatibility wrapper around the LangGraph in-silico research agent.
+
+    Args:
+        user_query: Paper text or research context to decompose.
+        data_list: Input datasets available for submitted research tasks.
+        user_id: Optional user identifier for output paths.
+        obs_file_list: Optional OBS paths for uploaded paper/context files.
+        output_dir: Optional explicit output directory.
+        **kwargs: Keyword-compatible analysis and sensitive overrides.
+
+    Returns:
+        In-silico research goals, task IDs, and any workflow error.
+    """
     in_silico_config = copy_config_with_overrides(
         IN_SILICO_CONFIG,
         kwargs,
