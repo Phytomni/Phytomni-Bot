@@ -2,10 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides functions for interacting with a knowledge base.
+"""Knowledge agent with retrieval and RAG-based synthesis.
 
-It includes functions for retrieving, reranking, and generating text based on
-the retrieved knowledge.
+Classes: KnowledgeAgentState, KnowledgeAgent.
+Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
+    retrieve_generate.
 """
 
 from typing import Any, Dict, List, Literal, Optional, TypedDict

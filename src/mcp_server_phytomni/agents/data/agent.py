@@ -2,12 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides functions for interacting with a database using
-natural language queries.
+"""NL2SQL agent for natural language database queries.
 
-It includes functions to convert natural language to SQL, execute the query,
-and to first rewrite the natural language query using a language model for
-better performance.
+Classes: DataAgentState.
+Functions: rewrite_nl2sql, retrieve_and_generate.
 """
 
 from typing import Any, Dict, Literal, Optional, TypedDict

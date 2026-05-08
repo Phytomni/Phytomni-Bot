@@ -2,7 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""IAM token helper for service API authentication."""
+"""IAM token helper for service API authentication.
+
+Functions: get_token.
+"""
 
 from httpx import AsyncClient, HTTPError, Timeout
 from mcp.shared.exceptions import McpError
@@ -18,7 +21,19 @@ SENSITIVE_CONFIG = SensitiveConfig.load()
 async def get_token(
     timeout: float = SERVER_CONFIG.TIMEOUT, region: str = SERVER_CONFIG.REGION
 ) -> str:
-    """Obtain an X-Subject-Token for API authentication."""
+    """Obtain an X-Subject-Token for API authentication.
+
+    Args:
+        timeout: Request timeout in seconds
+            (default from ServerConfig.TIMEOUT).
+        region: Cloud service region name (default from ServerConfig.REGION).
+
+    Returns:
+        str: X-Subject-Token header value for authenticated API requests.
+
+    Raises:
+        McpError: If token request fails with HTTP error.
+    """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
         password = SENSITIVE_CONFIG.USER_PASSWORD.get_secret_value()

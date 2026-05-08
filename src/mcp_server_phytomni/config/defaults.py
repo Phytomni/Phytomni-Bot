@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Default non-secret configuration for Phytomni agents."""
+"""Default non-secret configuration for Phytomni agents.
+
+Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
+    ReviewConfig, BriefGeneConfig, GeneNetworkConfig, DeepGenomeConfig,
+    DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig.
+"""
 
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Union

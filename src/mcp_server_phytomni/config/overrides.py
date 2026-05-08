@@ -2,7 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Helpers for building config copies from wrapper arguments."""
+"""Helpers for building config copies from wrapper arguments.
+
+FieldMaps: RETRIEVAL_CONFIG_FIELD_MAP, CHAT_COMPLETION_CONFIG_FIELD_MAP,
+    OBS_TRANSFER_CONFIG_FIELD_MAP, RETRY_CONFIG_FIELD_MAP,
+    NL2SQL_CONFIG_FIELD_MAP.
+Functions: collect_mapped_overrides, copy_config_with_overrides,
+    copy_sensitive_config_with_overrides.
+"""
 
 from collections.abc import Mapping
 from typing import Any, Optional, TypeVar
@@ -72,7 +79,17 @@ def collect_mapped_overrides(
     *,
     skip_none: bool = True,
 ) -> dict[str, Any]:
-    """Collect non-secret config updates from wrapper argument names."""
+    """Collect non-secret config updates from wrapper argument names.
+
+    Args:
+        values: Source mapping of argument names to values.
+        field_map: Mapping from source argument names to target config
+            field names.
+        skip_none: If True, skip None values (default True).
+
+    Returns:
+        dict[str, Any]: Dict mapping target field names to values.
+    """
     updates: dict[str, Any] = {}
     for source_key, target_key in field_map.items():
         if source_key not in values:
@@ -92,7 +109,20 @@ def copy_config_with_overrides(
     fixed_updates: Optional[Mapping[str, Any]] = None,
     skip_none: bool = True,
 ) -> ConfigT:
-    """Return a config copy with mapped public wrapper overrides."""
+    """Return a config copy with mapped public wrapper overrides.
+
+    Args:
+        base_config: Pydantic config instance to copy.
+        values: Source mapping of argument names to values.
+        field_map: Mapping from source argument names to target config
+            field names.
+        fixed_updates: Optional dict of fixed updates to apply before
+            field mapping.
+        skip_none: If True, skip None values (default True).
+
+    Returns:
+        ConfigT: Updated copy of base_config with overrides applied.
+    """
     updates = _collect_fixed_updates(fixed_updates, skip_none=skip_none)
     updates.update(
         collect_mapped_overrides(
@@ -112,7 +142,18 @@ def copy_sensitive_config_with_overrides(
     secret_field_map: Optional[FieldMap] = None,
     fixed_updates: Optional[Mapping[str, Any]] = None,
 ) -> ConfigT:
-    """Return a sensitive config copy with secret fields kept separate."""
+    """Return a sensitive config copy with secret fields kept separate.
+
+    Args:
+        base_config: Pydantic config instance to copy.
+        values: Source mapping of argument names to values.
+        field_map: Optional mapping from source to non-secret target fields.
+        secret_field_map: Optional mapping from source to secret target fields.
+        fixed_updates: Optional dict of fixed updates to apply.
+
+    Returns:
+        ConfigT: Updated copy of base_config with overrides applied.
+    """
     updates = _collect_fixed_updates(fixed_updates, skip_none=True)
     updates.update(
         collect_mapped_overrides(

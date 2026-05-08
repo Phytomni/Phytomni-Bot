@@ -2,12 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph-based in silico research agents for conducting computational
-research based on scientific literature.
+"""LangGraph-based in silico research agents for computational workflows.
 
-This module provides functions that extract research goals from scientific
-papers and execute comprehensive computational research workflows using
-LangGraph's parallel execution capabilities.
+Classes: ResearchTaskContext, InSilicoResearchState, InSilicoResearchAgents.
+Functions: in_silico_research, extract_goals_node, prepare_tasks,
+    run_research_node.
 """
 
 from dataclasses import dataclass

@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shared HTTP request and retry helpers."""
+"""Shared HTTP request and retry helpers.
+
+Classes: JsonPostRequest, JsonPostRetry.
+Functions: retry_http_status_or_raise, retry_network_or_raise,
+    request_response_with_retries, post_json_with_retries.
+"""
 
 import asyncio
 from collections.abc import Iterable, Mapping
@@ -23,7 +28,15 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 @dataclass(frozen=True)
 class JsonPostRequest:
-    """HTTP request payload for retry helpers."""
+    """HTTP request payload for retry helpers.
+
+    Attributes:
+        url: Target URL for the HTTP request.
+        method: HTTP method (default 'POST').
+        headers: Optional mapping of HTTP headers.
+        json_body: JSON-serializable body for POST requests.
+        data: Optional raw data body.
+    """
 
     url: str
     method: str = "POST"
@@ -34,7 +47,18 @@ class JsonPostRequest:
 
 @dataclass(frozen=True)
 class JsonPostRetry:
-    """Retry policy and error messages for JSON POST calls."""
+    """Retry policy and error messages for JSON POST calls.
+
+    Attributes:
+        timeout: Request timeout in seconds.
+        max_retries: Maximum number of retry attempts.
+        retriable_codes: Iterable of HTTP status codes
+            that should trigger retry.
+        message: Error message prefix for MCP error on
+            non-retriable status.
+        network_message: Error message prefix for network errors
+            (default 'Network error').
+    """
 
     timeout: float
     max_retries: int
@@ -83,7 +107,28 @@ async def retry_http_status_or_raise(
     retriable_codes: Iterable[int],
     message: str,
 ) -> bool:
-    """Sleep for a retriable HTTP status error or raise an MCP error."""
+    """Sleep for a retriable HTTP status error or raise an MCP error.
+
+    Args:
+        exc: The HTTPStatusError exception to evaluate.
+        attempt: Current attempt number (0-indexed).
+        max_retries: Maximum number of retry attempts
+            before raising.
+        retriable_codes: HTTP status codes that should
+            trigger retry.
+        message: Error message prefix for MCP error on
+            non-retriable status.
+
+    Returns:
+        bool: True if the error was retriable and sleep
+            occurred, triggering retry.
+            Returns are only meaningful internally;
+            caller should check attempt count.
+
+    Raises:
+        McpError: Raised when the HTTP status code is
+            not retriable or max retries exceeded.
+    """
     if (
         exc.response is not None
         and exc.response.status_code in retriable_codes
@@ -106,7 +151,24 @@ async def retry_network_or_raise(
     max_retries: int,
     message: str = "Network error",
 ) -> bool:
-    """Sleep for a retriable network error or raise an MCP error."""
+    """Sleep for a retriable network error or raise an MCP error.
+
+    Args:
+        exc: The network exception (ConnectError or
+            TimeoutException) to evaluate.
+        attempt: Current attempt number (0-indexed).
+        max_retries: Maximum number of retry attempts
+            before raising.
+        message: Error message prefix for MCP error
+            (default 'Network error').
+
+    Returns:
+        bool: True if retriable and sleep occurred,
+            triggering retry.
+
+    Raises:
+        McpError: Raised when max retries exceeded.
+    """
     if attempt < max_retries:
         await asyncio.sleep(1.5**attempt)
         return True
@@ -123,7 +185,19 @@ async def request_response_with_retries(
     request: JsonPostRequest,
     retry: JsonPostRetry,
 ) -> Response | None:
-    """Request with shared HTTP/network retry handling and return response."""
+    """Request with shared HTTP/network retry handling and return response.
+
+    Args:
+        client: Async HTTP client (httpx.AsyncClient).
+        request: JSON POST request payload including url,
+            method, headers, body.
+        retry: Retry policy including timeout, max_retries,
+            retriable_codes, and messages.
+
+    Returns:
+        Response | None: httpx.Response on success,
+            None after all retries exhausted.
+    """
     attempt = 0
     while attempt <= retry.max_retries:
         try:
@@ -161,6 +235,18 @@ async def post_json_with_retries(
     request: JsonPostRequest,
     retry: JsonPostRetry,
 ) -> Any:
-    """POST with shared HTTP/network retry handling and return JSON."""
+    """POST with shared HTTP/network retry handling and return JSON.
+
+    Args:
+        client: Async HTTP client (httpx.AsyncClient).
+        request: JSON POST request payload including url,
+            method, headers, body.
+        retry: Retry policy including timeout, max_retries,
+            retriable_codes, and messages.
+
+    Returns:
+        Any: Parsed JSON response body, or None if all
+            retries exhausted.
+    """
     response = await request_response_with_retries(client, request, retry)
     return response.json() if response is not None else None

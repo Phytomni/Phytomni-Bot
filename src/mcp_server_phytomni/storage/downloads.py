@@ -2,7 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""OBS download and upload-context conversion helpers."""
+"""OBS download and upload-context conversion helpers.
+
+Classes: ObsCredentials, ObsDownloadOptions,
+    ObsTransferContext, ResolvedObsFile.
+Functions: download_upload_context, download_obs_file,
+    download_obs_list,
+    convert_single_file, convert_multi_files, download_list_convert.
+"""
 
 import asyncio
 from concurrent.futures import ProcessPoolExecutor

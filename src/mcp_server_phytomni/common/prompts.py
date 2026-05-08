@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Template, prompt, and cached file-loading helpers."""
+"""Template, prompt, and cached file-loading helpers.
+
+Functions: load_template, file_cache_fingerprint, load_json_file,
+    load_text_file, render_template, get_prompt.
+"""
 
 import json
 from pathlib import Path
@@ -21,7 +25,23 @@ def load_template(
     template_file: str,
     template_str: Optional[str] = None,
 ) -> str:
-    """Load a template string from a YAML file."""
+    """Load a template string from a YAML file.
+
+    Args:
+        template_file: Path to the YAML template file.
+        template_str: Optional dot-separated path to extract a nested value
+            from the template (e.g., "section.subsection").
+
+    Returns:
+        str: Template string content, or extracted nested value
+            if template_str provided.
+
+    Raises:
+        FileNotFoundError: If template file does not exist.
+        KeyError: If template_str path not found in template structure.
+        ValueError: If template_str provided but template has multiple
+            top-level keys.
+    """
     template_path = Path(template_file)
     if not template_path.is_file():
         raise FileNotFoundError(f"Template file not found: {template_file}")
@@ -35,7 +55,18 @@ def load_template(
 
 
 def file_cache_fingerprint(file_path: str) -> tuple[str, int, int]:
-    """Return a stable file cache fingerprint for read-only local files."""
+    """Return a stable file cache fingerprint for read-only local files.
+
+    Args:
+        file_path: Path to the file to fingerprint.
+
+    Returns:
+        tuple[str, int, int]: Resolved absolute path, modification time
+            in nanoseconds, and file size in bytes.
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+    """
     path = Path(file_path)
     if not path.is_file():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -72,7 +103,17 @@ def _load_template_cached(
 
 
 def load_json_file(file_path: str) -> Any:
-    """Load a JSON file through the shared file-aware cache."""
+    """Load a JSON file through the shared file-aware cache.
+
+    Args:
+        file_path: Path to the JSON file to load.
+
+    Returns:
+        Any: Parsed JSON content (dict, list, or primitive type).
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+    """
     cache_path, mtime_ns, size = file_cache_fingerprint(file_path)
     return _load_json_file_cached(cache_path, mtime_ns, size)
 
@@ -89,7 +130,17 @@ def _load_json_file_cached(file_path: str, mtime_ns: int, size: int) -> Any:
 
 
 def load_text_file(file_path: str) -> str:
-    """Load a text file through the shared file-aware cache."""
+    """Load a text file through the shared file-aware cache.
+
+    Args:
+        file_path: Path to the text file to load.
+
+    Returns:
+        str: Full file contents.
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+    """
     cache_path, mtime_ns, size = file_cache_fingerprint(file_path)
     return _load_text_file_cached(cache_path, mtime_ns, size)
 
@@ -108,7 +159,17 @@ def _load_text_file_cached(file_path: str, mtime_ns: int, size: int) -> str:
 def render_template(
     template: str, parameters: Optional[Mapping[str, Any]] = None
 ) -> str:
-    """Replace placeholders in a template string with provided values."""
+    """Replace placeholders in a template string with provided values.
+
+    Args:
+        template: Template string with {{placeholder}} syntax.
+        parameters: Optional dict of parameter values to substitute.
+            Missing parameters trigger a warning and result in
+            empty string replacement.
+
+    Returns:
+        str: Template with all placeholders replaced by parameter values.
+    """
     if parameters is None:
         parameters = {}
     pattern = r"\{\{([^}]+)\}\}"
@@ -128,7 +189,16 @@ def get_prompt(
     template_str: Optional[str] = None,
     parameters: Optional[Mapping[str, Any]] = None,
 ) -> str:
-    """Generate a complete prompt from a template file and parameters."""
+    """Generate a complete prompt from a template file and parameters.
+
+    Args:
+        template_file: Path to the YAML template file.
+        template_str: Optional dot-separated path to extract nested value.
+        parameters: Optional dict of values to substitute into placeholders.
+
+    Returns:
+        str: Rendered prompt with all placeholders replaced.
+    """
     if parameters is None:
         parameters = {}
     template = load_template(template_file, template_str)

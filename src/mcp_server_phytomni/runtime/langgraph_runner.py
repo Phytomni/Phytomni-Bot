@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shared helpers for invoking LangGraph applications."""
+"""Shared helpers for invoking LangGraph applications.
+
+Classes: GraphRegistry.
+Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
+    ainvoke_graph, capture_workflow_boundary, config_fingerprint.
+"""
 
 import json
 from collections.abc import Awaitable, Callable, Mapping
@@ -36,14 +41,28 @@ SECRET_FIELD_NAMES = frozenset(
 
 
 def ensure_thread_id(thread_id: Optional[str] = None) -> str:
-    """Return an existing thread id or create a new one."""
+    """Return an existing thread id or create a new one.
+
+    Args:
+        thread_id: Existing thread ID to reuse, or None to generate new.
+
+    Returns:
+        str: Existing thread_id or newly generated ID.
+    """
     if thread_id:
         return thread_id
     return IdFactory().new_id("thread")
 
 
 def build_runnable_config(thread_id: Optional[str] = None) -> RunnableConfig:
-    """Build the LangGraph RunnableConfig used for checkpointing."""
+    """Build the LangGraph RunnableConfig used for checkpointing.
+
+    Args:
+        thread_id: Optional thread ID for conversation continuity.
+
+    Returns:
+        RunnableConfig: Configuration dict with thread_id in configurable.
+    """
     config: RunnableConfig = {
         "configurable": {"thread_id": ensure_thread_id(thread_id)}
     }
@@ -53,7 +72,14 @@ def build_runnable_config(thread_id: Optional[str] = None) -> RunnableConfig:
 def ensure_checkpointer(
     checkpointer: Optional[MemorySaver] = None,
 ) -> MemorySaver:
-    """Return a caller-provided checkpointer or create a fresh one."""
+    """Return a caller-provided checkpointer or create a fresh one.
+
+    Args:
+        checkpointer: Optional existing MemorySaver to reuse.
+
+    Returns:
+        MemorySaver: Provided checkpointer or newly created instance.
+    """
     if checkpointer is not None:
         return checkpointer
     return MemorySaver()
@@ -64,7 +90,16 @@ async def ainvoke_graph(
     initial_state: Any,
     thread_id: Optional[str] = None,
 ) -> Any:
-    """Invoke a compiled graph with a standard RunnableConfig."""
+    """Invoke a compiled graph with a standard RunnableConfig.
+
+    Args:
+        app: Compiled LangGraph application.
+        initial_state: Initial state dict to pass to the graph.
+        thread_id: Optional thread ID for checkpointing continuity.
+
+    Returns:
+        Any: Final state after graph invocation.
+    """
     return await app.ainvoke(
         initial_state,
         config=build_runnable_config(thread_id),
@@ -75,7 +110,17 @@ async def capture_workflow_boundary(
     action: Callable[[], Awaitable[dict[str, Any]]],
     failure_result: Callable[[Exception], dict[str, Any]],
 ) -> dict[str, Any]:
-    """Run a workflow action and convert graph/node failures to state."""
+    """Run a workflow action and convert graph/node failures to state.
+
+    Args:
+        action: Async callable that executes the workflow.
+        failure_result: Callable that converts exceptions
+            to failure state dict.
+
+    Returns:
+        dict[str, Any]: Workflow result on success,
+            or failure state on exception.
+    """
     try:
         return await action()
     except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -83,7 +128,14 @@ async def capture_workflow_boundary(
 
 
 def config_fingerprint(values: Optional[Mapping[str, Any]] = None) -> str:
-    """Return a stable fingerprint for non-secret config values."""
+    """Return a stable fingerprint for non-secret config values.
+
+    Args:
+        values: Mapping of configuration values to fingerprint.
+
+    Returns:
+        str: JSON string fingerprint with secrets stripped.
+    """
     safe_values = _strip_secret_values(values or {})
     return json.dumps(safe_values, sort_keys=True, separators=(",", ":"))
 
@@ -100,7 +152,16 @@ class GraphRegistry(Generic[GraphT]):
         factory: Callable[[], GraphT],
         fingerprint_values: Optional[Mapping[str, Any]] = None,
     ) -> GraphT:
-        """Return a cached graph or create one for this fingerprint."""
+        """Return a cached graph or create one for this fingerprint.
+
+        Args:
+            name: Graph name identifier.
+            factory: Callable that creates a new GraphT instance.
+            fingerprint_values: Optional config values for cache key.
+
+        Returns:
+            GraphT: Cached or newly created graph instance.
+        """
         key = (name, config_fingerprint(fingerprint_values))
         if key not in self._graphs:
             self._graphs[key] = factory()

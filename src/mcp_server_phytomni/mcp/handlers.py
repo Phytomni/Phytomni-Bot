@@ -2,7 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Handlers for MCP tool execution."""
+"""Handlers for MCP tool execution.
+
+Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
+    handle_analyst_agent, handle_review_agent, handle_brief_gene_agent,
+    handle_deep_genome_agent, handle_in_silico_research_agent,
+    handle_digital_design_agent, handle_gene_network_agent.
+"""
 
 from typing import Any
 
@@ -32,7 +38,15 @@ from ..config.settings import SensitiveConfig
 
 
 async def handle_chat_agent(args: Any) -> Any:
-    """Execute ChatAgent with default runtime configuration."""
+    """Execute ChatAgent with default runtime configuration.
+
+    Args:
+        args: ChatAgent arguments. Must be a ChatAgent Pydantic model with
+            user_query (str) and obs_file_list (list[str]).
+
+    Returns:
+        Any: ChatAgent response result.
+    """
     chat_config = ChatConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -70,7 +84,15 @@ async def handle_chat_agent(args: Any) -> Any:
 
 
 async def handle_knowledge_agent(args: Any) -> Any:
-    """Execute KnowledgeAgent with default runtime configuration."""
+    """Execute KnowledgeAgent with default runtime configuration.
+
+    Args:
+        args: KnowledgeAgent arguments. Must be a KnowledgeAgent Pydantic model
+            with user_query (str) and obs_file_list (list[str]).
+
+    Returns:
+        Any: KnowledgeAgent response result.
+    """
     knowledge_config = KnowledgeConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -118,7 +140,15 @@ async def handle_knowledge_agent(args: Any) -> Any:
 
 
 async def handle_data_agent(args: Any) -> Any:
-    """Execute DataAgent with default runtime configuration."""
+    """Execute DataAgent with default runtime configuration.
+
+    Args:
+        args: DataAgent arguments. Must be a DataAgent Pydantic model with
+            user_query (str): Natural-language database question.
+
+    Returns:
+        Any: DataAgent response result.
+    """
     data_config = DataConfig()
     sensitive_config = SensitiveConfig.load()
     return await rewrite_nl2sql(
@@ -160,7 +190,16 @@ async def handle_data_agent(args: Any) -> Any:
 
 
 async def handle_analyst_agent(args: Any) -> Any:
-    """Execute AnalystAgent with default runtime configuration."""
+    """Execute AnalystAgent with default runtime configuration.
+
+    Args:
+        args: AnalystAgent arguments. Must be an AnalystAgent Pydantic model
+            with goal_description (str), data_list (dict[str, str]),
+            and obs_file_list (list[str]).
+
+    Returns:
+        Any: AnalystAgent response result.
+    """
     analyst_config = AnalystConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -223,7 +262,15 @@ async def handle_analyst_agent(args: Any) -> Any:
 
 
 async def handle_review_agent(args: Any) -> Any:
-    """Execute ReviewAgent with default runtime configuration."""
+    """Execute ReviewAgent with default runtime configuration.
+
+    Args:
+        args: ReviewAgent arguments. Must be a ReviewAgent Pydantic model with
+            user_query (str) and obs_file_list (list[str]).
+
+    Returns:
+        Any: ReviewAgent response result.
+    """
     review_config = ReviewConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -271,7 +318,15 @@ async def handle_review_agent(args: Any) -> Any:
 
 
 async def handle_brief_gene_agent(args: Any) -> Any:
-    """Execute BriefGeneAgent with default runtime configuration."""
+    """Execute BriefGeneAgent with default runtime configuration.
+
+    Args:
+        args: BriefGeneAgent arguments. Must be a BriefGeneAgent Pydantic model
+            with user_query (str): One plant gene ID or transcript ID.
+
+    Returns:
+        Any: BriefGeneAgent response result.
+    """
     brief_config = BriefGeneConfig()
     sensitive_config = SensitiveConfig.load()
     return await brief_gene_function(
@@ -311,7 +366,14 @@ async def handle_brief_gene_agent(args: Any) -> Any:
 
 
 async def handle_deep_genome_agent(args: Any) -> Any:
-    """Execute DeepGenomeAgent with default runtime configuration."""
+    """Execute DeepGenomeAgent with default runtime configuration.
+
+    Args:
+        args: DeepGenomeAgent Pydantic: species_code (str), gene_id (str).
+
+    Returns:
+        Any: DeepGenomeAgent response result.
+    """
     deep_genome_config = DeepGenomeConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -378,7 +440,16 @@ async def handle_deep_genome_agent(args: Any) -> Any:
 
 
 async def handle_in_silico_research_agent(args: Any) -> Any:
-    """Execute InSilicoResearchAgent with default runtime configuration."""
+    """Execute InSilicoResearchAgent with default runtime configuration.
+
+    Args:
+        args: InSilicoResearchAgent arguments. Must be an InSilicoResearchAgent
+            Pydantic model with user_query (str), data_list (dict[str, str]),
+            and obs_file_list (list[str]).
+
+    Returns:
+        Any: InSilicoResearchAgent response result.
+    """
     in_silico_config = InSilicoResearchConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -429,7 +500,15 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
 
 
 async def handle_digital_design_agent(args: Any) -> Any:
-    """Execute DigitalDesignAgent with default runtime configuration."""
+    """Execute DigitalDesignAgent with default runtime configuration.
+
+    Args:
+        args: DigitalDesignAgent Pydantic model: species (str), gene_id (str),
+            obs_file_list (list[str]).
+
+    Returns:
+        Any: DigitalDesignAgent response result.
+    """
     design_config = DigitalDesignConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()
@@ -461,7 +540,15 @@ async def handle_digital_design_agent(args: Any) -> Any:
 
 
 async def handle_gene_network_agent(args: Any) -> Any:
-    """Execute GeneNetworkAgent with default runtime configuration."""
+    """Execute GeneNetworkAgent with default runtime configuration.
+
+    Args:
+        args: GeneNetworkAgent Pydantic model with species (str), to_id (str),
+            obs_file_list (list[str]).
+
+    Returns:
+        Any: GeneNetworkAgent response result.
+    """
     network_config = GeneNetworkConfig()
     sensitive_config = SensitiveConfig.load()
     access_key_id, secret_access_key = sensitive_config.obs_credentials()

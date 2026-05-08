@@ -2,8 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""This module provides a TaskManager class for managing tasks in a
-SQLite database and functions for interacting with a remote task server."""
+"""Task manager for SQLite database and remote task server interactions.
+
+Classes: RemoteTaskRequest, TaskManager.
+Functions: create_task (async), update_task (async).
+"""
 
 import sqlite3
 import uuid
@@ -26,7 +29,16 @@ DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
 @dataclass(frozen=True)
 class RemoteTaskRequest:
-    """Resolved request data for a remote task-manager call."""
+    """Resolved request data for a remote task-manager call.
+
+    Attributes:
+        url: Target URL for the remote task request.
+        data: Dictionary of task data fields.
+        timeout: Request timeout in seconds.
+        retriable_codes: Tuple of HTTP status codes that trigger retry.
+        max_retries: Maximum number of retry attempts.
+        message: Error message prefix for failures.
+    """
 
     url: str
     data: Dict[str, str]
@@ -57,8 +69,8 @@ class TaskManager:
         self._init_db()
 
     def _init_db(self):
-        """Initializes the database and creates the tasks table if it
-        doesn't exist."""
+        """Initializes the database and creates the tasks
+        table if it doesn't exist."""
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
@@ -73,7 +85,11 @@ class TaskManager:
         conn.close()
 
     def _get_connection(self):
-        """Returns a connection to the SQLite database."""
+        """Returns a connection to the SQLite database.
+
+        Returns:
+            sqlite3.Connection: SQLite database connection.
+        """
         return sqlite3.connect(self.db_path)
 
     def create_task(self):

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Sensitive environment settings and local .env loading helpers."""
+"""Sensitive environment settings and local .env loading helpers.
+
+Classes: SensitiveConfig.
+Functions: load_env_file, generate_env_template.
+"""
 
 import os
 from pathlib import Path

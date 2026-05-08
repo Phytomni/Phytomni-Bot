@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Common list helpers."""
+"""Common list helpers.
+
+Public functions:
+- split_list: Split a list into evenly sized chunks.
+"""
 
 from math import ceil
 from typing import List
@@ -13,7 +17,15 @@ __all__ = [
 
 
 def split_list(lst: List, max_size: int = 128) -> List[List]:
-    """Split a list into evenly sized chunks."""
+    """Split a list into evenly sized chunks.
+
+    Args:
+        lst: Input list to split.
+        max_size: Maximum size of each chunk (default 128).
+
+    Returns:
+        List[List]: List of chunks, each with at most max_size elements.
+    """
     n = len(lst)
     if n == 0:
         return []
