@@ -95,7 +95,18 @@ def _text_response(response: Any) -> list[TextContent]:
 async def dispatch_tool(
     name: Any, arguments: Dict[str, Any]
 ) -> list[TextContent]:
-    """Validate arguments, call a tool handler, and serialize the response."""
+    """Validate arguments, call a tool handler, and serialize the response.
+
+    Args:
+        name: Raw MCP tool name supplied by the client.
+        arguments: JSON object passed to the selected MCP tool.
+
+    Returns:
+        MCP text content containing the serialized handler response.
+
+    Raises:
+        McpError: If the tool is unknown or arguments fail schema validation.
+    """
     tool_name = _tool_name(name)
     model = TOOL_ARGUMENT_MODELS.get(tool_name)
     handler = TOOL_HANDLERS.get(tool_name)
@@ -203,6 +214,11 @@ async def serve() -> None:
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
+        """Return public MCP tool definitions.
+
+        Returns:
+            Tool metadata and JSON schemas for every registered Phytomni tool.
+        """
         return [
             Tool(
                 name=PhytomniAgents.CHAT_AGENT,
@@ -260,6 +276,15 @@ async def serve() -> None:
 
     @server.call_tool()
     async def call_tool(name, arguments: Dict[str, Any]) -> list[TextContent]:
+        """Dispatch one MCP tool call.
+
+        Args:
+            name: Raw tool name supplied by the MCP client.
+            arguments: JSON object supplied by the MCP client.
+
+        Returns:
+            Serialized MCP text response from `dispatch_tool`.
+        """
         return await dispatch_tool(name, arguments)
 
     options = server.create_initialization_options()

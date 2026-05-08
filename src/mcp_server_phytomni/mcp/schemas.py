@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""MCP public tool schemas for Phytomni agents."""
+"""MCP public tool schemas for Phytomni agents.
+
+This module defines request models for each public MCP tool and
+`PhytomniAgents`, the enum that stores stable tool names and descriptions.
+These schemas are the public JSON-schema surface for MCP clients.
+"""
 
 from enum import Enum
 from typing import Annotated, Dict, List
@@ -11,7 +16,12 @@ from pydantic import BaseModel, Field
 
 
 class ChatAgent(BaseModel):
-    """Input parameters for general ChatAgent Q&A and file summarization."""
+    """Input parameters for general ChatAgent Q&A and file summarization.
+
+    Attributes:
+        user_query: User question or instruction for the chat model.
+        obs_file_list: Optional OBS paths for uploaded context files.
+    """
 
     user_query: Annotated[
         str,
@@ -43,7 +53,12 @@ class ChatAgent(BaseModel):
 
 
 class KnowledgeAgent(BaseModel):
-    """Input parameters for retrieval-backed KnowledgeAgent answers."""
+    """Input parameters for retrieval-backed KnowledgeAgent answers.
+
+    Attributes:
+        user_query: Focused plant-science question requiring evidence.
+        obs_file_list: Optional uploaded documents to combine with retrieval.
+    """
 
     user_query: Annotated[
         str,
@@ -74,7 +89,11 @@ class KnowledgeAgent(BaseModel):
 
 
 class DataAgent(BaseModel):
-    """Input parameters for natural-language database querying."""
+    """Input parameters for natural-language database querying.
+
+    Attributes:
+        user_query: Natural-language database question to convert to SQL.
+    """
 
     user_query: Annotated[
         str,
@@ -89,7 +108,13 @@ class DataAgent(BaseModel):
 
 
 class AnalystAgent(BaseModel):
-    """Input parameters for bioinformatics workflow planning and submission."""
+    """Input parameters for bioinformatics workflow planning and submission.
+
+    Attributes:
+        goal_description: Bioinformatics analysis objective.
+        data_list: OBS dataset paths mapped to role descriptions.
+        obs_file_list: Optional supporting documents for workflow planning.
+    """
 
     goal_description: Annotated[
         str,
@@ -143,7 +168,12 @@ class AnalystAgent(BaseModel):
 
 
 class DeepGenomeAgent(BaseModel):
-    """Input parameters for comprehensive deep genome gene analysis."""
+    """Input parameters for comprehensive deep genome gene analysis.
+
+    Attributes:
+        species_code: Supported three-letter species code.
+        gene_id: Single target gene identifier in the selected species.
+    """
 
     species_code: Annotated[
         str,
@@ -232,7 +262,12 @@ class DeepGenomeAgent(BaseModel):
 
 
 class ReviewAgent(BaseModel):
-    """Input parameters for broad literature review and report generation."""
+    """Input parameters for broad literature review and report generation.
+
+    Attributes:
+        user_query: Broad review topic and desired report scope.
+        obs_file_list: Optional source documents to consider in the review.
+    """
 
     user_query: Annotated[
         str,
@@ -263,7 +298,11 @@ class ReviewAgent(BaseModel):
 
 
 class BriefGeneAgent(BaseModel):
-    """Input parameters for a concise single-gene function report."""
+    """Input parameters for a concise single-gene function report.
+
+    Attributes:
+        user_query: One plant gene or transcript identifier to summarize.
+    """
 
     user_query: Annotated[
         str,
@@ -277,7 +316,13 @@ class BriefGeneAgent(BaseModel):
 
 
 class InSilicoResearchAgent(BaseModel):
-    """Input parameters for paper-driven in silico research task submission."""
+    """Input parameters for paper-driven in silico research task submission.
+
+    Attributes:
+        user_query: Paper text or study context to decompose into tasks.
+        data_list: OBS dataset paths mapped to role descriptions.
+        obs_file_list: Optional uploaded papers or context files.
+    """
 
     user_query: Annotated[
         str,
@@ -330,7 +375,13 @@ class InSilicoResearchAgent(BaseModel):
 
 
 class DigitalDesignAgent(BaseModel):
-    """Input parameters for protein and promoter design task submission."""
+    """Input parameters for protein and promoter design task submission.
+
+    Attributes:
+        species: Latin species name for design analysis.
+        gene_id: Single target gene identifier.
+        obs_file_list: Optional uploaded context files.
+    """
 
     species: Annotated[
         str,
@@ -371,7 +422,13 @@ class DigitalDesignAgent(BaseModel):
 
 
 class GeneNetworkAgent(BaseModel):
-    """Input parameters for trait-associated gene network task submission."""
+    """Input parameters for trait-associated gene network task submission.
+
+    Attributes:
+        species: Latin species name for network analysis.
+        to_id: Trait Ontology identifier for the target phenotype.
+        obs_file_list: Optional uploaded context files.
+    """
 
     species: Annotated[
         str,
