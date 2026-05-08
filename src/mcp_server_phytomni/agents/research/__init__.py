@@ -2,11 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Compatibility exports for in-silico research agent workflows."""
+"""In-silico research agent package exports."""
 
-from .agents.research.agent import (
-    IN_SILICO_CONFIG,
-    SENSITIVE_CONFIG,
+from .agent import (
     InSilicoResearchAgents,
     InSilicoResearchState,
     ResearchTaskContext,
@@ -14,10 +12,8 @@ from .agents.research.agent import (
 )
 
 __all__ = [
-    "in_silico_research",
     "InSilicoResearchAgents",
-    "ResearchTaskContext",
-    "SENSITIVE_CONFIG",
     "InSilicoResearchState",
-    "IN_SILICO_CONFIG",
+    "ResearchTaskContext",
+    "in_silico_research",
 ]

@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni import (
-    digital_design_agents,
-    gene_network_agents,
-    in_silico_research_agents,
+from mcp_server_phytomni.agents.design import agent as digital_design_agents
+from mcp_server_phytomni.agents.network import agent as gene_network_agents
+from mcp_server_phytomni.agents.research import (
+    agent as in_silico_research_agents,
 )
 from mcp_server_phytomni.agents.shared import analysis as analysis_helpers
 

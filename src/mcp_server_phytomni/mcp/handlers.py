@@ -11,7 +11,10 @@ from ..agents.brief_gene.agent import brief_gene_function
 from ..agents.chat.service import phyto_chat_with_follow
 from ..agents.data.agent import rewrite_nl2sql
 from ..agents.deep_genome.agent import gene_function
+from ..agents.design.agent import design_module
 from ..agents.knowledge.agent import multi_retrieve_generate
+from ..agents.network.agent import network_analysis
+from ..agents.research.agent import in_silico_research
 from ..agents.review.agent import deep_research
 from ..config.defaults import (
     AnalystConfig,
@@ -26,9 +29,6 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
-from ..digital_design_agents import design_module
-from ..gene_network_agents import network_analysis
-from ..in_silico_research_agents import in_silico_research
 
 
 async def handle_chat_agent(args: Any) -> Any:

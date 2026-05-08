@@ -17,9 +17,9 @@ from .agents.knowledge.agent import (
     retrieve_generate,
 )
 from .agents.knowledge.retrieval import multi_retrieve
+from .agents.research.agent import in_silico_research
 from .agents.review.agent import deep_research
 from .auth.iam import get_token
-from .in_silico_research_agents import in_silico_research
 from .runtime.task_manager import TaskManager, create_task, update_task
 from .storage.downloads import download_list_convert
 from .utils import get_prompt, split_list
