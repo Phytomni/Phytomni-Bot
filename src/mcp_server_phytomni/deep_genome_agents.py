@@ -11,14 +11,14 @@ from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 import requests
 from langgraph.graph import END, START, StateGraph
 
-from .agents.data.agent import DataAgent
-from .agents.knowledge.agent import KnowledgeAgent
-from .analyst_agents import (
+from .agents.analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     ANALYST_SECRET_FIELD_MAP,
     ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
 )
+from .agents.data.agent import DataAgent
+from .agents.knowledge.agent import KnowledgeAgent
 from .config.defaults import DeepGenomeConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,

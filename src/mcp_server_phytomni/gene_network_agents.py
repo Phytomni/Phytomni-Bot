@@ -10,6 +10,13 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from .agents.analyst.agent import (
+    ANALYST_CONFIG_FIELD_MAP,
+    AnalystAgent,
+)
+from .agents.analyst.storage import (
+    get_data_list,
+)
 from .analysis_workflow_helpers import (
     AnalysisAgentCacheSpec,
     capture_dispatched_analysis,
@@ -17,11 +24,6 @@ from .analysis_workflow_helpers import (
     route_analysis_tasks,
     run_analysis_graph,
     submit_analyst_analysis,
-)
-from .analyst_agents import (
-    ANALYST_CONFIG_FIELD_MAP,
-    AnalystAgent,
-    get_data_list,
 )
 from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig

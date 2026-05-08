@@ -6,10 +6,10 @@
 
 from typing import Any
 
+from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.chat.service import phyto_chat_with_follow
 from ..agents.data.agent import rewrite_nl2sql
 from ..agents.knowledge.agent import multi_retrieve_generate
-from ..analyst_agents import retrieve_plan_submit
 from ..brief_gene_agents import brief_gene_function
 from ..config.defaults import (
     AnalystConfig,

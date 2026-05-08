@@ -13,10 +13,10 @@ from mcp_server_phytomni import (
     brief_gene_agents,
     deep_genome_agents,
 )
+from mcp_server_phytomni.agents.analyst.storage import get_data_list
 from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
 )
-from mcp_server_phytomni.analyst_agents import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.deep_genome_agents import network_to_string
 

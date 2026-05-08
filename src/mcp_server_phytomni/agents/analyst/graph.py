@@ -38,7 +38,7 @@ from .storage import (
 )
 
 if TYPE_CHECKING:
-    from ...analyst_agents import AnalystAgentsState
+    from .agent import AnalystAgentsState
 else:
     AnalystAgentsState = Dict[str, Any]
 
