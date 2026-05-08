@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni import (
-    analysis_workflow_helpers,
     digital_design_agents,
     gene_network_agents,
     in_silico_research_agents,
 )
+from mcp_server_phytomni.agents.shared import analysis as analysis_helpers
 
 pytestmark = pytest.mark.agent
 
@@ -71,9 +71,7 @@ async def test_design_module_applies_config_and_secret_overrides(
         "DigitalDesignAgents",
         FakeDigitalDesignAgents,
     )
-    monkeypatch.setattr(
-        analysis_workflow_helpers, "get_cached_agent", _no_cache
-    )
+    monkeypatch.setattr(analysis_helpers, "get_cached_agent", _no_cache)
 
     result = await digital_design_agents.design_module(
         species="osa",
@@ -139,9 +137,7 @@ async def test_network_analysis_applies_config_and_secret_overrides(
         "GeneNetworkAgents",
         FakeGeneNetworkAgents,
     )
-    monkeypatch.setattr(
-        analysis_workflow_helpers, "get_cached_agent", _no_cache
-    )
+    monkeypatch.setattr(analysis_helpers, "get_cached_agent", _no_cache)
 
     result = await gene_network_agents.network_analysis(
         species="osa",

@@ -17,7 +17,7 @@ from .agents.analyst.agent import (
 from .agents.analyst.storage import (
     get_data_list,
 )
-from .analysis_workflow_helpers import (
+from .agents.shared.analysis import (
     AnalysisAgentCacheSpec,
     capture_dispatched_analysis,
     get_configured_analysis_agent,
