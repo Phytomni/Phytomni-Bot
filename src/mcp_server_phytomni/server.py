@@ -35,24 +35,25 @@ from .tool_handlers import (
 
 
 class ChatAgent(BaseModel):
-    """Parameters for generating text using the Phyto model."""
+    """Input parameters for general ChatAgent Q&A and file summarization."""
 
     user_query: Annotated[
         str,
         Field(
-            description="The user's query string for generating text.",
+            description="Full user question or instruction for a general "
+            "plant-science answer, explanation, or uploaded-file summary. "
+            "Preserve the user's original intent and include any requested "
+            "output format.",
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional user-uploaded context files "
+            "to summarize or use while answering. Use complete OBS paths "
+            "exactly as provided, pass [] when no files are supplied, and do "
+            "not invent file paths. Supported file types: PPTX, DOCX, XLSX, "
+            "XLS, PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -66,25 +67,24 @@ class ChatAgent(BaseModel):
 
 
 class KnowledgeAgent(BaseModel):
-    """Parameters for retrieving documents and generating text."""
+    """Input parameters for retrieval-backed KnowledgeAgent answers."""
 
     user_query: Annotated[
         str,
         Field(
-            description="The user's query string for retrieving documents "
-            "and generating text."
+            description="Focused plant-science question to answer with "
+            "retrieved literature, patent, or book evidence. Include key "
+            "species, genes, traits, methods, or constraints from the user."
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional user-uploaded documents to "
+            "combine with retrieved evidence. Use complete OBS paths exactly "
+            "as provided, pass [] when no files are supplied, and do not "
+            "invent file paths. Supported file types: PPTX, DOCX, XLSX, XLS, "
+            "PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -98,37 +98,43 @@ class KnowledgeAgent(BaseModel):
 
 
 class DataAgent(BaseModel):
-    """Parameters for natural language searching SQL database."""
+    """Input parameters for natural-language database querying."""
 
     user_query: Annotated[
         str,
         Field(
-            description="The user's natural language query string for "
-            "searching SQL database.",
+            description="Natural-language database question that needs "
+            "structured SQL-backed results, such as counts, tables, "
+            "statistics, rankings, or filtered records. Keep it as a user "
+            "question rather than raw SQL, and include species, trait, gene, "
+            "or filter constraints when available.",
         ),
     ]
 
 
 class AnalystAgent(BaseModel):
-    """Parameters for submitting and waiting for a bioinformatic analysis."""
+    """Input parameters for bioinformatics workflow planning and submission."""
 
     goal_description: Annotated[
         str,
         Field(
-            description="Description of the biological research objective "
-            "and analysis goal.",
+            description=(
+                "Bioinformatics analysis objective to plan and submit. "
+                "Describe the biological question, desired analysis type, "
+                "target organism, comparisons, and expected outputs; put "
+                "dataset paths in data_list instead of this text."
+            ),
         ),
     ]
     data_list: Annotated[
         Dict[str, str],
         Field(
-            description="Input datasets dictionary mapping OBS file paths to "
-            "their detailed descriptions. Keys should be absolute "
-            "OBS paths pointing to genomic data files. Values "
-            "should comprehensively describe the data "
-            "characteristics including sequencing type, organism "
-            "source, data quality metrics, experimental "
-            "conditions, and intended analysis purpose",
+            description="Dictionary of input analysis datasets. Each key must "
+            "be a complete OBS path to a data file, and each value must "
+            "describe that file's role, format, sequencing or omics type, "
+            "organism, sample group or condition, quality notes, and intended "
+            "analysis use. Use {} only when the workflow truly has no input "
+            "datasets.",
             json_schema_extra={
                 "example": {
                     "/obs/phytomni/path/to/reference.fasta": "Reference "
@@ -144,13 +150,10 @@ class AnalystAgent(BaseModel):
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional supporting documents, such as "
+            "protocols, papers, or requirement files, that provide context "
+            "for workflow planning. Do not duplicate raw analysis datasets "
+            "already listed in data_list. Pass [] when no files are supplied.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -164,12 +167,15 @@ class AnalystAgent(BaseModel):
 
 
 class DeepGenomeAgent(BaseModel):
-    """Parameters for submitting and waiting for a gene function analysis."""
+    """Input parameters for comprehensive deep genome gene analysis."""
 
     species_code: Annotated[
         str,
         Field(
-            description="""species code is the key of dict: {
+            description=(
+                """Three-letter species_code for the target gene. Fill this
+                with one supported code, not a Latin name or common name.
+                Supported species_code values are the keys of this dict: {
                 'ach': 'kiwi (Actinidia chinensis)',
                 'aco': 'pineapple (Ananas comosus)',
                 'aly': 'Arabidopsis lyrata',
@@ -234,38 +240,40 @@ class DeepGenomeAgent(BaseModel):
                 'tpr': 'red (Trifolium pratense)',
                 'ttu': 'durum (Triticum turgidum)',
                 'vvi': 'grape (Vitis vinifera)',
-                'zma': 'maize (Zea mays)'}""",
+                'zma': 'maize (Zea mays)'}"""
+            ),
         ),
     ]
     gene_id: Annotated[
         str,
         Field(
-            description="gene id",
+            description="Single target gene identifier in the selected "
+            "species_code, such as a locus ID or accepted database gene "
+            "ID. Do not include multiple genes, trait IDs, or free-form "
+            "questions.",
         ),
     ]
 
 
 class ReviewAgent(BaseModel):
-    """Parameters for conducting in-depth research and
-    generating a comprehensive review."""
+    """Input parameters for broad literature review and report generation."""
 
     user_query: Annotated[
         str,
         Field(
-            description="The user's research question or topic "
-            "for which a detailed review is required."
+            description="Broad review or report topic. Include the crop or "
+            "species, biological process, trait, method, scope, comparison, "
+            "and desired report angle when provided by the user."
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional user-uploaded papers, notes, "
+            "or source documents to consider during review generation. Use "
+            "complete OBS paths exactly as provided, pass [] when no files "
+            "are supplied, and do not invent file paths. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -279,34 +287,40 @@ class ReviewAgent(BaseModel):
 
 
 class BriefGeneAgent(BaseModel):
-    """Parameters for generating a brief gene function report."""
+    """Input parameters for a concise single-gene function report."""
 
     user_query: Annotated[
         str,
         Field(
-            description="A plant gene ID, transcript ID, or gene symbol to "
-            "summarize using BI database annotations and literature evidence.",
+            description="One plant gene ID or transcript ID to summarize. "
+            "Prefer the exact identifier supplied by the user and do not use "
+            "gene symbols, species names, multiple genes, or a full research "
+            "question as this value.",
         ),
     ]
 
 
 class InSilicoResearchAgent(BaseModel):
-    """Parameters for conducting in silico research."""
+    """Input parameters for paper-driven in silico research task submission."""
 
     user_query: Annotated[
         str,
-        Field(description="The user's paper context."),
+        Field(
+            description="Scientific paper text, abstract, methods/results "
+            "context, or study description to decompose into computational "
+            "research objectives. If the paper is uploaded as a file, include "
+            "the user's instruction or brief context here."
+        ),
     ]
     data_list: Annotated[
         Dict[str, str],
         Field(
-            description="Input datasets dictionary mapping OBS file paths to "
-            "their detailed descriptions. Keys should be absolute "
-            "OBS paths pointing to genomic data files. Values "
-            "should comprehensively describe the data "
-            "characteristics including sequencing type, organism "
-            "source, data quality metrics, experimental "
-            "conditions, and intended analysis purpose",
+            description="Dictionary of datasets available for the extracted "
+            "in silico tasks. Each key must be a complete OBS path to a data "
+            "file, and each value must describe the file's biological source, "
+            "format, assay or sequencing type, sample condition, quality "
+            "notes, and intended use in reproducibility analysis. Use {} "
+            "only when no datasets are supplied.",
             json_schema_extra={
                 "example": {
                     "/obs/phytomni/path/to/reference.fasta": "Reference "
@@ -322,13 +336,11 @@ class InSilicoResearchAgent(BaseModel):
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional uploaded paper or context "
+            "files used to extract research objectives. Use complete OBS "
+            "paths exactly as provided, pass [] when no files are supplied, "
+            "and do not invent file paths. Supported file types: PPTX, "
+            "DOCX, XLSX, XLS, PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -342,42 +354,34 @@ class InSilicoResearchAgent(BaseModel):
 
 
 class DigitalDesignAgent(BaseModel):
-    """Parameters for protein and promoter design analysis."""
+    """Input parameters for protein and promoter design task submission."""
 
     species: Annotated[
         str,
         Field(
-            description="The species name in Latin lowercase format with "
-            "spaces (e.g., 'arabidopsis thaliana', "
-            "'oryza sativa', 'zea mays'). Examples: "
-            "'arabidopsis thaliana' (thale cress), "
-            "'oryza sativa' (rice), 'zea mays' (maize), "
-            "'glycine max' (soybean), "
-            "'triticum aestivum' (wheat), "
-            "'hordeum vulgare' (barley), "
-            "'solanum lycopersicum' (tomato), "
-            "'solanum tuberosum' (potato), "
-            "'brassica napus' (oilseed), "
-            "'gossypium hirsutum' (cotton), "
-            "'sorghum bicolor' (sorghum).",
+            description="Target species for design analysis as a Latin name "
+            "in lowercase with spaces, not a species_code. Examples: "
+            "'arabidopsis thaliana', 'oryza sativa', 'zea mays', "
+            "'glycine max', 'triticum aestivum', 'hordeum vulgare', "
+            "'solanum lycopersicum', 'solanum tuberosum', 'brassica napus', "
+            "'gossypium hirsutum', 'sorghum bicolor'.",
         ),
     ]
     gene_id: Annotated[
         str,
         Field(
-            description="The specific gene identifier to analyze for design.",
+            description="Single target gene identifier for protein and "
+            "promoter design in the selected species. Do not include multiple "
+            "genes, trait IDs, or a general function-analysis question.",
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional uploaded context files. Use "
+            "complete OBS paths exactly as provided, pass [] when no files "
+            "are supplied, and do not invent file paths. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -391,46 +395,35 @@ class DigitalDesignAgent(BaseModel):
 
 
 class GeneNetworkAgent(BaseModel):
-    """Parameters for gene network analysis."""
+    """Input parameters for trait-associated gene network task submission."""
 
     species: Annotated[
         str,
         Field(
-            description="The species name in Latin lowercase format with "
-            "spaces (e.g., 'arabidopsis thaliana', "
-            "'oryza sativa', 'zea mays'). Examples: "
-            "'arabidopsis thaliana' (thale cress), "
-            "'oryza sativa' (rice), 'zea mays' (maize), "
-            "'glycine max' (soybean), "
-            "'triticum aestivum' (wheat), "
-            "'hordeum vulgare' (barley), "
-            "'solanum lycopersicum' (tomato), "
-            "'solanum tuberosum' (potato), "
-            "'brassica napus' (oilseed), "
-            "'gossypium hirsutum' (cotton), "
-            "'sorghum bicolor' (sorghum).",
+            description="Target species for trait-associated gene network "
+            "analysis as a Latin name in lowercase with spaces, not a "
+            "species_code. Examples: 'arabidopsis thaliana', 'oryza sativa', "
+            "'zea mays', 'glycine max', 'triticum aestivum', "
+            "'hordeum vulgare', 'solanum lycopersicum', 'solanum tuberosum', "
+            "'brassica napus', 'gossypium hirsutum', 'sorghum bicolor'.",
         ),
     ]
     to_id: Annotated[
         str,
         Field(
-            description="The Trait Ontology identifier for network analysis "
-            "(e.g., 'TO:0000207' for plant height trait). Trait "
-            "Ontologies (TO) are standardized controlled "
-            "vocabularies that describe plant phenotypic traits "
-            "and characteristics.",
+            description="Trait Ontology identifier for the target phenotype, "
+            "formatted like 'TO:0000207'. Fill this with a TO ID, not a gene "
+            "ID or free-text trait name. If the user did not provide a "
+            "reliable TO ID, ask for clarification instead of guessing.",
         ),
     ]
     obs_file_list: Annotated[
         List[str],
         Field(
-            description="List of observation file paths for the large "
-            "language model to process. Users can upload one "
-            "file, multiple files, or no files. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook. When "
-            "uploading files, provide complete file paths as a "
-            "list of strings. When not uploading any files, pass "
-            "an empty list [].",
+            description="OBS paths for optional uploaded context files. Use "
+            "complete OBS paths exactly as provided, pass [] when no files "
+            "are supplied, and do not invent file paths. Supported file "
+            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook.",
             json_schema_extra={
                 "example": [
                     "/obs/phytomni/path/to/document.pdf",
@@ -467,71 +460,68 @@ class PhytomniAgents(str, Enum):
 
     CHAT_AGENT = "ChatAgent"
     CHAT_AGENT_DESCRIPTION = (
-        "Provides concise explanations for foundational or single-domain "
-        "questions in plant biology (e.g., definitions, basic mechanisms) "
-        "using the LLM's internal knowledge. Not recommended for "
-        "multi-dimensional agricultural optimization or climate adaptation "
-        "strategies."
+        "Use for general plant-science Q&A, conceptual explanations, and "
+        "summaries of user-uploaded files using the base LLM. Do not use "
+        "when the request needs literature retrieval, SQL/database results, "
+        "or bioinformatics workflow execution."
     )
     KNOWLEDGE_AGENT = "KnowledgeAgent"
     KNOWLEDGE_AGENT_DESCRIPTION = (
-        "Retrieves and synthesizes information from plant science literature, "
-        "patents, and books through RAG (Retrieval-Augmented Generation) "
-        "pipelines, providing evidence-supported answers."
+        "Use for evidence-backed answers that require retrieval from plant "
+        "science literature, patents, or books, optionally combined with "
+        "uploaded files. Do not use for broad review writing or structured "
+        "database queries."
     )
     DATA_AGENT = "DataAgent"
     DATA_AGENT_DESCRIPTION = (
-        "Executes structured queries on botanical databases (e.g., species "
-        "traits, experimental data) using SQL interfaces, returning precise "
-        "numerical/statistical results."
+        "Use for natural-language questions that need structured botanical "
+        "database or SQL results, including counts, tables, statistics, and "
+        "other precise database-backed facts."
     )
     ANALYST_AGENT = "AnalystAgent"
     ANALYST_AGENT_DESCRIPTION = (
-        "Initiates computational workflows (e.g., sequence alignment, "
-        "phylogenetic analysis) through integrated bioinformatics platforms "
-        "for genomic/proteomic investigations."
+        "Use for bioinformatics workflow planning and task submission from a "
+        "research goal plus input datasets, such as sequence, omics, or other "
+        "computational biology analyses that should run on the analysis "
+        "platform."
     )
     REVIEW_AGENT = "ReviewAgent"
     REVIEW_AGENT_DESCRIPTION = (
-        "Conducts a comprehensive and in-depth investigation into a user's "
-        "query, synthesizing information from a wide range of scientific "
-        "literature and other relevant sources to produce a structured review "
-        "or detailed report. Ideal for when a broad understanding, critical "
-        "assessment, or an extensive overview of a complex topic is required, "
-        "going beyond targeted Q&A or data retrieval."
+        "Use for broad literature review or report generation that requires "
+        "multi-dimension planning, retrieval, drafting, critique, revision, "
+        "and summary. Prefer KnowledgeAgent for targeted evidence-backed Q&A."
     )
     BRIEF_GENE_AGENT = "BriefGeneAgent"
     BRIEF_GENE_AGENT_DESCRIPTION = (
-        "Generates a concise, evidence-supported gene function report for a "
-        "plant gene ID or alias by combining BI database annotations with "
-        "retrieved literature context."
+        "Use for a concise function report about one plant gene, transcript, "
+        "or accepted database gene ID, using BI annotations when available "
+        "and retrieved literature as fallback or supporting evidence. Do not "
+        "route gene-symbol-only inputs here unless the user provides an ID."
     )
     DEEP_GENOME_AGENT = "DeepGenomeAgent"
     DEEP_GENOME_AGENT_DESCRIPTION = (
-        "Integrates functional annotations from plant multi-omics databases "
-        "(GO, KEGG, etc.) with experimental evidence mined from literature, "
-        "generating comparative summaries with experimental evidence."
+        "Use for comprehensive gene-function analysis from species_code plus "
+        "gene_id, including annotations, ortholog/paralog/interaction "
+        "context, deep computational analyses, experiment recommendations, "
+        "protocols, and final report sections."
     )
     IN_SILICO_RESEARCH_AGENT = "InSilicoResearchAgent"
     IN_SILICO_RESEARCH_AGENT_DESCRIPTION = (
-        "Decomposes a complete scientific paper by analyzing its methodology "
-        "and results, producing a structured, sequential list of high-level "
-        "tasks designed for computational replication."
+        "Use to extract computational research objectives from a paper or "
+        "research context, then submit reproducibility-style analysis tasks "
+        "against the provided datasets."
     )
     DIGITAL_DESIGN_AGENT = "DigitalDesignAgent"
     DIGITAL_DESIGN_AGENT_DESCRIPTION = (
-        "Performs comprehensive protein and promoter design analysis for "
-        "specific genes, including protein structure prediction, property "
-        "analysis, design optimization, and promoter modification prediction. "
-        "This agent automatically runs both protein design and promoter "
-        "design analyses and returns combined results."
+        "Use to submit both protein design and promoter design analyses for a "
+        "specific species plus gene_id. This is for computational design task "
+        "execution, not general gene-function explanation."
     )
     GENE_NETWORK_AGENT = "GeneNetworkAgent"
     GENE_NETWORK_AGENT_DESCRIPTION = (
-        "Analyzes gene networks including interaction prediction, "
-        "co-expression analysis, and regulatory network characterization. "
-        "Identifies functional modules and constructs comprehensive gene "
-        "relationship networks for plant genomics research."
+        "Use to submit trait-associated gene network analysis for a species "
+        "plus Trait Ontology ID. Do not use for generic free-form gene "
+        "interaction Q&A or broad network explanation."
     )
 
 
