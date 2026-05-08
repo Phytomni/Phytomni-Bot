@@ -1,7 +1,12 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Shared option builders for public agent wrappers."""
+"""Shared option builders for public agent wrappers.
+
+Exports submit option specs, resource-copy helpers, retry-code resolution, and
+keyword builders used by Analyst-backed domain wrappers before they call chat
+and task-submission services.
+"""
 
 from dataclasses import dataclass
 from typing import Any
@@ -17,7 +22,15 @@ __all__ = [
 
 @dataclass(frozen=True)
 class SubmitKwargsSpec:
-    """Static submit options for one Analyst-backed wrapper."""
+    """Static submit options for one Analyst-backed wrapper.
+
+    Attributes:
+        task_name: Analysis platform task name.
+        compute_resource: Default compute resource label.
+        execute_code: Whether submitted tasks should execute code.
+        is_create_dir: Optional directory-creation override.
+        enable_auto_select: Optional auto-selection override.
+    """
 
     task_name: str
     compute_resource: str
@@ -27,13 +40,29 @@ class SubmitKwargsSpec:
 
 
 def copy_resource_dict(value: Any, default: dict) -> dict:
-    """Return a copied nested resource dictionary."""
+    """Return a copied nested resource dictionary.
+
+    Args:
+        value: Optional override dictionary to copy.
+        default: Default dictionary copied when ``value`` is None.
+
+    Returns:
+        A shallow copy of the outer mapping and each nested resource mapping.
+    """
     source = default if value is None else value
     return {key: dict(item) for key, item in source.items()}
 
 
 def retry_codes_from_kwargs(kwargs: dict[str, Any], config: Any) -> list[int]:
-    """Return retriable status codes from overrides or config defaults."""
+    """Return retriable status codes from overrides or config defaults.
+
+    Args:
+        kwargs: Public wrapper keyword arguments.
+        config: Config object that provides ``RETRIABLE_CODES``.
+
+    Returns:
+        List of HTTP status codes that should trigger retry logic.
+    """
     retriable_codes = kwargs.get("retriable_codes")
     if retriable_codes is None:
         return list(config.RETRIABLE_CODES)
@@ -45,7 +74,16 @@ def build_chat_kwargs(
     config: Any,
     sensitive_config: Any,
 ) -> dict[str, Any]:
-    """Return common phyto_chat keyword arguments."""
+    """Return common phyto_chat keyword arguments.
+
+    Args:
+        kwargs: Public wrapper keyword arguments.
+        config: Public config object with chat and retry defaults.
+        sensitive_config: Sensitive config object with model credentials.
+
+    Returns:
+        Keyword arguments suitable for forwarding to ``phyto_chat``.
+    """
     return {
         "prompt_file": kwargs.get("prompt_file", config.PROMPT_FILE),
         "prompt_path": kwargs.get("prompt_path", config.PROMPT_PATH),
@@ -81,7 +119,18 @@ def build_submit_kwargs(
     credentials: tuple[str, str],
     spec: SubmitKwargsSpec,
 ) -> dict[str, Any]:
-    """Return common Analyst submit keyword arguments."""
+    """Return common Analyst submit keyword arguments.
+
+    Args:
+        kwargs: Public wrapper keyword arguments.
+        config: Public config object with OBS, retry, and resource defaults.
+        sensitive_config: Sensitive config object with model credentials.
+        credentials: Default OBS access key id and secret access key.
+        spec: Static task options for the wrapper.
+
+    Returns:
+        Keyword arguments suitable for Analyst task submission wrappers.
+    """
     access_key_id, secret_access_key = credentials
     result = {
         "execute_code": spec.execute_code,

@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shared storage helpers for Analyst-backed analysis workflows."""
+"""Storage helpers for Analyst-backed analysis workflows.
+
+Exports OBS access options, metadata data-list lookup, and output directory
+builders. Directory helpers prefer obsfs paths and fall back to the OBS SDK
+when the mount is unavailable.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +43,14 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 
 
 class ObsAccessOptions(NamedTuple):
-    """Resolved OBS endpoint and credential settings."""
+    """Resolved OBS endpoint and credential settings.
+
+    Attributes:
+        access_key_id: OBS access key id.
+        secret_access_key: OBS secret access key.
+        obs_server: OBS service endpoint.
+        bucket_name: OBS bucket that stores workflow data.
+    """
 
     access_key_id: str
     secret_access_key: str
@@ -47,7 +59,20 @@ class ObsAccessOptions(NamedTuple):
 
 
 def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
-    """Return configured data files for one analysis type and species."""
+    """Return configured data files for one analysis type and species.
+
+    Args:
+        data_file: JSON metadata file containing analysis data lists.
+        analysis_type: Analysis type key to select from the metadata.
+        species: Species key to select within the analysis type.
+
+    Returns:
+        Configured data list for the requested analysis and species.
+
+    Raises:
+        FileNotFoundError: If ``data_file`` cannot be read.
+        KeyError: If the analysis type or species is missing.
+    """
     try:
         cache_path, mtime_ns, size = file_cache_fingerprint(data_file)
     except FileNotFoundError as exc:
@@ -83,7 +108,20 @@ def _get_data_list_cached(
 
 
 def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
-    """Create a unique OBS output directory for analysis tasks."""
+    """Create a unique OBS output directory for analysis tasks.
+
+    Args:
+        user_id: User id used in the generated run-scoped path.
+        task: Task label used as the output directory scope.
+        **kwargs: Optional OBS credentials, endpoint, bucket,
+            obsfs_mount_root, and run_identity overrides.
+
+    Returns:
+        OBS path for the created output directory.
+
+    Raises:
+        OSError: If both obsfs creation and OBS SDK fallback fail.
+    """
     access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
     secret_access_key = kwargs.get(
         "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
@@ -124,7 +162,21 @@ def ensure_run_output_dir(
     run_identity: RunIdentity,
     output_dir: str | None = None,
 ) -> str:
-    """Return an existing output dir or create one under a run identity."""
+    """Return an existing output dir or create one under a run identity.
+
+    Args:
+        config: Public config object with OBS endpoint and bucket fields.
+        sensitive_config: Sensitive config object with OBS credentials.
+        task: Task label used as the output directory scope.
+        run_identity: Run identity used for path construction.
+        output_dir: Existing output directory to reuse when provided.
+
+    Returns:
+        Existing ``output_dir`` or a newly created OBS output directory.
+
+    Raises:
+        OSError: If output directory creation fails.
+    """
     if output_dir:
         return output_dir
     access_key_id, secret_access_key = sensitive_config.obs_credentials()

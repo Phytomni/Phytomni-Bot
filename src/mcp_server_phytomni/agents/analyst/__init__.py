@@ -2,7 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Analyst agent package exports."""
+"""Analyst agent package exports.
+
+Re-exports AnalystAgent, AnalystGraphMixin, state and OBS option types,
+task submit/status/log/delete wrappers, polling helpers, data-list lookup,
+output directory helpers, and analyst OBS upload/download utilities.
+"""
 
 from ..shared.analysis_storage import (
     ObsAccessOptions,

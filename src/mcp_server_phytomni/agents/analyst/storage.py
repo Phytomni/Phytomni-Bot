@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""OBS upload, delete, and result-download helpers for Analyst workflows."""
+"""OBS upload, delete, and result-download helpers for Analyst workflows.
+
+Exports download options plus public helpers that upload local files or
+generated metadata, delete analyst OBS objects, and download result files.
+Helpers prefer obsfs operations and fall back to the OBS SDK.
+"""
 
 from __future__ import annotations
 
@@ -35,7 +40,17 @@ DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
 
 @dataclass(frozen=True)
 class ObsDownloadOptions:
-    """Resolved options for downloading analyst results from OBS."""
+    """Resolved options for downloading analyst results from OBS.
+
+    Attributes:
+        download_path: Local root used for downloaded result files.
+        access: OBS endpoint and credential settings.
+        obsfs_mount_root: Local root where obsfs buckets are mounted.
+        target_file_feature: File suffixes selected when not downloading all.
+        marker: Optional OBS pagination marker.
+        max_keys: Maximum OBS objects listed per request.
+        if_download_all: Whether to download every listed object.
+    """
 
     download_path: str
     access: ObsAccessOptions
@@ -47,7 +62,14 @@ class ObsDownloadOptions:
 
     @classmethod
     def from_kwargs(cls, values: Dict[str, Any]):
-        """Build options from keyword-compatible overrides."""
+        """Build options from keyword-compatible overrides.
+
+        Args:
+            values: Wrapper keyword overrides and default-compatible fields.
+
+        Returns:
+            Resolved OBS download options.
+        """
         target_file_feature = values.get("target_file_feature")
         if target_file_feature is None:
             target_file_feature = ANALYST_CONFIG.TARGET_FILE_FEATURE
@@ -151,7 +173,20 @@ def upload_analyst_agents_content(
     object_name: str,
     **kwargs: Any,
 ) -> str:
-    """Upload generated analyst metadata content to OBS storage."""
+    """Upload generated analyst metadata content to OBS storage.
+
+    Args:
+        content: Text content to write to OBS.
+        object_name: Default object filename used when object_key is absent.
+        **kwargs: Optional OBS credentials, endpoint, bucket,
+            obsfs_mount_root, and object_key overrides.
+
+    Returns:
+        OBS path for the uploaded content.
+
+    Raises:
+        OSError: If both obsfs upload and OBS SDK fallback fail.
+    """
     access = _obs_access_from_values(kwargs)
     obsfs_mount_root = kwargs.get("obsfs_mount_root", DEFAULT_OBSFS_MOUNT_ROOT)
     object_key = kwargs.get("object_key")

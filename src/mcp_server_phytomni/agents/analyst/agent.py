@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Bioinformatics workflow agents for task planning and execution."""
+"""Bioinformatics workflow agents for task planning and execution.
+
+Exports AnalystAgent, its LangGraph state schema, compatibility wrappers for
+submit, retrieve-plan-submit, status, log, delete, and polling operations, and
+OBS storage helpers reused by MCP handlers.
+"""
 
 import asyncio
 import time
@@ -509,7 +514,11 @@ class AnalystAgent(AnalystGraphMixin):
         }
 
         async def run_graph() -> dict[str, Any]:
-            """Invoke the analyst graph and return public result fields."""
+            """Invoke the analyst graph and return public result fields.
+
+            Returns:
+                Public task fields selected from the final graph state.
+            """
             final_state = await ainvoke_graph(
                 self.app,
                 initial_state,
@@ -523,7 +532,14 @@ class AnalystAgent(AnalystGraphMixin):
             }
 
         def failure_state(exc: Exception) -> dict[str, Any]:
-            """Return graph failures as agent state."""
+            """Return graph failures as agent state.
+
+            Args:
+                exc: Exception raised while invoking the graph.
+
+            Returns:
+                Initial state extended with agent-level failure metadata.
+            """
             return {
                 **initial_state,
                 "task_status": "FAILED_AT_AGENT_LEVEL",
@@ -583,7 +599,18 @@ async def submit(
     data_list: Any,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph-based AnalystAgent."""
+    """Submit a prepared analysis plan through AnalystAgent.
+
+    Args:
+        goal_description: Research goal or analysis objective.
+        data_list: Data files and descriptions passed directly to the agent.
+        **kwargs: Optional config, credential, output, compute-resource,
+            metadata, user, thread, retry, and auto-selection overrides.
+
+    Returns:
+        AnalystAgent result payload with task id, output directory, job name,
+        and compute resource.
+    """
     user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
     user_id, thread_id = _submit_user_and_thread_id(
         user_id,
@@ -637,7 +664,18 @@ async def retrieve_plan_submit(
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Compatibility wrapper around the LangGraph-based AnalystAgent."""
+    """Retrieve context, plan, and submit an analysis through AnalystAgent.
+
+    Args:
+        goal_description: Research goal or analysis objective.
+        data_list: Data files and descriptions passed directly to the agent.
+        obs_file_list: Optional OBS files to include in retrieval context.
+        **kwargs: Optional config, credential, output, compute-resource,
+            metadata, user, thread, retry, and model overrides.
+
+    Returns:
+        AnalystAgent result payload, optionally augmented with ``meta_meta``.
+    """
     user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
     user_id, thread_id = _submit_user_and_thread_id(
         user_id,
@@ -690,7 +728,21 @@ async def wait_for_completion(
     task_id: str,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Poll a submitted task until it reaches a terminal status."""
+    """Poll a submitted task until it reaches a terminal status.
+
+    Args:
+        task_id: Analysis platform task id to poll.
+        **kwargs: Optional analysis_url, region, timeout, retriable_codes,
+            max_retries, poll_interval, and max_poll overrides.
+
+    Returns:
+        Final task status payload when the task succeeds.
+
+    Raises:
+        McpError: If the task is cancelled, fails, or returns an unknown
+            status.
+        asyncio.TimeoutError: If polling exceeds ``max_poll`` seconds.
+    """
     analysis_url = kwargs.get("analysis_url", ANALYST_CONFIG.ANALYSIS_URL)
     region = kwargs.get("region", ANALYST_CONFIG.ANALYSIS_REGION)
     timeout = kwargs.get("timeout", ANALYST_CONFIG.TIMEOUT)

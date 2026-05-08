@@ -3,7 +3,12 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""LangGraph node methods for AnalystAgent."""
+"""LangGraph node methods for AnalystAgent.
+
+Exports AnalystGraphMixin, which provides parsing, data selection, retrieval,
+planning, validation, tool extraction, submission, and polling nodes used by
+the AnalystAgent workflow graph.
+"""
 
 from __future__ import annotations
 

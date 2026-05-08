@@ -1,7 +1,12 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Shared helpers for Analyst-backed LangGraph task workflows."""
+"""Shared helpers for Analyst-backed LangGraph task workflows.
+
+Exports cache specs, routing helpers, output-dir builders, dispatch capture
+helpers, config-copy utilities, and graph invocation wrappers used by
+workflow agents that submit tasks through AnalystAgent.
+"""
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -47,7 +52,15 @@ __all__ = [
 
 @dataclass(frozen=True)
 class AnalysisAgentCacheSpec:
-    """Inputs needed to resolve a cached Analyst-backed agent."""
+    """Inputs needed to resolve a cached Analyst-backed agent.
+
+    Attributes:
+        agent_name: Registry key used for the cached agent instance.
+        config_name: Fingerprint label for the copied public config.
+        base_config: Source config object used before wrapper overrides.
+        field_map: Mapping from wrapper keyword names to config fields.
+        user_id: Optional user id stored in the copied config.
+    """
 
     agent_name: str
     config_name: str
@@ -62,7 +75,17 @@ def route_analysis_tasks(
     tasks_key: str,
     state: Mapping[str, Any],
 ) -> list[Send]:
-    """Dispatch analysis tasks in parallel using LangGraph Send."""
+    """Dispatch analysis tasks in parallel using LangGraph Send.
+
+    Args:
+        node_name: Graph node name that receives each task payload.
+        target_key: State key holding the target identifier to copy.
+        tasks_key: State key containing prepared task mappings.
+        state: Current workflow state with species, target, and tasks.
+
+    Returns:
+        LangGraph Send commands that fan tasks out to ``node_name``.
+    """
     return [
         Send(
             node_name,
@@ -85,7 +108,18 @@ def ensure_analysis_output_dir(
     output_dir: str | None,
     run_identity: RunIdentity | None = None,
 ) -> str:
-    """Return an existing or newly created analysis output directory."""
+    """Return an existing or newly created analysis output directory.
+
+    Args:
+        config: Public config object with user, OBS server, and bucket fields.
+        sensitive_config: Sensitive config object with OBS credentials.
+        analysis_type: Analysis workflow name used in generated paths.
+        output_dir: Existing output directory to reuse when provided.
+        run_identity: Optional run identity for deterministic path building.
+
+    Returns:
+        Existing ``output_dir`` or the newly created OBS output directory.
+    """
     if output_dir:
         return output_dir
     identity = run_identity or RunIdentity.create(
@@ -110,7 +144,19 @@ async def submit_analyst_analysis(
     sensitive_config: Any,
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Submit one prepared analysis task through AnalystAgent."""
+    """Submit one prepared analysis task through AnalystAgent.
+
+    Args:
+        analyst_agent: Configured AnalystAgent-compatible instance.
+        config: Public config object used for user and OBS settings.
+        sensitive_config: Sensitive config object used for OBS credentials.
+        request: Prepared request mapping containing analysis metadata,
+            prompt parts, compute resource, target id, and optional output dir.
+
+    Returns:
+        AnalystAgent result payload, including task id and output directory
+        when task submission succeeds.
+    """
     analysis_type = str(request["analysis_type"])
     target_id = str(request["target_id"])
     run_identity = RunIdentity.create(
@@ -155,10 +201,26 @@ async def capture_analysis_result(
     result_key: str,
     result_list_key: str | None = None,
 ) -> dict[str, Any]:
-    """Capture one dispatched analysis result as LangGraph state updates."""
+    """Capture one dispatched analysis result as LangGraph state updates.
+
+    Args:
+        state: Current LangGraph state used to preserve partial progress.
+        analysis_type: Analysis type label used for task id storage.
+        submit_call: Awaitable callback that submits or dispatches the task.
+        result_key: State key for the single result payload.
+        result_list_key: Optional state key for accumulating result payloads.
+
+    Returns:
+        State updates containing task ids, completion count, result payloads,
+        or an error message when dispatch fails.
+    """
 
     async def run_task() -> dict[str, Any]:
-        """Run the task and merge task id/result updates."""
+        """Run the task and merge task id/result updates.
+
+        Returns:
+            State updates containing merged task ids and result payloads.
+        """
         task_result = await submit_call()
         existing_task_ids = dict(state.get("task_ids", {}))
         task_id = task_result.get("task_id")
@@ -179,7 +241,14 @@ async def capture_analysis_result(
         return updates
 
     def failure_state(exc: Exception) -> dict[str, Any]:
-        """Preserve partial task progress when dispatch fails."""
+        """Preserve partial task progress when dispatch fails.
+
+        Args:
+            exc: Exception raised by the submit callback.
+
+        Returns:
+            State updates that record the error and completed dispatch count.
+        """
         return {
             "task_ids": state.get("task_ids", {}),
             "completed_count": 1,
@@ -198,7 +267,19 @@ async def capture_dispatched_analysis(
     ],
     result_keys: tuple[str, str | None],
 ) -> dict[str, Any]:
-    """Capture an analysis dispatched by target-key based state."""
+    """Capture an analysis dispatched by target-key based state.
+
+    Args:
+        state: Current LangGraph state containing species, target, and output.
+        analysis_type: Analysis type label passed to the dispatch callback.
+        target_key: State key holding the analysis target identifier.
+        dispatch_call: Callback that dispatches one target-specific analysis.
+        result_keys: Tuple containing the single-result key and optional
+            result-list key.
+
+    Returns:
+        State updates produced by ``capture_analysis_result``.
+    """
     return await capture_analysis_result(
         state,
         analysis_type,
@@ -219,7 +300,17 @@ def base_analysis_state(
     tasks_key: str,
     kwargs: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Build the common initial state for Analyst-backed workflows."""
+    """Build the common initial state for Analyst-backed workflows.
+
+    Args:
+        base_state: Workflow-specific initial state values.
+        result_key: State key that will hold result payloads.
+        tasks_key: State key that will hold prepared task payloads.
+        kwargs: Public wrapper keyword arguments.
+
+    Returns:
+        Initial graph state with shared task bookkeeping fields.
+    """
     return {
         **base_state,
         "user_id": kwargs.get("user_id"),
@@ -239,7 +330,17 @@ async def invoke_analysis_agent(
     thread_id: str | None,
     result_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Invoke an analysis graph and return selected result fields."""
+    """Invoke an analysis graph and return selected result fields.
+
+    Args:
+        app: Compiled LangGraph application.
+        initial_state: Initial state passed to the graph.
+        thread_id: Optional checkpoint thread id.
+        result_keys: Result fields to copy out of the final state.
+
+    Returns:
+        Mapping from each requested result key to its final-state value.
+    """
     result = await ainvoke_graph(
         app,
         initial_state,
@@ -252,7 +353,15 @@ def copy_analyst_sensitive_config(
     base_config: Any,
     kwargs: Mapping[str, Any],
 ) -> Any:
-    """Return sensitive config overrides shared by Analyst-backed agents."""
+    """Return sensitive config overrides shared by Analyst-backed agents.
+
+    Args:
+        base_config: Base SensitiveConfig-like object.
+        kwargs: Wrapper keyword overrides.
+
+    Returns:
+        Copied sensitive config with Analyst field overrides applied.
+    """
     return copy_sensitive_config_with_overrides(
         base_config,
         kwargs,
@@ -267,7 +376,17 @@ def copy_user_analysis_config(
     field_map: Mapping[str, str],
     user_id: str | None,
 ) -> Any:
-    """Return analysis config overrides plus the optional user id."""
+    """Return analysis config overrides plus the optional user id.
+
+    Args:
+        base_config: Base public config object.
+        kwargs: Wrapper keyword overrides.
+        field_map: Mapping from wrapper keyword names to config fields.
+        user_id: Optional user id fixed into the copied config.
+
+    Returns:
+        Copied public config with wrapper overrides applied.
+    """
     return copy_config_with_overrides(
         base_config,
         kwargs,
@@ -283,7 +402,18 @@ async def run_analysis_graph(
     kwargs: Mapping[str, Any],
     result_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Build initial state, invoke the graph, and return selected fields."""
+    """Build initial state, invoke the graph, and return selected fields.
+
+    Args:
+        app: Compiled LangGraph application.
+        base_state: Workflow-specific initial state values.
+        state_keys: Tuple of result and task-list state keys.
+        kwargs: Public wrapper keyword arguments.
+        result_keys: Final-state keys to return to the caller.
+
+    Returns:
+        Mapping of selected final-state values.
+    """
     initial_state = base_analysis_state(
         base_state,
         state_keys[0],
@@ -305,7 +435,18 @@ def get_cached_analysis_agent(
     config: Any,
     sensitive_config: Any,
 ) -> Any:
-    """Return a cached Analyst-backed agent with a stable fingerprint."""
+    """Return a cached Analyst-backed agent with a stable fingerprint.
+
+    Args:
+        agent_name: Registry key used for caching.
+        factory: Callable that creates the agent when cache misses.
+        config_name: Fingerprint label for the public config object.
+        config: Public config object used in the cache fingerprint.
+        sensitive_config: Sensitive config object used in the fingerprint.
+
+    Returns:
+        Cached or newly created Analyst-backed agent instance.
+    """
     return get_cached_agent(
         agent_name,
         factory,
@@ -321,7 +462,17 @@ def get_configured_analysis_agent(
     base_sensitive_config: Any,
     factory_builder: Callable[[Any, Any], Any],
 ) -> Any:
-    """Resolve overrides and return a cached Analyst-backed agent."""
+    """Resolve overrides and return a cached Analyst-backed agent.
+
+    Args:
+        spec: Static cache and config-copy settings.
+        kwargs: Public wrapper keyword overrides.
+        base_sensitive_config: Base SensitiveConfig-like object.
+        factory_builder: Callable that builds an agent from copied configs.
+
+    Returns:
+        Cached or newly created configured agent instance.
+    """
     config = copy_user_analysis_config(
         spec.base_config,
         kwargs,
