@@ -20,8 +20,8 @@ from ...runtime.langgraph_runner import capture_workflow_boundary
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
-from ..analyst.storage import (
-    download_obs_out,
+from ..analyst.storage import download_obs_out
+from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
 )

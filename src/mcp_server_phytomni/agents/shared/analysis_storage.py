@@ -1,0 +1,194 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: maoyc_0316 (maoyc_0316@163.com)
+#         xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Shared storage helpers for Analyst-backed analysis workflows."""
+
+from __future__ import annotations
+
+from traceback import format_exc
+from typing import Any, NamedTuple
+
+from obs import ObsClient
+
+from ...common.prompts import file_cache_fingerprint, load_json_file
+from ...config.defaults import AnalystConfig
+from ...config.settings import SensitiveConfig
+from ...storage.obs_storage import (
+    DEFAULT_OBSFS_MOUNT_ROOT,
+    obs_path_from_key,
+    obsfs_bucket_available,
+    obsfs_path_for,
+)
+from ...storage.path_policy import RunIdentity, task_output_key
+
+__all__ = [
+    "ObsAccessOptions",
+    "create_output_dir",
+    "ensure_run_output_dir",
+    "get_data_list",
+]
+
+ANALYST_CONFIG = AnalystConfig()
+SENSITIVE_CONFIG = SensitiveConfig.load()
+DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
+    SENSITIVE_CONFIG.obs_credentials()
+)
+
+
+class ObsAccessOptions(NamedTuple):
+    """Resolved OBS endpoint and credential settings."""
+
+    access_key_id: str
+    secret_access_key: str
+    obs_server: str
+    bucket_name: str
+
+
+def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
+    """Return configured data files for one analysis type and species."""
+    try:
+        cache_path, mtime_ns, size = file_cache_fingerprint(data_file)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Data file not found: {data_file}") from exc
+    return _get_data_list_cached(
+        cache_path,
+        analysis_type,
+        species,
+        mtime_ns,
+        size,
+    )
+
+
+def _get_data_list_cached(
+    data_file: str,
+    analysis_type: str,
+    species: str,
+    mtime_ns: int,
+    size: int,
+) -> list:
+    """Select a data list from cached static species metadata."""
+    del mtime_ns, size
+    data = load_json_file(data_file)
+    try:
+        analysis_data_list = data[analysis_type]
+    except KeyError as exc:
+        raise KeyError(f"Analysis type not found: {analysis_type}") from exc
+    try:
+        data_list = analysis_data_list[species]
+    except KeyError as exc:
+        raise KeyError(f"Species not found: {species}") from exc
+    return data_list
+
+
+def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
+    """Create a unique OBS output directory for analysis tasks."""
+    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
+    secret_access_key = kwargs.get(
+        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+    )
+    obs_server = kwargs.get("obs_server", ANALYST_CONFIG.OBS_SERVER)
+    bucket_name = kwargs.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
+    obsfs_mount_root = kwargs.get(
+        "obsfs_mount_root",
+        DEFAULT_OBSFS_MOUNT_ROOT,
+    )
+    run_identity = kwargs.get("run_identity")
+    if not isinstance(run_identity, RunIdentity):
+        run_identity = RunIdentity.create(user_id=user_id, scope=task)
+    output_dir = task_output_key(run_identity, task)
+    try:
+        _create_output_dir_obsfs(
+            output_dir,
+            bucket_name,
+            obsfs_mount_root,
+        )
+        return obs_path_from_key(bucket_name, output_dir)
+    except OSError:
+        return _create_output_dir_sdk(
+            output_dir,
+            ObsAccessOptions(
+                access_key_id,
+                secret_access_key,
+                obs_server,
+                bucket_name,
+            ),
+        )
+
+
+def ensure_run_output_dir(
+    config: Any,
+    sensitive_config: Any,
+    task: str,
+    run_identity: RunIdentity,
+    output_dir: str | None = None,
+) -> str:
+    """Return an existing output dir or create one under a run identity."""
+    if output_dir:
+        return output_dir
+    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    return create_output_dir(
+        user_id=run_identity.user_id,
+        task=task,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        obs_server=config.OBS_SERVER,
+        bucket_name=config.BUCKET_NAME,
+        run_identity=run_identity,
+    )
+
+
+def _create_output_dir_obsfs(
+    output_dir: str,
+    bucket_name: str,
+    obsfs_mount_root: str,
+) -> None:
+    """Create an output directory through obsfs."""
+    _require_obsfs_bucket(bucket_name, obsfs_mount_root)
+    output_path = obsfs_path_for(output_dir, bucket_name, obsfs_mount_root)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+
+def _create_output_dir_sdk(
+    output_dir: str,
+    access: ObsAccessOptions,
+) -> str:
+    """Create an output directory through the OBS SDK fallback."""
+    obs_client = ObsClient(
+        access_key_id=access.access_key_id,
+        secret_access_key=access.secret_access_key,
+        server=access.obs_server,
+    )
+    try:
+        response = obs_client.putContent(
+            bucketName=access.bucket_name,
+            objectKey=output_dir,
+            content=None,
+        )
+        status_code = getattr(response, "status", None)
+        if status_code is not None and status_code < 300:
+            return f"/obs/{access.bucket_name}/{output_dir}"
+        raise OSError(_obs_error_message("Put File Failed", response))
+    except Exception as exc:
+        raise OSError(f"Put File Failed\n{format_exc()}") from exc
+
+
+def _obs_error_message(message: str, response: Any) -> str:
+    """Return a compact OBS response error message."""
+    details = {
+        "requestId": getattr(response, "requestId", "unknown"),
+        "errorCode": getattr(response, "errorCode", "unknown"),
+        "errorMessage": getattr(response, "errorMessage", "unknown"),
+    }
+    return "\n".join(
+        [message, *[f"{key}: {value}" for key, value in details.items()]]
+    )
+
+
+def _require_obsfs_bucket(bucket_name: str, obsfs_mount_root: str) -> None:
+    """Raise when an obsfs bucket root is not currently available."""
+    if not obsfs_bucket_available(bucket_name, obsfs_mount_root):
+        raise FileNotFoundError(
+            f"OBSFS bucket is not available: {obsfs_mount_root}/{bucket_name}"
+        )

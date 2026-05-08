@@ -18,7 +18,6 @@ from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     AnalystAgent,
 )
-from ..analyst.storage import get_data_list
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
     capture_dispatched_analysis,
@@ -27,6 +26,7 @@ from ..shared.analysis import (
     run_analysis_graph,
     submit_analyst_analysis,
 )
+from ..shared.analysis_storage import get_data_list
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()

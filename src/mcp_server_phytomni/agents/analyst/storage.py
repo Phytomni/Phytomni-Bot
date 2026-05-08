@@ -3,7 +3,7 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""OBS storage and static-data helpers for Analyst workflows."""
+"""OBS upload, delete, and result-download helpers for Analyst workflows."""
 
 from __future__ import annotations
 
@@ -11,37 +11,26 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from traceback import format_exc
-from typing import Any, Dict, Mapping, NamedTuple, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
-from ...common.prompts import file_cache_fingerprint, load_json_file
 from ...config.defaults import AnalystConfig
 from ...config.settings import SensitiveConfig
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     bucket_colon_path,
     normalize_obs_object_key,
-    obs_path_from_key,
     obsfs_bucket_available,
     obsfs_path_for,
 )
-from ...storage.path_policy import RunIdentity, task_output_key
+from ..shared.analysis_storage import ObsAccessOptions
 
 ANALYST_CONFIG = AnalystConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
 DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
     SENSITIVE_CONFIG.obs_credentials()
 )
-
-
-class ObsAccessOptions(NamedTuple):
-    """Resolved OBS endpoint and credential settings."""
-
-    access_key_id: str
-    secret_access_key: str
-    obs_server: str
-    bucket_name: str
 
 
 @dataclass(frozen=True)
@@ -380,206 +369,6 @@ def _delete_analyst_data_sdk(
         )
     except Exception as exc:
         raise OSError(f"Delete Object Failed\n{format_exc()}") from exc
-
-
-def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
-    """Generate ready-to-use prompt from template components.
-
-    Combines template loading and rendering in one workflow:
-    1. Load base template from YAML file
-    2. Apply parameter substitutions
-
-    Args:
-        data_file: data_list_file for json format
-        analysis_type: analysis_type[evolution_analysis, deepgo2_analysis,
-                                     structure_analysis, prompter_analysis,
-                                     protein_design_analysis,
-                                     gene_expression_analysis, ppi_analysis]
-        species: 65 species ...
-
-    Returns:
-        data_list for analysis
-    """
-    try:
-        cache_path, mtime_ns, size = file_cache_fingerprint(data_file)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"Data file not found: {data_file}") from exc
-    return _get_data_list_cached(
-        cache_path,
-        analysis_type,
-        species,
-        mtime_ns,
-        size,
-    )
-
-
-def _get_data_list_cached(
-    data_file: str,
-    analysis_type: str,
-    species: str,
-    mtime_ns: int,
-    size: int,
-) -> list:
-    """Select a data list from cached static species metadata."""
-    del mtime_ns, size
-    data = load_json_file(data_file)
-    try:
-        analysis_data_list = data[analysis_type]
-    except KeyError as exc:
-        raise KeyError(f"Analysis type not found: {analysis_type}") from exc
-    try:
-        data_list = analysis_data_list[species]
-    except KeyError as exc:
-        raise KeyError(f"Species not found: {species}") from exc
-    return data_list
-
-
-def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
-    """Create a unique output directory for analysis tasks in Object Storage
-        Service.
-
-    This function generates a run-scoped, user-specific directory structure
-    in OBS for storing analysis results. The directory path includes the user
-    ID, UTC date, run ID, task type, and output marker.
-
-    Args:
-        user_id: Unique identifier for the user requesting the analysis.
-        task: Name or type of the analysis task (e.g., 'network_task',
-            'evolution_task').
-        access_key_id: Access key identifier for Object Storage Service (OBS)
-            authentication, required for directory creation operations.
-        secret_access_key: Secret access key for OBS authentication, paired
-            with access_key_id for secure storage operations.
-        obs_server: Base URL endpoint for the Object Storage Service where
-            the directory will be created.
-        bucket_name: Name of the OBS bucket where the output directory
-            will be created.
-
-    Returns:
-        The full OBS path to the created output directory in the format:
-        '/obs/{bucket_name}/agent_data/user_data/'
-        '{user_id}/runs/{date}/{run_id}/{task}/output/'
-
-    Raises:
-        OSError: If the directory creation fails due to OBS connectivity
-            issues, authentication problems, or insufficient permissions.
-
-    Examples:
-        Basic usage:
-            >>> output_path = create_output_dir(
-            ...     user_id='user123',
-            ...     task='gene_analysis'
-            ... )
-            >>> print(output_path)
-            '/obs/phytomni/agent_data/user_data/'
-            'user123/runs/20260507/run-id/gene_analysis/output/'
-
-        Custom configuration:
-            >>> output_path = create_output_dir(
-            ...     user_id='researcher001',
-            ...     task='network_analysis',
-            ...     bucket_name='custom_bucket'
-            ... )
-
-    Note:
-        The generated directory path includes a run ID to ensure uniqueness
-        across multiple analysis runs. The directory is created as an empty
-        placeholder in OBS and can be used immediately for storing analysis
-        results.
-    """
-    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
-    secret_access_key = kwargs.get(
-        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
-    )
-    obs_server = kwargs.get("obs_server", ANALYST_CONFIG.OBS_SERVER)
-    bucket_name = kwargs.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
-    obsfs_mount_root = kwargs.get(
-        "obsfs_mount_root",
-        DEFAULT_OBSFS_MOUNT_ROOT,
-    )
-    run_identity = kwargs.get("run_identity")
-    if not isinstance(run_identity, RunIdentity):
-        run_identity = RunIdentity.create(user_id=user_id, scope=task)
-    output_dir = task_output_key(run_identity, task)
-    try:
-        _create_output_dir_obsfs(
-            output_dir,
-            bucket_name,
-            obsfs_mount_root,
-        )
-        return obs_path_from_key(bucket_name, output_dir)
-    except OSError:
-        return _create_output_dir_sdk(
-            output_dir,
-            ObsAccessOptions(
-                access_key_id,
-                secret_access_key,
-                obs_server,
-                bucket_name,
-            ),
-        )
-
-
-def ensure_run_output_dir(
-    config: Any,
-    sensitive_config: Any,
-    task: str,
-    run_identity: RunIdentity,
-    output_dir: str | None = None,
-) -> str:
-    """Return an existing output dir or create one under a run identity."""
-    if output_dir:
-        return output_dir
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
-    return create_output_dir(
-        user_id=run_identity.user_id,
-        task=task,
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=config.OBS_SERVER,
-        bucket_name=config.BUCKET_NAME,
-        run_identity=run_identity,
-    )
-
-
-def _create_output_dir_obsfs(
-    output_dir: str,
-    bucket_name: str,
-    obsfs_mount_root: str,
-) -> None:
-    """Create an output directory through obsfs."""
-    _require_obsfs_bucket(bucket_name, obsfs_mount_root)
-    output_path = obsfs_path_for(output_dir, bucket_name, obsfs_mount_root)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-
-def _create_output_dir_sdk(
-    output_dir: str,
-    access: ObsAccessOptions,
-) -> str:
-    """Create an output directory through the OBS SDK fallback."""
-    obs_client = ObsClient(
-        access_key_id=access.access_key_id,
-        secret_access_key=access.secret_access_key,
-        server=access.obs_server,
-    )
-    try:
-        response = obs_client.putContent(
-            bucketName=access.bucket_name,
-            objectKey=output_dir,
-            content=None,
-        )
-        status_code = getattr(response, "status", None)
-        if status_code is not None and status_code < 300:
-            return f"/obs/{access.bucket_name}/{output_dir}"
-        raise OSError(
-            f"Put File Failed\n"
-            f"requestId: {getattr(response, 'requestId', 'unknown')}\n"
-            f"errorCode: {getattr(response, 'errorCode', 'unknown')}\n"
-            f"errorMessage: {getattr(response, 'errorMessage', 'unknown')}"
-        )
-    except Exception as exc:
-        raise OSError(f"Put File Failed\n{format_exc()}") from exc
 
 
 def _download_output_path(task_dir: str, download_path: str) -> Path:

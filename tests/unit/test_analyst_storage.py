@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst import storage as analyst_storage
+from mcp_server_phytomni.agents.shared import analysis_storage
+from mcp_server_phytomni.storage.obs_storage import normalize_obs_object_key
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
@@ -34,7 +36,7 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
         IdFactory(token_factory=lambda _: "abc12345"),
     )
 
-    result = analyst_storage.create_output_dir(
+    result = analysis_storage.create_output_dir(
         "user-a",
         "analysis_task",
         bucket_name="phytomni",
@@ -47,7 +49,7 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
         f"{run_identity.date_stamp}/{run_identity.run_id}/"
         "analysis_task/output/"
     )
-    object_key = analyst_storage.normalize_obs_object_key(
+    object_key = normalize_obs_object_key(
         result,
         "phytomni",
     )

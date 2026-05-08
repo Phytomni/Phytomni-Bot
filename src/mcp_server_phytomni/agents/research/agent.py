@@ -41,8 +41,8 @@ from ..analyst.agent import (
     ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
 )
-from ..analyst.storage import create_output_dir
 from ..chat.service import phyto_chat
+from ..shared.analysis_storage import create_output_dir
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()

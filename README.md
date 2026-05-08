@@ -66,7 +66,7 @@ src/mcp_server_phytomni/
     network/                 Gene network workflow
     environment/             Environment workflow
     evolution/               Evolution workflow
-    shared/                  Cross-agent analysis and option helpers
+    shared/                  Cross-agent analysis, storage, and option helpers
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config

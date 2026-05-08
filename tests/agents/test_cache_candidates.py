@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_server_phytomni.agents.analyst.storage import get_data_list
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agents
 from mcp_server_phytomni.agents.deep_genome import agent as deep_genome_agents
 from mcp_server_phytomni.agents.deep_genome.formatting import (
@@ -18,6 +17,7 @@ from mcp_server_phytomni.agents.deep_genome.formatting import (
 from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
 )
+from mcp_server_phytomni.agents.shared.analysis_storage import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 
 pytestmark = pytest.mark.agent

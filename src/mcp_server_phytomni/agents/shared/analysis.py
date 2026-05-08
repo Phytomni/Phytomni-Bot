@@ -26,7 +26,7 @@ from ..analyst.agent import (
     ANALYST_SECRET_FIELD_MAP,
     ANALYST_SENSITIVE_FIELD_MAP,
 )
-from ..analyst.storage import create_output_dir
+from .analysis_storage import create_output_dir
 
 __all__ = [
     "AnalysisAgentCacheSpec",

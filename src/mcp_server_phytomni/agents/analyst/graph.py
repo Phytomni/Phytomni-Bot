@@ -32,10 +32,8 @@ from ...storage.downloads import download_upload_context
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..chat.service import phyto_chat
 from ..knowledge.retrieval import multi_retrieve, retrieve
-from .storage import (
-    ensure_run_output_dir,
-    upload_analyst_agents_content,
-)
+from ..shared.analysis_storage import ensure_run_output_dir
+from .storage import upload_analyst_agents_content
 
 if TYPE_CHECKING:
     from .agent import AnalystAgentsState
