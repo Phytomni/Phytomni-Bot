@@ -19,8 +19,8 @@ from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from .agents.chat.service import phyto_chat
 from .auth.iam import get_token
-from .chat_agents import phyto_chat
 from .config.defaults import DataConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,

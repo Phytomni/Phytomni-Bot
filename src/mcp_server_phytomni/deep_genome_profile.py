@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
 
-from .chat_agents import phyto_chat
+from .agents.chat.service import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .deep_genome_formatting import SPECIES_CODE_MAP, network_to_string
 from .func_cache import func_cache

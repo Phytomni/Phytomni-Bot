@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .chat_agents import phyto_chat
+from .agents.chat.service import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .deep_genome_formatting import SPECIES_CODE_MAP
 from .runtime.workflow_mixins import WorkflowMixinBase

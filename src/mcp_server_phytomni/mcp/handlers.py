@@ -6,9 +6,9 @@
 
 from typing import Any
 
+from ..agents.chat.service import phyto_chat_with_follow
 from ..analyst_agents import retrieve_plan_submit
 from ..brief_gene_agents import brief_gene_function
-from ..chat_agents import phyto_chat_with_follow
 from ..config.defaults import (
     AnalystConfig,
     BriefGeneConfig,

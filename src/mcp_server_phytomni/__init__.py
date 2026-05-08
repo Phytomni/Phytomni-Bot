@@ -4,6 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Public package exports for Phytomni MCP server agents and utilities."""
 
+from .agents.chat.service import phyto_chat, phyto_chat_with_follow
 from .analyst_agents import (
     create_output_dir,
     get_data_list,
@@ -12,7 +13,6 @@ from .analyst_agents import (
 )
 from .auth.iam import get_token
 from .brief_gene_agents import brief_gene_function
-from .chat_agents import phyto_chat, phyto_chat_with_follow
 from .data_agents import nl2sql, rewrite_nl2sql
 from .deep_genome_agents import gene_function
 from .in_silico_research_agents import in_silico_research

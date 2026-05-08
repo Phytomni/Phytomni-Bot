@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni import chat_agents
+from mcp_server_phytomni.agents.chat import service as chat_agents
 
 pytestmark = pytest.mark.agent
 

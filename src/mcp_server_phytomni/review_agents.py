@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, TypedDict, Union
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .chat_agents import phyto_chat
+from .agents.chat.service import phyto_chat
 from .config.defaults import ReviewConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,

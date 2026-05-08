@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .chat_agents import phyto_chat
+from .agents.chat.service import phyto_chat
 from .config.defaults import KnowledgeConfig
 from .config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,

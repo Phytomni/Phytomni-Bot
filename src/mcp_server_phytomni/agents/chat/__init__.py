@@ -2,9 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Compatibility exports for chat agent helpers."""
+"""Chat agent service exports."""
 
-from .agents.chat.service import phyto_chat, phyto_chat_with_follow
+from .service import phyto_chat, phyto_chat_with_follow
 
 __all__ = [
     "phyto_chat",
