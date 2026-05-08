@@ -4,6 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Analyst agent package exports."""
 
+from .graph import AnalystGraphMixin
 from .storage import (
     ObsDownloadOptions,
     create_output_dir,
@@ -15,6 +16,7 @@ from .storage import (
 )
 
 __all__ = [
+    "AnalystGraphMixin",
     "ObsDownloadOptions",
     "create_output_dir",
     "download_obs_out",

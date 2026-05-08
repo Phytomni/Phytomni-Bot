@@ -15,6 +15,7 @@ from langgraph.graph import START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from .agents.analyst.graph import AnalystGraphMixin
 from .agents.analyst.storage import (
     ObsAccessOptions,
     ObsDownloadOptions,
@@ -24,7 +25,6 @@ from .agents.analyst.storage import (
     get_data_list,
     upload_analyst_agents_data,
 )
-from .analyst_graph_nodes import AnalystGraphMixin
 from .auth.iam import get_token
 from .config.defaults import AnalystConfig
 from .config.overrides import (
