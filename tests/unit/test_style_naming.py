@@ -109,7 +109,10 @@ def test_ruff_enforces_import_grouping_and_sorting():
     ruff_lint = pyproject["tool"]["ruff"]["lint"]
     assert "I" in ruff_lint["extend-select"]
     assert pyproject["tool"]["ruff"]["lint"]["isort"] == {
-        "known-first-party": ["mcp_server_phytomni"]
+        "known-first-party": [
+            "mcp_client_phytomni",
+            "mcp_server_phytomni",
+        ]
     }
 
 
