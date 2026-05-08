@@ -6,7 +6,7 @@
 
 import pytest
 
-from mcp_server_phytomni.utils import split_list
+from mcp_server_phytomni.common.lists import split_list
 
 pytestmark = pytest.mark.unit
 

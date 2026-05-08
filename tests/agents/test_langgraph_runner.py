@@ -17,7 +17,9 @@ from mcp_server_phytomni.runtime.langgraph_runner import (
     ensure_thread_id,
 )
 
-PACKAGE_DIR = Path(__file__).resolve().parents[2] / "src/mcp_server_phytomni"
+AGENTS_DIR = (
+    Path(__file__).resolve().parents[2] / "src/mcp_server_phytomni/agents"
+)
 
 
 class FakeGraph:
@@ -146,9 +148,11 @@ def test_graph_registry_can_clear_one_name_or_all():
 
 def test_agent_sources_use_shared_runner_for_graph_invocation():
     """Verify agent sources use shared runner for graph invocation."""
-    agent_files = sorted(PACKAGE_DIR.glob("*_agents.py"))
+    agent_files = sorted(AGENTS_DIR.glob("**/*.py"))
     source_by_name = {
-        agent_file.name: agent_file.read_text(encoding="utf-8")
+        agent_file.relative_to(AGENTS_DIR): agent_file.read_text(
+            encoding="utf-8"
+        )
         for agent_file in agent_files
     }
 

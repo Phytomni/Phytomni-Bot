@@ -23,9 +23,9 @@ from ...common.http import (
     JsonPostRetry,
     post_json_with_retries,
 )
+from ...common.lists import split_list
 from ...config.defaults import KnowledgeConfig
 from ...func_cache import func_cache
-from ...utils import split_list
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
 RETRIEVE_CACHE_TTL = 300

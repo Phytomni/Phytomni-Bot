@@ -15,7 +15,11 @@ from httpx import (
     Timeout,
 )
 
-from ..utils import JsonPostRequest, JsonPostRetry, post_json_with_retries
+from ..common.http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
+)
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
