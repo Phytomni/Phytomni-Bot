@@ -10,6 +10,7 @@ from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
 from ..agents.chat.service import phyto_chat_with_follow
 from ..agents.data.agent import rewrite_nl2sql
+from ..agents.deep_genome.agent import gene_function
 from ..agents.knowledge.agent import multi_retrieve_generate
 from ..agents.review.agent import deep_research
 from ..config.defaults import (
@@ -25,7 +26,6 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
-from ..deep_genome_agents import gene_function
 from ..digital_design_agents import design_module
 from ..gene_network_agents import network_analysis
 from ..in_silico_research_agents import in_silico_research

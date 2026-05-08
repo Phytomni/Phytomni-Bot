@@ -12,6 +12,7 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.brief_gene.agent import BriefGeneAgent
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.config.defaults import (
@@ -25,7 +26,6 @@ from mcp_server_phytomni.config.defaults import (
     ReviewConfig,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
-from mcp_server_phytomni.deep_genome_agents import DeepGenomeAgents
 from mcp_server_phytomni.digital_design_agents import DigitalDesignAgents
 from mcp_server_phytomni.gene_network_agents import GeneNetworkAgents
 from mcp_server_phytomni.in_silico_research_agents import (

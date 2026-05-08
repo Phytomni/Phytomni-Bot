@@ -11,8 +11,10 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni import deep_genome_dispatch
-from mcp_server_phytomni.deep_genome_dispatch import (
+from mcp_server_phytomni.agents.deep_genome import (
+    dispatch as deep_genome_dispatch,
+)
+from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
     DeepGenomeDispatchMixin,
 )

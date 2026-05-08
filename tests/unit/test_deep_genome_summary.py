@@ -6,7 +6,7 @@
 
 import pytest
 
-from mcp_server_phytomni.deep_genome_summary import build_sub_summary
+from mcp_server_phytomni.agents.deep_genome.summary import build_sub_summary
 
 pytestmark = pytest.mark.unit
 
