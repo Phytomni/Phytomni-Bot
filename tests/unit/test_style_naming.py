@@ -28,12 +28,12 @@ AUTHOR_CONTINUATION_PATTERN = re.compile(
 )
 PYLINT_DISABLE_MARKER = "".join(("pylint:", " disable="))
 ALLOWED_LOCAL_PYLINT_DISABLES = {
-    "src/mcp_server_phytomni/langgraph_runner.py": {
+    "src/mcp_server_phytomni/runtime/langgraph_runner.py": {
         "broad-exception-caught",
     },
 }
 ALLOWED_UUID4_CALLERS = {
-    "src/mcp_server_phytomni/task_manager.py",
+    "src/mcp_server_phytomni/runtime/task_manager.py",
 }
 
 

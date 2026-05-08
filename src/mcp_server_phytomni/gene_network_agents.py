@@ -25,7 +25,7 @@ from .analyst_agents import (
 )
 from .config.defaults import GeneNetworkConfig
 from .config.settings import SensitiveConfig
-from .langgraph_runner import ensure_checkpointer
+from .runtime.langgraph_runner import ensure_checkpointer
 from .utils import get_prompt
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()

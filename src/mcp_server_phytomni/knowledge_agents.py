@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import KnowledgeConfig
 from .config.overrides import (
@@ -26,7 +25,8 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .knowledge_retrieval import multi_retrieve, rerank, retrieve
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
+from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
     download_list_convert,
     format_retrieved_doc_context,

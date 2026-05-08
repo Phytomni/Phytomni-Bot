@@ -16,8 +16,8 @@ from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .deep_genome_formatting import SPECIES_CODE_MAP, network_to_string
 from .func_cache import func_cache
+from .runtime.workflow_mixins import WorkflowMixinBase
 from .utils import format_retrieved_doc_context, get_prompt, message_content
-from .workflow_mixins import WorkflowMixinBase
 
 if TYPE_CHECKING:
     from .deep_genome_agents import DeepGenomeState

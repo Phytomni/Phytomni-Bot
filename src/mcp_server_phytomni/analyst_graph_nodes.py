@@ -26,6 +26,7 @@ from .analyst_storage import (
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
 from .path_policy import RunIdentity, task_tmp_key
+from .runtime.workflow_mixins import WorkflowMixinBase
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
@@ -36,7 +37,6 @@ from .utils import (
     load_json_file,
     request_response_with_retries,
 )
-from .workflow_mixins import WorkflowMixinBase
 
 if TYPE_CHECKING:
     from .analyst_agents import AnalystAgentsState

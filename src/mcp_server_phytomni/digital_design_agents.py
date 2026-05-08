@@ -40,7 +40,7 @@ from .analyst_agents import (
 )
 from .config.defaults import DigitalDesignConfig
 from .config.settings import SensitiveConfig
-from .langgraph_runner import ensure_checkpointer
+from .runtime.langgraph_runner import ensure_checkpointer
 from .utils import get_prompt
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()

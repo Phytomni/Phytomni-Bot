@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING, Any
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .deep_genome_formatting import SPECIES_CODE_MAP
+from .runtime.workflow_mixins import WorkflowMixinBase
 from .utils import (
     get_prompt,
     message_content,
     parse_follow_up_questions,
     parse_json_list_fragment,
 )
-from .workflow_mixins import WorkflowMixinBase
 
 if TYPE_CHECKING:
     from .deep_genome_agents import DeepGenomeState

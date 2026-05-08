@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from mcp_server_phytomni.langgraph_runner import (
+from mcp_server_phytomni.runtime.langgraph_runner import (
     GraphRegistry,
     ainvoke_graph,
     build_runnable_config,

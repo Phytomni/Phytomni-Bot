@@ -19,7 +19,6 @@ from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .chat_agents import phyto_chat
 from .config.defaults import BriefGeneConfig
 from .config.overrides import (
@@ -32,7 +31,8 @@ from .config.overrides import (
 from .config.settings import SensitiveConfig
 from .func_cache import func_cache
 from .knowledge_agents import KnowledgeAgent
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
+from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,

@@ -11,7 +11,6 @@ from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 import requests
 from langgraph.graph import END, START, StateGraph
 
-from .agent_registry import agent_fingerprint_values, get_cached_agent
 from .analyst_agents import (
     ANALYST_CONFIG_FIELD_MAP,
     ANALYST_SECRET_FIELD_MAP,
@@ -39,7 +38,8 @@ from .deep_genome_profile import (
 )
 from .deep_genome_report import DeepGenomeReportMixin
 from .knowledge_agents import KnowledgeAgent
-from .langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
+from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
