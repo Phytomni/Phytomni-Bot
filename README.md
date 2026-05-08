@@ -15,10 +15,12 @@ The package lives under `src/mcp_server_phytomni`. The main MCP entrypoint is
 - The MCP server currently exposes 10 tools.
 - Several domain agents are LangGraph `StateGraph` workflows with compiled
   apps invoked through a shared runner.
-- MCP dispatch is split between `server.py` for schemas/routing and
-  `tool_handlers.py` for runtime config expansion.
-- Public wrapper functions remain compatible and reuse agent instances through
-  a non-secret agent registry where safe.
+- MCP dispatch lives in `mcp/app.py`, `mcp/schemas.py`, and
+  `mcp/handlers.py`; `server.py` remains the module startup entrypoint.
+- Domain wrappers live under `agents/<domain>/` packages and reuse agent
+  instances through a non-secret runtime registry where safe.
+- Legacy root Python modules such as `knowledge_agents.py`, `utils.py`, and
+  `tool_handlers.py` are not compatibility surfaces.
 - `func_cache` provides a tested SQLite-backed sync/async cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
@@ -31,26 +33,56 @@ document upload is needed.
 
 | Tool | Main module | Required arguments | Purpose |
 | --- | --- | --- | --- |
-| `ChatAgent` | `chat_agents.py` | `user_query`, `obs_file_list` | General plant science chat with optional document context. |
-| `KnowledgeAgent` | `knowledge_agents.py` | `user_query`, `obs_file_list` | Literature retrieval and RAG-based synthesis. |
-| `DataAgent` | `data_agents.py` | `user_query` | Natural-language SQL query rewriting and database search. |
-| `AnalystAgent` | `analyst_agents.py` | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
-| `ReviewAgent` | `review_agents.py` | `user_query`, `obs_file_list` | Multi-step literature review and deep research generation. |
-| `BriefGeneAgent` | `brief_gene_agents.py` | `user_query` | Concise gene function report from BI annotations and literature context. |
-| `DeepGenomeAgent` | `deep_genome_agents.py` | `species_code`, `gene_id` | Multi-omics gene function analysis. |
-| `InSilicoResearchAgent` | `in_silico_research_agents.py` | `user_query`, `data_list`, `obs_file_list` | Decompose papers or research goals into computational tasks. |
-| `DigitalDesignAgent` | `digital_design_agents.py` | `species`, `gene_id`, `obs_file_list` | Protein and promoter design workflows. |
-| `GeneNetworkAgent` | `gene_network_agents.py` | `species`, `to_id`, `obs_file_list` | Gene network analysis for species and trait ontology IDs. |
+| `ChatAgent` | `agents/chat/service.py` | `user_query`, `obs_file_list` | General plant science chat with optional document context. |
+| `KnowledgeAgent` | `agents/knowledge/agent.py` | `user_query`, `obs_file_list` | Literature retrieval and RAG-based synthesis. |
+| `DataAgent` | `agents/data/agent.py` | `user_query` | Natural-language SQL query rewriting and database search. |
+| `AnalystAgent` | `agents/analyst/agent.py` | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
+| `ReviewAgent` | `agents/review/agent.py` | `user_query`, `obs_file_list` | Multi-step literature review and deep research generation. |
+| `BriefGeneAgent` | `agents/brief_gene/agent.py` | `user_query` | Concise gene function report from BI annotations and literature context. |
+| `DeepGenomeAgent` | `agents/deep_genome/agent.py` | `species_code`, `gene_id` | Multi-omics gene function analysis. |
+| `InSilicoResearchAgent` | `agents/research/agent.py` | `user_query`, `data_list`, `obs_file_list` | Decompose papers or research goals into computational tasks. |
+| `DigitalDesignAgent` | `agents/design/agent.py` | `species`, `gene_id`, `obs_file_list` | Protein and promoter design workflows. |
+| `GeneNetworkAgent` | `agents/network/agent.py` | `species`, `to_id`, `obs_file_list` | Gene network analysis for species and trait ontology IDs. |
 
 ## Architecture
 
 ```text
 src/mcp_server_phytomni/
-  server.py                  MCP tool schema, validation, dispatch
-  tool_handlers.py           MCP tool runtime handlers and config expansion
-  *_agents.py                Domain workflows and external service calls
-  langgraph_runner.py        Shared LangGraph invocation helpers
-  agent_registry.py          Reusable agent registry keyed by safe config
+  server.py                  Compatibility startup module for MCP launchers
+  mcp/
+    app.py                   MCP server registration, dispatch, and serving
+    schemas.py               Public tool names and request schemas
+    handlers.py              Runtime handlers and config expansion
+  agents/
+    chat/                    Chat service workflow
+    knowledge/               Retrieval, reranking, and synthesis workflow
+    data/                    NL2SQL and data query workflow
+    analyst/                 Analyst graph, storage, and wrapper
+    review/                  Deep research review workflow
+    brief_gene/              Brief gene function workflow
+    deep_genome/             Deep genome graph and helpers
+    research/                In-silico research decomposition workflow
+    design/                  Digital design workflow
+    network/                 Gene network workflow
+    environment/             Environment workflow
+    evolution/               Evolution workflow
+    shared/                  Cross-agent analysis and option helpers
+  runtime/
+    langgraph_runner.py      Shared LangGraph invocation helpers
+    agent_registry.py        Reusable agent registry keyed by safe config
+    task_manager.py          Task lifecycle helper
+  common/
+    http.py                  JSON POST retry helpers
+    prompts.py               Prompt template loading
+    responses.py             LLM response parsing helpers
+    docs.py                  Retrieved document formatting helpers
+    lists.py                 Small list helpers
+  auth/
+    iam.py                   IAM token loading helper
+  storage/
+    obs_storage.py           OBS object naming and upload helpers
+    path_policy.py           Runtime path and ID policy
+    downloads.py             OBS/obsfs download and conversion helpers
   config/
     defaults.py              Non-secret defaults and agent config classes
     settings.py              Environment and secret loading
@@ -59,28 +91,29 @@ src/mcp_server_phytomni/
     species_data_list.json   Species metadata
     region_map.json          Region metadata
   func_cache/                SQLite-backed function cache package
-  task_manager.py            Task lifecycle helper
-  utils.py                   Prompt, OBS, document, token, and list helpers
 ```
 
 ### MCP Boundary
 
-`server.py` owns the public MCP surface:
+`mcp/app.py`, `mcp/schemas.py`, and `mcp/handlers.py` own the public MCP
+surface:
 
-- Pydantic request models for each tool.
+- Pydantic request models for each tool in `mcp/schemas.py`.
 - JSON schema generation for `tools/list`.
 - Argument validation and MCP-compliant `INVALID_PARAMS` errors.
 - Tool name to handler routing through `dispatch_tool`.
 - MCP `TextContent` response serialization.
 
-`tool_handlers.py` owns runtime adaptation from MCP requests to agent calls:
+`mcp/handlers.py` owns runtime adaptation from MCP requests to agent calls:
 
 - Loading default config and sensitive config.
 - Expanding config values into compatibility wrapper arguments.
-- Calling the public wrapper functions in each agent module.
+- Calling wrapper functions or service methods in the domain agent packages.
 
 Keep public tool names and request schemas stable unless a change is planned
-as an API migration.
+as an API migration. The old root Python module paths are intentionally not
+kept as compatibility shims; import code should use the package paths shown
+above.
 
 ### LangGraph Agents
 
@@ -88,14 +121,16 @@ Most complex agents are implemented as LangGraph workflows:
 
 - `StateGraph` defines the workflow state and node transitions.
 - Agent classes compile a graph into `self.app`.
-- `langgraph_runner.py` centralizes `RunnableConfig`, `thread_id`,
+- `runtime/langgraph_runner.py` centralizes `RunnableConfig`, `thread_id`,
   checkpointer defaults, and async graph invocation.
-- Public wrapper functions build config objects, preserve historical
-  signatures, and call agent classes rather than exposing graph internals.
-- `agent_registry.py` reuses agent instances by explicit non-secret config
-  fingerprints. Secret values are omitted from cache keys.
+- Wrapper functions in the domain packages build config objects, preserve
+  tool-facing signatures, and call agent classes rather than exposing graph
+  internals.
+- `runtime/agent_registry.py` reuses agent instances by explicit non-secret
+  config fingerprints. Secret values are omitted from cache keys.
 
-The following public wrappers are intentionally kept as compatibility facades:
+The following wrapper function names are intentionally kept inside their new
+domain packages:
 
 - `rewrite_nl2sql`
 - `multi_retrieve_generate`
@@ -108,7 +143,7 @@ The following public wrappers are intentionally kept as compatibility facades:
 - `in_silico_research`
 - `retrieve_plan_submit`
 
-Server handlers should call these wrappers or a shared service layer; they
+`mcp/handlers.py` should call these wrappers or a shared service layer; it
 should not duplicate graph construction or reach into private graph builders.
 
 ### Configuration
@@ -150,8 +185,8 @@ cache keys. `nl2sql` is not cached by default because `dialog_id` may carry
 session context. Cache database files such as `.func_cache.db*`, `*.sqlite*`,
 and WAL/SHM sidecars are ignored by git.
 
-This is separate from `agent_registry.py`. The registry only reuses in-memory
-agent instances and compiled LangGraph apps for matching non-secret
+This is separate from `runtime/agent_registry.py`. The registry only reuses
+in-memory agent instances and compiled LangGraph apps for matching non-secret
 configuration; it does not cache LLM responses, external API responses, task
 submissions, uploads, downloads, or polling results.
 
@@ -366,6 +401,7 @@ The test suite currently includes unit coverage for:
 - config override helpers for wrapper argument compatibility,
 - prompt/template helpers and `split_list`,
 - MCP tool schemas and dispatch routing,
+- package boundary tests that prevent legacy root module imports,
 - shared LangGraph runner and agent registry behavior,
 - wrapper override propagation for digital design, gene network, and
   in-silico research entrypoints,

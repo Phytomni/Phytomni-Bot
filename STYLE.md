@@ -8,7 +8,10 @@ planned and tested.
 ## Naming
 
 - Python modules and files use `snake_case.py`.
-- Agent implementation modules keep the `*_agents.py` suffix.
+- Agent implementation modules live under `agents/<domain>/` packages. Prefer
+  focused module names such as `agent.py`, `service.py`, `graph.py`,
+  `storage.py`, or `formatting.py`; do not add root-level `*_agents.py`
+  compatibility shims.
 - Test files use `test_*.py`; shared pytest helpers live in `conftest.py`.
 - Classes, Pydantic models, and exceptions use `PascalCase`.
 - Exception classes that represent errors end with `Error`.
@@ -26,6 +29,9 @@ planned and tested.
 - Do not change public wrapper signatures unless the migration plan explicitly
   calls for it.
 - Keep request and response schemas JSON-schema friendly.
+- Treat MCP tool names and request schemas as the public surface. Legacy
+  root-level Python module paths under `mcp_server_phytomni` are not
+  compatibility surfaces.
 - Internal state keys may be renamed only with focused tests around the owning
   agent workflow.
 - Preserve caller-provided IDs and explicit `output_dir` values unless a
@@ -35,7 +41,7 @@ planned and tested.
 
 - Runtime IDs that affect task directories, OBS object keys, temporary
   directories, LangGraph thread IDs, or dialog IDs must be created through
-  `path_policy.py`.
+  `storage/path_policy.py`.
 - Use one `RunIdentity` per workflow and pass it through child submissions so
   user, run, metadata, temporary, and output paths share one traceable layout.
 - Use `IdFactory` for standalone generated IDs, such as default thread or
@@ -44,8 +50,8 @@ planned and tested.
   `uuid4()` to invent a runtime `user_id`.
 - Direct UUID generation is limited to non-path platform, repository,
   workspace, app, or storage identifiers with a focused reason. The current
-  SQLite task row ID in `task_manager.py` is the only allowed source-tree
-  exception.
+  SQLite task row ID in `runtime/task_manager.py` is the only allowed
+  source-tree exception.
 
 ## Docstrings
 
@@ -139,3 +145,5 @@ README-style prose may wrap the same copyright text across lines.
 - Running `integration` or `network` tests requires explicit environment opt-in.
 - Add focused tests when renaming internal keys, moving wrappers, changing
   cache keys, or changing LangGraph execution flow.
+- Keep package boundary tests current when moving modules so production code
+  does not reintroduce legacy root imports.
