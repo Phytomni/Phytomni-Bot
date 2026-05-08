@@ -41,7 +41,17 @@ DEFAULT_CACHE_DB_PATH = Path(".cache") / "phytomni" / "func_cache.sqlite"
 
 @dataclass(frozen=True)
 class CacheOptions:
-    """Resolved options for one cached function."""
+    """Resolved options for one cached function.
+
+    Attributes:
+        key_params: Parameter names included in cache keys.
+        db_path: Optional SQLite cache database path.
+        ttl: Optional cache entry time-to-live in seconds.
+        compress: Whether serialized values use zlib compression.
+        lock_timeout: Maximum seconds to wait for cache locks.
+        lock_expire: Seconds before cache locks are considered stale.
+        exclude_params: Parameter names excluded from cache keys.
+    """
 
     key_params: Any = None
     db_path: Any = None
@@ -53,7 +63,18 @@ class CacheOptions:
 
     @classmethod
     def from_kwargs(cls, key_params: Any, kwargs: dict[str, Any]):
-        """Build options while preserving keyword compatibility."""
+        """Build options while preserving keyword compatibility.
+
+        Args:
+            key_params: Explicit parameter names to include in cache keys.
+            kwargs: Keyword-compatible cache options.
+
+        Returns:
+            Resolved cache options.
+
+        Raises:
+            TypeError: If unknown cache options are supplied.
+        """
         allowed = {
             "db_path",
             "ttl",
@@ -71,14 +92,28 @@ class CacheOptions:
 
 @dataclass
 class CacheStats:
-    """Mutable hit/miss counters for a cached function."""
+    """Mutable hit/miss counters for a cached function.
+
+    Attributes:
+        hits: Number of successful cache reads.
+        misses: Number of cache misses that required function execution.
+    """
 
     hits: int = 0
     misses: int = 0
 
 
 class CacheRuntime:
-    """Runtime state and operations for one decorated function."""
+    """Runtime state and operations for one decorated function.
+
+    Attributes:
+        func: Wrapped callable.
+        options: Resolved cache options for the callable.
+        storage: SQLite-backed cache storage.
+        key_builder: Cache-key builder for the wrapped callable.
+        lock_manager: Database-backed lock manager.
+        stats: Mutable cache hit and miss counters.
+    """
 
     def __init__(self, func: Any, options: CacheOptions):
         """Initialize cache storage, key builder, and lock manager."""
@@ -107,7 +142,15 @@ class CacheRuntime:
         )
 
     def call(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
-        """Return a cached sync result or execute the wrapped function."""
+        """Return a cached sync result or execute the wrapped function.
+
+        Args:
+            args: Positional arguments passed to the wrapped function.
+            kwargs: Keyword arguments passed to the wrapped function.
+
+        Returns:
+            Cached or newly computed function result.
+        """
         cache_key = self.build_cache_key(args, kwargs)
         if cache_key is None:
             return self.func(*args, **kwargs)
@@ -120,7 +163,15 @@ class CacheRuntime:
         return self.compute_locked(cache_key, args, kwargs)
 
     async def call_async(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
-        """Return a cached async result or execute the wrapped coroutine."""
+        """Return a cached async result or execute the wrapped coroutine.
+
+        Args:
+            args: Positional arguments passed to the wrapped coroutine.
+            kwargs: Keyword arguments passed to the wrapped coroutine.
+
+        Returns:
+            Cached or newly computed coroutine result.
+        """
         cache_key = self.build_cache_key(args, kwargs)
         if cache_key is None:
             return await self.func(*args, **kwargs)
@@ -133,7 +184,15 @@ class CacheRuntime:
         return await self.compute_locked_async(cache_key, args, kwargs)
 
     def build_cache_key(self, args: tuple[Any, ...], kwargs: dict[str, Any]):
-        """Build a cache key or return None when caching is unsafe."""
+        """Build a cache key or return None when caching is unsafe.
+
+        Args:
+            args: Positional arguments for the wrapped callable.
+            kwargs: Keyword arguments for the wrapped callable.
+
+        Returns:
+            Cache key string, or None when key construction fails.
+        """
         try:
             return self.key_builder.build_key(args, kwargs)
         except CacheError as exc:
@@ -141,7 +200,14 @@ class CacheRuntime:
             return None
 
     def read_cached(self, cache_key: str):
-        """Return cached value or a miss sentinel."""
+        """Return cached value or a miss sentinel.
+
+        Args:
+            cache_key: Cache key for the wrapped callable invocation.
+
+        Returns:
+            Cached value, or the internal cache-miss sentinel.
+        """
         try:
             cached = self.storage.get(self.key_builder.func_id, cache_key)
         except CacheError as exc:
@@ -150,7 +216,14 @@ class CacheRuntime:
         return self.deserialize_cached(cache_key, cached)
 
     async def read_cached_async(self, cache_key: str):
-        """Return cached async value or a miss sentinel."""
+        """Return cached async value or a miss sentinel.
+
+        Args:
+            cache_key: Cache key for the wrapped coroutine invocation.
+
+        Returns:
+            Cached value, or the internal cache-miss sentinel.
+        """
         try:
             cached = self.storage.get(self.key_builder.func_id, cache_key)
         except CacheError as exc:
@@ -159,7 +232,15 @@ class CacheRuntime:
         return await self.deserialize_cached_async(cache_key, cached)
 
     def write_cached(self, cache_key: str, result: Any) -> None:
-        """Serialize and store a cache value."""
+        """Serialize and store a cache value.
+
+        Args:
+            cache_key: Cache key for the stored result.
+            result: Function result to serialize and store.
+
+        Returns:
+            None. Storage failures are logged and ignored.
+        """
         try:
             value = dumps(result, self.options.compress)
             self.storage.set(
@@ -172,7 +253,15 @@ class CacheRuntime:
             _log_warning(f"Cache write failed: {exc}")
 
     async def write_cached_async(self, cache_key: str, result: Any) -> None:
-        """Serialize and store an async cache value."""
+        """Serialize and store an async cache value.
+
+        Args:
+            cache_key: Cache key for the stored result.
+            result: Coroutine result to serialize and store.
+
+        Returns:
+            None. Storage failures are logged and ignored.
+        """
         try:
             value = dumps(result, self.options.compress)
             self.storage.set(
@@ -190,7 +279,16 @@ class CacheRuntime:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ):
-        """Compute a sync cache miss under a database lock."""
+        """Compute a sync cache miss under a database lock.
+
+        Args:
+            cache_key: Cache key for the wrapped callable invocation.
+            args: Positional arguments for the wrapped callable.
+            kwargs: Keyword arguments for the wrapped callable.
+
+        Returns:
+            Cached value produced by another process, or newly computed value.
+        """
         if not self.acquire_lock(cache_key):
             self.stats.misses += 1
             return self.func(*args, **kwargs)
@@ -205,7 +303,16 @@ class CacheRuntime:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ):
-        """Compute an async cache miss under a database lock."""
+        """Compute an async cache miss under a database lock.
+
+        Args:
+            cache_key: Cache key for the wrapped coroutine invocation.
+            args: Positional arguments for the wrapped coroutine.
+            kwargs: Keyword arguments for the wrapped coroutine.
+
+        Returns:
+            Cached value produced by another process, or newly computed value.
+        """
         async with self.async_lock_for_key(cache_key):
             owner = self.lock_manager.owner(
                 f"async:{id(asyncio.current_task())}"
@@ -221,7 +328,14 @@ class CacheRuntime:
                 await self.release_lock_async(cache_key, owner)
 
     def async_lock_for_key(self, cache_key: str) -> asyncio.Lock:
-        """Return the event-loop-local lock for one async cache key."""
+        """Return the event-loop-local lock for one async cache key.
+
+        Args:
+            cache_key: Cache key requiring in-process async synchronization.
+
+        Returns:
+            Event-loop-local lock for the cache key.
+        """
         loop_key = (id(asyncio.get_running_loop()), cache_key)
         lock = self._async_locks.get(loop_key)
         if lock is None:
@@ -235,7 +349,16 @@ class CacheRuntime:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ):
-        """Double-check cache after lock, then compute and store."""
+        """Double-check cache after lock, then compute and store.
+
+        Args:
+            cache_key: Cache key for the wrapped callable invocation.
+            args: Positional arguments for the wrapped callable.
+            kwargs: Keyword arguments for the wrapped callable.
+
+        Returns:
+            Cached value after lock acquisition, or newly computed value.
+        """
         cached = self.read_cached(cache_key)
         if cached is not _CACHE_MISS:
             self.stats.hits += 1
@@ -252,7 +375,16 @@ class CacheRuntime:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ):
-        """Double-check async cache after lock, then compute and store."""
+        """Double-check async cache after lock, then compute and store.
+
+        Args:
+            cache_key: Cache key for the wrapped coroutine invocation.
+            args: Positional arguments for the wrapped coroutine.
+            kwargs: Keyword arguments for the wrapped coroutine.
+
+        Returns:
+            Cached value after lock acquisition, or newly computed value.
+        """
         cached = await self.read_cached_async(cache_key)
         if cached is not _CACHE_MISS:
             self.stats.hits += 1
@@ -264,7 +396,14 @@ class CacheRuntime:
         return result
 
     def acquire_lock(self, cache_key: str) -> bool:
-        """Acquire a sync lock, returning False on cache lock failures."""
+        """Acquire a sync lock, returning False on cache lock failures.
+
+        Args:
+            cache_key: Cache key to lock.
+
+        Returns:
+            True when the cache lock is acquired, otherwise False.
+        """
         try:
             self.lock_manager.acquire(self.key_builder.func_id, cache_key)
             return True
@@ -273,7 +412,15 @@ class CacheRuntime:
             return False
 
     async def acquire_lock_async(self, cache_key: str, owner: str) -> bool:
-        """Acquire an async lock, returning False on cache lock failures."""
+        """Acquire an async lock, returning False on cache lock failures.
+
+        Args:
+            cache_key: Cache key to lock.
+            owner: Explicit lock owner shared with release.
+
+        Returns:
+            True when the cache lock is acquired, otherwise False.
+        """
         try:
             self.lock_manager.acquire(
                 self.key_builder.func_id, cache_key, owner
@@ -284,14 +431,29 @@ class CacheRuntime:
             return False
 
     def release_lock(self, cache_key: str) -> None:
-        """Release a sync lock, ignoring cleanup failures."""
+        """Release a sync lock, ignoring cleanup failures.
+
+        Args:
+            cache_key: Cache key whose lock should be released.
+
+        Returns:
+            None. Cleanup failures are ignored.
+        """
         try:
             self.lock_manager.release(self.key_builder.func_id, cache_key)
         except CacheError:
             pass
 
     async def release_lock_async(self, cache_key: str, owner: str) -> None:
-        """Release an async lock, ignoring cleanup failures."""
+        """Release an async lock, ignoring cleanup failures.
+
+        Args:
+            cache_key: Cache key whose lock should be released.
+            owner: Explicit lock owner used during acquisition.
+
+        Returns:
+            None. Cleanup failures are ignored.
+        """
         try:
             self.lock_manager.release(
                 self.key_builder.func_id, cache_key, owner
@@ -300,7 +462,15 @@ class CacheRuntime:
             pass
 
     def deserialize_cached(self, cache_key: str, cached: Any):
-        """Deserialize cached bytes or remove a corrupted entry."""
+        """Deserialize cached bytes or remove a corrupted entry.
+
+        Args:
+            cache_key: Cache key associated with the cached bytes.
+            cached: Raw cached bytes, or None for a cache miss.
+
+        Returns:
+            Deserialized value, or the internal cache-miss sentinel.
+        """
         if cached is None:
             return _CACHE_MISS
         try:
@@ -311,7 +481,15 @@ class CacheRuntime:
             return _CACHE_MISS
 
     async def deserialize_cached_async(self, cache_key: str, cached: Any):
-        """Deserialize async cached bytes or remove a corrupted entry."""
+        """Deserialize async cached bytes or remove a corrupted entry.
+
+        Args:
+            cache_key: Cache key associated with the cached bytes.
+            cached: Raw cached bytes, or None for a cache miss.
+
+        Returns:
+            Deserialized value, or the internal cache-miss sentinel.
+        """
         if cached is None:
             return _CACHE_MISS
         try:
@@ -351,7 +529,11 @@ class CacheRuntime:
             _log_warning(f"Failed to clear cache: {exc}")
 
     def cache_info(self) -> dict[str, int]:
-        """Return cache statistics for the decorated function."""
+        """Return cache statistics for the decorated function.
+
+        Returns:
+            Dictionary with hit count, miss count, and current entry count.
+        """
         try:
             count = self.storage.count(self.key_builder.func_id)
         except CacheError:
@@ -364,7 +546,11 @@ class CacheRuntime:
 
 
 def default_cache_db_path():
-    """Return the default SQLite path for function result cache storage."""
+    """Return the default SQLite path for function result cache storage.
+
+    Returns:
+        Environment-provided cache path, or the repository default path.
+    """
     env_path = os.getenv(DEFAULT_CACHE_DB_ENV)
     if env_path:
         return env_path
@@ -386,16 +572,43 @@ def func_cache(key_params=None, **kwargs):
     options = CacheOptions.from_kwargs(key_params, kwargs)
 
     def decorator(func):
+        """Wrap one callable with the configured cache runtime.
+
+        Args:
+            func: Callable or coroutine function to cache.
+
+        Returns:
+            Wrapped callable with cache helpers attached.
+        """
         runtime = CacheRuntime(func, options)
 
         @functools.wraps(func)
         def wrapper(*args, **wrapper_kwargs):
-            """Wrapper for sync cache lookup, execution, and storage."""
+            """Wrapper for sync cache lookup, execution, and storage.
+
+            Args:
+                *args: Positional arguments forwarded to the wrapped callable.
+                **wrapper_kwargs: Keyword arguments forwarded to the wrapped
+                    callable.
+
+            Returns:
+                Cached or newly computed callable result.
+            """
             return runtime.call(args, wrapper_kwargs)
 
         @functools.wraps(func)
         async def async_wrapper(*args, **wrapper_kwargs):
-            """Wrapper for async cache lookup, execution, and storage."""
+            """Wrapper for async cache lookup, execution, and storage.
+
+            Args:
+                *args: Positional arguments forwarded to the wrapped
+                    coroutine.
+                **wrapper_kwargs: Keyword arguments forwarded to the wrapped
+                    coroutine.
+
+            Returns:
+                Cached or newly computed coroutine result.
+            """
             return await runtime.call_async(args, wrapper_kwargs)
 
         target_wrapper = (

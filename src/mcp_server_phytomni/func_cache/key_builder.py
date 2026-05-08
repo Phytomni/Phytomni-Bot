@@ -82,14 +82,25 @@ class KeyBuilder:
         return selected
 
     def selected_params(self):
-        """Return the parameter names included in generated cache keys."""
+        """Return the parameter names included in generated cache keys.
+
+        Returns:
+            Tuple of parameter names included in generated cache keys.
+        """
         return tuple(self.key_params)
 
     def build_key(self, args, kwargs):
         """Build a cache key from the given arguments.
 
+        Args:
+            args: Positional arguments passed to the wrapped callable.
+            kwargs: Keyword arguments passed to the wrapped callable.
+
         Returns:
             A SHA256 hex digest string representing the cache key.
+
+        Raises:
+            SerializationError: If selected arguments cannot be serialized.
         """
         try:
             bound = self.sig.bind(*args, **kwargs)

@@ -2,7 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Custom exception hierarchy for func_cache module."""
+"""Custom exception hierarchy for func_cache module.
+
+This module exposes `CacheError` and specialized cache configuration,
+locking, serialization, and storage exceptions used by the cache package.
+"""
 
 
 class CacheError(Exception):

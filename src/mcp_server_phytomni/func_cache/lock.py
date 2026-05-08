@@ -40,7 +40,14 @@ class LockManager:
         self.lock_expire = lock_expire
 
     def owner(self, token=None):
-        """Generate a unique owner ID for this process and token."""
+        """Generate a unique owner ID for this process and token.
+
+        Args:
+            token: Optional token to include after the current process ID.
+
+        Returns:
+            Lock owner string in `pid:token` form.
+        """
         pid = os.getpid()
         owner_token = token if token is not None else threading.get_ident()
         return f"{pid}:{owner_token}"

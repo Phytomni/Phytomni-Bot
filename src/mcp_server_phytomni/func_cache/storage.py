@@ -42,7 +42,14 @@ class Storage:
 
     @classmethod
     def get_instance(cls, db_path):
-        """Get or create a Storage singleton for the given database path."""
+        """Get or create a Storage singleton for the given database path.
+
+        Args:
+            db_path: SQLite database path for the cache store.
+
+        Returns:
+            Shared `Storage` instance for the resolved path.
+        """
         db_path = str(Path(db_path).resolve())
         with cls._instances_lock:
             if db_path not in cls._instances:
@@ -118,7 +125,18 @@ class Storage:
     # ────────── cache_entries ────────── #
 
     def get(self, func_id, key_hash):
-        """Retrieve a cached value, returning None if not found or expired."""
+        """Retrieve a cached value, returning None if not found or expired.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_hash: Cache key hash for one invocation.
+
+        Returns:
+            Raw cached bytes, or None when no live entry exists.
+
+        Raises:
+            StorageError: If SQLite read operations fail.
+        """
         try:
             conn = self._get_conn()
             cursor = conn.execute(
@@ -141,7 +159,20 @@ class Storage:
             raise StorageError(f"Failed to read cache: {e}") from e
 
     def set(self, func_id, key_hash, value, ttl=None):
-        """Store a value in the cache with optional TTL in seconds."""
+        """Store a value in the cache with optional TTL in seconds.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_hash: Cache key hash for one invocation.
+            value: Serialized value to store.
+            ttl: Optional time-to-live in seconds.
+
+        Returns:
+            None. The cache entry is inserted or replaced.
+
+        Raises:
+            StorageError: If SQLite write operations fail.
+        """
         try:
             conn = self._get_conn()
             expires_at = time.time() + ttl if ttl is not None else None
@@ -154,7 +185,18 @@ class Storage:
             raise StorageError(f"Failed to write cache: {e}") from e
 
     def delete_entry(self, func_id, key_hash):
-        """Delete a specific cache entry by func_id and key_hash."""
+        """Delete a specific cache entry by func_id and key_hash.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_hash: Cache key hash to delete.
+
+        Returns:
+            None. Matching cache entry is removed when present.
+
+        Raises:
+            StorageError: If SQLite delete operations fail.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
@@ -165,7 +207,17 @@ class Storage:
             raise StorageError(f"Failed to delete cache entry: {e}") from e
 
     def delete_func(self, func_id):
-        """Delete all cache entries for a given function."""
+        """Delete all cache entries for a given function.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+
+        Returns:
+            None. Matching cache entries are removed.
+
+        Raises:
+            StorageError: If SQLite delete operations fail.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
@@ -176,7 +228,17 @@ class Storage:
             raise StorageError(f"Failed to delete function cache: {e}") from e
 
     def count(self, func_id):
-        """Return the number of non-expired cache entries for a function."""
+        """Return the number of non-expired cache entries for a function.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+
+        Returns:
+            Number of live cache entries for the function.
+
+        Raises:
+            StorageError: If SQLite count operations fail.
+        """
         try:
             conn = self._get_conn()
             cursor = conn.execute(
@@ -204,7 +266,17 @@ class Storage:
     # ────────── cache_meta ────────── #
 
     def get_meta(self, func_id):
-        """Retrieve cache metadata for a function, or None if not found."""
+        """Retrieve cache metadata for a function, or None if not found.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+
+        Returns:
+            Tuple of key parameters and compression flag, or None.
+
+        Raises:
+            StorageError: If SQLite metadata reads fail.
+        """
         try:
             conn = self._get_conn()
             cursor = conn.execute(
@@ -219,7 +291,19 @@ class Storage:
             raise StorageError(f"Failed to read metadata: {e}") from e
 
     def set_meta(self, func_id, key_params, compress):
-        """Store or update cache metadata for a function."""
+        """Store or update cache metadata for a function.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_params: Parameter names used in generated keys.
+            compress: Whether values are stored with compression.
+
+        Returns:
+            None. Metadata is inserted or replaced.
+
+        Raises:
+            StorageError: If SQLite metadata writes fail.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
@@ -234,7 +318,20 @@ class Storage:
     # ────────── cache_locks ────────── #
 
     def try_acquire_lock(self, func_id, key_hash, owner, lock_expire):
-        """Attempt to acquire a lock, returning True if successful."""
+        """Attempt to acquire a lock, returning True if successful.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_hash: Cache key hash to lock.
+            owner: Lock owner identifier.
+            lock_expire: Seconds after which stale locks are discarded.
+
+        Returns:
+            True when the caller owns the lock, otherwise False.
+
+        Raises:
+            StorageError: If SQLite lock operations fail.
+        """
         conn = self._get_conn()
         now = time.time()
         try:
@@ -268,7 +365,19 @@ class Storage:
             raise StorageError(f"Failed to acquire lock: {e}") from e
 
     def release_lock(self, func_id, key_hash, owner):
-        """Release a lock held by the given owner."""
+        """Release a lock held by the given owner.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+            key_hash: Cache key hash to unlock.
+            owner: Lock owner identifier.
+
+        Returns:
+            None. The matching lock is deleted when present.
+
+        Raises:
+            StorageError: If SQLite lock release fails.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
@@ -280,7 +389,17 @@ class Storage:
             raise StorageError(f"Failed to release lock: {e}") from e
 
     def cleanup_process_locks(self, pid):
-        """Remove all locks held by processes matching the given PID."""
+        """Remove all locks held by processes matching the given PID.
+
+        Args:
+            pid: Process ID prefix used in lock owner strings.
+
+        Returns:
+            None. Matching process locks are removed.
+
+        Raises:
+            StorageError: If SQLite cleanup operations fail.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
@@ -291,7 +410,17 @@ class Storage:
             raise StorageError(f"Failed to cleanup process locks: {e}") from e
 
     def cleanup_func_locks(self, func_id):
-        """Remove all locks for a given function."""
+        """Remove all locks for a given function.
+
+        Args:
+            func_id: Fully qualified cached function identifier.
+
+        Returns:
+            None. Matching function locks are removed.
+
+        Raises:
+            StorageError: If SQLite cleanup operations fail.
+        """
         try:
             conn = self._get_conn()
             conn.execute(
