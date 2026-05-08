@@ -22,10 +22,10 @@ from .analyst_storage import (
 )
 from .deep_genome_formatting import SPECIES_CODE_MAP
 from .deep_genome_summary import build_sub_summary
-from .obs_storage import normalize_obs_object_key, obsfs_path_for
-from .path_policy import RunIdentity
 from .runtime.langgraph_runner import capture_workflow_boundary
 from .runtime.workflow_mixins import WorkflowMixinBase
+from .storage.obs_storage import normalize_obs_object_key, obsfs_path_for
+from .storage.path_policy import RunIdentity
 from .utils import get_prompt
 
 if TYPE_CHECKING:

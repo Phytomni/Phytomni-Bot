@@ -31,9 +31,9 @@ from .config.overrides import (
 )
 from .config.settings import SensitiveConfig
 from .knowledge_agents import retrieve
-from .path_policy import IdFactory
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .storage.path_policy import IdFactory
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,

@@ -13,7 +13,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
-from ..path_policy import IdFactory
+from ..storage.path_policy import IdFactory
 
 GraphT = TypeVar("GraphT")
 

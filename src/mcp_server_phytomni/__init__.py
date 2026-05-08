@@ -24,7 +24,8 @@ from .knowledge_agents import (
 )
 from .review_agents import deep_research
 from .runtime.task_manager import TaskManager, create_task, update_task
-from .utils import download_list_convert, get_prompt, split_list
+from .storage.downloads import download_list_convert
+from .utils import get_prompt, split_list
 
 __all__ = [
     "create_output_dir",

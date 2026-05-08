@@ -27,8 +27,8 @@ from .config.settings import SensitiveConfig
 from .knowledge_retrieval import multi_retrieve, rerank, retrieve
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .storage.downloads import download_list_convert
 from .utils import (
-    download_list_convert,
     format_retrieved_doc_context,
     format_upload_context,
     get_prompt,

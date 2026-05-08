@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_server_phytomni.obs_storage import (
+from mcp_server_phytomni.storage.obs_storage import (
     ObsPathError,
     bucket_colon_path,
     normalize_obs_object_key,

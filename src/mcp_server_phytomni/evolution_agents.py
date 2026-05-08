@@ -20,7 +20,7 @@ from .auth.iam import get_token
 from .chat_agents import phyto_chat
 from .config.defaults import DeepGenomeConfig
 from .config.settings import SensitiveConfig
-from .path_policy import RunIdentity
+from .storage.path_policy import RunIdentity
 from .utils import get_prompt
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()

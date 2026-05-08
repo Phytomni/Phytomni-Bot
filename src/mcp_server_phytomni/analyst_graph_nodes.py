@@ -26,12 +26,12 @@ from .analyst_storage import (
 from .auth.iam import get_token
 from .chat_agents import phyto_chat
 from .knowledge_agents import multi_retrieve, retrieve
-from .path_policy import RunIdentity, task_tmp_key
 from .runtime.workflow_mixins import WorkflowMixinBase
+from .storage.downloads import download_upload_context
+from .storage.path_policy import RunIdentity, task_tmp_key
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,
-    download_upload_context,
     format_retrieved_doc_context,
     get_prompt,
     load_json_file,

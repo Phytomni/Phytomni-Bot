@@ -18,8 +18,8 @@ from openai import AsyncOpenAI
 
 from .config.defaults import ChatConfig
 from .config.settings import SensitiveConfig
+from .storage.downloads import download_list_convert
 from .utils import (
-    download_list_convert,
     first_message,
     format_upload_context,
     get_prompt,

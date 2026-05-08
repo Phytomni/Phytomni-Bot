@@ -17,7 +17,7 @@ from .analyst_agents import create_output_dir, get_data_list, submit
 from .chat_agents import phyto_chat
 from .config.defaults import EnvironmentConfig
 from .config.settings import SensitiveConfig
-from .path_policy import RunIdentity
+from .storage.path_policy import RunIdentity
 from .utils import get_prompt, load_text_file
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()

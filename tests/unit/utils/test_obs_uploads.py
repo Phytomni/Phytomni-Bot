@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni import utils
+from mcp_server_phytomni.storage import downloads
 
 pytestmark = pytest.mark.unit
 
@@ -43,9 +43,9 @@ def test_convert_single_file_preserves_obsfs_source_when_cleanup_false(
     """Verify conversion can leave obsfs source files in place."""
     source_file = tmp_path / "paper.txt"
     source_file.write_text("paper text", encoding="utf-8")
-    monkeypatch.setattr(utils, "MarkItDown", FakeMarkItDown)
+    monkeypatch.setattr(downloads, "MarkItDown", FakeMarkItDown)
 
-    assert utils.convert_single_file(str(source_file), cleanup=False) == (
+    assert downloads.convert_single_file(str(source_file), cleanup=False) == (
         "paper text"
     )
 
@@ -59,9 +59,9 @@ def test_convert_single_file_removes_sdk_temp_when_cleanup_true(
     """Verify SDK temporary downloads still get removed after conversion."""
     source_file = tmp_path / "paper.txt"
     source_file.write_text("paper text", encoding="utf-8")
-    monkeypatch.setattr(utils, "MarkItDown", FakeMarkItDown)
+    monkeypatch.setattr(downloads, "MarkItDown", FakeMarkItDown)
 
-    assert utils.convert_single_file(str(source_file), cleanup=True) == (
+    assert downloads.convert_single_file(str(source_file), cleanup=True) == (
         "paper text"
     )
 
@@ -74,7 +74,7 @@ async def test_download_obs_file_returns_obsfs_source_when_available(tmp_path):
     obsfs_file.parent.mkdir(parents=True)
     obsfs_file.write_text("paper text", encoding="utf-8")
 
-    result = await utils.download_obs_file(
+    result = await downloads.download_obs_file(
         "/obs/phytomni/uploads/paper.txt",
         server_dir=str(tmp_path / "temp"),
         obsfs_mount_root=str(tmp_path),
@@ -97,10 +97,10 @@ async def test_download_list_convert_passes_obsfs_source_without_cleanup(
         captured.append((file_path, cleanup))
         return "converted paper"
 
-    monkeypatch.setattr(utils, "convert_single_file", fake_convert)
+    monkeypatch.setattr(downloads, "convert_single_file", fake_convert)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        result = await utils.download_list_convert(
+        result = await downloads.download_list_convert(
             ["/obs/phytomni/uploads/paper.txt"],
             server_dir=str(tmp_path / "temp"),
             obsfs_mount_root=str(tmp_path),
@@ -137,21 +137,21 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         obs_client: FakeObsClient,
         object_key: str,
         server_file: str,
-        context: utils.ObsTransferContext,
+        context: downloads.ObsTransferContext,
     ) -> str:
         del obs_client, context
         captured["object_key"] = object_key
         Path(server_file).write_text("downloaded", encoding="utf-8")
         return server_file
 
-    monkeypatch.setattr(utils, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
     monkeypatch.setattr(
-        utils,
+        downloads,
         "_download_obs_file_with_retry",
         fake_download_with_retry,
     )
 
-    result = await utils.download_obs_file(
+    result = await downloads.download_obs_file(
         "agent_data/paper.pdf",
         server_dir=str(tmp_path / "temp"),
         obsfs_mount_root=str(tmp_path / "missing"),
@@ -191,7 +191,7 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
         obs_client: FakeObsClient,
         object_key: str,
         server_file: str,
-        context: utils.ObsTransferContext,
+        context: downloads.ObsTransferContext,
     ) -> str:
         del obs_client, object_key, context
         Path(server_file).write_text("downloaded", encoding="utf-8")
@@ -202,16 +202,16 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
         captured["cleanup"] = cleanup
         return "converted paper"
 
-    monkeypatch.setattr(utils, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
     monkeypatch.setattr(
-        utils,
+        downloads,
         "_download_obs_file_with_retry",
         fake_download_with_retry,
     )
-    monkeypatch.setattr(utils, "convert_single_file", fake_convert)
+    monkeypatch.setattr(downloads, "convert_single_file", fake_convert)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        result = await utils.download_list_convert(
+        result = await downloads.download_list_convert(
             ["agent_data/paper.pdf"],
             server_dir=str(tmp_path / "temp"),
             obsfs_mount_root=str(tmp_path / "missing"),

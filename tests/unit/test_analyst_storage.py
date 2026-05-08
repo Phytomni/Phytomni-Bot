@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni import analyst_storage
-from mcp_server_phytomni.path_policy import IdFactory, RunIdentity
+from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
 

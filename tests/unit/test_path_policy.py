@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from mcp_server_phytomni.path_policy import (
+from mcp_server_phytomni.storage.path_policy import (
     DEFAULT_USER_ID,
     IdFactory,
     PathPolicyError,

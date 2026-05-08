@@ -36,13 +36,13 @@ from .config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from .config.settings import SensitiveConfig
-from .path_policy import RunIdentity
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import (
     ainvoke_graph,
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from .storage.path_policy import RunIdentity
 from .utils import (
     JsonPostRequest,
     JsonPostRetry,

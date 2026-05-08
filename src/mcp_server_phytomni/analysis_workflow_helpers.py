@@ -18,9 +18,9 @@ from .config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from .path_policy import RunIdentity
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, capture_workflow_boundary
+from .storage.path_policy import RunIdentity
 
 
 @dataclass(frozen=True)

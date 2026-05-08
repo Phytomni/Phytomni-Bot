@@ -17,7 +17,7 @@ from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
 from .config.defaults import AnalystConfig
 from .config.settings import SensitiveConfig
-from .obs_storage import (
+from .storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     bucket_colon_path,
     normalize_obs_object_key,
@@ -25,7 +25,7 @@ from .obs_storage import (
     obsfs_bucket_available,
     obsfs_path_for,
 )
-from .path_policy import RunIdentity, task_output_key
+from .storage.path_policy import RunIdentity, task_output_key
 from .utils import file_cache_fingerprint, load_json_file
 
 ANALYST_CONFIG = AnalystConfig()

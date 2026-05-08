@@ -30,8 +30,8 @@ from .config.settings import SensitiveConfig
 from .knowledge_agents import KnowledgeAgent
 from .runtime.agent_registry import agent_fingerprint_values, get_cached_agent
 from .runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from .storage.downloads import download_upload_context
 from .utils import (
-    download_upload_context,
     get_prompt,
     message_content,
     parse_follow_up_questions,
