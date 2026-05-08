@@ -3,7 +3,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Scan tracked, staged, or changed Git content for likely secrets."""
+"""Scan Git content for likely secrets.
+
+This script exposes `main` as the CLI entrypoint and public helpers for
+scanning tracked files, staged files, and revision ranges. `Rule` defines
+regular-expression checks, and `Finding` records redacted scan results.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +71,13 @@ SENSITIVE_SUFFIXES = {
 
 @dataclass(frozen=True)
 class Rule:
-    """A regular expression rule for a sensitive value."""
+    """A regular expression rule for a sensitive value.
+
+    Attributes:
+        name: Stable rule identifier shown in scan output.
+        pattern: Compiled regular expression used to detect a secret.
+        message: Human-readable remediation message for matched values.
+    """
 
     name: str
     pattern: Pattern[str]
@@ -75,7 +86,16 @@ class Rule:
 
 @dataclass(frozen=True)
 class Finding:
-    """A single secret-scan finding."""
+    """A single secret-scan finding.
+
+    Attributes:
+        source: Origin of the finding, such as tracked, staged, or git-range.
+        path: Repository-relative path associated with the finding.
+        line_number: One-based line number, or zero for path-only findings.
+        rule: Rule identifier that produced the finding.
+        message: Human-readable description of the problem.
+        context: Redacted context suitable for terminal output.
+    """
 
     source: str
     path: str
@@ -86,7 +106,12 @@ class Finding:
 
     @property
     def location(self) -> str:
-        """Return the source location for display."""
+        """Return the source location for display.
+
+        Returns:
+            A path-only location for path findings, or `path:line` for
+            content findings.
+        """
         if self.line_number > 0:
             return f"{self.path}:{self.line_number}"
         return self.path
@@ -150,7 +175,14 @@ SECRET_RULES = (
 
 
 def is_placeholder(value: str) -> bool:
-    """Return whether a matched value is an obvious placeholder."""
+    """Return whether a matched value is an obvious placeholder.
+
+    Args:
+        value: Matched candidate secret value.
+
+    Returns:
+        True when the value is empty, low-entropy, or placeholder-like.
+    """
     normalized = value.strip(" '\"\t\r\n").lower()
     if not normalized:
         return True
@@ -160,12 +192,26 @@ def is_placeholder(value: str) -> bool:
 
 
 def should_skip_path(path: str) -> bool:
-    """Return whether a path should be skipped during content scans."""
+    """Return whether a path should be skipped during content scans.
+
+    Args:
+        path: Repository-relative path to evaluate.
+
+    Returns:
+        True when any path component belongs to the scanner skip list.
+    """
     return any(part in SKIP_PARTS for part in Path(path).parts)
 
 
 def sensitive_path_reason(path: str) -> str | None:
-    """Return a reason when a tracked path itself looks sensitive."""
+    """Return a reason when a tracked path itself looks sensitive.
+
+    Args:
+        path: Repository-relative path to evaluate.
+
+    Returns:
+        A display message when the path name is sensitive, otherwise None.
+    """
     file_path = Path(path)
     name = file_path.name.lower()
     if name in ALLOWED_ENV_NAMES:
@@ -180,7 +226,15 @@ def sensitive_path_reason(path: str) -> str | None:
 
 
 def redact_line(line: str, match: re.Match[str]) -> str:
-    """Return a display-safe copy of a matched line."""
+    """Return a display-safe copy of a matched line.
+
+    Args:
+        line: Original line containing a sensitive-looking match.
+        match: Regular expression match produced by a secret rule.
+
+    Returns:
+        A redacted, bounded-length version of the input line.
+    """
     value = match.groupdict().get("value")
     redacted = line.strip()
     if value:
@@ -193,7 +247,17 @@ def redact_line(line: str, match: re.Match[str]) -> str:
 def scan_line(
     source: str, path: str, line_number: int, line: str
 ) -> list[Finding]:
-    """Scan a single line and return findings."""
+    """Scan a single line and return findings.
+
+    Args:
+        source: Scan source label to attach to generated findings.
+        path: Repository-relative path for the scanned line.
+        line_number: One-based line number in the scanned content.
+        line: Text content to scan.
+
+    Returns:
+        Findings produced by matching non-placeholder secret rules.
+    """
     lowered = line.lower()
     if any(marker in lowered for marker in ALLOWLIST_MARKERS):
         return []
@@ -218,7 +282,16 @@ def scan_line(
 
 
 def scan_text(source: str, path: str, text: str) -> list[Finding]:
-    """Scan text content for likely secrets."""
+    """Scan text content for likely secrets.
+
+    Args:
+        source: Scan source label to attach to generated findings.
+        path: Repository-relative path for the scanned text.
+        text: Decoded text content to scan line by line.
+
+    Returns:
+        Path-level and line-level findings detected in the content.
+    """
     findings: list[Finding] = []
     reason = sensitive_path_reason(path)
     if reason:
@@ -239,7 +312,14 @@ def scan_text(source: str, path: str, text: str) -> list[Finding]:
 
 
 def decode_bytes(raw_content: bytes) -> str | None:
-    """Decode file content as text, returning None for binary data."""
+    """Decode file content as text, returning None for binary data.
+
+    Args:
+        raw_content: Raw bytes read from a file or Git object.
+
+    Returns:
+        UTF-8 text when decoding succeeds, otherwise None.
+    """
     if b"\0" in raw_content:
         return None
     try:
@@ -251,7 +331,15 @@ def decode_bytes(raw_content: bytes) -> str | None:
 def run_git(
     args: list[str], *, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
-    """Run a Git command and return the completed process."""
+    """Run a Git command and return the completed process.
+
+    Args:
+        args: Git arguments to append after the `git` executable.
+        check: Whether subprocess should raise when Git exits non-zero.
+
+    Returns:
+        Completed Git subprocess with captured stdout and stderr.
+    """
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -262,13 +350,22 @@ def run_git(
 
 
 def tracked_files() -> list[str]:
-    """Return tracked files in the current Git checkout."""
+    """Return tracked files in the current Git checkout.
+
+    Returns:
+        Repository-relative paths tracked by Git.
+    """
     result = run_git(["ls-files", "-z"])
     return [path for path in result.stdout.split("\0") if path]
 
 
 def staged_files() -> list[str]:
-    """Return added, copied, modified, or renamed staged files."""
+    """Return added, copied, modified, or renamed staged files.
+
+    Returns:
+        Repository-relative staged paths with add, copy, modify, or rename
+        status.
+    """
     result = run_git(
         [
             "diff",
@@ -282,7 +379,15 @@ def staged_files() -> list[str]:
 
 
 def scan_worktree_path(path: str) -> list[Finding]:
-    """Scan a tracked path from the working tree."""
+    """Scan a tracked path from the working tree.
+
+    Args:
+        path: Repository-relative path to scan from the working tree.
+
+    Returns:
+        Findings detected in the path, or an empty list for skipped,
+        missing, oversized, directory, or binary paths.
+    """
     if should_skip_path(path):
         return []
     file_path = Path(path)
@@ -301,7 +406,15 @@ def scan_worktree_path(path: str) -> list[Finding]:
 
 
 def scan_staged_path(path: str) -> list[Finding]:
-    """Scan a staged path from the Git index."""
+    """Scan a staged path from the Git index.
+
+    Args:
+        path: Repository-relative path to read from the Git index.
+
+    Returns:
+        Findings detected in the staged object, or an empty list for skipped,
+        missing, oversized, or binary content.
+    """
     if should_skip_path(path):
         return []
     result = subprocess.run(
@@ -319,7 +432,15 @@ def scan_staged_path(path: str) -> list[Finding]:
 
 
 def scan_paths(paths: list[str], *, staged: bool) -> list[Finding]:
-    """Scan a list of paths from the working tree or Git index."""
+    """Scan a list of paths from the working tree or Git index.
+
+    Args:
+        paths: Repository-relative paths to scan.
+        staged: Whether to read paths from the Git index instead of disk.
+
+    Returns:
+        Combined findings from all scanned paths.
+    """
     findings: list[Finding] = []
     for path in paths:
         if staged:
@@ -330,7 +451,14 @@ def scan_paths(paths: list[str], *, staged: bool) -> list[Finding]:
 
 
 def scan_range_paths(range_spec: str) -> list[Finding]:
-    """Scan path names changed in a Git revision range."""
+    """Scan path names changed in a Git revision range.
+
+    Args:
+        range_spec: Git revision range understood by `git log`.
+
+    Returns:
+        Findings for sensitive path names changed in the range.
+    """
     result = run_git(["log", "--name-only", "--format=", range_spec])
     findings: list[Finding] = []
     seen: set[str] = set()
@@ -349,7 +477,14 @@ def scan_range_paths(range_spec: str) -> list[Finding]:
 
 
 def parse_hunk_start(line: str) -> int | None:
-    """Parse a unified-diff hunk header and return the new-file start line."""
+    """Parse a unified-diff hunk header and return the new-file start line.
+
+    Args:
+        line: Unified-diff hunk header.
+
+    Returns:
+        The new-file start line when present, otherwise None.
+    """
     match = re.search(r"\+(\d+)(?:,\d+)?", line)
     if not match:
         return None
@@ -357,7 +492,14 @@ def parse_hunk_start(line: str) -> int | None:
 
 
 def parse_diff_path(line: str) -> str:
-    """Parse the new path from a diff header."""
+    """Parse the new path from a diff header.
+
+    Args:
+        line: `diff --git` header line.
+
+    Returns:
+        The normalized new-file path, or `<unknown>` for malformed headers.
+    """
     parts = line.split()
     if len(parts) < 4:
         return "<unknown>"
@@ -368,7 +510,14 @@ def parse_diff_path(line: str) -> str:
 
 
 def scan_range_patch(range_spec: str) -> list[Finding]:
-    """Scan added lines in a Git revision range."""
+    """Scan added lines in a Git revision range.
+
+    Args:
+        range_spec: Git revision range understood by `git log`.
+
+    Returns:
+        Findings detected in added patch lines for the requested range.
+    """
     result = run_git(
         [
             "log",
@@ -412,12 +561,26 @@ def scan_range_patch(range_spec: str) -> list[Finding]:
 
 
 def scan_git_range(range_spec: str) -> list[Finding]:
-    """Scan changed paths and added lines in a Git revision range."""
+    """Scan changed paths and added lines in a Git revision range.
+
+    Args:
+        range_spec: Git revision range understood by `git log`.
+
+    Returns:
+        Findings from both changed path names and added patch lines.
+    """
     return scan_range_paths(range_spec) + scan_range_patch(range_spec)
 
 
 def print_findings(findings: list[Finding]) -> None:
-    """Print findings in a compact form."""
+    """Print findings in a compact form.
+
+    Args:
+        findings: Secret-scan findings to print to stderr.
+
+    Returns:
+        None. Findings are written to stderr.
+    """
     print(
         f"Secret scan failed with {len(findings)} finding(s):", file=sys.stderr
     )
@@ -431,7 +594,14 @@ def print_findings(findings: list[Finding]) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """Parse command-line arguments.
+
+    Args:
+        argv: Command-line arguments excluding the executable name.
+
+    Returns:
+        Parsed scanner options.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -453,7 +623,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the secret scanner."""
+    """Run the secret scanner.
+
+    Args:
+        argv: Optional command-line arguments excluding the executable name.
+
+    Returns:
+        Process exit code. Zero means no findings were detected.
+    """
     args = parse_args(argv or sys.argv[1:])
     if args.staged:
         findings = scan_paths(staged_files(), staged=True)

@@ -3,7 +3,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Normalize JSON files: sort keys and format with stable indentation."""
+"""Normalize JSON config files with deterministic formatting.
+
+This script exposes `run_json_normalizer` as the CLI entrypoint. It also uses
+private helpers to collect project config JSON files and rewrite each file
+with sorted keys, two-space indentation, and a trailing newline.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +64,11 @@ def _parse_cli_args() -> argparse.Namespace:
 
 
 def run_json_normalizer() -> None:
-    """Normalize requested JSON files, or all config JSON files by default."""
+    """Normalize requested JSON files, or all config JSON files by default.
+
+    Returns:
+        None. The selected JSON files are rewritten in place.
+    """
     args = _parse_cli_args()
     file_paths: list[Path] = args.paths or _collect_config_json_files()
 

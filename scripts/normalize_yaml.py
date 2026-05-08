@@ -3,7 +3,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Manage and normalize YAML config files with hierarchical path operations."""
+"""Manage YAML config files with hierarchical path operations.
+
+This script exposes `manage_yaml_path` for writing nested prompt paths and
+`sort_yaml_content` for deterministic sorting. Private helpers normalize
+line wrapping, scalar quoting, and dumper behavior for stable YAML output.
+"""
 
 from __future__ import annotations
 
@@ -62,6 +67,9 @@ def manage_yaml_path(file_path: str, yaml_path: str, prompt_text: str) -> None:
         file_path: Path to the YAML file.
         yaml_path: Slash-separated hierarchical path (e.g., "system/ai4ps").
         prompt_text: Content to write at the specified path.
+
+    Returns:
+        None. The YAML file is created or rewritten in place.
     """
     keys = yaml_path.split("/")
     target_key = keys[-1]
@@ -88,6 +96,9 @@ def sort_yaml_content(file_path: str) -> None:
 
     Args:
         file_path: Path to the YAML file.
+
+    Returns:
+        None. Existing YAML mappings are rewritten in place.
     """
     yaml_file = Path(file_path)
     if not yaml_file.exists():
