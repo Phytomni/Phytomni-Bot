@@ -85,7 +85,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Type check with mypy
-        run: mypy --python-version ${{ matrix.python-version }} src scripts
+        run: mypy --python-version ${{ matrix.python-version }} src tests scripts
 
   pyright:
     runs-on: ubuntu-latest
