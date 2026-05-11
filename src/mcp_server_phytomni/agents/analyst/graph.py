@@ -723,7 +723,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         """Build the metadata payload consumed by the compute task."""
         return (
             f"goal_description: '{state.get('goal_description')}'\n"
-            f"meta: '{self._submit_meta(state)}'\n"
+            f"meta: |\n{self._submit_meta(state).replace('\n', '\n  ')}\n"
             f"data_list: {self._processed_data_list(state)}\n"
             f"output_dir: '{output_dir}'\n"
             f"working_dir: '/obs'"
@@ -813,7 +813,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             "$output_dir)."
         )
         return (
-            f"### EXECUTION PLAN\n{plan}\n\n"
+            f"  ### EXECUTION PLAN\n{plan}\n\n"
             f"### TOOL USAGE\n{state.get('tool_usages', '')}"
         )
 
