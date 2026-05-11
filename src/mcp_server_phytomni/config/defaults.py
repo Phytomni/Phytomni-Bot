@@ -239,14 +239,14 @@ class AnalystConfig(KnowledgeConfig):
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
     TASK_NAME: str = "analyst-agents-task"
     RESOURCE: Dict[str, Dict[str, int]] = {
-        "small": {"cpu": 4, "memory": 16},
-        "medium": {"cpu": 8, "memory": 32},
-        "large": {"cpu": 16, "memory": 64},
+        "small": {"cpu": 4, "memory": 8},
+        "medium": {"cpu": 8, "memory": 16},
+        "large": {"cpu": 16, "memory": 48},
     }
     APP_ID: Dict[str, str] = {
-        "small": "fa83143f-5e07-11f0-bbb4-fa163e7f72d1",
-        "medium": "1d1b3dc5-5e08-11f0-bbb4-fa163e7f72d1",
-        "large": "31b31aac-5e08-11f0-bbb4-fa163e7f72d1",
+        "small": "e71c5415-4c67-11f1-bbb4-fa163e7f72d1",
+        "medium": "2f0a0495-4c68-11f1-bbb4-fa163e7f72d1",
+        "large": "624753c3-4c68-11f1-bbb4-fa163e7f72d1",
     }
     EXECUTE_CODE: bool = True
     USER_ID: str = ""
