@@ -129,6 +129,9 @@ class SensitiveConfig(BaseSettings):
     CODER_MODEL: str
     CODER_API_KEY: SecretStr
     BI_TOKEN: SecretStr = SecretStr("")
+    EMBED_URL: str
+    EMBED_MODEL: str
+    EMBED_API_KEY: SecretStr
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
