@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+import textwrap
 from typing import TYPE_CHECKING, Any, Dict
 
 from httpx import (
@@ -64,7 +65,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         Returns:
             A dictionary containing goal_description, data_list, and plan.
         """
-        if state["data_list"] and state["goal_description"]:
+        if state["goal_description"]:
             return {
                 "goal_description": state["goal_description"],
                 "data_list": state["data_list"],
@@ -415,6 +416,8 @@ class AnalystGraphMixin(WorkflowMixinBase):
         the plan and provide feedback. If the plan is approved or max retries
         are reached, it proceeds to tool extraction. Otherwise, it returns
         feedback to revise the plan.
+        If is_preset_plan is True and no method_context is available (skipped
+        retrieval), immediately approve the preset plan.
 
         Args:
             state: The current workflow state containing goal_description,
@@ -423,6 +426,14 @@ class AnalystGraphMixin(WorkflowMixinBase):
         Returns:
             A dictionary containing plan_feedback.
         """
+        # If is_preset_plan is True and method_context is None (skipped retrieval),
+        # immediately approve the preset plan
+        if state.get("is_preset_plan") and state.get("method_context") is None:
+            print("===================Check (Reset Plan)===================")
+            print("Skipping validation for reset plan - immediately approved")
+            print("========================================================")
+            return {"plan_feedback": "APPROVED"}
+
         check_prompt = get_prompt(
             self.analyst_config.PROMPT_FILE,
             "user/meta_step_check",
@@ -618,7 +629,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         """
         run_identity = self._submit_run_identity()
         output_dir = self._submit_output_dir(state, run_identity)
-        obs_meta_path = self._upload_submit_meta(
+        obs_task_path, obs_model_path = self._upload_submit_meta(
             state,
             output_dir,
             run_identity,
@@ -626,7 +637,8 @@ class AnalystGraphMixin(WorkflowMixinBase):
         job_headers = await self._submit_headers()
         job_name, job_data = self._submit_job_data(
             state,
-            obs_meta_path,
+            obs_task_path,
+            obs_model_path
         )
         return await self._post_submit_job(
             job_headers,
@@ -669,37 +681,106 @@ class AnalystGraphMixin(WorkflowMixinBase):
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
-        object_name = "submit.json"
-        return upload_analyst_agents_content(
-            content=json.dumps(self._submit_payload(state, output_dir)),
-            object_name=object_name,
+        task_object_name = "task.yaml"
+        task_path = upload_analyst_agents_content(
+            content=self._submit_payload(state, output_dir),
+            object_name=task_object_name,
             object_key=task_tmp_key(
                 run_identity,
                 "analysis_agents_task",
-                object_name,
+                task_object_name,
             ),
             access_key_id=access_key_id,
             secret_access_key=secret_access_key,
             obs_server=self.analyst_config.OBS_SERVER,
             bucket_name=self.analyst_config.BUCKET_NAME,
         )
+        model_object_name = "model.yaml"
+        model_path = upload_analyst_agents_content(
+            content=self._submit_coder_payload(state),
+            object_name=model_object_name,
+            object_key=task_tmp_key(
+                run_identity,
+                "analysis_agents_config",
+                model_object_name,
+            ),
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.analyst_config.OBS_SERVER,
+            bucket_name=self.analyst_config.BUCKET_NAME,
+        )
+        return (task_path, model_path)
 
     def _submit_payload(
         self: Any,
         state: AnalystAgentsState,
         output_dir: str,
-    ) -> Dict[str, Any]:
+    ) -> str:
         """Build the metadata payload consumed by the compute task."""
-        return {
-            "goal_description": state.get("goal_description"),
-            "data_list": self._processed_data_list(state),
-            "output_dir": output_dir,
-            "meta": self._submit_meta(state),
-            "execute_code": self.analyst_config.EXECUTE_CODE,
-            "model_url": self.sensitive_config.CODER_URL,
-            "model_name": self.sensitive_config.CODER_MODEL,
-            "api_key": self.sensitive_config.CODER_API_KEY.get_secret_value(),
-        }
+        return (
+            f"goal_description: '{state.get('goal_description')}'\n"
+            f"meta: '{self._submit_meta(state)}'\n"
+            f"data_list: {self._processed_data_list(state)}\n"
+            f"output_dir: '{output_dir}'\n"
+            f"working_dir: '/obs'"
+        )
+    
+    def _submit_coder_payload(
+        self: Any, 
+        state: AnalystAgentsState
+    ) -> str:
+        """Build the coder payload by compute task."""
+        model_config = textwrap.dedent(f"""\
+            llm:
+              model_name: {self.sensitive_config.CODER_MODEL}
+              api_base: {self.sensitive_config.CODER_URL}
+              api_key: {self.sensitive_config.CODER_API_KEY.get_secret_value()}
+              max_tokens: 8192
+              url_header_user_agent: ""
+              inference_endpoint: completions
+              chat_api_endpoint: chat/completions
+              server: openai
+              proxy: ""
+              proxy_verify: false
+              header:
+                Content-Type: application/json
+
+            embed:
+              model_id: {self.sensitive_config.EMBED_MODEL}
+              api_token: {self.sensitive_config.EMBED_API_KEY.get_secret_value()}
+              inference_url: {self.sensitive_config.EMBED_URL}
+              batch_size: 16
+              url_header_user_agent: ""
+              proxy: ""
+              proxy_verify: false
+
+            context_variables:
+              running_env: local
+              terminal_interactive: false
+              black_list:
+                - bioconductor-deseq2
+                - r-deseq2
+                - deseq2
+                - r-deseq2
+                - r
+                - r-base
+              conda_home: /opt/miniconda3
+              conda_bioenv: bioenv
+              conda_renv: bioenv
+              do_execute: true
+              debug: false
+              max_round: 300
+              max_times_per_round: 30
+              proxy: ''
+              proxy_verify: false
+
+            mcp:
+              biomcp:
+                type: stdio
+                command: uv
+                args: ["run", "--with", "biomcp-python", "biomcp", "run"]
+        """).strip()
+        return model_config
 
     @staticmethod
     def _processed_data_list(state: AnalystAgentsState) -> Dict[Any, Any]:
@@ -710,12 +791,19 @@ class AnalystGraphMixin(WorkflowMixinBase):
                 processed_data_list["/obs/" + key[6:].lstrip("/")] = value
             else:
                 processed_data_list[key] = value
-        return processed_data_list
+        data_list = []
+        for key, value in processed_data_list.items():
+            data_list.append(f"{key}: {value}")
+        return data_list
 
     @staticmethod
     def _submit_meta(state: AnalystAgentsState) -> str:
         """Return the final submit plan and tool usage metadata."""
-        plan = state.get("plan", "") + (
+        if state.get("preset_plan"):
+            plan = state.get("preset_plan")
+        else:
+            plan = state.get("plan", "")
+        plan = plan + (
             "\nnext step, summarize each of the generated result files "
             "(including images, result files, etc.) into a json file (named "
             "`result_files.json`) and save it, with the key of the file "
@@ -740,7 +828,8 @@ class AnalystGraphMixin(WorkflowMixinBase):
     def _submit_job_data(
         self: Any,
         state: AnalystAgentsState,
-        obs_meta_path: str,
+        obs_task_path: str,
+        obs_model_path: str
     ) -> tuple[str, Dict[str, Any]]:
         """Build analysis platform job name and payload."""
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
@@ -767,9 +856,14 @@ class AnalystGraphMixin(WorkflowMixinBase):
                             "values": ["phytomni:/agent_data/"],
                         },
                         {
-                            "name": "meta-file",
+                            "name": "config-file",
                             "type": "FILE",
-                            "values": [obs_meta_path],
+                            "values": [obs_model_path]
+                        },
+                        {
+                            "name": "task-yaml",
+                            "type": "FILE",
+                            "values": [obs_task_path],
                         },
                     ],
                     "resources": {
