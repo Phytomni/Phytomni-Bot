@@ -146,6 +146,7 @@ class AnalystAgentsState(TypedDict):
     compute_resource: str
     job_name: str
     method_context: Dict[str, str]
+    preset_plan: str
     plan: str
     plan_feedback: Optional[str]
     plan_retries: int
@@ -155,6 +156,7 @@ class AnalystAgentsState(TypedDict):
     task_status: str
     is_polling: bool
     is_auto_select: bool
+    is_preset_plan: bool
 
 
 class AnalystAgent(AnalystGraphMixin):
@@ -288,42 +290,40 @@ class AnalystAgent(AnalystGraphMixin):
     ]:
         """Route after the parse_query node based on configuration.
 
-        This method determines the next node based on auto_select flag and
-        whether a plan was provided in the query.
-
         Args:
             state: The current workflow state.
 
         Returns:
-            "data_select_node" if auto_select is enabled,
-            "tool_extract_node" if a plan was provided,
+            "data_select_node" if is_auto_select is enabled,
+            "tool_extract_node" if is_auto_select is False and preset_plan exists,
             otherwise "method_retrieve_node".
         """
         if state.get("is_auto_select"):
             return "data_select_node"
-        if state.get("plan"):
+        if state.get("is_preset_plan"):
             return "tool_extract_node"
         return "method_retrieve_node"
 
     def route_after_data_select(
         self, state: AnalystAgentsState
-    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
+    ) -> Literal["check_node", "method_retrieve_node", "tool_extract_node"]:
         """Route after the data_select node based on plan availability.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if a plan exists, otherwise
-            "method_retrieve_node".
+            "check_node" if is_preset_plan is True (skip plan_node),
+            "tool_extract_node" if preset_plan exists,
+            otherwise "method_retrieve_node".
         """
-        if state.get("plan"):
+        if state.get("is_preset_plan"):
             return "tool_extract_node"
         return "method_retrieve_node"
 
     def route_after_plan(
         self, state: AnalystAgentsState
-    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
+    ) -> Literal["check_node", "tool_extract_node"]:
         """Route after the plan node based on plan availability.
 
         Args:
@@ -331,11 +331,11 @@ class AnalystAgent(AnalystGraphMixin):
 
         Returns:
             "tool_extract_node" if a plan exists, otherwise
-            "method_retrieve_node".
+            "check_node".
         """
-        if state.get("plan"):
+        if state.get("is_preset_plan"):
             return "tool_extract_node"
-        return "method_retrieve_node"
+        return "check_node"
 
     def route_after_check(
         self, state: AnalystAgentsState
@@ -344,16 +344,17 @@ class AnalystAgent(AnalystGraphMixin):
 
         If the plan was approved or max retries were reached, proceed to
         tool extraction. Otherwise, return to plan_node for revision.
+        If is_preset_plan is True, skip revision loop and go to tool extraction.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if approved, otherwise "plan_node".
+            "tool_extract_node" if approved or is_preset_plan, otherwise "plan_node".
         """
         feedback = state.get("plan_feedback")
 
-        if feedback == "APPROVED":
+        if feedback == "APPROVED" or state.get("is_preset_plan"):
             return "tool_extract_node"
         return "plan_node"
 
@@ -501,7 +502,8 @@ class AnalystAgent(AnalystGraphMixin):
             "output_dir": compatibility_config.OUTPUT_DIR,
             "compute_resource": compatibility_config.COMPUTE_RESOURCE,
             "method_context": None,
-            "plan": kwargs.get("preset_plan"),
+            "preset_plan": kwargs.get("preset_plan"),
+            "plan": None,
             "plan_feedback": None,
             "plan_retries": 0,
             "extracted_tools": [],
@@ -511,6 +513,7 @@ class AnalystAgent(AnalystGraphMixin):
             "task_status": None,
             "is_polling": kwargs.get("is_polling", True),
             "is_auto_select": kwargs.get("is_auto_select", True),
+            "is_preset_plan": kwargs.get("is_preset_plan", False),
         }
 
         async def run_graph() -> dict[str, Any]:
