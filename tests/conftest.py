@@ -40,6 +40,9 @@ _TEST_ENV = {
     "CODER_URL": "https://example.invalid/coder",
     "CODER_MODEL": "pytest-coder-model",
     "CODER_API_KEY": "pytest-coder-api-key",
+    "EMBED_URL": "https://example.invalid/embed",
+    "EMBED_MODEL": "pytest-embed-model",
+    "EMBED_API_KEY": "pytest-embed-api-key",
     "BI_TOKEN": "pytest-bi-token",
 }
 

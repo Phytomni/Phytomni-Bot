@@ -322,9 +322,11 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
         "obs://counts.tsv": "count matrix"
     }
     assert fake_graph.state["obs_file_list"] == ["obs://metadata.tsv"]
-    assert fake_graph.state["plan"] == "Use DESeq2."
+    assert fake_graph.state["preset_plan"] == "Use DESeq2."
+    assert fake_graph.state["plan"] is None
     assert fake_graph.state["is_auto_select"] is False
     assert fake_graph.state["is_polling"] is False
+    assert fake_graph.state["is_preset_plan"] is False
     assert fake_graph.config == _thread_config("analyst-thread")
 
 

@@ -127,6 +127,8 @@ class AnalystAgentsState(TypedDict):
         job_name: The name of the compute job.
         method_context: Context retrieved from literature/SOPs for plan
             generation.
+        preset_plan: Optional caller-supplied analysis plan that bypasses
+            retrieval and validation when ``is_preset_plan`` is True.
         plan: The analysis plan/workflow (may be empty initially).
         plan_feedback: Feedback from the critic node for plan revision.
         plan_retries: Number of plan generation retries.
@@ -136,6 +138,8 @@ class AnalystAgentsState(TypedDict):
         task_status: The current task status.
         is_polling: Whether to poll for task status updates.
         is_auto_select: Whether to automatically select relevant data files.
+        is_preset_plan: Whether to skip retrieval and validation and use
+            ``preset_plan`` directly.
     """
 
     query: str
@@ -294,9 +298,9 @@ class AnalystAgent(AnalystGraphMixin):
             state: The current workflow state.
 
         Returns:
-            "data_select_node" if is_auto_select is enabled,
-            "tool_extract_node" if is_auto_select is False and preset_plan exists,
-            otherwise "method_retrieve_node".
+            "data_select_node" if ``is_auto_select`` is enabled,
+            "tool_extract_node" if ``is_auto_select`` is False and
+            ``is_preset_plan`` is True, otherwise "method_retrieve_node".
         """
         if state.get("is_auto_select"):
             return "data_select_node"
@@ -306,16 +310,15 @@ class AnalystAgent(AnalystGraphMixin):
 
     def route_after_data_select(
         self, state: AnalystAgentsState
-    ) -> Literal["check_node", "method_retrieve_node", "tool_extract_node"]:
+    ) -> Literal["method_retrieve_node", "tool_extract_node"]:
         """Route after the data_select node based on plan availability.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "check_node" if is_preset_plan is True (skip plan_node),
-            "tool_extract_node" if preset_plan exists,
-            otherwise "method_retrieve_node".
+            "tool_extract_node" if ``is_preset_plan`` is True (skip
+            plan_node), otherwise "method_retrieve_node".
         """
         if state.get("is_preset_plan"):
             return "tool_extract_node"
@@ -344,13 +347,15 @@ class AnalystAgent(AnalystGraphMixin):
 
         If the plan was approved or max retries were reached, proceed to
         tool extraction. Otherwise, return to plan_node for revision.
-        If is_preset_plan is True, skip revision loop and go to tool extraction.
+        If ``is_preset_plan`` is True, skip the revision loop and go
+        straight to tool extraction.
 
         Args:
             state: The current workflow state.
 
         Returns:
-            "tool_extract_node" if approved or is_preset_plan, otherwise "plan_node".
+            "tool_extract_node" if approved or ``is_preset_plan`` is True,
+            otherwise "plan_node".
         """
         feedback = state.get("plan_feedback")
 

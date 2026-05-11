@@ -426,8 +426,8 @@ class AnalystGraphMixin(WorkflowMixinBase):
         Returns:
             A dictionary containing plan_feedback.
         """
-        # If is_preset_plan is True and method_context is None (skipped retrieval),
-        # immediately approve the preset plan
+        # If is_preset_plan is True and method_context is None
+        # (skipped retrieval), immediately approve the preset plan.
         if state.get("is_preset_plan") and state.get("method_context") is None:
             print("===================Check (Reset Plan)===================")
             print("Skipping validation for reset plan - immediately approved")
@@ -638,7 +638,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         job_name, job_data = self._submit_job_data(
             state,
             obs_task_path,
-            obs_model_path
+            obs_model_path,
         )
         return await self._post_submit_job(
             job_headers,
@@ -676,8 +676,12 @@ class AnalystGraphMixin(WorkflowMixinBase):
         state: AnalystAgentsState,
         output_dir: str,
         run_identity: RunIdentity,
-    ) -> str:
-        """Upload submit metadata content to OBS storage."""
+    ) -> tuple[str, str]:
+        """Upload submit metadata content to OBS storage.
+
+        Returns:
+            Tuple of OBS paths ``(task_yaml_path, model_yaml_path)``.
+        """
         access_key_id, secret_access_key = (
             self.sensitive_config.obs_credentials()
         )
@@ -697,7 +701,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         )
         model_object_name = "model.yaml"
         model_path = upload_analyst_agents_content(
-            content=self._submit_coder_payload(state),
+            content=self._submit_coder_payload(),
             object_name=model_object_name,
             object_key=task_tmp_key(
                 run_identity,
@@ -724,17 +728,16 @@ class AnalystGraphMixin(WorkflowMixinBase):
             f"output_dir: '{output_dir}'\n"
             f"working_dir: '/obs'"
         )
-    
-    def _submit_coder_payload(
-        self: Any, 
-        state: AnalystAgentsState
-    ) -> str:
-        """Build the coder payload by compute task."""
+
+    def _submit_coder_payload(self: Any) -> str:
+        """Build the coder/embed model YAML payload for the compute task."""
+        coder_key = self.sensitive_config.CODER_API_KEY.get_secret_value()
+        embed_key = self.sensitive_config.EMBED_API_KEY.get_secret_value()
         model_config = textwrap.dedent(f"""\
             llm:
               model_name: {self.sensitive_config.CODER_MODEL}
               api_base: {self.sensitive_config.CODER_URL}
-              api_key: {self.sensitive_config.CODER_API_KEY.get_secret_value()}
+              api_key: {coder_key}
               max_tokens: 8192
               url_header_user_agent: ""
               inference_endpoint: completions
@@ -747,7 +750,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
 
             embed:
               model_id: {self.sensitive_config.EMBED_MODEL}
-              api_token: {self.sensitive_config.EMBED_API_KEY.get_secret_value()}
+              api_token: {embed_key}
               inference_url: {self.sensitive_config.EMBED_URL}
               batch_size: 16
               url_header_user_agent: ""
@@ -783,26 +786,23 @@ class AnalystGraphMixin(WorkflowMixinBase):
         return model_config
 
     @staticmethod
-    def _processed_data_list(state: AnalystAgentsState) -> Dict[Any, Any]:
-        """Normalize OBS URL keys for the analysis platform."""
-        processed_data_list = {}
+    def _processed_data_list(state: AnalystAgentsState) -> list[str]:
+        """Normalize OBS URL keys and return a list of YAML-friendly items."""
+        processed_data_list: Dict[Any, Any] = {}
         for key, value in state.get("data_list", {}).items():
             if isinstance(key, str) and key.startswith("obs://"):
                 processed_data_list["/obs/" + key[6:].lstrip("/")] = value
             else:
                 processed_data_list[key] = value
-        data_list = []
-        for key, value in processed_data_list.items():
-            data_list.append(f"{key}: {value}")
-        return data_list
+        return [
+            f"{key}: {value}" for key, value in processed_data_list.items()
+        ]
 
     @staticmethod
     def _submit_meta(state: AnalystAgentsState) -> str:
         """Return the final submit plan and tool usage metadata."""
-        if state.get("preset_plan"):
-            plan = state.get("preset_plan")
-        else:
-            plan = state.get("plan", "")
+        preset_plan = state.get("preset_plan")
+        plan = preset_plan if preset_plan else state.get("plan", "") or ""
         plan = plan + (
             "\nnext step, summarize each of the generated result files "
             "(including images, result files, etc.) into a json file (named "
@@ -829,7 +829,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         self: Any,
         state: AnalystAgentsState,
         obs_task_path: str,
-        obs_model_path: str
+        obs_model_path: str,
     ) -> tuple[str, Dict[str, Any]]:
         """Build analysis platform job name and payload."""
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
@@ -858,7 +858,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
                         {
                             "name": "config-file",
                             "type": "FILE",
-                            "values": [obs_model_path]
+                            "values": [obs_model_path],
                         },
                         {
                             "name": "task-yaml",

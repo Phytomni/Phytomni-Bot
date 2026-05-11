@@ -12,7 +12,7 @@ Functions: download_upload_context, download_obs_file,
 """
 
 import asyncio
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from traceback import format_exc
@@ -439,7 +439,7 @@ def convert_multi_files(
 async def download_list_convert(
     obs_file_list: List[str],
     server_dir: str,
-    executor: Optional[ProcessPoolExecutor] = None,
+    executor: Optional[Executor] = None,
     **kwargs: Any,
 ) -> List[str]:
     """Download, and convert multiple files from OBS in a parallel pipeline.
@@ -451,8 +451,8 @@ async def download_list_convert(
     Args:
         obs_file_list: A list of object keys for the files in OBS.
         server_dir: The local directory for temporary file storage.
-        executor: An optional existing `ProcessPoolExecutor` to reuse for
-            conversions. If None, a new one is created and managed.
+        executor: An optional existing `Executor` to reuse for conversions.
+            If None, a new `ProcessPoolExecutor` is created and managed.
         **kwargs: Keyword-compatible OBS transfer overrides.
 
     Returns:
@@ -481,7 +481,7 @@ async def download_list_convert(
 async def _download_and_convert(
     obs_file: str,
     context: ObsTransferContext,
-    executor: ProcessPoolExecutor,
+    executor: Executor,
 ) -> str:
     """Download one OBS file and convert it to Markdown."""
     source_file = await _resolve_obs_file(obs_file, context)
