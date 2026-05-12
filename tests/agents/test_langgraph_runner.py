@@ -10,6 +10,7 @@ fingerprint secret omission, graph registry reuse, and source-boundary checks.
 
 from pathlib import Path
 
+import pytest
 from pydantic import SecretStr
 
 from mcp_server_phytomni.runtime.langgraph_runner import (
@@ -20,6 +21,8 @@ from mcp_server_phytomni.runtime.langgraph_runner import (
     ensure_checkpointer,
     ensure_thread_id,
 )
+
+pytestmark = pytest.mark.agent
 
 AGENTS_DIR = (
     Path(__file__).resolve().parents[2] / "src/mcp_server_phytomni/agents"

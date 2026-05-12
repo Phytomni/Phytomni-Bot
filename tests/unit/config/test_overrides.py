@@ -10,6 +10,7 @@ copies, and SecretStr override preservation.
 
 from typing import Optional
 
+import pytest
 from pydantic import BaseModel, SecretStr
 
 from mcp_server_phytomni.config.overrides import (
@@ -17,6 +18,8 @@ from mcp_server_phytomni.config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class DemoConfig(BaseModel):

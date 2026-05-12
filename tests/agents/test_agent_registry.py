@@ -8,6 +8,7 @@ Covers cache reuse, Pydantic fingerprint dumping, and secret-field omission in
 agent registry cache keys.
 """
 
+import pytest
 from pydantic import BaseModel, SecretStr
 
 from mcp_server_phytomni.runtime.agent_registry import (
@@ -15,6 +16,8 @@ from mcp_server_phytomni.runtime.agent_registry import (
     clear_agent_registry,
     get_cached_agent,
 )
+
+pytestmark = pytest.mark.agent
 
 
 class DemoConfig(BaseModel):

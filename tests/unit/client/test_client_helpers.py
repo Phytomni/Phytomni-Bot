@@ -10,10 +10,14 @@ tool payload parsing used by the CLI client.
 
 import sys
 
+import pytest
+
 from mcp_client_phytomni.client import (
     parse_tool_payload,
     server_command_from_target,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def test_server_command_from_module_target() -> None:

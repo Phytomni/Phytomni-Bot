@@ -15,6 +15,10 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 
 def load_secret_scanner() -> ModuleType:
     """Load the scanner script as a module.

@@ -10,7 +10,11 @@ caller-provided field mapping in formatted MCP client results.
 
 import json
 
+import pytest
+
 from mcp_client_phytomni.tool_result_formatters import format_tool_result
+
+pytestmark = pytest.mark.unit
 
 
 def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
