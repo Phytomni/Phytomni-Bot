@@ -78,30 +78,39 @@ async def test_evo_test_analysis_with_all_species_submits_task(
         )
         return f"prompt:{prompt_path}"
 
-    def fake_get_data_list(*args: Any, **kwargs: Any) -> list[str]:
-        """Return a deterministic data list and capture call inputs.
+    def fake_get_data_list(
+        data: Any,
+        analysis_type: str,
+        species_code: str,
+    ) -> list[str]:
+        """Return a deterministic evolution data list.
 
         Args:
-            *args: Positional arguments forwarded by the wrapper.
-            **kwargs: Keyword arguments forwarded by the wrapper.
+            data: Deepgenome-data bundle forwarded by the wrapper.
+            analysis_type: Static analysis discriminator.
+            species_code: Source species code forwarded by the wrapper.
 
         Returns:
             Static OBS data list used by the evolution task.
         """
-        captured["data_list_call"] = {"args": args, "kwargs": kwargs}
+        assert data is not None
+        assert analysis_type == "evolution_analysis"
+        assert species_code == "osa"
         return ["obs://data/evo-1", "obs://data/evo-2"]
 
-    def fake_create_output_dir(*args: Any, **kwargs: Any) -> str:
-        """Return a deterministic output directory path.
+    def fake_create_output_dir(**obs_kwargs: Any) -> str:
+        """Return a deterministic evolution output directory path.
 
         Args:
-            *args: Positional arguments forwarded by the wrapper.
-            **kwargs: Keyword arguments forwarded by the wrapper.
+            **obs_kwargs: OBS credentials, task name, user id, and
+                run-identity forwarded by the wrapper.
 
         Returns:
             Static OBS output directory used by the evolution task.
         """
-        captured["output_dir_call"] = {"args": args, "kwargs": kwargs}
+        assert obs_kwargs["task"] == "evolution_agents_task"
+        assert "user_id" in obs_kwargs
+        assert "run_identity" in obs_kwargs
         return "obs://phytomni/test/evo-out"
 
     async def fake_submit(**kwargs: Any) -> dict[str, Any]:

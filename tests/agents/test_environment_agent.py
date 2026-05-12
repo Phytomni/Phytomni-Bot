@@ -75,7 +75,7 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         prompt_path: str,
         params: dict[str, Any] | None = None,
     ) -> str:
-        """Record prompt lookups and return a stub prompt string.
+        """Return a deterministic stub prompt string for the VCI workflow.
 
         Args:
             prompt_file: Prompt YAML file path.
@@ -85,39 +85,49 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         Returns:
             Deterministic prompt string keyed on ``prompt_path``.
         """
-        captured.setdefault("prompts", []).append(
-            {
-                "prompt_file": prompt_file,
-                "prompt_path": prompt_path,
-                "params": params,
-            }
-        )
+        assert prompt_file
+        assert params is None or isinstance(params, dict)
         return f"prompt:{prompt_path}"
 
-    def fake_get_data_list(*args: Any, **kwargs: Any) -> list[str]:
-        """Return a deterministic data list and capture call inputs.
+    def fake_get_data_list(
+        data: Any,
+        analysis_type: str,
+        task_name: str,
+    ) -> list[str]:
+        """Return a deterministic VCI data list.
 
         Args:
-            *args: Positional arguments forwarded by the wrapper.
-            **kwargs: Keyword arguments forwarded by the wrapper.
+            data: Environment-data bundle forwarded by the wrapper.
+            analysis_type: Static analysis discriminator.
+            task_name: Sub-task name discriminator.
 
         Returns:
             Static OBS data list used by the VCI task.
         """
-        captured["data_list"] = {"args": args, "kwargs": kwargs}
+        assert data is not None
+        assert analysis_type == "environment_analysis"
+        assert task_name == "vci_analysis"
         return ["obs://data/vci-1", "obs://data/vci-2"]
 
-    def fake_create_output_dir(*args: Any, **kwargs: Any) -> str:
-        """Return a deterministic output directory path.
+    def fake_create_output_dir(
+        user_id: str | None,
+        task: str,
+        **obs_kwargs: Any,
+    ) -> str:
+        """Return a deterministic VCI output directory path.
 
         Args:
-            *args: Positional arguments forwarded by the wrapper.
-            **kwargs: Keyword arguments forwarded by the wrapper.
+            user_id: Run-identity user id forwarded by the wrapper.
+            task: Output bucket task discriminator.
+            **obs_kwargs: OBS credentials and run-identity forwarded by
+                the wrapper; presence is asserted but values are unused.
 
         Returns:
             Static OBS output directory used by the VCI task.
         """
-        captured["output_dir_call"] = {"args": args, "kwargs": kwargs}
+        assert user_id is not None
+        assert task == "vci_analysis_task"
+        assert "run_identity" in obs_kwargs
         return "obs://phytomni/test/vci-out"
 
     async def fake_submit(**kwargs: Any) -> dict[str, Any]:
