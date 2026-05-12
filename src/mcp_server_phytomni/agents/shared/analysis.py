@@ -35,6 +35,7 @@ from .analysis_storage import create_output_dir
 
 __all__ = [
     "AnalysisAgentCacheSpec",
+    "AnalysisStateSpec",
     "base_analysis_state",
     "capture_analysis_result",
     "capture_dispatched_analysis",
@@ -48,6 +49,20 @@ __all__ = [
     "run_analysis_graph",
     "submit_analyst_analysis",
 ]
+
+
+@dataclass(frozen=True)
+class AnalysisStateSpec:
+    """State initialization spec for ``run_analysis_graph``.
+
+    Attributes:
+        tasks_key: State key that will hold prepared task payloads.
+        result_inits: Optional mapping of additional state keys to
+            their initial values (e.g. ``{"design_task_result": []}``).
+    """
+
+    tasks_key: str
+    result_inits: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -198,16 +213,21 @@ async def capture_analysis_result(
     state: Mapping[str, Any],
     analysis_type: str,
     submit_call: Callable[[], Awaitable[dict[str, Any]]],
-    result_key: str,
+    result_key: str | None = None,
     result_list_key: str | None = None,
 ) -> dict[str, Any]:
     """Capture one dispatched analysis result as LangGraph state updates.
 
     Args:
         state: Current LangGraph state used to preserve partial progress.
-        analysis_type: Analysis type label used for task id storage.
+        analysis_type: Analysis type label used for task id storage. The
+            ``_analysis`` suffix (when present) is stripped before keying
+            into ``task_ids``, so callers can pass either a strict
+            analysis type or an opaque task name.
         submit_call: Awaitable callback that submits or dispatches the task.
-        result_key: State key for the single result payload.
+        result_key: Optional state key for the single result payload.
+            Pass ``None`` to skip per-task result storage (useful for
+            workflows that only track ``task_ids`` like in-silico research).
         result_list_key: Optional state key for accumulating result payloads.
 
     Returns:
@@ -236,7 +256,7 @@ async def capture_analysis_result(
             task_results = list(state.get(result_list_key, []))
             task_results.append(task_result)
             updates[result_list_key] = task_results
-        else:
+        elif result_key is not None:
             updates[result_key] = task_result
         return updates
 
@@ -296,32 +316,38 @@ async def capture_dispatched_analysis(
 
 def base_analysis_state(
     base_state: Mapping[str, Any],
-    result_key: str,
     tasks_key: str,
     kwargs: Mapping[str, Any],
+    result_inits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the common initial state for Analyst-backed workflows.
 
     Args:
         base_state: Workflow-specific initial state values.
-        result_key: State key that will hold result payloads.
         tasks_key: State key that will hold prepared task payloads.
         kwargs: Public wrapper keyword arguments.
+        result_inits: Optional mapping of additional state keys to their
+            initial values (e.g. ``{"design_task_result": []}`` for
+            list-valued accumulators or ``{"network_task": {}}`` for
+            dict-valued result slots). Pass ``None`` when the workflow
+            does not pre-initialize result storage.
 
     Returns:
         Initial graph state with shared task bookkeeping fields.
     """
-    return {
+    state: dict[str, Any] = {
         **base_state,
         "user_id": kwargs.get("user_id"),
         "batch": kwargs.get("batch", False),
         "output_dir": kwargs.get("output_dir"),
-        result_key: [] if result_key.endswith("_result") else {},
         tasks_key: [],
         "task_ids": {},
         "completed_count": 0,
         "error": None,
     }
+    if result_inits:
+        state.update(result_inits)
+    return state
 
 
 async def invoke_analysis_agent(
@@ -398,27 +424,28 @@ def copy_user_analysis_config(
 async def run_analysis_graph(
     app: Any,
     base_state: Mapping[str, Any],
-    state_keys: tuple[str, str],
     kwargs: Mapping[str, Any],
     result_keys: tuple[str, ...],
+    state_spec: AnalysisStateSpec,
 ) -> dict[str, Any]:
     """Build initial state, invoke the graph, and return selected fields.
 
     Args:
         app: Compiled LangGraph application.
         base_state: Workflow-specific initial state values.
-        state_keys: Tuple of result and task-list state keys.
         kwargs: Public wrapper keyword arguments.
         result_keys: Final-state keys to return to the caller.
+        state_spec: Tasks-key plus optional ``result_inits`` mapping
+            forwarded to ``base_analysis_state``.
 
     Returns:
         Mapping of selected final-state values.
     """
     initial_state = base_analysis_state(
         base_state,
-        state_keys[0],
-        state_keys[1],
+        state_spec.tasks_key,
         kwargs,
+        result_inits=state_spec.result_inits,
     )
     return await invoke_analysis_agent(
         app,

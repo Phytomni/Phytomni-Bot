@@ -25,6 +25,7 @@ from ..analyst.agent import (
 )
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
+    AnalysisStateSpec,
     capture_dispatched_analysis,
     get_configured_analysis_agent,
     route_analysis_tasks,
@@ -292,9 +293,12 @@ class GeneNetworkAgents:
         return await run_analysis_graph(
             self.app,
             {"species": species, "to_id": to_id},
-            ("network_task", "network_tasks"),
             kwargs,
             ("network_task", "error"),
+            AnalysisStateSpec(
+                tasks_key="network_tasks",
+                result_inits={"network_task": {}},
+            ),
         )
 
 

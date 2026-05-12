@@ -34,6 +34,7 @@ from ..analyst.agent import (
 )
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
+    AnalysisStateSpec,
     capture_dispatched_analysis,
     get_configured_analysis_agent,
     route_analysis_tasks,
@@ -311,9 +312,12 @@ class DigitalDesignAgents:
         return await run_analysis_graph(
             self.app,
             {"species": species, "gene_id": gene_id},
-            ("design_task_result", "design_tasks"),
             kwargs,
             ("design_task_result", "error"),
+            AnalysisStateSpec(
+                tasks_key="design_tasks",
+                result_inits={"design_task_result": []},
+            ),
         )
 
 
