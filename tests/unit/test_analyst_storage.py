@@ -152,6 +152,59 @@ def test_delete_analyst_agents_data_prefers_obsfs(tmp_path):
     assert not target_file.exists()
 
 
+def test_obs_download_options_explicit_download_path_wins(tmp_path):
+    """Verify explicit download_path kwarg overrides resolver and config.
+
+    Args:
+        tmp_path: Temporary path supplying the explicit override value.
+    """
+    options = analyst_storage.ObsDownloadOptions.from_kwargs(
+        {
+            "download_path": str(tmp_path / "explicit"),
+            "run_identity": RunIdentity.create(
+                "user-a",
+                "analyst-task",
+                IdFactory(token_factory=lambda _: "abc12345"),
+            ),
+            "obsfs_mount_root": str(tmp_path / "missing"),
+        }
+    )
+
+    assert options.download_path == str(tmp_path / "explicit")
+
+
+def test_obs_download_options_uses_resolver_with_run_identity(tmp_path):
+    """Verify the resolver activates when only run_identity is provided.
+
+    Args:
+        tmp_path: Temporary path used as the local fallback.
+    """
+    run_identity = RunIdentity.create(
+        "user-a",
+        "analyst-task",
+        IdFactory(token_factory=lambda _: "abc12345"),
+    )
+
+    options = analyst_storage.ObsDownloadOptions.from_kwargs(
+        {
+            "run_identity": run_identity,
+            "obsfs_mount_root": str(tmp_path / "missing"),
+            "bucket_name": "phytomni",
+        }
+    )
+
+    assert options.download_path.endswith(f"{run_identity.run_id}/analyst")
+
+
+def test_obs_download_options_falls_back_to_static_default():
+    """Verify the static default is used when no run_identity is supplied."""
+    options = analyst_storage.ObsDownloadOptions.from_kwargs({})
+
+    assert (
+        options.download_path == analyst_storage.ANALYST_CONFIG.DOWNLOAD_PATH
+    )
+
+
 def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
     """Verify result downloads copy matching files from obsfs first.
 

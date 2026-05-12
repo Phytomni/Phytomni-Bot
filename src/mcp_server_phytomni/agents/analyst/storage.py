@@ -29,6 +29,8 @@ from ...storage.obs_storage import (
     obsfs_bucket_available,
     obsfs_path_for,
 )
+from ...storage.path_policy import RunIdentity
+from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..shared.analysis_storage import ObsAccessOptions
 
 ANALYST_CONFIG = AnalystConfig()
@@ -73,10 +75,16 @@ class ObsDownloadOptions:
         target_file_feature = values.get("target_file_feature")
         if target_file_feature is None:
             target_file_feature = ANALYST_CONFIG.TARGET_FILE_FEATURE
+        bucket_name = values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)
+        obsfs_mount_root = values.get(
+            "obsfs_mount_root",
+            DEFAULT_OBSFS_MOUNT_ROOT,
+        )
+        download_path = _resolved_download_path(
+            values, bucket_name, obsfs_mount_root
+        )
         return cls(
-            download_path=values.get(
-                "download_path", ANALYST_CONFIG.DOWNLOAD_PATH
-            ),
+            download_path=download_path,
             access=ObsAccessOptions(
                 access_key_id=values.get(
                     "access_key_id", DEFAULT_ACCESS_KEY_ID
@@ -85,14 +93,9 @@ class ObsDownloadOptions:
                     "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
                 ),
                 obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
-                bucket_name=values.get(
-                    "bucket_name", ANALYST_CONFIG.BUCKET_NAME
-                ),
+                bucket_name=bucket_name,
             ),
-            obsfs_mount_root=values.get(
-                "obsfs_mount_root",
-                DEFAULT_OBSFS_MOUNT_ROOT,
-            ),
+            obsfs_mount_root=obsfs_mount_root,
             target_file_feature=tuple(target_file_feature),
             marker=values.get("marker", ANALYST_CONFIG.DOWNLOAD_MARKER),
             max_keys=values.get("max_keys", ANALYST_CONFIG.DOWNLOAD_MAX_KEYS),
@@ -100,6 +103,35 @@ class ObsDownloadOptions:
                 "if_download_all", ANALYST_CONFIG.IF_DOWNLOAD_ALL
             ),
         )
+
+
+def _resolved_download_path(
+    values: Dict[str, Any],
+    bucket_name: str,
+    obsfs_mount_root: str,
+) -> str:
+    """Return an explicit override, resolver output, or static fallback.
+
+    Precedence: explicit `download_path` kwarg wins, then the scratch
+    resolver activates when values carries a RunIdentity, otherwise
+    falls back to the static AnalystConfig default.
+    """
+    explicit = values.get("download_path")
+    if explicit is not None:
+        return explicit
+    run_identity = values.get("run_identity")
+    if isinstance(run_identity, RunIdentity):
+        return resolve_scratch_dir(
+            "downloads",
+            run_identity,
+            values.get("task", "analyst"),
+            ScratchTarget(
+                bucket_name=bucket_name,
+                local_fallback=Path(ANALYST_CONFIG.DOWNLOAD_PATH),
+                obsfs_mount_root=obsfs_mount_root,
+            ),
+        )
+    return ANALYST_CONFIG.DOWNLOAD_PATH
 
 
 def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
