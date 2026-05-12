@@ -29,6 +29,11 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
   offline `pytest`, `yamllint`, and `jsonlint`.
+- Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
+  and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
+  every MCP tool against real backends through `PhytomniMcpClient`. See
+  the [Demo Data & E2E](#demo-data--e2e) section for the per-tool payloads
+  and the manual run command.
 
 ## Available MCP Tools
 
@@ -235,6 +240,15 @@ uv venv --python=3.12 .venv
 source .venv/bin/activate
 uv pip install -e .
 uv pip install -e ".[dev]"
+```
+
+To regenerate the bundled `demo_data/` fixtures, drive the live e2e
+suite, or run `./scripts/validate_local.sh` (which now verifies
+`demo_data/` idempotency before pytest), also install the `[demo]`
+extra:
+
+```bash
+uv pip install -e ".[dev,demo]"
 ```
 
 Python 3.12 remains the default local example, while Python 3.13 and 3.14
@@ -600,7 +614,9 @@ python scripts/normalize_json.py \
 - `flake8 src tests`
 - `mypy src`
 - `pyright src`
-- `pylint --persistent=no $(git ls-files '*.py')`
+- `pylint --persistent=no $(git ls-files '*.py')` (its job installs
+  `[dev,demo]` so the `demo_data/scripts/generate_demo_data.py`
+  imports of `reportlab` and `openpyxl` resolve)
 - `pytest --cov=mcp_server_phytomni`
 - `yamllint .`
 - `jsonlint "$file" --quiet` for every tracked JSON file
@@ -617,6 +633,10 @@ python scripts/normalize_json.py \
 - Do not cache LLM generations, task submission, polling, uploads, downloads,
   or other side-effecting operations unless a later design explicitly allows
   it.
+- Regenerate `demo_data/` only through
+  [`demo_data/scripts/generate_demo_data.py`](demo_data/scripts/generate_demo_data.py)
+  and keep its output byte-deterministic; the
+  `./scripts/validate_local.sh` idempotency check fails on any drift.
 
 ## Dependencies
 
@@ -646,6 +666,12 @@ Development dependencies include:
 - `pytest-asyncio`
 - `pytest-cov`
 - `yamllint`
+
+Demo / live-E2E dependencies (`[project.optional-dependencies].demo`) cover
+the `demo_data/` regenerator and the e2e suite's bundled imports:
+
+- `reportlab`
+- `openpyxl`
 
 CI also installs Node-based `jsonlint` with npm for tracked JSON validation.
 
