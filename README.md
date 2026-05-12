@@ -6,12 +6,16 @@ literature retrieval, natural-language SQL, bioinformatics workflow
 orchestration, review generation, gene function analysis, in-silico research
 decomposition, gene networks, and digital design.
 
-The package lives under `src/mcp_server_phytomni`. The main MCP entrypoint is
-`src/mcp_server_phytomni/server.py`.
+The server package lives under `src/mcp_server_phytomni`. The main MCP
+entrypoint is `src/mcp_server_phytomni/server.py`. A companion CLI client
+package lives under `src/mcp_client_phytomni` and is shipped from the same
+wheel; after `pip install -e .` it exposes a `phytomni` console script.
 
 ## Current Status
 
-- The project is packaged as `mcp_server_phytomni` with a `src/` layout.
+- The wheel packages two libraries: `mcp_server_phytomni` (the MCP server)
+  and `mcp_client_phytomni` (a stdio CLI client and tool-result formatters
+  for applications that drive the server).
 - The MCP server currently exposes 10 tools.
 - Several domain agents are LangGraph `StateGraph` workflows with compiled
   apps invoked through a shared runner.
@@ -64,16 +68,21 @@ src/mcp_server_phytomni/
     research/                In-silico research decomposition workflow
     design/                  Digital design workflow
     network/                 Gene network workflow
-    environment/             Environment workflow
-    evolution/               Evolution workflow
-    shared/                  Cross-agent analysis, storage, and option helpers
+    environment/             Environment workflow (not MCP-bridged)
+    evolution/               Evolution workflow (not MCP-bridged)
+    shared/
+      analysis.py            Cross-agent Analyst-backed analysis helpers
+      analysis_storage.py    Cross-agent storage and OBS path helpers
+      options.py             Shared chat/submit kwargs builders
+      parallel_dispatch.py   Shared StateGraph builder for parallel agents
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
     task_manager.py          Task lifecycle helper
+    workflow_mixins.py       Reusable workflow mixin helpers for nodes
   common/
     http.py                  JSON POST retry helpers
-    prompts.py               Prompt template loading
+    prompts.py               Prompt template and JSON file loading
     responses.py             LLM response parsing helpers
     docs.py                  Retrieved document formatting helpers
     lists.py                 Small list helpers
@@ -84,13 +93,20 @@ src/mcp_server_phytomni/
     path_policy.py           Runtime path and ID policy
     downloads.py             OBS/obsfs download and conversion helpers
   config/
-    defaults.py              Non-secret defaults and agent config classes
+    defaults.py              Non-secret defaults, agent config classes,
+                             and Pydantic schemas for static datasets
     settings.py              Environment and secret loading
     overrides.py             Wrapper argument to config override helpers
+    data_loaders.py          Validated loaders for the static datasets
     .prompts.yaml            Prompt templates
     species_data_list.json   Species metadata
     region_map.json          Region metadata
   func_cache/                SQLite-backed function cache package
+src/mcp_client_phytomni/
+  client.py                  PhytomniMcpClient, PhytomniToolRouter, and
+                             response models for stdio-driven applications
+  main.py                    `phytomni` CLI entry point
+  tool_result_formatters.py  Citation, doc dedup, and follow-up formatters
 ```
 
 ### MCP Boundary
@@ -161,6 +177,14 @@ without changing public wrapper signatures.
 For tests, `PHYTOMNI_TESTING=1` disables real `.env` file loading and lets
 the test suite inject dummy secrets. Do not use that mode for real service
 runs.
+
+The three bundled static datasets (`species_data_list.json`,
+`region_map.json`, `.prompts.yaml`) are validated by Pydantic schemas in
+`config/defaults.py` (`SpeciesDataIndex`, `RegionMap`, `PromptTemplates`)
+and consumed through `config/data_loaders.py`. If you edit the JSON or
+YAML directly, the next run of the offline test suite will fail with a
+`pydantic.ValidationError` whenever the new shape diverges from the
+schema, so prefer adjusting the schema and data together.
 
 ### Caching
 
@@ -295,6 +319,20 @@ PYTHONPATH=src python -m mcp_server_phytomni.server
 ```
 
 The server uses MCP stdio transport.
+
+### `phytomni` CLI
+
+After `pip install -e .`, the `phytomni` console script is available for
+quick stdio-driven inspection of any MCP server that points at this
+package (or another one through `--server`):
+
+```bash
+phytomni list-tools
+phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
+```
+
+The CLI lives in `src/mcp_client_phytomni/main.py` and delegates to
+`PhytomniMcpClient` and the tool-result formatters in the same package.
 
 ## MCP Client Example
 
