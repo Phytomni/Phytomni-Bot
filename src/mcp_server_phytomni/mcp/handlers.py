@@ -40,7 +40,7 @@ from ..storage.path_policy import RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 
 
-def _scratch_server_dir(config: Any, scope: str) -> str:
+def scratch_server_dir(config: Any, scope: str) -> str:
     """Return an obsfs-or-local scratch dir for handler ``server_dir`` use.
 
     Builds a fresh RunIdentity scoped to the handler call, then routes
@@ -90,7 +90,7 @@ async def handle_chat_agent(args: Any) -> Any:
         temperature=chat_config.TEMPERATURE,
         top_p=chat_config.TOP_P,
         user=chat_config.USER,
-        server_dir=_scratch_server_dir(chat_config, "chat"),
+        server_dir=scratch_server_dir(chat_config, "chat"),
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
         obs_server=chat_config.OBS_SERVER,
@@ -147,7 +147,7 @@ async def handle_knowledge_agent(args: Any) -> Any:
         top_p=knowledge_config.TOP_P,
         user=knowledge_config.USER,
         obs_file_list=args.obs_file_list,
-        server_dir=_scratch_server_dir(knowledge_config, "knowledge"),
+        server_dir=scratch_server_dir(knowledge_config, "knowledge"),
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
         obs_server=knowledge_config.OBS_SERVER,
@@ -258,7 +258,7 @@ async def handle_analyst_agent(args: Any) -> Any:
         top_p=analyst_config.TOP_P,
         user=analyst_config.USER,
         obs_file_list=args.obs_file_list,
-        server_dir=_scratch_server_dir(analyst_config, "analyst"),
+        server_dir=scratch_server_dir(analyst_config, "analyst"),
         execute_code=analyst_config.EXECUTE_CODE,
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
@@ -324,7 +324,7 @@ async def handle_review_agent(args: Any) -> Any:
         score_threshold=review_config.SCORE_THRESHOLD,
         top_n=review_config.TOP_N,
         obs_file_list=args.obs_file_list,
-        server_dir=_scratch_server_dir(review_config, "review"),
+        server_dir=scratch_server_dir(review_config, "review"),
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
         obs_server=review_config.OBS_SERVER,
@@ -503,7 +503,7 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
         top_p=in_silico_config.TOP_P,
         user=in_silico_config.USER,
         obs_file_list=args.obs_file_list,
-        server_dir=_scratch_server_dir(in_silico_config, "research"),
+        server_dir=scratch_server_dir(in_silico_config, "research"),
         execute_code=in_silico_config.EXECUTE_CODE,
         model_url=sensitive_config.CODER_URL,
         model_name=sensitive_config.CODER_MODEL,
