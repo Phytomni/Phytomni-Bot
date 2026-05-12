@@ -20,6 +20,7 @@ import httpx
 import pytest
 
 TEST_ROOT = Path(__file__).resolve().parent
+DEMO_DATA_DIR = (TEST_ROOT.parent / "demo_data").resolve()
 TEST_LAYER_MARKERS = {
     "unit": "unit",
     "server": "server",
@@ -185,3 +186,13 @@ def block_external_http(
     )
 
     yield
+
+
+@pytest.fixture(scope="session")
+def demo_data_dir() -> Path:
+    """Return the absolute path to the committed demo_data/ directory.
+
+    Returns:
+        Absolute path to the repository's demo_data root.
+    """
+    return DEMO_DATA_DIR
