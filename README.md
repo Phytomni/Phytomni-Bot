@@ -134,7 +134,9 @@ domain packages:
 
 - `rewrite_nl2sql`
 - `multi_retrieve_generate`
-- `retrieve_generate`
+- `retrieve_generate` (single-repo convenience helper; delegates to
+  `multi_retrieve_generate` with a one-key `repo_id_dict`. Public for
+  direct importers; not registered as an MCP tool.)
 - `deep_research`
 - `brief_gene_function`
 - `gene_function`
