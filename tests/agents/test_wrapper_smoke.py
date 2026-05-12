@@ -77,6 +77,14 @@ class _FakeAgent:
         self.captured["arun"] = {"args": args, "kwargs": kwargs}
         return {"ok": True}
 
+    def init_calls(self) -> list[dict[str, Any]]:
+        """Return the recorded constructor invocations.
+
+        Returns:
+            List of init kwargs dictionaries captured so far.
+        """
+        return self.captured.get("init", [])
+
 
 def _bind_fake_agent(
     module: Any,
