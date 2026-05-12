@@ -1,0 +1,27 @@
+# Local pytest configuration for the live business E2E suite.
+#
+# This file shadows the repository root pyproject.toml's
+# [tool.pytest.ini_options] block when running `pytest e2e/`, so the
+# e2e suite is fully isolated from the default offline test gate. The
+# block intentionally omits `not integration and not network` filters
+# because every test here is a live integration call by design.
+#
+# Default `uv run pytest` invoked from the repo root keeps using the
+# root config (its `testpaths = ["tests"]` makes it ignore e2e/), so
+# this directory is only ever exercised when the user explicitly
+# invokes `pytest e2e/` after configuring their .env.
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["."]
+python_files = "test_*_e2e.py"
+asyncio_mode = "auto"
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "-ra",
+    "-v",
+]
+markers = [
+    "live: live e2e test against real backends.",
+]
