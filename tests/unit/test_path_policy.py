@@ -21,6 +21,7 @@ from mcp_server_phytomni.storage.path_policy import (
     RunIdentity,
     resolve_user_id,
     safe_path_segment,
+    task_downloads_key,
     task_output_key,
     task_tmp_key,
 )
@@ -62,6 +63,23 @@ def test_task_keys_are_derived_from_one_run_identity():
         "agent_data/user_data/researcher/runs/20260507/"
         "20260507T010203Z-workflow-researcher-abcdef01/"
         "rna-seq/tmp/submit.json"
+    )
+
+
+def test_task_downloads_key_uses_shared_run_root_and_safe_segment():
+    """Verify task_downloads_key shares the run root and slugs unsafe names."""
+    factory = IdFactory(now=_fixed_time, token_factory=lambda _: "abcdef01")
+    identity = RunIdentity.create("researcher", "workflow", factory)
+
+    assert task_downloads_key(identity, "rna seq") == (
+        "agent_data/user_data/researcher/runs/20260507/"
+        "20260507T010203Z-workflow-researcher-abcdef01/"
+        "rna-seq/downloads/"
+    )
+    assert task_downloads_key(identity, "ChIP-Seq Run 01") == (
+        "agent_data/user_data/researcher/runs/20260507/"
+        "20260507T010203Z-workflow-researcher-abcdef01/"
+        "ChIP-Seq-Run-01/downloads/"
     )
 
 

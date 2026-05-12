@@ -6,7 +6,7 @@
 
 Classes: PathPolicyError, IdFactory, RunIdentity.
 Functions: resolve_user_id, safe_path_segment, run_root_key, task_root_key,
-    task_output_key, task_tmp_key.
+    task_output_key, task_tmp_key, task_downloads_key.
 """
 
 from __future__ import annotations
@@ -299,6 +299,19 @@ def task_tmp_key(
     if object_name is None:
         return tmp_key
     return f"{tmp_key}{safe_path_segment(object_name, 'object')}"
+
+
+def task_downloads_key(identity: RunIdentity, task: str) -> str:
+    """Return the OBS object-key prefix for per-run downloaded artifacts.
+
+    Args:
+        identity: RunIdentity instance with user_id, run_id, date_stamp.
+        task: Task identifier string.
+
+    Returns:
+        str: OBS object-key prefix for task download directory.
+    """
+    return f"{task_root_key(identity, task)}downloads/"
 
 
 def _contains_path_separator(value: str) -> bool:
