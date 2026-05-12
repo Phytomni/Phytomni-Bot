@@ -234,3 +234,9 @@ package-lock.json
 # Results
 .out
 .temp
+
+# E2E & demo artifacts
+e2e/.pytest_cache/
+e2e/.coverage*
+e2e/output/
+demo_data/output/

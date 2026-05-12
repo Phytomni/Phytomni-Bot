@@ -60,6 +60,10 @@ dev = [
     "types-requests>=2.33.0.20260503",
     "yamllint>=1.38.0",
 ]
+demo = [
+    "openpyxl>=3.1",
+    "reportlab>=4.0",
+]
 
 [dependency-groups]
 dev = [
