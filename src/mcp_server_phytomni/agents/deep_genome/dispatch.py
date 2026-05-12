@@ -25,6 +25,7 @@ from ...runtime.langgraph_runner import capture_workflow_boundary
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
+from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..analyst.storage import download_obs_out
 from ..shared.analysis_storage import (
     ensure_run_output_dir,
@@ -667,7 +668,9 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         print(f"  -> {analysis_type} task completed (task_id: {task_id})")
 
         print(f"  -> Preparing {analysis_type} results...")
-        results_dir = self._download_analysis_result(context, output_path)
+        results_dir = self._download_analysis_result(
+            context, output_path, run_identity
+        )
         return {
             "task_id": task_id,
             "output_path": output_path,
@@ -752,6 +755,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         self: Any,
         context: AnalysisDispatchContext,
         output_path: str,
+        run_identity: RunIdentity,
     ) -> str:
         """Return a readable result directory, downloading only if needed."""
         obsfs_result_dir = self._obsfs_analysis_result_dir(output_path)
@@ -761,9 +765,16 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             output_path,
             self.deep_genome_config.BUCKET_NAME,
         )
-        local_results_dir = (
-            Path(self.deep_genome_config.DEEPGENOME_OUT) / context.gene_id
+        scratch_root = resolve_scratch_dir(
+            "downloads",
+            run_identity,
+            context.analysis_type,
+            ScratchTarget(
+                bucket_name=self.deep_genome_config.BUCKET_NAME,
+                local_fallback=Path(self.deep_genome_config.DEEPGENOME_OUT),
+            ),
         )
+        local_results_dir = Path(scratch_root) / context.gene_id
         target_file_feature = ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
             context.analysis_type,
             DEFAULT_TARGET_FILE_FEATURE,
@@ -776,7 +787,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 download_obs_out(
                     task_dir=context.gene_id,
                     obs_output_path=obs_output_path,
-                    download_path=self.deep_genome_config.DEEPGENOME_OUT,
+                    download_path=scratch_root,
                     access_key_id=access_key_id,
                     secret_access_key=secret_access_key,
                     obs_server=self.deep_genome_config.OBS_SERVER,

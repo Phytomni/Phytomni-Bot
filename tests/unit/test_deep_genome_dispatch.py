@@ -10,6 +10,7 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -22,8 +23,21 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
     DeepGenomeDispatchMixin,
 )
+from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
+
+
+def _fixed_run_identity() -> RunIdentity:
+    """Return a deterministic RunIdentity for local fallback paths."""
+    factory = IdFactory(
+        now=lambda: datetime(2026, 5, 7, 1, 2, 3, tzinfo=timezone.utc),
+        token_factory=lambda _: "abcdef01",
+    )
+    return RunIdentity.create("alice", "deep-genome-test", factory)
+
+
+_FIXED_RUN_ID = "20260507T010203Z-deep-genome-test-alice-abcdef01"
 
 
 class FakeSensitiveConfig:
@@ -111,6 +125,7 @@ def test_download_analysis_result_uses_readable_obsfs_dir(
     assert download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
+        _fixed_run_identity(),
     ) == str(result_dir)
 
 
@@ -156,11 +171,15 @@ def test_download_analysis_result_falls_back_to_sdk_download(
     result = download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
+        _fixed_run_identity(),
     )
 
-    assert result == str(tmp_path / "deep-out" / "GeneA")
+    scratch_root = (
+        tmp_path / "deep-out" / _FIXED_RUN_ID / "gene_expression_tissues"
+    )
+    assert result == str(scratch_root / "GeneA")
     assert captured["kwargs"]["obs_output_path"] == "results/GeneA"
-    assert captured["kwargs"]["download_path"] == str(tmp_path / "deep-out")
+    assert captured["kwargs"]["download_path"] == str(scratch_root)
     assert captured["kwargs"]["bucket_name"] == "phytomni"
     assert captured["kwargs"]["target_file_feature"] == [
         ".png",
