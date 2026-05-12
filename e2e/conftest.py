@@ -24,7 +24,7 @@ Provides three pillars used by every test under ``e2e/``:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from typing import Any, Dict
 
@@ -94,28 +94,31 @@ async def mcp_client() -> AsyncIterator[PhytomniMcpClient]:
         yield client
 
 
+@pytest.fixture
 def load_payload(
-    name: str,
-    *,
     demo_data_dir: Path,
-    published: Mapping[str, str],
-) -> Dict[str, Any]:
-    """Load a committed payload and rewrite its placeholder OBS paths.
+    published_demo_data: Mapping[str, str],
+) -> Callable[[str], Dict[str, Any]]:
+    """Return a callable that loads and rewrites a committed payload.
 
     Args:
-        name: Payload filename inside ``demo_data/payloads/``
-            (e.g. ``"chat_agent.json"``).
         demo_data_dir: Resolved ``demo_data/`` directory.
-        published: Mapping from local relative path to the per-session
-            OBS URL produced by ``published_demo_data``.
+        published_demo_data: Per-session mapping of local relative
+            paths to their published OBS URLs.
 
     Returns:
-        Dict-shaped payload with every ``/obs/phytomni/demo/...``
-        placeholder replaced by the corresponding URL from ``published``.
+        Callable accepting a payload filename (e.g. ``"chat_agent.json"``)
+        and returning the parsed dict with every
+        ``/obs/phytomni/demo/...`` placeholder rewritten to the
+        corresponding URL in ``published_demo_data``.
     """
-    raw = (demo_data_dir / "payloads" / name).read_text(encoding="utf-8")
-    payload = json.loads(raw)
-    return _rewrite_obs_placeholders(payload, published)
+
+    def _load(name: str) -> Dict[str, Any]:
+        raw = (demo_data_dir / "payloads" / name).read_text(encoding="utf-8")
+        payload = json.loads(raw)
+        return _rewrite_obs_placeholders(payload, published_demo_data)
+
+    return _load
 
 
 def _rewrite_obs_placeholders(
