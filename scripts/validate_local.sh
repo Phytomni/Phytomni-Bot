@@ -42,4 +42,12 @@ git ls-files '*.json' | while IFS= read -r file; do
     jsonlint_cmd "$file"
 done
 
+printf '\n==> demo_data idempotency check\n'
+uv run python demo_data/scripts/generate_demo_data.py
+if ! git diff --quiet -- demo_data/; then
+    printf 'demo_data/ drifted after running the generator:\n' >&2
+    git --no-pager diff --stat -- demo_data/ >&2
+    exit 1
+fi
+
 run uv run pytest
