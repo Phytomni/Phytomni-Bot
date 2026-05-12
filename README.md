@@ -92,6 +92,7 @@ src/mcp_server_phytomni/
     obs_storage.py           OBS object naming and upload helpers
     path_policy.py           Runtime path and ID policy
     downloads.py             OBS/obsfs download and conversion helpers
+    scratch.py               Obsfs-first per-run scratch directory resolver
   config/
     defaults.py              Non-secret defaults, agent config classes,
                              and Pydantic schemas for static datasets
@@ -199,7 +200,10 @@ schema, so prefer adjusting the schema and data together.
 - `cache_info()` and `cache_clear()` helpers.
 
 The default cache database path is `PHYTOMNI_CACHE_DB` when set, otherwise
-`.cache/phytomni/func_cache.sqlite`. The first low-risk integrations cache
+`.cache/phytomni/func_cache.sqlite`. This path stays on local disk regardless
+of obsfs availability — SQLite over a network filesystem can deadlock under
+WAL locking, so the func_cache database is intentionally excluded from the
+scratch resolver's obsfs routing. The first low-risk integrations cache
 template file reads, static JSON/text metadata reads, `get_data_list`, and
 `network_to_string`, all with explicit TTLs and file fingerprints where local
 files are involved. Rendered prompts are not persisted because parameters may
@@ -293,6 +297,17 @@ mounted source path, generated Analyst metadata is written directly under
 `/obs/phytomni/agent_data/tmp_data/`, and DeepGenome reads completed Analyst
 result directories in place instead of downloading them to a local staging
 directory.
+
+Per-run scratch directories — handler-level temporary file roots
+(`server_dir`), Analyst download caches, DeepGenome's downloaded-result and
+synthesized-report directories — are resolved through `storage/scratch.py`.
+With obsfs available they land under
+`/obs/phytomni/agent_data/user_data/<user>/runs/<date>/<run>/<scope>/{downloads,tmp}/`;
+without it they fall back to run-scoped subdirectories of `TEMP_DIR`,
+`DOWNLOAD_PATH`, or `DEEPGENOME_OUT` so the repo root no longer accumulates
+flat `.out` and `.temp` directories. Use `storage.scratch.resolve_scratch_dir`
+for new agent-level call sites and `mcp.handlers.scratch_server_dir` for new
+handler wrappers.
 
 For root or sudo-enabled runtime checks:
 
