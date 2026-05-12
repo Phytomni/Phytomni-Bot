@@ -120,23 +120,25 @@ async def test_research_state_reduction_dispatches_single_goal(
     monkeypatch.setattr(agent, "_extract_goals", fake_extract)
     monkeypatch.setattr(agent, "_submit_research_task", fake_submit)
 
-    initial_state = {
-        "paper_text": "Study PHYB regulation in rice under drought.",
-        "data_list": {"rice": "obs://data/rice.fa"},
-        "user_id": "test-user",
-        "obs_file_list": [],
-        "output_dir": "/tmp/research-out",
-        "goals": [],
-        "research_tasks": [],
-        "task_ids": {},
-        "completed_count": 0,
+    seed_state: dict[str, Any] = {
         "error": None,
+        "completed_count": 0,
+        "task_ids": {},
+        "research_tasks": [],
+        "goals": [],
+        "output_dir": "/tmp/research-out",
+        "obs_file_list": [],
+        "user_id": "test-user",
+        "data_list": {
+            "/obs/phytomni/data/rice.fa": (
+                "Rice protein sequences for PHYB analysis."
+            ),
+        },
+        "paper_text": "Study PHYB regulation in rice under drought.",
     }
+    config = {"configurable": {"thread_id": "research-reduction-test"}}
 
-    final_state = await agent.app.ainvoke(
-        initial_state,
-        config={"configurable": {"thread_id": "research-reduction-test"}},
-    )
+    final_state = await agent.app.ainvoke(seed_state, config=config)
 
     # extract_goals_node populated state.goals; prepare_tasks emitted
     # exactly one research task; the worker dispatched once.

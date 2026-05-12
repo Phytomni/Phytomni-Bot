@@ -90,7 +90,7 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
         Returns:
             Deterministic task payload echoing ``analysis_type``.
         """
-        assert species == "Arabidopsis_thaliana"
+        assert species == "arabidopsis thaliana"
         assert gene_id == "AT1G01010"
         assert output_dir == "/tmp/design-out"
         dispatched.append(analysis_type)
@@ -103,7 +103,7 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
 
     initial_state = {
-        "species": "Arabidopsis_thaliana",
+        "species": "arabidopsis thaliana",
         "gene_id": "AT1G01010",
         "user_id": "test-user",
         "batch": False,

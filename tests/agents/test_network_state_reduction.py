@@ -88,8 +88,8 @@ async def test_network_state_reduction_dispatches_single_task(
         Returns:
             Deterministic task payload echoing ``analysis_type``.
         """
-        assert species == "rice"
-        assert to_id == "Os01g01010"
+        assert species == "oryza sativa"
+        assert to_id == "TO:0000207"
         assert output_dir == "/tmp/network-out"
         dispatched.append(analysis_type)
         return {
@@ -100,20 +100,20 @@ async def test_network_state_reduction_dispatches_single_task(
 
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
 
-    initial_state = {
-        "species": "rice",
-        "to_id": "Os01g01010",
-        "user_id": "test-user",
-        "batch": False,
-        "output_dir": "/tmp/network-out",
-        "network_task": {},
-        "network_tasks": [],
-        "task_ids": {},
-        "completed_count": 0,
-        "error": None,
-    }
+    initial_state: dict[str, Any] = dict.fromkeys(["error"], None)
+    initial_state.update(
+        species="oryza sativa",
+        to_id="TO:0000207",
+        user_id="test-user",
+        batch=False,
+        output_dir="/tmp/network-out",
+        network_task={},
+        network_tasks=[],
+        task_ids={},
+        completed_count=0,
+    )
 
-    final_state = await agent.app.ainvoke(
+    merged = await agent.app.ainvoke(
         initial_state,
         config={"configurable": {"thread_id": "network-reduction-test"}},
     )
@@ -122,15 +122,15 @@ async def test_network_state_reduction_dispatches_single_task(
     # so a single Send fans out to the worker and writes the slots once.
     assert dispatched == ["gene_network_analysis"]
 
-    network_task = final_state["network_task"]
+    network_task = merged["network_task"]
     assert network_task["task_id"] == "task-gene_network_analysis"
     assert network_task["analysis_type"] == "gene_network_analysis"
 
     # task_ids strips the _analysis suffix from the dispatched analysis
     # type so the network key is stored without the suffix.
-    assert final_state["task_ids"] == {
+    assert merged["task_ids"] == {
         "gene_network": "task-gene_network_analysis",
     }
 
-    assert final_state["completed_count"] == 1
-    assert final_state.get("error") is None
+    assert merged["completed_count"] == 1
+    assert merged.get("error") is None
