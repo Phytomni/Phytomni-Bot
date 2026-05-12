@@ -13,7 +13,6 @@ them through AnalystAgent, and returns submitted task metadata.
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
 
 from ...common.prompts import get_prompt
 from ...config.defaults import GeneNetworkConfig
@@ -33,6 +32,10 @@ from ..shared.analysis import (
     submit_analyst_analysis,
 )
 from ..shared.analysis_storage import get_data_list
+from ..shared.parallel_dispatch import (
+    ParallelDispatchSpec,
+    build_parallel_dispatch_graph,
+)
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -133,19 +136,16 @@ class GeneNetworkAgents:
 
     def _build_graph(self):
         """Build the LangGraph workflow for gene network analysis tasks."""
-        workflow = StateGraph(GeneNetworkState)
-
-        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
-        workflow.add_node("network_node", self.run_network_node)
-
-        workflow.add_edge(START, "prepare_tasks_node")
-
-        workflow.add_conditional_edges(
-            "prepare_tasks_node", self.route_network_tasks, ["network_node"]
+        return build_parallel_dispatch_graph(
+            ParallelDispatchSpec(
+                state_class=GeneNetworkState,
+                prepare_node=self.prepare_tasks,
+                work_node=self.run_network_node,
+                route_fn=self.route_network_tasks,
+                work_node_name="network_node",
+            ),
+            checkpointer=self.checkpointer,
         )
-        workflow.add_edge("network_node", END)
-
-        return workflow.compile(checkpointer=self.checkpointer)
 
     def route_network_tasks(self, state: GeneNetworkState):
         """Dispatch network analysis tasks in parallel using Send API.

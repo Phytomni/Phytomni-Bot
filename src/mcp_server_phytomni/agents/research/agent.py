@@ -14,7 +14,6 @@ from json import loads
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from ...common.prompts import get_prompt
@@ -47,6 +46,10 @@ from ..shared.analysis import (
     run_analysis_graph,
 )
 from ..shared.analysis_storage import create_output_dir
+from ..shared.parallel_dispatch import (
+    ParallelDispatchSpec,
+    build_parallel_dispatch_graph,
+)
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -154,22 +157,18 @@ class InSilicoResearchAgents:
 
     def _build_graph(self):
         """Build the LangGraph workflow for in silico research tasks."""
-        workflow = StateGraph(InSilicoResearchState)
-
-        workflow.add_node("extract_goals_node", self.extract_goals_node)
-        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
-        workflow.add_node("research_node", self.run_research_node)
-
-        workflow.add_edge(START, "extract_goals_node")
-        workflow.add_edge("extract_goals_node", "prepare_tasks_node")
-
-        # Use Send API for dynamic task dispatch
-        workflow.add_conditional_edges(
-            "prepare_tasks_node", self.route_research_tasks, ["research_node"]
+        return build_parallel_dispatch_graph(
+            ParallelDispatchSpec(
+                state_class=InSilicoResearchState,
+                prepare_node=self.prepare_tasks,
+                work_node=self.run_research_node,
+                route_fn=self.route_research_tasks,
+                work_node_name="research_node",
+                extract_node=self.extract_goals_node,
+                extract_node_name="extract_goals_node",
+            ),
+            checkpointer=self.checkpointer,
         )
-        workflow.add_edge("research_node", END)
-
-        return workflow.compile(checkpointer=self.checkpointer)
 
     def route_research_tasks(self, state: InSilicoResearchState):
         """Dispatch research tasks in parallel using Send API.

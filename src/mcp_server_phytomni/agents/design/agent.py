@@ -22,7 +22,6 @@ from typing import (
 )
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
 
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
@@ -42,6 +41,10 @@ from ..shared.analysis import (
     submit_analyst_analysis,
 )
 from ..shared.analysis_storage import get_data_list
+from ..shared.parallel_dispatch import (
+    ParallelDispatchSpec,
+    build_parallel_dispatch_graph,
+)
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -147,20 +150,16 @@ class DigitalDesignAgents:
 
     def _build_graph(self):
         """Build the LangGraph workflow for digital design tasks."""
-        workflow = StateGraph(DigitalDesignState)
-
-        workflow.add_node("prepare_tasks_node", self.prepare_tasks)
-        workflow.add_node("design_node", self.run_design_node)
-
-        workflow.add_edge(START, "prepare_tasks_node")
-
-        # Use Send API for dynamic task dispatch
-        workflow.add_conditional_edges(
-            "prepare_tasks_node", self.route_design_tasks, ["design_node"]
+        return build_parallel_dispatch_graph(
+            ParallelDispatchSpec(
+                state_class=DigitalDesignState,
+                prepare_node=self.prepare_tasks,
+                work_node=self.run_design_node,
+                route_fn=self.route_design_tasks,
+                work_node_name="design_node",
+            ),
+            checkpointer=self.checkpointer,
         )
-        workflow.add_edge("design_node", END)
-
-        return workflow.compile(checkpointer=self.checkpointer)
 
     def route_design_tasks(self, state: DigitalDesignState):
         """Dispatch design tasks in parallel using Send API.
