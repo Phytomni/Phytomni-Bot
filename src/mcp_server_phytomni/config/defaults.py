@@ -7,7 +7,7 @@
 Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
     ReviewConfig, BriefGeneConfig, GeneNetworkConfig, DeepGenomeConfig,
     DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig,
-    SpeciesDataIndex, RegionMap.
+    SpeciesDataIndex, RegionMap, PromptTemplates.
 """
 
 from pathlib import Path
@@ -421,3 +421,36 @@ class RegionMap(RootModel[Dict[str, Dict[str, Dict[str, str]]]]):
             List of city keys under the requested province.
         """
         return list(self.root[province].keys())
+
+
+PromptLeaf = Union[str, Dict[str, str]]
+
+
+class PromptTemplates(RootModel[Dict[str, Dict[str, PromptLeaf]]]):
+    """Validation schema for .prompts.yaml.
+
+    The file follows the shape ``{section: {key: leaf}}`` where
+    ``section`` is one of ``system``, ``template``, or ``user``, and
+    ``leaf`` is either a prompt template string (depth-2 entries) or a
+    sub-dict of ``{name: template}`` entries (depth-3 entries used for
+    nested prompt paths such as ``user/environment/get_code_query``).
+    """
+
+    def sections(self) -> List[str]:
+        """Return the top-level prompt section keys.
+
+        Returns:
+            List of section keys present in the validated templates.
+        """
+        return list(self.root.keys())
+
+    def keys_for(self, section: str) -> List[str]:
+        """Return the prompt keys configured under ``section``.
+
+        Args:
+            section: Top-level section key (e.g. ``"system"``).
+
+        Returns:
+            List of prompt keys under the requested section.
+        """
+        return list(self.root[section].keys())

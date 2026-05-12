@@ -7,12 +7,18 @@
 import json
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
-from mcp_server_phytomni.config.data_loaders import load_species_data
+from mcp_server_phytomni.config.data_loaders import (
+    load_prompt_templates,
+    load_species_data,
+)
 from mcp_server_phytomni.config.defaults import (
     PRE_PREPARED_DATA_PATH,
     PRE_PREPARED_REGION_PATH,
+    PROMPT_PATH,
+    PromptTemplates,
     RegionMap,
     SpeciesDataIndex,
 )
@@ -101,3 +107,59 @@ def test_species_data_index_helpers_return_top_level_keys():
     }
     assert set(index.species_for("evolution_analysis")) == {"ath", "osa"}
     assert set(index.species_for("deepgo2_analysis")) == {"ath"}
+
+
+def test_bundled_prompt_templates_pass_schema_validation():
+    """Verify the shipped .prompts.yaml satisfies PromptTemplates."""
+    templates = load_prompt_templates(str(PROMPT_PATH))
+
+    sections = set(templates.keys())
+    assert sections >= {"system", "template", "user"}
+    for section, keys in templates.items():
+        assert isinstance(section, str)
+        assert isinstance(keys, dict)
+        for key, leaf in keys.items():
+            assert isinstance(key, str)
+            assert isinstance(leaf, (str, dict))
+            if isinstance(leaf, dict):
+                for name, template in leaf.items():
+                    assert isinstance(name, str)
+                    assert isinstance(template, str)
+
+
+def test_load_prompt_templates_rejects_non_string_leaf(tmp_path):
+    """Verify load_prompt_templates raises on non-string leaves.
+
+    Args:
+        tmp_path: Temporary directory used to write a corrupt YAML fixture.
+    """
+    corrupt = tmp_path / "prompts.yaml"
+    corrupt.write_text(
+        yaml.safe_dump(
+            {
+                "system": {
+                    "ai4ps": 42,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError):
+        load_prompt_templates(str(corrupt))
+
+
+def test_prompt_templates_helpers_return_section_and_key_lists():
+    """Verify PromptTemplates.sections and keys_for round-trip cleanly."""
+    templates = PromptTemplates.model_validate(
+        {
+            "system": {"ai4ps": "you are an assistant"},
+            "user": {
+                "environment": {"get_code": "extract codes"},
+                "analysis": "describe the data",
+            },
+        }
+    )
+
+    assert set(templates.sections()) == {"system", "user"}
+    assert set(templates.keys_for("user")) == {"environment", "analysis"}
