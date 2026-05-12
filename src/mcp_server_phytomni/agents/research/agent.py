@@ -29,7 +29,6 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import (
-    ainvoke_graph,
     capture_workflow_boundary,
     ensure_checkpointer,
 )
@@ -42,6 +41,11 @@ from ..analyst.agent import (
     AnalystAgent,
 )
 from ..chat.service import phyto_chat
+from ..shared.analysis import (
+    AnalysisStateSpec,
+    capture_analysis_result,
+    run_analysis_graph,
+)
 from ..shared.analysis_storage import create_output_dir
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
@@ -401,55 +405,36 @@ class InSilicoResearchAgents:
             Dict with task_ids, completed_count, and optional error.
         """
         task_index = state.get("task_index")
-        goal_description = state["goal_description"]
-        context = state["context"]
         task_name = state["task_name"]
-        data_list = state.get("data_list", {})
-        thread_id = state.get("thread_id", task_name)
         output_dir = state.get("output_dir")
         if output_dir is None:
             raise ValueError("output_dir is required for research tasks")
 
         print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
 
-        async def submit_task() -> dict[str, Any]:
-            """Submit one research task and return state updates.
+        async def submit_call() -> dict[str, Any]:
+            """Submit one research task and return its raw result.
 
             Returns:
-                State update containing task IDs and completion increment.
+                AnalystAgent payload with ``task_id`` and ``output_dir``.
             """
-            result = await self._submit_research_task(
+            return await self._submit_research_task(
                 ResearchTaskContext(
-                    goal_description=goal_description,
-                    context=context,
-                    data_list=data_list,
+                    goal_description=state["goal_description"],
+                    context=state["context"],
+                    data_list=state.get("data_list", {}),
                     output_dir=output_dir,
                     task_name=task_name,
-                    thread_id=thread_id,
+                    thread_id=state.get("thread_id", task_name),
                 )
             )
-            existing_task_ids: Dict[str, str] = state.get("task_ids", {})
-            task_id = result.get("task_id")
-            if task_id is not None:
-                existing_task_ids[task_name] = str(task_id)
-            return {"task_ids": existing_task_ids, "completed_count": 1}
 
-        def failure_state(exc: Exception) -> dict[str, Any]:
-            """Preserve partial task progress when submit fails.
-
-            Args:
-                exc: Exception raised during task submission.
-
-            Returns:
-                Failure state update preserving known task IDs.
-            """
-            return {
-                "task_ids": state.get("task_ids", {}),
-                "completed_count": 1,
-                "error": str(exc),
-            }
-
-        return await capture_workflow_boundary(submit_task, failure_state)
+        return await capture_analysis_result(
+            state,
+            analysis_type=task_name,
+            submit_call=submit_call,
+            result_key=None,
+        )
 
     async def arun(
         self,
@@ -470,29 +455,20 @@ class InSilicoResearchAgents:
         Returns:
             Dict with task_ids mapping research goals to task IDs.
         """
-        initial_state = {
-            "paper_text": paper_text,
-            "data_list": data_list,
-            "user_id": kwargs.get("user_id"),
-            "obs_file_list": kwargs.get("obs_file_list") or [],
-            "output_dir": kwargs.get("output_dir"),
-            "goals": [],
-            "research_tasks": [],
-            "task_ids": {},
-            "completed_count": 0,
-            "error": None,
-        }
-
-        result = await ainvoke_graph(
+        return await run_analysis_graph(
             self.app,
-            initial_state,
-            thread_id=kwargs.get("thread_id"),
+            {
+                "paper_text": paper_text,
+                "data_list": data_list,
+                "obs_file_list": kwargs.get("obs_file_list") or [],
+            },
+            kwargs,
+            ("task_ids", "goals", "error"),
+            AnalysisStateSpec(
+                tasks_key="research_tasks",
+                result_inits={"goals": []},
+            ),
         )
-        return {
-            "task_ids": result.get("task_ids"),
-            "goals": result.get("goals"),
-            "error": result.get("error"),
-        }
 
 
 async def in_silico_research(
