@@ -60,8 +60,10 @@ class GeneNetworkState(TypedDict):
     operations.
 
     Attributes:
-        species: Species name (e.g., "rice", "arabidopsis").
-        to_id: Target gene identifier for network analysis.
+        species: Latin species name in lowercase with spaces (e.g.,
+            "oryza sativa", "arabidopsis thaliana").
+        to_id: Trait Ontology identifier for the target phenotype,
+            formatted like "TO:0000207".
         user_id: User identifier.
         batch: Whether this is batch processing.
         output_dir: Output directory path for results.
@@ -72,8 +74,8 @@ class GeneNetworkState(TypedDict):
         error: Error message if any task failed during execution.
     """
 
-    species: str  # Species name (e.g., "rice", "arabidopsis")
-    to_id: str  # Target gene identifier for network analysis
+    species: str  # Latin name lowercase with spaces (e.g. "oryza sativa")
+    to_id: str  # Trait Ontology id formatted like "TO:0000207"
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
     output_dir: Optional[str]
@@ -281,8 +283,10 @@ class GeneNetworkAgents:
         """Submit a gene network analysis task and return task_id.
 
         Args:
-            species: Species name (e.g., "rice", "arabidopsis").
-            to_id: Target gene identifier for network analysis.
+            species: Latin species name in lowercase with spaces (e.g.,
+                "oryza sativa", "arabidopsis thaliana").
+            to_id: Trait Ontology identifier for the target phenotype,
+                formatted like "TO:0000207".
             user_id: Optional user identifier.
             batch: Whether this is batch processing.
             thread_id: Optional thread ID for checkpointer.

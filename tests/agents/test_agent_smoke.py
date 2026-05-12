@@ -225,7 +225,7 @@ async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
     agent.app = fake_graph
 
     result = await agent.arun(
-        species="osa",
+        species="oryza sativa",
         to_id="TO:0000621",
         user_id="user-1",
         batch=True,
@@ -235,7 +235,7 @@ async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
 
     assert result == {"network_task": {"task_id": "network-1"}, "error": None}
     assert fake_graph.state is not None
-    assert fake_graph.state["species"] == "osa"
+    assert fake_graph.state["species"] == "oryza sativa"
     assert fake_graph.state["to_id"] == "TO:0000621"
     assert fake_graph.state["user_id"] == "user-1"
     assert fake_graph.state["batch"] is True
@@ -256,7 +256,7 @@ async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
     agent.app = fake_graph
 
     result = await agent.arun(
-        species="ath",
+        species="arabidopsis thaliana",
         gene_id="AT1G01010",
         user_id="user-1",
         batch=False,
@@ -269,7 +269,7 @@ async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
         "error": None,
     }
     assert fake_graph.state is not None
-    assert fake_graph.state["species"] == "ath"
+    assert fake_graph.state["species"] == "arabidopsis thaliana"
     assert fake_graph.state["gene_id"] == "AT1G01010"
     assert fake_graph.state["user_id"] == "user-1"
     assert fake_graph.state["batch"] is False

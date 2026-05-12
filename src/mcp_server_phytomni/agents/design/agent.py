@@ -73,7 +73,8 @@ class DigitalDesignState(TypedDict):
     task execution.
 
     Attributes:
-        species: Species name (e.g., "Arabidopsis_thaliana").
+        species: Latin species name in lowercase with spaces (e.g.,
+            "arabidopsis thaliana", "oryza sativa").
         gene_id: Gene identifier for target protein or promoter.
         user_id: User identifier.
         batch: Whether this is batch processing.
@@ -299,7 +300,8 @@ class DigitalDesignAgents:
         """Submit protein design tasks and return task_ids.
 
         Args:
-            species: Species name (e.g., "Arabidopsis_thaliana").
+            species: Latin species name in lowercase with spaces (e.g.,
+                "arabidopsis thaliana", "oryza sativa").
             gene_id: Gene identifier.
             user_id: Optional user identifier.
             batch: Whether this is batch processing.
