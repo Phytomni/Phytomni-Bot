@@ -30,4 +30,16 @@ fi
 
 run uv run pylint --persistent=no $(git ls-files '*.py')
 run uv run yamllint .
+
+if command -v jsonlint >/dev/null 2>&1; then
+    jsonlint_cmd() { jsonlint "$1" --quiet; }
+else
+    jsonlint_cmd() { npx --yes jsonlint "$1" --quiet; }
+fi
+
+printf '\n==> jsonlint (per JSON file)\n'
+git ls-files '*.json' | while IFS= read -r file; do
+    jsonlint_cmd "$file"
+done
+
 run uv run pytest
