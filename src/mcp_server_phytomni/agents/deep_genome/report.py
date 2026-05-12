@@ -12,6 +12,7 @@ and follow-up questions into the final report state.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
@@ -22,6 +23,8 @@ from ...common.responses import (
 )
 from ...config.defaults import DeepGenomeConfig
 from ...runtime.workflow_mixins import WorkflowMixinBase
+from ...storage.path_policy import RunIdentity
+from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import phyto_chat
 from .formatting import SPECIES_CODE_MAP
 
@@ -94,10 +97,20 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                     gene_results = gene_results.replace(replace_content, "")
             except KeyError:
                 continue
-        results_path = (
-            f"{self.deep_genome_config.DEEPGENOME_OUT}/"
-            f"{state['gene_id']}_results.md"
+        run_identity = RunIdentity.create(
+            user_id=self.deep_genome_config.USER_ID,
+            scope="report",
         )
+        report_dir = resolve_scratch_dir(
+            "tmp",
+            run_identity,
+            "report",
+            ScratchTarget(
+                bucket_name=self.deep_genome_config.BUCKET_NAME,
+                local_fallback=Path(self.deep_genome_config.DEEPGENOME_OUT),
+            ),
+        )
+        results_path = Path(report_dir) / f"{state['gene_id']}_results.md"
         with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(gene_results)
         # print(gene_results)
