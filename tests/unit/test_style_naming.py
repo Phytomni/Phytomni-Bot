@@ -205,6 +205,39 @@ def test_local_pylint_disables_are_langgraph_boundary_only():
     assert not violations
 
 
+def test_init_files_with_imports_declare_all():
+    """Verify __init__.py modules with imports declare __all__.
+
+    STYLE.md mandates that ``__init__.py`` re-exports are made explicit
+    via ``__all__``. An ``__init__.py`` that imports from sibling modules
+    is treated as performing re-exports, so it must declare ``__all__``.
+    Empty or docstring-only ``__init__.py`` files are exempt.
+    """
+    root = Path(__file__).resolve().parents[2]
+    violations = []
+
+    for path in (root / "src").rglob("__init__.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        has_imports = any(
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            for node in module.body
+        )
+        if not has_imports:
+            continue
+        has_all = any(
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            )
+            for node in module.body
+        )
+        if not has_all:
+            violations.append(path.relative_to(root).as_posix())
+
+    assert not violations
+
+
 def test_runtime_ids_do_not_use_direct_uuid_generation():
     """Verify runtime paths and threads use path_policy instead of UUIDs."""
     root = Path(__file__).resolve().parents[2]
