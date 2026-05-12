@@ -127,7 +127,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install uv
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e ".[dev,demo]"
       - name: Analyse the code with pylint
         run: |
           PYTHONPATH=src pylint \

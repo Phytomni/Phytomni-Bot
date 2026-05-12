@@ -1,0 +1,70 @@
+{
+  "files": {
+    "docs/plant_science_brief.md": "Source markdown for the plant-science brief used by Review, Knowledge, and InSilicoResearch demo runs.",
+    "docs/plant_science_brief.pdf": "Deterministic PDF render of the brief, attached via obs_file_list for upload-enabled tools.",
+    "docs/sample_metadata.xlsx": "Five-row sample metadata workbook covering species, tissue, treatment, and biological replicate columns.",
+    "sequences/arabidopsis_sample.fasta": "Five short curated Arabidopsis thaliana protein sequences for orthology and motif benchmarking."
+  },
+  "tools": [
+    {
+      "kind": "sync",
+      "name": "ChatAgent",
+      "payload": "payloads/chat_agent.json",
+      "summary": "General Q&A on C3 photosynthesis (no file upload)."
+    },
+    {
+      "kind": "sync",
+      "name": "KnowledgeAgent",
+      "payload": "payloads/knowledge_agent.json",
+      "summary": "Evidence-backed wheat drought-tolerance question."
+    },
+    {
+      "kind": "sync",
+      "name": "DataAgent",
+      "payload": "payloads/data_agent.json",
+      "summary": "NL2SQL homology lookup for AT1G75370 in wheat."
+    },
+    {
+      "kind": "async",
+      "name": "AnalystAgent",
+      "payload": "payloads/analyst_agent.json",
+      "summary": "ATAC-seq peak-calling submission on rice replicates."
+    },
+    {
+      "kind": "sync",
+      "name": "ReviewAgent",
+      "payload": "payloads/review_agent.json",
+      "summary": "Multi-section sorghum drought literature review."
+    },
+    {
+      "kind": "sync",
+      "name": "BriefGeneAgent",
+      "payload": "payloads/brief_gene_agent.json",
+      "summary": "Concise gene card for AT1G01010."
+    },
+    {
+      "kind": "async",
+      "name": "DeepGenomeAgent",
+      "payload": "payloads/deep_genome_agent.json",
+      "summary": "Deep gene-function analysis for AT1G75370 in ath."
+    },
+    {
+      "kind": "async",
+      "name": "InSilicoResearchAgent",
+      "payload": "payloads/in_silico_research_agent.json",
+      "summary": "Reproducibility tasks decomposed from the brief PDF."
+    },
+    {
+      "kind": "async",
+      "name": "DigitalDesignAgent",
+      "payload": "payloads/digital_design_agent.json",
+      "summary": "Protein and promoter design for AT1G75370."
+    },
+    {
+      "kind": "async",
+      "name": "GeneNetworkAgent",
+      "payload": "payloads/gene_network_agent.json",
+      "summary": "Trait-network analysis for rice (TO:0000207)."
+    }
+  ]
+}

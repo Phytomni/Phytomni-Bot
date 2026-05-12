@@ -1,0 +1,10 @@
+{
+  "data_list": {
+    "/obs/phytomni/demo/docs/sample_metadata.xlsx": "Sample metadata workbook covering species, tissue, treatment, and biological replicate columns for the demo dataset.",
+    "/obs/phytomni/demo/sequences/arabidopsis_sample.fasta": "Curated short Arabidopsis thaliana protein sequences for orthology benchmarking and motif scanning."
+  },
+  "obs_file_list": [
+    "/obs/phytomni/demo/docs/plant_science_brief.pdf"
+  ],
+  "user_query": "Decompose the attached plant-science brief into reproducible computational analyses. Focus on orthology identification across the curated sequences, expression pattern comparison using the metadata workbook, and a simple stress-response classifier."
+}

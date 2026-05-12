@@ -1,0 +1,8 @@
+{
+  "data_list": {
+    "/obs/phytomni/demo/sequences/sample_rep1.fastq.gz": "Illumina single-end ATAC-seq fastq, 50bp reads, rice (Oryza sativa) leaf control replicate 1, for peak calling.",
+    "/obs/phytomni/demo/sequences/sample_rep2.fastq.gz": "Illumina single-end ATAC-seq fastq, 50bp reads, rice (Oryza sativa) leaf control replicate 2, for peak calling."
+  },
+  "goal_description": "Run an ATAC-seq peak-calling workflow on these two rice leaf control replicates: align reads to the Oryza sativa reference, mark duplicates, call peaks with MACS2 in narrow-peak mode, and report peak counts plus the QC summary.",
+  "obs_file_list": []
+}
