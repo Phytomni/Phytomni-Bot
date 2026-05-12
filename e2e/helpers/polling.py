@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+from mcp_client_phytomni import McpToolResponse
 
 DEFAULT_DB_PATH = "server_tasks.db"
 DEFAULT_TIMEOUT_SECONDS = 600.0
@@ -135,6 +138,68 @@ async def poll_until_done(
         f"Task {task_id} did not reach a terminal status before the "
         f"deadline (last seen state: {last_state})."
     )
+
+
+_TASK_ID_KEYS = ("task_id", "taskId", "id", "submission_id")
+_TASK_ID_PATTERN = re.compile(
+    r"\btask[_\- ]?id\s*[:=]\s*([0-9a-fA-F-]{8,})",
+    re.IGNORECASE,
+)
+_UUID_PATTERN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+
+
+def extract_task_id(response: McpToolResponse) -> str:
+    """Return the submission task_id reported by an async tool.
+
+    Tries the raw JSON payload first (common ``task_id`` keys), then
+    falls back to scanning the formatted answer text for either a
+    ``task_id: <uuid>`` pattern or a bare UUID.
+
+    Args:
+        response: ``McpToolResponse`` returned by ``client.call_tool``.
+
+    Returns:
+        The task identifier as a string.
+
+    Raises:
+        RuntimeError: If no task identifier can be located.
+    """
+    payload = response.raw_payload
+    candidate = _extract_from_mapping(payload)
+    if candidate is not None:
+        return candidate
+    candidate = _extract_from_text(response.formatted.answer)
+    if candidate is not None:
+        return candidate
+    raise RuntimeError(
+        "Could not extract task_id from response: "
+        f"raw_payload={payload!r}; answer={response.formatted.answer!r}"
+    )
+
+
+def _extract_from_mapping(payload: Any) -> Optional[str]:
+    """Return a task_id from a dict-shaped payload if present."""
+    if not isinstance(payload, dict):
+        return None
+    for key in _TASK_ID_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _extract_from_text(text: str) -> Optional[str]:
+    """Return a task_id parsed from formatted answer text if present."""
+    explicit = _TASK_ID_PATTERN.search(text)
+    if explicit:
+        return explicit.group(1)
+    uuid_match = _UUID_PATTERN.search(text)
+    if uuid_match:
+        return uuid_match.group(0)
+    return None
 
 
 def _read_task_state(
