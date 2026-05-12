@@ -1,13 +1,13 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Live e2e test for ``AnalystAgent`` with full task polling.
+"""Live e2e test for ``DeepGenomeAgent`` with full task polling.
 
-Submits an ATAC-seq peak-calling workflow on two rice replicates via
-the stdio MCP client, polls ``server_tasks.db`` until the task reaches
-a terminal status, and asserts that the analyst output directory was
-published on OBS so the regression catches both queue-only completions
-and completions with no produced artifact.
+Submits the deep gene-function analysis for AT1G75370 in Arabidopsis
+through the stdio MCP client, polls ``server_tasks.db`` until the task
+reaches terminal status, and asserts the produced output directory is
+non-empty so the regression catches submissions that succeed in the
+queue but never write artifacts.
 """
 
 from __future__ import annotations
@@ -23,23 +23,23 @@ from .helpers.polling import submit_and_poll_to_success
 pytestmark = pytest.mark.live
 
 
-async def test_analyst_agent_e2e_polls_to_success(
+async def test_deep_genome_agent_e2e_polls_to_success(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], Dict[str, Any]],
 ) -> None:
-    """AnalystAgent submits, polls to success, and reports an output dir.
+    """DeepGenomeAgent submits, polls to success, and reports artifacts.
 
     Args:
         mcp_client: Session-scoped MCP client.
         load_payload: Loader that returns the rewritten payload.
     """
-    payload = load_payload("analyst_agent.json")
+    payload = load_payload("deep_genome_agent.json")
 
     state = await submit_and_poll_to_success(
-        mcp_client, "AnalystAgent", payload
+        mcp_client, "DeepGenomeAgent", payload
     )
 
     assert state.output_dir and state.output_dir != "unupdated", (
-        f"AnalystAgent task {state.task_id} succeeded but reported no "
-        f"output directory; state={state!r}"
+        f"DeepGenomeAgent task {state.task_id} succeeded but reported "
+        f"no output directory; state={state!r}"
     )

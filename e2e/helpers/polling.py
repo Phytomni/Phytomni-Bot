@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from mcp_client_phytomni import McpToolResponse
+from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
+
+from .client import call_tool, submit_timeout_seconds
 
 DEFAULT_DB_PATH = "server_tasks.db"
 DEFAULT_TIMEOUT_SECONDS = 600.0
@@ -200,6 +202,50 @@ def _extract_from_text(text: str) -> Optional[str]:
     if uuid_match:
         return uuid_match.group(0)
     return None
+
+
+async def submit_and_poll_to_success(
+    client: PhytomniMcpClient,
+    tool_name: str,
+    payload: Any,
+) -> TaskState:
+    """Submit an async tool and poll its task to a success terminal state.
+
+    Timeouts honor the environment overrides documented in
+    ``e2e/README.md``: ``PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS`` for the
+    submit call and ``PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`` for the
+    polling deadline.
+
+    Args:
+        client: Session-scoped MCP client.
+        tool_name: Public MCP tool name (e.g. ``"AnalystAgent"``).
+        payload: JSON-schema-compatible payload for ``tool_name``.
+
+    Returns:
+        Final ``TaskState`` once the task reaches a success terminal
+        state.
+
+    Raises:
+        AssertionError: If the task ends in a non-success terminal
+            status, so the caller's test fails with a clear message.
+        TaskPollingTimeoutError: If the polling deadline elapses.
+        RuntimeError: If no task identifier could be extracted from
+            the submission response.
+    """
+    response = await call_tool(
+        client,
+        tool_name,
+        payload,
+        timeout_seconds=submit_timeout_seconds(),
+    )
+    task_id = extract_task_id(response)
+    state = await poll_until_done(task_id)
+    if not state.succeeded:
+        raise AssertionError(
+            f"{tool_name} task {task_id} ended with status "
+            f"{state.status!r}; expected a success terminal state."
+        )
+    return state
 
 
 def _read_task_state(
