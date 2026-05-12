@@ -20,7 +20,10 @@ from mcp_server_phytomni.storage.path_policy import (
     IdFactory,
     RunIdentity,
 )
-from mcp_server_phytomni.storage.scratch import resolve_scratch_dir
+from mcp_server_phytomni.storage.scratch import (
+    ScratchTarget,
+    resolve_scratch_dir,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -57,14 +60,17 @@ def test_resolve_scratch_dir_uses_obsfs_when_bucket_mounted(
     (tmp_path / bucket).mkdir()
     local_fallback = tmp_path / "fallback"
     identity = _fixed_identity()
+    target = ScratchTarget(
+        bucket_name=bucket,
+        local_fallback=local_fallback,
+        obsfs_mount_root=tmp_path,
+    )
 
     result = resolve_scratch_dir(
         kind,  # type: ignore[arg-type]
         identity,
         "task-one",
-        bucket_name=bucket,
-        local_fallback=local_fallback,
-        obsfs_mount_root=tmp_path,
+        target,
     )
 
     expected_obs_path = (
@@ -101,14 +107,17 @@ def test_resolve_scratch_dir_falls_back_to_local_when_bucket_missing(
     bucket = "phytomni"
     local_fallback = tmp_path / "fallback"
     identity = _fixed_identity()
+    target = ScratchTarget(
+        bucket_name=bucket,
+        local_fallback=local_fallback,
+        obsfs_mount_root=tmp_path,
+    )
 
     result = resolve_scratch_dir(
         "downloads",
         identity,
         "task-two",
-        bucket_name=bucket,
-        local_fallback=local_fallback,
-        obsfs_mount_root=tmp_path,
+        target,
     )
 
     expected_dir = (
