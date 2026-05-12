@@ -13,11 +13,12 @@ when the mount is unavailable.
 from __future__ import annotations
 
 from traceback import format_exc
-from typing import Any, NamedTuple
+from typing import Any, Dict, NamedTuple
 
 from obs import ObsClient
 
-from ...common.prompts import file_cache_fingerprint, load_json_file
+from ...common.prompts import file_cache_fingerprint
+from ...config.data_loaders import load_species_data
 from ...config.defaults import AnalystConfig
 from ...config.settings import SensitiveConfig
 from ...storage.obs_storage import (
@@ -58,7 +59,9 @@ class ObsAccessOptions(NamedTuple):
     bucket_name: str
 
 
-def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
+def get_data_list(
+    data_file: str, analysis_type: str, species: str
+) -> Dict[str, Any]:
     """Return configured data files for one analysis type and species.
 
     Args:
@@ -67,7 +70,12 @@ def get_data_list(data_file: str, analysis_type: str, species: str) -> list:
         species: Species key to select within the analysis type.
 
     Returns:
-        Configured data list for the requested analysis and species.
+        Mapping of OBS data-file paths to their natural-language
+        descriptions for the requested analysis and species. For analyses
+        that subdivide species into subgroups (e.g.
+        ``gene_expression_analysis`` with cultivars/tissues/treatments)
+        some values are themselves ``Dict[str, str]`` of file paths to
+        descriptions, so the value type is widened to ``Any``.
 
     Raises:
         FileNotFoundError: If ``data_file`` cannot be read.
@@ -92,10 +100,10 @@ def _get_data_list_cached(
     species: str,
     mtime_ns: int,
     size: int,
-) -> list:
+) -> Dict[str, Any]:
     """Select a data list from cached static species metadata."""
     del mtime_ns, size
-    data = load_json_file(data_file)
+    data = load_species_data(data_file)
     try:
         analysis_data_list = data[analysis_type]
     except KeyError as exc:

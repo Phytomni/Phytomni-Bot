@@ -678,7 +678,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     def _analysis_prompt_parts(
         self: Any,
         context: AnalysisDispatchContext,
-    ) -> tuple[str, list, str, str]:
+    ) -> tuple[str, dict[str, Any], str, str]:
         """Build goal, data list, meta prompt, and compute resource."""
         analysis_type = context.analysis_type
         goal_path = ANALYSIS_GOAL_TEMPLATE_MAP.get(analysis_type)

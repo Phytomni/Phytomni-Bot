@@ -32,7 +32,8 @@ from ...common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
-from ...common.prompts import get_prompt, load_json_file
+from ...common.prompts import get_prompt
+from ...config.data_loaders import load_species_data
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.downloads import download_upload_context
 from ...storage.path_policy import RunIdentity, task_tmp_key
@@ -137,7 +138,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
                 fails.
         """
         try:
-            species_data = load_json_file(
+            species_data = load_species_data(
                 self.analyst_config.PRE_PREPARED_DATA_PATH
             )
         except (FileNotFoundError, json.JSONDecodeError) as exc:

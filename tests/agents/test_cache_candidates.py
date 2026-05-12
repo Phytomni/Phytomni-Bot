@@ -35,21 +35,32 @@ def test_get_data_list_tracks_config_file_changes(tmp_path):
     """
     data_file = tmp_path / "species_data.json"
     data_file.write_text(
-        json.dumps({"analysis": {"ath": ["first"]}}),
+        json.dumps({"analysis": {"ath": {"/obs/data/first.fa": "first"}}}),
         encoding="utf-8",
     )
 
-    assert get_data_list(str(data_file), "analysis", "ath") == ["first"]
+    assert get_data_list(str(data_file), "analysis", "ath") == {
+        "/obs/data/first.fa": "first",
+    }
 
     data_file.write_text(
-        json.dumps({"analysis": {"ath": ["second", "third"]}}),
+        json.dumps(
+            {
+                "analysis": {
+                    "ath": {
+                        "/obs/data/second.fa": "second",
+                        "/obs/data/third.fa": "third",
+                    }
+                }
+            }
+        ),
         encoding="utf-8",
     )
 
-    assert get_data_list(str(data_file), "analysis", "ath") == [
-        "second",
-        "third",
-    ]
+    assert get_data_list(str(data_file), "analysis", "ath") == {
+        "/obs/data/second.fa": "second",
+        "/obs/data/third.fa": "third",
+    }
 
 
 def test_network_to_string_uses_cache_for_identical_inputs():

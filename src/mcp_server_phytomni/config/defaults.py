@@ -6,12 +6,14 @@
 
 Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
     ReviewConfig, BriefGeneConfig, GeneNetworkConfig, DeepGenomeConfig,
-    DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig.
+    DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig,
+    SpeciesDataIndex, RegionMap.
 """
 
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Union
 
+from pydantic import RootModel
 from pydantic_settings import BaseSettings
 
 _MAX_TOKENS = 65536
@@ -358,3 +360,64 @@ class EnvironmentConfig(AnalystConfig):
 
     ENVIRONMENT_DATA: str = str(PRE_PREPARED_DATA_PATH)
     REGION_CODE: str = str(PRE_PREPARED_REGION_PATH)
+
+
+SpeciesEntryValue = Union[str, Dict[str, str]]
+
+
+class SpeciesDataIndex(
+    RootModel[Dict[str, Dict[str, Dict[str, SpeciesEntryValue]]]]
+):
+    """Validation schema for species_data_list.json.
+
+    The file follows the shape
+    ``{analysis_type: {species_name: {key: leaf}}}`` where ``leaf`` is
+    either an OBS file description string or a sub-dict mapping further
+    keys (e.g. ``cultivars``, ``tissues``) to ``{file_path: description}``.
+    """
+
+    def analysis_types(self) -> List[str]:
+        """Return the top-level analysis type keys.
+
+        Returns:
+            List of analysis-type keys present in the validated index.
+        """
+        return list(self.root.keys())
+
+    def species_for(self, analysis_type: str) -> List[str]:
+        """Return the species keys configured under ``analysis_type``.
+
+        Args:
+            analysis_type: Analysis type key (e.g. ``"evolution_analysis"``).
+
+        Returns:
+            List of species keys under the requested analysis type.
+        """
+        return list(self.root[analysis_type].keys())
+
+
+class RegionMap(RootModel[Dict[str, Dict[str, Dict[str, str]]]]):
+    """Validation schema for region_map.json.
+
+    The file maps {province: {city: {district: region_code}}}; every leaf
+    value is a pipe-delimited string like ``"310000|310000|310114"``.
+    """
+
+    def provinces(self) -> List[str]:
+        """Return the top-level province keys.
+
+        Returns:
+            List of province keys present in the validated map.
+        """
+        return list(self.root.keys())
+
+    def cities_for(self, province: str) -> List[str]:
+        """Return the city keys configured under ``province``.
+
+        Args:
+            province: Province key (e.g. ``"北京市"``).
+
+        Returns:
+            List of city keys under the requested province.
+        """
+        return list(self.root[province].keys())

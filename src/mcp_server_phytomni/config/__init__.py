@@ -8,6 +8,7 @@ This package provides default config models, sensitive environment settings,
 and override helpers used by MCP handlers and compatibility wrappers.
 """
 
+from .data_loaders import load_species_data
 from .defaults import (
     AnalystConfig,
     ChatConfig,
@@ -15,7 +16,9 @@ from .defaults import (
     DeepGenomeConfig,
     InSilicoResearchConfig,
     KnowledgeConfig,
+    RegionMap,
     ReviewConfig,
+    SpeciesDataIndex,
 )
 from .settings import SensitiveConfig
 
@@ -26,6 +29,9 @@ __all__ = [
     "DeepGenomeConfig",
     "InSilicoResearchConfig",
     "KnowledgeConfig",
+    "RegionMap",
     "ReviewConfig",
     "SensitiveConfig",
+    "SpeciesDataIndex",
+    "load_species_data",
 ]
