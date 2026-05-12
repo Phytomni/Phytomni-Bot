@@ -5,11 +5,15 @@
 """Tests for MCP tool parameter schemas.
 
 Covers generated JSON schema shape, ChatAgent field validation, stable public
-agent enum values, constant-style enum names, and omitted legacy names.
+agent enum values, constant-style enum names, omitted legacy names, and that
+every demo_data payload validates under its declared MCP tool schema.
 """
 
+import json
+from pathlib import Path
+
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from mcp_server_phytomni.mcp import schemas
 
@@ -28,6 +32,24 @@ TOOL_MODELS = [
     schemas.DigitalDesignAgent,
     schemas.GeneNetworkAgent,
 ]
+
+
+DEMO_PAYLOADS_DIR = (
+    Path(__file__).resolve().parents[2] / "demo_data" / "payloads"
+)
+
+DEMO_PAYLOAD_TO_MODEL: dict[str, type[BaseModel]] = {
+    "chat_agent.json": schemas.ChatAgent,
+    "knowledge_agent.json": schemas.KnowledgeAgent,
+    "data_agent.json": schemas.DataAgent,
+    "analyst_agent.json": schemas.AnalystAgent,
+    "review_agent.json": schemas.ReviewAgent,
+    "brief_gene_agent.json": schemas.BriefGeneAgent,
+    "deep_genome_agent.json": schemas.DeepGenomeAgent,
+    "in_silico_research_agent.json": schemas.InSilicoResearchAgent,
+    "digital_design_agent.json": schemas.DigitalDesignAgent,
+    "gene_network_agent.json": schemas.GeneNetworkAgent,
+}
 
 
 def test_tool_models_generate_object_json_schemas():
@@ -104,3 +126,27 @@ def test_public_agent_enum_omits_legacy_member_names(member_name):
         member_name: Legacy enum member name expected to be absent.
     """
     assert member_name not in schemas.PhytomniAgents.__members__
+
+
+@pytest.mark.parametrize(
+    "payload_path",
+    sorted(DEMO_PAYLOADS_DIR.glob("*.json")),
+    ids=lambda path: path.name,
+)
+def test_demo_payload_matches_schema(payload_path):
+    """Verify each demo_data payload validates under its MCP tool schema.
+
+    Args:
+        payload_path: Filesystem path to a demo_data payload JSON file.
+    """
+    model = DEMO_PAYLOAD_TO_MODEL[payload_path.name]
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+
+    instance = model.model_validate(payload)
+
+    assert isinstance(instance, model)
+
+
+def test_demo_payload_map_covers_every_tool_model():
+    """Verify every public tool model has a matching demo payload entry."""
+    assert set(DEMO_PAYLOAD_TO_MODEL.values()) == set(TOOL_MODELS)
