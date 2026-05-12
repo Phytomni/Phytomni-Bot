@@ -80,6 +80,6 @@ async def test_knowledge_agent_e2e_with_uploaded_brief(
 
     response = await call_tool(mcp_client, "KnowledgeAgent", payload)
 
-    assert response.formatted.answer, (
-        "KnowledgeAgent returned no answer when given the brief PDF"
-    )
+    assert (
+        response.formatted.answer
+    ), "KnowledgeAgent returned no answer when given the brief PDF"
