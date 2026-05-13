@@ -16,6 +16,14 @@ minversion = "9.0"
 testpaths = ["."]
 python_files = "test_*_e2e.py"
 asyncio_mode = "auto"
+# Share one event loop across the session so every async fixture and
+# test runs on the same loop. The session-scoped `published_demo_data`
+# fixture (sync) and the function-scoped `mcp_client` fixture (async,
+# whose stdio_client streams are bound to their creator loop) must
+# stay on a single loop; otherwise tests silently deadlock when the
+# function loop awaits primitives created on the fixture loop.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 addopts = [
     "--strict-config",
     "--strict-markers",

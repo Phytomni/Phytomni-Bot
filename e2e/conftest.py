@@ -82,16 +82,30 @@ def published_demo_data(
     return publish_demo_data(demo_data_dir, session_run_identity)
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def mcp_client() -> AsyncIterator[PhytomniMcpClient]:
-    """Yield a connected ``PhytomniMcpClient`` for the session.
+    """Yield a connected ``PhytomniMcpClient`` for one test.
+
+    Function-scoped so the stdio subprocess starts fresh per test.
+    The outer ``try``/``except`` swallows the known anyio +
+    pytest-asyncio interaction where ``stdio_client`` raises
+    ``RuntimeError: Attempted to exit cancel scope in a different
+    task`` during teardown, because pytest-asyncio drives the
+    generator's final ``__anext__`` from a task distinct from the
+    one that entered the cancel scope. The server subprocess is
+    still reaped when its stdio pipes close as pytest moves on, so
+    the test outcome is reliable.
 
     Yields:
         Connected client whose server subprocess is shut down on
-        teardown.
+        teardown (best effort).
     """
-    async with make_client() as client:
-        yield client
+    try:
+        async with make_client() as client:
+            yield client
+    except RuntimeError as exc:
+        if "different task" not in str(exc):
+            raise
 
 
 @pytest.fixture
