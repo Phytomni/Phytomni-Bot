@@ -15,7 +15,7 @@ jobs:
       - name: Scan tracked content for secrets
         run: python3 scripts/scan_secrets.py --all
       - name: Compile Python sources
-        run: python -m compileall src tests scripts
+        run: python -m compileall src tests e2e scripts
       - name: Check committed whitespace
         run: git diff-tree --check --no-commit-id --root -r HEAD
 
@@ -65,7 +65,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with flake8
-        run: flake8 src tests scripts
+        run: flake8 src tests e2e scripts
 
   mypy:
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
       - name: Type check with mypy
         run: |
           mypy --python-version ${{ matrix.python-version }} \
-            src tests scripts
+            src tests e2e scripts
 
   pyright:
     runs-on: ubuntu-latest

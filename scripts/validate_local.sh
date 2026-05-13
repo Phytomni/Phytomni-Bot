@@ -14,18 +14,18 @@ run() {
 }
 
 run python3 scripts/scan_secrets.py --all
-run uv run python -m compileall src tests scripts/scan_secrets.py
+run uv run python -m compileall src tests e2e scripts
 run git diff --check
 run git diff --cached --check
 run uv run black --check .
 run uv run ruff check .
-run uv run flake8 src tests
-run uv run mypy src
+run uv run flake8 src tests e2e scripts
+run uv run mypy src tests e2e scripts
 
 if command -v pyright >/dev/null 2>&1; then
-    run pyright src
+    run pyright src tests e2e scripts
 else
-    run npx --yes pyright src
+    run npx --yes pyright src tests e2e scripts
 fi
 
 run uv run pylint --persistent=no $(git ls-files '*.py')

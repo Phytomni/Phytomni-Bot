@@ -21,6 +21,7 @@ from mcp_server_phytomni.storage.path_policy import (
     RunIdentity,
 )
 from mcp_server_phytomni.storage.scratch import (
+    ScratchKind,
     ScratchTarget,
     resolve_scratch_dir,
 )
@@ -45,7 +46,7 @@ def _fixed_identity() -> RunIdentity:
     ],
 )
 def test_resolve_scratch_dir_uses_obsfs_when_bucket_mounted(
-    kind: str,
+    kind: ScratchKind,
     leaf: str,
     tmp_path: Path,
 ):
@@ -67,7 +68,7 @@ def test_resolve_scratch_dir_uses_obsfs_when_bucket_mounted(
     )
 
     result = resolve_scratch_dir(
-        kind,  # type: ignore[arg-type]
+        kind,
         identity,
         "task-one",
         target,

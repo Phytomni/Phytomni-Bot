@@ -8,12 +8,12 @@ Covers graph routing, NL2SQL dialog id policy, DataAgent graph invocation, and
 legacy rewrite_nl2sql wrapper thread-id compatibility.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from mcp_server_phytomni.agents.data import agent as data_agent_module
-from mcp_server_phytomni.agents.data.agent import DataAgent
+from mcp_server_phytomni.agents.data.agent import DataAgent, DataAgentState
 from mcp_server_phytomni.agents.data.nl2sql import Nl2SqlRequest
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
@@ -64,8 +64,14 @@ def test_data_agent_routes_start_by_rewrite_flag():
         sensitive_config=SensitiveConfig.load(),
     )
 
-    assert agent.route_start({"is_rewrite": True}) == "retrieve_node"
-    assert agent.route_start({"is_rewrite": False}) == "search_node"
+    assert (
+        agent.route_start(cast(DataAgentState, {"is_rewrite": True}))
+        == "retrieve_node"
+    )
+    assert (
+        agent.route_start(cast(DataAgentState, {"is_rewrite": False}))
+        == "search_node"
+    )
 
 
 def test_nl2sql_request_keeps_explicit_dialog_id():
@@ -92,7 +98,7 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
         sensitive_config=SensitiveConfig.load(),
     )
     fake_graph = FakeCompiledGraph()
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         user_query="plant height in rice",

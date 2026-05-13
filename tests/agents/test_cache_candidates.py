@@ -10,6 +10,7 @@ cache keys, and DeepGenome BI lookup cache behavior.
 
 import json
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -21,6 +22,7 @@ from mcp_server_phytomni.agents.deep_genome.formatting import (
 from mcp_server_phytomni.agents.knowledge import (
     retrieval as knowledge_retrieval,
 )
+from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.shared.analysis_storage import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 
@@ -351,13 +353,13 @@ async def test_gene_retrieve_uses_agent_context_cache():
     first = await brief_gene_agents.gene_retrieve(
         "Arabidopsis thaliana",
         ["NAC001", "NAC001"],
-        FakeKnowledgeAgent(),
+        cast(KnowledgeAgent, FakeKnowledgeAgent()),
         top_n=1,
     )
     second = await brief_gene_agents.gene_retrieve(
         "Arabidopsis thaliana",
         ["NAC001", "NAC001"],
-        FakeKnowledgeAgent(),
+        cast(KnowledgeAgent, FakeKnowledgeAgent()),
         top_n=1,
     )
 

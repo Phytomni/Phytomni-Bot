@@ -98,7 +98,7 @@ async def test_knowledge_agent_arun_invokes_graph_with_initial_state():
         sensitive_config=_sensitive_config(),
     )
     fake_graph = FakeCompiledGraph({"final_response": {"answer": "ok"}})
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         user_query="photosynthesis review",
@@ -123,12 +123,12 @@ async def test_brief_gene_agent_arun_invokes_graph_with_initial_state():
     agent = BriefGeneAgent(
         brief_config=BriefGeneConfig(),
         sensitive_config=_sensitive_config(),
-        knowledge_agent=object(),
+        knowledge_agent=None,
     )
     fake_graph = FakeCompiledGraph(
         {"final_response": {"gene": "AT1G01010", "summary": "ok"}}
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         user_query="AT1G01010 function",
@@ -149,10 +149,10 @@ async def test_review_agent_arun_invokes_graph_with_initial_state():
     agent = DeepResearchAgent(
         review_config=ReviewConfig(),
         sensitive_config=_sensitive_config(),
-        knowledge_agent=object(),
+        knowledge_agent=None,
     )
     fake_graph = FakeCompiledGraph({"final_response": {"review": "ok"}})
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         user_query="write a rice drought review",
@@ -174,7 +174,7 @@ async def test_review_agent_arun_invokes_graph_with_initial_state():
 async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
     """Verify in silico agent arun invokes graph with initial state."""
     agent = InSilicoResearchAgents(
-        analyst_agent=object(),
+        analyst_agent=None,
         in_silico_config=InSilicoResearchConfig(),
         sensitive_config=_sensitive_config(),
     )
@@ -185,7 +185,7 @@ async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
             "error": None,
         }
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         paper_text="A paper about root architecture.",
@@ -215,14 +215,14 @@ async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
 async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
     """Verify gene network agent arun invokes graph with initial state."""
     agent = GeneNetworkAgents(
-        analyst_agent=object(),
+        analyst_agent=None,
         gene_network_config=GeneNetworkConfig(),
         sensitive_config=_sensitive_config(),
     )
     fake_graph = FakeCompiledGraph(
         {"network_task": {"task_id": "network-1"}, "error": None}
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         species="oryza sativa",
@@ -246,14 +246,14 @@ async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
 async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
     """Verify digital design agent arun invokes graph with initial state."""
     agent = DigitalDesignAgents(
-        analyst_agent=object(),
+        analyst_agent=None,
         digital_design_config=DigitalDesignConfig(),
         sensitive_config=_sensitive_config(),
     )
     fake_graph = FakeCompiledGraph(
         {"design_task_result": [{"task_id": "design-1"}], "error": None}
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         species="arabidopsis thaliana",
@@ -291,7 +291,7 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
             "compute_resource": "small",
         }
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         query="run differential expression",
@@ -334,8 +334,8 @@ async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
     """Verify deep genome agent arun invokes graph with initial state."""
     agent = DeepGenomeAgents(
         data_agent=object(),
-        knowledge_agent=object(),
-        analyst_agent=object(),
+        knowledge_agent=None,
+        analyst_agent=None,
         deep_genome_config=DeepGenomeConfig(),
         sensitive_config=_sensitive_config(),
     )
@@ -345,7 +345,7 @@ async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
             "follow_up_questions": ["What next?"],
         }
     )
-    agent.app = fake_graph
+    object.__setattr__(agent, "app", fake_graph)
 
     result = await agent.arun(
         species_code="osa",

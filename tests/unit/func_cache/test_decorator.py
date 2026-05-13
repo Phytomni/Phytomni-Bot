@@ -9,6 +9,7 @@ paths, excluded parameters, corrupted values, and concurrent miss locking.
 """
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -31,7 +32,7 @@ def test_func_cache_reuses_result_and_exposes_info(tmp_path):
     Returns:
         None after cache info assertions pass.
     """
-    calls = {"count": 0}
+    calls: dict[str, Any] = {"count": 0}
 
     @func_cache(
         db_path=str(tmp_path / "decorator.sqlite"),
@@ -268,7 +269,7 @@ async def test_func_cache_supports_async_round_trip(tmp_path):
     Returns:
         None after async cache assertions pass.
     """
-    calls = {"count": 0}
+    calls: dict[str, Any] = {"count": 0}
 
     @func_cache(
         db_path=str(tmp_path / "async.sqlite"),

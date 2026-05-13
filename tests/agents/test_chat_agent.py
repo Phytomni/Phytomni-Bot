@@ -10,6 +10,7 @@ follow-up question attachment without external network calls.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -139,11 +140,7 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
                 "api_key": api_key,
                 "base_url": base_url,
             }
-            self.chat = type(
-                "FakeChat",
-                (),
-                {"completions": FakeCompletions()},
-            )()
+            self.chat = SimpleNamespace(completions=FakeCompletions())
 
         def client_settings(self) -> dict[str, str]:
             """Return captured client connection settings.

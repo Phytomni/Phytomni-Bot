@@ -74,7 +74,7 @@ def test_chat_agent_validates_required_fields():
     assert arguments.obs_file_list == []
 
     with pytest.raises(ValidationError):
-        schemas.ChatAgent(user_query="missing file list")
+        schemas.ChatAgent.model_validate({"user_query": "missing file list"})
 
 
 @pytest.mark.parametrize(
