@@ -17,6 +17,7 @@ Covers two variants in one file:
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict
 
 import pytest
@@ -26,6 +27,18 @@ from mcp_client_phytomni import PhytomniMcpClient
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
+
+# The uploaded-document leg drives the live retrieve -> rerank -> LLM
+# fan-out with an extra source attached. When that backend stack is
+# healthy a run completes in ~5 min; when it is degraded the same
+# wrapper call does not return for 20-30+ min (observed: one success at
+# 5.2 min, then 30/20/9 min and 5 consecutive 12 min runs all timing
+# out, with `multi_retrieve_generate` itself never returning -- the
+# MCP layer and this harness were ruled out). Skip by default so the
+# suite stays deterministic; set PHYTOMNI_E2E_RUN_KA_UPLOAD=1 to
+# exercise it once the rerank/LLM tier is back to single-digit-minute
+# latency.
+RUN_UPLOADED_KA_VAR = "PHYTOMNI_E2E_RUN_KA_UPLOAD"
 
 WHEAT_DROUGHT_KEYWORDS = (
     "drought",
@@ -61,6 +74,14 @@ async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get(RUN_UPLOADED_KA_VAR) != "1",
+    reason=(
+        "uploaded-document retrieve->rerank->LLM path is backend-bound "
+        "and intermittently exceeds 20-30 min; set "
+        "PHYTOMNI_E2E_RUN_KA_UPLOAD=1 to run when the tier is healthy"
+    ),
+)
 async def test_knowledge_agent_e2e_with_uploaded_brief(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], Dict[str, Any]],
