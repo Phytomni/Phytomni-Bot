@@ -299,6 +299,42 @@ for compatibility, but new local configuration should use the uppercase names.
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, or local virtual environments.
 
+### Distribution to Trusted Customers
+
+Phytomni-Bot ships to a small number of trusted customers as a Docker
+image that consumes **our** Huawei resources and **our** LLM quota, so the
+plaintext `.env` must never enter the image. Instead, each customer gets a
+per-customer encrypted envelope:
+
+1. **Build time (operator):** seal that customer's `.env` with their
+   license key:
+
+   ```bash
+   python scripts/encrypt_env.py \
+     --input src/mcp_server_phytomni/config/.env \
+     --license-key "<per-customer-license-key>" \
+     --output src/mcp_server_phytomni/config/.env.encrypted
+   ```
+
+   The output is an AES-256-GCM blob (`PHYBOT01` magic, PBKDF2-derived
+   key). Bake `.env.encrypted` — never the plaintext `.env` — into that
+   customer's image. The `.dockerignore` enforces this for any future
+   Dockerfile.
+
+2. **Runtime (customer):** the customer supplies only their license key
+   via `PHYTOMNI_LICENSE_KEY`; the bot derives the key, decrypts the
+   envelope into the process environment at startup, and never writes the
+   plaintext to disk.
+
+A leaked license key compromises one customer's envelope only — rebuild
+and redistribute with a rotated key, no fleet-wide exposure.
+
+**Threat scope.** Encryption blocks casual inspection (`docker history`,
+`docker export`, `cat .env`). It does **not** stop a motivated operator
+with `gcore`, `py-spy`, or `tcpdump` on their own host; defending against
+that requires the request-forwarder relay tracked in the deferred plan,
+not this envelope.
+
 ### OBSFS Storage
 
 The storage helpers prefer the obsfs mount at `/obs/phytomni` for OBS-backed
@@ -627,6 +663,10 @@ python scripts/normalize_json.py \
   import organization.
 - Keep public MCP tool names and schemas stable.
 - Keep generated caches and SQLite cache databases out of git.
+- `.env.encrypted` (the `PHYBOT01` envelope) is the only `.env*` artifact
+  permitted inside a shipped image; plaintext `.env` and its variants must
+  never enter a build context (enforced by `.dockerignore` and the
+  `scan_secrets.py` envelope check).
 - Prefer structured parsing and Pydantic validation over ad hoc string
   handling.
 - Add or update focused tests for behavior changes.
