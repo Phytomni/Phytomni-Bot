@@ -21,6 +21,11 @@ from .defaults import (
     ReviewConfig,
     SpeciesDataIndex,
 )
+from .secret_envelope import (
+    SecretEnvelopeError,
+    decrypt_env_blob,
+    encrypt_env_file,
+)
 from .settings import SensitiveConfig
 
 __all__ = [
@@ -33,8 +38,11 @@ __all__ = [
     "PromptTemplates",
     "RegionMap",
     "ReviewConfig",
+    "SecretEnvelopeError",
     "SensitiveConfig",
     "SpeciesDataIndex",
+    "decrypt_env_blob",
+    "encrypt_env_file",
     "load_prompt_templates",
     "load_species_data",
 ]
