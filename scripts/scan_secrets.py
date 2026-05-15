@@ -49,7 +49,10 @@ ALLOWED_ENV_NAMES = {
     ".env.example",
     ".env.sample",
     ".env.template",
+    ".env.encrypted",
 }
+ENVELOPE_ENV_NAME = ".env.encrypted"
+ENVELOPE_MAGIC = b"PHYBOT01"
 SENSITIVE_FILE_NAMES = {
     ".npmrc",
     ".pypirc",
@@ -223,6 +226,43 @@ def sensitive_path_reason(path: str) -> str | None:
     if file_path.suffix.lower() in SENSITIVE_SUFFIXES:
         return "private key or certificate files must stay out of Git history"
     return None
+
+
+def envelope_path_finding(
+    source: str, path: str, raw: bytes
+) -> Finding | None:
+    """Validate a `.env.encrypted` path against the envelope magic.
+
+    A real envelope is opaque ciphertext beginning with the
+    ``PHYBOT01`` magic and is safe to commit and ship. A file named
+    ``.env.encrypted`` that lacks the magic is almost certainly a
+    misnamed plaintext .env and must still be blocked. `.env.encrypted`
+    is allowlisted by name in `sensitive_path_reason`, so this content
+    check is the guard that keeps a misnamed plaintext from slipping
+    through wherever raw bytes are available (working tree and index).
+
+    Args:
+        source: Scan source label to attach to a generated finding.
+        path: Repository-relative path being scanned.
+        raw: Raw file bytes from the working tree or the staged blob.
+
+    Returns:
+        None when `path` is not envelope-named or the bytes carry the
+        magic; a sensitive-path finding for a misnamed plaintext file.
+    """
+    if Path(path).name.lower() != ENVELOPE_ENV_NAME:
+        return None
+    if raw.startswith(ENVELOPE_MAGIC):
+        return None
+    return Finding(
+        source,
+        path,
+        0,
+        "sensitive-path",
+        ".env.encrypted lacks the PHYBOT01 magic "
+        "(misnamed plaintext .env?)",
+        "<path>",
+    )
 
 
 def redact_line(line: str, match: re.Match[str]) -> str:
@@ -399,6 +439,9 @@ def scan_worktree_path(path: str) -> list[Finding]:
     if not file_path.is_file() or file_path.stat().st_size > MAX_FILE_BYTES:
         return []
     raw_content = file_path.read_bytes()
+    if file_path.name.lower() == ENVELOPE_ENV_NAME:
+        finding = envelope_path_finding("tracked", path, raw_content)
+        return [finding] if finding else []
     text = decode_bytes(raw_content)
     if text is None:
         return []
@@ -423,7 +466,12 @@ def scan_staged_path(path: str) -> list[Finding]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    if result.returncode != 0 or len(result.stdout) > MAX_FILE_BYTES:
+    if result.returncode != 0:
+        return []
+    if Path(path).name.lower() == ENVELOPE_ENV_NAME:
+        finding = envelope_path_finding("staged", path, result.stdout)
+        return [finding] if finding else []
+    if len(result.stdout) > MAX_FILE_BYTES:
         return []
     text = decode_bytes(result.stdout)
     if text is None:

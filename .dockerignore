@@ -1,0 +1,15 @@
+# Security boundary for image builds (Phytomni-Bot ships to
+# customers). Plaintext secrets must NEVER enter the Docker build
+# context; only the AES-256-GCM envelope (.env.encrypted, "PHYBOT01"
+# magic) may ship. See README "Distribution to trusted customers".
+#
+# No Dockerfile exists yet; this file is intentionally added now so
+# the security default is correct the moment one is introduced.
+
+# Exclude every plaintext .env and variant (incl. .env.example) ...
+**/.env
+**/.env.*
+src/mcp_server_phytomni/config/.env
+
+# ... but the encrypted envelope is the one artifact that MUST ship.
+!**/.env.encrypted
