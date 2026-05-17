@@ -290,8 +290,14 @@ API_KEY=your_api_key
 CODER_URL=your_coder_base_url
 CODER_MODEL=your_coder_model
 CODER_API_KEY=your_coder_api_key
+EMBED_URL=your_embed_base_url
+EMBED_MODEL=your_embed_model
+EMBED_API_KEY=your_embed_api_key
 BI_TOKEN=your_bi_token
 ```
+
+`EMBED_URL`, `EMBED_MODEL`, and `EMBED_API_KEY` are required;
+`BI_TOKEN` is optional and defaults to empty.
 
 Legacy `AccessKeyID` and `SecretAccessKey` environment names remain accepted
 for compatibility, but new local configuration should use the uppercase names.
@@ -740,15 +746,25 @@ When changing dependencies:
 
 ## Troubleshooting
 
-### Missing `.env`
+### Missing configuration
 
-If the server raises a missing `.env` error, copy the example file and provide
-real values:
+If no configuration source is found, startup raises a `RuntimeError`
+that enumerates the three accepted provisioning paths:
+
+1. `PHYTOMNI_TESTING=1` — the test suites inject dummy secrets.
+2. `PHYTOMNI_LICENSE_KEY=<key>` with a `.env.encrypted` envelope
+   beside `config/` — the customer-image path (see
+   [Distribution to Trusted Customers](#distribution-to-trusted-customers)).
+3. A plaintext `config/.env` — the local developer path:
 
 ```bash
 cp src/mcp_server_phytomni/config/.env.example \
   src/mcp_server_phytomni/config/.env
 ```
+
+A wrong `PHYTOMNI_LICENSE_KEY` (or a corrupted envelope) raises
+`SecretEnvelopeError` and aborts startup rather than booting with
+empty secrets.
 
 ### Tool Argument Validation
 
