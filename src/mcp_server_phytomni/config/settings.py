@@ -5,7 +5,7 @@
 """Sensitive environment settings and local .env loading helpers.
 
 Classes: SensitiveConfig.
-Functions: load_env_file, generate_env_template.
+Functions: load_env_file.
 """
 
 import os
@@ -16,9 +16,18 @@ from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .secret_envelope import decrypt_env_blob
+
 _current_dir = Path(__file__).parent
 PROJECT_ROOT = _current_dir.parent
 ENV_PATH = PROJECT_ROOT / "config/.env"
+ENCRYPTED_ENV_PATH = PROJECT_ROOT / "config/.env.encrypted"
+LICENSE_KEY_ENV = "PHYTOMNI_LICENSE_KEY"
+
+# In-process, never-persisted memo so the PBKDF2 decrypt runs once
+# per process even though SensitiveConfig.load() is called at import
+# time in 9+ modules. Tests reset it via monkeypatch.
+_ENV_DECRYPT_MEMO = {"done": False}
 
 
 def load_env_file() -> bool:
@@ -27,53 +36,49 @@ def load_env_file() -> bool:
     Checks for the existence of the .env file and raises an error if not found.
     Automatically loads environment variables into the application context.
 
+    Resolution order:
+        1. ``PHYTOMNI_TESTING=1`` — tests inject dummy secrets; no
+           file is read.
+        2. ``PHYTOMNI_LICENSE_KEY`` set and an encrypted envelope at
+           ``ENCRYPTED_ENV_PATH`` — decrypt once per process and
+           inject into ``os.environ`` (existing env wins).
+        3. A plaintext ``ENV_PATH`` — load it (file wins, legacy
+           developer behaviour).
+
     Raises:
-        FileNotFoundError: If the .env file is missing and cannot be generated
-        RuntimeError: If required environment variables are missing
+        SecretEnvelopeError: If the encrypted envelope cannot be
+            opened (wrong license key or corrupted file). Propagated
+            uncaught so the process refuses to start rather than
+            booting with empty secrets.
+        RuntimeError: If none of the three provisioning paths apply.
 
     Returns:
         bool: True if environment variables were successfully loaded
     """
     if os.getenv("PHYTOMNI_TESTING") == "1":
         return True
-    if not ENV_PATH.exists():
-        generate_env_template()
-        raise FileNotFoundError(
-            "Missing .env file. "
-            f"Please create using {PROJECT_ROOT}/config/.env.example"
-        )
-    load_dotenv(ENV_PATH, override=True)
-    return True
-
-
-def generate_env_template() -> None:
-    """Generate a .env.example template file with default configuration.
-
-    Creates a template file containing all required environment variables
-    with placeholder values and example formatting.
-
-    Returns:
-        None. The template file is created only when it does not exist.
-    """
-    template = """# Required configuration (⚠️ remove comments)
-DOMAIN_NAME=your_domain_name
-USER_NAME=your_username
-USER_PASSWORD=your_password
-ACCESS_KEY_ID=your_access_key_id
-SECRET_ACCESS_KEY=your_secret_access_key
-BASE_URL=your_base_url
-MODEL_ID=your_model_id
-API_KEY=your_api_key
-CODER_URL=your_coder_url
-CODER_MODEL=your_coder_model
-CODER_API_KEY=your_coder_api_key
-BI_TOKEN=your_bi_token
-"""
-    env_example = Path(__file__).parent.parent / ".env.example"
-    if not env_example.exists():
-        with open(env_example, "w", encoding="utf-8") as f:
-            f.write(template)
-        print(f"Template generated: {env_example}")
+    license_key = os.getenv(LICENSE_KEY_ENV)
+    if license_key and ENCRYPTED_ENV_PATH.exists():
+        if not _ENV_DECRYPT_MEMO["done"]:
+            decrypted = decrypt_env_blob(
+                ENCRYPTED_ENV_PATH.read_bytes(), license_key
+            )
+            for key, value in decrypted.items():
+                os.environ.setdefault(key, value)
+            decrypted.clear()
+            _ENV_DECRYPT_MEMO["done"] = True
+        return True
+    if ENV_PATH.exists():
+        load_dotenv(ENV_PATH, override=True)
+        return True
+    raise RuntimeError(
+        "No configuration source found. Provide exactly one of:\n"
+        "  1. PHYTOMNI_TESTING=1 (test suites inject dummy secrets)\n"
+        f"  2. {LICENSE_KEY_ENV}=<license-key> with an encrypted "
+        f"envelope at {ENCRYPTED_ENV_PATH}\n"
+        f"  3. a plaintext .env at {ENV_PATH} (copy "
+        f"{PROJECT_ROOT}/config/.env.example)"
+    )
 
 
 class SensitiveConfig(BaseSettings):
@@ -150,6 +155,12 @@ class SensitiveConfig(BaseSettings):
         load_env_file()
         settings_cls = cast(Any, cls)
         if os.getenv("PHYTOMNI_TESTING") == "1":
+            return settings_cls(_env_file=None)
+        license_key = os.getenv(LICENSE_KEY_ENV)
+        if license_key and ENCRYPTED_ENV_PATH.exists():
+            # Encrypted values are already in os.environ; the
+            # class-bound env_file=ENV_PATH must be ignored so a
+            # stray plaintext .env cannot leak in.
             return settings_cls(_env_file=None)
         return settings_cls()
 
