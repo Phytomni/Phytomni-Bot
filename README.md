@@ -541,6 +541,7 @@ Tunables (set as environment variables):
 | `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS` | Per-call submit timeout for async tools. | 1800 |
 | `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS` | Polling deadline for one async task. | 600 |
 | `PHYTOMNI_E2E_TASKS_DB` | Override `server_tasks.db` path. | repo root |
+| `PHYTOMNI_E2E_RUN_KA_UPLOAD` | Set to `1` to also run the KnowledgeAgent uploaded-document variant. Skipped by default: with an attached document the retrieve→rerank fan-out is backend-bound and can exceed 30 min when the retrieval tier is degraded. The no-upload KnowledgeAgent test always runs. | unset (skipped) |
 
 See [`e2e/README.md`](e2e/README.md) for the full layout, entry-point
 rationale (client-stdio is the only path; handler-direct and
