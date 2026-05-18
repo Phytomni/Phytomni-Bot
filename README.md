@@ -232,6 +232,11 @@ submissions, uploads, downloads, or polling results.
 - Python `>=3.12,<3.15`
 - Linux is the primary supported runtime environment.
 - `uv` is recommended for local development.
+- A reasonably modern C toolchain (GCC ≥ 9 / glibc ≥ 2.28) **or**
+  conda-forge prebuilt wheels. `numpy`/`pandas` are pulled in
+  transitively by `markitdown[all]`; on an ancient compiler they fall
+  back to a source build that fails. See
+  [Building numpy/pandas from source on an old toolchain](#building-numpypandas-from-source-on-an-old-toolchain).
 
 ### Using uv
 
@@ -266,6 +271,11 @@ conda activate phytomni-bot
 pip install -e .
 pip install -e ".[dev]"
 ```
+
+> On a host with an old system compiler (GCC < 9), `conda env create`
+> can try to build `numpy`/`pandas` from source and fail. Install them
+> as conda-forge prebuilt wheels first — see
+> [Building numpy/pandas from source on an old toolchain](#building-numpypandas-from-source-on-an-old-toolchain).
 
 ## Configuration
 
@@ -765,6 +775,44 @@ cp src/mcp_server_phytomni/config/.env.example \
 A wrong `PHYTOMNI_LICENSE_KEY` (or a corrupted envelope) raises
 `SecretEnvelopeError` and aborts startup rather than booting with
 empty secrets.
+
+### Building numpy/pandas from source on an old toolchain
+
+`numpy` and `pandas` are not direct dependencies; they are pulled in
+transitively by `markitdown[all]` (used for the document-upload
+agents). The project deliberately keeps open `>=` ranges and ships no
+`uv.lock` (see the Dependency Policy in [CLAUDE.md](CLAUDE.md)), so on
+a host with an old compiler `pip`/`conda` resolves the newest releases
+and tries to **compile them from source**, failing with errors like
+`gcc: error: unrecognized command line option` or a C99/C11 standard
+error.
+
+This is a host-toolchain limitation, not a project defect — the fix is
+to provide prebuilt binaries, **not** to pin versions. Pick one
+supported path:
+
+**Option 1 — modern toolchain.** Use a host or container with
+GCC ≥ 9 and glibc ≥ 2.28. Recent manylinux wheels then install with
+no local compilation.
+
+**Option 2 — conda-forge prebuilt wheels (no system compiler
+needed).** Install the heavy binary deps as conda-forge wheels
+*before* the editable install, so `pip` sees them already satisfied
+and skips the source build entirely:
+
+```bash
+conda create -n phytomni-bot python=3.12
+conda activate phytomni-bot
+# Prebuilt wheels — no source build, no system GCC required:
+conda install -c conda-forge numpy pandas lxml
+pip install -e ".[dev]"
+```
+
+Add any other C-extension dependency that still fails to the
+`conda install -c conda-forge ...` line. Do **not** pin these
+versions in `pyproject.toml`/`environment.yml`: the open-range
+dependency policy is intentional, and the toolchain — not the
+project — is what to upgrade.
 
 ### Tool Argument Validation
 
