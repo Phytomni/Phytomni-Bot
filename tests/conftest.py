@@ -10,10 +10,13 @@ helpers, and the autouse HTTP blocker fixture used by repository tests.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import socket
+import sys
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import httpx
@@ -196,3 +199,25 @@ def demo_data_dir() -> Path:
         Absolute path to the repository's demo_data root.
     """
     return DEMO_DATA_DIR
+
+
+@pytest.fixture(scope="session")
+def secret_scanner() -> ModuleType:
+    """Load scripts/scan_secrets.py once as an importable module.
+
+    The secret scanner ships as a standalone script rather than a
+    package module, so tests load it via importlib. Anchoring the path
+    on TEST_ROOT keeps a single, depth-independent source of truth for
+    every test directory instead of a per-file ``parents[N]`` walk.
+
+    Returns:
+        The imported scan_secrets module object.
+    """
+    script_path = TEST_ROOT.parent / "scripts" / "scan_secrets.py"
+    spec = importlib.util.spec_from_file_location("scan_secrets", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load scan_secrets.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["scan_secrets"] = module
+    spec.loader.exec_module(module)
+    return module

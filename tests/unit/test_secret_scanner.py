@@ -10,38 +10,20 @@ placeholder values, and reporting tracked sensitive paths.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
-
 import pytest
 
 pytestmark = pytest.mark.unit
 
 
-def load_secret_scanner() -> ModuleType:
-    """Load the scanner script as a module.
+def test_scan_text_detects_secret_assignment(secret_scanner) -> None:
+    """Secret-looking values are reported.
 
-    Returns:
-        Imported scan_secrets module object.
+    Args:
+        secret_scanner: Loaded scan_secrets module fixture.
     """
-    script_path = Path(__file__).parents[2] / "scripts" / "scan_secrets.py"
-    spec = importlib.util.spec_from_file_location("scan_secrets", script_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Unable to load scan_secrets.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["scan_secrets"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_scan_text_detects_secret_assignment() -> None:
-    """Secret-looking values are reported."""
-    scanner = load_secret_scanner()
     secret_value = "sk-" + ("A" * 32)
 
-    findings = scanner.scan_text(
+    findings = secret_scanner.scan_text(
         "test",
         "example.py",
         f'OPENAI_API_KEY = "{secret_value}"',
@@ -51,11 +33,13 @@ def test_scan_text_detects_secret_assignment() -> None:
     assert findings[0].rule == "openai-token"
 
 
-def test_scan_text_allows_placeholders() -> None:
-    """Placeholder values in example files are allowed."""
-    scanner = load_secret_scanner()
+def test_scan_text_allows_placeholders(secret_scanner) -> None:
+    """Placeholder values in example files are allowed.
 
-    findings = scanner.scan_text(
+    Args:
+        secret_scanner: Loaded scan_secrets module fixture.
+    """
+    findings = secret_scanner.scan_text(
         "test",
         "src/mcp_server_phytomni/config/.env.example",
         "OPENAI_API_KEY=your-openai-api-key",
@@ -64,11 +48,15 @@ def test_scan_text_allows_placeholders() -> None:
     assert findings == []
 
 
-def test_scan_text_detects_sensitive_paths() -> None:
-    """Tracked environment files are reported by path."""
-    scanner = load_secret_scanner()
+def test_scan_text_detects_sensitive_paths(secret_scanner) -> None:
+    """Tracked environment files are reported by path.
 
-    findings = scanner.scan_text("test", "src/mcp_server_phytomni/.env", "")
+    Args:
+        secret_scanner: Loaded scan_secrets module fixture.
+    """
+    findings = secret_scanner.scan_text(
+        "test", "src/mcp_server_phytomni/.env", ""
+    )
 
     assert findings
     assert findings[0].rule == "sensitive-path"
