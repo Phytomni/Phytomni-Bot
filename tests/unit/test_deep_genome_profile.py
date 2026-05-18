@@ -4,9 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the DeepGenome BI SQL helper.
 
-Pin the _post_bi_sql guards: a non-2xx status or a non-JSON body (an
-HTML 502/504 gateway page) must surface as McpError with the status and
-a body excerpt, not the opaque "Expecting value: line 1 column 1".
+``_post_bi_sql`` now routes through the shared ``post_json_with_retries``
+helper for retry parity with brief_gene. Pin the surviving A-5
+guarantee: retry exhaustion, a non-2xx status, and an empty payload
+surface as the helper's ``McpError``, and a 2xx non-JSON body still
+surfaces as a clear ``McpError`` rather than an opaque decode error.
 """
 
 from __future__ import annotations
@@ -14,8 +16,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import requests
 from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.agents.deep_genome import profile
 from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
@@ -23,85 +25,45 @@ from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
 pytestmark = pytest.mark.unit
 
 
-class _FakeResponse:
-    """Minimal requests.Response stand-in for _post_bi_sql tests.
-
-    Attributes:
-        status_code: HTTP status code reported by the fake.
-        text: Raw response body used for error excerpts.
-    """
-
-    def __init__(
-        self,
-        status_code: int,
-        text: str,
-        json_value: Any = None,
-        json_error: Exception | None = None,
-    ):
-        """Store the simulated response behaviour.
-
-        Args:
-            status_code: HTTP status code to report.
-            text: Raw body text for error excerpts.
-            json_value: Value returned by ``json()`` on success.
-            json_error: Exception raised by ``json()`` when set.
-        """
-        self.status_code = status_code
-        self.text = text
-        self._json_value = json_value
-        self._json_error = json_error
-
-    def raise_for_status(self) -> None:
-        """Raise HTTPError for non-2xx statuses like requests does.
-
-        Raises:
-            requests.HTTPError: When the status code is >= 400.
-        """
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"{self.status_code} Server Error")
-
-    def json(self) -> Any:
-        """Return the decoded body or raise the configured error.
-
-        Returns:
-            The configured JSON value on success.
-
-        Raises:
-            Exception: The configured ``json_error`` when set.
-        """
-        if self._json_error is not None:
-            raise self._json_error
-        return self._json_value
-
-
-def _patch_post(monkeypatch: pytest.MonkeyPatch, response: _FakeResponse):
-    """Point profile.requests.post at a fixed fake response.
+def _patch_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    result: Any = None,
+    error: Exception | None = None,
+) -> None:
+    """Replace profile.post_json_with_retries with an async fake.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
-        response: Fake response every post call should return.
+        result: Value the fake helper returns when no error is set.
+        error: Exception the fake helper raises instead of returning.
     """
 
-    def fake_post(*args: Any, **kwargs: Any) -> _FakeResponse:
-        """Return the fixed fake response.
+    async def fake_helper(*args: Any, **kwargs: Any) -> Any:
+        """Return the configured payload or raise the configured error.
 
         Args:
             *args: Ignored positional args.
             **kwargs: Ignored keyword args.
 
         Returns:
-            The pre-built fake response.
+            The configured ``result`` when no error is set.
+
+        Raises:
+            Exception: The configured ``error`` when set.
         """
         _ = (args, kwargs)
-        return response
+        if error is not None:
+            raise error
+        return result
 
-    monkeypatch.setattr(profile.requests, "post", fake_post)
+    monkeypatch.setattr(profile, "post_json_with_retries", fake_helper)
 
 
-def test_post_bi_sql_returns_payload_on_success(
+async def test_post_bi_sql_returns_payload_on_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify a 2xx JSON body is returned unchanged.
+    """Verify a decoded JSON payload is returned unchanged.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -109,44 +71,44 @@ def test_post_bi_sql_returns_payload_on_success(
     Returns:
         None after the decoded payload assertion passes.
     """
-    _patch_post(
-        monkeypatch,
-        _FakeResponse(200, '{"data": []}', json_value={"data": []}),
-    )
+    _patch_helper(monkeypatch, result={"data": []})
 
-    result = _post_bi_sql("https://bi", {}, "SELECT 1")
+    result = await _post_bi_sql("https://bi", {}, "SELECT 1")
 
     assert result == {"data": []}
 
 
-def test_post_bi_sql_raises_mcperror_on_http_error(
+async def test_post_bi_sql_propagates_helper_mcperror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify a 504 gateway page surfaces as a clear McpError.
+    """Verify the retry helper's McpError propagates unchanged.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
 
     Returns:
-        None after the error message assertions pass.
+        None after the propagated error assertion passes.
     """
-    _patch_post(
+    _patch_helper(
         monkeypatch,
-        _FakeResponse(504, "<html>504 Gateway Time-out</html>"),
+        error=McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message="BI query failed after all retries",
+            )
+        ),
     )
 
     with pytest.raises(McpError) as excinfo:
-        _post_bi_sql("https://bi", {}, "SELECT 1")
+        await _post_bi_sql("https://bi", {}, "SELECT 1")
 
-    message = excinfo.value.error.message
-    assert "HTTP 504" in message
-    assert "Gateway Time-out" in message
+    assert "BI query failed" in excinfo.value.error.message
 
 
-def test_post_bi_sql_raises_mcperror_on_non_json(
+async def test_post_bi_sql_raises_mcperror_on_non_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify a 200 non-JSON body surfaces as a clear McpError.
+    """Verify a 2xx non-JSON body surfaces as a clear McpError.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -154,18 +116,31 @@ def test_post_bi_sql_raises_mcperror_on_non_json(
     Returns:
         None after the non-JSON error message assertions pass.
     """
-    _patch_post(
+    _patch_helper(
         monkeypatch,
-        _FakeResponse(
-            200,
-            "<html>proxy error</html>",
-            json_error=ValueError("Expecting value: line 1 column 1 (char 0)"),
-        ),
+        error=ValueError("Expecting value: line 1 column 1 (char 0)"),
     )
 
     with pytest.raises(McpError) as excinfo:
-        _post_bi_sql("https://bi", {}, "SELECT 1")
+        await _post_bi_sql("https://bi", {}, "SELECT 1")
 
-    message = excinfo.value.error.message
-    assert "non-JSON" in message
-    assert "status=200" in message
+    assert "non-JSON" in excinfo.value.error.message
+
+
+async def test_post_bi_sql_raises_mcperror_on_empty_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify a missing payload surfaces as a clear McpError.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None after the empty-payload error message assertion passes.
+    """
+    _patch_helper(monkeypatch, result=None)
+
+    with pytest.raises(McpError) as excinfo:
+        await _post_bi_sql("https://bi", {}, "SELECT 1")
+
+    assert "no payload" in excinfo.value.error.message

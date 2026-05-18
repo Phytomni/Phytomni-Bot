@@ -15,11 +15,17 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-import requests
+from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.docs import format_retrieved_doc_context
+from ...common.http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
+    require_json_object,
+)
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...config.defaults import DeepGenomeConfig
@@ -37,7 +43,7 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 GENE_LOOKUP_CACHE_TTL = 300
 
 
-def _post_bi_sql(
+async def _post_bi_sql(
     bi_url: str,
     sql_headers: Dict[str, str],
     sql: str,
@@ -45,42 +51,59 @@ def _post_bi_sql(
 ) -> Dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
+    Routes through the shared ``post_json_with_retries`` helper for
+    parity with brief_gene's BI path (transient-transport and
+    retriable-status backoff), then layers a non-JSON guard on top
+    because the helper calls ``response.json()`` with no content-type
+    check of its own.
+
+    Args:
+        bi_url: BI endpoint URL.
+        sql_headers: HTTP headers (content type and BI token).
+        sql: SQL statement to execute.
+        timeout: Per-request timeout in seconds.
+
+    Returns:
+        The decoded BI JSON payload.
+
     Raises:
-        McpError: If the BI endpoint returns a non-2xx status or a body
-            that is not valid JSON (e.g. an HTML 502/504 gateway page),
-            surfaced with the status and a body excerpt instead of the
-            opaque ``Expecting value: line 1 column 1 (char 0)``.
+        McpError: If the BI endpoint keeps failing after all retries,
+            returns no payload, or returns a 2xx body that is not valid
+            JSON (e.g. an HTML 502/504 gateway page) — surfaced with a
+            clear message instead of the opaque ``Expecting value:
+            line 1 column 1 (char 0)``.
     """
-    response = requests.post(
-        url=bi_url,
-        json={"sql": sql, "returnType": "json"},
-        headers=sql_headers,
-        timeout=timeout,
+    client_timeout = Timeout(timeout, connect=timeout)
+    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+        try:
+            data = await post_json_with_retries(
+                client,
+                JsonPostRequest(
+                    url=bi_url,
+                    headers=sql_headers,
+                    json_body={"sql": sql, "returnType": "json"},
+                ),
+                JsonPostRetry(
+                    timeout=timeout,
+                    max_retries=_LOOKUP_CONFIG.MAX_RETRIES,
+                    retriable_codes=list(_LOOKUP_CONFIG.RETRIABLE_CODES),
+                    message="BI query failed",
+                    network_message="BI query network error",
+                ),
+            )
+        except ValueError as exc:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=(
+                        "BI backend returned non-JSON "
+                        f"(2xx body is not valid JSON: {exc})"
+                    ),
+                )
+            ) from exc
+    return require_json_object(
+        data, "BI query returned no payload after all retries"
     )
-    try:
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as exc:
-        raise McpError(
-            ErrorData(
-                code=INTERNAL_ERROR,
-                message=(
-                    f"BI query failed with HTTP "
-                    f"{response.status_code}: {response.text[:200]!r}"
-                ),
-            )
-        ) from exc
-    except ValueError as exc:
-        raise McpError(
-            ErrorData(
-                code=INTERNAL_ERROR,
-                message=(
-                    "BI backend returned non-JSON "
-                    f"(status={response.status_code}, "
-                    f"body head={response.text[:200]!r})"
-                ),
-            )
-        ) from exc
 
 
 @func_cache(
@@ -100,7 +123,7 @@ async def _cached_gene_symbol_lookup(
         "SELECT * FROM id_table WHERE gene_id = "
         f"'{gene_id}' AND species_code = '{species_code}'"
     )
-    response = _post_bi_sql(bi_url, sql_headers, sql, timeout)
+    response = await _post_bi_sql(bi_url, sql_headers, sql, timeout)
     gene_symbol_list: List[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
@@ -144,7 +167,8 @@ async def _cached_gene_annotation_lookup(
         f"AND species_code = '{species_code}'",
     )
     responses = [
-        _post_bi_sql(bi_url, sql_headers, sql, timeout) for sql in sql_list
+        await _post_bi_sql(bi_url, sql_headers, sql, timeout)
+        for sql in sql_list
     ]
     gene_anno_dict: Dict[str, Any] = {}
     if responses[0]["data"]:

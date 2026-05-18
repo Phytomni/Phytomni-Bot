@@ -21,13 +21,12 @@ from httpx import (
 )
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import (
     JsonPostRequest,
     JsonPostRetry,
     post_json_with_retries,
+    require_json_object,
 )
 from ...common.prompts import get_prompt
 from ...common.responses import (
@@ -282,14 +281,8 @@ async def run_bi_api(
                 network_message="BI API network error",
             ),
         )
-        if isinstance(data, dict):
-            return data
-
-    raise McpError(
-        ErrorData(
-            code=INTERNAL_ERROR,
-            message="Failed to query BI API after all retries",
-        )
+    return require_json_object(
+        data, "Failed to query BI API after all retries"
     )
 
 

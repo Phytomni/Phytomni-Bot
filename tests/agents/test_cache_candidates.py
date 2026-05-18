@@ -9,13 +9,15 @@ cache keys, and DeepGenome BI lookup cache behavior.
 """
 
 import json
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agents
 from mcp_server_phytomni.agents.deep_genome import agent as deep_genome_agents
+from mcp_server_phytomni.agents.deep_genome import (
+    profile as deep_genome_profile,
+)
 from mcp_server_phytomni.agents.deep_genome.formatting import (
     network_to_string,
 )
@@ -387,26 +389,23 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
     deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
-    def fake_post(*args, **kwargs):
-        """Return fake symbol rows from BI.
+    async def fake_helper(*args, **kwargs):
+        """Return fake symbol rows from the BI retry helper.
 
         Args:
-            *args: Ignored request positional arguments.
-            **kwargs: Ignored request keyword arguments.
+            *args: Ignored client/request/retry positional arguments.
+            **kwargs: Ignored keyword arguments.
 
         Returns:
-            Object exposing a json method with symbol rows.
+            Decoded BI payload with symbol rows.
         """
         del args, kwargs
         calls["post"] += 1
-        return SimpleNamespace(
-            json=lambda: {"data": [{"symbol": "NAC001|NAC002"}]},
-            raise_for_status=lambda: None,
-            status_code=200,
-            text="",
-        )
+        return {"data": [{"symbol": "NAC001|NAC002"}]}
 
-    monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
+    monkeypatch.setattr(
+        deep_genome_profile, "post_json_with_retries", fake_helper
+    )
 
     lookup_symbol = getattr(deep_genome_agents, "_cached_gene_symbol_lookup")
     first = await lookup_symbol(
@@ -439,19 +438,20 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
     deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
-    def fake_post(*args, **kwargs):
+    async def fake_helper(client, request, retry):
         """Return fake annotation rows selected by SQL text.
 
         Args:
-            *args: Ignored request positional arguments.
-            **kwargs: Request keyword arguments containing JSON SQL.
+            client: Ignored async HTTP client.
+            request: BI request whose json_body carries the SQL.
+            retry: Ignored retry policy.
 
         Returns:
-            Object exposing a json method with annotation rows.
+            Decoded BI payload with annotation rows.
         """
-        del args
+        del client, retry
         calls["post"] += 1
-        sql = kwargs["json"]["sql"]
+        sql = request.json_body["sql"]
         if "description" in sql:
             payload = {"data": [{"description": "NAC factor"}]}
         elif "ontology" in sql:
@@ -460,14 +460,11 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
             payload = {"data": [{"interpro_id": "IPR1"}]}
         else:
             payload = {"data": [{"mapman": "27.3"}]}
-        return SimpleNamespace(
-            json=lambda: payload,
-            raise_for_status=lambda: None,
-            status_code=200,
-            text="",
-        )
+        return payload
 
-    monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
+    monkeypatch.setattr(
+        deep_genome_profile, "post_json_with_retries", fake_helper
+    )
 
     lookup_annotation = getattr(
         deep_genome_agents,

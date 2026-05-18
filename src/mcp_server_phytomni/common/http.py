@@ -6,7 +6,8 @@
 
 Classes: JsonPostRequest, JsonPostRetry.
 Functions: retry_http_status_or_raise, retry_network_or_raise,
-    request_response_with_retries, post_json_with_retries.
+    request_response_with_retries, post_json_with_retries,
+    require_json_object.
 """
 
 import asyncio
@@ -266,3 +267,26 @@ async def post_json_with_retries(
     """
     response = await request_response_with_retries(client, request, retry)
     return response.json() if response is not None else None
+
+
+def require_json_object(data: Any, message: str) -> dict[str, Any]:
+    """Return data when it is a JSON object, else raise McpError.
+
+    ``post_json_with_retries`` returns ``None`` once retries are
+    exhausted and may yield a non-object JSON value; callers that need
+    a mapping use this to fail with a clear MCP error instead of an
+    opaque downstream ``KeyError``/``TypeError``.
+
+    Args:
+        data: Parsed JSON returned by ``post_json_with_retries``.
+        message: MCP error message used when ``data`` is not an object.
+
+    Returns:
+        dict[str, Any]: ``data`` when it is a JSON object.
+
+    Raises:
+        McpError: When ``data`` is ``None`` or not a JSON object.
+    """
+    if isinstance(data, dict):
+        return data
+    raise McpError(ErrorData(code=INTERNAL_ERROR, message=message))
