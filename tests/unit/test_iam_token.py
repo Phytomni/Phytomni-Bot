@@ -4,26 +4,26 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the IAM ``get_token`` retry hardening.
 
-A single transient ``httpx.ConnectError`` previously failed the whole
-request because ``get_token`` issued one POST with no retry, unlike every
-downstream BI / NL2SQL call. These offline tests pin the new behavior:
-transient connect errors are retried via the shared
-``request_response_with_retries`` helper, exhausted retries surface an
-``McpError`` (not a bare exception), and a success response missing the
-``X-Subject-Token`` header is reported as an ``McpError``.
+``get_token`` previously issued one POST with no retry, so a single
+transient ``httpx.ConnectError`` failed the whole request. These
+offline tests pin: transient connect errors retry then succeed,
+exhausted retries raise ``McpError``, and a 2xx response missing the
+``X-Subject-Token`` header raises ``McpError``. Shared fake client and
+instant-retry sleep live in ``tests/unit/conftest.py``.
 """
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import pytest
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.auth import iam
+
+_ClientFactory = Callable[[list[Any], dict[str, int]], type]
 
 
 def _resp(status_code: int, headers: dict[str, str]) -> SimpleNamespace:
@@ -47,72 +47,19 @@ def _resp(status_code: int, headers: dict[str, str]) -> SimpleNamespace:
     )
 
 
-def _client_factory(behaviors: list[Any], calls: dict[str, int]) -> type:
-    """Build a fake ``AsyncClient`` whose ``post`` replays ``behaviors``.
-
-    Args:
-        behaviors: Per-call script; an exception instance is raised, any
-            other value is returned as the response.
-        calls: Mutable counter; ``calls["n"]`` is incremented per POST so
-            the test can assert how many attempts were made.
-
-    Returns:
-        A class for ``monkeypatch.setattr(iam, "AsyncClient", ...)``.
-    """
-    script = list(behaviors)
-
-    class _FakeClient:
-        """Async context-manager HTTP client stub."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            """Ignore client construction arguments."""
-            del args, kwargs
-
-        async def __aenter__(self) -> "_FakeClient":
-            """Enter the async context."""
-            return self
-
-        async def __aexit__(self, *args: Any) -> None:
-            """Exit the async context."""
-            del args
-
-        async def post(self, *args: Any, **kwargs: Any) -> Any:
-            """Replay the next scripted behavior for one POST."""
-            del args, kwargs
-            calls["n"] += 1
-            behavior = script.pop(0)
-            if isinstance(behavior, BaseException):
-                raise behavior
-            return behavior
-
-    return _FakeClient
-
-
-@pytest.fixture(autouse=True)
-def _instant_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the shared retry backoff instant so tests stay fast.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture.
-    """
-
-    async def _no_sleep(*args: Any, **kwargs: Any) -> None:
-        del args, kwargs
-        return None
-
-    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
-
-
+@pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_retries_transient_connect_error_then_succeeds(
     monkeypatch: pytest.MonkeyPatch,
+    fake_client_factory: _ClientFactory,
 ) -> None:
     """A transient ConnectError is retried; the next 2xx yields the token.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        fake_client_factory: Scripted fake-client builder.
     """
     calls = {"n": 0}
-    fake = _client_factory(
+    fake = fake_client_factory(
         [
             httpx.ConnectError("transient connect blip"),
             _resp(201, {"X-Subject-Token": "tok-abc-123"}),
@@ -127,17 +74,20 @@ async def test_get_token_retries_transient_connect_error_then_succeeds(
     assert calls["n"] == 2  # one failure + one success
 
 
+@pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_raises_mcperror_after_exhausting_retries(
     monkeypatch: pytest.MonkeyPatch,
+    fake_client_factory: _ClientFactory,
 ) -> None:
     """Persistent ConnectError surfaces as McpError, not a raw exception.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        fake_client_factory: Scripted fake-client builder.
     """
     attempts = iam.SERVER_CONFIG.MAX_RETRIES + 1
     calls = {"n": 0}
-    fake = _client_factory(
+    fake = fake_client_factory(
         [httpx.ConnectError("down") for _ in range(attempts)],
         calls,
     )
@@ -150,16 +100,19 @@ async def test_get_token_raises_mcperror_after_exhausting_retries(
     assert calls["n"] == attempts
 
 
+@pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_raises_mcperror_when_header_missing(
     monkeypatch: pytest.MonkeyPatch,
+    fake_client_factory: _ClientFactory,
 ) -> None:
     """A 2xx response without X-Subject-Token is an McpError, not KeyError.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        fake_client_factory: Scripted fake-client builder.
     """
     calls = {"n": 0}
-    fake = _client_factory([_resp(200, {})], calls)
+    fake = fake_client_factory([_resp(200, {})], calls)
     monkeypatch.setattr(iam, "AsyncClient", fake)
 
     with pytest.raises(McpError) as excinfo:

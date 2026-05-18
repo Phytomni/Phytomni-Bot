@@ -17,13 +17,29 @@ from typing import Any
 
 from httpx import (
     AsyncClient,
-    ConnectError,
     HTTPStatusError,
+    NetworkError,
+    ProxyError,
+    RemoteProtocolError,
     Response,
     TimeoutException,
+    TransportError,
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+
+# Transient transport faults worth retrying: connect / read / write /
+# close errors and all timeouts (NetworkError, TimeoutException), a
+# mid-flight server disconnect (RemoteProtocolError), and proxy
+# failures (ProxyError). Deliberately excludes LocalProtocolError and
+# UnsupportedProtocol — client-side misuse a retry cannot fix.
+# ``ConnectError`` stays covered as a ``NetworkError`` subclass.
+_RETRIABLE_TRANSPORT_ERRORS = (
+    TimeoutException,
+    NetworkError,
+    RemoteProtocolError,
+    ProxyError,
+)
 
 
 @dataclass(frozen=True)
@@ -145,7 +161,7 @@ async def retry_http_status_or_raise(
 
 
 async def retry_network_or_raise(
-    exc: ConnectError | TimeoutException,
+    exc: TransportError,
     *,
     attempt: int,
     max_retries: int,
@@ -154,8 +170,8 @@ async def retry_network_or_raise(
     """Sleep for a retriable network error or raise an MCP error.
 
     Args:
-        exc: The network exception (ConnectError or
-            TimeoutException) to evaluate.
+        exc: The transient transport exception (timeout, network,
+            server disconnect, or proxy error) to evaluate.
         attempt: Current attempt number (0-indexed).
         max_retries: Maximum number of retry attempts
             before raising.
@@ -216,7 +232,7 @@ async def request_response_with_retries(
             ):
                 attempt += 1
                 continue
-        except (ConnectError, TimeoutException) as exc:
+        except _RETRIABLE_TRANSPORT_ERRORS as exc:
             retry_network = await retry_network_or_raise(
                 exc,
                 attempt=attempt,
