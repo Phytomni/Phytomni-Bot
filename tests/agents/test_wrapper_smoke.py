@@ -276,3 +276,42 @@ async def test_retrieve_plan_submit_runs_analyst_workflow(
     assert arun["goal_description"] == "Map QTLs in rice"
     assert arun["preset_data_list"] == {"input": "obs://rice/data.csv"}
     assert arun["obs_file_list"] == ["obs://papers/rice.pdf"]
+
+
+async def test_submit_wrappers_accept_user_and_compute_resource_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify submit wrappers accept overlapping config kwargs.
+
+    Regression for ``_analyst_config_with_overrides() got multiple values
+    for keyword argument 'user_id'/'compute_resource'``: passing these as
+    kwargs, exactly as the human testers did, must not raise ``TypeError``
+    and must still forward ``compute_resource`` to the agent run.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to swap agent class.
+
+    Returns:
+        None after both wrappers run without a duplicate-kwarg TypeError.
+    """
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(analyst_agent, "get_cached_agent", _no_cache)
+    _bind_fake_agent(analyst_agent, "AnalystAgent", captured)
+
+    submit_result = await analyst_agent.submit(
+        goal_description="Cluster single-cell data",
+        data_list={"matrix": "obs://sc/mtx.gz"},
+        user_id="tester",
+        compute_resource="large",
+    )
+    assert submit_result["ok"] is True
+    assert captured["arun"]["kwargs"]["compute_resource"] == "large"
+
+    plan_result = await analyst_agent.retrieve_plan_submit(
+        goal_description="Run peak calling",
+        data_list={"reads": "obs://atac/r1.fq.gz"},
+        user_id="tester",
+        compute_resource="large",
+    )
+    assert plan_result["ok"] is True
+    assert captured["arun"]["kwargs"]["compute_resource"] == "large"

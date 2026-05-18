@@ -578,6 +578,13 @@ def _analyst_config_with_overrides(
     )
 
 
+# ``_analyst_config_with_overrides`` consumes these as explicit parameters;
+# strip them from the splatted kwargs or Python raises "got multiple values".
+_CONFIG_EXPLICIT_KEYS = frozenset(
+    {"user_id", "is_create_dir", "output_dir", "compute_resource"}
+)
+
+
 def _sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
     return copy_sensitive_config_with_overrides(
@@ -602,6 +609,47 @@ def _submit_user_and_thread_id(
     return run_identity.user_id, run_identity.scoped_id("thread", operation)
 
 
+def _build_submit_agent(
+    kwargs: Dict[str, Any],
+    scope: str,
+    operation: str,
+    cache_label: str,
+) -> tuple[Any, str, str, str]:
+    """Resolve wrapper kwargs into a cached collision-safe AnalystAgent."""
+    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
+    user_id, thread_id = _submit_user_and_thread_id(
+        user_id,
+        scope,
+        operation,
+    )
+    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
+    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
+    compute_resource = kwargs.get(
+        "compute_resource",
+        ANALYST_CONFIG.COMPUTE_RESOURCE,
+    )
+    analyst_config = _analyst_config_with_overrides(
+        user_id=user_id,
+        is_create_dir=is_create_dir,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        **{k: v for k, v in kwargs.items() if k not in _CONFIG_EXPLICIT_KEYS},
+    )
+    sensitive_config = _sensitive_config_with_overrides(**kwargs)
+    agent = get_cached_agent(
+        cache_label,
+        lambda: AnalystAgent(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            analyst_config=analyst_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    return agent, output_dir, compute_resource, thread_id
+
+
 async def submit(
     goal_description: str,
     data_list: Any,
@@ -619,39 +667,14 @@ async def submit(
         AnalystAgent result payload with task id, output directory, job name,
         and compute resource.
     """
-    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
-    user_id, thread_id = _submit_user_and_thread_id(
-        user_id,
-        "analyst-submit",
-        "submit",
-    )
-    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
-    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
     meta = kwargs.get("meta", "")
-    compute_resource = kwargs.get(
-        "compute_resource",
-        ANALYST_CONFIG.COMPUTE_RESOURCE,
-    )
     enable_auto_select = kwargs.get("enable_auto_select", True)
     meta_meta = kwargs.get("meta_meta")
-    analyst_config = _analyst_config_with_overrides(
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        compute_resource=compute_resource,
-        **kwargs,
-    )
-    sensitive_config = _sensitive_config_with_overrides(**kwargs)
-    agent = get_cached_agent(
+    agent, output_dir, compute_resource, thread_id = _build_submit_agent(
+        kwargs,
+        "analyst-submit",
+        "submit",
         "AnalystAgent.submit",
-        lambda: AnalystAgent(
-            analyst_config=analyst_config,
-            sensitive_config=sensitive_config,
-        ),
-        agent_fingerprint_values(
-            analyst_config=analyst_config,
-            sensitive_config=sensitive_config,
-        ),
     )
     return await agent.arun(
         query=goal_description,
@@ -684,37 +707,12 @@ async def retrieve_plan_submit(
     Returns:
         AnalystAgent result payload, optionally augmented with ``meta_meta``.
     """
-    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
-    user_id, thread_id = _submit_user_and_thread_id(
-        user_id,
+    meta_meta = kwargs.get("meta_meta")
+    agent, output_dir, compute_resource, thread_id = _build_submit_agent(
+        kwargs,
         "analyst-retrieve-plan-submit",
         "retrieve-plan-submit",
-    )
-    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
-    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
-    compute_resource = kwargs.get(
-        "compute_resource",
-        ANALYST_CONFIG.COMPUTE_RESOURCE,
-    )
-    meta_meta = kwargs.get("meta_meta")
-    analyst_config = _analyst_config_with_overrides(
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        compute_resource=compute_resource,
-        **kwargs,
-    )
-    sensitive_config = _sensitive_config_with_overrides(**kwargs)
-    agent = get_cached_agent(
         "AnalystAgent.retrieve_plan_submit",
-        lambda: AnalystAgent(
-            analyst_config=analyst_config,
-            sensitive_config=sensitive_config,
-        ),
-        agent_fingerprint_values(
-            analyst_config=analyst_config,
-            sensitive_config=sensitive_config,
-        ),
     )
     result = await agent.arun(
         query=goal_description,
