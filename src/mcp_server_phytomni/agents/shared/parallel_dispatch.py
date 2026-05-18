@@ -8,14 +8,16 @@ Classes: ParallelDispatchSpec.
 Functions: build_parallel_dispatch_graph.
 """
 
+import operator
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Annotated, Any, Dict, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 __all__ = [
     "ParallelDispatchSpec",
+    "ParallelDispatchState",
     "build_parallel_dispatch_graph",
     "keep_last_error",
 ]
@@ -40,6 +42,32 @@ def keep_last_error(
         ``right`` when it is truthy, otherwise ``left``.
     """
     return right if right else left
+
+
+class ParallelDispatchState(TypedDict):
+    """Shared parallel-dispatch bookkeeping for fan-out worker graphs.
+
+    Domain state TypedDicts (``DigitalDesignState``,
+    ``GeneNetworkState``, ...) inherit these fields so the Send-fan-out
+    reducer contract — concurrent-safe ``task_ids`` / ``completed_count``
+    merges and last-error retention — is declared exactly once instead
+    of being copied into every domain state.
+
+    Attributes:
+        analysis_type: Selected analysis variant for the run.
+        task_index: Current task index in parallel execution via Send.
+        task_ids: Mapping of task names to their dispatched task IDs.
+        completed_count: Counter of completed parallel tasks.
+        error: Most recent non-empty per-task error message.
+    """
+
+    analysis_type: str
+    task_index: Optional[int]  # Current task index in parallel execution
+    task_ids: Annotated[
+        Dict[str, str], operator.or_
+    ]  # Mapping of task names to task IDs
+    completed_count: Annotated[int, operator.add]  # Completed task counter
+    error: Annotated[Optional[str], keep_last_error]  # Last task error
 
 
 @dataclass(frozen=True)

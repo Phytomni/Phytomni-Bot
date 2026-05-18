@@ -10,15 +10,12 @@ This module exposes `GeneNetworkState`, `GeneNetworkAgents`, and
 them through AnalystAgent, and returns submitted task metadata.
 """
 
-import operator
 from typing import (
-    Annotated,
     Any,
     Dict,
     List,
     Literal,
     Optional,
-    TypedDict,
 )
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -43,8 +40,8 @@ from ..shared.analysis import (
 from ..shared.analysis_storage import get_data_list
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
+    ParallelDispatchState,
     build_parallel_dispatch_graph,
-    keep_last_error,
 )
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
@@ -61,13 +58,13 @@ GENE_NETWORK_TEMPLATE_PATHS = {
 }
 
 
-class GeneNetworkState(TypedDict):
+class GeneNetworkState(ParallelDispatchState):
     """State schema for the gene network analysis workflow.
 
-    This TypedDict defines the state structure used throughout the gene network
-    analysis workflow, tracking species information, gene identifiers, task
-    management, and result aggregation for parallel network analysis
-    operations.
+    Inherits the shared parallel-dispatch bookkeeping fields
+    (``analysis_type``, ``task_index``, ``task_ids``,
+    ``completed_count``, ``error``) from ``ParallelDispatchState`` and
+    adds the gene-network-specific fields below.
 
     Attributes:
         species: Latin species name in lowercase with spaces (e.g.,
@@ -91,13 +88,6 @@ class GeneNetworkState(TypedDict):
     output_dir: Optional[str]
     network_task: Dict[str, Any]  # submit results
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
-    analysis_type: str
-    task_index: Optional[int]  # Current task index in parallel execution
-    task_ids: Annotated[
-        Dict[str, str], operator.or_
-    ]  # Mapping of task names to task IDs
-    completed_count: Annotated[int, operator.add]  # Completed counter
-    error: Annotated[Optional[str], keep_last_error]  # Last task error
 
 
 class GeneNetworkAgents:

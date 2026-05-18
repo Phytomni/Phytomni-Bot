@@ -18,7 +18,6 @@ from typing import (
     List,
     Literal,
     Optional,
-    TypedDict,
 )
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -43,8 +42,8 @@ from ..shared.analysis import (
 from ..shared.analysis_storage import get_data_list
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
+    ParallelDispatchState,
     build_parallel_dispatch_graph,
-    keep_last_error,
 )
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
@@ -65,13 +64,13 @@ DIGITAL_DESIGN_TEMPLATE_PATHS = {
 }
 
 
-class DigitalDesignState(TypedDict):
+class DigitalDesignState(ParallelDispatchState):
     """State schema for the digital design workflow.
 
-    This TypedDict defines the state structure used throughout the protein
-    and promoter digital design workflow, tracking species information, gene
-    identifiers, task management, and result aggregation for parallel design
-    task execution.
+    Inherits the shared parallel-dispatch bookkeeping fields
+    (``analysis_type``, ``task_index``, ``task_ids``,
+    ``completed_count``, ``error``) from ``ParallelDispatchState`` and
+    adds the protein/promoter design-specific fields below.
 
     Attributes:
         species: Latin species name in lowercase with spaces (e.g.,
@@ -94,13 +93,6 @@ class DigitalDesignState(TypedDict):
     output_dir: Optional[str]
     design_task_result: Annotated[List[Dict[str, Any]], operator.add]
     design_tasks: List[Dict[str, Any]]  # List of design tasks
-    analysis_type: str
-    task_index: Optional[int]  # Current task index
-    task_ids: Annotated[
-        Dict[str, str], operator.or_
-    ]  # Multiple task_ids: {"protein_design": "xxx", "other_task": "yyy"}
-    completed_count: Annotated[int, operator.add]  # Completed task counter
-    error: Annotated[Optional[str], keep_last_error]
 
 
 class DigitalDesignAgents:
