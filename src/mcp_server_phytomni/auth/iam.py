@@ -7,10 +7,15 @@
 Functions: get_token.
 """
 
-from httpx import AsyncClient, HTTPError, Timeout
+from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from ..common.http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    request_response_with_retries,
+)
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig
 
@@ -23,6 +28,12 @@ async def get_token(
 ) -> str:
     """Obtain an X-Subject-Token for API authentication.
 
+    Transient network errors (``ConnectError`` / timeouts) and retriable
+    HTTP status codes are retried with backoff via the shared
+    ``request_response_with_retries`` helper, so a single flaky IAM
+    connection no longer fails the whole request. This mirrors the
+    resilience every downstream BI / NL2SQL call already relies on.
+
     Args:
         timeout: Request timeout in seconds
             (default from ServerConfig.TIMEOUT).
@@ -32,7 +43,8 @@ async def get_token(
         str: X-Subject-Token header value for authenticated API requests.
 
     Raises:
-        McpError: If token request fails with HTTP error.
+        McpError: If the token request fails after all retries, or a
+            successful response omits the X-Subject-Token header.
     """
     client_timeout = Timeout(timeout, connect=timeout)
     async with AsyncClient(timeout=client_timeout, verify=False) as client:
@@ -52,19 +64,37 @@ async def get_token(
                 "scope": {"project": {"name": region}},
             },
         }
-        try:
-            response = await client.post(
-                SERVER_CONFIG.TOKEN_URL,
+        response = await request_response_with_retries(
+            client,
+            JsonPostRequest(
+                url=SERVER_CONFIG.TOKEN_URL,
                 headers={"Content-Type": "application/json"},
-                json=data,
+                json_body=data,
+            ),
+            JsonPostRetry(
                 timeout=timeout,
-            )
-            response.raise_for_status()
-            return response.headers["X-Subject-Token"]
-        except HTTPError as e:
+                max_retries=SERVER_CONFIG.MAX_RETRIES,
+                retriable_codes=SERVER_CONFIG.RETRIABLE_CODES,
+                message="Failed to get token",
+                network_message="Failed to get token",
+            ),
+        )
+        if response is None:
             raise McpError(
                 ErrorData(
                     code=INTERNAL_ERROR,
-                    message=f"Failed to get token: {str(e)}",
+                    message="Failed to get token after all retries",
                 )
-            ) from e
+            )
+        token = response.headers.get("X-Subject-Token")
+        if not token:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=(
+                        "Failed to get token: response missing "
+                        "X-Subject-Token header"
+                    ),
+                )
+            )
+        return token
