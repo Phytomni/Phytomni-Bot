@@ -12,6 +12,7 @@ multi-section drafting path ran end-to-end.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable, Dict
 
 import pytest
@@ -23,6 +24,31 @@ from .helpers.client import call_tool
 pytestmark = pytest.mark.live
 
 MIN_REVIEW_SECTIONS = 3
+
+
+def _markdown_body(answer: str) -> str:
+    """Return the markdown body from a possibly JSON-wrapped answer.
+
+    Citation-bearing agents serialize ``answer`` as a JSON envelope
+    ``{"content": "<markdown>", "doc_list": [...]}`` per the documented
+    ``FormattedToolResult`` contract, so the markdown (with its
+    section headers) lives inside the escaped ``content`` value. Parse
+    that out when present; fall back to the raw string for the
+    plain-markdown path (e.g. ChatAgent).
+
+    Args:
+        answer: Raw ``response.formatted.answer`` string.
+
+    Returns:
+        The markdown body to scan for section headers.
+    """
+    try:
+        parsed = json.loads(answer)
+    except (ValueError, TypeError):
+        return answer
+    if isinstance(parsed, dict) and isinstance(parsed.get("content"), str):
+        return parsed["content"]
+    return answer
 
 
 async def test_review_agent_e2e_returns_multi_section_review(
@@ -41,7 +67,8 @@ async def test_review_agent_e2e_returns_multi_section_review(
 
     answer = response.formatted.answer
     assert answer, "ReviewAgent answer was empty"
-    sections = [line for line in answer.splitlines() if line.startswith("## ")]
+    body = _markdown_body(answer)
+    sections = [line for line in body.splitlines() if line.startswith("## ")]
     assert len(sections) >= MIN_REVIEW_SECTIONS, (
         f"ReviewAgent answer had only {len(sections)} `## ` sections "
         f"(expected >= {MIN_REVIEW_SECTIONS}); got: {answer!r}"
