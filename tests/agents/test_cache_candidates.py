@@ -400,7 +400,10 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
         del args, kwargs
         calls["post"] += 1
         return SimpleNamespace(
-            json=lambda: {"data": [{"symbol": "NAC001|NAC002"}]}
+            json=lambda: {"data": [{"symbol": "NAC001|NAC002"}]},
+            raise_for_status=lambda: None,
+            status_code=200,
+            text="",
         )
 
     monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
@@ -457,7 +460,12 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
             payload = {"data": [{"interpro_id": "IPR1"}]}
         else:
             payload = {"data": [{"mapman": "27.3"}]}
-        return SimpleNamespace(json=lambda: payload)
+        return SimpleNamespace(
+            json=lambda: payload,
+            raise_for_status=lambda: None,
+            status_code=200,
+            text="",
+        )
 
     monkeypatch.setattr(deep_genome_agents.requests, "post", fake_post)
 

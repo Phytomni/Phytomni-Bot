@@ -16,6 +16,8 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.docs import format_retrieved_doc_context
 from ...common.prompts import get_prompt
@@ -41,13 +43,44 @@ def _post_bi_sql(
     sql: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
-    """Run one BI SQL query and return the JSON payload."""
-    return requests.post(
+    """Run one BI SQL query and return the JSON payload.
+
+    Raises:
+        McpError: If the BI endpoint returns a non-2xx status or a body
+            that is not valid JSON (e.g. an HTML 502/504 gateway page),
+            surfaced with the status and a body excerpt instead of the
+            opaque ``Expecting value: line 1 column 1 (char 0)``.
+    """
+    response = requests.post(
         url=bi_url,
         json={"sql": sql, "returnType": "json"},
         headers=sql_headers,
         timeout=timeout,
-    ).json()
+    )
+    try:
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as exc:
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message=(
+                    f"BI query failed with HTTP "
+                    f"{response.status_code}: {response.text[:200]!r}"
+                ),
+            )
+        ) from exc
+    except ValueError as exc:
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message=(
+                    "BI backend returned non-JSON "
+                    f"(status={response.status_code}, "
+                    f"body head={response.text[:200]!r})"
+                ),
+            )
+        ) from exc
 
 
 @func_cache(
