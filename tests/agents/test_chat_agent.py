@@ -195,6 +195,7 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     assert "converted paper text" in messages[1]["content"]
     assert "Summarize the paper." in messages[1]["content"]
     assert captured["completion"]["timeout"] == 3.0
+    assert captured["completion"]["max_tokens"] == 200
     assert "reasoning_effort" not in captured["completion"]
 
 

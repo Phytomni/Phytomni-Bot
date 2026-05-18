@@ -377,6 +377,8 @@ def _completion_params(
         "user": options["user"],
         "timeout": options["timeout"],
     }
+    if options["max_tokens"] is not None:
+        params["max_tokens"] = options["max_tokens"]
     if (
         "reasoner" in options["model"]
         and options["reasoning_effort"] is not None
