@@ -22,6 +22,9 @@ from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
 )
+from mcp_server_phytomni.agents.shared.parallel_dispatch import (
+    keep_last_error,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
@@ -145,3 +148,89 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
     # operator.add reducer summed two completed_count=1 increments.
     assert final_state["completed_count"] == 2
     assert final_state.get("error") is None
+
+
+def test_keep_last_error_prefers_latest_non_empty() -> None:
+    """Verify the keep_last_error reducer semantics.
+
+    Returns:
+        None after each branch-merge combination is asserted.
+    """
+    assert keep_last_error("first", "second") == "second"
+    assert keep_last_error("first", None) == "first"
+    assert keep_last_error(None, "second") == "second"
+    assert keep_last_error("first", "") == "first"
+    assert keep_last_error(None, None) is None
+
+
+async def test_design_state_reduction_handles_dual_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify two concurrently failing design tasks merge without error.
+
+    Both protein and promoter dispatch raise, so each Send branch writes
+    ``error``; the keep_last_error reducer must merge them instead of
+    raising LangGraph's InvalidUpdateError. This is the regression that
+    the happy-path test above never exercised.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to force both
+            dispatched design tasks to fail deterministically.
+
+    Returns:
+        None after the merged state proves the reducer worked.
+    """
+    agent = DigitalDesignAgents(
+        digital_design_config=DigitalDesignConfig(),
+        sensitive_config=SensitiveConfig.load(),
+        analyst_agent=cast(AnalystAgent, _StubAnalyst()),
+    )
+
+    async def fake_dispatch(
+        analysis_type: str,
+        species: str,
+        gene_id: str,
+        output_dir: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Fail every dispatched design task deterministically.
+
+        Args:
+            analysis_type: Design analysis label for the failing task.
+            species: Species forwarded by the dispatcher.
+            gene_id: Target gene identifier forwarded by the dispatcher.
+            output_dir: Optional output directory (unused).
+
+        Raises:
+            RuntimeError: Always, tagged with the analysis type.
+        """
+        assert species == "oryza sativa"
+        assert gene_id == "Os01g0177400"
+        _ = output_dir
+        raise RuntimeError(f"boom {analysis_type}")
+
+    monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
+
+    seed_state: dict[str, Any] = {
+        "species": "oryza sativa",
+        "gene_id": "Os01g0177400",
+        "user_id": "test-user",
+        "batch": False,
+        "output_dir": "/tmp/design-out",
+        "design_task_result": [],
+        "design_tasks": [],
+        "task_ids": {},
+        "completed_count": 0,
+        "error": None,
+    }
+
+    final_state = await agent.app.ainvoke(
+        seed_state,
+        config={"configurable": {"thread_id": "design-dual-failure-test"}},
+    )
+
+    # Both branches failed and merged cleanly: completed_count summed via
+    # operator.add, error retained by keep_last_error, no task ids stored.
+    assert final_state["completed_count"] == 2
+    assert isinstance(final_state.get("error"), str)
+    assert final_state["error"].startswith("boom ")
+    assert final_state["task_ids"] == {}

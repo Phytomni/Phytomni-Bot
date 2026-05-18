@@ -44,6 +44,7 @@ from ..shared.analysis_storage import get_data_list
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     build_parallel_dispatch_graph,
+    keep_last_error,
 )
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
@@ -99,7 +100,7 @@ class DigitalDesignState(TypedDict):
         Dict[str, str], operator.or_
     ]  # Multiple task_ids: {"protein_design": "xxx", "other_task": "yyy"}
     completed_count: Annotated[int, operator.add]  # Completed task counter
-    error: Optional[str]
+    error: Annotated[Optional[str], keep_last_error]
 
 
 class DigitalDesignAgents:

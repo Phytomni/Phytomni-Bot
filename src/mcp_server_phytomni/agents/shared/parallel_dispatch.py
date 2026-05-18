@@ -17,7 +17,29 @@ from langgraph.graph import END, START, StateGraph
 __all__ = [
     "ParallelDispatchSpec",
     "build_parallel_dispatch_graph",
+    "keep_last_error",
 ]
+
+
+def keep_last_error(
+    left: Optional[str],
+    right: Optional[str],
+) -> Optional[str]:
+    """Reduce concurrent error writes, keeping the latest non-empty one.
+
+    Parallel-dispatch worker branches each merge their own update into the
+    shared state; without a reducer two branches writing ``error`` raise a
+    LangGraph concurrent-update conflict. Prefer the most recent non-empty
+    error so a failing branch is never masked by a sibling's ``None``.
+
+    Args:
+        left: Error already on the channel (or ``None``).
+        right: Error contributed by the merging branch (or ``None``).
+
+    Returns:
+        ``right`` when it is truthy, otherwise ``left``.
+    """
+    return right if right else left
 
 
 @dataclass(frozen=True)
