@@ -10,7 +10,16 @@ This module exposes `GeneNetworkState`, `GeneNetworkAgents`, and
 them through AnalystAgent, and returns submitted task metadata.
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+import operator
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    TypedDict,
+)
 
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -35,6 +44,7 @@ from ..shared.analysis_storage import get_data_list
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     build_parallel_dispatch_graph,
+    keep_last_error,
 )
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
@@ -83,9 +93,11 @@ class GeneNetworkState(TypedDict):
     network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
     analysis_type: str
     task_index: Optional[int]  # Current task index in parallel execution
-    task_ids: Dict[str, str]  # Mapping of task names to task IDs
-    completed_count: int  # Counter for completed tasks
-    error: Optional[str]  # Error message if any task failed
+    task_ids: Annotated[
+        Dict[str, str], operator.or_
+    ]  # Mapping of task names to task IDs
+    completed_count: Annotated[int, operator.add]  # Completed counter
+    error: Annotated[Optional[str], keep_last_error]  # Last task error
 
 
 class GeneNetworkAgents:
