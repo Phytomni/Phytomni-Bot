@@ -95,6 +95,7 @@ ANALYST_CONFIG_FIELD_MAP = {
     **OBS_TRANSFER_CONFIG_FIELD_MAP,
     **RETRY_CONFIG_FIELD_MAP,
     "max_poll": "MAX_POLL",
+    "plan_min_score": "PLAN_MIN_SCORE",
 }
 ANALYST_SENSITIVE_FIELD_MAP = {
     "base_url": "BASE_URL",

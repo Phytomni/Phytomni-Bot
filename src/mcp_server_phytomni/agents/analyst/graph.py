@@ -496,8 +496,23 @@ class AnalystGraphMixin(WorkflowMixinBase):
         print(f"Score: {score}")
         print(f"Feedback: {feedback}")
         print("==========================================")
-        if decision == "APPROVED" or current_retries >= max_retries:
+        min_score = self.analyst_config.PLAN_MIN_SCORE
+        if decision == "APPROVED" and (min_score == 0 or score >= min_score):
             return {"plan_feedback": "APPROVED"}
+        if current_retries >= max_retries:
+            if min_score == 0:
+                return {"plan_feedback": "APPROVED"}
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=(
+                        "Analysis plan rejected: best critic score "
+                        f"{score} is below PLAN_MIN_SCORE {min_score} "
+                        f"after {max_retries} retries. Latest "
+                        f"feedback: {feedback}"
+                    ),
+                )
+            )
         return {"plan_feedback": feedback}
 
     async def tool_extract_node(self: Any, state: AnalystAgentsState) -> dict:

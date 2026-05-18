@@ -232,6 +232,12 @@ class AnalystConfig(KnowledgeConfig):
         TASK_NAME: task name in ai4s platform.
         APP_ID: app id in difference compute resource
         RESOURCE: cpu and memory information in difference compute resource.
+        PLAN_MIN_SCORE (int): Minimum critic score the analysis plan
+            must reach. 0 (default) disables the gate and preserves the
+            current force-approve-on-retry-exhaustion behavior; when > 0
+            the plan-check loop fails loudly via McpError if retries
+            exhaust below this score. Inherited by
+            InSilicoResearchConfig.
     """
 
     TOOL_REPO_ID: str = "381d8f6c-89d9-468d-9531-a0ced46c7d02"
@@ -261,6 +267,7 @@ class AnalystConfig(KnowledgeConfig):
     PRE_PREPARED_DATA_PATH: str = str(PRE_PREPARED_DATA_PATH)
     POLL_INTERVAL: float = 300
     MAX_POLL: float = 86400
+    PLAN_MIN_SCORE: int = 0
 
 
 class ReviewConfig(KnowledgeConfig):
