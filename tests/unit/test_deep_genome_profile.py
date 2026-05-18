@@ -18,6 +18,7 @@ import requests
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.deep_genome import profile
+from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
 
 pytestmark = pytest.mark.unit
 
@@ -113,7 +114,7 @@ def test_post_bi_sql_returns_payload_on_success(
         _FakeResponse(200, '{"data": []}', json_value={"data": []}),
     )
 
-    result = profile._post_bi_sql("https://bi", {}, "SELECT 1")
+    result = _post_bi_sql("https://bi", {}, "SELECT 1")
 
     assert result == {"data": []}
 
@@ -135,7 +136,7 @@ def test_post_bi_sql_raises_mcperror_on_http_error(
     )
 
     with pytest.raises(McpError) as excinfo:
-        profile._post_bi_sql("https://bi", {}, "SELECT 1")
+        _post_bi_sql("https://bi", {}, "SELECT 1")
 
     message = excinfo.value.error.message
     assert "HTTP 504" in message
@@ -163,7 +164,7 @@ def test_post_bi_sql_raises_mcperror_on_non_json(
     )
 
     with pytest.raises(McpError) as excinfo:
-        profile._post_bi_sql("https://bi", {}, "SELECT 1")
+        _post_bi_sql("https://bi", {}, "SELECT 1")
 
     message = excinfo.value.error.message
     assert "non-JSON" in message
