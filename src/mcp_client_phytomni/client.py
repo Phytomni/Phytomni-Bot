@@ -19,7 +19,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 from mcp.types import Tool
 from openai import AsyncOpenAI
 
@@ -32,6 +32,17 @@ from .tool_result_formatters import (
 
 DEFAULT_SERVER_MODULE = "mcp_server_phytomni.server"
 DEFAULT_TOOL_TIMEOUT_SECONDS = 36000
+
+# Environment variables forwarded from the current process into the
+# spawned MCP server child, layered on top of the MCP SDK's minimal
+# default environment. Deliberately a narrow allowlist: the
+# encrypted-.env distribution path needs PHYTOMNI_LICENSE_KEY to reach
+# the server (the MCP stdio transport otherwise sanitizes it away),
+# and PHYTOMNI_TESTING must propagate so spawned-server test runs stay
+# offline. A blanket os.environ passthrough is intentionally NOT done:
+# it would defeat the transport's deliberate environment sanitization
+# and leak unrelated host variables into the child.
+_FORWARDED_ENV_VARS = ("PHYTOMNI_LICENSE_KEY", "PHYTOMNI_TESTING")
 
 
 class ToolCallError(RuntimeError):
@@ -108,6 +119,32 @@ def server_command_from_target(
     if target.endswith(".js"):
         return ServerCommand("node", (target,), env)
     return ServerCommand(python_executable, ("-m", target), env)
+
+
+def _build_server_env(
+    explicit: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Compose the environment for the spawned MCP server child.
+
+    Starts from the MCP SDK's minimal safe default environment, layers
+    the narrow phytomni allowlist read from the current process, then
+    applies any caller-supplied explicit mapping last so an explicit
+    env always wins. The whole ``os.environ`` is never forwarded.
+
+    Args:
+        explicit: Optional caller-provided environment mapping.
+
+    Returns:
+        Environment mapping passed to ``StdioServerParameters``.
+    """
+    env: dict[str, str] = dict(get_default_environment())
+    for name in _FORWARDED_ENV_VARS:
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    if explicit is not None:
+        env.update(explicit)
+    return env
 
 
 def parse_tool_payload(text: str) -> Any:
@@ -188,11 +225,7 @@ class PhytomniMcpClient:
         server_params = StdioServerParameters(
             command=self.command.command,
             args=list(self.command.args),
-            env=(
-                dict(self.command.env)
-                if self.command.env is not None
-                else None
-            ),
+            env=_build_server_env(self.command.env),
         )
         stdio_transport = await self._exit_stack.enter_async_context(
             stdio_client(server_params)
