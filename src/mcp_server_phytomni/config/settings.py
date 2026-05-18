@@ -23,11 +23,52 @@ PROJECT_ROOT = _current_dir.parent
 ENV_PATH = PROJECT_ROOT / "config/.env"
 ENCRYPTED_ENV_PATH = PROJECT_ROOT / "config/.env.encrypted"
 LICENSE_KEY_ENV = "PHYTOMNI_LICENSE_KEY"
+# Model A delivery: the per-customer key is never baked into the
+# image. The customer drops it here at deploy time (or mounts it as a
+# Docker volume / k8s secret). MUST stay out of git and image build
+# contexts — see .gitignore / .dockerignore.
+LICENSE_KEY_PATH = PROJECT_ROOT / "config/.license_key"
 
 # In-process, never-persisted memo so the PBKDF2 decrypt runs once
 # per process even though SensitiveConfig.load() is called at import
 # time in 9+ modules. Tests reset it via monkeypatch.
 _ENV_DECRYPT_MEMO = {"done": False}
+
+
+def _resolve_license_key() -> str | None:
+    """Resolve the per-customer license key (Model A delivery).
+
+    Two sources may provide the key: the ``PHYTOMNI_LICENSE_KEY``
+    environment variable (operator / ``docker -e``) and the
+    out-of-band file the customer drops at ``LICENSE_KEY_PATH``. The
+    decrypted ``.env`` contents never leave the process; this only
+    decides where the *key* comes from.
+
+    Returns:
+        The license key, or ``None`` when no source supplies one (the
+        caller then falls through to the plaintext / ``RuntimeError``
+        paths exactly as before).
+    """
+    # 1. Env var wins, mirroring the os.environ.setdefault
+    #    "env wins over blob" rule: an operator can `docker -e`
+    #    override without re-shipping the key file. A set-but-blank
+    #    var is treated as unset so resolution still falls through.
+    env_value = os.getenv(LICENSE_KEY_ENV)
+    if env_value and env_value.strip():
+        return env_value.strip()
+    if LICENSE_KEY_PATH.exists():
+        # 4. Fail loud on an unreadable key file: a swallowed
+        #    PermissionError would fall through to the generic
+        #    "no configuration source" RuntimeError and mask the
+        #    real operator misconfiguration. read_text raises
+        #    PermissionError (an OSError) and we let it propagate.
+        # 2. Strip the trailing newline `echo`/editors add, else
+        #    PBKDF2 fails with a confusing SecretEnvelopeError.
+        file_value = LICENSE_KEY_PATH.read_text(encoding="utf-8")
+        # 3. Empty / whitespace-only file => no key, fall through.
+        if file_value.strip():
+            return file_value.strip()
+    return None
 
 
 def load_env_file() -> bool:
@@ -39,7 +80,9 @@ def load_env_file() -> bool:
     Resolution order:
         1. ``PHYTOMNI_TESTING=1`` — tests inject dummy secrets; no
            file is read.
-        2. ``PHYTOMNI_LICENSE_KEY`` set and an encrypted envelope at
+        2. A license key (``PHYTOMNI_LICENSE_KEY`` env var or the
+           ``LICENSE_KEY_PATH`` file, resolved by
+           ``_resolve_license_key``) and an encrypted envelope at
            ``ENCRYPTED_ENV_PATH`` — decrypt once per process and
            inject into ``os.environ`` (existing env wins).
         3. A plaintext ``ENV_PATH`` — load it (file wins, legacy
@@ -57,7 +100,7 @@ def load_env_file() -> bool:
     """
     if os.getenv("PHYTOMNI_TESTING") == "1":
         return True
-    license_key = os.getenv(LICENSE_KEY_ENV)
+    license_key = _resolve_license_key()
     if license_key and ENCRYPTED_ENV_PATH.exists():
         if not _ENV_DECRYPT_MEMO["done"]:
             decrypted = decrypt_env_blob(
@@ -74,8 +117,9 @@ def load_env_file() -> bool:
     raise RuntimeError(
         "No configuration source found. Provide exactly one of:\n"
         "  1. PHYTOMNI_TESTING=1 (test suites inject dummy secrets)\n"
-        f"  2. {LICENSE_KEY_ENV}=<license-key> with an encrypted "
-        f"envelope at {ENCRYPTED_ENV_PATH}\n"
+        f"  2. {LICENSE_KEY_ENV}=<license-key> (or the key in "
+        f"{LICENSE_KEY_PATH}) with an encrypted envelope at "
+        f"{ENCRYPTED_ENV_PATH}\n"
         f"  3. a plaintext .env at {ENV_PATH} (copy "
         f"{PROJECT_ROOT}/config/.env.example)"
     )

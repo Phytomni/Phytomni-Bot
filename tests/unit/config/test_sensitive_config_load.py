@@ -250,3 +250,89 @@ def test_load_end_to_end_encrypted(tmp_path, monkeypatch):
     assert config.DOMAIN_NAME == "enc-domain"
     assert config.API_KEY.get_secret_value() == "enc-api-key"
     assert config.EMBED_MODEL == "enc-embed-model"
+
+
+def _write_keyfile(tmp_path, text):
+    """Write a Model-A license-key file and return its path.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        text: Raw file body (callers include trailing newlines on
+            purpose to exercise the whitespace-stripping rule).
+
+    Returns:
+        Path to the written .license_key file.
+    """
+    keyfile = tmp_path / ".license_key"
+    keyfile.write_text(text, encoding="utf-8")
+    return keyfile
+
+
+def test_license_key_file_drives_decryption(tmp_path, monkeypatch):
+    """Verify the LICENSE_KEY_PATH file alone unlocks the envelope.
+
+    No PHYTOMNI_LICENSE_KEY env var is set; the key arrives only via
+    the dropped file (with a trailing newline, as `echo` would write).
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal(tmp_path)
+    keyfile = _write_keyfile(tmp_path, f"{LICENSE}\n")
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "LICENSE_KEY_PATH", keyfile)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.delenv("PHYTOMNI_LICENSE_KEY", raising=False)
+    os.environ.pop(MARKER, None)
+
+    assert settings.load_env_file() is True
+    assert os.environ[MARKER] == "marker-value"
+
+
+def test_env_var_wins_over_license_key_file(tmp_path, monkeypatch):
+    """Verify the env var beats a (wrong) on-disk key file.
+
+    The file holds a wrong key; only the correct env var lets the
+    decrypt succeed, so success proves env precedence unambiguously.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal(tmp_path)
+    keyfile = _write_keyfile(tmp_path, "wrong-key-in-file\n")
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "LICENSE_KEY_PATH", keyfile)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
+    os.environ.pop(MARKER, None)
+
+    assert settings.load_env_file() is True
+    assert os.environ[MARKER] == "marker-value"
+
+
+def test_empty_license_key_file_is_treated_as_absent(tmp_path, monkeypatch):
+    """Verify a blank key file falls through, not a failed decrypt.
+
+    With no env var, an empty/whitespace-only file present, an
+    envelope present, and no plaintext .env, resolution must reach
+    the RuntimeError (key treated as absent) rather than attempting a
+    guaranteed-failing PBKDF2 decrypt.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal(tmp_path)
+    keyfile = _write_keyfile(tmp_path, "   \n")
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "LICENSE_KEY_PATH", keyfile)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.delenv("PHYTOMNI_LICENSE_KEY", raising=False)
+
+    with pytest.raises(RuntimeError):
+        settings.load_env_file()

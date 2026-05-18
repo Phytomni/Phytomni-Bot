@@ -13,3 +13,11 @@ src/mcp_server_phytomni/config/.env
 
 # ... but the encrypted envelope is the one artifact that MUST ship.
 !**/.env.encrypted
+
+# Model A delivery: the per-customer license key is handed over a
+# separate channel and dropped on the host at deploy time. It MUST
+# NEVER enter an image (image leak would then equal plaintext leak,
+# defeating the envelope). It does not match the .env* patterns
+# above, so it needs its own exclusion.
+**/.license_key
+src/mcp_server_phytomni/config/.license_key

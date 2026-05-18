@@ -137,6 +137,7 @@ celerybeat.pid
 
 # Environments
 .env
+.license_key
 .envrc
 .venv
 env/

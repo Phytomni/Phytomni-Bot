@@ -337,10 +337,20 @@ per-customer encrypted envelope:
    customer's image. The `.dockerignore` enforces this for any future
    Dockerfile.
 
-2. **Runtime (customer):** the customer supplies only their license key
-   via `PHYTOMNI_LICENSE_KEY`; the bot derives the key, decrypts the
-   envelope into the process environment at startup, and never writes the
-   plaintext to disk.
+2. **Runtime (customer):** the customer supplies only their license key,
+   from either source — the `PHYTOMNI_LICENSE_KEY` environment variable
+   (e.g. `docker -e`), **or** a `config/.license_key` file dropped on the
+   host at deploy time (or mounted as a Docker volume / k8s secret). The
+   environment variable wins when both are present, so an operator can
+   override without re-provisioning the file. The bot derives the key,
+   decrypts the envelope into the process environment at startup, and
+   never writes the plaintext to disk.
+
+   The license key is delivered **out-of-band** and must NEVER be baked
+   into the image: an image that carried both `.env.encrypted` and the
+   key would make an image leak equivalent to a plaintext leak, defeating
+   the envelope. `.dockerignore` (and `.gitignore`) therefore exclude
+   `.license_key` just as they exclude plaintext `.env`.
 
 A leaked license key compromises one customer's envelope only — rebuild
 and redistribute with a rotated key, no fleet-wide exposure.
@@ -762,7 +772,8 @@ If no configuration source is found, startup raises a `RuntimeError`
 that enumerates the three accepted provisioning paths:
 
 1. `PHYTOMNI_TESTING=1` — the test suites inject dummy secrets.
-2. `PHYTOMNI_LICENSE_KEY=<key>` with a `.env.encrypted` envelope
+2. A license key — `PHYTOMNI_LICENSE_KEY=<key>` or a
+   `config/.license_key` file — with a `.env.encrypted` envelope
    beside `config/` — the customer-image path (see
    [Distribution to Trusted Customers](#distribution-to-trusted-customers)).
 3. A plaintext `config/.env` — the local developer path:
