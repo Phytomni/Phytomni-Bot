@@ -81,6 +81,7 @@ fi
 py_files=""
 yaml_files=""
 json_files=""
+sh_files=""
 test_files=""
 demo_changed=0
 
@@ -120,6 +121,10 @@ for f in $changed; do
             json_files="${json_files}${f}
 "
             ;;
+        *.sh | .githooks/*)
+            sh_files="${sh_files}${f}
+"
+            ;;
     esac
 done
 IFS=$old_ifs
@@ -127,6 +132,7 @@ IFS=$old_ifs
 py_files=$(printf '%s' "$py_files" | sed '/^[[:space:]]*$/d')
 yaml_files=$(printf '%s' "$yaml_files" | sed '/^[[:space:]]*$/d')
 json_files=$(printf '%s' "$json_files" | sed '/^[[:space:]]*$/d')
+sh_files=$(printf '%s' "$sh_files" | sed '/^[[:space:]]*$/d')
 test_files=$(printf '%s' "$test_files" | sed '/^[[:space:]]*$/d')
 
 # ---------------------------------------------------------------------------
@@ -181,6 +187,25 @@ else
 
     # NOTE: validate_local.sh does NOT set PYTHONPATH for pylint; mirror that.
     run uv run pylint --persistent=no "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# Static check of changed shell scripts (incl. .githooks/* hooks).
+# ---------------------------------------------------------------------------
+if [ -z "$sh_files" ]; then
+    printf '\n==> no changed shell files; skipping shellcheck\n'
+else
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $sh_files; do
+        if [ -n "$f" ]; then
+            set -- "$@" "$f"
+        fi
+    done
+    IFS=$old_ifs
+    run uv run shellcheck "$@"
 fi
 
 # ---------------------------------------------------------------------------
