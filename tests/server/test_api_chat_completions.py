@@ -10,23 +10,14 @@ follow_up_questions preserved, stream rejection, and unknown model.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import pytest
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.api.auth import ApiKeyStore
 
 pytestmark = pytest.mark.server
-
-
-def _issue_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    """Point the key store at a temp db and return a fresh key."""
-    db = str(tmp_path / "keys.sqlite")
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", db)
-    return ApiKeyStore(db).create(user_id="u1").api_key
 
 
 def _stub_chat(monkeypatch: pytest.MonkeyPatch, captured: dict) -> None:
@@ -60,24 +51,21 @@ def _stub_chat(monkeypatch: pytest.MonkeyPatch, captured: dict) -> None:
 
 async def test_chat_completions_passthrough(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify a valid call returns the ChatCompletion with extras."""
-    key = _issue_key(tmp_path, monkeypatch)
     captured: dict[str, Any] = {}
     _stub_chat(monkeypatch, captured)
 
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "phyto-chat",
-            "messages": [
-                {"role": "system", "content": "be brief"},
-                {"role": "user", "content": "what is photosynthesis?"},
-            ],
-        },
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        messages=[
+            {"role": "system", "content": "be brief"},
+            {"role": "user", "content": "what is photosynthesis?"},
+        ],
     )
 
     assert response.status_code == 200
@@ -106,40 +94,23 @@ async def test_chat_completions_requires_auth(
 
 async def test_chat_completions_rejects_stream(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
 ) -> None:
     """Verify stream=true is refused with 400."""
-    key = _issue_key(tmp_path, monkeypatch)
-
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "phyto-chat",
-            "messages": [{"role": "user", "content": "hi"}],
-            "stream": True,
-        },
-    )
+    response = await chat_completion(api_client, issued_api_key, stream=True)
 
     assert response.status_code == 400
 
 
 async def test_chat_completions_unknown_model(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
 ) -> None:
     """Verify an unknown model id yields 404."""
-    key = _issue_key(tmp_path, monkeypatch)
-
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "gpt-imaginary",
-            "messages": [{"role": "user", "content": "hi"}],
-        },
+    response = await chat_completion(
+        api_client, issued_api_key, model="gpt-imaginary"
     )
 
     assert response.status_code == 404
@@ -147,16 +118,10 @@ async def test_chat_completions_unknown_model(
 
 async def test_chat_completions_requires_user_message(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
 ) -> None:
     """Verify an empty message list is rejected with 400."""
-    key = _issue_key(tmp_path, monkeypatch)
-
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={"model": "phyto-chat", "messages": []},
-    )
+    response = await chat_completion(api_client, issued_api_key, messages=[])
 
     assert response.status_code == 400

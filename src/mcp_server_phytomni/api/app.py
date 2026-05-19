@@ -25,6 +25,7 @@ from ..config.defaults import ApiConfig
 from ..mcp.app import invoke_tool_raw
 from ..runtime.request_context import (
     bind_request_id,
+    bind_request_user,
     current_request_id,
     reset_request_var,
 )
@@ -91,9 +92,13 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
 
     A generated request id is bound to the contextvar for the request's
     lifetime and echoed as the ``X-Request-Id`` response header so the
-    error envelope and clients can correlate a call. A closure-based pure
-    ASGI middleware is used (not BaseHTTPMiddleware) so the contextvar is
-    set in the same task that runs the endpoint and exception handlers.
+    error envelope and clients can correlate a call. The user contextvar
+    is also bracketed here (bound to None, reset on exit) so the value
+    require_principal sets is always restored without relying on the
+    server copying the contextvars context per request. A closure-based
+    pure ASGI middleware is used (not BaseHTTPMiddleware) so the
+    contextvars are set in the same task that runs the endpoint and
+    exception handlers.
 
     Args:
         app: The downstream ASGI application to wrap.
@@ -108,7 +113,8 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
             await app(scope, receive, send)
             return
         request_id = IdFactory().new_id("request")
-        token = bind_request_id(request_id)
+        id_token = bind_request_id(request_id)
+        user_token = bind_request_user(None)
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -120,7 +126,8 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         try:
             await app(scope, receive, send_with_header)
         finally:
-            reset_request_var(token)
+            reset_request_var(user_token)
+            reset_request_var(id_token)
 
     return asgi
 

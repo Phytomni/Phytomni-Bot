@@ -383,8 +383,8 @@ async def require_principal(
     """
     store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
     principal = resolve_principal(store, authorization, x_api_key)
-    # Bind for downstream handlers/wrappers. uvicorn copies the
-    # contextvars Context per request task, so this stays request-local
-    # without an explicit reset.
+    # Bind for downstream handlers/wrappers. request_context_middleware
+    # brackets this contextvar (bound to None then reset on request
+    # exit), so no explicit reset is needed here.
     bind_request_user(principal.user_id)
     return principal

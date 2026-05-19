@@ -10,23 +10,14 @@ the BriefGene obs_file_list rejection.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import pytest
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.api.auth import ApiKeyStore
 
 pytestmark = pytest.mark.server
-
-
-def _issue_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    """Point the key store at a temp db and return a fresh key."""
-    db = str(tmp_path / "keys.sqlite")
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", db)
-    return ApiKeyStore(db).create(user_id="u1").api_key
 
 
 def _stub(
@@ -43,14 +34,12 @@ def _stub(
 
 async def test_models_lists_chat_like_agents(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
 ) -> None:
     """Verify GET /v1/models lists exactly the four chat models."""
-    key = _issue_key(tmp_path, monkeypatch)
-
     response = await api_client.get(
-        "/v1/models", headers={"Authorization": f"Bearer {key}"}
+        "/v1/models",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
     )
 
     assert response.status_code == 200
@@ -76,11 +65,11 @@ async def test_models_requires_auth(
 
 async def test_knowledge_preserves_doc_list(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify knowledge model routes and keeps top-level doc_list."""
-    key = _issue_key(tmp_path, monkeypatch)
     _stub(
         monkeypatch,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,
@@ -96,13 +85,8 @@ async def test_knowledge_preserves_doc_list(
         },
     )
 
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "phyto-knowledge",
-            "messages": [{"role": "user", "content": "q"}],
-        },
+    response = await chat_completion(
+        api_client, issued_api_key, model="phyto-knowledge", content="q"
     )
 
     assert response.status_code == 200
@@ -113,20 +97,16 @@ async def test_knowledge_preserves_doc_list(
 
 async def test_brief_gene_rejects_obs_file_list(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
 ) -> None:
     """Verify brief-gene refuses obs_file_list it cannot accept."""
-    key = _issue_key(tmp_path, monkeypatch)
-
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "phyto-brief-gene",
-            "messages": [{"role": "user", "content": "AT1G01010"}],
-            "obs_file_list": ["/obs/phytomni/x.pdf"],
-        },
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-brief-gene",
+        content="AT1G01010",
+        obs_file_list=["/obs/phytomni/x.pdf"],
     )
 
     assert response.status_code == 400
@@ -134,24 +114,22 @@ async def test_brief_gene_rejects_obs_file_list(
 
 async def test_brief_gene_without_obs_succeeds(
     api_client: httpx.AsyncClient,
-    tmp_path: Path,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify brief-gene runs when no obs_file_list is supplied."""
-    key = _issue_key(tmp_path, monkeypatch)
     _stub(
         monkeypatch,
         server.PhytomniAgents.BRIEF_GENE_AGENT.value,
         {"answer": "gene summary"},
     )
 
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "model": "phyto-brief-gene",
-            "messages": [{"role": "user", "content": "AT1G01010"}],
-        },
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-brief-gene",
+        content="AT1G01010",
     )
 
     assert response.status_code == 200

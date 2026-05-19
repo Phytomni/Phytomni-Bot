@@ -24,6 +24,7 @@ import httpx
 import pytest
 
 from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.auth import ApiKeyStore
 
 # Captured at import time, before block_external_http monkeypatches
 # httpx.AsyncClient.request for offline runs, so the in-process ASGI
@@ -313,3 +314,53 @@ async def api_client(
         transport=transport, base_url="http://api.test"
     ) as client:
         yield client
+
+
+@pytest.fixture
+def issued_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Point the API key store at a temp db and return a fresh key.
+
+    Args:
+        tmp_path: Pytest temp directory for the throwaway SQLite store.
+        monkeypatch: Used to set the store-path environment variable.
+
+    Returns:
+        A usable plaintext API key bound to user ``u1``.
+    """
+    db = str(tmp_path / "keys.sqlite")
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", db)
+    return ApiKeyStore(db).create(user_id="u1").api_key
+
+
+@pytest.fixture
+def chat_completion() -> Callable[..., Any]:
+    """Return an async helper posting one chat completion request.
+
+    The client is passed in at call time rather than injected, so this
+    fixture does not shadow the ``api_client`` fixture.
+
+    Returns:
+        ``post(client, key, *, model, messages, content, **extra)``
+        coroutine factory issuing the authenticated POST.
+    """
+
+    async def _post(
+        client: httpx.AsyncClient,
+        key: str,
+        *,
+        model: str = "phyto-chat",
+        messages: Any = None,
+        content: str = "hi",
+        **extra: Any,
+    ) -> httpx.Response:
+        """Issue one authenticated chat completion request."""
+        if messages is None:
+            messages = [{"role": "user", "content": content}]
+        body = {"model": model, "messages": messages, **extra}
+        return await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json=body,
+        )
+
+    return _post
