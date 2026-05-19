@@ -24,6 +24,7 @@ from ..common.http import (
     JsonPostRetry,
     post_json_with_retries,
 )
+from ..config.defaults import ApiConfig
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
@@ -206,14 +207,11 @@ def resolve_tasks_db_path() -> str:
     Single source of truth so the submit-side writer and the
     GetTaskStatus reader provably address the same file. Reads
     ``ApiConfig.API_TASKS_DB_PATH`` (env ``API_TASKS_DB_PATH`` /
-    ``PHYTOMNI_TASKS_DB``, default ``server_tasks.db``). The import is
-    lazy to keep ``TaskManager`` free of import-time config coupling.
+    ``PHYTOMNI_TASKS_DB``, default ``server_tasks.db``).
 
     Returns:
         The configured tasks database path.
     """
-    from ..config.defaults import ApiConfig
-
     return ApiConfig().API_TASKS_DB_PATH
 
 

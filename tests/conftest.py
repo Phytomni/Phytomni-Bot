@@ -364,3 +364,26 @@ def chat_completion() -> Callable[..., Any]:
         )
 
     return _post
+
+
+@pytest.fixture
+def tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Point the handlers' local task registry at a temp SQLite file.
+
+    Shared by the submit-recording and GetTaskStatus suites so they do
+    not duplicate the same ``resolve_tasks_db_path`` monkeypatch idiom
+    (root conftest per the one-conftest-per-test-root convention).
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        The temp database path the handlers will resolve.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.mcp.handlers.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    return db_path

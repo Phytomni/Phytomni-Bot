@@ -12,7 +12,6 @@ on malformed results, and all five submit-style handlers are decorated.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -32,23 +31,16 @@ pytestmark = pytest.mark.server
 
 
 async def test_decorator_records_and_passes_result_through(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tasks_db_path: str,
 ) -> None:
     """Verify the wrapper logs the task yet returns the result as-is.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
-        tmp_path: Pytest temp directory fixture.
+        tasks_db_path: Temp registry DB fixture.
 
     Returns:
         None after the pass-through and recorded-row assertions pass.
     """
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.mcp.handlers.resolve_tasks_db_path",
-        lambda: db_path,
-    )
     submitted = {"task_id": "T-1", "output_dir": "/obs/run"}
 
     async def fake_handler(args: Any) -> Any:
@@ -68,7 +60,7 @@ async def test_decorator_records_and_passes_result_through(
     result = await wrapped(object())
 
     assert result is submitted
-    assert TaskManager(db_path).get_task("T-1") == {
+    assert TaskManager(tasks_db_path).get_task("T-1") == {
         "task_id": "T-1",
         "status": "submitted",
         "analysis_id": "",
@@ -77,29 +69,21 @@ async def test_decorator_records_and_passes_result_through(
 
 
 def test_record_submitted_task_ignores_malformed_results(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tasks_db_path: str,
 ) -> None:
     """Verify non-dict / missing-id results record nothing, no raise.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture.
-        tmp_path: Pytest temp directory fixture.
+        tasks_db_path: Temp registry DB fixture.
 
     Returns:
         None after the no-row assertions pass.
     """
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.mcp.handlers.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-
     _record_submitted_task("not a dict")
     _record_submitted_task({})
     _record_submitted_task({"task_id": ""})
 
-    assert TaskManager(db_path).get_task("") is None
+    assert TaskManager(tasks_db_path).get_task("") is None
 
 
 def test_all_submit_handlers_are_decorated() -> None:
