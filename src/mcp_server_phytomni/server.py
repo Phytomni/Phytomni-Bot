@@ -15,6 +15,7 @@ from .mcp.app import (
     TOOL_ARGUMENT_MODELS,
     TOOL_HANDLERS,
     dispatch_tool,
+    invoke_tool_formatted,
     invoke_tool_raw,
     serve,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "TOOL_ARGUMENT_MODELS",
     "TOOL_HANDLERS",
     "dispatch_tool",
+    "invoke_tool_formatted",
     "invoke_tool_raw",
     "serve",
 ]

@@ -5,12 +5,13 @@
 """Tests for the shared raw tool invocation seam.
 
 Covers invoke_tool_raw returning the unwrapped handler payload and the MCP
-dispatch wrapper remaining behaviorally identical on top of it.
+dispatch wrapper formatting that raw payload on top of it.
 """
 
 from __future__ import annotations
 
-from json import loads
+from dataclasses import asdict
+from json import dumps, loads
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.mcp.result_formatting import format_tool_result
 
 pytestmark = pytest.mark.server
 
@@ -69,10 +71,10 @@ async def test_invoke_tool_raw_rejects_invalid_arguments() -> None:
     assert "obs_file_list" in exc_info.value.error.message
 
 
-async def test_dispatch_tool_wraps_invoke_tool_raw_unchanged(
+async def test_dispatch_tool_formats_invoke_tool_raw(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify dispatch_tool is exactly invoke_tool_raw plus JSON wrapping."""
+    """Verify dispatch_tool is invoke_tool_raw plus formatting + JSON."""
 
     async def fake_handler(args: Any) -> dict[str, Any]:
         """Return a deterministic payload for the dispatch comparison."""
@@ -92,6 +94,18 @@ async def test_dispatch_tool_wraps_invoke_tool_raw_unchanged(
         server.PhytomniAgents.CHAT_AGENT, arguments
     )
 
+    assert raw == {"echo": "hi"}
     assert len(wrapped) == 1
     assert wrapped[0].type == "text"
-    assert loads(wrapped[0].text) == raw == {"echo": "hi"}
+    expected = loads(
+        dumps(
+            asdict(
+                format_tool_result(
+                    server.PhytomniAgents.CHAT_AGENT.value,
+                    raw,
+                    arguments=arguments,
+                )
+            )
+        )
+    )
+    assert loads(wrapped[0].text) == expected

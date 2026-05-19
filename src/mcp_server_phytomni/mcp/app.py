@@ -9,6 +9,7 @@ to the domain-specific tool handler layer while keeping public tool names
 stable for existing clients.
 """
 
+from dataclasses import asdict
 from json import dumps
 from typing import Any, Awaitable, Callable, Dict
 
@@ -31,6 +32,7 @@ from .handlers import (
     handle_knowledge_agent,
     handle_review_agent,
 )
+from .result_formatting import FormattedToolResult, format_tool_result
 from .schemas import (
     AnalystAgent,
     BriefGeneAgent,
@@ -128,22 +130,47 @@ async def invoke_tool_raw(name: Any, arguments: Dict[str, Any]) -> Any:
     return await handler(args)
 
 
+async def invoke_tool_formatted(
+    name: Any, arguments: Dict[str, Any]
+) -> FormattedToolResult:
+    """Validate arguments, call a handler, and format its payload.
+
+    This is the shared formatted seam built on top of invoke_tool_raw:
+    the MCP dispatcher and the HTTP API both route through it so the
+    stdio and HTTP surfaces emit the same normalized result. The raw
+    seam stays untouched and keeps returning the unwrapped payload.
+
+    Args:
+        name: Raw tool name supplied by the caller.
+        arguments: JSON object passed to the selected tool.
+
+    Returns:
+        The normalized client-facing result for the selected tool.
+
+    Raises:
+        McpError: If the tool is unknown or arguments fail validation.
+    """
+    raw = await invoke_tool_raw(name, arguments)
+    return format_tool_result(_tool_name(name), raw, arguments=arguments)
+
+
 async def dispatch_tool(
     name: Any, arguments: Dict[str, Any]
 ) -> list[TextContent]:
-    """Validate arguments, call a tool handler, and serialize the response.
+    """Validate arguments, call a tool handler, and serialize the result.
 
     Args:
         name: Raw MCP tool name supplied by the client.
         arguments: JSON object passed to the selected MCP tool.
 
     Returns:
-        MCP text content containing the serialized handler response.
+        MCP text content containing the serialized formatted result.
 
     Raises:
-        McpError: If the tool is unknown or arguments fail schema validation.
+        McpError: If the tool is unknown or arguments fail validation.
     """
-    return _text_response(await invoke_tool_raw(name, arguments))
+    formatted = await invoke_tool_formatted(name, arguments)
+    return _text_response(asdict(formatted))
 
 
 async def serve() -> None:

@@ -5,7 +5,7 @@
 """Tests for MCP tool dispatch routing.
 
 Covers dispatch table completeness, argument validation, handler invocation,
-JSON wrapping, and invalid tool or argument error behavior.
+formatted JSON wrapping, and invalid tool or argument error behavior.
 """
 
 from __future__ import annotations
@@ -50,7 +50,10 @@ def test_tool_dispatch_tables_cover_public_agents():
 async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify dispatch validates arguments, calls handler, and wraps JSON.
+    """Verify dispatch validates, calls handler, and wraps formatted JSON.
+
+    The fake ChatAgent payload has no OpenAI ``choices``, so the server
+    formatter yields an empty answer with the default envelope shape.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap dispatch handler.
@@ -89,7 +92,12 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     assert isinstance(captured["args"], server.ChatAgent)
     assert len(result) == 1
     assert result[0].type == "text"
-    assert loads(result[0].text) == {"answer": "hello", "files": []}
+    assert loads(result[0].text) == {
+        "answer": "",
+        "follow_up_questions": [],
+        "metadata": {},
+        "references": [],
+    }
 
 
 async def test_dispatch_tool_rejects_unknown_tool():
