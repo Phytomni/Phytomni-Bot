@@ -1,0 +1,10 @@
+---
+# Repo yamllint config. Keeps yamllint's built-in `default` ruleset
+# unchanged (tracked YAML has always been default-clean) and only
+# excludes vendored dependencies: `uv run yamllint .` would otherwise
+# recurse into .venv/ site-packages and fail on third-party port.yaml
+# files that are not ours to format.
+extends: default
+
+ignore: |
+  .venv/
