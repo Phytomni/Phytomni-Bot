@@ -4,4 +4,8 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+if [ "${PHYTOMNI_SCOPED_GATE:-}" = "1" ]; then
+    exec scripts/scoped_gate.sh prepush
+fi
+
 exec scripts/validate_local.sh
