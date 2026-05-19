@@ -8,17 +8,106 @@ Covers graph routing, NL2SQL dialog id policy, DataAgent graph invocation, and
 legacy rewrite_nl2sql wrapper thread-id compatibility.
 """
 
-from typing import Any, cast
+import importlib
+from typing import Any, List, cast
 
 import pytest
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.agents.data import agent as data_agent_module
 from mcp_server_phytomni.agents.data.agent import DataAgent, DataAgentState
-from mcp_server_phytomni.agents.data.nl2sql import Nl2SqlRequest
+from mcp_server_phytomni.agents.data.nl2sql import (
+    Nl2SqlRequest,
+    execute_nl2sql_request,
+)
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
+# ``agents.data.__init__`` re-exports the ``nl2sql`` *function*, which
+# shadows the submodule of the same name on the package; resolve the
+# real module from sys.modules so monkeypatch targets its globals.
+nl2sql_module = importlib.import_module(
+    "mcp_server_phytomni.agents.data.nl2sql"
+)
+
 pytestmark = pytest.mark.agent
+
+
+class _FakePost:
+    """Capture each attempt's ``dialog_id`` and script its outcome.
+
+    Attributes:
+        outcomes: One entry per expected attempt; an ``Exception``
+            instance is raised, anything else is returned as the
+            parsed JSON response.
+        dialog_ids: ``dialog_id`` observed on each successive POST.
+    """
+
+    def __init__(self, outcomes: List[Any]) -> None:
+        """Store the scripted per-attempt outcomes."""
+        self.outcomes = outcomes
+        self.dialog_ids: List[str] = []
+
+    async def __call__(self, client: Any, request: Any, retry: Any) -> Any:
+        """Record the conversation id and return/raise the outcome.
+
+        Args:
+            client: Ignored fake HTTP client.
+            request: ``JsonPostRequest`` whose body carries dialog_id.
+            retry: Ignored retry policy.
+
+        Returns:
+            The scripted response for this attempt.
+
+        Raises:
+            Exception: When the scripted outcome is an exception.
+        """
+        del client, retry
+        self.dialog_ids.append(request.json_body["dialog_id"])
+        outcome = self.outcomes[len(self.dialog_ids) - 1]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def recorded_dialog_ids(self) -> List[str]:
+        """Return the conversation ids seen across attempts in order.
+
+        Returns:
+            The ``dialog_id`` captured on each successive POST.
+        """
+        return self.dialog_ids
+
+    def attempt_count(self) -> int:
+        """Return how many conversations were attempted.
+
+        Returns:
+            Number of POSTs the rotation loop issued.
+        """
+        return len(self.dialog_ids)
+
+
+def _mcp_error() -> McpError:
+    """Return an MCP error mirroring an exhausted single conversation."""
+    return McpError(
+        ErrorData(code=INTERNAL_ERROR, message="Failed to query SQL database")
+    )
+
+
+def _patch_transport(monkeypatch: pytest.MonkeyPatch, fake: _FakePost) -> None:
+    """Stub the token fetch and shared POST helper for nl2sql tests.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        fake: Scripted POST stand-in capturing per-attempt dialog ids.
+    """
+
+    async def fake_token() -> str:
+        """Return a dummy IAM token."""
+        return "token-xyz"
+
+    monkeypatch.setattr(nl2sql_module, "get_token", fake_token)
+    monkeypatch.setattr(nl2sql_module, "post_json_with_retries", fake)
 
 
 class FakeCompiledGraph:
@@ -209,3 +298,97 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
         "is_rewrite": False,
         "thread_id": "dialog-1",
     }
+
+
+async def test_execute_nl2sql_returns_first_success_without_rotation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A first-attempt success returns immediately, one conversation.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake = _FakePost([{"answer": "ok"}])
+    _patch_transport(monkeypatch, fake)
+    request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"dialog_id": "dialog-explicit", "max_retries": 3},
+    )
+
+    result = await execute_nl2sql_request(request)
+
+    assert result == {"answer": "ok"}
+    # Exactly one conversation, and it honored the caller's dialog id.
+    assert fake.recorded_dialog_ids() == ["dialog-explicit"]
+
+
+async def test_execute_nl2sql_rotates_dialog_id_on_retry(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A failed conversation is retried under a brand-new dialog id.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake = _FakePost([_mcp_error(), {"answer": "recovered"}])
+    _patch_transport(monkeypatch, fake)
+    request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"dialog_id": "dialog-explicit", "max_retries": 3},
+    )
+
+    result = await execute_nl2sql_request(request)
+
+    assert result == {"answer": "recovered"}
+    ids = fake.recorded_dialog_ids()
+    assert fake.attempt_count() == 2
+    # Attempt 0 keeps the caller's conversation; attempt 1 is fresh,
+    # so the poisoned server-side cache slot is bypassed.
+    assert ids[0] == "dialog-explicit"
+    assert ids[1] != "dialog-explicit"
+    assert "-dialog-" in ids[1]
+
+
+async def test_execute_nl2sql_reraises_after_exhausting_rotations(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """All conversations failing re-raises McpError, never returns None.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake = _FakePost([_mcp_error(), _mcp_error(), _mcp_error()])
+    _patch_transport(monkeypatch, fake)
+    request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"dialog_id": "dialog-explicit", "max_retries": 2},
+    )
+
+    with pytest.raises(McpError):
+        await execute_nl2sql_request(request)
+
+    # max_retries=2 -> 1 original + 2 rotated = 3 conversations,
+    # each under a distinct dialog id.
+    assert fake.attempt_count() == 3
+    assert len(set(fake.recorded_dialog_ids())) == 3
+
+
+async def test_execute_nl2sql_first_attempt_generates_dialog_when_absent(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """With no caller dialog id, attempt 0 still uses a generated id.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake = _FakePost([{"answer": "ok"}])
+    _patch_transport(monkeypatch, fake)
+    request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"max_retries": 3},
+    )
+
+    result = await execute_nl2sql_request(request)
+
+    assert result == {"answer": "ok"}
+    assert "-dialog-" in fake.recorded_dialog_ids()[0]
