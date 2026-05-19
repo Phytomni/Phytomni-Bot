@@ -6,14 +6,14 @@
 
 Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
     ReviewConfig, BriefGeneConfig, GeneNetworkConfig, DeepGenomeConfig,
-    DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig,
+    DigitalDesignConfig, InSilicoResearchConfig, EnvironmentConfig, ApiConfig,
     SpeciesDataIndex, RegionMap, PromptTemplates.
 """
 
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import RootModel
+from pydantic import AliasChoices, Field, RootModel
 from pydantic_settings import BaseSettings
 
 _MAX_TOKENS = 65536
@@ -367,6 +367,54 @@ class EnvironmentConfig(AnalystConfig):
 
     ENVIRONMENT_DATA: str = str(PRE_PREPARED_DATA_PATH)
     REGION_CODE: str = str(PRE_PREPARED_REGION_PATH)
+
+
+_API_CACHE_DIR = Path(".cache") / "phytomni"
+
+
+class ApiConfig(BaseSettings):
+    """Non-secret configuration for the external HTTP API service.
+
+    The SQLite store paths stay local-only on purpose: network
+    filesystems deadlock under SQLite WAL. Each path accepts both a bare
+    name and a ``PHYTOMNI_``-prefixed environment alias.
+
+    Attributes:
+        API_HOST (str): Bind host for the uvicorn server.
+        API_PORT (int): Bind port for the uvicorn server.
+        API_KEYS_DB_PATH (str): Local SQLite path for the API key store.
+        API_RUNS_DB_PATH (str): Local SQLite path for the async run store.
+        API_TASKS_DB_PATH (str): Local SQLite path for backend task status.
+        API_REQUEST_TIMEOUT (float): Per-request timeout in seconds.
+        API_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute.
+        API_RUN_TTL_OK_HOURS (int): Retention for terminal successful runs.
+        API_RUN_TTL_FAIL_DAYS (int): Retention for failed or cancelled runs.
+    """
+
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8080
+    API_KEYS_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "api_keys.sqlite"),
+        validation_alias=AliasChoices(
+            "API_KEYS_DB_PATH", "PHYTOMNI_API_KEYS_DB"
+        ),
+    )
+    API_RUNS_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "api_runs.sqlite"),
+        validation_alias=AliasChoices(
+            "API_RUNS_DB_PATH", "PHYTOMNI_API_RUNS_DB"
+        ),
+    )
+    API_TASKS_DB_PATH: str = Field(
+        default="server_tasks.db",
+        validation_alias=AliasChoices(
+            "API_TASKS_DB_PATH", "PHYTOMNI_TASKS_DB"
+        ),
+    )
+    API_REQUEST_TIMEOUT: float = 600.0
+    API_RATE_LIMIT_PER_MIN: int = 120
+    API_RUN_TTL_OK_HOURS: int = 24
+    API_RUN_TTL_FAIL_DAYS: int = 7
 
 
 SpeciesEntryValue = Union[str, Dict[str, str]]
