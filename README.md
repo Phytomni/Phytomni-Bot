@@ -743,9 +743,13 @@ by the style tests and are reserved for documented framework boundaries.
 ### Local Quality Gate
 
 `./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
-whitespace, black, ruff, flake8, mypy, pyright, pylint, yamllint, jsonlint,
-`demo_data/` idempotency, then `pytest`) over every tracked file — the same
-checks as CI and the `.githooks/pre-push` hook. A `Makefile` wraps it and adds
+whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
+yamllint, jsonlint, `demo_data/` idempotency, then `pytest`) over every
+tracked file — the same checks as CI and the `.githooks/pre-push` hook.
+Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
+(`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
+`scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
+`go install mvdan.cc/sh/v3/cmd/shfmt` cached under `.cache/phytomni/`. A `Makefile` wraps it and adds
 a **scoped** gate (`scripts/scoped_gate.sh`) that runs those same tools and
 flags but only over the files in the active change region, so parallel work is
 not blocked by unrelated whole-tree failures:
@@ -763,10 +767,14 @@ The scoped gate mirrors `validate_local.sh` exactly but skips any tool whose
 file kind did not change, runs `demo_data/` idempotency only when `demo_data/`
 changed, and always runs the whole-tree structural tests
 (`test_style_naming` / `test_pytest_layers` / `test_package_boundaries`)
-whenever any `.py` changed. `make push` uses an SSH keepalive instead of
-`--no-verify`, so the pre-push hook still runs. A `PHYTOMNI_SCOPED_GATE=1`
-pre-push opt-in (run the scoped gate instead of the full gate on push) is
-planned as a follow-up.
+whenever any `.py` changed, and (like the full gate) runs `shellcheck` plus
+`shfmt -d -i 4` over any changed shell scripts. `make push` uses an SSH
+keepalive instead of `--no-verify`, so the pre-push hook still runs. Exporting
+`PHYTOMNI_SCOPED_GATE=1` makes the `.githooks/pre-push` hook run the scoped
+gate instead of the full gate (e.g. `PHYTOMNI_SCOPED_GATE=1 git push`, or
+`PHYTOMNI_SCOPED_GATE=1 make push`); unset, the hook runs the full
+`validate_local.sh` exactly as before, so CI and other contributors are
+unaffected.
 
 ### Config Normalization
 
