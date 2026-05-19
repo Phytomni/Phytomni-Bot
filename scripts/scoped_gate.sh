@@ -178,12 +178,7 @@ else
     run uv run ruff check "$@"
     run uv run flake8 "$@"
     run uv run mypy "$@"
-
-    if command -v pyright >/dev/null 2>&1; then
-        run pyright "$@"
-    else
-        run npx --yes pyright "$@"
-    fi
+    run uv run pyright "$@"
 
     # NOTE: validate_local.sh does NOT set PYTHONPATH for pylint; mirror that.
     run uv run pylint --persistent=no "$@"
