@@ -13,7 +13,7 @@ SHELL := /bin/sh
 
 # Push must keep the SSH socket alive: the slow pre-push hook idles the
 # connection. Use a keepalive instead of --no-verify so the hook still runs.
-GIT_SSH_KEEPALIVE := ssh -o ServerAliveInterval=30 -o ServerAliveCountInterval=6
+GIT_SSH_KEEPALIVE := ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6
 
 .DEFAULT_GOAL := help
 .PHONY: help scoped precommit prepush full push
