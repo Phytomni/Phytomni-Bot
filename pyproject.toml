@@ -48,6 +48,7 @@ dependencies = [
 [project.scripts]
 phytomni = "mcp_client_phytomni.main:main"
 phytomni-api = "mcp_server_phytomni.api.server:main"
+phytomni-api-key = "mcp_server_phytomni.api.keys:main"
 
 [project.optional-dependencies]
 dev = [
