@@ -28,7 +28,27 @@ else
     run npx --yes pyright src tests e2e scripts
 fi
 
-run uv run pylint --persistent=no $(git ls-files '*.py')
+set --
+while IFS= read -r pyfile; do
+    if [ -n "$pyfile" ]; then
+        set -- "$@" "$pyfile"
+    fi
+done <<EOF
+$(git ls-files '*.py')
+EOF
+run uv run pylint --persistent=no "$@"
+
+set --
+while IFS= read -r shfile; do
+    if [ -n "$shfile" ]; then
+        set -- "$@" "$shfile"
+    fi
+done <<EOF
+$(git ls-files '*.sh')
+$(git ls-files .githooks)
+EOF
+run uv run shellcheck "$@"
+
 run uv run yamllint .
 
 if command -v jsonlint >/dev/null 2>&1; then
