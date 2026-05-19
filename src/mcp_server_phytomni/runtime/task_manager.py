@@ -5,13 +5,14 @@
 """Task manager for SQLite database and remote task server interactions.
 
 Classes: RemoteTaskRequest, TaskManager.
-Functions: create_task (async), update_task (async).
+Functions: create_task (async), update_task (async),
+    resolve_tasks_db_path.
 """
 
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from httpx import (
     AsyncClient,
@@ -126,10 +127,94 @@ class TaskManager:
             UPDATE tasks
             SET status = ?, analysis_id = ?, output_dir = ? WHERE task_id = ?
         """,
-            (status, task_id, analysis_id, output_dir),
+            (status, analysis_id, output_dir, task_id),
         )
         conn.commit()
         conn.close()
+
+    def record_submission(
+        self,
+        task_id: str,
+        status: str,
+        output_dir: str,
+        analysis_id: str = "",
+    ) -> None:
+        """Upsert a submitted task's row by its known task_id.
+
+        Unlike ``create_task`` (which mints its own uuid), the submit
+        chokepoint already holds the MCP-facing ``task_id``, so this
+        writes that exact row idempotently (``INSERT OR REPLACE``).
+
+        Args:
+            task_id: The MCP-facing task id returned to the caller.
+            status: Submission status to record (e.g. ``"submitted"``).
+            output_dir: Output directory reported by the submission.
+            analysis_id: Optional remote/analysis-platform id used by
+                the live status bridge; empty when not yet known.
+        """
+        conn = self._get_connection()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO tasks
+                (task_id, status, analysis_id, output_dir)
+            VALUES (?, ?, ?, ?)
+        """,
+            (task_id, status, analysis_id, output_dir),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_task(self, task_id: str) -> Optional[Dict[str, str]]:
+        """Return one task row, or None when the id is unknown.
+
+        A single non-blocking ``SELECT`` — never polls or waits — so
+        callers (the GetTaskStatus tool) cannot re-create the C-1
+        MCP-timeout problem.
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            ``{"task_id", "status", "analysis_id", "output_dir"}`` when
+            the row exists, otherwise ``None``.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """
+                SELECT status, analysis_id, output_dir
+                FROM tasks WHERE task_id = ?
+            """,
+                (task_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        return {
+            "task_id": task_id,
+            "status": row[0],
+            "analysis_id": row[1],
+            "output_dir": row[2],
+        }
+
+
+def resolve_tasks_db_path() -> str:
+    """Return the shared SQLite path for the local task registry.
+
+    Single source of truth so the submit-side writer and the
+    GetTaskStatus reader provably address the same file. Reads
+    ``ApiConfig.API_TASKS_DB_PATH`` (env ``API_TASKS_DB_PATH`` /
+    ``PHYTOMNI_TASKS_DB``, default ``server_tasks.db``). The import is
+    lazy to keep ``TaskManager`` free of import-time config coupling.
+
+    Returns:
+        The configured tasks database path.
+    """
+    from ..config.defaults import ApiConfig
+
+    return ApiConfig().API_TASKS_DB_PATH
 
 
 async def create_task(
