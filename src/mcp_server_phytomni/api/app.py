@@ -10,7 +10,9 @@ Public functions: create_app.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +37,7 @@ from .openai_mapping import (
     tool_accepts_obs,
     tool_for_model,
 )
+from .ratelimit import make_rate_limiter
 from .schemas import ApiErrorDetail, ApiErrorResponse, ChatCompletionRequest
 
 __all__ = ["create_app"]
@@ -52,12 +55,18 @@ _ERROR_TYPES = {
 }
 
 
-def _error_response(status_code: int, message: str) -> JSONResponse:
+def _error_response(
+    status_code: int,
+    message: str,
+    headers: Optional[Mapping[str, str]] = None,
+) -> JSONResponse:
     """Build a unified error-envelope JSON response.
 
     Args:
         status_code: HTTP status code mirrored into the body.
         message: Human-readable explanation.
+        headers: Optional response headers to propagate (e.g.
+            Retry-After, WWW-Authenticate) from the raised exception.
 
     Returns:
         JSON response carrying the unified error envelope.
@@ -70,7 +79,11 @@ def _error_response(status_code: int, message: str) -> JSONResponse:
             request_id=current_request_id(),
         )
     )
-    return JSONResponse(status_code=status_code, content=payload.model_dump())
+    return JSONResponse(
+        status_code=status_code,
+        content=payload.model_dump(),
+        headers=dict(headers) if headers else None,
+    )
 
 
 def request_context_middleware(app: ASGIApp) -> ASGIApp:
@@ -153,6 +166,21 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="Phytomni HTTP API", version="0.1.0")
     app.add_middleware(request_context_middleware)
+    rate_limit = make_rate_limiter()
+
+    async def authorized(
+        principal: ApiPrincipal = Depends(require_principal),
+    ) -> ApiPrincipal:
+        """Authenticate, then enforce the per-key request budget."""
+        limit = ApiConfig().API_RATE_LIMIT_PER_MIN
+        retry_after = rate_limit(principal.key_prefix, limit)
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="rate limit exceeded",
+                headers={"Retry-After": str(retry_after)},
+            )
+        return principal
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -178,7 +206,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/models")
     async def list_models(
-        principal: ApiPrincipal = Depends(require_principal),
+        principal: ApiPrincipal = Depends(authorized),
     ) -> JSONResponse:
         """List the chat-like model ids (OpenAI convention)."""
         del principal  # Auth side-effect only.
@@ -199,7 +227,7 @@ def create_app() -> FastAPI:
     @app.post("/v1/chat/completions")
     async def chat_completions(
         payload: ChatCompletionRequest,
-        principal: ApiPrincipal = Depends(require_principal),
+        principal: ApiPrincipal = Depends(authorized),
     ) -> JSONResponse:
         """Run a chat-like agent in an OpenAI-compatible shape."""
         del principal  # Auth side-effect; identity flows via contextvar.
@@ -238,7 +266,9 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         """Render HTTP exceptions through the unified envelope."""
         message = exc.detail if isinstance(exc.detail, str) else "error"
-        return _error_response(exc.status_code, message)
+        return _error_response(
+            exc.status_code, message, getattr(exc, "headers", None)
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
