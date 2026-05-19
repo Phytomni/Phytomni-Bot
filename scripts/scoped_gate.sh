@@ -82,6 +82,7 @@ py_files=""
 yaml_files=""
 json_files=""
 sh_files=""
+md_files=""
 test_files=""
 demo_changed=0
 
@@ -125,6 +126,17 @@ for f in $changed; do
         sh_files="${sh_files}${f}
 "
         ;;
+    *.md)
+        # demo_data/*.md is generator-owned (covered by the demo_data
+        # idempotency check); never hand-format it.
+        case "$f" in
+        demo_data/*) ;;
+        *)
+            md_files="${md_files}${f}
+"
+            ;;
+        esac
+        ;;
     esac
 done
 IFS=$old_ifs
@@ -133,6 +145,7 @@ py_files=$(printf '%s' "$py_files" | sed '/^[[:space:]]*$/d')
 yaml_files=$(printf '%s' "$yaml_files" | sed '/^[[:space:]]*$/d')
 json_files=$(printf '%s' "$json_files" | sed '/^[[:space:]]*$/d')
 sh_files=$(printf '%s' "$sh_files" | sed '/^[[:space:]]*$/d')
+md_files=$(printf '%s' "$md_files" | sed '/^[[:space:]]*$/d')
 test_files=$(printf '%s' "$test_files" | sed '/^[[:space:]]*$/d')
 
 # ---------------------------------------------------------------------------
@@ -221,6 +234,29 @@ else
     done
     IFS=$old_ifs
     run uv run yamllint "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# Markdown — only changed *.md (demo_data/*.md is excluded in the partition
+# above: it is generator-owned and covered by the demo_data idempotency
+# check). mdformat owns line shape (--wrap keep); pymarkdown reads the
+# [tool.pymarkdown] rule config from pyproject.toml.
+# ---------------------------------------------------------------------------
+if [ -z "$md_files" ]; then
+    printf '\n==> no changed markdown files; skipping mdformat/pymarkdown\n'
+else
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $md_files; do
+        if [ -n "$f" ]; then
+            set -- "$@" "$f"
+        fi
+    done
+    IFS=$old_ifs
+    run uv run mdformat --check "$@"
+    run uv run pymarkdown --config pyproject.toml scan "$@"
 fi
 
 # ---------------------------------------------------------------------------
