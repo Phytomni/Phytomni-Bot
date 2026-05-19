@@ -28,7 +28,8 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - `func_cache` provides a tested SQLite-backed sync/async cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
-  offline `pytest`, `yamllint`, and `jsonlint`.
+  offline `pytest`, `yamllint`, `shellcheck`, `shfmt`, `mdformat`,
+  `pymarkdown`, and `jsonlint`.
 - Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
   and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
   every MCP tool against real backends through `PhytomniMcpClient`. See
@@ -744,13 +745,18 @@ by the style tests and are reserved for documented framework boundaries.
 
 `./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
 whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
-yamllint, jsonlint, `demo_data/` idempotency, then `pytest`) over every
-tracked file — the same checks as CI and the `.githooks/pre-push` hook.
+yamllint, mdformat, pymarkdown, jsonlint, `demo_data/` idempotency, then
+`pytest`) over every tracked file — the same checks as CI and the
+`.githooks/pre-push` hook.
 Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
 (`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
 `scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
-`go install mvdan.cc/sh/v3/cmd/shfmt` cached under `.cache/phytomni/`. A `Makefile` wraps it and adds
-a **scoped** gate (`scripts/scoped_gate.sh`) that runs those same tools and
+`go install mvdan.cc/sh/v3/cmd/shfmt` cached under `.cache/phytomni/`.
+Markdown (`*.md`, excluding generator-owned `demo_data/*.md`) gets both a
+format check (`mdformat --check`, GFM) and static analysis (`pymarkdown`,
+configured through `[tool.pymarkdown]` in `pyproject.toml`). A `Makefile`
+wraps it and adds a **scoped** gate (`scripts/scoped_gate.sh`) that runs
+those same tools and
 flags but only over the files in the active change region, so parallel work is
 not blocked by unrelated whole-tree failures:
 
@@ -809,6 +815,9 @@ python scripts/normalize_json.py \
   imports of `reportlab` and `openpyxl` resolve)
 - `pytest --cov=mcp_server_phytomni`
 - `yamllint .`
+- `mdformat --check` and `pymarkdown --config pyproject.toml scan` over
+  tracked `*.md` (excluding generator-owned `demo_data/`)
+- `shellcheck` and `shfmt -d -i 4` over tracked `*.sh` and `.githooks/*`
 - `jsonlint "$file" --quiet` for every tracked JSON file
 
 ## Repository Hygiene
@@ -854,12 +863,15 @@ Development dependencies include:
 - `ruff`
 - `flake8`
 - `mypy`
-- `pyright` through `npx` or global npm install in CI
+- `pyright`
 - `pylint`
 - `pytest`
 - `pytest-asyncio`
 - `pytest-cov`
 - `yamllint`
+- `shellcheck-py`
+- `mdformat` and `mdformat-gfm`
+- `pymarkdownlnt`
 
 Demo / live-E2E dependencies (`[project.optional-dependencies].demo`) cover
 the `demo_data/` regenerator and the e2e suite's bundled imports:
