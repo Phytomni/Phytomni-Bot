@@ -190,10 +190,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Static check of changed shell scripts (incl. .githooks/* hooks).
+# Static + format check of changed shell scripts (incl. .githooks/* hooks).
 # ---------------------------------------------------------------------------
 if [ -z "$sh_files" ]; then
-    printf '\n==> no changed shell files; skipping shellcheck\n'
+    printf '\n==> no changed shell files; skipping shellcheck/shfmt\n'
 else
     set --
     old_ifs=$IFS
@@ -206,6 +206,7 @@ else
     done
     IFS=$old_ifs
     run uv run shellcheck "$@"
+    run scripts/shfmt_runner.sh -d -i 4 "$@"
 fi
 
 # ---------------------------------------------------------------------------
