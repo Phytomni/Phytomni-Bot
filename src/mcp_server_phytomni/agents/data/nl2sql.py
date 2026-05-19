@@ -8,7 +8,9 @@ This module exposes `Nl2SqlRequest`, `nl2sql`, and
 `execute_nl2sql_request` for preparing authenticated database API calls.
 """
 
+import asyncio
 from dataclasses import dataclass
+from random import uniform
 from typing import Any, Dict
 
 from httpx import AsyncClient, Timeout
@@ -26,10 +28,34 @@ from ...storage.path_policy import IdFactory
 
 DATA_CONFIG = DataConfig()
 
+# Small, capped backoff between rotated conversations. The actual fix
+# for a poisoned conversation cache is the fresh dialog_id, not
+# waiting -- this only keeps rotations from instantly hammering the
+# gateway when a 504 was in fact brief gateway saturation rather than
+# cache confusion. Kept small on purpose so a 5-rotation worst case
+# adds seconds, not minutes.
+_ROTATION_BACKOFF_BASE_SECONDS = 0.5
+_ROTATION_BACKOFF_CAP_SECONDS = 4.0
+_ROTATION_BACKOFF_JITTER_SECONDS = 0.25
+
 
 def _default_dialog_id() -> str:
     """Return a generated dialog ID for caller-omitted NL2SQL sessions."""
     return IdFactory().new_id("dialog")
+
+
+async def _rotation_backoff(attempt: int) -> None:
+    """Pause briefly before retrying under a fresh conversation.
+
+    Args:
+        attempt: Zero-based index of the attempt that just failed
+            (the pause grows with it, capped low).
+    """
+    delay = min(
+        _ROTATION_BACKOFF_BASE_SECONDS * (2**attempt),
+        _ROTATION_BACKOFF_CAP_SECONDS,
+    )
+    await asyncio.sleep(delay + uniform(0, _ROTATION_BACKOFF_JITTER_SECONDS))
 
 
 @dataclass(frozen=True)
@@ -232,6 +258,7 @@ async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
                 # caller never sees a silent None.
                 if attempt == last_attempt:
                     raise
+                await _rotation_backoff(attempt)
     # Reached only if max_retries is negative (empty attempt range);
     # never silently return None into the NL2SQL caller.
     raise McpError(

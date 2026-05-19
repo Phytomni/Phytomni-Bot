@@ -42,12 +42,16 @@ class _FakePost:
             instance is raised, anything else is returned as the
             parsed JSON response.
         dialog_ids: ``dialog_id`` observed on each successive POST.
+        backoff_attempts: Attempt index passed to each inter-rotation
+            backoff (recorded by the patched no-op so the suite stays
+            fast and the cadence is assertable).
     """
 
     def __init__(self, outcomes: List[Any]) -> None:
         """Store the scripted per-attempt outcomes."""
         self.outcomes = outcomes
         self.dialog_ids: List[str] = []
+        self.backoff_attempts: List[int] = []
 
     async def __call__(self, client: Any, request: Any, retry: Any) -> Any:
         """Record the conversation id and return/raise the outcome.
@@ -86,6 +90,14 @@ class _FakePost:
         """
         return len(self.dialog_ids)
 
+    def recorded_backoffs(self) -> List[int]:
+        """Return the attempt index handed to each backoff, in order.
+
+        Returns:
+            One entry per inter-rotation pause the loop performed.
+        """
+        return self.backoff_attempts
+
 
 def _mcp_error() -> McpError:
     """Return an MCP error mirroring an exhausted single conversation."""
@@ -106,8 +118,13 @@ def _patch_transport(monkeypatch: pytest.MonkeyPatch, fake: _FakePost) -> None:
         """Return a dummy IAM token."""
         return "token-xyz"
 
+    async def fake_backoff(attempt: int) -> None:
+        """Record the backoff cadence without actually sleeping."""
+        fake.backoff_attempts.append(attempt)
+
     monkeypatch.setattr(nl2sql_module, "get_token", fake_token)
     monkeypatch.setattr(nl2sql_module, "post_json_with_retries", fake)
+    monkeypatch.setattr(nl2sql_module, "_rotation_backoff", fake_backoff)
 
 
 class FakeCompiledGraph:
@@ -392,3 +409,31 @@ async def test_execute_nl2sql_first_attempt_generates_dialog_when_absent(
 
     assert result == {"answer": "ok"}
     assert "-dialog-" in fake.recorded_dialog_ids()[0]
+
+
+async def test_execute_nl2sql_backs_off_only_between_rotations(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Backoff runs between failed attempts, not before 0 or after last.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    # A first-attempt success must never pause.
+    ok = _FakePost([{"answer": "ok"}])
+    _patch_transport(monkeypatch, ok)
+    await execute_nl2sql_request(
+        Nl2SqlRequest.from_kwargs("q", {"max_retries": 3})
+    )
+    assert not ok.recorded_backoffs()
+
+    # All three conversations fail: pause after attempts 0 and 1, but
+    # not after the final (attempt 2) which re-raises immediately.
+    fail = _FakePost([_mcp_error(), _mcp_error(), _mcp_error()])
+    _patch_transport(monkeypatch, fail)
+    with pytest.raises(McpError):
+        await execute_nl2sql_request(
+            Nl2SqlRequest.from_kwargs("q", {"max_retries": 2})
+        )
+    assert fail.recorded_backoffs() == [0, 1]
+    assert fail.attempt_count() == 3
