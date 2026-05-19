@@ -16,7 +16,7 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - The wheel packages two libraries: `mcp_server_phytomni` (the MCP server)
   and `mcp_client_phytomni` (a stdio CLI client and tool-result formatters
   for applications that drive the server).
-- The MCP server currently exposes 10 tools.
+- The MCP server currently exposes 11 tools.
 - Several domain agents are LangGraph `StateGraph` workflows with compiled
   apps invoked through a shared runner.
 - MCP dispatch lives in `mcp/app.py`, `mcp/schemas.py`, and
@@ -522,7 +522,7 @@ every MCP tool against real backends with a single command.
 demo_data/
 ├── README.md                         # auto-generated index
 ├── manifest.json                     # tool → payload + fixture map
-├── payloads/                         # 10 JSON payloads, one per MCP tool
+├── payloads/                         # 11 JSON payloads, one per MCP tool
 ├── docs/                             # plant-science brief MD/PDF + xlsx
 ├── sequences/                        # short Arabidopsis FASTA
 └── scripts/generate_demo_data.py     # idempotent regenerator
@@ -547,6 +547,7 @@ working tree (enforced by `./scripts/validate_local.sh`).
 | InSilicoResearchAgent | async | [in_silico_research_agent.json](demo_data/payloads/in_silico_research_agent.json) | Reproducibility tasks from the brief PDF. |
 | DigitalDesignAgent | async | [digital_design_agent.json](demo_data/payloads/digital_design_agent.json) | Protein + promoter design for AT1G75370. |
 | GeneNetworkAgent | async | [gene_network_agent.json](demo_data/payloads/gene_network_agent.json) | Trait-network analysis for rice (TO:0000207). |
+| GetTaskStatus | sync | [get_task_status.json](demo_data/payloads/get_task_status.json) | Non-blocking status poll for a submitted task id. |
 
 OBS paths inside the committed payloads use the placeholder prefix
 `/obs/phytomni/demo/`. The e2e suite's [`conftest.py`](e2e/conftest.py)
