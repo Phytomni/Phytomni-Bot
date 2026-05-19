@@ -25,11 +25,11 @@ cd "$repo_root"
 
 mode=${1:-prepush}
 case "$mode" in
-    precommit | prepush | scoped) ;;
-    *)
-        printf 'usage: scripts/scoped_gate.sh <precommit|prepush|scoped>\n' >&2
-        exit 2
-        ;;
+precommit | prepush | scoped) ;;
+*)
+    printf 'usage: scripts/scoped_gate.sh <precommit|prepush|scoped>\n' >&2
+    exit 2
+    ;;
 esac
 if [ "$mode" = scoped ]; then
     mode=prepush
@@ -98,33 +98,33 @@ for f in $changed; do
         continue
     fi
     case "$f" in
-        demo_data/*)
-            demo_changed=1
-            ;;
+    demo_data/*)
+        demo_changed=1
+        ;;
     esac
     case "$f" in
-        *.py)
-            py_files="${py_files}${f}
+    *.py)
+        py_files="${py_files}${f}
 "
-            case "$f" in
-                tests/*test_*.py)
-                    test_files="${test_files}${f}
-"
-                    ;;
-            esac
-            ;;
-        *.yaml | *.yml)
-            yaml_files="${yaml_files}${f}
+        case "$f" in
+        tests/*test_*.py)
+            test_files="${test_files}${f}
 "
             ;;
-        *.json)
-            json_files="${json_files}${f}
+        esac
+        ;;
+    *.yaml | *.yml)
+        yaml_files="${yaml_files}${f}
 "
-            ;;
-        *.sh | .githooks/*)
-            sh_files="${sh_files}${f}
+        ;;
+    *.json)
+        json_files="${json_files}${f}
 "
-            ;;
+        ;;
+    *.sh | .githooks/*)
+        sh_files="${sh_files}${f}
+"
+        ;;
     esac
 done
 IFS=$old_ifs
