@@ -4,16 +4,22 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """HTTP API request and response schemas.
 
-Public models: ApiErrorDetail, ApiErrorResponse.
+Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
+    ChatCompletionRequest.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-__all__ = ["ApiErrorDetail", "ApiErrorResponse"]
+__all__ = [
+    "ApiErrorDetail",
+    "ApiErrorResponse",
+    "ChatMessage",
+    "ChatCompletionRequest",
+]
 
 
 class ApiErrorDetail(BaseModel):
@@ -40,3 +46,36 @@ class ApiErrorResponse(BaseModel):
     """
 
     error: ApiErrorDetail
+
+
+class ChatMessage(BaseModel):
+    """One OpenAI-style chat message.
+
+    Attributes:
+        role: Message role (system, user, assistant).
+        content: Message text content.
+    """
+
+    role: str
+    content: str
+
+
+class ChatCompletionRequest(BaseModel):
+    """OpenAI-compatible chat completion request subset.
+
+    Unknown OpenAI fields (temperature, top_p, ...) are accepted and
+    ignored so standard OpenAI clients work unchanged.
+
+    Attributes:
+        model: Selects the backing chat-like agent.
+        messages: Ordered conversation messages.
+        stream: Streaming flag; only False is supported.
+        obs_file_list: Optional OBS document paths for the agent.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    model: str
+    messages: List[ChatMessage]
+    stream: bool = False
+    obs_file_list: Optional[List[str]] = None

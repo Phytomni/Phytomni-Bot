@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
@@ -20,13 +20,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config.defaults import ApiConfig
+from ..mcp.app import invoke_tool_raw
 from ..runtime.request_context import (
     bind_request_id,
     current_request_id,
     reset_request_var,
 )
 from ..storage.path_policy import IdFactory
-from .schemas import ApiErrorDetail, ApiErrorResponse
+from .auth import ApiPrincipal, require_principal
+from .openai_mapping import (
+    flatten_messages,
+    to_chat_completion,
+    tool_for_model,
+)
+from .schemas import ApiErrorDetail, ApiErrorResponse, ChatCompletionRequest
 
 __all__ = ["create_app"]
 
@@ -166,6 +173,37 @@ def create_app() -> FastAPI:
             status_code=200,
             content={"status": "ok", "checks": checks},
         )
+
+    @app.post("/v1/chat/completions")
+    async def chat_completions(
+        payload: ChatCompletionRequest,
+        principal: ApiPrincipal = Depends(require_principal),
+    ) -> JSONResponse:
+        """Run a chat-like agent in an OpenAI-compatible shape."""
+        del principal  # Auth side-effect; identity flows via contextvar.
+        if payload.stream:
+            raise HTTPException(
+                status_code=400,
+                detail="streaming is not supported",
+            )
+        tool_name = tool_for_model(payload.model)
+        if tool_name is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"model not found: {payload.model}",
+            )
+        try:
+            user_query = flatten_messages(payload.messages)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        result = await invoke_tool_raw(
+            tool_name,
+            {
+                "user_query": user_query,
+                "obs_file_list": payload.obs_file_list or [],
+            },
+        )
+        return JSONResponse(to_chat_completion(result, payload.model))
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
