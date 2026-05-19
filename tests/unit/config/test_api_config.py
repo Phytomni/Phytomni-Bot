@@ -10,11 +10,15 @@ SQLite store paths and rate-limit / TTL knobs.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mcp_server_phytomni.config.defaults import ApiConfig
 
 pytestmark = pytest.mark.unit
+
+_CACHE_DIR = Path(".cache") / "phytomni"
 
 
 def test_api_config_defaults() -> None:
@@ -23,8 +27,8 @@ def test_api_config_defaults() -> None:
 
     assert config.API_HOST == "127.0.0.1"
     assert config.API_PORT == 8080
-    assert config.API_KEYS_DB_PATH.endswith("api_keys.sqlite")
-    assert config.API_RUNS_DB_PATH.endswith("api_runs.sqlite")
+    assert config.API_KEYS_DB_PATH == str(_CACHE_DIR / "api_keys.sqlite")
+    assert config.API_RUNS_DB_PATH == str(_CACHE_DIR / "api_runs.sqlite")
     assert config.API_TASKS_DB_PATH == "server_tasks.db"
     assert config.API_REQUEST_TIMEOUT == 600.0
     assert config.API_RATE_LIMIT_PER_MIN == 120
