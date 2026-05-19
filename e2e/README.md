@@ -79,6 +79,34 @@ PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS=1200 \
     uv run pytest e2e/test_analyst_agent_e2e.py -v
 ```
 
+### HTTP API e2e
+
+`test_api_http_e2e.py` is the one file that does NOT go through the
+stdio MCP client. It boots `phytomni-api` as a real uvicorn subprocess
+on an ephemeral port, mints a per-user key in a throwaway SQLite store
+via `ApiKeyStore`, then drives `POST /v1/chat/completions` over real
+HTTP for all four OpenAI-compatible models. Review and BriefGene each
+block the synchronous endpoint ~10 min, so the file runs ~20 min and
+all four model calls run by default (no opt-in flag):
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+    uv run pytest e2e/test_api_http_e2e.py -v
+```
+
+To validate just the subprocess/key/HTTP harness without paying the
+~20 min, restrict to the cheap smoke/negative cases:
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+    uv run pytest e2e/test_api_http_e2e.py -v \
+    -k "healthz or models or auth or unknown or stream or obs"
+```
+
+Tunables: `PHYTOMNI_E2E_API_STARTUP_SECONDS` (health-gate budget,
+default 120) and `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS` (per-request
+read timeout, default 1200).
+
 ## Layout
 
 ```
@@ -90,5 +118,6 @@ e2e/
 │   ├── client.py           # PhytomniMcpClient context manager
 │   ├── obs_publish.py      # per-session demo_data upload
 │   └── polling.py          # async task polling
-└── test_*_e2e.py           # one file per public MCP tool
+├── test_*_e2e.py           # one file per public MCP tool
+└── test_api_http_e2e.py    # live HTTP API (chat surface)
 ```
