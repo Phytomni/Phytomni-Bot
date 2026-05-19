@@ -10,6 +10,8 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
     handle_digital_design_agent, handle_gene_network_agent.
 """
 
+import functools
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
+from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..storage.path_policy import RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 
@@ -58,6 +61,64 @@ def scratch_server_dir(config: Any, scope: str) -> str:
             local_fallback=Path(config.TEMP_DIR),
         ),
     )
+
+
+def _record_submitted_task(result: Any) -> None:
+    """Best-effort: persist a submitted task into the local registry.
+
+    Writes the MCP-facing ``task_id`` / ``output_dir`` so the
+    non-blocking GetTaskStatus tool can later look the submission up.
+    A registry failure must never break an already-successful
+    submission, so SQLite/OS errors are swallowed — the caller still
+    receives its ``task_id``; only the auxiliary bookkeeping is lost.
+
+    Args:
+        result: The wrapper result returned by a submit-style handler.
+    """
+    if not isinstance(result, dict):
+        return
+    task_id = result.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        return
+    output_dir = result.get("output_dir") or ""
+    try:
+        TaskManager(resolve_tasks_db_path()).record_submission(
+            task_id, "submitted", str(output_dir)
+        )
+    except (sqlite3.Error, OSError):
+        return
+
+
+def _records_submission(handler: Any) -> Any:
+    """Decorate a submit-style handler to log its task post-return.
+
+    The handler runs unchanged; its result is forwarded verbatim and
+    also recorded in the local registry for GetTaskStatus.
+    ``functools.wraps`` preserves the handler name so the
+    ``TOOL_HANDLERS`` mapping in ``mcp/app.py`` is unaffected.
+
+    Args:
+        handler: The async submit handler to wrap.
+
+    Returns:
+        The wrapped async handler.
+    """
+
+    @functools.wraps(handler)
+    async def _wrapper(args: Any) -> Any:
+        """Await the handler, record the task, return the result.
+
+        Args:
+            args: The validated tool-argument model.
+
+        Returns:
+            The handler's result, unchanged.
+        """
+        result = await handler(args)
+        _record_submitted_task(result)
+        return result
+
+    return _wrapper
 
 
 async def handle_chat_agent(args: Any) -> Any:
@@ -212,6 +273,7 @@ async def handle_data_agent(args: Any) -> Any:
     )
 
 
+@_records_submission
 async def handle_analyst_agent(args: Any) -> Any:
     """Execute AnalystAgent with default runtime configuration.
 
@@ -388,6 +450,7 @@ async def handle_brief_gene_agent(args: Any) -> Any:
     )
 
 
+@_records_submission
 async def handle_deep_genome_agent(args: Any) -> Any:
     """Execute DeepGenomeAgent with default runtime configuration.
 
@@ -462,6 +525,7 @@ async def handle_deep_genome_agent(args: Any) -> Any:
     )
 
 
+@_records_submission
 async def handle_in_silico_research_agent(args: Any) -> Any:
     """Execute InSilicoResearchAgent with default runtime configuration.
 
@@ -522,6 +586,7 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
     )
 
 
+@_records_submission
 async def handle_digital_design_agent(args: Any) -> Any:
     """Execute DigitalDesignAgent with default runtime configuration.
 
@@ -562,6 +627,7 @@ async def handle_digital_design_agent(args: Any) -> Any:
     )
 
 
+@_records_submission
 async def handle_gene_network_agent(args: Any) -> Any:
     """Execute GeneNetworkAgent with default runtime configuration.
 
