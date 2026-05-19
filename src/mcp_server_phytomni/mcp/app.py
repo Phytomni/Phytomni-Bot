@@ -26,6 +26,7 @@ from .handlers import (
     handle_deep_genome_agent,
     handle_digital_design_agent,
     handle_gene_network_agent,
+    handle_get_task_status,
     handle_in_silico_research_agent,
     handle_knowledge_agent,
     handle_review_agent,
@@ -38,6 +39,7 @@ from .schemas import (
     DeepGenomeAgent,
     DigitalDesignAgent,
     GeneNetworkAgent,
+    GetTaskStatus,
     InSilicoResearchAgent,
     KnowledgeAgent,
     PhytomniAgents,
@@ -57,6 +59,7 @@ TOOL_ARGUMENT_MODELS: Dict[str, type[BaseModel]] = {
     PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value: InSilicoResearchAgent,
     PhytomniAgents.DIGITAL_DESIGN_AGENT.value: DigitalDesignAgent,
     PhytomniAgents.GENE_NETWORK_AGENT.value: GeneNetworkAgent,
+    PhytomniAgents.GET_TASK_STATUS.value: GetTaskStatus,
 }
 
 TOOL_HANDLERS: Dict[str, ToolHandler] = {
@@ -72,6 +75,7 @@ TOOL_HANDLERS: Dict[str, ToolHandler] = {
     ),
     PhytomniAgents.DIGITAL_DESIGN_AGENT.value: handle_digital_design_agent,
     PhytomniAgents.GENE_NETWORK_AGENT.value: handle_gene_network_agent,
+    PhytomniAgents.GET_TASK_STATUS.value: handle_get_task_status,
 }
 
 
@@ -291,6 +295,11 @@ async def serve() -> None:
                 name=PhytomniAgents.GENE_NETWORK_AGENT,
                 description=PhytomniAgents.GENE_NETWORK_AGENT_DESCRIPTION,
                 inputSchema=GeneNetworkAgent.model_json_schema(),
+            ),
+            Tool(
+                name=PhytomniAgents.GET_TASK_STATUS,
+                description=PhytomniAgents.GET_TASK_STATUS_DESCRIPTION,
+                inputSchema=GetTaskStatus.model_json_schema(),
             ),
         ]
 

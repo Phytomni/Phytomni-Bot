@@ -7,7 +7,8 @@
 Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
     handle_analyst_agent, handle_review_agent, handle_brief_gene_agent,
     handle_deep_genome_agent, handle_in_silico_research_agent,
-    handle_digital_design_agent, handle_gene_network_agent.
+    handle_digital_design_agent, handle_gene_network_agent,
+    handle_get_task_status.
 """
 
 import functools
@@ -15,7 +16,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..agents.analyst.agent import retrieve_plan_submit
+from mcp.shared.exceptions import McpError
+
+from ..agents.analyst.agent import retrieve_plan_submit, task_status
 from ..agents.brief_gene.agent import brief_gene_function
 from ..agents.chat.service import phyto_chat_with_follow
 from ..agents.data.agent import rewrite_nl2sql
@@ -669,3 +672,55 @@ async def handle_gene_network_agent(args: Any) -> Any:
         max_retries=network_config.MAX_RETRIES,
         max_poll=network_config.MAX_POLL,
     )
+
+
+async def handle_get_task_status(args: Any) -> Any:
+    """Return a submitted task's status without ever blocking.
+
+    Reads the local registry row, then for a known task performs
+    exactly one live analysis-platform status check — never the
+    ``wait_for_completion`` poll loop, so this cannot re-create the
+    C-1 MCP timeout. A failed or unreachable live check degrades to
+    the locally recorded status so the lookup stays robust.
+
+    Args:
+        args: GetTaskStatus arguments with task_id (str).
+
+    Returns:
+        Any: ``{task_id, status, output_dir, analysis_id,
+        live_status}``; status is ``"unknown"`` for an unrecorded id.
+    """
+    task_id = args.task_id
+    row = TaskManager(resolve_tasks_db_path()).get_task(task_id)
+    if row is None:
+        return {
+            "task_id": task_id,
+            "status": "unknown",
+            "output_dir": "",
+            "analysis_id": "",
+            "live_status": None,
+        }
+    analyst_config = AnalystConfig()
+    result = {
+        "task_id": task_id,
+        "status": row["status"],
+        "output_dir": row["output_dir"],
+        "analysis_id": row["analysis_id"],
+        "live_status": None,
+    }
+    try:
+        live = await task_status(
+            task_id,
+            analysis_url=analyst_config.ANALYSIS_URL,
+            region=analyst_config.ANALYSIS_REGION,
+            timeout=analyst_config.TIMEOUT,
+            retriable_codes=analyst_config.RETRIABLE_CODES,
+            max_retries=analyst_config.MAX_RETRIES,
+        )
+    except McpError:
+        return result
+    result["live_status"] = live
+    live_status = live.get("status") if isinstance(live, dict) else None
+    if live_status:
+        result["status"] = live_status
+    return result

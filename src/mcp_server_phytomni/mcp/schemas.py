@@ -469,6 +469,25 @@ class GeneNetworkAgent(BaseModel):
     ]
 
 
+class GetTaskStatus(BaseModel):
+    """Input parameters for a non-blocking task-status lookup.
+
+    Attributes:
+        task_id: The task id returned by a prior async submission.
+    """
+
+    task_id: Annotated[
+        str,
+        Field(
+            description="The task id returned by a prior asynchronous "
+            "submission (AnalystAgent, DeepGenomeAgent, DigitalDesignAgent, "
+            "GeneNetworkAgent, or InSilicoResearchAgent). This performs a "
+            "single non-blocking status lookup — submit first, then poll "
+            "with this tool; it never waits for completion.",
+        ),
+    ]
+
+
 class PhytomniAgents(str, Enum):
     """Enumeration of specialized AI agents for plant science research support.
 
@@ -555,4 +574,12 @@ class PhytomniAgents(str, Enum):
         "Use to submit trait-associated gene network analysis for a species "
         "plus Trait Ontology ID. Do not use for generic free-form gene "
         "interaction Q&A or broad network explanation."
+    )
+    GET_TASK_STATUS = "GetTaskStatus"
+    GET_TASK_STATUS_DESCRIPTION = (
+        "Use to check a previously submitted task's status without "
+        "blocking. Pass the task_id returned by an async submission "
+        "(Analyst/DeepGenome/DigitalDesign/GeneNetwork/InSilicoResearch); "
+        "it returns the recorded status and output_dir merged with one "
+        "live platform status check. Submit first, then poll with this."
     )

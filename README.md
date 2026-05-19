@@ -52,6 +52,20 @@ document upload is needed.
 | `InSilicoResearchAgent` | `agents/research/agent.py` | `user_query`, `data_list`, `obs_file_list` | Decompose papers or research goals into computational tasks. |
 | `DigitalDesignAgent` | `agents/design/agent.py` | `species`, `gene_id`, `obs_file_list` | Protein and promoter design workflows. |
 | `GeneNetworkAgent` | `agents/network/agent.py` | `species`, `to_id`, `obs_file_list` | Gene network analysis for species and trait ontology IDs. |
+| `GetTaskStatus` | `runtime/task_manager.py` | `task_id` | Non-blocking status lookup for a previously submitted async task. |
+
+### Submit-then-poll for async tools
+
+`AnalystAgent`, `DeepGenomeAgent`, `DigitalDesignAgent`,
+`GeneNetworkAgent`, and `InSilicoResearchAgent` submit work to a
+backend and return a `task_id` without waiting for completion. Use the
+two-step pattern:
+
+1. Call the submit tool; keep the returned `task_id`.
+2. Call `GetTaskStatus` with that `task_id` to check progress. It is
+   non-blocking — it reads the local task registry and merges one live
+   platform status check, and never waits, so it is safe to poll on
+   your own cadence. An unrecorded id returns `status: "unknown"`.
 
 ## Architecture
 

@@ -36,6 +36,7 @@ def test_tool_dispatch_tables_cover_public_agents():
         server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
         server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
         server.PhytomniAgents.GENE_NETWORK_AGENT.value,
+        server.PhytomniAgents.GET_TASK_STATUS.value,
     }
 
     assert set(server.TOOL_ARGUMENT_MODELS) == expected_names

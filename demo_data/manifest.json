@@ -65,6 +65,12 @@
       "name": "GeneNetworkAgent",
       "payload": "payloads/gene_network_agent.json",
       "summary": "Trait-network analysis for rice (TO:0000207)."
+    },
+    {
+      "kind": "sync",
+      "name": "GetTaskStatus",
+      "payload": "payloads/get_task_status.json",
+      "summary": "Non-blocking status poll for a submitted task id."
     }
   ]
 }

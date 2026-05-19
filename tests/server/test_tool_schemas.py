@@ -31,6 +31,7 @@ TOOL_MODELS = [
     schemas.InSilicoResearchAgent,
     schemas.DigitalDesignAgent,
     schemas.GeneNetworkAgent,
+    schemas.GetTaskStatus,
 ]
 
 
@@ -49,6 +50,7 @@ DEMO_PAYLOAD_TO_MODEL: dict[str, type[BaseModel]] = {
     "in_silico_research_agent.json": schemas.InSilicoResearchAgent,
     "digital_design_agent.json": schemas.DigitalDesignAgent,
     "gene_network_agent.json": schemas.GeneNetworkAgent,
+    "get_task_status.json": schemas.GetTaskStatus,
 }
 
 
@@ -90,6 +92,7 @@ def test_chat_agent_validates_required_fields():
         ("IN_SILICO_RESEARCH_AGENT", "InSilicoResearchAgent"),
         ("DIGITAL_DESIGN_AGENT", "DigitalDesignAgent"),
         ("GENE_NETWORK_AGENT", "GeneNetworkAgent"),
+        ("GET_TASK_STATUS", "GetTaskStatus"),
     ],
 )
 def test_public_agent_enum_values_remain_stable(member_name, value):

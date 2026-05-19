@@ -173,6 +173,9 @@ PAYLOADS: Dict[str, Dict[str, Any]] = {
         "species": "oryza sativa",
         "to_id": "TO:0000207",
     },
+    "get_task_status.json": {
+        "task_id": "a1b2c3d4-0000-4000-8000-000000000001",
+    },
 }
 
 
@@ -319,6 +322,12 @@ TOOL_INDEX: Tuple[Dict[str, str], ...] = (
         "payload": "payloads/gene_network_agent.json",
         "kind": "async",
         "summary": "Trait-network analysis for rice (TO:0000207).",
+    },
+    {
+        "name": "GetTaskStatus",
+        "payload": "payloads/get_task_status.json",
+        "kind": "sync",
+        "summary": "Non-blocking status poll for a submitted task id.",
     },
 )
 

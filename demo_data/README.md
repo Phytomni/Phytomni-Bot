@@ -22,6 +22,7 @@ working tree stays clean after a rerun.
 | InSilicoResearchAgent | async | [payloads/in_silico_research_agent.json](payloads/in_silico_research_agent.json) | Reproducibility tasks decomposed from the brief PDF. |
 | DigitalDesignAgent | async | [payloads/digital_design_agent.json](payloads/digital_design_agent.json) | Protein and promoter design for AT1G75370. |
 | GeneNetworkAgent | async | [payloads/gene_network_agent.json](payloads/gene_network_agent.json) | Trait-network analysis for rice (TO:0000207). |
+| GetTaskStatus | sync | [payloads/get_task_status.json](payloads/get_task_status.json) | Non-blocking status poll for a submitted task id. |
 
 ## Supporting fixtures
 
