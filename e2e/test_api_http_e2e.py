@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import socket
 import subprocess
 import sys
@@ -39,6 +38,16 @@ import pytest_asyncio
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 
+from .helpers.assertions import (
+    ANNOTATION_CUES,
+    GENE_ID,
+    MIN_REVIEW_SECTIONS,
+    PHOTOSYNTHESIS_KEYWORDS,
+    WHEAT_DROUGHT_KEYWORDS,
+    markdown_body,
+    section_count,
+)
+
 pytestmark = pytest.mark.live
 
 MODEL_IDS = {
@@ -47,34 +56,6 @@ MODEL_IDS = {
     "phyto-review",
     "phyto-brief-gene",
 }
-PHOTOSYNTHESIS_KEYWORDS = ("photosynthesis", "c3", "calvin", "rubisco")
-# Mirrors test_knowledge_agent_e2e.py so the MCP and HTTP surfaces are
-# asserted against the same wheat drought-tolerance cue set.
-WHEAT_DROUGHT_KEYWORDS = (
-    "drought",
-    "wheat",
-    "triticum",
-    "aba",
-    "dreb",
-    "snrk",
-)
-GENE_ID = "AT1G01010"
-# Mirrors test_brief_gene_agent_e2e.py.
-ANNOTATION_CUES = (
-    "function",
-    "expression",
-    "ortholog",
-    "homolog",
-    "domain",
-    "pathway",
-    "literature",
-    "tissue",
-)
-MIN_REVIEW_SECTIONS = 3
-# Depth>=2 ATX heading; mirrors test_review_agent_e2e.py (the drafting
-# LLM varies ## vs ### run-to-run, so any sub-title heading counts).
-_ATX_SECTION = re.compile(r"^\s{0,3}#{2,6}\s+\S")
-
 _STARTUP_DEADLINE_DEFAULT = 120.0
 _READ_TIMEOUT_DEFAULT = 1200.0
 _LOG_TAIL = 500
@@ -300,18 +281,7 @@ def _completion_text(body: dict[str, Any]) -> str:
         The assistant message content (envelope-unwrapped).
     """
     content = body["choices"][0]["message"]["content"]
-    try:
-        parsed = json.loads(content)
-    except (ValueError, TypeError):
-        return content
-    if isinstance(parsed, dict) and isinstance(parsed.get("content"), str):
-        return parsed["content"]
-    return content
-
-
-def _section_count(text: str) -> int:
-    """Count depth>=2 ATX markdown headers in ``text``."""
-    return sum(1 for line in text.splitlines() if _ATX_SECTION.match(line))
+    return markdown_body(content)
 
 
 async def _chat(
@@ -531,7 +501,7 @@ async def test_review_completion(
     )
 
     assert resp.status_code == 200, resp.text
-    sections = _section_count(_completion_text(resp.json()))
+    sections = section_count(_completion_text(resp.json()))
     assert sections >= MIN_REVIEW_SECTIONS, (
         f"phyto-review had only {sections} markdown sections "
         f"(expected >= {MIN_REVIEW_SECTIONS})"

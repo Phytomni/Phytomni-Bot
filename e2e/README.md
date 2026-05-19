@@ -115,6 +115,7 @@ e2e/
 ├── pyproject.toml          # local pytest rootdir config
 ├── conftest.py             # session client + OBS publish fixtures
 ├── helpers/
+│   ├── assertions.py       # shared keyword/markdown assertions
 │   ├── client.py           # PhytomniMcpClient context manager
 │   ├── obs_publish.py      # per-session demo_data upload
 │   └── polling.py          # async task polling

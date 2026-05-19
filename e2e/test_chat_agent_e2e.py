@@ -17,11 +17,10 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
+from .helpers.assertions import PHOTOSYNTHESIS_KEYWORDS
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
-
-PHOTOSYNTHESIS_KEYWORDS = ("photosynthesis", "c3", "calvin", "rubisco")
 
 
 async def test_chat_agent_e2e_returns_photosynthesis_answer(

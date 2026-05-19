@@ -19,21 +19,10 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
+from .helpers.assertions import ANNOTATION_CUES, GENE_ID
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
-
-GENE_ID = "AT1G01010"
-ANNOTATION_CUES = (
-    "function",
-    "expression",
-    "ortholog",
-    "homolog",
-    "domain",
-    "pathway",
-    "literature",
-    "tissue",
-)
 
 
 async def test_brief_gene_agent_e2e_returns_gene_card(

@@ -24,6 +24,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
+from .helpers.assertions import WHEAT_DROUGHT_KEYWORDS
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
@@ -39,15 +40,6 @@ pytestmark = pytest.mark.live
 # exercise it once the rerank/LLM tier is back to single-digit-minute
 # latency.
 RUN_UPLOADED_KA_VAR = "PHYTOMNI_E2E_RUN_KA_UPLOAD"
-
-WHEAT_DROUGHT_KEYWORDS = (
-    "drought",
-    "wheat",
-    "triticum",
-    "aba",
-    "dreb",
-    "snrk",
-)
 
 
 async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
