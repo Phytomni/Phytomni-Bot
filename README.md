@@ -439,6 +439,82 @@ phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_
 The CLI lives in `src/mcp_client_phytomni/main.py` and delegates to
 `PhytomniMcpClient` and the tool-result formatters in the same package.
 
+## HTTP API
+
+The same agents are also reachable over an authenticated HTTP API that
+runs as a **separate process** beside (never replacing) the stdio MCP
+server. It reuses the MCP handler layer through a single shared
+invocation seam, so MCP behavior is unchanged.
+
+### Start the service
+
+```bash
+phytomni-api                 # binds ApiConfig API_HOST/API_PORT
+python -m mcp_server_phytomni.api.server   # equivalent
+```
+
+`ApiConfig` (in `config/defaults.py`) carries non-secret, env-overridable
+settings; the SQLite stores are **local-only** (network filesystems
+deadlock under SQLite WAL):
+
+| Setting | Env (either name) | Default |
+| --- | --- | --- |
+| API bind host | `API_HOST` | `127.0.0.1` |
+| API bind port | `API_PORT` | `8080` |
+| API key store | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
+| Run ownership store | `API_RUNS_DB_PATH` / `PHYTOMNI_API_RUNS_DB` | `.cache/phytomni/api_runs.sqlite` |
+| Backend task registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB` | `server_tasks.db` |
+| Per-key req/min | `API_RATE_LIMIT_PER_MIN` | `120` (`<= 0` disables) |
+
+### Per-user API keys
+
+Inbound auth is a per-user key, fully separate from the outbound LLM
+`API_KEY`. Keys are stored only as PBKDF2-HMAC-SHA256 hashes with a
+per-key salt; the plaintext is shown once at creation and never
+recoverable. Manage them with the admin CLI:
+
+```bash
+phytomni-api-key create --user-id alice --name laptop [--expires-days 90]
+phytomni-api-key list   [--user-id alice]
+phytomni-api-key revoke --prefix ptm_xxxxxxxx
+```
+
+Send the key as either header:
+
+```
+Authorization: Bearer ptm_...
+X-API-Key: ptm_...
+```
+
+Every response carries an `X-Request-Id`; errors on native routes use a
+unified envelope `{"error": {"type", "code", "message", "request_id"}}`.
+Over-budget callers get `429` with `Retry-After`. Streaming is not
+supported (`stream: true` → `400`).
+
+### Endpoints
+
+- `GET /healthz` — liveness (no auth, no dependencies).
+- `GET /readyz` — readiness (no auth; checks the local store dirs are
+  writable without creating anything).
+- `GET /v1/models` — lists the OpenAI-compatible model ids.
+- `POST /v1/chat/completions` — OpenAI-compatible; `model` selects a
+  chat-like agent: `phyto-chat`, `phyto-knowledge`, `phyto-review`,
+  `phyto-brief-gene`. `doc_list` / `follow_up_questions` are surfaced as
+  extra top-level keys; `phyto-brief-gene` rejects a non-empty
+  `obs_file_list`.
+
+```bash
+curl -s http://127.0.0.1:8080/v1/chat/completions \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"phyto-chat","messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
+```
+
+Native per-agent runs and long-running task polling
+(`POST /v1/agents/{agent}/runs`, `GET /v1/runs/{run_id}`) are added in a
+later change and documented when they land. The MCP stdio server remains
+`python -m mcp_server_phytomni.server` and is unaffected.
+
 ## MCP Client Example
 
 ```python
