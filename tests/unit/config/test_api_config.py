@@ -28,8 +28,8 @@ def test_api_config_defaults() -> None:
     assert config.API_HOST == "127.0.0.1"
     assert config.API_PORT == 8080
     assert config.API_KEYS_DB_PATH == str(_CACHE_DIR / "api_keys.sqlite")
-    assert config.API_RUNS_DB_PATH == str(_CACHE_DIR / "api_runs.sqlite")
     assert config.API_TASKS_DB_PATH == "server_tasks.db"
+    assert not hasattr(config, "API_RUNS_DB_PATH")
     assert config.API_REQUEST_TIMEOUT == 600.0
     assert config.API_RATE_LIMIT_PER_MIN == 120
     assert config.API_RUN_TTL_OK_HOURS == 24
@@ -41,11 +41,11 @@ def test_api_config_env_override(
 ) -> None:
     """Verify PHYTOMNI_-prefixed env vars override store paths."""
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", "/tmp/keys.sqlite")
-    monkeypatch.setenv("PHYTOMNI_API_RUNS_DB", "/tmp/runs.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", "/tmp/tasks.sqlite")
     monkeypatch.setenv("API_RATE_LIMIT_PER_MIN", "5")
 
     config = ApiConfig()
 
     assert config.API_KEYS_DB_PATH == "/tmp/keys.sqlite"
-    assert config.API_RUNS_DB_PATH == "/tmp/runs.sqlite"
+    assert config.API_TASKS_DB_PATH == "/tmp/tasks.sqlite"
     assert config.API_RATE_LIMIT_PER_MIN == 5

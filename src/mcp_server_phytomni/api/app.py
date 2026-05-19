@@ -200,7 +200,7 @@ def create_app() -> FastAPI:
         config = ApiConfig()
         checks = {
             "api_keys_db": _store_path_writable(config.API_KEYS_DB_PATH),
-            "api_runs_db": _store_path_writable(config.API_RUNS_DB_PATH),
+            "tasks_db": _store_path_writable(config.API_TASKS_DB_PATH),
         }
         if not all(checks.values()):
             return _error_response(

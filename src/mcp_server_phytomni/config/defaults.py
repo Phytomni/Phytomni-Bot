@@ -383,8 +383,8 @@ class ApiConfig(BaseSettings):
         API_HOST (str): Bind host for the uvicorn server.
         API_PORT (int): Bind port for the uvicorn server.
         API_KEYS_DB_PATH (str): Local SQLite path for the API key store.
-        API_RUNS_DB_PATH (str): Local SQLite path for the async run store.
-        API_TASKS_DB_PATH (str): Local SQLite path for backend task status.
+        API_TASKS_DB_PATH (str): Shared local SQLite path for the run
+            registry and backend task status (single source of truth).
         API_REQUEST_TIMEOUT (float): Per-request timeout in seconds.
         API_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute.
         API_RUN_TTL_OK_HOURS (int): Retention for terminal successful runs.
@@ -397,12 +397,6 @@ class ApiConfig(BaseSettings):
         default=str(_API_CACHE_DIR / "api_keys.sqlite"),
         validation_alias=AliasChoices(
             "API_KEYS_DB_PATH", "PHYTOMNI_API_KEYS_DB"
-        ),
-    )
-    API_RUNS_DB_PATH: str = Field(
-        default=str(_API_CACHE_DIR / "api_runs.sqlite"),
-        validation_alias=AliasChoices(
-            "API_RUNS_DB_PATH", "PHYTOMNI_API_RUNS_DB"
         ),
     )
     API_TASKS_DB_PATH: str = Field(
