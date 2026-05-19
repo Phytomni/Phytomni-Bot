@@ -40,19 +40,19 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
 document upload is needed.
 
-| Tool | Main module | Required arguments | Purpose |
-| --- | --- | --- | --- |
-| `ChatAgent` | `agents/chat/service.py` | `user_query`, `obs_file_list` | General plant science chat with optional document context. |
-| `KnowledgeAgent` | `agents/knowledge/agent.py` | `user_query`, `obs_file_list` | Literature retrieval and RAG-based synthesis. |
-| `DataAgent` | `agents/data/agent.py` | `user_query` | Natural-language SQL query rewriting and database search. |
-| `AnalystAgent` | `agents/analyst/agent.py` | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
-| `ReviewAgent` | `agents/review/agent.py` | `user_query`, `obs_file_list` | Multi-step literature review and deep research generation. |
-| `BriefGeneAgent` | `agents/brief_gene/agent.py` | `user_query` | Concise gene function report from BI annotations and literature context. |
-| `DeepGenomeAgent` | `agents/deep_genome/agent.py` | `species_code`, `gene_id` | Multi-omics gene function analysis. |
-| `InSilicoResearchAgent` | `agents/research/agent.py` | `user_query`, `data_list`, `obs_file_list` | Decompose papers or research goals into computational tasks. |
-| `DigitalDesignAgent` | `agents/design/agent.py` | `species`, `gene_id`, `obs_file_list` | Protein and promoter design workflows. |
-| `GeneNetworkAgent` | `agents/network/agent.py` | `species`, `to_id`, `obs_file_list` | Gene network analysis for species and trait ontology IDs. |
-| `GetTaskStatus` | `runtime/task_manager.py` | `task_id` | Non-blocking status lookup for a previously submitted async task. |
+| Tool                    | Main module                   | Required arguments                               | Purpose                                                                       |
+| ----------------------- | ----------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `ChatAgent`             | `agents/chat/service.py`      | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                    |
+| `KnowledgeAgent`        | `agents/knowledge/agent.py`   | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                 |
+| `DataAgent`             | `agents/data/agent.py`        | `user_query`                                     | Natural-language SQL query rewriting and database search.                     |
+| `AnalystAgent`          | `agents/analyst/agent.py`     | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
+| `ReviewAgent`           | `agents/review/agent.py`      | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                    |
+| `BriefGeneAgent`        | `agents/brief_gene/agent.py`  | `user_query`                                     | Concise gene function report from BI annotations and literature context.      |
+| `DeepGenomeAgent`       | `agents/deep_genome/agent.py` | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                           |
+| `InSilicoResearchAgent` | `agents/research/agent.py`    | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                  |
+| `DigitalDesignAgent`    | `agents/design/agent.py`      | `species`, `gene_id`, `obs_file_list`            | Protein and promoter design workflows.                                        |
+| `GeneNetworkAgent`      | `agents/network/agent.py`     | `species`, `to_id`, `obs_file_list`              | Gene network analysis for species and trait ontology IDs.                     |
+| `GetTaskStatus`         | `runtime/task_manager.py`     | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.             |
 
 ### Submit-then-poll for async tools
 
@@ -62,7 +62,7 @@ backend and return a `task_id` without waiting for completion. Use the
 two-step pattern:
 
 1. Call the submit tool; keep the returned `task_id`.
-2. Call `GetTaskStatus` with that `task_id` to check progress. It is
+1. Call `GetTaskStatus` with that `task_id` to check progress. It is
    non-blocking — it reads the local task registry and merges one live
    platform status check, and never waits, so it is safe to poll on
    your own cadence. An unrecorded id returns `status: "unknown"`.
@@ -351,7 +351,7 @@ per-customer encrypted envelope:
    customer's image. The `.dockerignore` enforces this for any future
    Dockerfile.
 
-2. **Runtime (customer):** the customer supplies only their license key,
+1. **Runtime (customer):** the customer supplies only their license key,
    from either source — the `PHYTOMNI_LICENSE_KEY` environment variable
    (e.g. `docker -e`), **or** a `config/.license_key` file dropped on the
    host at deploy time (or mounted as a Docker volume / k8s secret). The
@@ -457,14 +457,14 @@ python -m mcp_server_phytomni.api.server   # equivalent
 settings; the SQLite stores are **local-only** (network filesystems
 deadlock under SQLite WAL):
 
-| Setting | Env (either name) | Default |
-| --- | --- | --- |
-| API bind host | `API_HOST` | `127.0.0.1` |
-| API bind port | `API_PORT` | `8080` |
-| API key store | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
-| Run ownership store | `API_RUNS_DB_PATH` / `PHYTOMNI_API_RUNS_DB` | `.cache/phytomni/api_runs.sqlite` |
-| Backend task registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB` | `server_tasks.db` |
-| Per-key req/min | `API_RATE_LIMIT_PER_MIN` | `120` (`<= 0` disables) |
+| Setting               | Env (either name)                           | Default                           |
+| --------------------- | ------------------------------------------- | --------------------------------- |
+| API bind host         | `API_HOST`                                  | `127.0.0.1`                       |
+| API bind port         | `API_PORT`                                  | `8080`                            |
+| API key store         | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
+| Run ownership store   | `API_RUNS_DB_PATH` / `PHYTOMNI_API_RUNS_DB` | `.cache/phytomni/api_runs.sqlite` |
+| Backend task registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
+| Per-key req/min       | `API_RATE_LIMIT_PER_MIN`                    | `120` (`<= 0` disables)           |
 
 ### Per-user API keys
 
@@ -481,7 +481,7 @@ phytomni-api-key revoke --prefix ptm_xxxxxxxx
 
 Send the key as either header:
 
-```
+```text
 Authorization: Bearer ptm_...
 X-API-Key: ptm_...
 ```
@@ -594,7 +594,7 @@ every MCP tool against real backends with a single command.
 
 ### What's in `demo_data/`
 
-```
+```text
 demo_data/
 ├── README.md                         # auto-generated index
 ├── manifest.json                     # tool → payload + fixture map
@@ -611,19 +611,19 @@ working tree (enforced by `./scripts/validate_local.sh`).
 
 ### Per-tool demo payloads
 
-| Tool | Kind | Payload | Demo summary |
-| --- | --- | --- | --- |
-| ChatAgent | sync | [chat_agent.json](demo_data/payloads/chat_agent.json) | C3 photosynthesis explainer (no upload). |
-| KnowledgeAgent | sync | [knowledge_agent.json](demo_data/payloads/knowledge_agent.json) | Wheat drought-tolerance evidence query. |
-| DataAgent | sync | [data_agent.json](demo_data/payloads/data_agent.json) | NL2SQL homology lookup for AT1G75370. |
-| ReviewAgent | sync | [review_agent.json](demo_data/payloads/review_agent.json) | Multi-section sorghum drought review. |
-| BriefGeneAgent | sync | [brief_gene_agent.json](demo_data/payloads/brief_gene_agent.json) | Concise gene-card for AT1G01010. |
-| AnalystAgent | async | [analyst_agent.json](demo_data/payloads/analyst_agent.json) | ATAC-seq peak-calling on rice replicates. |
-| DeepGenomeAgent | async | [deep_genome_agent.json](demo_data/payloads/deep_genome_agent.json) | Deep gene-function analysis (ath, AT1G75370). |
-| InSilicoResearchAgent | async | [in_silico_research_agent.json](demo_data/payloads/in_silico_research_agent.json) | Reproducibility tasks from the brief PDF. |
-| DigitalDesignAgent | async | [digital_design_agent.json](demo_data/payloads/digital_design_agent.json) | Protein + promoter design for AT1G75370. |
-| GeneNetworkAgent | async | [gene_network_agent.json](demo_data/payloads/gene_network_agent.json) | Trait-network analysis for rice (TO:0000207). |
-| GetTaskStatus | sync | [get_task_status.json](demo_data/payloads/get_task_status.json) | Non-blocking status poll for a submitted task id. |
+| Tool                  | Kind  | Payload                                                                           | Demo summary                                      |
+| --------------------- | ----- | --------------------------------------------------------------------------------- | ------------------------------------------------- |
+| ChatAgent             | sync  | [chat_agent.json](demo_data/payloads/chat_agent.json)                             | C3 photosynthesis explainer (no upload).          |
+| KnowledgeAgent        | sync  | [knowledge_agent.json](demo_data/payloads/knowledge_agent.json)                   | Wheat drought-tolerance evidence query.           |
+| DataAgent             | sync  | [data_agent.json](demo_data/payloads/data_agent.json)                             | NL2SQL homology lookup for AT1G75370.             |
+| ReviewAgent           | sync  | [review_agent.json](demo_data/payloads/review_agent.json)                         | Multi-section sorghum drought review.             |
+| BriefGeneAgent        | sync  | [brief_gene_agent.json](demo_data/payloads/brief_gene_agent.json)                 | Concise gene-card for AT1G01010.                  |
+| AnalystAgent          | async | [analyst_agent.json](demo_data/payloads/analyst_agent.json)                       | ATAC-seq peak-calling on rice replicates.         |
+| DeepGenomeAgent       | async | [deep_genome_agent.json](demo_data/payloads/deep_genome_agent.json)               | Deep gene-function analysis (ath, AT1G75370).     |
+| InSilicoResearchAgent | async | [in_silico_research_agent.json](demo_data/payloads/in_silico_research_agent.json) | Reproducibility tasks from the brief PDF.         |
+| DigitalDesignAgent    | async | [digital_design_agent.json](demo_data/payloads/digital_design_agent.json)         | Protein + promoter design for AT1G75370.          |
+| GeneNetworkAgent      | async | [gene_network_agent.json](demo_data/payloads/gene_network_agent.json)             | Trait-network analysis for rice (TO:0000207).     |
+| GetTaskStatus         | sync  | [get_task_status.json](demo_data/payloads/get_task_status.json)                   | Non-blocking status poll for a submitted task id. |
 
 OBS paths inside the committed payloads use the placeholder prefix
 `/obs/phytomni/demo/`. The e2e suite's [`conftest.py`](e2e/conftest.py)
@@ -653,12 +653,12 @@ PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
 
 Tunables (set as environment variables):
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS` | Per-call submit timeout for async tools. | 1800 |
-| `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS` | Polling deadline for one async task. | 600 |
-| `PHYTOMNI_E2E_TASKS_DB` | Override `server_tasks.db` path. | repo root |
-| `PHYTOMNI_E2E_RUN_KA_UPLOAD` | Set to `1` to also run the KnowledgeAgent uploaded-document variant. Skipped by default: with an attached document the retrieve→rerank fan-out is backend-bound and can exceed 30 min when the retrieval tier is degraded. The no-upload KnowledgeAgent test always runs. | unset (skipped) |
+| Variable                              | Purpose                                                                                                                                                                                                                                                                   | Default         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS` | Per-call submit timeout for async tools.                                                                                                                                                                                                                                  | 1800            |
+| `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`   | Polling deadline for one async task.                                                                                                                                                                                                                                      | 600             |
+| `PHYTOMNI_E2E_TASKS_DB`               | Override `server_tasks.db` path.                                                                                                                                                                                                                                          | repo root       |
+| `PHYTOMNI_E2E_RUN_KA_UPLOAD`          | Set to `1` to also run the KnowledgeAgent uploaded-document variant. Skipped by default: with an attached document the retrieve→rerank fan-out is backend-bound and can exceed 30 min when the retrieval tier is degraded. The no-upload KnowledgeAgent test always runs. | unset (skipped) |
 
 See [`e2e/README.md`](e2e/README.md) for the full layout, entry-point
 rationale (client-stdio is the only path; handler-direct and
@@ -899,11 +899,11 @@ If no configuration source is found, startup raises a `RuntimeError`
 that enumerates the three accepted provisioning paths:
 
 1. `PHYTOMNI_TESTING=1` — the test suites inject dummy secrets.
-2. A license key — `PHYTOMNI_LICENSE_KEY=<key>` or a
+1. A license key — `PHYTOMNI_LICENSE_KEY=<key>` or a
    `config/.license_key` file — with a `.env.encrypted` envelope
    beside `config/` — the customer-image path (see
    [Distribution to Trusted Customers](#distribution-to-trusted-customers)).
-3. A plaintext `config/.env` — the local developer path:
+1. A plaintext `config/.env` — the local developer path:
 
 ```bash
 cp src/mcp_server_phytomni/config/.env.example \

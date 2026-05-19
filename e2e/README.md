@@ -47,7 +47,7 @@ itself is the bug worth surfacing.
    # edit .env with your API keys, OBS credentials, etc.
    ```
 
-2. Install the optional `demo` extra so the regenerator (and any tests
+1. Install the optional `demo` extra so the regenerator (and any tests
    that touch the bundled fixtures) can import `openpyxl` and
    `reportlab`:
 
@@ -109,7 +109,7 @@ read timeout, default 1200).
 
 ## Layout
 
-```
+```text
 e2e/
 ├── README.md
 ├── pyproject.toml          # local pytest rootdir config
