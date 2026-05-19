@@ -21,12 +21,7 @@ run uv run black --check .
 run uv run ruff check .
 run uv run flake8 src tests e2e scripts
 run uv run mypy src tests e2e scripts
-
-if command -v pyright >/dev/null 2>&1; then
-    run pyright src tests e2e scripts
-else
-    run npx --yes pyright src tests e2e scripts
-fi
+run uv run pyright src tests e2e scripts
 
 set --
 while IFS= read -r pyfile; do
