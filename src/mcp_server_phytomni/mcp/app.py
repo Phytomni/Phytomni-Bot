@@ -92,17 +92,20 @@ def _text_response(response: Any) -> list[TextContent]:
     return [TextContent(type="text", text=dumps(response))]
 
 
-async def dispatch_tool(
-    name: Any, arguments: Dict[str, Any]
-) -> list[TextContent]:
-    """Validate arguments, call a tool handler, and serialize the response.
+async def invoke_tool_raw(name: Any, arguments: Dict[str, Any]) -> Any:
+    """Validate arguments and call a tool handler, returning its payload.
+
+    This is the single shared invocation seam: the MCP dispatcher and the
+    HTTP API both route through it so agent lookup, schema validation, and
+    handler invocation live in exactly one place. It returns the raw
+    handler payload without any MCP serialization.
 
     Args:
-        name: Raw MCP tool name supplied by the client.
-        arguments: JSON object passed to the selected MCP tool.
+        name: Raw tool name supplied by the caller.
+        arguments: JSON object passed to the selected tool.
 
     Returns:
-        MCP text content containing the serialized handler response.
+        The unwrapped handler response payload.
 
     Raises:
         McpError: If the tool is unknown or arguments fail schema validation.
@@ -118,8 +121,25 @@ async def dispatch_tool(
     except ValueError as exc:
         raise _invalid_params(str(exc)) from exc
 
-    response = await handler(args)
-    return _text_response(response)
+    return await handler(args)
+
+
+async def dispatch_tool(
+    name: Any, arguments: Dict[str, Any]
+) -> list[TextContent]:
+    """Validate arguments, call a tool handler, and serialize the response.
+
+    Args:
+        name: Raw MCP tool name supplied by the client.
+        arguments: JSON object passed to the selected MCP tool.
+
+    Returns:
+        MCP text content containing the serialized handler response.
+
+    Raises:
+        McpError: If the tool is unknown or arguments fail schema validation.
+    """
+    return _text_response(await invoke_tool_raw(name, arguments))
 
 
 async def serve() -> None:

@@ -11,7 +11,13 @@ module starts the stdio MCP server.
 
 import asyncio
 
-from .mcp.app import TOOL_ARGUMENT_MODELS, TOOL_HANDLERS, dispatch_tool, serve
+from .mcp.app import (
+    TOOL_ARGUMENT_MODELS,
+    TOOL_HANDLERS,
+    dispatch_tool,
+    invoke_tool_raw,
+    serve,
+)
 from .mcp.schemas import (
     AnalystAgent,
     BriefGeneAgent,
@@ -41,6 +47,7 @@ __all__ = [
     "TOOL_ARGUMENT_MODELS",
     "TOOL_HANDLERS",
     "dispatch_tool",
+    "invoke_tool_raw",
     "serve",
 ]
 
