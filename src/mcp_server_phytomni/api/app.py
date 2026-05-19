@@ -15,9 +15,17 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config.defaults import ApiConfig
+from ..runtime.request_context import (
+    bind_request_id,
+    current_request_id,
+    reset_request_var,
+)
+from ..storage.path_policy import IdFactory
 from .schemas import ApiErrorDetail, ApiErrorResponse
 
 __all__ = ["create_app"]
@@ -50,10 +58,49 @@ def _error_response(status_code: int, message: str) -> JSONResponse:
             type=_ERROR_TYPES.get(status_code, "error"),
             code=status_code,
             message=message,
-            request_id=None,
+            request_id=current_request_id(),
         )
     )
     return JSONResponse(status_code=status_code, content=payload.model_dump())
+
+
+def request_context_middleware(app: ASGIApp) -> ASGIApp:
+    """Wrap an ASGI app to bind a per-request correlation id.
+
+    A generated request id is bound to the contextvar for the request's
+    lifetime and echoed as the ``X-Request-Id`` response header so the
+    error envelope and clients can correlate a call. A closure-based pure
+    ASGI middleware is used (not BaseHTTPMiddleware) so the contextvar is
+    set in the same task that runs the endpoint and exception handlers.
+
+    Args:
+        app: The downstream ASGI application to wrap.
+
+    Returns:
+        An ASGI application that binds request context then delegates.
+    """
+
+    async def asgi(scope: Scope, receive: Receive, send: Send) -> None:
+        """Bind the request id, inject the header, then delegate."""
+        if scope["type"] != "http":
+            await app(scope, receive, send)
+            return
+        request_id = IdFactory().new_id("request")
+        token = bind_request_id(request_id)
+
+        async def send_with_header(message: Message) -> None:
+            """Attach X-Request-Id on the response start event."""
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-Id"] = request_id
+            await send(message)
+
+        try:
+            await app(scope, receive, send_with_header)
+        finally:
+            reset_request_var(token)
+
+    return asgi
 
 
 def _nearest_existing(path: Path) -> Path:
@@ -96,6 +143,7 @@ def create_app() -> FastAPI:
         API layers.
     """
     app = FastAPI(title="Phytomni HTTP API", version="0.1.0")
+    app.add_middleware(request_context_middleware)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

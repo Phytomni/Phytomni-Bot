@@ -38,6 +38,7 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
+from ..runtime.request_context import current_request_user
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..storage.path_policy import RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
@@ -51,7 +52,9 @@ def scratch_server_dir(config: Any, scope: str) -> str:
     ``agent_data/user_data/<user>/runs/.../<scope>/tmp`` and other hosts
     use ``<config.TEMP_DIR>/<run_id>/<scope>``.
     """
-    run_identity = RunIdentity.create(scope=scope)
+    run_identity = RunIdentity.create(
+        user_id=current_request_user(), scope=scope
+    )
     return resolve_scratch_dir(
         "tmp",
         run_identity,
@@ -291,7 +294,7 @@ async def handle_analyst_agent(args: Any) -> Any:
     return await retrieve_plan_submit(
         goal_description=args.goal_description,
         data_list=args.data_list,
-        user_id=analyst_config.USER_ID,
+        user_id=current_request_user() or analyst_config.USER_ID,
         is_create_dir=analyst_config.CREATE_DIR,
         output_dir=analyst_config.OUTPUT_DIR,
         retrieve_url=analyst_config.RETRIEVE_URL,
@@ -466,7 +469,7 @@ async def handle_deep_genome_agent(args: Any) -> Any:
     return await gene_function(
         species_code=args.species_code,
         gene_id=args.gene_id,
-        user_id=deep_genome_config.USER_ID,
+        user_id=current_request_user() or deep_genome_config.USER_ID,
         batch=deep_genome_config.BATCH,
         epic_type=deep_genome_config.EPIC_TYPE,
         create_task_url=deep_genome_config.CREATE_TASK_URL,
@@ -543,6 +546,7 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
     return await in_silico_research(
         user_query=args.user_query,
         data_list=args.data_list,
+        user_id=current_request_user(),
         output_dir=in_silico_config.OUTPUT_DIR,
         repo_id_dict=in_silico_config.REPO_ID_DICT,
         page_num=in_silico_config.PAGE_NUM,
@@ -603,7 +607,7 @@ async def handle_digital_design_agent(args: Any) -> Any:
     return await design_module(
         species=args.species,
         gene_id=args.gene_id,
-        user_id=design_config.USER_ID,
+        user_id=current_request_user() or design_config.USER_ID,
         batch=True,
         enable_auto_select=False,
         prompt_file=design_config.PROMPT_FILE,
@@ -644,7 +648,7 @@ async def handle_gene_network_agent(args: Any) -> Any:
     return await network_analysis(
         species=args.species,
         to_id=args.to_id,
-        user_id=network_config.USER_ID,
+        user_id=current_request_user() or network_config.USER_ID,
         batch=False,
         prompt_file=network_config.PROMPT_FILE,
         deepgenome_data=network_config.DEEPGENOME_DATA,

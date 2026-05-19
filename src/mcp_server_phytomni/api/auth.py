@@ -27,6 +27,7 @@ from typing import Optional
 from fastapi import Header, HTTPException
 
 from ..config.defaults import ApiConfig
+from ..runtime.request_context import bind_request_user
 
 __all__ = [
     "ApiPrincipal",
@@ -381,4 +382,9 @@ async def require_principal(
         The authenticated principal for the configured key store.
     """
     store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
-    return resolve_principal(store, authorization, x_api_key)
+    principal = resolve_principal(store, authorization, x_api_key)
+    # Bind for downstream handlers/wrappers. uvicorn copies the
+    # contextvars Context per request task, so this stays request-local
+    # without an explicit reset.
+    bind_request_user(principal.user_id)
+    return principal
