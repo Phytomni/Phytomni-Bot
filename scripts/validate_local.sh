@@ -48,6 +48,7 @@ $(git ls-files '*.sh')
 $(git ls-files .githooks)
 EOF
 run uv run shellcheck "$@"
+run scripts/shfmt_runner.sh -d -i 4 "$@"
 
 run uv run yamllint .
 
