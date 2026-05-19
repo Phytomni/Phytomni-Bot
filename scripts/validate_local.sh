@@ -47,6 +47,19 @@ run scripts/shfmt_runner.sh -d -i 4 "$@"
 
 run uv run yamllint .
 
+# demo_data/*.md is generator-owned (covered by the demo_data idempotency
+# check below); exclude it so the gate never expects hand-formatted fixtures.
+set --
+while IFS= read -r mdfile; do
+    if [ -n "$mdfile" ]; then
+        set -- "$@" "$mdfile"
+    fi
+done <<EOF
+$(git ls-files '*.md' ':!:demo_data/')
+EOF
+run uv run mdformat --check "$@"
+run uv run pymarkdown --config pyproject.toml scan "$@"
+
 if command -v jsonlint >/dev/null 2>&1; then
     jsonlint_cmd() { jsonlint "$1" --quiet; }
 else
