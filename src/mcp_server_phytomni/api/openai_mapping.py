@@ -20,20 +20,32 @@ from ..storage.path_policy import IdFactory
 __all__ = [
     "MODEL_TO_TOOL",
     "tool_for_model",
+    "tool_accepts_obs",
     "flatten_messages",
     "to_chat_completion",
 ]
 
-# Chat-like agents exposed through /v1/chat/completions. Knowledge,
-# Review, and BriefGene are wired in a later layer.
+# Chat-like agents exposed through /v1/chat/completions.
 MODEL_TO_TOOL = {
     "phyto-chat": "ChatAgent",
+    "phyto-knowledge": "KnowledgeAgent",
+    "phyto-review": "ReviewAgent",
+    "phyto-brief-gene": "BriefGeneAgent",
 }
+
+# Tools whose request schema carries an obs_file_list field. BriefGene
+# only takes a single gene/transcript id, so it rejects document lists.
+_OBS_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
 
 def tool_for_model(model: str) -> Optional[str]:
     """Return the MCP tool name for an OpenAI-style model id."""
     return MODEL_TO_TOOL.get(model)
+
+
+def tool_accepts_obs(tool_name: str) -> bool:
+    """Return True when the tool's schema accepts obs_file_list."""
+    return tool_name in _OBS_CAPABLE_TOOLS
 
 
 def flatten_messages(

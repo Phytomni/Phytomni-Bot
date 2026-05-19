@@ -29,8 +29,10 @@ from ..runtime.request_context import (
 from ..storage.path_policy import IdFactory
 from .auth import ApiPrincipal, require_principal
 from .openai_mapping import (
+    MODEL_TO_TOOL,
     flatten_messages,
     to_chat_completion,
+    tool_accepts_obs,
     tool_for_model,
 )
 from .schemas import ApiErrorDetail, ApiErrorResponse, ChatCompletionRequest
@@ -174,6 +176,26 @@ def create_app() -> FastAPI:
             content={"status": "ok", "checks": checks},
         )
 
+    @app.get("/v1/models")
+    async def list_models(
+        principal: ApiPrincipal = Depends(require_principal),
+    ) -> JSONResponse:
+        """List the chat-like model ids (OpenAI convention)."""
+        del principal  # Auth side-effect only.
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "id": model_id,
+                        "object": "model",
+                        "owned_by": "phytomni",
+                    }
+                    for model_id in MODEL_TO_TOOL
+                ],
+            }
+        )
+
     @app.post("/v1/chat/completions")
     async def chat_completions(
         payload: ChatCompletionRequest,
@@ -192,17 +214,22 @@ def create_app() -> FastAPI:
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
+        obs_files = payload.obs_file_list or []
+        accepts_obs = tool_accepts_obs(tool_name)
+        if obs_files and not accepts_obs:
+            raise HTTPException(
+                status_code=400,
+                detail=f"model {payload.model} does not accept "
+                "obs_file_list",
+            )
         try:
             user_query = flatten_messages(payload.messages)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        result = await invoke_tool_raw(
-            tool_name,
-            {
-                "user_query": user_query,
-                "obs_file_list": payload.obs_file_list or [],
-            },
-        )
+        arguments: dict[str, object] = {"user_query": user_query}
+        if accepts_obs:
+            arguments["obs_file_list"] = obs_files
+        result = await invoke_tool_raw(tool_name, arguments)
         return JSONResponse(to_chat_completion(result, payload.model))
 
     @app.exception_handler(StarletteHTTPException)
