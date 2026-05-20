@@ -68,6 +68,7 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     Returns:
         None after request payload assertions pass.
     """
+    chat_agents.run_phyto_chat_cached.cache_clear()
     captured: dict[str, Any] = {}
 
     async def fake_download_list_convert(**kwargs: Any) -> list[str]:
@@ -275,3 +276,143 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
     ]
     assert calls[0]["obs_file_list"] == ["obs://context.pdf"]
     assert calls[1]["user_query"] == "follow-up prompt"
+
+
+async def test_run_phyto_chat_cached_dedupes_identical_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify identical sampling inputs hit the LLM endpoint once.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace AsyncOpenAI.
+
+    Returns:
+        None after cache hit assertions pass.
+    """
+    chat_agents.run_phyto_chat_cached.cache_clear()
+    calls = {"create": 0}
+
+    async def fake_create(**kwargs: Any) -> FakeChatCompletion:
+        """Tally each completion request and return a fake response."""
+        del kwargs
+        calls["create"] += 1
+        return FakeChatCompletion(f"answer-{calls['create']}")
+
+    def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
+        """Return a SimpleNamespace mimicking AsyncOpenAI(api_key, base_url)."""
+        del api_key, base_url
+        return SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=fake_create),
+            ),
+        )
+
+    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+
+    sampling_kwargs: dict[str, Any] = {
+        "messages": [{"role": "user", "content": "leaf growth"}],
+        "model": "pytest-model",
+        "temperature": 0.3,
+        "top_p": 1.0,
+        "frequency_penalty": 0.0,
+        "presence_penalty": 0.0,
+        "n": 1,
+        "max_tokens": 200,
+        "response_format": {"type": "json_object"},
+        "reasoning_effort": None,
+        "api_key": "ignored-1",
+        "base_url": "https://example.invalid/v1",
+        "user": "u",
+        "timeout": 3.0,
+        "stream": False,
+    }
+
+    first = await chat_agents.run_phyto_chat_cached(**sampling_kwargs)
+    # Rotate every infra-only parameter on the second call to prove the
+    # cache ignores them; the result must come from the first call's
+    # cached payload, not a fresh completion.
+    second = await chat_agents.run_phyto_chat_cached(
+        **{
+            **sampling_kwargs,
+            "api_key": "ignored-2",
+            "base_url": "https://other.invalid/v1",
+            "user": "v",
+            "timeout": 9.9,
+            "stream": True,
+        }
+    )
+
+    assert first == second
+    assert calls["create"] == 1
+
+    # Flipping a semantic input (temperature) must miss the cache and
+    # trigger a fresh completion.
+    third = await chat_agents.run_phyto_chat_cached(
+        **{**sampling_kwargs, "temperature": 0.9}
+    )
+
+    assert third != first
+    assert calls["create"] == 2
+
+
+async def test_run_phyto_chat_cached_does_not_cache_failures(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify a raising completion never stores a cache entry.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace AsyncOpenAI.
+
+    Returns:
+        None after failure/recovery assertions pass.
+    """
+    chat_agents.run_phyto_chat_cached.cache_clear()
+    calls = {"create": 0}
+
+    async def flakey_create(**kwargs: Any) -> FakeChatCompletion:
+        """Raise on the first invocation, succeed afterwards."""
+        del kwargs
+        calls["create"] += 1
+        if calls["create"] == 1:
+            raise RuntimeError("first attempt fails")
+        return FakeChatCompletion("recovered")
+
+    def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
+        """Return a SimpleNamespace mimicking AsyncOpenAI(api_key, base_url)."""
+        del api_key, base_url
+        return SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=flakey_create),
+            ),
+        )
+
+    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+
+    sampling_kwargs: dict[str, Any] = {
+        "messages": [{"role": "user", "content": "leaf growth"}],
+        "model": "pytest-model",
+        "temperature": 0.3,
+        "top_p": 1.0,
+        "frequency_penalty": 0.0,
+        "presence_penalty": 0.0,
+        "n": 1,
+        "max_tokens": None,
+        "response_format": {"type": "json_object"},
+        "reasoning_effort": None,
+        "api_key": "k",
+        "base_url": "https://example.invalid/v1",
+        "user": "u",
+        "timeout": 3.0,
+        "stream": False,
+    }
+
+    with pytest.raises(RuntimeError, match="first attempt fails"):
+        await chat_agents.run_phyto_chat_cached(**sampling_kwargs)
+
+    # The first failure did not poison the cache, so the next call
+    # runs the underlying create() again and observes the recovered
+    # payload.
+    result = await chat_agents.run_phyto_chat_cached(**sampling_kwargs)
+
+    assert result["choices"][0]["message"]["content"] == "recovered"
+    assert calls["create"] == 2

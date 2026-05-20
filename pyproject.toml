@@ -215,14 +215,16 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 
 [tool.pylint.design]
 # Cache-key primitives (e.g. agents/knowledge/retrieval.py
-# _retrieve_scope_docs, _rerank_batch) deliberately expose every
-# semantic input as a top-level scalar parameter so the @func_cache
-# key_params list hashes only the real query inputs — wrapping them
-# back into an options object would re-introduce the infra-leaks-into-
-# key bug the rework removed. The default R0913 / R0917 max of 5 args
-# is too tight for that pattern, so bump the threshold project-wide.
-max-args = 12
-max-positional-arguments = 12
+# _retrieve_scope_docs, _rerank_batch, agents/chat/service.py
+# run_phyto_chat_cached) deliberately expose every semantic input
+# as a top-level scalar parameter so the @func_cache key_params list
+# hashes only the real query inputs — wrapping them back into an
+# options object would re-introduce the infra-leaks-into-key bug the
+# rework removed. The default R0913 / R0914 / R0917 thresholds are
+# too tight for that pattern, so bump them project-wide.
+max-args = 15
+max-locals = 20
+max-positional-arguments = 15
 
 [tool.pymarkdown]
 # Markdown gate config (consumed via `pymarkdown --config pyproject.toml`).

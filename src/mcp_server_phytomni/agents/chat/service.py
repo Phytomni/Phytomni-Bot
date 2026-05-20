@@ -29,6 +29,7 @@ from ...common.responses import (
 )
 from ...config.defaults import ChatConfig
 from ...config.settings import SensitiveConfig
+from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.downloads import download_list_convert
 
 CHAT_CONFIG = ChatConfig()
@@ -359,49 +360,109 @@ async def _query_with_upload_context(
     )
 
 
-def _completion_params(
+@func_cache(
+    key_params=[
+        "messages",
+        "model",
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "n",
+        "max_tokens",
+        "response_format",
+        "reasoning_effort",
+    ],
+    ttl=LONG_TTL_SECONDS,
+)
+async def run_phyto_chat_cached(
+    *,
     messages: List[Dict[str, str]],
-    options: Dict[str, Any],
+    model: str,
+    temperature: float,
+    top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    n: int,
+    max_tokens: Optional[int],
+    response_format: Dict[str, Any],
+    reasoning_effort: Optional[str],
+    api_key: str,
+    base_url: str,
+    user: str,
+    timeout: float,
+    stream: bool,
 ) -> Dict[str, Any]:
-    """Return OpenAI chat completion parameters."""
+    """Issue one LLM completion and cache the normalized dict.
+
+    The cache key is the semantic sampling shape (messages, model, and
+    sampling parameters). Infrastructure params (api_key, base_url,
+    user, timeout, stream) are deliberately excluded so rotating an
+    API key, swapping endpoints, or flipping streaming behavior does
+    not invalidate the cache; identical sampling inputs share one
+    stored answer across all infra variations.
+
+    Any failure (HTTP error, transport error) propagates as an
+    exception so the cache never persists a None or partial result —
+    the outer retry/dispatcher layer owns the retry-exhaustion path
+    and the None contract callers depend on.
+    """
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     params: Dict[str, Any] = {
         "messages": messages,
-        "model": options["model"],
-        "frequency_penalty": options["frequency_penalty"],
-        "n": options["n"],
-        "presence_penalty": options["presence_penalty"],
-        "response_format": options["response_format"],
-        "stream": options["stream"],
-        "temperature": options["temperature"],
-        "top_p": options["top_p"],
-        "user": options["user"],
-        "timeout": options["timeout"],
+        "model": model,
+        "frequency_penalty": frequency_penalty,
+        "n": n,
+        "presence_penalty": presence_penalty,
+        "response_format": response_format,
+        "stream": stream,
+        "temperature": temperature,
+        "top_p": top_p,
+        "user": user,
+        "timeout": timeout,
     }
-    if options["max_tokens"] is not None:
-        params["max_tokens"] = options["max_tokens"]
-    if (
-        "reasoner" in options["model"]
-        and options["reasoning_effort"] is not None
-    ):
-        params["reasoning_effort"] = options["reasoning_effort"]
-    return params
+    if max_tokens is not None:
+        params["max_tokens"] = max_tokens
+    if "reasoner" in model and reasoning_effort is not None:
+        params["reasoning_effort"] = reasoning_effort
+    chat_completions = await client.chat.completions.create(**params)
+    if stream:
+        return await _stream_response_to_dict(chat_completions)
+    return chat_completions.model_dump()
 
 
 async def _run_phyto_chat(
     messages: List[Dict[str, str]],
     options: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Call the Phyto chat endpoint with retry handling."""
-    client = AsyncOpenAI(
-        api_key=options["api_key"], base_url=options["base_url"]
-    )
+    """Call the Phyto chat endpoint with retry handling.
+
+    Thin dispatcher around ``run_phyto_chat_cached`` that owns the
+    retry loop and preserves the historical ``Optional[Dict]``
+    contract (None on retry exhaustion) for callers like
+    evolution_agent.evo_test_analysis that short-circuit on a None
+    return. The cached inner handles a single attempt and raises on
+    any exception so the cache never stores a failure.
+    """
     for attempt in range(options["max_retries"] + 1):
         try:
-            params = _completion_params(messages, options)
-            chat_completions = await client.chat.completions.create(**params)
-            if options["stream"]:
-                return await _stream_response_to_dict(chat_completions)
-            return chat_completions.model_dump()
+            return await run_phyto_chat_cached(
+                messages=messages,
+                model=options["model"],
+                temperature=options["temperature"],
+                top_p=options["top_p"],
+                frequency_penalty=options["frequency_penalty"],
+                presence_penalty=options["presence_penalty"],
+                n=options["n"],
+                max_tokens=options["max_tokens"],
+                response_format=options["response_format"],
+                reasoning_effort=options["reasoning_effort"],
+                api_key=options["api_key"],
+                base_url=options["base_url"],
+                user=options["user"],
+                timeout=options["timeout"],
+                stream=options["stream"],
+            )
         except HTTPStatusError as exc:
             if await retry_http_status_or_raise(
                 exc,
