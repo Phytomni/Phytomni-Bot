@@ -500,9 +500,11 @@ supported (`stream: true` → `400`).
 - `GET /v1/models` — lists the OpenAI-compatible model ids.
 - `POST /v1/chat/completions` — OpenAI-compatible; `model` selects a
   chat-like agent: `phyto-chat`, `phyto-knowledge`, `phyto-review`,
-  `phyto-brief-gene`. `doc_list` / `follow_up_questions` are surfaced as
-  extra top-level keys; `phyto-brief-gene` rejects a non-empty
-  `obs_file_list`.
+  `phyto-brief-gene`. `follow_up_questions`, `references`, and
+  `metadata` are surfaced as extra top-level keys; cited-agent answers
+  also carry a `{"content","doc_list"}` JSON envelope as
+  `message.content` (parse it with `json.loads`); `phyto-brief-gene`
+  rejects a non-empty `obs_file_list`.
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/chat/completions \
