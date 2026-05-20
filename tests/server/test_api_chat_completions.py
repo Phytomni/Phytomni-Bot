@@ -75,7 +75,7 @@ async def test_chat_completions_passthrough(
     assert body["id"]
     message = body["choices"][0]["message"]
     assert message["content"] == "photosynthesis converts light"
-    assert message["follow_up_questions"] == ["what is C4?"]
+    assert body["follow_up_questions"] == ["what is C4?"]
     assert "what is photosynthesis?" in captured["user_query"]
 
 

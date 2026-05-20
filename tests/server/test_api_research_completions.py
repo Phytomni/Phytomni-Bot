@@ -10,6 +10,7 @@ the BriefGene obs_file_list rejection.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 import httpx
@@ -69,7 +70,7 @@ async def test_knowledge_preserves_doc_list(
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify knowledge model routes and keeps top-level doc_list."""
+    """Verify knowledge model surfaces cited docs via the formatter."""
     _stub(
         monkeypatch,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,
@@ -77,11 +78,16 @@ async def test_knowledge_preserves_doc_list(
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": "ans"},
+                    "message": {
+                        "role": "assistant",
+                        "content": "Evidence in [1].",
+                        "doc_list": [
+                            {"file_id": "doc-a", "title": "Paper A"},
+                        ],
+                    },
                     "finish_reason": "stop",
                 }
             ],
-            "doc_list": [{"title": "Paper A"}],
         },
     )
 
@@ -91,8 +97,15 @@ async def test_knowledge_preserves_doc_list(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["doc_list"] == [{"title": "Paper A"}]
     assert body["model"] == "phyto-knowledge"
+    assert body["references"] == [
+        {"file_id": "doc-a", "title": "Paper A"},
+    ]
+    envelope = json.loads(body["choices"][0]["message"]["content"])
+    assert envelope == {
+        "content": "Evidence in [1].",
+        "doc_list": [{"file_id": "doc-a", "title": "Paper A"}],
+    }
 
 
 async def test_brief_gene_rejects_obs_file_list(
@@ -122,7 +135,18 @@ async def test_brief_gene_without_obs_succeeds(
     _stub(
         monkeypatch,
         server.PhytomniAgents.BRIEF_GENE_AGENT.value,
-        {"answer": "gene summary"},
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "gene summary",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        },
     )
 
     response = await chat_completion(

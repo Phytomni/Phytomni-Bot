@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config.defaults import ApiConfig
-from ..mcp.app import invoke_tool_raw
+from ..mcp.app import invoke_tool_formatted
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -264,8 +265,19 @@ def create_app() -> FastAPI:
         arguments: dict[str, object] = {"user_query": user_query}
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
-        result = await invoke_tool_raw(tool_name, arguments)
-        return JSONResponse(to_chat_completion(result, payload.model))
+        formatted = await invoke_tool_formatted(tool_name, arguments)
+        result = asdict(formatted)
+        return JSONResponse(
+            to_chat_completion(
+                result,
+                payload.model,
+                extra_keys=(
+                    "follow_up_questions",
+                    "references",
+                    "metadata",
+                ),
+            )
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
