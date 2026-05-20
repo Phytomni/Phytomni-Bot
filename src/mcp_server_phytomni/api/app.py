@@ -32,7 +32,7 @@ from ..runtime.request_context import (
     current_request_user,
     reset_request_var,
 )
-from ..runtime.run_registry import RunRegistry, RunSpec
+from ..runtime.run_registry import RunFilter, RunRegistry, RunSpec
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from .auth import ApiPrincipal, require_principal
@@ -171,6 +171,49 @@ async def _invoke_agent_run(
     else:
         run_id = _record_sync_run(agent=agent, owner=owner, result=result)
     return {"run_id": run_id, "result": result}
+
+
+def _list_owner_runs(
+    *,
+    status: Optional[str],
+    agent: Optional[str],
+    origin: Optional[str],
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    """Return one ``GET /v1/runs`` body for the authenticated owner.
+
+    Performs a best-effort ``purge_expired`` call before reading so a
+    listing-heavy workload acts as the lazy GC for the registry; a
+    SQLite / OS failure on purge is swallowed so the listing itself
+    still succeeds.
+
+    Args:
+        status: Optional exact-match status filter.
+        agent: Optional exact-match agent slug filter.
+        origin: Optional exact-match origin filter.
+        limit: Max rows to return.
+        offset: Rows to skip (paging).
+
+    Returns:
+        ``{"object", "data"}`` envelope with the flat run records.
+    """
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    try:
+        registry.purge_expired()
+    except (sqlite3.Error, OSError):
+        pass
+    records = registry.list_runs(
+        owner=owner,
+        run_filter=RunFilter(status=status, agent=agent, origin=origin),
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "object": "list",
+        "data": [_run_record_to_dict(record) for record in records],
+    }
 
 
 async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
@@ -509,6 +552,32 @@ def create_app() -> FastAPI:
         """Return one owner-scoped run record by id."""
         del principal
         return JSONResponse(await _fetch_owner_run(run_id))
+
+    @app.get("/v1/runs")
+    async def list_runs(
+        principal: ApiPrincipal = Depends(authorized),
+        *,
+        status: Optional[str] = None,
+        agent: Optional[str] = None,
+        origin: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> JSONResponse:
+        """List owner-scoped runs with optional filters and paging.
+
+        Acts as the lazy GC trigger for the registry by calling
+        ``purge_expired`` once per request before the listing.
+        """
+        del principal
+        return JSONResponse(
+            _list_owner_runs(
+                status=status,
+                agent=agent,
+                origin=origin,
+                limit=limit,
+                offset=offset,
+            )
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
