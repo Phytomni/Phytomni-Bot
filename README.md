@@ -31,8 +31,8 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
   offline `pytest`, `yamllint`, `actionlint`, `shellcheck`, `shfmt`,
-  `mdformat`, `pymarkdown`, `toml-sort`, `validate-pyproject`, and
-  `jsonlint`.
+  `mdformat`, `pymarkdown`, `toml-sort`, `validate-pyproject`,
+  `jsonlint`, and `normalize_json.py --check`.
 - Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
   and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
   every MCP tool against real backends through `PhytomniMcpClient`. See
