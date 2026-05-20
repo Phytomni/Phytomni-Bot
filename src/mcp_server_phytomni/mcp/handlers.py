@@ -13,9 +13,10 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
 
 import functools
 import sqlite3
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -75,16 +76,77 @@ def scratch_server_dir(config: Any, scope: str) -> str:
     )
 
 
+def _extract_task_submissions(
+    result: Mapping[str, Any], agent: str
+) -> Tuple[Tuple[str, str], ...]:
+    """Extract ``(task_id, output_dir)`` pairs by per-agent wrapper shape.
+
+    Each public submit wrapper returns task identity in its own shape,
+    so the chokepoint dispatches by agent slug rather than guessing:
+
+    - ``analyst`` / ``deep_genome``: ``task_id`` at the top level (with
+      ``output_dir`` alongside).
+    - ``research``: a ``task_ids`` dict mapping research-goal names to
+      task ids; the top-level ``output_dir`` is shared across children.
+    - ``network``: nested under ``network_task`` (``task_id`` +
+      ``output_dir`` inside).
+    - ``design``: up to three nested submission objects keyed
+      ``protein_design_task`` / ``promoter_design_task`` /
+      ``terminator_design_task`` (each with its own ``output_dir``).
+
+    Args:
+        result: Raw wrapper result dict (pre-formatter).
+        agent: Public agent alias (e.g. ``"analyst"``).
+
+    Returns:
+        Tuple of ``(task_id, output_dir)`` pairs; empty when nothing
+        recognizable is present so the caller skips writing.
+    """
+    pairs: list[tuple[str, str]] = []
+    if agent in ("analyst", "deep_genome"):
+        task_id = result.get("task_id")
+        if isinstance(task_id, str) and task_id:
+            pairs.append((task_id, str(result.get("output_dir") or "")))
+    elif agent == "research":
+        mapping = result.get("task_ids")
+        if isinstance(mapping, Mapping):
+            shared_output = str(result.get("output_dir") or "")
+            pairs.extend(
+                (str(value), shared_output)
+                for value in mapping.values()
+                if isinstance(value, str) and value
+            )
+    elif agent == "network":
+        nested = result.get("network_task")
+        if isinstance(nested, Mapping):
+            task_id = nested.get("task_id")
+            if isinstance(task_id, str) and task_id:
+                pairs.append((task_id, str(nested.get("output_dir") or "")))
+    elif agent == "design":
+        for key in (
+            "protein_design_task",
+            "promoter_design_task",
+            "terminator_design_task",
+        ):
+            nested = result.get(key)
+            if not isinstance(nested, Mapping):
+                continue
+            task_id = nested.get("task_id")
+            if isinstance(task_id, str) and task_id:
+                pairs.append((task_id, str(nested.get("output_dir") or "")))
+    return tuple(pairs)
+
+
 def _record_submitted_task(result: Any, *, agent: str) -> None:
-    """Persist a submitted task plus its owning run row.
+    """Persist submitted tasks plus their owning run row.
 
     Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``,
     writes one ``runs`` row (``origin="remote"``, ``status="running"``)
-    via ``RunRegistry.create_run``, then writes the child task row
-    carrying the same ``run_id`` / ``user_id`` / ``agent`` / ``origin``.
+    via ``RunRegistry.create_run``, then writes one child task row per
+    extracted task id — all sharing the same ``run_id`` so
+    ``RunRegistry.reconcile`` can join them by ``tasks.run_id``.
     Best-effort: a registry / SQLite / OS error must never break an
-    already-successful submission, so failures are swallowed — the
-    caller still receives its ``task_id``; only the bookkeeping is lost.
+    already-successful submission, so failures are swallowed.
 
     The MCP tool's return dict is *not* mutated (no ``run_id`` is
     surfaced to the client) so the existing stdio MCP contract stays
@@ -98,10 +160,9 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
     """
     if not isinstance(result, dict):
         return
-    task_id = result.get("task_id")
-    if not isinstance(task_id, str) or not task_id:
+    submissions = _extract_task_submissions(result, agent)
+    if not submissions:
         return
-    output_dir = str(result.get("output_dir") or "")
     user_id = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent)
     now = datetime.now(timezone.utc).isoformat()
@@ -115,21 +176,23 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                 origin="remote",
             )
         )
-        TaskManager(db_path).record(
-            Submission(
-                task_id=task_id,
-                status="submitted",
-                output_dir=output_dir,
-                run_context=RunContext(
-                    run_id=run_id,
-                    user_id=user_id,
-                    agent=agent,
-                    origin="remote",
-                    created_at=now,
-                    updated_at=now,
-                ),
+        manager = TaskManager(db_path)
+        for task_id, output_dir in submissions:
+            manager.record(
+                Submission(
+                    task_id=task_id,
+                    status="submitted",
+                    output_dir=output_dir,
+                    run_context=RunContext(
+                        run_id=run_id,
+                        user_id=user_id,
+                        agent=agent,
+                        origin="remote",
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                )
             )
-        )
     except (sqlite3.Error, OSError):
         return
 
