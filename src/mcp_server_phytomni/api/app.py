@@ -10,10 +10,11 @@ Public functions: create_app.
 from __future__ import annotations
 
 import os
+import sqlite3
 from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -28,8 +29,11 @@ from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
     current_request_id,
+    current_request_user,
     reset_request_var,
 )
+from ..runtime.run_registry import RunRegistry, RunSpec
+from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from .auth import ApiPrincipal, require_principal
 from .openai_mapping import (
@@ -55,6 +59,60 @@ _ERROR_TYPES = {
     500: "internal_error",
     503: "unavailable",
 }
+
+# Public agent slug recorded on the ``runs`` row for sync chat calls.
+# Kept here (not in ``openai_mapping``) so this run-registry concern
+# stays inside the API layer and does not perturb the pure mapping
+# module that other API touch points already share.
+_MODEL_TO_AGENT_SLUG = {
+    "phyto-chat": "chat",
+    "phyto-knowledge": "knowledge",
+    "phyto-review": "review",
+    "phyto-brief-gene": "brief_gene",
+}
+
+
+def _record_sync_run(
+    *, agent: str, owner: str, result: dict[str, Any]
+) -> Optional[str]:
+    """Persist a terminal ``origin="local"`` run for a sync agent call.
+
+    Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``
+    and writes one ``runs`` row at terminal status ``"succeeded"`` so
+    the upcoming ``/v1/runs/{id}`` and ``/v1/runs`` endpoints replay
+    the formatted answer without re-invoking the agent. SQLite / OS
+    failures are swallowed — a successful HTTP completion must never
+    fail because the bookkeeping write hit the disk wrong.
+
+    The MCP stdio path never reaches this helper (it does not enter
+    the FastAPI request lifecycle), so the existing stdio MCP
+    contract stays byte-equivalent.
+
+    Args:
+        agent: Public agent alias (e.g. ``"chat"``).
+        owner: Authenticated user id (``"anonymous"`` for stdio).
+        result: The formatted result dict (stored as JSON in
+            ``result_json``).
+
+    Returns:
+        The minted ``run_id`` on a successful write, otherwise
+        ``None``.
+    """
+    run_id = IdFactory().new_id("run", agent)
+    try:
+        RunRegistry(resolve_tasks_db_path()).create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=owner,
+                agent=agent,
+                origin="local",
+            ),
+            status="succeeded",
+            result=result,
+        )
+    except (sqlite3.Error, OSError):
+        return None
+    return run_id
 
 
 def _error_response(
@@ -267,6 +325,13 @@ def create_app() -> FastAPI:
             arguments["obs_file_list"] = obs_files
         formatted = await invoke_tool_formatted(tool_name, arguments)
         result = asdict(formatted)
+        agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
+        if agent_slug is not None:
+            _record_sync_run(
+                agent=agent_slug,
+                owner=current_request_user() or "anonymous",
+                result=result,
+            )
         return JSONResponse(
             to_chat_completion(
                 result,
