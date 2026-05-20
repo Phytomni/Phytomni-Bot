@@ -20,7 +20,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
-from .helpers.assertions import ANNOTATION_CUES, GENE_ID
+from .helpers.assertions import assert_brief_gene_answer
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
@@ -40,14 +40,4 @@ async def test_brief_gene_agent_e2e_returns_gene_card(
 
     response = await call_tool(mcp_client, "BriefGeneAgent", payload)
 
-    answer = response.formatted.answer
-    assert answer, "BriefGeneAgent answer was empty"
-    lowered = answer.lower()
-    assert GENE_ID.lower() in lowered, (
-        f"BriefGeneAgent answer did not mention {GENE_ID}; " f"got: {answer!r}"
-    )
-    matched = [cue for cue in ANNOTATION_CUES if cue in lowered]
-    assert matched, (
-        f"BriefGeneAgent answer lacked every annotation cue "
-        f"({ANNOTATION_CUES}); got: {answer!r}"
-    )
+    assert_brief_gene_answer(response.formatted.answer)

@@ -18,12 +18,10 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
+from .helpers.assertions import assert_data_answer
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
-
-SQL_CUES = ("select", "from", "where", "join", "limit")
-HOMOLOG_CUES = ("traes", "homolog", "ortholog", "os01g0177400", "identity")
 
 
 async def test_data_agent_e2e_returns_nl2sql_response(
@@ -40,12 +38,4 @@ async def test_data_agent_e2e_returns_nl2sql_response(
 
     response = await call_tool(mcp_client, "DataAgent", payload)
 
-    answer = response.formatted.answer
-    assert answer, "DataAgent answer was empty"
-    lowered = answer.lower()
-    sql_hit = any(cue in lowered for cue in SQL_CUES)
-    homolog_hit = any(cue in lowered for cue in HOMOLOG_CUES)
-    assert sql_hit or homolog_hit, (
-        f"DataAgent answer lacked both SQL ({SQL_CUES}) and homolog "
-        f"({HOMOLOG_CUES}) cues; got: {answer!r}"
-    )
+    assert_data_answer(response.formatted.answer)

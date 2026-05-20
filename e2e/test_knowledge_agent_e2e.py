@@ -24,7 +24,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
-from .helpers.assertions import WHEAT_DROUGHT_KEYWORDS
+from .helpers.assertions import assert_knowledge_answer
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
@@ -56,14 +56,7 @@ async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
 
     response = await call_tool(mcp_client, "KnowledgeAgent", payload)
 
-    answer = response.formatted.answer
-    assert answer, "KnowledgeAgent answer was empty"
-    lowered = answer.lower()
-    matched = [kw for kw in WHEAT_DROUGHT_KEYWORDS if kw in lowered]
-    assert matched, (
-        f"KnowledgeAgent answer missed every expected keyword "
-        f"({WHEAT_DROUGHT_KEYWORDS}); got: {answer!r}"
-    )
+    assert_knowledge_answer(response.formatted.answer)
 
 
 @pytest.mark.skipif(

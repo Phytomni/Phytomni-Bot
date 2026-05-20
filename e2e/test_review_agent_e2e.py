@@ -18,7 +18,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
-from .helpers.assertions import MIN_REVIEW_SECTIONS, section_count
+from .helpers.assertions import assert_review_answer
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
@@ -38,10 +38,4 @@ async def test_review_agent_e2e_returns_multi_section_review(
 
     response = await call_tool(mcp_client, "ReviewAgent", payload)
 
-    answer = response.formatted.answer
-    assert answer, "ReviewAgent answer was empty"
-    count = section_count(answer)
-    assert count >= MIN_REVIEW_SECTIONS, (
-        f"ReviewAgent answer had only {count} markdown section "
-        f"headers (expected >= {MIN_REVIEW_SECTIONS}); got: {answer!r}"
-    )
+    assert_review_answer(response.formatted.answer)

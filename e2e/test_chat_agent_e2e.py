@@ -17,7 +17,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
-from .helpers.assertions import PHOTOSYNTHESIS_KEYWORDS
+from .helpers.assertions import assert_chat_answer
 from .helpers.client import call_tool
 
 pytestmark = pytest.mark.live
@@ -37,11 +37,4 @@ async def test_chat_agent_e2e_returns_photosynthesis_answer(
 
     response = await call_tool(mcp_client, "ChatAgent", payload)
 
-    answer = response.formatted.answer
-    assert answer, "ChatAgent answer was empty"
-    lowered = answer.lower()
-    matched = [kw for kw in PHOTOSYNTHESIS_KEYWORDS if kw in lowered]
-    assert matched, (
-        f"ChatAgent answer missed every expected keyword "
-        f"({PHOTOSYNTHESIS_KEYWORDS}); got: {answer!r}"
-    )
+    assert_chat_answer(response.formatted.answer)
