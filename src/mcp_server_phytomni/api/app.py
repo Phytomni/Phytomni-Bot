@@ -102,6 +102,97 @@ _REMOTE_AGENT_SLUGS = frozenset(
 )
 
 
+def _run_record_to_dict(record: Any) -> dict[str, Any]:
+    """Flatten a ``RunRecord`` into the JSON envelope the API returns.
+
+    Unpacks ``spec`` (identity bundle) and ``timestamps`` (lifecycle
+    bundle) so the on-wire shape stays a flat object rather than the
+    nested dataclass tree, and serialises ``task_ids`` as a list so
+    clients consume it as a JSON array.
+
+    Args:
+        record: The ``RunRegistry`` record to flatten.
+
+    Returns:
+        A JSON-serialisable dict.
+    """
+    return {
+        "run_id": record.spec.run_id,
+        "agent": record.spec.agent,
+        "origin": record.spec.origin,
+        "user_id": record.spec.user_id,
+        "status": record.status,
+        "result": record.result,
+        "error": record.error,
+        "created_at": record.timestamps.created_at,
+        "updated_at": record.timestamps.updated_at,
+        "expires_at": record.timestamps.expires_at,
+        "task_ids": list(record.task_ids),
+    }
+
+
+async def _invoke_agent_run(
+    *, agent: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
+
+    Owns the slug -> tool lookup, the shared ``invoke_tool_formatted``
+    call, and the origin-aware run id resolution: for remote agents the
+    chokepoint has already written the row so we read ``tasks.run_id``
+    back; for sync agents we mint and persist an ``origin="local"``
+    terminal row via ``_record_sync_run``.
+
+    Args:
+        agent: Public agent alias (e.g. ``"chat"``).
+        arguments: Tool-specific kwargs forwarded to the agent.
+
+    Returns:
+        The ``{"run_id", "result"}`` response body.
+
+    Raises:
+        HTTPException: 404 when the slug is unknown.
+    """
+    tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
+    if tool_name is None:
+        raise HTTPException(
+            status_code=404, detail=f"agent not found: {agent}"
+        )
+    formatted = await invoke_tool_formatted(tool_name, arguments)
+    result = asdict(formatted)
+    owner = current_request_user() or "anonymous"
+    if agent in _REMOTE_AGENT_SLUGS:
+        metadata = result.get("metadata") or {}
+        task_id = metadata.get("task_id")
+        run_id = (
+            TaskManager(resolve_tasks_db_path()).run_id_for_task(task_id)
+            if isinstance(task_id, str) and task_id
+            else None
+        )
+    else:
+        run_id = _record_sync_run(agent=agent, owner=owner, result=result)
+    return {"run_id": run_id, "result": result}
+
+
+async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
+    """Reconcile + flatten one ``GET /v1/runs/{run_id}`` request body.
+
+    Args:
+        run_id: Run id to fetch.
+
+    Returns:
+        Flat JSON-serialisable run envelope.
+
+    Raises:
+        HTTPException: 404 when the run is unknown or foreign-owned.
+    """
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    record = await registry.reconcile(run_id, owner=owner)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    return _run_record_to_dict(record)
+
+
 def _record_sync_run(
     *, agent: str, owner: str, result: dict[str, Any]
 ) -> Optional[str]:
@@ -404,36 +495,20 @@ def create_app() -> FastAPI:
         payload: AgentRunRequest,
         principal: ApiPrincipal = Depends(authorized),
     ) -> JSONResponse:
-        """Invoke one agent by slug and return its run id + result.
-
-        Sync agents (chat / knowledge / data / review / brief_gene)
-        get an ``origin="local"`` terminal run written here; remote
-        agents (analyst / deep_genome / research / design / network)
-        rely on the in-process ``_records_submission`` chokepoint to
-        write ``origin="remote"`` and we look the resulting ``run_id``
-        back up via ``tasks.run_id``.
-        """
+        """Invoke one agent by slug and return its run id + result."""
         del principal
-        tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
-        if tool_name is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"agent not found: {agent}",
-            )
-        formatted = await invoke_tool_formatted(tool_name, payload.arguments)
-        result = asdict(formatted)
-        owner = current_request_user() or "anonymous"
-        if agent in _REMOTE_AGENT_SLUGS:
-            metadata = result.get("metadata") or {}
-            task_id = metadata.get("task_id")
-            run_id = (
-                TaskManager(resolve_tasks_db_path()).run_id_for_task(task_id)
-                if isinstance(task_id, str) and task_id
-                else None
-            )
-        else:
-            run_id = _record_sync_run(agent=agent, owner=owner, result=result)
-        return JSONResponse({"run_id": run_id, "result": result})
+        return JSONResponse(
+            await _invoke_agent_run(agent=agent, arguments=payload.arguments)
+        )
+
+    @app.get("/v1/runs/{run_id}")
+    async def get_run(
+        run_id: str,
+        principal: ApiPrincipal = Depends(authorized),
+    ) -> JSONResponse:
+        """Return one owner-scoped run record by id."""
+        del principal
+        return JSONResponse(await _fetch_owner_run(run_id))
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
