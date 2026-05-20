@@ -3,14 +3,29 @@
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 # ruff: noqa: N802, N803, N815
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument,too-few-public-methods,invalid-name
+# pylint: disable=missing-function-docstring,too-many-arguments
+# pylint: disable=too-many-positional-arguments
 """Minimal type stubs for the OBS SDK surface used by Phytomni.
 
-The unused-argument rule is disabled file-wide because stubs declare
-signatures without bodies, so every parameter is structurally "unused" by
-pylint's definition; the rule is unsatisfiable for stub files and parameter
-names must mirror the real OBS SDK API exactly (same reason this file also
-carries `# ruff: noqa: N802, N803, N815` for camelCase argument names).
+Pylint targets executable code semantics; this file is a type stub
+mirroring an external SDK's interface, so several pylint rules are
+structurally unsatisfiable here:
+
+* unused-argument — every parameter is "unused" because stubs have no
+  bodies, and names must mirror the real OBS SDK API.
+* too-few-public-methods — response classes are dataclass-like field
+  declarations, not behavior-bearing classes.
+* invalid-name / missing-function-docstring — the OBS SDK uses
+  camelCase method and argument names and the type signatures are the
+  documentation; the ruff equivalents are already silenced above with
+  `# ruff: noqa: N802, N803, N815`.
+* too-many-arguments / too-many-positional-arguments — the upstream
+  SDK methods take 6-7 positional arguments; the stub must match.
+
+mypy and pyright are the canonical type-stub checkers and continue to
+enforce correctness here; pylint runs to catch regressions in the
+stub's exported names and import graph.
 """
 
 from typing import Any
