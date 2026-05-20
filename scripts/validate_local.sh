@@ -106,6 +106,12 @@ git ls-files '*.json' | while IFS= read -r file; do
     jsonlint_cmd "$file"
 done
 
+# normalize_json --check is the format-side of the JSON gate. It is scoped
+# to src/mcp_server_phytomni/config/*.json (the files normalize_json.py
+# owns); demo_data/*.json is generator-owned and covered by the demo_data
+# idempotency check below.
+run uv run python scripts/normalize_json.py --check
+
 printf '\n==> demo_data idempotency check\n'
 uv run python demo_data/scripts/generate_demo_data.py
 if ! git diff --quiet -- demo_data/; then

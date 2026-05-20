@@ -308,3 +308,14 @@ jobs:
           git ls-files '*.json' | while IFS= read -r file; do
             jsonlint "$file" --quiet
           done
+
+  json-normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check config JSON normalization with normalize_json.py
+        run: python scripts/normalize_json.py --check

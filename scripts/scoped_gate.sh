@@ -369,6 +369,41 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# normalize_json --check — format-side of the JSON gate, scoped to the
+# config JSON files normalize_json.py owns. demo_data/*.json is generator-
+# owned (covered by the demo_data idempotency check below), so the filter
+# here is src/mcp_server_phytomni/config/*.json only.
+# ---------------------------------------------------------------------------
+config_json_files=""
+old_ifs=$IFS
+IFS='
+'
+for f in $json_files; do
+    case "$f" in
+    src/mcp_server_phytomni/config/*.json) config_json_files="${config_json_files}${f}
+" ;;
+    esac
+done
+IFS=$old_ifs
+config_json_files=$(printf '%s' "$config_json_files" | sed '/^[[:space:]]*$/d')
+
+if [ -z "$config_json_files" ]; then
+    printf '\n==> no changed config json files; skipping normalize_json --check\n'
+else
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $config_json_files; do
+        if [ -n "$f" ]; then
+            set -- "$@" "$f"
+        fi
+    done
+    IFS=$old_ifs
+    run uv run python scripts/normalize_json.py --check "$@"
+fi
+
+# ---------------------------------------------------------------------------
 # demo_data idempotency — ONLY when a changed path is under demo_data/. A
 # concurrent agent may own demo_data/; never regenerate foreign scratch.
 # ---------------------------------------------------------------------------
