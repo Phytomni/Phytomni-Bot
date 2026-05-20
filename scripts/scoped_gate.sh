@@ -83,6 +83,7 @@ yaml_files=""
 json_files=""
 sh_files=""
 md_files=""
+toml_files=""
 test_files=""
 demo_changed=0
 
@@ -137,6 +138,10 @@ for f in $changed; do
             ;;
         esac
         ;;
+    *.toml)
+        toml_files="${toml_files}${f}
+"
+        ;;
     esac
 done
 IFS=$old_ifs
@@ -146,6 +151,7 @@ yaml_files=$(printf '%s' "$yaml_files" | sed '/^[[:space:]]*$/d')
 json_files=$(printf '%s' "$json_files" | sed '/^[[:space:]]*$/d')
 sh_files=$(printf '%s' "$sh_files" | sed '/^[[:space:]]*$/d')
 md_files=$(printf '%s' "$md_files" | sed '/^[[:space:]]*$/d')
+toml_files=$(printf '%s' "$toml_files" | sed '/^[[:space:]]*$/d')
 test_files=$(printf '%s' "$test_files" | sed '/^[[:space:]]*$/d')
 
 # ---------------------------------------------------------------------------
@@ -257,6 +263,45 @@ else
     IFS=$old_ifs
     run uv run mdformat --check "$@"
     run uv run pymarkdown --config pyproject.toml scan "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# TOML — only changed *.toml. toml-sort reads [tool.tomlsort] from
+# pyproject.toml so the CLI takes no flags (one source of truth shared
+# with CI). validate-pyproject checks PEP 621 schemas and is scoped by
+# basename to *pyproject.toml — running it on a non-pyproject TOML would
+# fail by design, since the schema does not apply.
+# ---------------------------------------------------------------------------
+if [ -z "$toml_files" ]; then
+    printf '\n==> no changed toml files; skipping toml-sort/validate-pyproject\n'
+else
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $toml_files; do
+        if [ -n "$f" ]; then
+            set -- "$@" "$f"
+        fi
+    done
+    IFS=$old_ifs
+    run uv run toml-sort --check "$@"
+
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $toml_files; do
+        case "$(basename "$f")" in
+        pyproject.toml) set -- "$@" "$f" ;;
+        esac
+    done
+    IFS=$old_ifs
+    if [ "$#" -gt 0 ]; then
+        run uv run validate-pyproject "$@"
+    else
+        printf '\n==> no changed pyproject.toml; skipping validate-pyproject\n'
+    fi
 fi
 
 # ---------------------------------------------------------------------------
