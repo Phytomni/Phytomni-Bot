@@ -127,6 +127,8 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
     """
     retrieve_cache_clear = getattr(knowledge_retrieval.retrieve, "cache_clear")
     retrieve_cache_clear()
+    knowledge_retrieval._retrieve_scope_docs.cache_clear()
+    knowledge_retrieval._rerank_batch.cache_clear()
     calls = {"post": 0, "rerank": 0}
 
     class FakeResponse:

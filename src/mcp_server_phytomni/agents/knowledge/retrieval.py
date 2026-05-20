@@ -9,6 +9,7 @@ This module exposes retrieval option models plus `retrieve`,
 """
 
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -662,6 +663,26 @@ async def rerank(
     ]
 
 
+def _docs_identity(
+    docs_batch: List[Dict[str, Any]],
+) -> tuple[tuple[Any, str], ...]:
+    """Return a stable order-preserving identity for one rerank batch.
+
+    Each ``(id, content_fingerprint)`` pair is order-sensitive so a
+    reordered batch (which the upstream rerank may rank differently)
+    gets a different cache key. The fingerprint is the first 16 hex
+    chars of ``sha1(title + content)`` — a deterministic digest that
+    is process-stable, unlike Python's salted built-in ``hash``.
+    """
+    pairs: List[tuple[Any, str]] = []
+    for doc in docs_batch:
+        title = str(doc.get("title", ""))
+        content = str(doc.get("content", ""))
+        digest = hashlib.sha1((title + content).encode("utf-8")).hexdigest()
+        pairs.append((doc.get("id"), digest[:16]))
+    return tuple(pairs)
+
+
 async def _rank_docs(
     client: AsyncClient,
     user_query: str,
@@ -672,39 +693,86 @@ async def _rank_docs(
     if len(docs) > options.rerank_batch_size:
         chunks = split_list(docs, options.rerank_batch_size)
         tasks = [
-            _rerank_batch(client, user_query, chunk, options)
+            _rerank_batch(
+                client,
+                user_query=user_query,
+                docs_batch=chunk,
+                docs_identity=_docs_identity(chunk),
+                rerank_url=options.rerank_url,
+                top_n=options.top_n,
+                timeout=options.timeout,
+                max_retries=options.max_retries,
+                retriable_codes=options.retriable_codes,
+            )
             for chunk in chunks
         ]
         return _collect_rank_results(
             await asyncio.gather(*tasks, return_exceptions=True),
             options.top_n,
         )
-    return await _rerank_batch(client, user_query, docs, options)
+    return await _rerank_batch(
+        client,
+        user_query=user_query,
+        docs_batch=docs,
+        docs_identity=_docs_identity(docs),
+        rerank_url=options.rerank_url,
+        top_n=options.top_n,
+        timeout=options.timeout,
+        max_retries=options.max_retries,
+        retriable_codes=options.retriable_codes,
+    )
 
 
+@func_cache(
+    key_params=[
+        "user_query",
+        "rerank_url",
+        "docs_identity",
+        "top_n",
+    ],
+    ttl=LONG_TTL_SECONDS,
+)
 async def _rerank_batch(
     client: AsyncClient,
+    *,
     user_query: str,
     docs_batch: List[Dict[str, Any]],
-    options: RerankOptions,
+    docs_identity: tuple[tuple[Any, str], ...],
+    rerank_url: str,
+    top_n: int,
+    timeout: float,
+    max_retries: int,
+    retriable_codes: tuple[int, ...],
 ):
-    """Send one rerank request batch."""
+    """Send one rerank request batch.
+
+    Cached on (user_query, rerank_url, docs_identity, top_n). The
+    docs_batch list itself stays out of ``key_params`` because it is
+    large and order-sensitive — the caller-supplied ``docs_identity``
+    is the stable hashable summary used for the cache key, while
+    ``docs_batch`` carries the actual content for the HTTP body on
+    a cache miss. Infrastructure params (client, timeout,
+    max_retries, retriable_codes) are excluded from the key.
+    """
+    # docs_identity is the cache-key projection of docs_batch (consumed
+    # by @func_cache key_params); the body uses docs_batch directly.
+    del docs_identity
     result = await post_json_with_retries(
         client,
         JsonPostRequest(
-            url=options.rerank_url,
+            url=rerank_url,
             headers={"Content-Type": "application/json"},
             json_body={
                 "query": user_query,
                 "ranking_order": ["title", "content"],
                 "docs": docs_batch,
-                "top_n": options.top_n,
+                "top_n": top_n,
             },
         ),
         JsonPostRetry(
-            timeout=options.timeout,
-            max_retries=options.max_retries,
-            retriable_codes=options.retriable_codes,
+            timeout=timeout,
+            max_retries=max_retries,
+            retriable_codes=retriable_codes,
             message="Failed to rerank",
         ),
     )
