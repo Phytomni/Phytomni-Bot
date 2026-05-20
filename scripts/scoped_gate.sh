@@ -154,6 +154,22 @@ md_files=$(printf '%s' "$md_files" | sed '/^[[:space:]]*$/d')
 toml_files=$(printf '%s' "$toml_files" | sed '/^[[:space:]]*$/d')
 test_files=$(printf '%s' "$test_files" | sed '/^[[:space:]]*$/d')
 
+# Workflow files are a strict subset of yaml_files (still linted by yamllint
+# unchanged); the subset is what actionlint targets. Filter once here so the
+# step below stays empty-skip-clean when no workflow changed.
+workflow_files=""
+old_ifs=$IFS
+IFS='
+'
+for f in $yaml_files; do
+    case "$f" in
+    .github/workflows/*) workflow_files="${workflow_files}${f}
+" ;;
+    esac
+done
+IFS=$old_ifs
+workflow_files=$(printf '%s' "$workflow_files" | sed '/^[[:space:]]*$/d')
+
 # ---------------------------------------------------------------------------
 # scan_secrets — scoped variant per mode (mirrors validate_local.sh tool).
 # ---------------------------------------------------------------------------
@@ -240,6 +256,30 @@ else
     done
     IFS=$old_ifs
     run uv run yamllint "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# actionlint — only changed .github/workflows/* (a subset of yamllint above).
+# yamllint covers YAML shape; actionlint adds workflow-semantic checks
+# (action versions, required inputs, shell errors in run: blocks).
+# Resolved via scripts/actionlint_runner.sh — mirrors shfmt_runner.sh:
+# on-PATH binary, else a pinned go-installed binary cached under
+# .cache/phytomni/, else fail with the official install hint.
+# ---------------------------------------------------------------------------
+if [ -z "$workflow_files" ]; then
+    printf '\n==> no changed workflow files; skipping actionlint\n'
+else
+    set --
+    old_ifs=$IFS
+    IFS='
+'
+    for f in $workflow_files; do
+        if [ -n "$f" ]; then
+            set -- "$@" "$f"
+        fi
+    done
+    IFS=$old_ifs
+    run scripts/actionlint_runner.sh "$@"
 fi
 
 # ---------------------------------------------------------------------------
