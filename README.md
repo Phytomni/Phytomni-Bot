@@ -762,8 +762,9 @@ by the style tests and are reserved for documented framework boundaries.
 `./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
 whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
 yamllint, actionlint, mdformat, pymarkdown, toml-sort, validate-pyproject,
-jsonlint, `demo_data/` idempotency, then `pytest`) over every tracked
-file — the same checks as CI and the `.githooks/pre-push` hook.
+jsonlint, `normalize_json.py --check`, `demo_data/` idempotency, then
+`pytest`) over every tracked file — the same checks as CI and the
+`.githooks/pre-push` hook.
 Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
 (`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
 `scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
@@ -774,7 +775,11 @@ configured through `[tool.pymarkdown]` in `pyproject.toml`). TOML
 (`*.toml`) gets both a format check (`toml-sort --check`, configured
 through `[tool.tomlsort]` to keep the existing table order, 4-space
 multiline arrays, and trailing commas) and schema validation
-(`validate-pyproject` over every tracked `pyproject.toml`). GitHub
+(`validate-pyproject` over every tracked `pyproject.toml`). JSON config
+files (`src/mcp_server_phytomni/config/*.json`) get both a format check
+(`scripts/normalize_json.py --check`, sorted keys + two-space indent)
+and structural validation (`jsonlint`); `demo_data/*.json` is covered
+by the demo_data idempotency check instead. GitHub
 Actions workflow files (`.github/workflows/*`) get both yamllint shape
 coverage and `actionlint` workflow-semantic checks (action versions,
 missing inputs, shell errors in `run:` blocks via actionlint's
@@ -810,7 +815,9 @@ whenever any `.py` changed, and (like the full gate) runs `shellcheck` plus
 `demo_data/*.md`), and `toml-sort --check` plus `validate-pyproject` (the
 latter only on changed `*pyproject.toml`) over any changed `*.toml`,
 and `scripts/actionlint_runner.sh` over any changed
-`.github/workflows/*`.
+`.github/workflows/*`, and
+`python scripts/normalize_json.py --check` over any changed
+`src/mcp_server_phytomni/config/*.json`.
 `make push` uses an SSH
 keepalive instead of `--no-verify`, so the pre-push hook still runs. Exporting
 `PHYTOMNI_SCOPED_GATE=1` makes the `.githooks/pre-push` hook run the scoped
@@ -861,6 +868,9 @@ python scripts/normalize_json.py \
   the existing table order and array style)
 - `shellcheck` and `shfmt -d -i 4` over tracked `*.sh` and `.githooks/*`
 - `jsonlint "$file" --quiet` for every tracked JSON file
+- `python scripts/normalize_json.py --check` over the config JSON files
+  it owns (`src/mcp_server_phytomni/config/*.json`); demo_data JSON is
+  covered by the demo_data idempotency check instead
 
 ## Repository Hygiene
 
