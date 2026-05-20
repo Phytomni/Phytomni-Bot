@@ -5,23 +5,12 @@
 
 """Minimal type stubs for the OBS SDK surface used by Phytomni.
 
-Pylint targets executable code semantics; this file is a type stub
-mirroring an external SDK's interface, so several pylint rules are
-structurally unsatisfiable here:
-
-* unused-argument — every parameter is "unused" because stubs have no
-  bodies, and names must mirror the real OBS SDK API.
-* too-few-public-methods — response classes are dataclass-like field
-  declarations, not behavior-bearing classes.
-* invalid-name / missing-function-docstring — the OBS SDK uses
-  camelCase method and argument names and the type signatures are the
-  documentation.
-* too-many-arguments / too-many-positional-arguments — the upstream
-  SDK methods take 6-7 positional arguments; the stub must match.
-
-mypy and pyright are the canonical type-stub checkers and continue to
-enforce correctness here; pylint runs to catch regressions in the
-stub's exported names and import graph.
+mypy and pyright are the canonical stub checkers and validate these
+declarations; pylint and ruff are configured at project level to skip
+`typings/` (`[tool.pylint.main].ignore` and `[tool.ruff].exclude` in
+`pyproject.toml`) because their style and design rules target
+executable-code semantics that body-less stubs mirroring an external
+camelCase SDK cannot satisfy.
 """
 
 from typing import Any
