@@ -128,10 +128,10 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Analyse the code with pylint
         run: |
-          PYTHONPATH=src pylint \
-            --py-version=${{ matrix.python-version }} \
-            --persistent=no \
-            $(git ls-files '*.py')
+          git ls-files -z '*.py' \
+            | PYTHONPATH=src xargs -0 -r pylint \
+              --py-version=${{ matrix.python-version }} \
+              --persistent=no
 
   pytest:
     runs-on: ubuntu-latest
