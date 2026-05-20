@@ -341,11 +341,20 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
     assert calls == {"post": 2, "rerank": 4}
 
 
-async def test_gene_retrieve_uses_agent_context_cache():
-    """Verify gene_retrieve uses agent context cache.
+async def test_gene_retrieve_is_idempotent_without_composite_cache():
+    """Verify gene_retrieve returns identical docs across repeated calls.
+
+    The brief_gene composite cache that previously caught the second
+    invocation is gone; this test now pins the behavior that two
+    identical gene_retrieve calls return identical merged-and-trimmed
+    doc lists and each call independently delegates to
+    KnowledgeAgent.arun for every deduplicated query term, since the
+    actual roundtrip de-duplication has moved one layer down into the
+    retrieval primitive cache (not exercised here because arun is
+    stubbed at the agent level).
 
     Returns:
-        None after repeated retrieval uses one underlying agent call.
+        None after idempotence assertions pass.
     """
     brief_gene_agents.clear_gene_retrieve_cache()
     calls = {"arun": 0}
@@ -407,7 +416,10 @@ async def test_gene_retrieve_uses_agent_context_cache():
             "score": 0.7,
         }
     ]
-    assert calls["arun"] == 1
+    # No composite cache: each gene_retrieve invokes arun once per
+    # deduplicated query term, so two identical calls accumulate two
+    # underlying agent invocations.
+    assert calls["arun"] == 2
 
 
 async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):

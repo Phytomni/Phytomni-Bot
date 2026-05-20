@@ -43,7 +43,6 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig
-from ...func_cache import func_cache
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -51,10 +50,10 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from ..knowledge.retrieval import clear_retrieval_caches
 
 BRIEF_CONFIG = BriefGeneConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
-GENE_RETRIEVE_CACHE_TTL = 300
 
 BRIEF_GENE_CONFIG_FIELD_MAP = {
     **CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -75,19 +74,22 @@ BRIEF_GENE_SECRET_FIELD_MAP = {
 
 @dataclass(frozen=True)
 class GeneRetrieveRequest:
-    """Cache-key-safe options for one gene literature retrieval request.
+    """Stable request shape for one gene literature retrieval call.
+
+    The composite-level cache that previously keyed on this dataclass
+    has been removed; the actual caching now lives one layer down in
+    the knowledge retrieval HTTP primitives, so this struct is just a
+    convenient bundle for the public ``gene_retrieve`` wrapper.
 
     Attributes:
         species: Species display name included in retrieval queries.
         symbols: Deduplicated gene symbols and identifiers to retrieve.
         top_n: Maximum number of retrieved documents to retain.
-        agent_context: Stable KnowledgeAgent fingerprint entries.
     """
 
     species: str
     symbols: tuple[str, ...]
     top_n: int
-    agent_context: tuple[tuple[str, Any], ...]
 
 
 def _sql_literal(value: str) -> str:
@@ -309,33 +311,33 @@ async def gene_retrieve(
     if not symbols:
         return {"doc_list": [], "total": 10000}
 
-    agent_context = agent_fingerprint_values(
-        knowledge_config=knowledge_agent.knowledge_config,
-    )
     request = GeneRetrieveRequest(
         species=species,
         symbols=symbols,
         top_n=top_n,
-        agent_context=tuple(sorted(agent_context.items())),
     )
-    return await _gene_retrieve_cached(
+    return await _gene_retrieve(
         request=request,
         knowledge_agent=knowledge_agent,
         semaphore=semaphore,
     )
 
 
-@func_cache(
-    key_params=["request"],
-    ttl=GENE_RETRIEVE_CACHE_TTL,
-    exclude_params=["knowledge_agent", "semaphore"],
-)
-async def _gene_retrieve_cached(
+async def _gene_retrieve(
     request: GeneRetrieveRequest,
     knowledge_agent: KnowledgeAgent,
     semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Dict[str, Any]:
-    """Retrieve and cache gene literature for stable gene symbol queries."""
+    """Fan out one KnowledgeAgent.arun per symbol and merge the docs.
+
+    The composite cache that previously sat on this function is gone;
+    de-duplication of repeated retrieval roundtrips now happens inside
+    the knowledge retrieval HTTP primitive caches, which are keyed on
+    the actual semantic inputs rather than this layer's bundled
+    request object. Call ``clear_gene_retrieve_cache()`` (the shim) to
+    drop the underlying retrieval-primitive state when testing or
+    administering the cache.
+    """
     combined_symbols = "\n".join(request.symbols)
     query_terms = _dedupe([*request.symbols, combined_symbols])
 
@@ -372,8 +374,14 @@ async def _gene_retrieve_cached(
 
 
 def clear_gene_retrieve_cache() -> None:
-    """Clear cached gene literature retrieval results for tests/admin."""
-    _gene_retrieve_cached.cache_clear()
+    """Compatibility shim that drops the retrieval primitive caches.
+
+    Kept under the original name so existing importers and tests
+    continue to work. Internally it delegates to the knowledge-layer
+    ``clear_retrieval_caches`` since brief_gene no longer owns a
+    composite cache.
+    """
+    clear_retrieval_caches()
 
 
 async def _generate_follow_up(
