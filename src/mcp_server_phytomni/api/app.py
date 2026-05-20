@@ -31,10 +31,11 @@ from ..runtime.request_context import (
     bind_run_id,
     current_request_id,
     current_request_user,
+    current_run_id,
     reset_request_var,
 )
 from ..runtime.run_registry import RunFilter, RunRegistry, RunSpec
-from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from .auth import ApiPrincipal, require_principal
 from .openai_mapping import (
@@ -96,8 +97,8 @@ _AGENT_SLUG_TO_TOOL = {
 
 # Slugs whose handlers submit a remote analysis task and rely on the
 # ``_records_submission`` chokepoint in ``mcp/handlers`` to write the
-# runs row with ``origin="remote"``; the API layer instead reads
-# ``tasks.run_id`` back via ``TaskManager.run_id_for_task``.
+# runs row with ``origin="remote"`` and bind the freshly-minted run id
+# to ``current_run_id()`` so the API layer can recover it directly.
 _REMOTE_AGENT_SLUGS = frozenset(
     {"analyst", "deep_genome", "research", "design", "network"}
 )
@@ -159,9 +160,10 @@ async def _invoke_agent_run(
     ``task_ids`` at HTTP 202 (the submission ack convention) so a
     client can immediately poll ``/v1/runs/{id}`` for the live status.
     The formatted result is surfaced in both cases — sync clients
-    consume it directly; remote clients can short-circuit using
-    ``metadata.task_id`` / ``metadata.output_dir`` before the first
-    ``/v1/runs/{id}`` call.
+    consume it directly; remote clients can read the raw payload for
+    additional context but should track the run by ``id`` and
+    ``task_ids`` since those are uniformly populated for every
+    remote agent regardless of formatter shape.
 
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
@@ -185,7 +187,7 @@ async def _invoke_agent_run(
     result = asdict(formatted)
     owner = current_request_user() or "anonymous"
     if agent in _REMOTE_AGENT_SLUGS:
-        run_id, task_ids = _resolve_remote_run(result, owner)
+        run_id, task_ids = _resolve_remote_run(owner)
         _purge_expired_runs_best_effort()
         body = {
             "id": run_id,
@@ -208,40 +210,34 @@ async def _invoke_agent_run(
     return body, 200
 
 
-def _resolve_remote_run(
-    result: dict[str, Any], owner: str
-) -> tuple[Optional[str], list[str]]:
-    """Resolve the chokepoint-minted run id + child task ids for owner.
+def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
+    """Read the chokepoint's run id from contextvar, then list its tasks.
 
-    The remote chokepoint in ``mcp/handlers`` writes the runs row + N
-    child task rows before returning the formatted payload. The HTTP
-    layer recovers the run identity by joining: the formatter's
-    ``metadata.task_id`` gives one task id (the primary), and
-    ``TaskManager.run_id_for_task`` looks up its owning run id; the
-    full child set then comes from ``RunRegistry.get_run`` so the
-    response carries every submitted task id, not just the primary.
+    The submit chokepoint in ``mcp/handlers`` calls ``bind_run_id``
+    after it writes the runs row plus its N child task rows, so the
+    HTTP layer can recover the run identity directly from the
+    per-request contextvar — no formatter-specific metadata key
+    (analyst's ``task_id`` vs deep_genome's ``server_id`` vs
+    research's missing entry) is consulted. The child task ids are
+    then sourced from ``RunRegistry.get_run`` so a multi-task
+    submission returns every task id the chokepoint persisted, not
+    just the primary one.
 
     Args:
-        result: The formatted tool payload (already ``asdict``-ified).
         owner: Authenticated user id used for the registry read.
 
     Returns:
         ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
-        ``task_ids`` is empty when the chokepoint did not record a
-        recognisable submission (so the API caller still gets the raw
-        result and an unambiguous "no run was registered" signal).
+        ``task_ids`` is empty when the chokepoint did not bind a
+        run id (so the API caller still gets the raw result and an
+        unambiguous "no run was registered" signal).
     """
-    metadata = result.get("metadata") or {}
-    primary_task_id = metadata.get("task_id")
-    if not isinstance(primary_task_id, str) or not primary_task_id:
+    run_id = current_run_id()
+    if run_id is None:
         return None, []
-    db_path = resolve_tasks_db_path()
-    run_id = TaskManager(db_path).run_id_for_task(primary_task_id)
-    if not run_id:
-        return None, [primary_task_id]
-    record = RunRegistry(db_path).get_run(run_id, owner=owner)
+    record = RunRegistry(resolve_tasks_db_path()).get_run(run_id, owner=owner)
     if record is None:
-        return run_id, [primary_task_id]
+        return run_id, []
     return run_id, list(record.task_ids)
 
 
