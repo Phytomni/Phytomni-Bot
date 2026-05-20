@@ -1,7 +1,7 @@
 [project]
 name = "mcp_server_phytomni"
 version = "0.1.0"
-description = "MCP server providing LangGraph agents for plant-science research workflows."
+description = "Phytomni MCP server, FastAPI HTTP API, and stdio CLI client packaging LangGraph agents for plant-science research workflows."
 readme = "README.md"
 license = {file = "LICENSE"}
 keywords = [
@@ -11,6 +11,10 @@ keywords = [
     "plant-science",
     "bioinformatics",
     "phytomni",
+    "fastapi",
+    "http-api",
+    "stdio-client",
+    "cli",
 ]
 authors = [
     {name = "Shang Xie", email = "xieshang0608@gmail.com"},
@@ -19,13 +23,17 @@ requires-python = ">=3.12,<3.15"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Framework :: AsyncIO",
+    "Framework :: FastAPI",
+    "Framework :: Pydantic",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
