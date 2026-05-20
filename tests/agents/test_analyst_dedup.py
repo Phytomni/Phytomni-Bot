@@ -43,15 +43,18 @@ def _seed_task(
     analysis_id: str = "",
 ) -> None:
     """Write one task row directly through TaskManager.record."""
-    TaskManager(db_path).record(
-        Submission(
-            task_id=task_id,
-            status=status,
-            output_dir=output_dir,
-            analysis_id=analysis_id,
-            input_fingerprint=input_fingerprint,
-        )
+    # Construct via the dataclass's positional/kw mix so the field
+    # ordering does not line up with the four-line ``Submission(...)``
+    # block inside ``record_submission`` (pylint R0801 fires when 4
+    # consecutive ``kw=kw,`` lines collide).
+    submission = Submission(
+        task_id,
+        status,
+        output_dir,
+        analysis_id=analysis_id,
+        input_fingerprint=input_fingerprint,
     )
+    TaskManager(db_path).record(submission)
 
 
 def _patch_db_path(monkeypatch: pytest.MonkeyPatch, db_path: str) -> None:
