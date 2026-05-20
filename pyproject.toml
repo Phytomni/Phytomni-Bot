@@ -49,6 +49,7 @@ dependencies = [
 phytomni = "mcp_client_phytomni.main:main"
 phytomni-api = "mcp_server_phytomni.api.server:main"
 phytomni-api-key = "mcp_server_phytomni.api.keys:main"
+phytomni-cache = "mcp_server_phytomni.func_cache.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -132,6 +133,10 @@ exclude = [
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
+    # typings/ holds type stubs (camelCase external SDK signatures);
+    # mypy and pyright are the canonical stub checkers, so ruff's
+    # PEP 8 naming/style rules do not apply here.
+    "typings",
 ]
 
 [tool.ruff.lint]
@@ -195,7 +200,10 @@ output = "coverage.xml"
 
 [tool.pylint.main]
 py-version = "3.12"
-ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
+# typings/ holds type stubs that mirror external SDKs' camelCase APIs and
+# have no method bodies; mypy and pyright are the canonical stub checkers
+# (no rule conflicts there), so the stubs sit outside pylint's scope.
+ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 
 [tool.pymarkdown]
 # Markdown gate config (consumed via `pymarkdown --config pyproject.toml`).

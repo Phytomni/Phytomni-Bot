@@ -2,10 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-# ruff: noqa: N802, N803, N815
-# pylint: disable=unused-argument,too-few-public-methods,invalid-name
-# pylint: disable=missing-function-docstring,too-many-arguments
-# pylint: disable=too-many-positional-arguments
+
 """Minimal type stubs for the OBS SDK surface used by Phytomni.
 
 Pylint targets executable code semantics; this file is a type stub
@@ -18,8 +15,7 @@ structurally unsatisfiable here:
   declarations, not behavior-bearing classes.
 * invalid-name / missing-function-docstring — the OBS SDK uses
   camelCase method and argument names and the type signatures are the
-  documentation; the ruff equivalents are already silenced above with
-  `# ruff: noqa: N802, N803, N815`.
+  documentation.
 * too-many-arguments / too-many-positional-arguments — the upstream
   SDK methods take 6-7 positional arguments; the stub must match.
 

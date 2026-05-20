@@ -105,11 +105,7 @@ for f in $changed; do
         ;;
     esac
     case "$f" in
-    *.py | *.pyi)
-        # Type stubs (*.pyi) flow through every Python tool exactly like
-        # *.py — black/ruff/mypy/pyright handle stubs natively, and pylint
-        # needs the explicit selector since validate_local.sh drives it
-        # by `git ls-files '*.py' '*.pyi'`.
+    *.py)
         py_files="${py_files}${f}
 "
         case "$f" in
