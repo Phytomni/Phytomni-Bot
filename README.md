@@ -477,9 +477,15 @@ deadlock under SQLite WAL):
 | API bind host         | `API_HOST`                                  | `127.0.0.1`                       |
 | API bind port         | `API_PORT`                                  | `8080`                            |
 | API key store         | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
-| Run ownership store   | `API_RUNS_DB_PATH` / `PHYTOMNI_API_RUNS_DB` | `.cache/phytomni/api_runs.sqlite` |
-| Backend task registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
+| Runs + tasks registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
 | Per-key req/min       | `API_RATE_LIMIT_PER_MIN`                    | `120` (`<= 0` disables)           |
+| Succeeded-run TTL     | `API_RUN_TTL_OK_HOURS`                      | `24`                              |
+| Failed-run TTL        | `API_RUN_TTL_FAIL_DAYS`                     | `7`                               |
+
+The runs table (parent: run_id, owner, agent, origin, status, cached
+`result_json`, `expires_at`) and the tasks table (child: task_id with a
+`run_id` foreign key) share one SQLite file so the submit-side writer
+and the run-status reader address the same source of truth.
 
 ### Per-user API keys
 
@@ -527,10 +533,72 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"phyto-chat","messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
 ```
 
-Native per-agent runs and long-running task polling
-(`POST /v1/agents/{agent}/runs`, `GET /v1/runs/{run_id}`) are added in a
-later change and documented when they land. The MCP stdio server remains
-`python -m mcp_server_phytomni.server` and is unaffected.
+- `GET /v1/agents` — lists every agent reachable through the native
+  run endpoint. Each entry carries its public slug, the MCP tool name
+  it dispatches to, and an `origin` label (`local` for synchronous
+  agents that return their answer in the same request, `remote` for
+  submit-style agents that hand the job to the analysis platform).
+- `POST /v1/agents/{agent}/runs` — invoke one agent by slug with a
+  `{"arguments": {...}}` body whose keys match the MCP tool schema.
+  Synchronous agents (`chat`, `knowledge`, `data`, `review`,
+  `brief_gene`) respond `200` with
+  `{"id": run_id, "object": "agent.run", "agent": slug, "status": "succeeded", "task_ids": [], "result": <formatted>}`.
+  Remote agents (`analyst`, `deep_genome`, `research`, `design`,
+  `network`) respond `202` (submission ack) with `status: "running"`
+  and `task_ids` listing every child task the chokepoint registered;
+  poll `/v1/runs/{run_id}` for the live status.
+- `GET /v1/runs/{run_id}` — owner-isolated run state. Unknown ids and
+  runs owned by another caller collapse to one `404` envelope so an
+  attacker cannot enumerate other users' run ids. Terminal cached
+  runs are returned immediately; non-terminal runs reconcile each
+  child task exactly once per call (no `wait_for_completion` loop).
+- `GET /v1/runs?status=&agent=&origin=&limit=&offset=` —
+  owner-scoped, newest-first listing. The optional `status`, `agent`,
+  and `origin` query parameters compose conjunctively; `limit`
+  defaults to `10` and `offset` defaults to `0`. Each write path and
+  the listing itself trigger a best-effort `purge_expired` sweep so
+  the registry stays bounded under both submission-heavy and
+  listing-heavy workloads.
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"user_query":"Explain C3 photosynthesis.","obs_file_list":[]}}'
+
+curl -s -X POST http://127.0.0.1:8080/v1/agents/analyst/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"goal_description":"...","data_list":{},"obs_file_list":[]}}'
+
+curl -s "http://127.0.0.1:8080/v1/runs/<run-id>" \
+  -H "Authorization: Bearer ptm_..."
+
+curl -s "http://127.0.0.1:8080/v1/runs?status=succeeded&limit=20" \
+  -H "Authorization: Bearer ptm_..."
+```
+
+**Polling recommendation.** A remote run typically takes minutes to
+finish. Poll `/v1/runs/{run_id}` with an exponential backoff bounded
+between `2s` and `30s` (for example: `2s, 4s, 8s, 16s, 30s, 30s, …`)
+until `status` flips to `succeeded` or `failed`. The endpoint is
+cheap once the run is terminal (the cached `result_json` is returned
+without re-polling the analysis platform), so periodic re-reads are
+safe even after completion.
+
+**Retention.** A terminal run row carries an `expires_at` set from
+`API_RUN_TTL_OK_HOURS` (defaults to 24 h) for `succeeded` and
+`API_RUN_TTL_FAIL_DAYS` (defaults to 7 d) for `failed`. The next API
+write or list call past that timestamp deletes the row plus its
+child task rows in one manual cascade. A non-terminal run carries no
+TTL; reconcile-on-read keeps it visible until it finishes.
+
+**Correlation.** Every response carries an `X-Request-Id` header
+that is also surfaced in the error envelope, so a `429`/`5xx` can be
+joined back to the corresponding server log line. The MCP stdio
+server remains `python -m mcp_server_phytomni.server` and is
+unaffected — none of the run-registry write paths run there, so the
+existing stdio response shape is byte-equivalent.
 
 ## MCP Client Example
 
