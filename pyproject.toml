@@ -224,6 +224,7 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 # too tight for that pattern, so bump them project-wide.
 max-args = 15
 max-locals = 20
+max-module-lines = 1200
 max-positional-arguments = 15
 
 [tool.pymarkdown]

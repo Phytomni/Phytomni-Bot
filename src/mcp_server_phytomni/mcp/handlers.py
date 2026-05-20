@@ -16,7 +16,7 @@ import sqlite3
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -78,14 +78,16 @@ def scratch_server_dir(config: Any, scope: str) -> str:
 
 def _extract_task_submissions(
     result: Mapping[str, Any], agent: str
-) -> Tuple[Tuple[str, str], ...]:
-    """Extract ``(task_id, output_dir)`` pairs by per-agent wrapper shape.
+) -> Tuple[Tuple[str, str, Optional[str]], ...]:
+    """Extract per-task identity triples by per-agent wrapper shape.
 
     Each public submit wrapper returns task identity in its own shape,
     so the chokepoint dispatches by agent slug rather than guessing:
 
     - ``analyst`` / ``deep_genome``: ``task_id`` at the top level (with
-      ``output_dir`` alongside).
+      ``output_dir`` alongside). Analyst additionally carries
+      ``input_fingerprint`` for the duplicate-submission dedup contract;
+      other agents leave the slot ``None``.
     - ``research``: a ``task_ids`` dict mapping research-goal names to
       task ids; the top-level ``output_dir`` is shared across children.
     - ``network``: nested under ``network_task`` (``task_id`` +
@@ -99,20 +101,29 @@ def _extract_task_submissions(
         agent: Public agent alias (e.g. ``"analyst"``).
 
     Returns:
-        Tuple of ``(task_id, output_dir)`` pairs; empty when nothing
-        recognizable is present so the caller skips writing.
+        Tuple of ``(task_id, output_dir, input_fingerprint)`` triples;
+        empty when nothing recognizable is present so the caller skips
+        writing. ``input_fingerprint`` is ``None`` for agents that do
+        not participate in the dedup contract.
     """
-    pairs: list[tuple[str, str]] = []
+    pairs: list[tuple[str, str, Optional[str]]] = []
     if agent in ("analyst", "deep_genome"):
         task_id = result.get("task_id")
         if isinstance(task_id, str) and task_id:
-            pairs.append((task_id, str(result.get("output_dir") or "")))
+            fingerprint = result.get("input_fingerprint")
+            pairs.append(
+                (
+                    task_id,
+                    str(result.get("output_dir") or ""),
+                    fingerprint if isinstance(fingerprint, str) else None,
+                )
+            )
     elif agent == "research":
         mapping = result.get("task_ids")
         if isinstance(mapping, Mapping):
             shared_output = str(result.get("output_dir") or "")
             pairs.extend(
-                (str(value), shared_output)
+                (str(value), shared_output, None)
                 for value in mapping.values()
                 if isinstance(value, str) and value
             )
@@ -121,7 +132,13 @@ def _extract_task_submissions(
         if isinstance(nested, Mapping):
             task_id = nested.get("task_id")
             if isinstance(task_id, str) and task_id:
-                pairs.append((task_id, str(nested.get("output_dir") or "")))
+                pairs.append(
+                    (
+                        task_id,
+                        str(nested.get("output_dir") or ""),
+                        None,
+                    )
+                )
     elif agent == "design":
         for key in (
             "protein_design_task",
@@ -133,7 +150,13 @@ def _extract_task_submissions(
                 continue
             task_id = nested.get("task_id")
             if isinstance(task_id, str) and task_id:
-                pairs.append((task_id, str(nested.get("output_dir") or "")))
+                pairs.append(
+                    (
+                        task_id,
+                        str(nested.get("output_dir") or ""),
+                        None,
+                    )
+                )
     return tuple(pairs)
 
 
@@ -177,7 +200,7 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
             )
         )
         manager = TaskManager(db_path)
-        for task_id, output_dir in submissions:
+        for task_id, output_dir, input_fingerprint in submissions:
             manager.record(
                 Submission(
                     task_id=task_id,
@@ -191,6 +214,7 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                         created_at=now,
                         updated_at=now,
                     ),
+                    input_fingerprint=input_fingerprint,
                 )
             )
     except (sqlite3.Error, OSError):

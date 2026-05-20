@@ -11,6 +11,8 @@ OBS storage helpers reused by MCP handlers.
 """
 
 import asyncio
+import hashlib
+import json
 import time
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
@@ -45,6 +47,8 @@ from ...runtime.langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from ...runtime.request_context import current_request_user
+from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ...storage.path_policy import RunIdentity
 from ..shared.analysis_storage import (
     ObsAccessOptions,
@@ -690,6 +694,102 @@ async def submit(
     )
 
 
+def _analyst_task_fingerprint(
+    goal_description: str,
+    data_list: Dict[str, str],
+    obs_file_list: Optional[List[str]],
+    compute_resource: str,
+    user_id: str,
+) -> str:
+    """Return a stable identity digest for one analyst submission.
+
+    This baseline implementation canonicalizes every component so two
+    structurally-identical requests with different dict / list orderings
+    hit the same fingerprint:
+
+    - ``data_list`` is normalized to a sorted list of ``[path,
+      description]`` pairs so a callers's dict insertion order does not
+      affect identity.
+    - ``obs_file_list`` is sorted so upload order is ignored.
+    - ``compute_resource`` and ``user_id`` are included so a
+      small-vs-large submission and a per-user submission stay
+      separate.
+
+    TODO(user, learning-mode): the **business-logic choices below** are
+    where domain knowledge matters most — replace or extend this
+    baseline to match the project's policy:
+
+    - Should ``description`` text participate in identity? Including it
+      treats "same paths, different annotations" as different tasks
+      (safer for documented intent); excluding it treats them as the
+      same (cheaper dedup).
+    - Should ``compute_resource`` participate in identity? Excluding it
+      lets a ``small`` failure dedup against a ``large`` retry; including
+      it (current baseline) treats them as separate tasks.
+    - Should ``user_id`` participate? Including it isolates dedup per
+      user (privacy-safe default); excluding it lets the same public
+      analysis dedup across tenants.
+
+    Args:
+        goal_description: Research goal or analysis objective.
+        data_list: Data files and descriptions for the submission.
+        obs_file_list: Optional OBS files attached to the request.
+        compute_resource: Compute tier (e.g. ``"small"`` / ``"large"``).
+        user_id: Authenticated user id; ``"anonymous"`` on the MCP path.
+
+    Returns:
+        Hex digest string; equal inputs MUST yield equal digests.
+    """
+    canonical = {
+        "goal_description": goal_description,
+        "data_list": sorted(data_list.items()),
+        "obs_file_list": sorted(obs_file_list or []),
+        "compute_resource": compute_resource,
+        "user_id": user_id,
+    }
+    encoded = json.dumps(canonical, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _should_reuse_prior_task(prior_status: str) -> bool:
+    """Decide whether a prior task row may short-circuit a fresh submit.
+
+    The user-supplied decision the dedup contract hinges on:
+
+    - **In-flight** (``submitted`` / ``running`` / ``pending``) → reuse
+      avoids launching a duplicate 30min–3h job; the caller polls the
+      already-running remote id.
+    - **Succeeded** (``succeeded`` / ``success`` / ``completed`` /
+      ``done``) → reuse hands the caller the finished output directly.
+    - **Unknown** → fail safe and resubmit; ``get_task_by_fingerprint``
+      already filters out the dead-status set at the SQL layer, so an
+      unrecognized status here is a sign the prior row is in an
+      unexpected state and shouldn't be trusted.
+
+    TODO(user, learning-mode): the **policy choice** is whether
+    "unknown" defaults to reuse (maximizes dedup) or resubmit
+    (conservative; current baseline). Override this body to flip the
+    policy if the project prefers aggressive dedup over conservative
+    resubmission.
+
+    Args:
+        prior_status: Status string from the tasks registry row.
+
+    Returns:
+        True to short-circuit and return the prior task; False to
+        submit a fresh analysis job.
+    """
+    return prior_status.lower() in {
+        "submitted",
+        "running",
+        "pending",
+        "succeeded",
+        "success",
+        "completed",
+        "done",
+    }
+
+
 async def retrieve_plan_submit(
     goal_description: str,
     data_list: Dict[str, str],
@@ -697,6 +797,13 @@ async def retrieve_plan_submit(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Retrieve context, plan, and submit an analysis through AnalystAgent.
+
+    Computes an input-identity fingerprint from the stable user-supplied
+    inputs and queries ``TaskManager.get_task_by_fingerprint`` before
+    launching the LangGraph workflow. If a reusable prior task exists
+    (per ``_should_reuse_prior_task``), the prior ``task_id`` /
+    ``output_dir`` are returned without running ``agent.arun``, so a
+    duplicate 30min–3h submission collapses into a constant-time lookup.
 
     Args:
         goal_description: Research goal or analysis objective.
@@ -706,9 +813,36 @@ async def retrieve_plan_submit(
             metadata, user, thread, retry, and model overrides.
 
     Returns:
-        AnalystAgent result payload, optionally augmented with ``meta_meta``.
+        AnalystAgent result payload, optionally augmented with
+        ``meta_meta``. Always includes ``input_fingerprint`` so the
+        submit chokepoint can persist the dedup key on the new task row
+        (or carries the prior row's identity on a reuse hit).
     """
     meta_meta = kwargs.get("meta_meta")
+    compute_resource = kwargs.get("compute_resource", "small")
+    user_id = current_request_user() or "anonymous"
+    fingerprint = _analyst_task_fingerprint(
+        goal_description=goal_description,
+        data_list=data_list,
+        obs_file_list=obs_file_list,
+        compute_resource=compute_resource,
+        user_id=user_id,
+    )
+    prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
+        fingerprint
+    )
+    if prior is not None and _should_reuse_prior_task(prior["status"] or ""):
+        reused: Dict[str, Any] = {
+            "task_id": prior["task_id"],
+            "output_dir": prior["output_dir"],
+            "job_name": "",
+            "compute_resource": compute_resource,
+            "input_fingerprint": fingerprint,
+        }
+        if meta_meta:
+            reused["meta_meta"] = meta_meta
+        return reused
+
     agent, output_dir, compute_resource, thread_id = _build_submit_agent(
         kwargs,
         "analyst-retrieve-plan-submit",
@@ -728,6 +862,7 @@ async def retrieve_plan_submit(
     )
     if meta_meta:
         result["meta_meta"] = meta_meta
+    result["input_fingerprint"] = fingerprint
     return result
 
 
