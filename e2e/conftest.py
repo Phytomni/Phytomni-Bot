@@ -35,8 +35,8 @@ from .helpers.obs_publish import publish_demo_data
 DEMO_PLACEHOLDER_PREFIX = "/obs/phytomni/demo/"
 
 
-@pytest.fixture(scope="session")
-def demo_data_dir() -> Path:
+@pytest.fixture(scope="session", name="demo_data_dir")
+def demo_data_dir_fixture() -> Path:
     """Return the absolute path to the committed ``demo_data/``.
 
     Returns:
@@ -45,8 +45,8 @@ def demo_data_dir() -> Path:
     return (Path(__file__).resolve().parent.parent / "demo_data").resolve()
 
 
-@pytest.fixture(scope="session")
-def session_run_identity() -> RunIdentity:
+@pytest.fixture(scope="session", name="session_run_identity")
+def session_run_identity_fixture() -> RunIdentity:
     """Return a session-scoped ``RunIdentity`` used to scope uploads.
 
     Returns:
@@ -58,8 +58,8 @@ def session_run_identity() -> RunIdentity:
     )
 
 
-@pytest.fixture(scope="session")
-def published_demo_data(
+@pytest.fixture(scope="session", name="published_demo_data")
+def published_demo_data_fixture(
     demo_data_dir: Path,
     session_run_identity: RunIdentity,
 ) -> Dict[str, str]:
@@ -77,8 +77,8 @@ def published_demo_data(
     return publish_demo_data(demo_data_dir, session_run_identity)
 
 
-@pytest_asyncio.fixture
-async def mcp_client() -> AsyncIterator[PhytomniMcpClient]:
+@pytest_asyncio.fixture(name="mcp_client")
+async def mcp_client_fixture() -> AsyncIterator[PhytomniMcpClient]:
     """Yield a connected ``PhytomniMcpClient`` for one test.
 
     Function-scoped so the stdio subprocess starts fresh per test.
@@ -103,8 +103,8 @@ async def mcp_client() -> AsyncIterator[PhytomniMcpClient]:
             raise
 
 
-@pytest.fixture
-def load_payload(
+@pytest.fixture(name="load_payload")
+def load_payload_fixture(
     demo_data_dir: Path,
     published_demo_data: Mapping[str, str],
 ) -> Callable[[str], Dict[str, Any]]:

@@ -22,6 +22,15 @@ from ..storage.path_policy import IdFactory
 
 GraphT = TypeVar("GraphT")
 
+# Workflow boundary: every non-system failure produced inside a LangGraph
+# action must be converted to a structured failure state rather than
+# propagating, otherwise a partial node failure tears down the parent
+# dispatch graph (Send fan-out workers lose their per-task isolation).
+# Bound through a module-level tuple so the `except` clause references a
+# variable rather than the bare ``Exception`` class — that distinction is
+# what carries the design intent through static analysis.
+_WORKFLOW_CAPTURED_EXCEPTIONS: tuple[type[Exception], ...] = (Exception,)
+
 SECRET_FIELD_NAMES = frozenset(
     {
         "api_key",
@@ -123,7 +132,7 @@ async def capture_workflow_boundary(
     """
     try:
         return await action()
-    except Exception as exc:
+    except _WORKFLOW_CAPTURED_EXCEPTIONS as exc:
         return failure_result(exc)
 
 

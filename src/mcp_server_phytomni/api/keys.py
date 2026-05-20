@@ -16,6 +16,7 @@ import argparse
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
+from ..common.cli import dispatch_cli
 from ..config.defaults import ApiConfig
 from .auth import ApiKeyStore, get_key_store
 
@@ -101,17 +102,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Run the API key admin CLI.
-
-    Args:
-        argv: Optional argument vector; defaults to ``sys.argv[1:]``.
-
-    Returns:
-        Process exit code (0 on success).
-    """
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    return int(args.func(args))
+    """Run the API key admin CLI."""
+    return dispatch_cli(_build_parser, argv)
 
 
 if __name__ == "__main__":

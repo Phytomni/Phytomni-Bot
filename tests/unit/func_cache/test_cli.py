@@ -11,8 +11,6 @@ explicitly so the singleton points at a tmp_path SQLite.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from mcp_server_phytomni.func_cache.cli import main
@@ -21,28 +19,11 @@ from mcp_server_phytomni.func_cache.storage import Storage
 pytestmark = pytest.mark.unit
 
 
-@pytest.fixture(name="cache_db")
-def cache_db_fixture(tmp_path: Path):
-    """Return the temporary cache database path and tear it down.
-
-    Args:
-        tmp_path: Temporary directory provided by pytest.
-    """
-    db_path = str(tmp_path / "cli.sqlite")
-    yield db_path
-    Storage.get_instance(db_path).close()
-
-
 def test_stats_prints_per_func_counts(
-    cache_db: str, capsys: pytest.CaptureFixture[str]
+    cache_db_two_funcs: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verify stats lists every func with its live entry count."""
-    storage = Storage.get_instance(cache_db)
-    storage.set("alpha", "k1", b"v")
-    storage.set("alpha", "k2", b"v")
-    storage.set("beta", "k1", b"v")
-
-    exit_code = main(["--db-path", cache_db, "stats"])
+    exit_code = main(["--db-path", cache_db_two_funcs, "stats"])
     out = capsys.readouterr().out
 
     assert exit_code == 0
@@ -128,18 +109,16 @@ def test_reexpire_permanent_drops_expiry_on_one_func(cache_db: str) -> None:
 
 
 def test_purge_expired_removes_expired_only(
-    cache_db: str, capsys: pytest.CaptureFixture[str]
+    cache_db_alpha_one_expired: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verify purge-expired drops ttl=0 rows but leaves open-ended rows."""
-    storage = Storage.get_instance(cache_db)
-    storage.set("alpha", "k1", b"v", ttl=0)
-    storage.set("alpha", "k2", b"v")
-
-    exit_code = main(["--db-path", cache_db, "purge-expired"])
+    exit_code = main(
+        ["--db-path", cache_db_alpha_one_expired, "purge-expired"]
+    )
 
     assert exit_code == 0
     assert "expired entries purged" in capsys.readouterr().out
-    assert storage.count("alpha") == 1
+    assert Storage.get_instance(cache_db_alpha_one_expired).count("alpha") == 1
 
 
 def test_reexpire_requires_ttl_or_permanent(cache_db: str) -> None:

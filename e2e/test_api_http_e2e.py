@@ -157,8 +157,8 @@ def _await_healthy(
     )
 
 
-@pytest.fixture(scope="session")
-def api_server(
+@pytest.fixture(scope="session", name="api_server")
+def api_server_fixture(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[ApiServer]:
     """Boot the HTTP API subprocess and yield its URL plus a key.
@@ -211,8 +211,8 @@ def api_server(
     drain.join(timeout=5)
 
 
-@pytest_asyncio.fixture
-async def api_client(
+@pytest_asyncio.fixture(name="api_client")
+async def api_client_fixture(
     api_server: ApiServer,
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Yield an httpx client bound to the live API base URL.

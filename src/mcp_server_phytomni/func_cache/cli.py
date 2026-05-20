@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 from typing import Optional, Sequence
 
+from ..common.cli import dispatch_cli
 from .maintenance import (
     cache_stats,
     purge_all,
@@ -127,17 +128,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Run the func_cache admin CLI.
-
-    Args:
-        argv: Optional argument vector; defaults to ``sys.argv[1:]``.
-
-    Returns:
-        Process exit code (0 on success).
-    """
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    return int(args.func(args))
+    """Run the func_cache admin CLI."""
+    return dispatch_cli(_build_parser, argv)
 
 
 if __name__ == "__main__":

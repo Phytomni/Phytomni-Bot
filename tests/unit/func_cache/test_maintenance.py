@@ -26,18 +26,6 @@ from mcp_server_phytomni.func_cache.storage import Storage
 pytestmark = pytest.mark.unit
 
 
-@pytest.fixture(name="cache_db")
-def cache_db_fixture(tmp_path):
-    """Return the temporary cache database path and tear its singleton down.
-
-    Args:
-        tmp_path: Temporary directory provided by pytest.
-    """
-    db_path = str(tmp_path / "maintenance.sqlite")
-    yield db_path
-    Storage.get_instance(db_path).close()
-
-
 def test_cache_stats_returns_per_func_counts(cache_db):
     """Verify cache_stats reports a live count per known func_id.
 
@@ -120,17 +108,17 @@ def test_reexpire_func_only_extends_one_func(cache_db):
     assert storage.get("beta", "k1") is None
 
 
-def test_purge_expired_entries_removes_expired_rows(cache_db):
+def test_purge_expired_entries_removes_expired_rows(
+    cache_db_alpha_one_expired,
+):
     """Verify purge_expired_entries clears already-expired rows.
 
     Args:
-        cache_db: Temporary cache database path.
+        cache_db_alpha_one_expired: Cache pre-seeded with alpha k1
+            expired and alpha k2 live.
     """
-    storage = Storage.get_instance(cache_db)
-    storage.set("alpha", "k1", b"v", ttl=0)
-    storage.set("alpha", "k2", b"v")
     time.sleep(0.001)
 
-    purge_expired_entries(db_path=cache_db)
+    purge_expired_entries(db_path=cache_db_alpha_one_expired)
 
-    assert cache_stats(db_path=cache_db) == {"alpha": 1}
+    assert cache_stats(db_path=cache_db_alpha_one_expired) == {"alpha": 1}
