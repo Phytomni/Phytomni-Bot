@@ -259,7 +259,13 @@ async def test_agent_run_purges_expired(
     response = await api_client.post(
         "/v1/agents/chat/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={"arguments": {"user_query": "hi", "obs_file_list": []}},
+        json={
+            "arguments": {
+                "user_query": "purge-trigger",
+                "obs_file_list": [],
+            }
+        },
     )
     assert response.status_code == 200
-    assert RunRegistry(tasks_db_path).get_run("run-stale", owner="u1") is None
+    purged = RunRegistry(tasks_db_path).get_run("run-stale", owner="u1")
+    assert purged is None
