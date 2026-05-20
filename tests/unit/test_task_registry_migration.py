@@ -35,6 +35,7 @@ _EXPECTED_COLUMNS = {
     "origin",
     "created_at",
     "updated_at",
+    "input_fingerprint",
 }
 
 
