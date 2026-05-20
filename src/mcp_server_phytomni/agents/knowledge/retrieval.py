@@ -9,7 +9,6 @@ This module exposes retrieval option models plus `retrieve`,
 """
 
 import asyncio
-import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -395,24 +394,55 @@ class RerankOptions:
         return cls(**options)
 
 
-async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
-    """Keyword-compatible cached knowledge-base retrieval.
+@func_cache(
+    key_params=[
+        "user_query",
+        "repo_id",
+        "scope",
+        "page_num",
+        "page_size",
+        "filter_string",
+        "extra_repo_ids",
+        "top_n",
+        "score_threshold",
+    ],
+    ttl=LONG_TTL_SECONDS,
+)
+async def _retrieve_cached(
+    user_query: str,
+    *,
+    repo_id: str,
+    scope: str,
+    page_num: int,
+    page_size: int,
+    filter_string: Optional[str],
+    extra_repo_ids: tuple[str, ...],
+    top_n: int,
+    score_threshold: float,
+    options: RetrieveOptions,
+) -> Dict[str, Any]:
+    """Cache the merged retrieve + rerank answer per user query.
 
-    Caching now lives one layer down at the HTTP primitives
-    (``_retrieve_scope_docs`` and ``_rerank_batch``), so this wrapper
-    is a plain editorial: build a ``RetrieveOptions`` from kwargs,
-    fetch the raw docs, rerank them, and shape the response. Use
-    ``clear_retrieval_caches()`` to drop the cached primitives when
-    the operator wants a fresh remote roundtrip.
+    The cache key is anchored on ``user_query`` plus the minimum set
+    of semantic parameters needed to keep the result correct (which
+    repos are searched, page slice, scope, filter, top-N, and score
+    threshold). Infrastructure parameters carried inside ``options``
+    (URLs, timeouts, retry policy, rerank batching) are deliberately
+    excluded so rotating an endpoint or tuning retries never
+    invalidates the cached answer. ``options`` is forwarded to the
+    cache-miss path that runs ``_retrieve_raw_docs`` + ``rerank``;
+    on a hit the cached doc_list is returned directly so the rerank
+    HTTP is not paid again.
 
-    Args:
-        user_query: Query text to search in the knowledge base.
-        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
-
-    Returns:
-        Dictionary with retrieved document list and total count.
+    ``_retrieve_scope_docs`` keeps its own primitive cache as a
+    second defensive layer: two different ``user_query`` strings that
+    happen to share the same (repo, scope, page) tuple still benefit
+    from primitive-level dedup. ``_rerank_batch`` no longer caches —
+    rerank cost is small compared to retrieval and the composite
+    cache here already covers the user-facing repeat-question case.
     """
-    options = RetrieveOptions.from_kwargs(kwargs)
+    del repo_id, scope, page_num, page_size, filter_string
+    del extra_repo_ids, top_n, score_threshold
     doc_list = await _retrieve_raw_docs(user_query, options)
     return {
         "doc_list": await rerank(
@@ -428,6 +458,38 @@ async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
         ),
         "total": 10000,
     }
+
+
+async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
+    """Keyword-compatible cached knowledge-base retrieval.
+
+    Thin wrapper that resolves ``RetrieveOptions`` from kwargs and
+    forwards to ``_retrieve_cached``. The cache key is anchored on
+    ``user_query`` plus the semantic retrieve parameters; URLs /
+    timeouts / retries / rerank batching live inside ``options`` and
+    are excluded from the key so the cached answer is shared across
+    deployments and retry-policy tweaks.
+
+    Args:
+        user_query: Query text to search in the knowledge base.
+        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
+
+    Returns:
+        Dictionary with retrieved document list and total count.
+    """
+    options = RetrieveOptions.from_kwargs(kwargs)
+    return await _retrieve_cached(
+        user_query,
+        repo_id=options.payload_options.repo_id,
+        scope=options.scope,
+        page_num=options.payload_options.page_num,
+        page_size=options.payload_options.page_size,
+        filter_string=options.payload_options.filter_string,
+        extra_repo_ids=tuple(options.payload_options.extra_repo_ids or ()),
+        top_n=options.page_size,
+        score_threshold=options.score_threshold,
+        options=options,
+    )
 
 
 async def _retrieve_raw_docs(
@@ -564,18 +626,30 @@ async def _retrieve_both_scopes(
     return doc_list
 
 
+@func_cache(
+    key_params=["user_query", "repo_items", "top_n"],
+    ttl=LONG_TTL_SECONDS,
+)
 async def _multi_retrieve(
     user_query: str,
     repo_items: tuple[tuple[str, int], ...],
+    top_n: int,
+    *,
     options: MultiRetrieveOptions,
 ) -> Dict[str, Any]:
-    """Retrieve from multiple repositories and return sorted docs.
+    """Retrieve from multiple repositories and cache the merged result.
 
-    Pure fan-out + sort over already-cached ``retrieve`` calls; the
-    per-repo retrieve invocations hit the primitive caches at
-    ``_retrieve_scope_docs`` and ``_rerank_batch`` so this layer no
-    longer carries its own ``@func_cache``.
+    The composite cache key is anchored on ``user_query`` plus the
+    sorted ``repo_items`` (repo id + page size pairs) and the merged
+    ``top_n`` so identical user-facing requests collapse into one
+    stored answer. ``options`` carries the rerank URL / retry / timeout
+    knobs into the cache-miss path but is excluded from ``key_params``
+    so deploys can rotate those without invalidating the cached
+    answer. On a miss the helper fans out per-repo ``retrieve`` calls
+    (themselves cached at the ``_retrieve_cached`` layer) and merges
+    the results; on a hit the merged doc_list returns directly.
     """
+    del top_n
     try:
         tasks = [
             retrieve(
@@ -625,8 +699,18 @@ async def multi_retrieve(
     repo_items = tuple(sorted(dict(repo_id_dict).items()))
     if semaphore is not None:
         async with semaphore:
-            return await _multi_retrieve(user_query, repo_items, options)
-    return await _multi_retrieve(user_query, repo_items, options)
+            return await _multi_retrieve(
+                user_query,
+                repo_items,
+                options.top_n,
+                options=options,
+            )
+    return await _multi_retrieve(
+        user_query,
+        repo_items,
+        options.top_n,
+        options=options,
+    )
 
 
 async def rerank(
@@ -657,33 +741,21 @@ async def rerank(
     ]
 
 
-def _docs_identity(
-    docs_batch: List[Dict[str, Any]],
-) -> tuple[tuple[Any, str], ...]:
-    """Return a stable order-preserving identity for one rerank batch.
-
-    Each ``(id, content_fingerprint)`` pair is order-sensitive so a
-    reordered batch (which the upstream rerank may rank differently)
-    gets a different cache key. The fingerprint is the first 16 hex
-    chars of ``sha1(title + content)`` — a deterministic digest that
-    is process-stable, unlike Python's salted built-in ``hash``.
-    """
-    pairs: List[tuple[Any, str]] = []
-    for doc in docs_batch:
-        title = str(doc.get("title", ""))
-        content = str(doc.get("content", ""))
-        digest = hashlib.sha1((title + content).encode("utf-8")).hexdigest()
-        pairs.append((doc.get("id"), digest[:16]))
-    return tuple(pairs)
-
-
 async def _rank_docs(
     client: AsyncClient,
     user_query: str,
     docs: List[Dict[str, Any]],
     options: RerankOptions,
 ):
-    """Rank docs, batching when needed."""
+    """Rank docs, batching when needed.
+
+    Rerank batches are no longer individually cached: the composite
+    ``_retrieve_cached`` layer above already memoizes the full
+    rerank-merged answer per user query, so an additional per-batch
+    cache only adds storage churn for a cheap operation. On a cache
+    miss in the composite layer this helper still fans out batches
+    in parallel against the rerank HTTP endpoint.
+    """
     if len(docs) > options.rerank_batch_size:
         chunks = split_list(docs, options.rerank_batch_size)
         tasks = [
@@ -691,7 +763,6 @@ async def _rank_docs(
                 client,
                 user_query=user_query,
                 docs_batch=chunk,
-                docs_identity=_docs_identity(chunk),
                 rerank_url=options.rerank_url,
                 top_n=options.top_n,
                 timeout=options.timeout,
@@ -708,7 +779,6 @@ async def _rank_docs(
         client,
         user_query=user_query,
         docs_batch=docs,
-        docs_identity=_docs_identity(docs),
         rerank_url=options.rerank_url,
         top_n=options.top_n,
         timeout=options.timeout,
@@ -717,40 +787,26 @@ async def _rank_docs(
     )
 
 
-@func_cache(
-    key_params=[
-        "user_query",
-        "rerank_url",
-        "docs_identity",
-        "top_n",
-    ],
-    ttl=LONG_TTL_SECONDS,
-)
 async def _rerank_batch(
     client: AsyncClient,
     *,
     user_query: str,
     docs_batch: List[Dict[str, Any]],
-    docs_identity: tuple[tuple[Any, str], ...],
     rerank_url: str,
     top_n: int,
     timeout: float,
     max_retries: int,
     retriable_codes: tuple[int, ...],
 ):
-    """Send one rerank request batch.
+    """Send one rerank request batch (uncached).
 
-    Cached on (user_query, rerank_url, docs_identity, top_n). The
-    docs_batch list itself stays out of ``key_params`` because it is
-    large and order-sensitive — the caller-supplied ``docs_identity``
-    is the stable hashable summary used for the cache key, while
-    ``docs_batch`` carries the actual content for the HTTP body on
-    a cache miss. Infrastructure params (client, timeout,
-    max_retries, retriable_codes) are excluded from the key.
+    Caching the rerank step individually was removed in favor of the
+    composite ``_retrieve_cached`` cache one layer up: rerank cost is
+    small compared to retrieval, and the composite cache already
+    suppresses repeat work whenever the user issues the same query
+    again. Keeping a per-batch cache here would only add SQLite
+    maintenance load without measurable savings.
     """
-    # docs_identity is the cache-key projection of docs_batch (consumed
-    # by @func_cache key_params); the body uses docs_batch directly.
-    del docs_identity
     result = await post_json_with_retries(
         client,
         JsonPostRequest(
@@ -842,14 +898,15 @@ def _timeout(timeout: float) -> Timeout:
 
 
 def clear_retrieval_caches() -> None:
-    """Drop cached results for the retrieval HTTP primitives.
+    """Drop cached retrieval results across all layers.
 
-    Replaces the previous ``setattr(retrieve, "cache_clear", ...)``
-    attribute-injection pattern. Callers that need a fresh roundtrip
-    against the retrieval or rerank services invoke this single entry
-    point; both the per-scope retrieve cache and the per-batch rerank
-    cache are dropped together because they always cooperate on the
-    same composite query.
+    The retrieval stack now caches in three places: the composite
+    ``_multi_retrieve`` layer (per user_query + repo set + top_n),
+    the per-repo ``_retrieve_cached`` layer (per user_query + repo
+    page slice), and the underlying ``_retrieve_scope_docs`` HTTP
+    primitive. All three are cleared together because they cooperate
+    on the same call path and are always purged as a unit.
     """
+    _multi_retrieve.cache_clear()
+    _retrieve_cached.cache_clear()
     _retrieve_scope_docs.cache_clear()
-    _rerank_batch.cache_clear()

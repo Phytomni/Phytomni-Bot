@@ -116,14 +116,14 @@ def test_network_to_string_uses_cache_for_identical_inputs():
     }
 
 
-async def test_retrieve_uses_primitive_scope_cache(monkeypatch):
-    """Verify retrieve dedupes the retrieve-scope HTTP via the primitive cache.
+async def test_retrieve_uses_composite_cache(monkeypatch):
+    """Verify retrieve memoizes the merged answer per user query.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
 
     Returns:
-        None after primitive-cache hit/miss assertions pass.
+        None after composite-cache hit/miss assertions pass.
     """
     knowledge_retrieval.clear_retrieval_caches()
     calls = {"post": 0, "rerank": 0}
@@ -239,10 +239,10 @@ async def test_retrieve_uses_primitive_scope_cache(monkeypatch):
             "total": 10000,
         }
     )
-    # Primitive _retrieve_scope_docs cache catches the second retrieve
-    # roundtrip, so post stays at 1; the composite cache is gone so the
-    # module-level rerank stub is invoked once per retrieve() call.
-    assert calls == {"post": 1, "rerank": 2}
+    # The composite _retrieve_cached layer memoizes the merged answer,
+    # so the second retrieve(...) returns immediately without touching
+    # either the retrieve HTTP or the rerank stub.
+    assert calls == {"post": 1, "rerank": 1}
 
 
 async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
@@ -334,11 +334,11 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
     )
 
     assert first == second
-    # Two repos × one retrieve HTTP each = 2 primitive cache misses on the
-    # first multi_retrieve; the second multi_retrieve hits the cache for
-    # both repos, so post stays at 2. The composite is gone, so the
-    # stubbed rerank is invoked once per repo per multi_retrieve.
-    assert calls == {"post": 2, "rerank": 4}
+    # The composite _multi_retrieve cache memoizes the merged answer for
+    # the (user_query, repo_items, top_n) tuple. First call: two repos
+    # each hit the retrieve HTTP once and rerank once. Second call hits
+    # the composite cache, so neither retrieve nor rerank is reached.
+    assert calls == {"post": 2, "rerank": 2}
 
 
 async def test_gene_retrieve_is_idempotent_without_composite_cache():
