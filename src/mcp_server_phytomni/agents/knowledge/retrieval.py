@@ -33,7 +33,6 @@ from ...config.defaults import KnowledgeConfig
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
-RETRIEVE_CACHE_TTL = 300
 
 
 @dataclass(frozen=True)
@@ -396,15 +395,24 @@ class RerankOptions:
         return cls(**options)
 
 
-@func_cache(
-    key_params=["user_query", "options"],
-    ttl=RETRIEVE_CACHE_TTL,
-)
-async def _retrieve_cached(
-    user_query: str,
-    options: RetrieveOptions,
-) -> Dict[str, Any]:
-    """Retrieve and rerank documents from a knowledge base."""
+async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
+    """Keyword-compatible cached knowledge-base retrieval.
+
+    Caching now lives one layer down at the HTTP primitives
+    (``_retrieve_scope_docs`` and ``_rerank_batch``), so this wrapper
+    is a plain editorial: build a ``RetrieveOptions`` from kwargs,
+    fetch the raw docs, rerank them, and shape the response. Use
+    ``clear_retrieval_caches()`` to drop the cached primitives when
+    the operator wants a fresh remote roundtrip.
+
+    Args:
+        user_query: Query text to search in the knowledge base.
+        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
+
+    Returns:
+        Dictionary with retrieved document list and total count.
+    """
+    options = RetrieveOptions.from_kwargs(kwargs)
     doc_list = await _retrieve_raw_docs(user_query, options)
     return {
         "doc_list": await rerank(
@@ -420,20 +428,6 @@ async def _retrieve_cached(
         ),
         "total": 10000,
     }
-
-
-async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
-    """Keyword-compatible cached knowledge-base retrieval.
-
-    Args:
-        user_query: Query text to search in the knowledge base.
-        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
-
-    Returns:
-        Dictionary with retrieved document list and total count.
-    """
-    options = RetrieveOptions.from_kwargs(kwargs)
-    return await _retrieve_cached(user_query, options)
 
 
 async def _retrieve_raw_docs(
@@ -570,16 +564,18 @@ async def _retrieve_both_scopes(
     return doc_list
 
 
-@func_cache(
-    key_params=["user_query", "repo_items", "options"],
-    ttl=RETRIEVE_CACHE_TTL,
-)
-async def _multi_retrieve_cached(
+async def _multi_retrieve(
     user_query: str,
     repo_items: tuple[tuple[str, int], ...],
     options: MultiRetrieveOptions,
 ) -> Dict[str, Any]:
-    """Retrieve from multiple repositories and return sorted docs."""
+    """Retrieve from multiple repositories and return sorted docs.
+
+    Pure fan-out + sort over already-cached ``retrieve`` calls; the
+    per-repo retrieve invocations hit the primitive caches at
+    ``_retrieve_scope_docs`` and ``_rerank_batch`` so this layer no
+    longer carries its own ``@func_cache``.
+    """
     try:
         tasks = [
             retrieve(
@@ -629,10 +625,8 @@ async def multi_retrieve(
     repo_items = tuple(sorted(dict(repo_id_dict).items()))
     if semaphore is not None:
         async with semaphore:
-            return await _multi_retrieve_cached(
-                user_query, repo_items, options
-            )
-    return await _multi_retrieve_cached(user_query, repo_items, options)
+            return await _multi_retrieve(user_query, repo_items, options)
+    return await _multi_retrieve(user_query, repo_items, options)
 
 
 async def rerank(
@@ -847,7 +841,15 @@ def _timeout(timeout: float) -> Timeout:
     return Timeout(timeout, connect=timeout)
 
 
-setattr(retrieve, "cache_clear", _retrieve_cached.cache_clear)
-setattr(retrieve, "cache_info", _retrieve_cached.cache_info)
-setattr(multi_retrieve, "cache_clear", _multi_retrieve_cached.cache_clear)
-setattr(multi_retrieve, "cache_info", _multi_retrieve_cached.cache_info)
+def clear_retrieval_caches() -> None:
+    """Drop cached results for the retrieval HTTP primitives.
+
+    Replaces the previous ``setattr(retrieve, "cache_clear", ...)``
+    attribute-injection pattern. Callers that need a fresh roundtrip
+    against the retrieval or rerank services invoke this single entry
+    point; both the per-scope retrieve cache and the per-batch rerank
+    cache are dropped together because they always cooperate on the
+    same composite query.
+    """
+    _retrieve_scope_docs.cache_clear()
+    _rerank_batch.cache_clear()

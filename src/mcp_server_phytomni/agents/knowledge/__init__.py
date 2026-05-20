@@ -15,11 +15,17 @@ from .agent import (
     response_to_string,
     retrieve_generate,
 )
-from .retrieval import multi_retrieve, rerank, retrieve
+from .retrieval import (
+    clear_retrieval_caches,
+    multi_retrieve,
+    rerank,
+    retrieve,
+)
 
 __all__ = [
     "KnowledgeAgent",
     "KnowledgeAgentState",
+    "clear_retrieval_caches",
     "multi_retrieve",
     "multi_retrieve_generate",
     "rerank",

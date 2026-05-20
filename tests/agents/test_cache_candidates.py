@@ -116,19 +116,16 @@ def test_network_to_string_uses_cache_for_identical_inputs():
     }
 
 
-async def test_retrieve_uses_short_ttl_cache(monkeypatch):
-    """Verify retrieve uses short ttl cache.
+async def test_retrieve_uses_primitive_scope_cache(monkeypatch):
+    """Verify retrieve dedupes the retrieve-scope HTTP via the primitive cache.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
 
     Returns:
-        None after cache hit/miss assertions pass.
+        None after primitive-cache hit/miss assertions pass.
     """
-    retrieve_cache_clear = getattr(knowledge_retrieval.retrieve, "cache_clear")
-    retrieve_cache_clear()
-    knowledge_retrieval._retrieve_scope_docs.cache_clear()
-    knowledge_retrieval._rerank_batch.cache_clear()
+    knowledge_retrieval.clear_retrieval_caches()
     calls = {"post": 0, "rerank": 0}
 
     class FakeResponse:
@@ -242,42 +239,72 @@ async def test_retrieve_uses_short_ttl_cache(monkeypatch):
             "total": 10000,
         }
     )
-    assert calls == {"post": 1, "rerank": 1}
+    # Primitive _retrieve_scope_docs cache catches the second retrieve
+    # roundtrip, so post stays at 1; the composite cache is gone so the
+    # module-level rerank stub is invoked once per retrieve() call.
+    assert calls == {"post": 1, "rerank": 2}
 
 
-async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
-    """Verify multi_retrieve uses short ttl cache.
+async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
+    """Verify multi_retrieve hits one retrieve HTTP per (repo, query) tuple.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to replace retrieval.
+        monkeypatch: Pytest monkeypatch fixture used to replace HTTP calls.
 
     Returns:
-        None after cache hit/miss assertions pass.
+        None after primitive-cache hit/miss assertions pass.
     """
-    multi_retrieve_cache_clear = getattr(
-        knowledge_retrieval.multi_retrieve,
-        "cache_clear",
-    )
-    multi_retrieve_cache_clear()
-    calls = {"retrieve": 0}
+    knowledge_retrieval.clear_retrieval_caches()
+    calls = {"post": 0, "rerank": 0}
 
-    async def fake_retrieve(**kwargs):
-        """Return one document keyed by repo id.
+    class FakeResponse:
+        """Minimal retrieve response stub."""
 
-        Args:
-            **kwargs: Retrieval options including repo_id.
+        def raise_for_status(self):
+            """No-op successful status check."""
+            return None
 
-        Returns:
-            Minimal retrieval payload for one repository.
-        """
-        calls["retrieve"] += 1
-        repo_id = kwargs["repo_id"]
-        return {
-            "doc_list": [{"chunk_id": repo_id, "score": 0.8}],
-            "total": 10000,
-        }
+        def json(self):
+            """Return a minimal retrieval JSON payload."""
+            return {
+                "doc_list": [
+                    {
+                        "chunk_id": "doc-1",
+                        "title": "Leaf",
+                        "content": "content",
+                    }
+                ]
+            }
 
-    monkeypatch.setattr(knowledge_retrieval, "retrieve", fake_retrieve)
+    class FakeClient:
+        """Minimal async HTTP client stub for retrieval HTTPs."""
+
+        def __init__(self, *args, **kwargs):
+            """Ignore httpx AsyncClient constructor args."""
+            del args, kwargs
+
+        async def __aenter__(self):
+            """Return self as the async context value."""
+            return self
+
+        async def __aexit__(self, *args):
+            """Discard async-exit arguments."""
+            del args
+
+        async def post(self, *args, **kwargs):
+            """Count POST attempts and return a fake retrieval response."""
+            del args, kwargs
+            calls["post"] += 1
+            return FakeResponse()
+
+    async def fake_rerank(**kwargs):
+        """Return one ranked doc and count the call."""
+        del kwargs
+        calls["rerank"] += 1
+        return [{"chunk_id": "doc-1", "score": 0.9}]
+
+    monkeypatch.setattr(knowledge_retrieval, "AsyncClient", FakeClient)
+    monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_retrieval.multi_retrieve(
         user_query="root growth",
@@ -307,7 +334,11 @@ async def test_multi_retrieve_uses_short_ttl_cache(monkeypatch):
     )
 
     assert first == second
-    assert calls["retrieve"] == 2
+    # Two repos × one retrieve HTTP each = 2 primitive cache misses on the
+    # first multi_retrieve; the second multi_retrieve hits the cache for
+    # both repos, so post stays at 2. The composite is gone, so the
+    # stubbed rerank is invoked once per repo per multi_retrieve.
+    assert calls == {"post": 2, "rerank": 4}
 
 
 async def test_gene_retrieve_uses_agent_context_cache():
