@@ -28,6 +28,7 @@ from ..mcp.app import invoke_tool_formatted
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
+    bind_run_id,
     current_request_id,
     current_request_user,
     reset_request_var,
@@ -406,6 +407,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         request_id = IdFactory().new_id("request")
         id_token = bind_request_id(request_id)
         user_token = bind_request_user(None)
+        run_token = bind_run_id(None)
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -417,6 +419,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         try:
             await app(scope, receive, send_with_header)
         finally:
+            reset_request_var(run_token)
             reset_request_var(user_token)
             reset_request_var(id_token)
 
