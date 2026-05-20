@@ -13,7 +13,9 @@ from typing import Any
 
 import pytest
 
+import mcp_server_phytomni.func_cache as func_cache_pkg
 from mcp_server_phytomni.func_cache.decorator import (
+    LONG_TTL_SECONDS,
     default_cache_db_path,
     func_cache,
 )
@@ -370,3 +372,14 @@ async def test_func_cache_async_concurrent_miss_runs_once(tmp_path):
     ]
     assert calls["count"] == 1
     assert expensive.cache_info() == {"hits": 2, "misses": 1, "count": 1}
+
+
+def test_long_ttl_seconds_is_ninety_days_and_exported():
+    """Verify the shared long TTL constant value and package export.
+
+    Returns:
+        None after the constant equals 90 days and is re-exported.
+    """
+    assert LONG_TTL_SECONDS == 90 * 24 * 3600
+    assert func_cache_pkg.LONG_TTL_SECONDS is LONG_TTL_SECONDS
+    assert "LONG_TTL_SECONDS" in func_cache_pkg.__all__

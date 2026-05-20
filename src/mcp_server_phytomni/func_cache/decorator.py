@@ -38,6 +38,12 @@ _CACHE_MISS = object()
 DEFAULT_CACHE_DB_ENV = "PHYTOMNI_CACHE_DB"
 DEFAULT_CACHE_DB_PATH = Path(".cache") / "phytomni" / "func_cache.sqlite"
 
+# Shared TTL for caches over scarce remote resources (LLM completions,
+# retrieval, rerank, nl2sql, BI lookups). Storage is ample but remote
+# LLM/GPU concurrency is the bottleneck, so these entries persist ~90
+# days; per-entry expiry is rewritable via the phytomni-cache CLI.
+LONG_TTL_SECONDS = 90 * 24 * 3600
+
 
 @dataclass(frozen=True)
 class CacheOptions:

@@ -8,7 +8,7 @@ This package exposes `func_cache`, cache key building, serialization,
 storage, lock management, and cache-specific exception classes.
 """
 
-from .decorator import func_cache
+from .decorator import LONG_TTL_SECONDS, func_cache
 from .storage import Storage
 
-__all__ = ["func_cache", "Storage"]
+__all__ = ["LONG_TTL_SECONDS", "func_cache", "Storage"]
