@@ -299,7 +299,7 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
         return FakeChatCompletion(f"answer-{calls['create']}")
 
     def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
-        """Return a SimpleNamespace mimicking AsyncOpenAI(api_key, base_url)."""
+        """Return a SimpleNamespace mimicking AsyncOpenAI's surface."""
         del api_key, base_url
         return SimpleNamespace(
             chat=SimpleNamespace(
@@ -378,7 +378,7 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
         return FakeChatCompletion("recovered")
 
     def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
-        """Return a SimpleNamespace mimicking AsyncOpenAI(api_key, base_url)."""
+        """Return a SimpleNamespace mimicking AsyncOpenAI's surface."""
         del api_key, base_url
         return SimpleNamespace(
             chat=SimpleNamespace(
