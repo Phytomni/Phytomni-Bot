@@ -29,7 +29,7 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
   offline `pytest`, `yamllint`, `shellcheck`, `shfmt`, `mdformat`,
-  `pymarkdown`, and `jsonlint`.
+  `pymarkdown`, `toml-sort`, `validate-pyproject`, and `jsonlint`.
 - Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
   and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
   every MCP tool against real backends through `PhytomniMcpClient`. See
@@ -747,16 +747,20 @@ by the style tests and are reserved for documented framework boundaries.
 
 `./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
 whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
-yamllint, mdformat, pymarkdown, jsonlint, `demo_data/` idempotency, then
-`pytest`) over every tracked file — the same checks as CI and the
-`.githooks/pre-push` hook.
+yamllint, mdformat, pymarkdown, toml-sort, validate-pyproject, jsonlint,
+`demo_data/` idempotency, then `pytest`) over every tracked file — the
+same checks as CI and the `.githooks/pre-push` hook.
 Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
 (`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
 `scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
 `go install mvdan.cc/sh/v3/cmd/shfmt` cached under `.cache/phytomni/`.
 Markdown (`*.md`, excluding generator-owned `demo_data/*.md`) gets both a
 format check (`mdformat --check`, GFM) and static analysis (`pymarkdown`,
-configured through `[tool.pymarkdown]` in `pyproject.toml`). A `Makefile`
+configured through `[tool.pymarkdown]` in `pyproject.toml`). TOML
+(`*.toml`) gets both a format check (`toml-sort --check`, configured
+through `[tool.tomlsort]` to keep the existing table order, 4-space
+multiline arrays, and trailing commas) and schema validation
+(`validate-pyproject` over every tracked `pyproject.toml`). A `Makefile`
 wraps it and adds a **scoped** gate (`scripts/scoped_gate.sh`) that runs
 those same tools and
 flags but only over the files in the active change region, so parallel work is
@@ -776,7 +780,11 @@ file kind did not change, runs `demo_data/` idempotency only when `demo_data/`
 changed, and always runs the whole-tree structural tests
 (`test_style_naming` / `test_pytest_layers` / `test_package_boundaries`)
 whenever any `.py` changed, and (like the full gate) runs `shellcheck` plus
-`shfmt -d -i 4` over any changed shell scripts. `make push` uses an SSH
+`shfmt -d -i 4` over any changed shell scripts, `mdformat --check` plus
+`pymarkdown` over any changed Markdown (excluding generator-owned
+`demo_data/*.md`), and `toml-sort --check` plus `validate-pyproject` (the
+latter only on changed `*pyproject.toml`) over any changed `*.toml`.
+`make push` uses an SSH
 keepalive instead of `--no-verify`, so the pre-push hook still runs. Exporting
 `PHYTOMNI_SCOPED_GATE=1` makes the `.githooks/pre-push` hook run the scoped
 gate instead of the full gate (e.g. `PHYTOMNI_SCOPED_GATE=1 git push`, or
@@ -819,6 +827,9 @@ python scripts/normalize_json.py \
 - `yamllint .`
 - `mdformat --check` and `pymarkdown --config pyproject.toml scan` over
   tracked `*.md` (excluding generator-owned `demo_data/`)
+- `toml-sort --check` over tracked `*.toml` and `validate-pyproject`
+  over every tracked `*pyproject.toml` (`[tool.tomlsort]` config keeps
+  the existing table order and array style)
 - `shellcheck` and `shfmt -d -i 4` over tracked `*.sh` and `.githooks/*`
 - `jsonlint "$file" --quiet` for every tracked JSON file
 
@@ -874,6 +885,8 @@ Development dependencies include:
 - `shellcheck-py`
 - `mdformat` and `mdformat-gfm`
 - `pymarkdownlnt`
+- `toml-sort`
+- `validate-pyproject`
 
 Demo / live-E2E dependencies (`[project.optional-dependencies].demo`) cover
 the `demo_data/` regenerator and the e2e suite's bundled imports:
