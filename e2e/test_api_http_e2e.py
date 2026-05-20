@@ -512,7 +512,7 @@ async def test_brief_gene_completion(
     api_client: httpx.AsyncClient,
     api_server: ApiServer,
 ) -> None:
-    """``phyto-brief-gene`` returns a gene-card for AT1G01010.
+    """``phyto-brief-gene`` returns a gene-card for Os01g0177400.
 
     ~10 min: the synchronous endpoint blocks until BriefGene finishes.
 

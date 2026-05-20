@@ -4,7 +4,7 @@
 """Live e2e test for ``DigitalDesignAgent`` with full task polling.
 
 Submits the committed digital_design_agent.json payload (protein and
-promoter design for AT1G75370 in Arabidopsis thaliana) through the
+promoter design for Os01g0177400 in rice, Oryza sativa) through the
 stdio MCP client, polls ``server_tasks.db`` until the task reaches
 terminal status, and asserts the produced output directory is
 non-empty so the regression catches design submissions that succeed

@@ -4,7 +4,7 @@
 """Live e2e test for ``DataAgent`` over the stdio MCP client.
 
 Submits the committed ``data_agent.json`` payload (an NL2SQL homology
-question about AT1G75370 orthologs in wheat) and asserts the formatted
+question about Os01g0177400 orthologs in wheat) and asserts the formatted
 answer contains either a SQL-looking statement or a structured result
 fragment, so the regression catches both blank responses and
 free-text-only completions that bypass the SQL backend.
@@ -23,14 +23,14 @@ from .helpers.client import call_tool
 pytestmark = pytest.mark.live
 
 SQL_CUES = ("select", "from", "where", "join", "limit")
-HOMOLOG_CUES = ("traes", "homolog", "ortholog", "at1g75370", "identity")
+HOMOLOG_CUES = ("traes", "homolog", "ortholog", "os01g0177400", "identity")
 
 
 async def test_data_agent_e2e_returns_nl2sql_response(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], Dict[str, Any]],
 ) -> None:
-    """DataAgent answers the AT1G75370 homology query.
+    """DataAgent answers the Os01g0177400 homology query.
 
     Args:
         mcp_client: Session-scoped MCP client.

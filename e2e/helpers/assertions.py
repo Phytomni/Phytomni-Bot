@@ -22,7 +22,7 @@ WHEAT_DROUGHT_KEYWORDS = (
     "dreb",
     "snrk",
 )
-GENE_ID = "AT1G01010"
+GENE_ID = "Os01g0177400"
 ANNOTATION_CUES = (
     "function",
     "expression",

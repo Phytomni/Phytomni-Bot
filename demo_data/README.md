@@ -14,13 +14,13 @@ working tree stays clean after a rerun.
 | --- | --- | --- | --- |
 | ChatAgent | sync | [payloads/chat_agent.json](payloads/chat_agent.json) | General Q&A on C3 photosynthesis (no file upload). |
 | KnowledgeAgent | sync | [payloads/knowledge_agent.json](payloads/knowledge_agent.json) | Evidence-backed wheat drought-tolerance question. |
-| DataAgent | sync | [payloads/data_agent.json](payloads/data_agent.json) | NL2SQL homology lookup for AT1G75370 in wheat. |
+| DataAgent | sync | [payloads/data_agent.json](payloads/data_agent.json) | NL2SQL homology lookup for Os01g0177400 in wheat. |
 | AnalystAgent | async | [payloads/analyst_agent.json](payloads/analyst_agent.json) | ATAC-seq peak-calling submission on rice replicates. |
 | ReviewAgent | sync | [payloads/review_agent.json](payloads/review_agent.json) | Multi-section sorghum drought literature review. |
-| BriefGeneAgent | sync | [payloads/brief_gene_agent.json](payloads/brief_gene_agent.json) | Concise gene card for AT1G01010. |
-| DeepGenomeAgent | async | [payloads/deep_genome_agent.json](payloads/deep_genome_agent.json) | Deep gene-function analysis for AT1G75370 in ath. |
+| BriefGeneAgent | sync | [payloads/brief_gene_agent.json](payloads/brief_gene_agent.json) | Concise gene card for Os01g0177400. |
+| DeepGenomeAgent | async | [payloads/deep_genome_agent.json](payloads/deep_genome_agent.json) | Deep gene-function analysis for Os01g0177400 in osa. |
 | InSilicoResearchAgent | async | [payloads/in_silico_research_agent.json](payloads/in_silico_research_agent.json) | Reproducibility tasks decomposed from the brief PDF. |
-| DigitalDesignAgent | async | [payloads/digital_design_agent.json](payloads/digital_design_agent.json) | Protein and promoter design for AT1G75370. |
+| DigitalDesignAgent | async | [payloads/digital_design_agent.json](payloads/digital_design_agent.json) | Protein and promoter design for Os01g0177400. |
 | GeneNetworkAgent | async | [payloads/gene_network_agent.json](payloads/gene_network_agent.json) | Trait-network analysis for rice (TO:0000207). |
 | GetTaskStatus | sync | [payloads/get_task_status.json](payloads/get_task_status.json) | Non-blocking status poll for a submitted task id. |
 

@@ -95,7 +95,7 @@ PAYLOADS: Dict[str, Dict[str, Any]] = {
     },
     "data_agent.json": {
         "user_query": (
-            "What are the homologous genes of AT1G75370 in wheat "
+            "What are the homologous genes of Os01g0177400 in wheat "
             "(Triticum aestivum)? List up to ten orthologs with their "
             "gene IDs and identity scores."
         ),
@@ -134,11 +134,11 @@ PAYLOADS: Dict[str, Dict[str, Any]] = {
         ),
     },
     "brief_gene_agent.json": {
-        "user_query": "AT1G01010",
+        "user_query": "Os01g0177400",
     },
     "deep_genome_agent.json": {
-        "gene_id": "AT1G75370",
-        "species_code": "ath",
+        "gene_id": "Os01g0177400",
+        "species_code": "osa",
     },
     "in_silico_research_agent.json": {
         "data_list": {
@@ -164,9 +164,9 @@ PAYLOADS: Dict[str, Dict[str, Any]] = {
         ),
     },
     "digital_design_agent.json": {
-        "gene_id": "AT1G75370",
+        "gene_id": "Os01g0177400",
         "obs_file_list": [],
-        "species": "arabidopsis thaliana",
+        "species": "oryza sativa",
     },
     "gene_network_agent.json": {
         "obs_file_list": [],
@@ -279,7 +279,7 @@ TOOL_INDEX: Tuple[Dict[str, str], ...] = (
         "name": "DataAgent",
         "payload": "payloads/data_agent.json",
         "kind": "sync",
-        "summary": "NL2SQL homology lookup for AT1G75370 in wheat.",
+        "summary": "NL2SQL homology lookup for Os01g0177400 in wheat.",
     },
     {
         "name": "AnalystAgent",
@@ -297,13 +297,13 @@ TOOL_INDEX: Tuple[Dict[str, str], ...] = (
         "name": "BriefGeneAgent",
         "payload": "payloads/brief_gene_agent.json",
         "kind": "sync",
-        "summary": "Concise gene card for AT1G01010.",
+        "summary": "Concise gene card for Os01g0177400.",
     },
     {
         "name": "DeepGenomeAgent",
         "payload": "payloads/deep_genome_agent.json",
         "kind": "async",
-        "summary": "Deep gene-function analysis for AT1G75370 in ath.",
+        "summary": "Deep gene-function analysis for Os01g0177400 in osa.",
     },
     {
         "name": "InSilicoResearchAgent",
@@ -315,7 +315,7 @@ TOOL_INDEX: Tuple[Dict[str, str], ...] = (
         "name": "DigitalDesignAgent",
         "payload": "payloads/digital_design_agent.json",
         "kind": "async",
-        "summary": "Protein and promoter design for AT1G75370.",
+        "summary": "Protein and promoter design for Os01g0177400.",
     },
     {
         "name": "GeneNetworkAgent",

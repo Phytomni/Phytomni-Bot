@@ -4,8 +4,9 @@
 """Live e2e test for ``BriefGeneAgent`` over the stdio MCP client.
 
 Submits the committed ``brief_gene_agent.json`` payload (the single
-locus AT1G01010) and asserts the formatted answer mentions the gene
-identifier together with at least one of the canonical gene-card
+rice locus Os01g0177400, Oryza sativa) and asserts the formatted
+answer mentions the gene identifier together with at least one of
+the canonical gene-card
 sections (function/expression/orthology/literature), so the regression
 catches both empty responses and free-form prose that bypassed the
 gene-annotation lookup.
@@ -29,7 +30,7 @@ async def test_brief_gene_agent_e2e_returns_gene_card(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], Dict[str, Any]],
 ) -> None:
-    """BriefGeneAgent returns a gene-card for AT1G01010.
+    """BriefGeneAgent returns a gene-card for Os01g0177400.
 
     Args:
         mcp_client: Session-scoped MCP client.

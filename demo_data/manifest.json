@@ -22,7 +22,7 @@
       "kind": "sync",
       "name": "DataAgent",
       "payload": "payloads/data_agent.json",
-      "summary": "NL2SQL homology lookup for AT1G75370 in wheat."
+      "summary": "NL2SQL homology lookup for Os01g0177400 in wheat."
     },
     {
       "kind": "async",
@@ -40,13 +40,13 @@
       "kind": "sync",
       "name": "BriefGeneAgent",
       "payload": "payloads/brief_gene_agent.json",
-      "summary": "Concise gene card for AT1G01010."
+      "summary": "Concise gene card for Os01g0177400."
     },
     {
       "kind": "async",
       "name": "DeepGenomeAgent",
       "payload": "payloads/deep_genome_agent.json",
-      "summary": "Deep gene-function analysis for AT1G75370 in ath."
+      "summary": "Deep gene-function analysis for Os01g0177400 in osa."
     },
     {
       "kind": "async",
@@ -58,7 +58,7 @@
       "kind": "async",
       "name": "DigitalDesignAgent",
       "payload": "payloads/digital_design_agent.json",
-      "summary": "Protein and promoter design for AT1G75370."
+      "summary": "Protein and promoter design for Os01g0177400."
     },
     {
       "kind": "async",

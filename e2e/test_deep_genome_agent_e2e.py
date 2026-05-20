@@ -3,8 +3,9 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Live e2e test for ``DeepGenomeAgent`` with full task polling.
 
-Submits the deep gene-function analysis for AT1G75370 in Arabidopsis
-through the stdio MCP client, polls ``server_tasks.db`` until the task
+Submits the deep gene-function analysis for Os01g0177400 in rice
+(Oryza sativa) through the stdio MCP client, polls ``server_tasks.db``
+until the task
 reaches terminal status, and asserts the produced output directory is
 non-empty so the regression catches submissions that succeed in the
 queue but never write artifacts.
