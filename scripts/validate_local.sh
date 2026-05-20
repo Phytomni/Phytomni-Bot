@@ -47,6 +47,19 @@ run scripts/shfmt_runner.sh -d -i 4 "$@"
 
 run uv run yamllint .
 
+# actionlint adds workflow-semantic checks (action versions, required
+# inputs, shell errors in run: blocks) on top of yamllint's YAML-shape
+# coverage; the runner is the same pinned go-installed binary CI uses.
+set --
+while IFS= read -r wffile; do
+    if [ -n "$wffile" ]; then
+        set -- "$@" "$wffile"
+    fi
+done <<EOF
+$(git ls-files '.github/workflows/*')
+EOF
+run scripts/actionlint_runner.sh "$@"
+
 # demo_data/*.md is generator-owned (covered by the demo_data idempotency
 # check below); exclude it so the gate never expects hand-formatted fixtures.
 set --
