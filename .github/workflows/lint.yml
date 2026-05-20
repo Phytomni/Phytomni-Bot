@@ -224,6 +224,28 @@ jobs:
           git ls-files -z '*.md' ':!:demo_data/' \
             | xargs -0 -r pymarkdown --config pyproject.toml scan
 
+  toml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install --system -e ".[dev]"
+      - name: Check TOML formatting with toml-sort
+        run: |
+          git ls-files -z '*.toml' \
+            | xargs -0 -r toml-sort --check
+      - name: Validate pyproject.toml schemas
+        run: |
+          git ls-files -z '*pyproject.toml' \
+            | xargs -0 -r validate-pyproject
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

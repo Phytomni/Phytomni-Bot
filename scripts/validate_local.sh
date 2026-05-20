@@ -60,6 +60,28 @@ EOF
 run uv run mdformat --check "$@"
 run uv run pymarkdown --config pyproject.toml scan "$@"
 
+# toml-sort owns formatting (reads [tool.tomlsort] from pyproject.toml, no
+# CLI flags); validate-pyproject is schema-scoped to pyproject.toml files.
+set --
+while IFS= read -r tomlfile; do
+    if [ -n "$tomlfile" ]; then
+        set -- "$@" "$tomlfile"
+    fi
+done <<EOF
+$(git ls-files '*.toml')
+EOF
+run uv run toml-sort --check "$@"
+
+set --
+while IFS= read -r ppfile; do
+    if [ -n "$ppfile" ]; then
+        set -- "$@" "$ppfile"
+    fi
+done <<EOF
+$(git ls-files '*pyproject.toml')
+EOF
+run uv run validate-pyproject "$@"
+
 if command -v jsonlint >/dev/null 2>&1; then
     jsonlint_cmd() { jsonlint "$1" --quiet; }
 else
