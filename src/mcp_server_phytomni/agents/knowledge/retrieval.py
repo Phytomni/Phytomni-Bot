@@ -29,7 +29,7 @@ from ...common.http import (
 )
 from ...common.lists import split_list
 from ...config.defaults import KnowledgeConfig
-from ...func_cache import func_cache
+from ...func_cache import LONG_TTL_SECONDS, func_cache
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
 RETRIEVE_CACHE_TTL = 300
@@ -469,6 +469,19 @@ async def _retrieve_raw_docs(
     return _list_or_empty(docs)
 
 
+@func_cache(
+    key_params=[
+        "user_query",
+        "retrieve_url",
+        "repo_id",
+        "scope",
+        "page_num",
+        "page_size",
+        "filter_string",
+        "extra_repo_ids",
+    ],
+    ttl=LONG_TTL_SECONDS,
+)
 async def _retrieve_scope_docs(
     client: AsyncClient,
     *,
@@ -486,13 +499,13 @@ async def _retrieve_scope_docs(
 ) -> Any:
     """Retrieve docs for a single knowledge-base scope.
 
-    The retrieval-service body is built inline from the explicit
-    scalar arguments rather than from a wrapped options object so
-    every semantic input (user_query / repo_id / scope / paging /
-    filter / extras) is visible at the call site and every infra
-    parameter (client / timeout / max_retries / retriable_codes)
-    stays plain function-level, leaving the body shape unchanged
-    from the previous ``RetrieveOptions.payload`` form.
+    Cached on the semantic inputs only (query, service URL, repo,
+    scope, paging, filter, extras) using LONG_TTL_SECONDS so identical
+    retrieval requests skip the remote HTTP roundtrip. Infrastructure
+    parameters — ``client`` / ``timeout`` / ``max_retries`` /
+    ``retriable_codes`` — are intentionally absent from ``key_params``
+    so flipping a retry policy or rotating the HTTP client does not
+    invalidate the cache.
     """
     result = await post_json_with_retries(
         client,
