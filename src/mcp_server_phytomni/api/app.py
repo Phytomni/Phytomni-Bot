@@ -33,7 +33,7 @@ from ..runtime.request_context import (
     reset_request_var,
 )
 from ..runtime.run_registry import RunRegistry, RunSpec
-from ..runtime.task_manager import resolve_tasks_db_path
+from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from .auth import ApiPrincipal, require_principal
 from .openai_mapping import (
@@ -44,7 +44,12 @@ from .openai_mapping import (
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
-from .schemas import ApiErrorDetail, ApiErrorResponse, ChatCompletionRequest
+from .schemas import (
+    AgentRunRequest,
+    ApiErrorDetail,
+    ApiErrorResponse,
+    ChatCompletionRequest,
+)
 
 __all__ = ["create_app"]
 
@@ -70,6 +75,31 @@ _MODEL_TO_AGENT_SLUG = {
     "phyto-review": "review",
     "phyto-brief-gene": "brief_gene",
 }
+
+# Full ``slug -> MCP tool name`` map for the native ``/v1/agents``
+# endpoints. Slugs mirror the ``agents/<domain>/`` directory naming
+# so the run table speaks the same vocabulary as the in-process agent
+# packages.
+_AGENT_SLUG_TO_TOOL = {
+    "chat": "ChatAgent",
+    "knowledge": "KnowledgeAgent",
+    "data": "DataAgent",
+    "review": "ReviewAgent",
+    "brief_gene": "BriefGeneAgent",
+    "analyst": "AnalystAgent",
+    "deep_genome": "DeepGenomeAgent",
+    "research": "InSilicoResearchAgent",
+    "design": "DigitalDesignAgent",
+    "network": "GeneNetworkAgent",
+}
+
+# Slugs whose handlers submit a remote analysis task and rely on the
+# ``_records_submission`` chokepoint in ``mcp/handlers`` to write the
+# runs row with ``origin="remote"``; the API layer instead reads
+# ``tasks.run_id`` back via ``TaskManager.run_id_for_task``.
+_REMOTE_AGENT_SLUGS = frozenset(
+    {"analyst", "deep_genome", "research", "design", "network"}
+)
 
 
 def _record_sync_run(
@@ -343,6 +373,67 @@ def create_app() -> FastAPI:
                 ),
             )
         )
+
+    @app.get("/v1/agents")
+    async def list_agents(
+        principal: ApiPrincipal = Depends(authorized),
+    ) -> JSONResponse:
+        """List the agents reachable via ``/v1/agents/{slug}/runs``."""
+        del principal
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "slug": slug,
+                        "tool": tool,
+                        "origin": (
+                            "remote"
+                            if slug in _REMOTE_AGENT_SLUGS
+                            else "local"
+                        ),
+                    }
+                    for slug, tool in _AGENT_SLUG_TO_TOOL.items()
+                ],
+            }
+        )
+
+    @app.post("/v1/agents/{agent}/runs")
+    async def create_agent_run(
+        agent: str,
+        payload: AgentRunRequest,
+        principal: ApiPrincipal = Depends(authorized),
+    ) -> JSONResponse:
+        """Invoke one agent by slug and return its run id + result.
+
+        Sync agents (chat / knowledge / data / review / brief_gene)
+        get an ``origin="local"`` terminal run written here; remote
+        agents (analyst / deep_genome / research / design / network)
+        rely on the in-process ``_records_submission`` chokepoint to
+        write ``origin="remote"`` and we look the resulting ``run_id``
+        back up via ``tasks.run_id``.
+        """
+        del principal
+        tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
+        if tool_name is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"agent not found: {agent}",
+            )
+        formatted = await invoke_tool_formatted(tool_name, payload.arguments)
+        result = asdict(formatted)
+        owner = current_request_user() or "anonymous"
+        if agent in _REMOTE_AGENT_SLUGS:
+            metadata = result.get("metadata") or {}
+            task_id = metadata.get("task_id")
+            run_id = (
+                TaskManager(resolve_tasks_db_path()).run_id_for_task(task_id)
+                if isinstance(task_id, str) and task_id
+                else None
+            )
+        else:
+            run_id = _record_sync_run(agent=agent, owner=owner, result=result)
+        return JSONResponse({"run_id": run_id, "result": result})
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

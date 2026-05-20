@@ -290,6 +290,34 @@ class TaskManager:
             )
         )
 
+    def run_id_for_task(self, task_id: str) -> Optional[str]:
+        """Return the owning ``run_id`` for a task, or ``None``.
+
+        Single non-blocking ``SELECT`` so the HTTP API layer can surface
+        the chokepoint-minted run id back to the caller after a remote
+        submission, without binding a contextvar across the call seam
+        (the chokepoint mints the id and writes it via ``record``; this
+        method reads it back from ``tasks.run_id``).
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            The owning ``run_id`` when both the row and its ``run_id``
+            column are populated, otherwise ``None``.
+        """
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT run_id FROM tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None or not row[0]:
+            return None
+        return str(row[0])
+
     def get_task(self, task_id: str) -> Optional[Dict[str, str]]:
         """Return one task row, or None when the id is unknown.
 

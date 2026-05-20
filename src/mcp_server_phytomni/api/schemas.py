@@ -5,20 +5,21 @@
 """HTTP API request and response schemas.
 
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
-    ChatCompletionRequest.
+    ChatCompletionRequest, AgentRunRequest.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
+    "AgentRunRequest",
     "ApiErrorDetail",
     "ApiErrorResponse",
-    "ChatMessage",
     "ChatCompletionRequest",
+    "ChatMessage",
 ]
 
 
@@ -79,3 +80,18 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     stream: bool = False
     obs_file_list: Optional[List[str]] = None
+
+
+class AgentRunRequest(BaseModel):
+    """Body for ``POST /v1/agents/{agent}/runs``.
+
+    The agent slug is positional in the URL so the body carries only
+    the per-tool arguments. Validation against the per-tool Pydantic
+    model lives one layer below in ``invoke_tool_formatted`` so this
+    schema stays free of agent-shape coupling.
+
+    Attributes:
+        arguments: Tool-specific kwargs forwarded to the agent.
+    """
+
+    arguments: Dict[str, Any] = Field(default_factory=dict)
