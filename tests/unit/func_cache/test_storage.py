@@ -82,3 +82,58 @@ def test_storage_can_replace_expired_lock(cache_storage):
     time.sleep(0.002)
 
     assert cache_storage.try_acquire_lock("func", "key", "fresh-owner", 0.001)
+
+
+def test_storage_list_funcs_returns_distinct_sorted(cache_storage):
+    """Verify list_funcs returns distinct func_ids sorted.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
+    cache_storage.set("zeta", "k1", b"v")
+    cache_storage.set("zeta", "k2", b"v")
+    cache_storage.set("alpha", "k1", b"v")
+
+    assert cache_storage.list_funcs() == ["alpha", "zeta"]
+
+
+def test_storage_list_funcs_empty_when_no_entries(cache_storage):
+    """Verify list_funcs is empty when no entries exist.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
+    assert cache_storage.list_funcs() == []
+
+
+def test_storage_reexpire_all_to_none_makes_entries_permanent(cache_storage):
+    """Verify reexpire(None, None) clears expiry on every row.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
+    cache_storage.set("f1", "k1", b"v", ttl=0)
+    cache_storage.set("f2", "k1", b"v", ttl=0)
+
+    rowcount = cache_storage.reexpire(None, None)
+
+    assert rowcount == 2
+    assert cache_storage.get("f1", "k1") == b"v"
+    assert cache_storage.get("f2", "k1") == b"v"
+
+
+def test_storage_reexpire_one_func_only_touches_that_func(cache_storage):
+    """Verify reexpire(func_id, ...) only updates that func's rows.
+
+    Args:
+        cache_storage: Temporary cache storage fixture.
+    """
+    cache_storage.set("f1", "k1", b"v", ttl=0)
+    cache_storage.set("f2", "k1", b"v", ttl=0)
+
+    far_future = time.time() + 3600
+    rowcount = cache_storage.reexpire("f1", far_future)
+
+    assert rowcount == 1
+    assert cache_storage.get("f1", "k1") == b"v"
+    assert cache_storage.get("f2", "k1") is None

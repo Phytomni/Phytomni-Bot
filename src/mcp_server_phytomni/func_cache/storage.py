@@ -263,6 +263,62 @@ class Storage:
         except sqlite3.Error as e:
             raise StorageError(f"Failed to purge expired cache: {e}") from e
 
+    def list_funcs(self):
+        """List distinct func_ids that currently hold cache entries.
+
+        Returns:
+            Sorted list of func_id strings present in cache_entries.
+
+        Raises:
+            StorageError: If SQLite read operations fail.
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "SELECT DISTINCT func_id FROM cache_entries "
+                "ORDER BY func_id"
+            )
+            return [row[0] for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to list cached funcs: {e}") from e
+
+    def reexpire(self, func_id, new_expires_at):
+        """Rewrite expires_at on cache entries, returning rowcount.
+
+        Used by the phytomni-cache maintenance CLI to batch-extend or
+        clear per-entry expiry without re-running the underlying
+        cached call. Operates on the live row set only — already-
+        deleted entries are not resurrected.
+
+        Args:
+            func_id: Restrict the rewrite to one function id, or None
+                to rewrite every cache_entries row.
+            new_expires_at: Absolute Unix timestamp at which the
+                entries should next expire, or None to make them
+                permanent (no TTL).
+
+        Returns:
+            Number of rows updated.
+
+        Raises:
+            StorageError: If SQLite update operations fail.
+        """
+        try:
+            conn = self._get_conn()
+            if func_id is None:
+                cursor = conn.execute(
+                    "UPDATE cache_entries SET expires_at=?",
+                    (new_expires_at,),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE cache_entries SET expires_at=? WHERE func_id=?",
+                    (new_expires_at, func_id),
+                )
+            return cursor.rowcount
+        except sqlite3.Error as e:
+            raise StorageError(f"Failed to reexpire cache: {e}") from e
+
     # ────────── cache_meta ────────── #
 
     def get_meta(self, func_id):
