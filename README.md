@@ -19,8 +19,10 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - The MCP server currently exposes 11 tools.
 - Several domain agents are LangGraph `StateGraph` workflows with compiled
   apps invoked through a shared runner.
-- MCP dispatch lives in `mcp/app.py`, `mcp/schemas.py`, and
-  `mcp/handlers.py`; `server.py` remains the module startup entrypoint.
+- MCP dispatch lives in `mcp/app.py`, `mcp/schemas.py`,
+  `mcp/handlers.py`, and `mcp/result_formatting.py` (the dispatch-seam
+  formatter shared by the stdio and HTTP surfaces); `server.py` remains
+  the module startup entrypoint.
 - Domain wrappers live under `agents/<domain>/` packages and reuse agent
   instances through a non-secret runtime registry where safe.
 - Legacy root Python modules such as `knowledge_agents.py`, `utils.py`, and
@@ -77,6 +79,7 @@ src/mcp_server_phytomni/
     app.py                   MCP server registration, dispatch, and serving
     schemas.py               Public tool names and request schemas
     handlers.py              Runtime handlers and config expansion
+    result_formatting.py     Tool-response formatter at the dispatch seam
   agents/
     chat/                    Chat service workflow
     knowledge/               Retrieval, reranking, and synthesis workflow
@@ -127,18 +130,28 @@ src/mcp_client_phytomni/
   client.py                  PhytomniMcpClient, PhytomniToolRouter, and
                              response models for stdio-driven applications
   main.py                    `phytomni` CLI entry point
-  tool_result_formatters.py  Citation, doc dedup, and follow-up formatters
+  tool_result_formatters.py  FormattedToolResult model and parse-only
+                             shim that deserializes server-formatted
+                             results (the actual citation/doc dedup
+                             formatter lives server-side in
+                             mcp/result_formatting.py)
 ```
 
 ### MCP Boundary
 
-`mcp/app.py`, `mcp/schemas.py`, and `mcp/handlers.py` own the public MCP
-surface:
+`mcp/app.py`, `mcp/schemas.py`, `mcp/handlers.py`, and
+`mcp/result_formatting.py` own the public MCP surface:
 
 - Pydantic request models for each tool in `mcp/schemas.py`.
 - JSON schema generation for `tools/list`.
 - Argument validation and MCP-compliant `INVALID_PARAMS` errors.
-- Tool name to handler routing through `dispatch_tool`.
+- Tool name to handler routing through `dispatch_tool` and the shared
+  formatted seam `invoke_tool_formatted` (built on the unchanged raw
+  seam `invoke_tool_raw`), so MCP stdio and the HTTP API emit the
+  identical normalized envelope.
+- Tool-response formatting (citation dedup, the
+  `{"content","doc_list"}` envelope for cited agents, DataAgent table
+  JSON, task-submission metadata) in `mcp/result_formatting.py`.
 - MCP `TextContent` response serialization.
 
 `mcp/handlers.py` owns runtime adaptation from MCP requests to agent calls:
