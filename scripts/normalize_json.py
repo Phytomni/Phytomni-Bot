@@ -31,20 +31,29 @@ def _collect_config_json_files() -> list[Path]:
     return sorted(CONFIG_DIR.glob("*.json"))
 
 
-def _rewrite_json_file(file_path: Path) -> None:
-    """Normalize one JSON file in place."""
+def _normalized_text(file_path: Path) -> str:
+    """Return the canonical normalized text for one JSON file."""
     with file_path.open("r", encoding="utf-8") as f:
         data: Any = json.load(f)
-
-    with file_path.open("w", encoding="utf-8") as f:
-        json.dump(
+    return (
+        json.dumps(
             data,
-            f,
             ensure_ascii=False,
             indent=JSON_INDENT,
             sort_keys=True,
         )
-        f.write("\n")
+        + "\n"
+    )
+
+
+def _rewrite_json_file(file_path: Path) -> None:
+    """Normalize one JSON file in place."""
+    file_path.write_text(_normalized_text(file_path), encoding="utf-8")
+
+
+def _check_json_file(file_path: Path) -> bool:
+    """Return True when the file already matches its normalized form."""
+    return file_path.read_text(encoding="utf-8") == _normalized_text(file_path)
 
 
 def _parse_cli_args() -> argparse.Namespace:
@@ -53,6 +62,15 @@ def _parse_cli_args() -> argparse.Namespace:
         description=(
             "Normalize JSON files with sorted keys and two-space indent."
         )
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Verify each file matches its normalized form. "
+            "Exit 1 on any drift; never rewrite. "
+            "Intended for the local and CI quality gates."
+        ),
     )
     parser.add_argument(
         "paths",
@@ -67,10 +85,20 @@ def run_json_normalizer() -> None:
     """Normalize requested JSON files, or all config JSON files by default.
 
     Returns:
-        None. The selected JSON files are rewritten in place.
+        None. The selected JSON files are rewritten in place unless
+        ``--check`` is given, in which case the script exits 1 on any
+        file that does not already match its normalized form.
     """
     args = _parse_cli_args()
     file_paths: list[Path] = args.paths or _collect_config_json_files()
+
+    if args.check:
+        drifted = [p for p in file_paths if not _check_json_file(p)]
+        if drifted:
+            for path in drifted:
+                print(f"json drift: {path}")
+            raise SystemExit(1)
+        return
 
     for file_path in file_paths:
         _rewrite_json_file(file_path)
