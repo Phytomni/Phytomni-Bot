@@ -133,21 +133,29 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
 
 async def _invoke_agent_run(
     *, agent: str, arguments: dict[str, Any]
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int]:
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
 
     Owns the slug -> tool lookup, the shared ``invoke_tool_formatted``
-    call, and the origin-aware run id resolution: for remote agents the
-    chokepoint has already written the row so we read ``tasks.run_id``
-    back; for sync agents we mint and persist an ``origin="local"``
-    terminal row via ``_record_sync_run``.
+    call, and the origin-aware run id resolution. Returns the plan-
+    mandated ``agent.run`` envelope: sync agents get
+    ``status="succeeded"`` at HTTP 200, remote agents get
+    ``status="running"`` plus the child ``task_ids`` at HTTP 202 (the
+    submission ack convention) so a client can immediately poll
+    ``/v1/runs/{id}`` for the live status. The formatted result is
+    surfaced in both cases — sync clients consume it directly; remote
+    clients can short-circuit using ``metadata.task_id`` /
+    ``metadata.output_dir`` before the first ``/v1/runs/{id}`` call.
 
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
         arguments: Tool-specific kwargs forwarded to the agent.
 
     Returns:
-        The ``{"run_id", "result"}`` response body.
+        ``(body, status_code)`` — ``body`` is the ``agent.run``
+        envelope (``id`` / ``object`` / ``agent`` / ``status`` /
+        ``task_ids`` / ``result``), ``status_code`` is 202 for remote
+        submissions and 200 for synchronous completions.
 
     Raises:
         HTTPException: 404 when the slug is unknown.
@@ -161,16 +169,63 @@ async def _invoke_agent_run(
     result = asdict(formatted)
     owner = current_request_user() or "anonymous"
     if agent in _REMOTE_AGENT_SLUGS:
-        metadata = result.get("metadata") or {}
-        task_id = metadata.get("task_id")
-        run_id = (
-            TaskManager(resolve_tasks_db_path()).run_id_for_task(task_id)
-            if isinstance(task_id, str) and task_id
-            else None
-        )
-    else:
-        run_id = _record_sync_run(agent=agent, owner=owner, result=result)
-    return {"run_id": run_id, "result": result}
+        run_id, task_ids = _resolve_remote_run(result, owner)
+        body = {
+            "id": run_id,
+            "object": "agent.run",
+            "agent": agent,
+            "status": "running",
+            "task_ids": task_ids,
+            "result": result,
+        }
+        return body, 202
+    run_id = _record_sync_run(agent=agent, owner=owner, result=result)
+    body = {
+        "id": run_id,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": result,
+    }
+    return body, 200
+
+
+def _resolve_remote_run(
+    result: dict[str, Any], owner: str
+) -> tuple[Optional[str], list[str]]:
+    """Resolve the chokepoint-minted run id + child task ids for owner.
+
+    The remote chokepoint in ``mcp/handlers`` writes the runs row + N
+    child task rows before returning the formatted payload. The HTTP
+    layer recovers the run identity by joining: the formatter's
+    ``metadata.task_id`` gives one task id (the primary), and
+    ``TaskManager.run_id_for_task`` looks up its owning run id; the
+    full child set then comes from ``RunRegistry.get_run`` so the
+    response carries every submitted task id, not just the primary.
+
+    Args:
+        result: The formatted tool payload (already ``asdict``-ified).
+        owner: Authenticated user id used for the registry read.
+
+    Returns:
+        ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
+        ``task_ids`` is empty when the chokepoint did not record a
+        recognisable submission (so the API caller still gets the raw
+        result and an unambiguous "no run was registered" signal).
+    """
+    metadata = result.get("metadata") or {}
+    primary_task_id = metadata.get("task_id")
+    if not isinstance(primary_task_id, str) or not primary_task_id:
+        return None, []
+    db_path = resolve_tasks_db_path()
+    run_id = TaskManager(db_path).run_id_for_task(primary_task_id)
+    if not run_id:
+        return None, [primary_task_id]
+    record = RunRegistry(db_path).get_run(run_id, owner=owner)
+    if record is None:
+        return run_id, [primary_task_id]
+    return run_id, list(record.task_ids)
 
 
 def _list_owner_runs(
@@ -538,11 +593,12 @@ def create_app() -> FastAPI:
         payload: AgentRunRequest,
         principal: ApiPrincipal = Depends(authorized),
     ) -> JSONResponse:
-        """Invoke one agent by slug and return its run id + result."""
+        """Invoke one agent by slug and return its agent.run envelope."""
         del principal
-        return JSONResponse(
-            await _invoke_agent_run(agent=agent, arguments=payload.arguments)
+        body, status_code = await _invoke_agent_run(
+            agent=agent, arguments=payload.arguments
         )
+        return JSONResponse(body, status_code=status_code)
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(

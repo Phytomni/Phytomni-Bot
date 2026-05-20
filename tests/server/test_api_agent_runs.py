@@ -81,7 +81,7 @@ async def test_agent_run_sync_writes_local_run(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A sync-agent invocation writes ``origin="local"`` and replays."""
+    """A sync-agent invocation returns the agent.run envelope at 200."""
 
     async def fake(args: Any) -> dict[str, Any]:
         """Return a stub chat completion-shaped result."""
@@ -101,13 +101,17 @@ async def test_agent_run_sync_writes_local_run(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["run_id"]
+    assert body["object"] == "agent.run"
+    assert body["agent"] == "chat"
+    assert body["status"] == "succeeded"
+    assert body["task_ids"] == []
+    assert body["id"]
     assert body["result"] is not None
 
     listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert len(listing) == 1
     record = listing[0]
-    assert record.spec.run_id == body["run_id"]
+    assert record.spec.run_id == body["id"]
     assert record.spec.agent == "chat"
     assert record.spec.origin == "local"
     assert record.status == "succeeded"
@@ -119,7 +123,7 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A remote-agent invocation surfaces the chokepoint-minted run_id."""
+    """A remote-agent invocation returns 202 with task_ids and run id."""
 
     async def fake(args: Any) -> dict[str, Any]:
         """Return a stub remote-submission result with a task_id."""
@@ -143,15 +147,19 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
             }
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
-    assert body["run_id"]
+    assert body["object"] == "agent.run"
+    assert body["agent"] == "analyst"
+    assert body["status"] == "running"
+    assert body["task_ids"] == ["task-fake-1"]
+    assert body["id"]
     assert body["result"]["metadata"]["task_id"] == "task-fake-1"
 
     listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert len(listing) == 1
     record = listing[0]
-    assert record.spec.run_id == body["run_id"]
+    assert record.spec.run_id == body["id"]
     assert record.spec.agent == "analyst"
     assert record.spec.origin == "remote"
     assert record.task_ids == ("task-fake-1",)
