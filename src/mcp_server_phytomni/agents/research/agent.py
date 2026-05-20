@@ -11,7 +11,7 @@ Functions: in_silico_research, extract_goals_node, prepare_tasks,
 
 from dataclasses import dataclass
 from json import loads
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Send
@@ -48,6 +48,7 @@ from ..shared.analysis import (
 from ..shared.analysis_storage import create_output_dir
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
+    ParallelDispatchState,
     build_parallel_dispatch_graph,
 )
 
@@ -76,13 +77,17 @@ class ResearchTaskContext:
     thread_id: str
 
 
-class InSilicoResearchState(TypedDict):
+class InSilicoResearchState(ParallelDispatchState):
     """State schema for the in silico research workflow.
 
-    This TypedDict defines the state structure used throughout the in silico
-    research workflow, tracking paper content, data sources, extracted research
-    goals, task management, and result aggregation for parallel research
-    task execution.
+    Inherits the shared parallel-dispatch bookkeeping fields
+    (``analysis_type``, ``task_index``, ``task_ids``,
+    ``completed_count``, ``error``) from ``ParallelDispatchState`` so
+    multi-goal Send fan-out merges through reducers
+    (``task_ids: operator.or_``, ``completed_count: operator.add``)
+    instead of raising LangGraph's ``InvalidUpdateError`` on concurrent
+    writes. Domain-specific fields below carry paper / goal / task
+    bookkeeping that is unique to research.
 
     Attributes:
         paper_text: Scientific paper text to analyze for research goals.
@@ -92,10 +97,6 @@ class InSilicoResearchState(TypedDict):
         output_dir: Output directory path for results.
         goals: List of extracted research objectives from the paper.
         research_tasks: List of research tasks to be executed.
-        task_index: Current task index in parallel execution via Send API.
-        task_ids: Mapping of task names to their corresponding task IDs.
-        completed_count: Counter tracking the number of completed tasks.
-        error: Error message if any task failed during execution.
     """
 
     paper_text: str
@@ -109,10 +110,6 @@ class InSilicoResearchState(TypedDict):
     context: str
     task_name: str
     thread_id: str
-    task_index: Optional[int]  # Current task index
-    task_ids: Dict[str, str]  # Mapping of task names to task IDs
-    completed_count: int  # Counter for completed tasks
-    error: Optional[str]
 
 
 class InSilicoResearchAgents:

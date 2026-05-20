@@ -152,21 +152,16 @@ async def test_research_state_reduction_dispatches_single_goal(
     assert final_state.get("error") is None
 
 
-@pytest.mark.xfail(
-    reason=(
-        "InSilicoResearchState lacks Annotated reducers on task_ids and "
-        "completed_count, so two parallel research_node Sends produce "
-        "InvalidUpdateError when the LLM extracts multiple goals. "
-        "Pre-existing schema gap, unchanged by the parallel_dispatch "
-        "builder migration."
-    ),
-    strict=True,
-    raises=Exception,
-)
 async def test_research_state_reduction_handles_multiple_goals(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Document the multi-goal merge failure as an expected xfail.
+    """Verify two parallel research_node Sends merge through reducers.
+
+    With ``InSilicoResearchState`` now inheriting ``ParallelDispatchState``,
+    ``task_ids`` (``operator.or_``) and ``completed_count``
+    (``operator.add``) carry concurrent-safe reducers, so two goals
+    fan out cleanly instead of raising LangGraph's
+    ``InvalidUpdateError``.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace the
@@ -174,8 +169,8 @@ async def test_research_state_reduction_handles_multiple_goals(
             deterministic fakes that emit two goals.
 
     Returns:
-        None after the expected InvalidUpdateError propagates from
-        LangGraph's parallel state merger.
+        None after both parallel branches merge their task ids and
+        completion counts into the final state.
     """
     agent = _build_research_agent()
 
@@ -218,7 +213,7 @@ async def test_research_state_reduction_handles_multiple_goals(
     monkeypatch.setattr(agent, "_extract_goals", fake_extract)
     monkeypatch.setattr(agent, "_submit_research_task", fake_submit)
 
-    await agent.app.ainvoke(
+    final_state = await agent.app.ainvoke(
         {
             "paper_text": "Two-goal paper.",
             "data_list": {},
@@ -233,3 +228,11 @@ async def test_research_state_reduction_handles_multiple_goals(
         },
         config={"configurable": {"thread_id": "research-multi-goal-test"}},
     )
+
+    assert final_state["task_ids"] == {
+        "research_goal_0": "task-research_goal_0",
+        "research_goal_1": "task-research_goal_1",
+    }
+    assert final_state["completed_count"] == 2
+    assert final_state["goals"] == extracted
+    assert final_state.get("error") is None
