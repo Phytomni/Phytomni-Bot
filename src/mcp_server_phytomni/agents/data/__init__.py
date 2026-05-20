@@ -9,12 +9,13 @@ helpers, and compatibility wrappers for natural-language database queries.
 """
 
 from .agent import DataAgent, DataAgentState, rewrite_nl2sql
-from .nl2sql import Nl2SqlRequest, nl2sql
+from .nl2sql import Nl2SqlRequest, clear_nl2sql_cache, nl2sql
 
 __all__ = [
     "DataAgent",
     "DataAgentState",
     "Nl2SqlRequest",
+    "clear_nl2sql_cache",
     "nl2sql",
     "rewrite_nl2sql",
 ]
