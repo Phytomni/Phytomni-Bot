@@ -117,49 +117,98 @@ async def test_agent_run_sync_writes_local_run(
     assert record.status == "succeeded"
 
 
+_REMOTE_CASES = [
+    pytest.param(
+        "analyst",
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        {"task_id": "T-A", "output_dir": "/obs/a"},
+        {
+            "goal_description": "test",
+            "data_list": {},
+            "obs_file_list": [],
+        },
+        {"T-A"},
+        id="analyst-top-level-task_id",
+    ),
+    pytest.param(
+        "deep_genome",
+        server.PhytomniAgents.DEEP_GENOME_AGENT.value,
+        {"task_id": "T-D", "output_dir": "/obs/d"},
+        {"species_code": "ATH", "gene_id": "AT1G01010"},
+        {"T-D"},
+        id="deep_genome-top-level-task_id",
+    ),
+    pytest.param(
+        "research",
+        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
+        {
+            "task_ids": {"g1": "T-R1", "g2": "T-R2"},
+            "output_dir": "/obs/r",
+        },
+        {
+            "user_query": "test",
+            "data_list": {},
+            "obs_file_list": [],
+        },
+        {"T-R1", "T-R2"},
+        id="research-task_ids-map",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "slug,tool_name,stub_return,arguments,expected_task_ids",
+    _REMOTE_CASES,
+)
 async def test_agent_run_remote_returns_chokepoint_run_id(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
+    slug: str,
+    tool_name: str,
+    stub_return: dict[str, Any],
+    arguments: dict[str, Any],
+    expected_task_ids: set[str],
 ) -> None:
-    """A remote-agent invocation returns 202 with task_ids and run id."""
+    """Remote agents return 202 + run_id + task_ids regardless of shape.
+
+    Covers all three wrapper return shapes the chokepoint handles:
+    analyst / deep_genome (top-level ``task_id``) and research
+    (``task_ids`` dict map). The HTTP layer reads ``current_run_id``
+    via contextvar, so the response no longer depends on whether the
+    formatter exposes ``metadata.task_id`` (analyst) vs
+    ``metadata.server_id`` (deep_genome) vs nothing (research).
+    """
 
     async def fake(args: Any) -> dict[str, Any]:
-        """Return a stub remote-submission result with a task_id."""
+        """Return the parametrised stub wrapper payload."""
         _ = args
-        return {"task_id": "task-fake-1", "output_dir": "/obs/run"}
+        return stub_return
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        _records_submission("analyst")(fake),
+        tool_name,
+        _records_submission(slug)(fake),
     )
 
     response = await api_client.post(
-        "/v1/agents/analyst/runs",
+        f"/v1/agents/{slug}/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "goal_description": "test",
-                "data_list": {},
-                "obs_file_list": [],
-            }
-        },
+        json={"arguments": arguments},
     )
     assert response.status_code == 202
     body = response.json()
     assert body["object"] == "agent.run"
-    assert body["agent"] == "analyst"
+    assert body["agent"] == slug
     assert body["status"] == "running"
-    assert body["task_ids"] == ["task-fake-1"]
     assert body["id"]
-    assert body["result"]["metadata"]["task_id"] == "task-fake-1"
+    assert set(body["task_ids"]) == expected_task_ids
 
     listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert len(listing) == 1
     record = listing[0]
     assert record.spec.run_id == body["id"]
-    assert record.spec.agent == "analyst"
+    assert record.spec.agent == slug
     assert record.spec.origin == "remote"
-    assert record.task_ids == ("task-fake-1",)
+    assert set(record.task_ids) == expected_task_ids

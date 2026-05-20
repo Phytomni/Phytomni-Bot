@@ -6,13 +6,10 @@
 
 Functions: current_request_user, current_request_id, current_run_id,
     bind_request_user, bind_request_id, bind_run_id, reset_request_var,
-    request_context.
-
-The MCP stdio path never binds these, so getters return None and the
-agent layer keeps its existing anonymous behavior unchanged. The
-run-id contextvar carries the submit chokepoint's freshly-minted
-run_id forward to the HTTP response builder so the HTTP layer does
-not have to recover it by reading a formatter-specific metadata key.
+    request_context. MCP stdio binds none of these (getters return
+    None and the agent layer stays anonymous); the run-id slot carries
+    the submit chokepoint's freshly-minted run_id forward to the HTTP
+    response builder, replacing formatter-metadata reverse lookups.
 """
 
 from __future__ import annotations
