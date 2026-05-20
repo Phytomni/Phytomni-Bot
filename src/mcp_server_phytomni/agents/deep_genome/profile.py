@@ -29,7 +29,7 @@ from ...common.http import (
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...config.defaults import DeepGenomeConfig
-from ...func_cache import func_cache
+from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..chat.service import phyto_chat
 from .formatting import SPECIES_CODE_MAP, network_to_string
@@ -40,7 +40,14 @@ else:
     DeepGenomeState = Dict[str, Any]
 
 _LOOKUP_CONFIG = DeepGenomeConfig()
-GENE_LOOKUP_CACHE_TTL = 300
+# Gene-id ↔ symbol and gene annotation rows from the BI gateway are
+# reference data: a deploy may push a new build now and then, but the
+# per-gene mappings change on a months-to-years cadence. Reuse the
+# shared long TTL so identical lookups hit the local SQLite cache
+# instead of re-paying the BI gateway roundtrip for ~90 days; operators
+# can drop the entries early via the phytomni-cache CLI when a fresh
+# annotation pipeline lands.
+GENE_LOOKUP_CACHE_TTL = LONG_TTL_SECONDS
 
 
 async def _post_bi_sql(
