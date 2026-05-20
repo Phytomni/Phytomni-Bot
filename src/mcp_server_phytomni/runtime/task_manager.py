@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Task manager for SQLite database and remote task server interactions.
 
-Classes: RemoteTaskRequest, TaskManager.
+Classes: RemoteTaskRequest, RunContext, Submission, TaskManager.
 Functions: create_task (async), update_task (async),
     resolve_tasks_db_path.
 """
@@ -50,6 +50,91 @@ class RemoteTaskRequest:
     message: str
 
 
+@dataclass(frozen=True)
+class RunContext:
+    """Run-scope context passed to ``TaskManager.record_submission``.
+
+    All fields default to ``None`` so an old positional call writes NULL
+    into the run-scoped columns (byte-equivalent to the original
+    4-column behavior), while the unified run-registry chokepoint
+    supplies them.
+
+    Attributes:
+        run_id: Owning run id (``IdFactory().new_id("run", agent)``).
+        user_id: Authenticated user (``"anonymous"`` on the MCP path).
+        agent: Public agent alias (e.g. ``"analyst"``).
+        origin: ``"remote"`` for analysis-platform submissions,
+            ``"local"`` for in-process synchronous runs.
+        created_at: ISO-8601 row creation timestamp.
+        updated_at: ISO-8601 last-update timestamp.
+    """
+
+    run_id: Optional[str] = None
+    user_id: Optional[str] = None
+    agent: Optional[str] = None
+    origin: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Submission:
+    """A full task-row write spec for ``TaskManager.record``.
+
+    Bundles the task-grain fields with an optional ``RunContext`` so
+    ``record`` takes a single ``submission`` argument (which keeps the
+    method pylint-clean at the project's two-positional-argument limit
+    while still expressing every column the table now carries).
+
+    Attributes:
+        task_id: The MCP-facing task id returned to the caller.
+        status: Submission status to record (e.g. ``"submitted"``).
+        output_dir: Output directory reported by the submission.
+        analysis_id: Optional remote/analysis-platform id used by the
+            live status bridge; empty when not yet known.
+        run_context: Optional run-scope context for the unified run
+            registry; ``None`` keeps the run-scoped columns ``NULL``.
+    """
+
+    task_id: str
+    status: str
+    output_dir: str
+    analysis_id: str = ""
+    run_context: Optional[RunContext] = None
+
+
+# Fresh-database schema: ``CREATE TABLE IF NOT EXISTS`` creates all
+# columns in one shot. The original 4 columns stay first so old code
+# paths (``create_task``/``update_task``) keep working unchanged.
+_CREATE_TASKS_DDL = """
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id TEXT PRIMARY KEY,
+    status TEXT,
+    analysis_id TEXT,
+    output_dir TEXT,
+    run_id TEXT,
+    user_id TEXT,
+    agent TEXT,
+    origin TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
+# In-place migration for legacy 4-column databases. SQLite has no
+# ``ADD COLUMN IF NOT EXISTS``, so each ALTER is guarded by a
+# ``PRAGMA table_info(tasks)`` lookup at call time; statements are
+# pre-baked literals (no SQL identifier interpolation).
+_TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
+    ("run_id", "ALTER TABLE tasks ADD COLUMN run_id TEXT"),
+    ("user_id", "ALTER TABLE tasks ADD COLUMN user_id TEXT"),
+    ("agent", "ALTER TABLE tasks ADD COLUMN agent TEXT"),
+    ("origin", "ALTER TABLE tasks ADD COLUMN origin TEXT"),
+    ("created_at", "ALTER TABLE tasks ADD COLUMN created_at TEXT"),
+    ("updated_at", "ALTER TABLE tasks ADD COLUMN updated_at TEXT"),
+)
+
+
 class TaskManager:
     """Manages tasks in a SQLite database.
 
@@ -71,18 +156,21 @@ class TaskManager:
         self._init_db()
 
     def _init_db(self):
-        """Initializes the database and creates the tasks
-        table if it doesn't exist."""
+        """Create or in-place widen the ``tasks`` table.
+
+        Fresh databases receive every column from ``_CREATE_TASKS_DDL``.
+        Legacy 4-column databases are upgraded in place by guarded
+        ``ALTER TABLE ADD COLUMN`` (SQLite has no ``IF NOT EXISTS``
+        column form); pre-existing rows get ``NULL`` for the new
+        columns automatically.
+        """
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                task_id TEXT PRIMARY KEY,
-                status TEXT,
-                analysis_id TEXT,
-                output_dir TEXT
-            )
-        """)
+        conn.execute(_CREATE_TASKS_DDL)
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
+            if column not in existing:
+                conn.execute(statement)
         conn.commit()
         conn.close()
 
@@ -133,6 +221,44 @@ class TaskManager:
         conn.commit()
         conn.close()
 
+    def record(self, submission: Submission) -> None:
+        """Upsert one task row from a ``Submission`` spec.
+
+        Performs ``INSERT OR REPLACE`` over every column in the
+        run-scoped schema; a submission without a ``RunContext`` leaves
+        the run-scoped columns ``NULL`` (byte-equivalent to the original
+        4-column write), while the unified run-registry chokepoint
+        passes a populated context so a run's child tasks share
+        ``run_id`` / ``user_id`` / ``agent`` / ``origin`` / timestamps.
+
+        Args:
+            submission: The full per-row write spec.
+        """
+        ctx = submission.run_context or RunContext()
+        conn = self._get_connection()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO tasks (
+                task_id, status, analysis_id, output_dir,
+                run_id, user_id, agent, origin, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                submission.task_id,
+                submission.status,
+                submission.analysis_id,
+                submission.output_dir,
+                ctx.run_id,
+                ctx.user_id,
+                ctx.agent,
+                ctx.origin,
+                ctx.created_at,
+                ctx.updated_at,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
     def record_submission(
         self,
         task_id: str,
@@ -142,9 +268,11 @@ class TaskManager:
     ) -> None:
         """Upsert a submitted task's row by its known task_id.
 
-        Unlike ``create_task`` (which mints its own uuid), the submit
-        chokepoint already holds the MCP-facing ``task_id``, so this
-        writes that exact row idempotently (``INSERT OR REPLACE``).
+        Backward-compatible shim preserved for existing callers
+        (handlers' submit chokepoint and the older unit tests) so they
+        continue to work byte-for-byte with a 4-column-style write.
+        New callers should use ``record(Submission(...))`` directly to
+        populate the run-scoped columns.
 
         Args:
             task_id: The MCP-facing task id returned to the caller.
@@ -153,17 +281,14 @@ class TaskManager:
             analysis_id: Optional remote/analysis-platform id used by
                 the live status bridge; empty when not yet known.
         """
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO tasks
-                (task_id, status, analysis_id, output_dir)
-            VALUES (?, ?, ?, ?)
-        """,
-            (task_id, status, analysis_id, output_dir),
+        self.record(
+            Submission(
+                task_id=task_id,
+                status=status,
+                output_dir=output_dir,
+                analysis_id=analysis_id,
+            )
         )
-        conn.commit()
-        conn.close()
 
     def get_task(self, task_id: str) -> Optional[Dict[str, str]]:
         """Return one task row, or None when the id is unknown.
