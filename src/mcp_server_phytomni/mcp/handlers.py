@@ -16,9 +16,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from mcp.shared.exceptions import McpError
-
-from ..agents.analyst.agent import retrieve_plan_submit, task_status
+from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
 from ..agents.chat.service import phyto_chat_with_follow
 from ..agents.data.agent import rewrite_nl2sql
@@ -43,6 +41,7 @@ from ..config.defaults import (
 from ..config.settings import SensitiveConfig
 from ..runtime.request_context import current_request_user
 from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ..runtime.task_reconcile import reconcile_task
 from ..storage.path_policy import RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 
@@ -677,11 +676,12 @@ async def handle_gene_network_agent(args: Any) -> Any:
 async def handle_get_task_status(args: Any) -> Any:
     """Return a submitted task's status without ever blocking.
 
-    Reads the local registry row, then for a known task performs
-    exactly one live analysis-platform status check — never the
-    ``wait_for_completion`` poll loop, so this cannot re-create the
-    C-1 MCP timeout. A failed or unreachable live check degrades to
-    the locally recorded status so the lookup stays robust.
+    Delegates to ``runtime.task_reconcile.reconcile_task`` so the MCP
+    tool and the upcoming run-registry status endpoint share one
+    non-blocking local+live status implementation (a single SELECT plus
+    exactly one remote ``task_status`` lookup, never the
+    ``wait_for_completion`` poll loop, so this cannot re-create the C-1
+    MCP timeout).
 
     Args:
         args: GetTaskStatus arguments with task_id (str).
@@ -690,37 +690,4 @@ async def handle_get_task_status(args: Any) -> Any:
         Any: ``{task_id, status, output_dir, analysis_id,
         live_status}``; status is ``"unknown"`` for an unrecorded id.
     """
-    task_id = args.task_id
-    row = TaskManager(resolve_tasks_db_path()).get_task(task_id)
-    if row is None:
-        return {
-            "task_id": task_id,
-            "status": "unknown",
-            "output_dir": "",
-            "analysis_id": "",
-            "live_status": None,
-        }
-    analyst_config = AnalystConfig()
-    result = {
-        "task_id": task_id,
-        "status": row["status"],
-        "output_dir": row["output_dir"],
-        "analysis_id": row["analysis_id"],
-        "live_status": None,
-    }
-    try:
-        live = await task_status(
-            task_id,
-            analysis_url=analyst_config.ANALYSIS_URL,
-            region=analyst_config.ANALYSIS_REGION,
-            timeout=analyst_config.TIMEOUT,
-            retriable_codes=analyst_config.RETRIABLE_CODES,
-            max_retries=analyst_config.MAX_RETRIES,
-        )
-    except McpError:
-        return result
-    result["live_status"] = live
-    live_status = live.get("status") if isinstance(live, dict) else None
-    if live_status:
-        result["status"] = live_status
-    return result
+    return await reconcile_task(args.task_id)

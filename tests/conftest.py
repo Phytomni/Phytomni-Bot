@@ -386,4 +386,8 @@ def tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
         "mcp_server_phytomni.mcp.handlers.resolve_tasks_db_path",
         lambda: db_path,
     )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: db_path,
+    )
     return db_path

@@ -70,7 +70,7 @@ async def test_recorded_task_merges_live_status(
         return {"status": "SUCCEEDED"}
 
     monkeypatch.setattr(
-        "mcp_server_phytomni.mcp.handlers.task_status", fake_status
+        "mcp_server_phytomni.runtime.task_reconcile.task_status", fake_status
     )
 
     result = await handle_get_task_status(GetTaskStatus(task_id="T-9"))
@@ -107,7 +107,7 @@ async def test_live_failure_degrades_to_recorded(
         _ = (args, kwargs)
         raise McpError(ErrorData(code=INTERNAL_ERROR, message="platform down"))
 
-    monkeypatch.setattr("mcp_server_phytomni.mcp.handlers.task_status", boom)
+    monkeypatch.setattr("mcp_server_phytomni.runtime.task_reconcile.task_status", boom)
 
     result = await handle_get_task_status(GetTaskStatus(task_id="T-7"))
 
