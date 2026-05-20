@@ -27,6 +27,7 @@ from mcp_server_phytomni.mcp.handlers import (
     handle_gene_network_agent,
     handle_in_silico_research_agent,
 )
+from mcp_server_phytomni.runtime.request_context import current_run_id
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
@@ -118,6 +119,26 @@ def test_all_submit_handlers_are_decorated() -> None:
         handle_in_silico_research_agent,
     ):
         assert hasattr(handler, "__wrapped__"), handler.__name__
+
+
+def test_record_binds_run_id_contextvar(tasks_db_path: str) -> None:
+    """The chokepoint binds ``current_run_id`` to the freshly minted id.
+
+    Pin the audit-1.2 contract: after a successful chokepoint write,
+    the HTTP layer can recover the run id directly from the
+    contextvar without re-reading a formatter-specific metadata key.
+    """
+    assert current_run_id() is None
+    _record_submitted_task(
+        {"task_id": "T-bind", "output_dir": "/obs/run"},
+        agent="analyst",
+    )
+    bound = current_run_id()
+    assert bound is not None
+    assert bound.endswith("analyst") or "analyst" in bound
+    runs = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
+    assert len(runs) == 1
+    assert runs[0].spec.run_id == bound
 
 
 def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:

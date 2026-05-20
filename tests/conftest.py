@@ -26,6 +26,7 @@ import pytest
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.func_cache.storage import Storage
+from mcp_server_phytomni.runtime.request_context import request_context
 
 # Captured at import time, before block_external_http monkeypatches
 # httpx.AsyncClient.request for offline runs, so the in-process ASGI
@@ -124,6 +125,21 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                     )
                 )
             )
+
+
+@pytest.fixture(autouse=True)
+def _reset_request_contextvars() -> Iterator[None]:
+    """Bracket the three per-request contextvars so tests stay isolated.
+
+    The submit chokepoint in ``mcp/handlers`` now calls ``bind_run_id``
+    without an explicit reset — the HTTP middleware's ``finally`` block
+    cleans the value up in production. In pytest there is no
+    middleware, so a chokepoint binding leaks across tests unless we
+    bracket the trio here. Using ``request_context(None, None, None)``
+    matches what the middleware does on each request entry.
+    """
+    with request_context(None, None, None):
+        yield
 
 
 @pytest.fixture(autouse=True)

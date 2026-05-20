@@ -41,7 +41,7 @@ from ..config.defaults import (
     ReviewConfig,
 )
 from ..config.settings import SensitiveConfig
-from ..runtime.request_context import current_request_user
+from ..runtime.request_context import bind_run_id, current_request_user
 from ..runtime.run_registry import RunRegistry, RunSpec
 from ..runtime.task_manager import (
     RunContext,
@@ -199,6 +199,7 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                 origin="remote",
             )
         )
+        bind_run_id(run_id)
         manager = TaskManager(db_path)
         for task_id, output_dir, input_fingerprint in submissions:
             manager.record(
