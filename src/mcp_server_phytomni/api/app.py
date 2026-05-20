@@ -102,6 +102,21 @@ _REMOTE_AGENT_SLUGS = frozenset(
 )
 
 
+def _purge_expired_runs_best_effort() -> None:
+    """Run a single ``RunRegistry.purge_expired`` pass, swallowing errors.
+
+    Every API write path (sync chat completions, native agent runs,
+    and the registry listing) drives the lazy GC by calling this
+    helper so an expired row never outlives its TTL. A SQLite / OS
+    failure must never propagate — the user-facing write already
+    succeeded and the next request can re-trigger the purge.
+    """
+    try:
+        RunRegistry(resolve_tasks_db_path()).purge_expired()
+    except (sqlite3.Error, OSError):
+        pass
+
+
 def _run_record_to_dict(record: Any) -> dict[str, Any]:
     """Flatten a ``RunRecord`` into the JSON envelope the API returns.
 
@@ -137,15 +152,15 @@ async def _invoke_agent_run(
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
 
     Owns the slug -> tool lookup, the shared ``invoke_tool_formatted``
-    call, and the origin-aware run id resolution. Returns the plan-
-    mandated ``agent.run`` envelope: sync agents get
-    ``status="succeeded"`` at HTTP 200, remote agents get
-    ``status="running"`` plus the child ``task_ids`` at HTTP 202 (the
-    submission ack convention) so a client can immediately poll
-    ``/v1/runs/{id}`` for the live status. The formatted result is
-    surfaced in both cases — sync clients consume it directly; remote
-    clients can short-circuit using ``metadata.task_id`` /
-    ``metadata.output_dir`` before the first ``/v1/runs/{id}`` call.
+    call, and the origin-aware run id resolution. Returns the
+    ``agent.run`` envelope: sync agents get ``status="succeeded"`` at
+    HTTP 200, remote agents get ``status="running"`` plus the child
+    ``task_ids`` at HTTP 202 (the submission ack convention) so a
+    client can immediately poll ``/v1/runs/{id}`` for the live status.
+    The formatted result is surfaced in both cases — sync clients
+    consume it directly; remote clients can short-circuit using
+    ``metadata.task_id`` / ``metadata.output_dir`` before the first
+    ``/v1/runs/{id}`` call.
 
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
@@ -170,6 +185,7 @@ async def _invoke_agent_run(
     owner = current_request_user() or "anonymous"
     if agent in _REMOTE_AGENT_SLUGS:
         run_id, task_ids = _resolve_remote_run(result, owner)
+        _purge_expired_runs_best_effort()
         body = {
             "id": run_id,
             "object": "agent.run",
@@ -238,10 +254,10 @@ def _list_owner_runs(
 ) -> dict[str, Any]:
     """Return one ``GET /v1/runs`` body for the authenticated owner.
 
-    Performs a best-effort ``purge_expired`` call before reading so a
-    listing-heavy workload acts as the lazy GC for the registry; a
-    SQLite / OS failure on purge is swallowed so the listing itself
-    still succeeds.
+    Drives the lazy GC via ``_purge_expired_runs_best_effort`` (the
+    same helper the sync chat and native agent run write paths use)
+    so the registry stays bounded under listing-heavy and
+    submission-heavy workloads alike.
 
     Args:
         status: Optional exact-match status filter.
@@ -254,12 +270,8 @@ def _list_owner_runs(
         ``{"object", "data"}`` envelope with the flat run records.
     """
     owner = current_request_user() or "anonymous"
-    registry = RunRegistry(resolve_tasks_db_path())
-    try:
-        registry.purge_expired()
-    except (sqlite3.Error, OSError):
-        pass
-    records = registry.list_runs(
+    _purge_expired_runs_best_effort()
+    records = RunRegistry(resolve_tasks_db_path()).list_runs(
         owner=owner,
         run_filter=RunFilter(status=status, agent=agent, origin=origin),
         limit=limit,
@@ -331,6 +343,7 @@ def _record_sync_run(
         )
     except (sqlite3.Error, OSError):
         return None
+    _purge_expired_runs_best_effort()
     return run_id
 
 
