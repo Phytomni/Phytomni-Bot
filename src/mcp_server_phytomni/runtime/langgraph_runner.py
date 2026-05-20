@@ -123,7 +123,7 @@ async def capture_workflow_boundary(
     """
     try:
         return await action()
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         return failure_result(exc)
 
 

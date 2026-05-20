@@ -16,11 +16,6 @@ Provides three pillars used by every test under ``e2e/``:
   the ``published`` map.
 """
 
-# pylint: disable=redefined-outer-name
-# Reason: pytest's standard fixture-injection pattern reuses the
-# fixture name as the parameter name in dependent fixtures and tests.
-# Renaming would break pytest dependency resolution.
-
 from __future__ import annotations
 
 import json

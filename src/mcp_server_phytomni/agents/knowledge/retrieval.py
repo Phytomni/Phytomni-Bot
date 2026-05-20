@@ -445,7 +445,20 @@ async def _retrieve_raw_docs(
     ) as client:
         if options.scope in ("doc", "keyword"):
             docs = await _retrieve_scope_docs(
-                client, user_query, options, options.scope
+                client,
+                user_query=user_query,
+                retrieve_url=options.retrieve_url,
+                repo_id=options.payload_options.repo_id,
+                scope=options.scope,
+                page_num=options.payload_options.page_num,
+                page_size=options.payload_options.page_size,
+                filter_string=options.payload_options.filter_string,
+                extra_repo_ids=tuple(
+                    options.payload_options.extra_repo_ids or ()
+                ),
+                timeout=options.timeout,
+                max_retries=options.max_retries,
+                retriable_codes=options.retriable_codes,
             )
         elif options.scope == "both":
             docs = await _retrieve_both_scopes(client, user_query, options)
@@ -458,22 +471,48 @@ async def _retrieve_raw_docs(
 
 async def _retrieve_scope_docs(
     client: AsyncClient,
+    *,
     user_query: str,
-    options: RetrieveOptions,
+    retrieve_url: str,
+    repo_id: str,
     scope: str,
+    page_num: int,
+    page_size: int,
+    filter_string: Optional[str],
+    extra_repo_ids: tuple[str, ...],
+    timeout: float,
+    max_retries: int,
+    retriable_codes: tuple[int, ...],
 ) -> Any:
-    """Retrieve docs for a single knowledge-base scope."""
+    """Retrieve docs for a single knowledge-base scope.
+
+    The retrieval-service body is built inline from the explicit
+    scalar arguments rather than from a wrapped options object so
+    every semantic input (user_query / repo_id / scope / paging /
+    filter / extras) is visible at the call site and every infra
+    parameter (client / timeout / max_retries / retriable_codes)
+    stays plain function-level, leaving the body shape unchanged
+    from the previous ``RetrieveOptions.payload`` form.
+    """
     result = await post_json_with_retries(
         client,
         JsonPostRequest(
-            url=options.retrieve_url,
+            url=retrieve_url,
             headers={"Content-Type": "application/json"},
-            json_body=options.payload(user_query, scope),
+            json_body={
+                "repo_id": repo_id,
+                "content": user_query,
+                "page_num": page_num,
+                "page_size": page_size,
+                "filter_string": filter_string,
+                "scope": scope,
+                "extra_repo_ids": list(extra_repo_ids),
+            },
         ),
         JsonPostRetry(
-            timeout=options.timeout,
-            max_retries=options.max_retries,
-            retriable_codes=options.retriable_codes,
+            timeout=timeout,
+            max_retries=max_retries,
+            retriable_codes=retriable_codes,
             message="Failed to retrieve knowledge base",
         ),
     )
@@ -487,7 +526,20 @@ async def _retrieve_both_scopes(
 ) -> List[Dict[str, Any]]:
     """Retrieve and merge docs from document and keyword scopes."""
     tasks = [
-        _retrieve_scope_docs(client, user_query, options, scope)
+        _retrieve_scope_docs(
+            client,
+            user_query=user_query,
+            retrieve_url=options.retrieve_url,
+            repo_id=options.payload_options.repo_id,
+            scope=scope,
+            page_num=options.payload_options.page_num,
+            page_size=options.payload_options.page_size,
+            filter_string=options.payload_options.filter_string,
+            extra_repo_ids=tuple(options.payload_options.extra_repo_ids or ()),
+            timeout=options.timeout,
+            max_retries=options.max_retries,
+            retriable_codes=options.retriable_codes,
+        )
         for scope in ("doc", "keyword")
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

@@ -10,14 +10,6 @@ HTTP. Review/BriefGene each ~10 min; runs only under a manual
 ``pytest e2e/`` with a configured ``.env``.
 """
 
-# pylint: disable=redefined-outer-name
-# Reason: pytest's standard fixture-injection pattern reuses the
-# fixture name as the parameter name in dependent fixtures and tests.
-# The session lifecycle fixture lives in this file (one HTTP-API e2e
-# file does not warrant a second conftest, which would also collide
-# under mypy's duplicate-module check), so the shadowing is in-module
-# here; this mirrors e2e/conftest.py's identical, documented waiver.
-
 from __future__ import annotations
 
 import json
