@@ -24,6 +24,7 @@ from ...common.http import (
     post_json_with_retries,
 )
 from ...config.defaults import DataConfig
+from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.path_policy import IdFactory
 
 DATA_CONFIG = DataConfig()
@@ -213,7 +214,7 @@ async def _post_one_conversation(
     )
 
 
-async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
+async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     """Execute a resolved NL2SQL request, rotating the conversation.
 
     The Huawei DataArts NL-query gateway keys conversation state on the
@@ -267,3 +268,82 @@ async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
             message="Failed to query SQL database: no attempts executed",
         )
     )
+
+
+@func_cache(
+    key_params=[
+        "message_content",
+        "subject_id",
+        "workspace_id",
+        "database_url",
+        "need_insight",
+        "simplify_response",
+    ],
+    ttl=LONG_TTL_SECONDS,
+)
+async def _execute_nl2sql_cached(
+    message_content: str,
+    subject_id: str,
+    workspace_id: str,
+    database_url: str,
+    need_insight: bool,
+    simplify_response: bool,
+    *,
+    request: Nl2SqlRequest,
+) -> Any:
+    """Cache NL2SQL answers on the deterministic semantic fields only.
+
+    ``dialog_id`` is fresh per call (a server-side conversation slot,
+    rotated again inside ``_execute_nl2sql_uncached`` on retry) and
+    ``token`` is a volatile IAM credential; both are intentionally
+    excluded from ``key_params`` so identical natural-language
+    questions over the same workspace / subject / database / insight
+    flags hit one cached BI answer regardless of which conversation
+    or token attempted it. Failures propagate uncached (the inner
+    raises McpError on retry exhaustion), so a transient gateway
+    glitch never poisons the 90-day store.
+    """
+    del message_content, subject_id, workspace_id
+    del database_url, need_insight, simplify_response
+    return await _execute_nl2sql_uncached(request)
+
+
+async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
+    """Execute a resolved NL2SQL request with semantic-input caching.
+
+    Thin adapter that pulls the deterministic semantic scalars off the
+    request (the rewritten ``message_content`` plus the workspace,
+    subject, database, and insight knobs) and delegates to the cached
+    inner; the request itself is forwarded keyword-only so the cache
+    miss path retains the rotating-conversation retry behavior the
+    Huawei DataArts NL-query gateway requires.
+
+    Args:
+        request: Resolved NL2SQL request settings.
+
+    Returns:
+        Raw JSON response from the cached or freshly-executed call.
+    """
+    payload = request.payload_data
+    return await _execute_nl2sql_cached(
+        message_content=payload["message_content"],
+        subject_id=payload["subject_id"],
+        workspace_id=request.workspace_id,
+        database_url=request.database_url,
+        need_insight=payload["need_insight"],
+        simplify_response=payload["simplify_response"],
+        request=request,
+    )
+
+
+def clear_nl2sql_cache() -> None:
+    """Drop the cached NL2SQL answers in the local SQLite store.
+
+    Public seam over the private ``_execute_nl2sql_cached`` cache so
+    test fixtures and admin tooling don't need to reach into a
+    protected attribute. Calling this before / between tests is the
+    only safe way to assert the rotation-and-retry behavior the
+    uncached helper provides, because the cached store persists
+    across test runs at LONG_TTL_SECONDS.
+    """
+    _execute_nl2sql_cached.cache_clear()

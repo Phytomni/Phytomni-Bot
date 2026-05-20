@@ -34,6 +34,21 @@ nl2sql_module = importlib.import_module(
 pytestmark = pytest.mark.agent
 
 
+@pytest.fixture(autouse=True)
+def _clear_nl2sql_cache():
+    """Reset the NL2SQL execute cache so tests cannot bleed state.
+
+    The cached inner ``_execute_nl2sql_cached`` lives in the persistent
+    .cache/phytomni SQLite store; without an explicit clear, a passing
+    test caches its result against the natural-language question key
+    and every later test that reuses that question short-circuits
+    through the cache, bypassing the rotation-and-failure behavior
+    those tests are pinning.
+    """
+    nl2sql_module.clear_nl2sql_cache()
+    yield
+
+
 class _FakePost:
     """Capture each attempt's ``dialog_id`` and script its outcome.
 
@@ -427,6 +442,12 @@ async def test_execute_nl2sql_backs_off_only_between_rotations(
     )
     assert not ok.recorded_backoffs()
 
+    # The success above just populated the deterministic-input cache;
+    # clear it so the next phase exercises the failure-rotation path
+    # against the same NL question rather than short-circuiting on
+    # the cached "ok" answer.
+    nl2sql_module.clear_nl2sql_cache()
+
     # All three conversations fail: pause after attempts 0 and 1, but
     # not after the final (attempt 2) which re-raises immediately.
     fail = _FakePost([_mcp_error(), _mcp_error(), _mcp_error()])
@@ -437,3 +458,52 @@ async def test_execute_nl2sql_backs_off_only_between_rotations(
         )
     assert fail.recorded_backoffs() == [0, 1]
     assert fail.attempt_count() == 3
+
+
+async def test_execute_nl2sql_dedupes_identical_questions_across_dialogs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Identical NL questions hit the BI gateway once regardless of dialog id.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    fake = _FakePost([{"answer": "wheat orthologs"}])
+    _patch_transport(monkeypatch, fake)
+
+    # Two requests carry different dialog_id values (one explicit, one
+    # auto-generated) but the same NL question / workspace / subject /
+    # database / insight flags — exactly the inputs the cache keys on.
+    first_request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"dialog_id": "dialog-explicit", "max_retries": 0},
+    )
+    second_request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in wheat",
+        {"max_retries": 0},
+    )
+    assert (
+        first_request.payload_data["dialog_id"]
+        != second_request.payload_data["dialog_id"]
+    )
+
+    first = await execute_nl2sql_request(first_request)
+    second = await execute_nl2sql_request(second_request)
+
+    assert first == second == {"answer": "wheat orthologs"}
+    # Only the first request roundtripped to the gateway; the second
+    # call landed on the cached answer despite its fresh dialog_id.
+    assert fake.attempt_count() == 1
+
+    # Flipping the NL question must miss the cache and re-run the
+    # rotation logic with a fresh BI gateway call.
+    fake.outcomes.append({"answer": "rice orthologs"})
+    third_request = Nl2SqlRequest.from_kwargs(
+        "homologs of AT1G75370 in rice",
+        {"max_retries": 0},
+    )
+
+    third = await execute_nl2sql_request(third_request)
+
+    assert third == {"answer": "rice orthologs"}
+    assert fake.attempt_count() == 2
