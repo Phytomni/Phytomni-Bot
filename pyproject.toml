@@ -66,8 +66,10 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
     "shellcheck-py>=0.11.0",
+    "toml-sort>=0.24.4",
     "types-pyyaml>=6.0.12",
     "types-requests>=2.33.0",
+    "validate-pyproject>=0.25",
     "yamllint>=1.38.0",
 ]
 demo = [
@@ -91,8 +93,10 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.15.12",
     "shellcheck-py>=0.11.0",
+    "toml-sort>=0.24.4",
     "types-pyyaml>=6.0.12",
     "types-requests>=2.33.0",
+    "validate-pyproject>=0.25",
     "yamllint>=1.38.0",
 ]
 
@@ -205,6 +209,21 @@ plugins.md013.enabled = false
 # the top-level "Configuration" section); siblings_only keeps the rule on
 # for genuine same-parent duplicates without forcing degraded headings.
 plugins.md024.siblings_only = true
+
+[tool.tomlsort]
+# TOML gate config (consumed by `toml-sort --check` and the in-place
+# formatter; CLI flags are not used so local and CI share one config).
+# Preserve the project's deliberate table ordering — alphabetizing
+# [tool.*] would scramble the [build-system]/[project]/[tool.*] grouping
+# this repo and most pyprojects expect.
+no_sort_tables = true
+# Keep 4-space indentation in multiline arrays (the repo's existing
+# convention for the dev / classifiers / exclude lists).
+spaces_indent_inline_array = 4
+# Preserve the trailing comma on the last item in multiline arrays:
+# adding a new dep then does not modify the prior line, which keeps
+# code-review diffs small under heavy multi-agent churn.
+trailing_comma_inline_array = true
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
