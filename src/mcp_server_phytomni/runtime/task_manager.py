@@ -94,6 +94,12 @@ class Submission:
             live status bridge; empty when not yet known.
         run_context: Optional run-scope context for the unified run
             registry; ``None`` keeps the run-scoped columns ``NULL``.
+        input_fingerprint: Optional deterministic identity digest for
+            the submission inputs. When supplied, downstream callers
+            can look the row up via
+            ``TaskManager.get_task_by_fingerprint`` to short-circuit a
+            duplicate long-running submission and reuse the prior
+            remote ``task_id`` instead of launching a fresh job.
     """
 
     task_id: str
@@ -101,6 +107,7 @@ class Submission:
     output_dir: str
     analysis_id: str = ""
     run_context: Optional[RunContext] = None
+    input_fingerprint: Optional[str] = None
 
 
 # Fresh-database schema: ``CREATE TABLE IF NOT EXISTS`` creates all
@@ -117,7 +124,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     agent TEXT,
     origin TEXT,
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    input_fingerprint TEXT
 )
 """
 
@@ -132,6 +140,23 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
     ("origin", "ALTER TABLE tasks ADD COLUMN origin TEXT"),
     ("created_at", "ALTER TABLE tasks ADD COLUMN created_at TEXT"),
     ("updated_at", "ALTER TABLE tasks ADD COLUMN updated_at TEXT"),
+    (
+        "input_fingerprint",
+        "ALTER TABLE tasks ADD COLUMN input_fingerprint TEXT",
+    ),
+)
+
+# Status values that disqualify a prior row from being reused via
+# ``get_task_by_fingerprint``: the analyst remote platform reports
+# ``"failed"`` / ``"error"`` / ``"cancelled"`` on terminal failures,
+# and the in-process LangGraph leg raises
+# ``"failed_at_agent_level"``. A failed prior must trigger a fresh
+# submission rather than handing the caller a dead remote id.
+_DEAD_TASK_STATUSES: tuple[str, ...] = (
+    "failed",
+    "error",
+    "cancelled",
+    "failed_at_agent_level",
 )
 
 
@@ -230,6 +255,8 @@ class TaskManager:
         4-column write), while the unified run-registry chokepoint
         passes a populated context so a run's child tasks share
         ``run_id`` / ``user_id`` / ``agent`` / ``origin`` / timestamps.
+        The optional ``input_fingerprint`` carries the deterministic
+        identity digest that powers ``get_task_by_fingerprint`` dedup.
 
         Args:
             submission: The full per-row write spec.
@@ -240,8 +267,9 @@ class TaskManager:
             """
             INSERT OR REPLACE INTO tasks (
                 task_id, status, analysis_id, output_dir,
-                run_id, user_id, agent, origin, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                run_id, user_id, agent, origin, created_at, updated_at,
+                input_fingerprint
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 submission.task_id,
@@ -254,10 +282,62 @@ class TaskManager:
                 ctx.origin,
                 ctx.created_at,
                 ctx.updated_at,
+                submission.input_fingerprint,
             ),
         )
         conn.commit()
         conn.close()
+
+    def get_task_by_fingerprint(
+        self, input_fingerprint: str
+    ) -> Optional[Dict[str, str]]:
+        """Return the most-recent non-failed task row for a fingerprint.
+
+        Filters out terminal-failed rows (``_DEAD_TASK_STATUSES``) so a
+        prior failed attempt never short-circuits a fresh submission;
+        in-flight (``submitted`` / ``running`` / ``pending``) and
+        succeeded rows are eligible for reuse. ``ORDER BY rowid DESC``
+        picks the most recent surviving row when multiple rows share a
+        fingerprint (e.g., a re-submitted task after an earlier failed
+        attempt).
+
+        Args:
+            input_fingerprint: Deterministic identity digest produced
+                by the caller (e.g. ``_analyst_task_fingerprint``).
+
+        Returns:
+            ``{"task_id", "status", "analysis_id", "output_dir"}`` for a
+            reusable prior row, or ``None`` when no non-failed match
+            exists.
+        """
+        placeholders = ",".join("?" for _ in _DEAD_TASK_STATUSES)
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                f"""
+                SELECT task_id, status, analysis_id, output_dir
+                FROM tasks
+                WHERE input_fingerprint = ?
+                  AND (
+                      status IS NULL
+                      OR lower(status) NOT IN ({placeholders})
+                  )
+                ORDER BY rowid DESC
+                LIMIT 1
+                """,
+                (input_fingerprint, *_DEAD_TASK_STATUSES),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        return {
+            "task_id": row[0],
+            "status": row[1],
+            "analysis_id": row[2],
+            "output_dir": row[3],
+        }
 
     def record_submission(
         self,
