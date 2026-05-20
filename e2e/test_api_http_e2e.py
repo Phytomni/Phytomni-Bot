@@ -260,17 +260,18 @@ def _read_user_query(demo_data_dir: Path, name: str) -> str:
 
 
 def _completion_text(body: dict[str, Any]) -> str:
-    """Return assistant content, unwrapping the citation envelope.
+    """Return assistant content as plain markdown.
 
-    Citation-bearing agents serialize the answer as a JSON envelope
-    ``{"content": "<markdown>", "doc_list": [...]}``; unwrap it so
-    keyword/section assertions see the markdown body.
+    Cited agents now emit plain markdown with inline ``[N]`` markers in
+    ``message.content``; the ``markdown_body`` helper also tolerates the
+    legacy ``{"content","doc_list"}`` JSON envelope for archived logs
+    and pre-unwrap servers.
 
     Args:
         body: Parsed chat-completion response.
 
     Returns:
-        The assistant message content (envelope-unwrapped).
+        The assistant message content as markdown.
     """
     content = body["choices"][0]["message"]["content"]
     return markdown_body(content)

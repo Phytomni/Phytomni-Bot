@@ -10,7 +10,6 @@ the BriefGene obs_file_list rejection.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Callable
 
 import httpx
@@ -101,11 +100,7 @@ async def test_knowledge_preserves_doc_list(
     assert body["references"] == [
         {"file_id": "doc-a", "title": "Paper A"},
     ]
-    envelope = json.loads(body["choices"][0]["message"]["content"])
-    assert envelope == {
-        "content": "Evidence in [1].",
-        "doc_list": [{"file_id": "doc-a", "title": "Paper A"}],
-    }
+    assert body["choices"][0]["message"]["content"] == "Evidence in [1]."
 
 
 async def test_brief_gene_rejects_obs_file_list(

@@ -1072,9 +1072,12 @@ user:
     provided basic genomic information and retrieved literature context.
 
     Strict directives:
-    - Part I must display the supplied basic genomic variables. Do not
-    alter,
-      omit, or hallucinate these facts.
+    - Part I must display every supplied basic-genomic bullet verbatim.
+      Do not alter, omit, hallucinate, or merge any of them. In
+      particular, when two bullets carry the same value (for example,
+      `User Query ID` and `Search ID` are both "Os01g0177400" because
+      the user typed the canonical locus), emit BOTH lines — never
+      collapse duplicate-looking bullets into one.
     - Part II must be derived strictly from the retrieved literature
     context.
       If no relevant information is available, state that clearly.

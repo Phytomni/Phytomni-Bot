@@ -111,7 +111,14 @@ def _format_message_result(
 def _format_cited_message_result(
     content: Mapping[str, Any],
 ) -> FormattedToolResult:
-    """Format an OpenAI-style response and normalize cited documents."""
+    """Format an OpenAI-style response and normalize cited documents.
+
+    The answer text stays as plain markdown with inline ``[N]`` citation
+    markers; deduplicated citation documents flow through the structured
+    ``references`` field. The OpenAI HTTP surface and the MCP stdio
+    surface both consume those two fields directly, so neither needs to
+    ``json.loads`` a wrapped envelope out of ``message.content``.
+    """
     message = _first_message(content)
     answer = str(message.get("content", ""))
     doc_list = _doc_list(message)
@@ -121,16 +128,9 @@ def _format_cited_message_result(
             follow_up_questions=_follow_up_questions(message),
         )
 
-    normalized_answer, references = _normalize_citations(
-        answer,
-        doc_list,
-    )
-    structured_answer = {
-        "content": normalized_answer,
-        "doc_list": list(references),
-    }
+    normalized_answer, references = _normalize_citations(answer, doc_list)
     return FormattedToolResult(
-        answer=_json_dumps(structured_answer),
+        answer=normalized_answer,
         follow_up_questions=_follow_up_questions(message),
         references=references,
     )

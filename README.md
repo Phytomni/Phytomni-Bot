@@ -150,8 +150,9 @@ src/mcp_client_phytomni/
   formatted seam `invoke_tool_formatted` (built on the unchanged raw
   seam `invoke_tool_raw`), so MCP stdio and the HTTP API emit the
   identical normalized envelope.
-- Tool-response formatting (citation dedup, the
-  `{"content","doc_list"}` envelope for cited agents, DataAgent table
+- Tool-response formatting (citation dedup with inline `[N]` markers
+  preserved in `message.content` and deduplicated documents lifted to
+  the top-level `references` field for cited agents, DataAgent table
   JSON, task-submission metadata) in `mcp/result_formatting.py`.
 - MCP `TextContent` response serialization.
 
@@ -522,9 +523,10 @@ supported (`stream: true` → `400`).
   chat-like agent: `phyto-chat`, `phyto-knowledge`, `phyto-review`,
   `phyto-brief-gene`. `follow_up_questions`, `references`, and
   `metadata` are surfaced as extra top-level keys; cited-agent answers
-  also carry a `{"content","doc_list"}` JSON envelope as
-  `message.content` (parse it with `json.loads`); `phyto-brief-gene`
-  rejects a non-empty `obs_file_list`.
+  (Knowledge/Review/BriefGene) emit plain markdown with inline `[N]`
+  citation markers as `message.content` and ship deduplicated
+  citation documents through the top-level `references` field;
+  `phyto-brief-gene` rejects a non-empty `obs_file_list`.
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/chat/completions \

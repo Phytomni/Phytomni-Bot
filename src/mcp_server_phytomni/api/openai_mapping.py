@@ -53,18 +53,27 @@ def flatten_messages(
 ) -> str:
     """Flatten OpenAI chat messages into a single user query.
 
+    A lone user message is returned verbatim so identifier-driven tools
+    (BriefGene takes a gene/transcript id) see the raw content; any
+    multi-message conversation keeps ``role: content`` blocks to
+    preserve turn context.
+
     Args:
         messages: Sequence of objects exposing ``role`` and ``content``.
 
     Returns:
-        The conversation rendered as ``role: content`` blocks.
+        The user content verbatim for a single user message, or the
+        conversation rendered as ``role: content`` blocks otherwise.
 
     Raises:
         ValueError: When no user message is present.
     """
-    if not any(getattr(m, "role", None) == "user" for m in messages):
+    msgs = list(messages)
+    if not any(getattr(m, "role", None) == "user" for m in msgs):
         raise ValueError("messages must include a user message")
-    return "\n\n".join(f"{m.role}: {m.content}" for m in messages)
+    if len(msgs) == 1 and getattr(msgs[0], "role", None) == "user":
+        return str(msgs[0].content)
+    return "\n\n".join(f"{m.role}: {m.content}" for m in msgs)
 
 
 def to_chat_completion(
