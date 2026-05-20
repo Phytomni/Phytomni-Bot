@@ -13,8 +13,9 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
 
 import functools
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -40,9 +41,15 @@ from ..config.defaults import (
 )
 from ..config.settings import SensitiveConfig
 from ..runtime.request_context import current_request_user
-from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ..runtime.run_registry import RunRegistry, RunSpec
+from ..runtime.task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+    resolve_tasks_db_path,
+)
 from ..runtime.task_reconcile import reconcile_task
-from ..storage.path_policy import RunIdentity
+from ..storage.path_policy import IdFactory, RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 
 
@@ -68,62 +75,104 @@ def scratch_server_dir(config: Any, scope: str) -> str:
     )
 
 
-def _record_submitted_task(result: Any) -> None:
-    """Best-effort: persist a submitted task into the local registry.
+def _record_submitted_task(result: Any, *, agent: str) -> None:
+    """Persist a submitted task plus its owning run row.
 
-    Writes the MCP-facing ``task_id`` / ``output_dir`` so the
-    non-blocking GetTaskStatus tool can later look the submission up.
-    A registry failure must never break an already-successful
-    submission, so SQLite/OS errors are swallowed — the caller still
-    receives its ``task_id``; only the auxiliary bookkeeping is lost.
+    Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``,
+    writes one ``runs`` row (``origin="remote"``, ``status="running"``)
+    via ``RunRegistry.create_run``, then writes the child task row
+    carrying the same ``run_id`` / ``user_id`` / ``agent`` / ``origin``.
+    Best-effort: a registry / SQLite / OS error must never break an
+    already-successful submission, so failures are swallowed — the
+    caller still receives its ``task_id``; only the bookkeeping is lost.
+
+    The MCP tool's return dict is *not* mutated (no ``run_id`` is
+    surfaced to the client) so the existing stdio MCP contract stays
+    byte-equivalent; the HTTP API path reads ``tasks.run_id`` back
+    when it needs the run identity.
 
     Args:
         result: The wrapper result returned by a submit-style handler.
+        agent: Public agent alias (e.g. ``"analyst"``) recorded on the
+            run and task rows.
     """
     if not isinstance(result, dict):
         return
     task_id = result.get("task_id")
     if not isinstance(task_id, str) or not task_id:
         return
-    output_dir = result.get("output_dir") or ""
+    output_dir = str(result.get("output_dir") or "")
+    user_id = current_request_user() or "anonymous"
+    run_id = IdFactory().new_id("run", agent)
+    now = datetime.now(timezone.utc).isoformat()
+    db_path = resolve_tasks_db_path()
     try:
-        TaskManager(resolve_tasks_db_path()).record_submission(
-            task_id, "submitted", str(output_dir)
+        RunRegistry(db_path).create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=user_id,
+                agent=agent,
+                origin="remote",
+            )
+        )
+        TaskManager(db_path).record(
+            Submission(
+                task_id=task_id,
+                status="submitted",
+                output_dir=output_dir,
+                run_context=RunContext(
+                    run_id=run_id,
+                    user_id=user_id,
+                    agent=agent,
+                    origin="remote",
+                    created_at=now,
+                    updated_at=now,
+                ),
+            )
         )
     except (sqlite3.Error, OSError):
         return
 
 
-def _records_submission(handler: Any) -> Any:
-    """Decorate a submit-style handler to log its task post-return.
+def _records_submission(
+    agent: str,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator factory: log a submit handler's run + task on return.
 
     The handler runs unchanged; its result is forwarded verbatim and
-    also recorded in the local registry for GetTaskStatus.
-    ``functools.wraps`` preserves the handler name so the
-    ``TOOL_HANDLERS`` mapping in ``mcp/app.py`` is unaffected.
+    also recorded in the unified run+task registry. ``functools.wraps``
+    preserves the handler name so the ``TOOL_HANDLERS`` mapping in
+    ``mcp/app.py`` is unaffected, and the static ``agent`` slug avoids
+    name-introspection at call time.
 
     Args:
-        handler: The async submit handler to wrap.
+        agent: Public agent alias (e.g. ``"analyst"``) recorded on the
+            run and task rows.
 
     Returns:
-        The wrapped async handler.
+        Decorator that wraps an async submit handler.
     """
 
-    @functools.wraps(handler)
-    async def _wrapper(args: Any) -> Any:
-        """Await the handler, record the task, return the result.
+    def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap one async submit handler with the recorder hook."""
 
-        Args:
-            args: The validated tool-argument model.
+        @functools.wraps(handler)
+        async def _wrapper(args: Any) -> Any:
+            """Await the handler, record the run + task, return the result.
 
-        Returns:
-            The handler's result, unchanged.
-        """
-        result = await handler(args)
-        _record_submitted_task(result)
-        return result
+            Args:
+                args: The validated tool-argument model.
 
-    return _wrapper
+            Returns:
+                The handler's result, unchanged.
+            """
+            result = await handler(args)
+            _record_submitted_task(result, agent=agent)
+            return result
+
+        return _wrapper
+
+    return decorator
 
 
 async def handle_chat_agent(args: Any) -> Any:
@@ -278,7 +327,7 @@ async def handle_data_agent(args: Any) -> Any:
     )
 
 
-@_records_submission
+@_records_submission("analyst")
 async def handle_analyst_agent(args: Any) -> Any:
     """Execute AnalystAgent with default runtime configuration.
 
@@ -455,7 +504,7 @@ async def handle_brief_gene_agent(args: Any) -> Any:
     )
 
 
-@_records_submission
+@_records_submission("deep_genome")
 async def handle_deep_genome_agent(args: Any) -> Any:
     """Execute DeepGenomeAgent with default runtime configuration.
 
@@ -530,7 +579,7 @@ async def handle_deep_genome_agent(args: Any) -> Any:
     )
 
 
-@_records_submission
+@_records_submission("research")
 async def handle_in_silico_research_agent(args: Any) -> Any:
     """Execute InSilicoResearchAgent with default runtime configuration.
 
@@ -592,7 +641,7 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
     )
 
 
-@_records_submission
+@_records_submission("design")
 async def handle_digital_design_agent(args: Any) -> Any:
     """Execute DigitalDesignAgent with default runtime configuration.
 
@@ -633,7 +682,7 @@ async def handle_digital_design_agent(args: Any) -> Any:
     )
 
 
-@_records_submission
+@_records_submission("network")
 async def handle_gene_network_agent(args: Any) -> Any:
     """Execute GeneNetworkAgent with default runtime configuration.
 
