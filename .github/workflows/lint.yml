@@ -128,7 +128,7 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Analyse the code with pylint
         run: |
-          git ls-files -z '*.py' \
+          git ls-files -z '*.py' '*.pyi' \
             | PYTHONPATH=src xargs -0 -r pylint \
               --py-version=${{ matrix.python-version }} \
               --persistent=no

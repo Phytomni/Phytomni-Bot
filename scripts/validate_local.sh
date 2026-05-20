@@ -29,7 +29,7 @@ while IFS= read -r pyfile; do
         set -- "$@" "$pyfile"
     fi
 done <<EOF
-$(git ls-files '*.py')
+$(git ls-files '*.py' '*.pyi')
 EOF
 run uv run pylint --persistent=no "$@"
 

@@ -3,7 +3,15 @@
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 # ruff: noqa: N802, N803, N815
-"""Minimal type stubs for the OBS SDK surface used by Phytomni."""
+# pylint: disable=unused-argument
+"""Minimal type stubs for the OBS SDK surface used by Phytomni.
+
+The unused-argument rule is disabled file-wide because stubs declare
+signatures without bodies, so every parameter is structurally "unused" by
+pylint's definition; the rule is unsatisfiable for stub files and parameter
+names must mirror the real OBS SDK API exactly (same reason this file also
+carries `# ruff: noqa: N802, N803, N815` for camelCase argument names).
+"""
 
 from typing import Any
 
