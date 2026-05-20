@@ -151,6 +151,30 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Run offline tests with coverage
+        env:
+          # Several agents/* modules call SensitiveConfig.load() at
+          # module-import time, so pytest collection imports the
+          # package before tests/conftest.py can populate os.environ.
+          # CI has no .env file; mirror tests/conftest.py:_TEST_ENV
+          # here so the import-time validation succeeds and
+          # PHYTOMNI_TESTING short-circuits load_env_file() before
+          # pydantic runs.
+          PHYTOMNI_TESTING: "1"
+          DOMAIN_NAME: pytest-domain
+          USER_NAME: pytest-user
+          USER_PASSWORD: pytest-password
+          ACCESS_KEY_ID: pytest-access-key-id
+          SECRET_ACCESS_KEY: pytest-secret-access-key
+          BASE_URL: https://example.invalid/llm
+          MODEL_ID: pytest-model
+          API_KEY: pytest-api-key
+          CODER_URL: https://example.invalid/coder
+          CODER_MODEL: pytest-coder-model
+          CODER_API_KEY: pytest-coder-api-key
+          EMBED_URL: https://example.invalid/embed
+          EMBED_MODEL: pytest-embed-model
+          EMBED_API_KEY: pytest-embed-api-key
+          BI_TOKEN: pytest-bi-token
         run: |
           pytest \
             --cov=mcp_server_phytomni \
