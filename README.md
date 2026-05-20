@@ -30,8 +30,9 @@ wheel; after `pip install -e .` it exposes a `phytomni` console script.
 - `func_cache` provides a tested SQLite-backed sync/async cache decorator.
 - Default pytest runs are offline, secret-free, and network-blocked.
 - CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
-  offline `pytest`, `yamllint`, `shellcheck`, `shfmt`, `mdformat`,
-  `pymarkdown`, `toml-sort`, `validate-pyproject`, and `jsonlint`.
+  offline `pytest`, `yamllint`, `actionlint`, `shellcheck`, `shfmt`,
+  `mdformat`, `pymarkdown`, `toml-sort`, `validate-pyproject`, and
+  `jsonlint`.
 - Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
   and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
   every MCP tool against real backends through `PhytomniMcpClient`. See
@@ -760,9 +761,9 @@ by the style tests and are reserved for documented framework boundaries.
 
 `./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
 whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
-yamllint, mdformat, pymarkdown, toml-sort, validate-pyproject, jsonlint,
-`demo_data/` idempotency, then `pytest`) over every tracked file — the
-same checks as CI and the `.githooks/pre-push` hook.
+yamllint, actionlint, mdformat, pymarkdown, toml-sort, validate-pyproject,
+jsonlint, `demo_data/` idempotency, then `pytest`) over every tracked
+file — the same checks as CI and the `.githooks/pre-push` hook.
 Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
 (`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
 `scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
@@ -773,9 +774,20 @@ configured through `[tool.pymarkdown]` in `pyproject.toml`). TOML
 (`*.toml`) gets both a format check (`toml-sort --check`, configured
 through `[tool.tomlsort]` to keep the existing table order, 4-space
 multiline arrays, and trailing commas) and schema validation
-(`validate-pyproject` over every tracked `pyproject.toml`). A `Makefile`
-wraps it and adds a **scoped** gate (`scripts/scoped_gate.sh`) that runs
-those same tools and
+(`validate-pyproject` over every tracked `pyproject.toml`). GitHub
+Actions workflow files (`.github/workflows/*`) get both yamllint shape
+coverage and `actionlint` workflow-semantic checks (action versions,
+missing inputs, shell errors in `run:` blocks via actionlint's
+shellcheck integration); actionlint has no pip or npx package, so
+`scripts/actionlint_runner.sh` resolves it from an on-PATH binary,
+else a pinned `go install github.com/rhysd/actionlint/cmd/actionlint`
+cached under `.cache/phytomni/`, mirroring `scripts/shfmt_runner.sh`.
+Type stubs under `typings/` are validated by mypy and pyright (the
+canonical stub checkers) and explicitly excluded from pylint and ruff
+via `[tool.pylint.main].ignore` and `[tool.ruff].exclude`, since their
+rules target executable-code semantics body-less stubs cannot satisfy.
+A `Makefile` wraps it and adds a **scoped** gate
+(`scripts/scoped_gate.sh`) that runs those same tools and
 flags but only over the files in the active change region, so parallel work is
 not blocked by unrelated whole-tree failures:
 
@@ -796,7 +808,9 @@ whenever any `.py` changed, and (like the full gate) runs `shellcheck` plus
 `shfmt -d -i 4` over any changed shell scripts, `mdformat --check` plus
 `pymarkdown` over any changed Markdown (excluding generator-owned
 `demo_data/*.md`), and `toml-sort --check` plus `validate-pyproject` (the
-latter only on changed `*pyproject.toml`) over any changed `*.toml`.
+latter only on changed `*pyproject.toml`) over any changed `*.toml`,
+and `scripts/actionlint_runner.sh` over any changed
+`.github/workflows/*`.
 `make push` uses an SSH
 keepalive instead of `--no-verify`, so the pre-push hook still runs. Exporting
 `PHYTOMNI_SCOPED_GATE=1` makes the `.githooks/pre-push` hook run the scoped
@@ -838,6 +852,8 @@ python scripts/normalize_json.py \
   imports of `reportlab` and `openpyxl` resolve)
 - `pytest --cov=mcp_server_phytomni`
 - `yamllint .`
+- `scripts/actionlint_runner.sh` over every tracked
+  `.github/workflows/*` (Go binary, pinned via the runner)
 - `mdformat --check` and `pymarkdown --config pyproject.toml scan` over
   tracked `*.md` (excluding generator-owned `demo_data/`)
 - `toml-sort --check` over tracked `*.toml` and `validate-pyproject`
