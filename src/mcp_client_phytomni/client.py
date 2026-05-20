@@ -24,10 +24,8 @@ from mcp.types import Tool
 from openai import AsyncOpenAI
 
 from .tool_result_formatters import (
-    FieldMapper,
     FormattedToolResult,
-    ReferenceResolver,
-    format_tool_result,
+    parse_formatted_result,
 )
 
 DEFAULT_SERVER_MODULE = "mcp_server_phytomni.server"
@@ -167,8 +165,10 @@ class PhytomniMcpClient:
 
     Attributes:
         command: Server subprocess command used by `connect`.
-        field_mapper: Optional mapper for DataAgent table headers.
-        reference_resolver: Optional resolver for cited document metadata.
+        field_mapper: Deprecated and ignored; the MCP server now
+            formats tool output upstream.
+        reference_resolver: Deprecated and ignored; the MCP server now
+            formats tool output upstream.
         session: Active MCP client session after `connect` succeeds.
     """
 
@@ -176,8 +176,8 @@ class PhytomniMcpClient:
         self,
         command: ServerCommand | None = None,
         *,
-        field_mapper: FieldMapper | None = None,
-        reference_resolver: ReferenceResolver | None = None,
+        field_mapper: Any = None,
+        reference_resolver: Any = None,
     ) -> None:
         self.command = command or server_command_from_target()
         self.field_mapper = field_mapper
@@ -308,13 +308,7 @@ class PhytomniMcpClient:
             raise ToolCallError(raw_text)
 
         raw_payload = parse_tool_payload(raw_text)
-        formatted = format_tool_result(
-            tool_name,
-            raw_payload,
-            arguments=arguments,
-            field_mapper=self.field_mapper,
-            reference_resolver=self.reference_resolver,
-        )
+        formatted = parse_formatted_result(raw_payload)
         return McpToolResponse(
             tool_name=tool_name,
             arguments=dict(arguments),

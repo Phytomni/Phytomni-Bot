@@ -2,67 +2,53 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for MCP client result formatting helpers.
+"""Tests for MCP client result deserialization.
 
-Covers citation rewriting, document deduplication, follow-up extraction, and
-caller-provided field mapping in formatted MCP client results.
+The MCP server formats tool output upstream; the client only
+reconstructs FormattedToolResult and keeps a backward-compatible
+format_tool_result shim that ignores legacy keyword arguments.
 """
-
-import json
 
 import pytest
 
-from mcp_client_phytomni.tool_result_formatters import format_tool_result
+from mcp_client_phytomni.tool_result_formatters import (
+    FormattedToolResult,
+    format_tool_result,
+    parse_formatted_result,
+)
 
 pytestmark = pytest.mark.unit
 
 
-def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
-    """Verify cited documents are deduplicated in first-citation order."""
+def test_parse_formatted_result_round_trips_server_payload() -> None:
+    """Verify a server asdict payload rebuilds typed dataclass fields."""
     payload = {
-        "choices": [
-            {
-                "message": {
-                    "content": "Evidence appears in [2] and [1, 2].",
-                    "follow_up_questions": ["Next question?"],
-                    "doc_list": [
-                        {"file_id": "doc-a", "title": "Paper A.pdf"},
-                        {"file_id": "doc-b", "title": "Paper B.pdf"},
-                    ],
-                }
-            }
-        ]
+        "answer": "Evidence appears in [1].",
+        "follow_up_questions": ["Next question?"],
+        "metadata": {"task_id": "t-1"},
+        "references": [{"file_id": "doc-a", "title": "Paper A"}],
     }
 
-    result = format_tool_result("KnowledgeAgent", payload)
-    answer = json.loads(result.answer)
+    result = parse_formatted_result(payload)
 
-    assert answer == {
-        "content": "Evidence appears in [1] and [2,1].",
-        "doc_list": [
-            {"file_id": "doc-b", "title": "Paper B"},
-            {"file_id": "doc-a", "title": "Paper A"},
-        ],
-    }
+    assert isinstance(result, FormattedToolResult)
+    assert result.answer == "Evidence appears in [1]."
     assert result.follow_up_questions == ("Next question?",)
+    assert result.metadata == {"task_id": "t-1"}
+    assert result.references == ({"file_id": "doc-a", "title": "Paper A"},)
 
 
-def test_data_result_allows_external_field_mapping() -> None:
-    """Verify DataAgent headers can be mapped by caller-provided metadata."""
-    payload = {
-        "header": [{"caption": "gene_id"}, {"caption": "score"}],
-        "data": [["Os01g01010", 0.8]],
-    }
+def test_format_tool_result_shim_ignores_legacy_kwargs() -> None:
+    """Verify the shim parses the payload and drops legacy arguments."""
+    payload = {"answer": "ok", "follow_up_questions": [], "metadata": {}}
 
     result = format_tool_result(
-        "DataAgent",
+        "KnowledgeAgent",
         payload,
-        field_mapper=lambda headers: [
-            "Gene ID" if h == "gene_id" else h for h in headers
-        ],
+        arguments={"user_query": "q"},
+        field_mapper=lambda headers: headers,
+        reference_resolver=lambda _file_id: None,
     )
 
-    assert json.loads(result.answer) == {
-        "headers": ["Gene ID", "score"],
-        "rows": [["Os01g01010", 0.8]],
-    }
+    assert result == parse_formatted_result(payload)
+    assert result.answer == "ok"

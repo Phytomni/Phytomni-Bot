@@ -5,8 +5,8 @@
 """Client helpers for interacting with the Phytomni MCP server.
 
 The package re-exports `PhytomniMcpClient`, `PhytomniToolRouter`, response
-models, command helpers, and tool-result formatting helpers for applications
-that call Phytomni MCP tools over stdio.
+models, command helpers, and tool-result deserialization helpers for
+applications that call Phytomni MCP tools over stdio.
 """
 
 from .client import (
