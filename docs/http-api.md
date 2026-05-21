@@ -14,7 +14,8 @@ python -m mcp_server_phytomni.api.server
 
 `ApiConfig` in `config/defaults.py` carries non-secret, env-overridable
 settings. SQLite stores are local-only because network filesystems can
-deadlock under SQLite WAL.
+deadlock under SQLite WAL. See [Configuration](configuration.md) for the
+canonical variable matrix.
 
 | Setting              | Env                                         | Default                           |
 | -------------------- | ------------------------------------------- | --------------------------------- |
@@ -41,6 +42,8 @@ phytomni-api-key list   [--user-id alice]
 phytomni-api-key revoke --prefix ptm_xxxxxxxx
 ```
 
+See [CLI Reference](cli.md) for the full command reference.
+
 Send the key as either header:
 
 ```text
@@ -59,16 +62,19 @@ supported; `stream: true` returns `400`.
 
 ## Endpoints
 
-- `GET /healthz`: liveness, no auth, no dependencies.
-- `GET /readyz`: readiness, no auth, checks local store directories are
-  writable without creating anything.
-- `GET /v1/models`: lists OpenAI-compatible model ids.
-- `POST /v1/chat/completions`: OpenAI-compatible chat endpoint.
-- `GET /v1/agents`: lists native agent-run slugs.
-- `POST /v1/agents/{agent}/runs`: invokes one agent by slug.
-- `GET /v1/runs/{run_id}`: owner-isolated run state.
-- `GET /v1/runs?status=&agent=&origin=&limit=&offset=`: owner-scoped,
-  newest-first listing.
+| Method | Path                      | Auth | Purpose                                                           |
+| ------ | ------------------------- | ---- | ----------------------------------------------------------------- |
+| `GET`  | `/healthz`                | no   | Liveness, no dependencies.                                        |
+| `GET`  | `/readyz`                 | no   | Readiness, checks local store directories without creating files. |
+| `GET`  | `/v1/models`              | yes  | Lists OpenAI-compatible model ids.                                |
+| `POST` | `/v1/chat/completions`    | yes  | OpenAI-compatible chat endpoint.                                  |
+| `GET`  | `/v1/agents`              | yes  | Lists native agent-run slugs.                                     |
+| `POST` | `/v1/agents/{agent}/runs` | yes  | Invokes one agent by slug.                                        |
+| `GET`  | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
+| `GET`  | `/v1/runs`                | yes  | Lists owner-scoped runs newest-first.                             |
+
+`GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`, and
+`offset` query parameters.
 
 ## OpenAI-compatible Chat
 

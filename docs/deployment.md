@@ -1,8 +1,8 @@
 # Deployment and Storage
 
-This document covers runtime configuration, encrypted customer
-distribution, OBSFS-first storage, scratch paths, and startup
-troubleshooting.
+This document covers customer distribution, OBSFS-first storage, scratch
+paths, and startup troubleshooting. The canonical variable matrix lives in
+[Configuration](configuration.md).
 
 ## Local Configuration
 
@@ -13,30 +13,8 @@ cp src/mcp_server_phytomni/config/.env.example \
   src/mcp_server_phytomni/config/.env
 ```
 
-Expected variables:
-
-```bash
-DOMAIN_NAME=your_domain_name
-USER_NAME=your_username
-USER_PASSWORD=your_password
-ACCESS_KEY_ID=your_access_key_id
-SECRET_ACCESS_KEY=your_secret_access_key
-BASE_URL=your_llm_base_url
-MODEL_ID=your_model_id
-API_KEY=your_api_key
-CODER_URL=your_coder_base_url
-CODER_MODEL=your_coder_model
-CODER_API_KEY=your_coder_api_key
-EMBED_URL=your_embed_base_url
-EMBED_MODEL=your_embed_model
-EMBED_API_KEY=your_embed_api_key
-BI_TOKEN=your_bi_token
-```
-
-`EMBED_URL`, `EMBED_MODEL`, and `EMBED_API_KEY` are required. `BI_TOKEN`
-is optional and defaults to empty. Legacy `AccessKeyID` and
-`SecretAccessKey` names remain accepted for compatibility, but new local
-configuration should use the uppercase names.
+See [Configuration](configuration.md) for the required variables,
+accepted legacy aliases, and runtime-only customer license key behavior.
 
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, local SQLite registries, or local virtual environments.

@@ -48,13 +48,15 @@ phytomni-api
 phytomni-api-key create --user-id alice --name laptop
 ```
 
-See [HTTP API](docs/http-api.md) for authentication, endpoint contracts,
+See [CLI Reference](docs/cli.md) for the installed commands and
+[HTTP API](docs/http-api.md) for authentication, endpoint contracts,
 run polling, retention, and OpenAI-compatible chat examples.
 
 ## Available MCP Tools
 
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
-document upload is needed.
+document upload is needed. See [MCP Tool Reference](docs/mcp-tools.md)
+for detailed argument semantics, async behavior, and demo payload links.
 
 | Tool                    | Kind  | Required arguments                               | Purpose                                                                       |
 | ----------------------- | ----- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -99,34 +101,11 @@ runtime license key. The project never commits plaintext `.env` files, API
 keys, OBS credentials, generated cache databases, or local virtual
 environments.
 
-Common local variables:
-
-```bash
-DOMAIN_NAME=your_domain_name
-USER_NAME=your_username
-USER_PASSWORD=your_password
-ACCESS_KEY_ID=your_access_key_id
-SECRET_ACCESS_KEY=your_secret_access_key
-BASE_URL=your_llm_base_url
-MODEL_ID=your_model_id
-API_KEY=your_api_key
-CODER_URL=your_coder_base_url
-CODER_MODEL=your_coder_model
-CODER_API_KEY=your_coder_api_key
-EMBED_URL=your_embed_base_url
-EMBED_MODEL=your_embed_model
-EMBED_API_KEY=your_embed_api_key
-BI_TOKEN=your_bi_token
-```
-
-`EMBED_URL`, `EMBED_MODEL`, and `EMBED_API_KEY` are required. `BI_TOKEN`
-is optional and defaults to empty. Legacy `AccessKeyID` and
-`SecretAccessKey` names remain accepted, but new local configuration should
-use the uppercase names above.
-
-See [Deployment and Storage](docs/deployment.md) for encrypted customer
-distribution, license-key resolution, OBSFS-first storage, scratch path
-layout, and configuration troubleshooting.
+See [Configuration](docs/configuration.md) for required variables,
+encrypted envelope behavior, HTTP API settings, cache paths, and e2e
+tunables. See [Deployment and Storage](docs/deployment.md) for
+customer-image distribution, OBSFS-first storage, scratch path layout, and
+startup troubleshooting.
 
 ## Demo Data and Live E2E
 
@@ -183,8 +162,14 @@ dependency policy, config normalization, and common troubleshooting.
 
 - [Architecture](docs/architecture.md): package layout, MCP dispatch,
   LangGraph wrappers, configuration ownership, and cache policy.
+- [MCP Tool Reference](docs/mcp-tools.md): public tool arguments,
+  sync/async behavior, status polling, and demo payload links.
 - [HTTP API](docs/http-api.md): service startup, per-user keys,
   endpoints, polling, retention, and response shape.
+- [CLI Reference](docs/cli.md): `phytomni`, `phytomni-api`,
+  `phytomni-api-key`, and `phytomni-cache`.
+- [Configuration](docs/configuration.md): local `.env`, encrypted
+  envelopes, API variables, cache paths, and live e2e tunables.
 - [Deployment and Storage](docs/deployment.md): encrypted customer
   configuration, OBSFS fallback behavior, and scratch directory policy.
 - [Development](docs/development.md): local gates, CI, dependency policy,

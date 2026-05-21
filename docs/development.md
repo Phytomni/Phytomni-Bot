@@ -1,7 +1,9 @@
 # Development
 
 This document covers local setup, validation gates, CI, demo fixtures,
-dependency policy, and common development troubleshooting.
+dependency policy, and common development troubleshooting. Configuration
+variables are documented in [Configuration](configuration.md), and
+installed commands are documented in [CLI Reference](cli.md).
 
 ## Requirements
 
@@ -141,6 +143,7 @@ style tests and are reserved for documented framework boundaries.
 - shellcheck and shfmt for shell scripts
 - yamllint and actionlint for YAML and workflows
 - mdformat and pymarkdown for Markdown
+- tracked-document consistency through the pytest suite
 - toml-sort and validate-pyproject for TOML
 - jsonlint and `scripts/normalize_json.py --check` for JSON
 - `demo_data/` idempotency
@@ -200,6 +203,21 @@ pymarkdown, toml-sort, validate-pyproject, jsonlint, and
 The pylint job installs `[dev,demo]` so `demo_data/scripts` imports of
 `reportlab` and `openpyxl` resolve. GitHub workflow files are checked with
 both yamllint shape validation and actionlint workflow semantics.
+
+## Documentation Checks
+
+Tracked Markdown files are checked for formatting and lint shape through
+`mdformat` and `pymarkdown`. The unit test suite also pins repository
+documentation to code-owned surfaces:
+
+- Markdown relative links must point to existing tracked or workspace files.
+- `README.md` and [MCP Tool Reference](mcp-tools.md) must list every public
+  MCP tool from `mcp/schemas.py`.
+- [HTTP API](http-api.md) and the
+  [HTTP API Operations Runbook](ops/http-api-runbook.md) must list every
+  public FastAPI route from `api/app.py`.
+- [CLI Reference](cli.md) must cover every console script in
+  `pyproject.toml`.
 
 ## Dependency Policy
 
