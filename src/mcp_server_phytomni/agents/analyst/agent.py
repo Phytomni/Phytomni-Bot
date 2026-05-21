@@ -751,12 +751,6 @@ def _should_reuse_prior_task(prior_status: str) -> bool:
       unrecognized status here is a sign the prior row is in an
       unexpected state and shouldn't be trusted.
 
-    TODO(user, learning-mode): the **policy choice** is whether
-    "unknown" defaults to reuse (maximizes dedup) or resubmit
-    (conservative; current baseline). Override this body to flip the
-    policy if the project prefers aggressive dedup over conservative
-    resubmission.
-
     Args:
         prior_status: Status string from the tasks registry row.
 
