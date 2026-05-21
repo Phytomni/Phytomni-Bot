@@ -403,7 +403,6 @@ class RerankOptions:
         "page_size",
         "filter_string",
         "extra_repo_ids",
-        "top_n",
         "score_threshold",
     ],
     ttl=LONG_TTL_SECONDS,
@@ -425,7 +424,7 @@ async def _retrieve_cached(
 
     The cache key is anchored on ``user_query`` plus the minimum set
     of semantic parameters needed to keep the result correct (which
-    repos are searched, page slice, scope, filter, top-N, and score
+    repos are searched, page slice, scope, filter, and score
     threshold). Infrastructure parameters carried inside ``options``
     (URLs, timeouts, retry policy, rerank batching) are deliberately
     excluded so rotating an endpoint or tuning retries never
@@ -433,6 +432,12 @@ async def _retrieve_cached(
     cache-miss path that runs ``_retrieve_raw_docs`` + ``rerank``;
     on a hit the cached doc_list is returned directly so the rerank
     HTTP is not paid again.
+
+    ``top_n`` is kept in the signature for ``retrieve()`` wrapper
+    compatibility but is *not* in ``key_params``: the wrapper threads
+    ``top_n=options.page_size`` so the two parameters always carry
+    the same value and using both as cache bits added no
+    discrimination. ``page_size`` alone owns the per-call slice size.
 
     ``_retrieve_scope_docs`` keeps its own primitive cache as a
     second defensive layer: two different ``user_query`` strings that
