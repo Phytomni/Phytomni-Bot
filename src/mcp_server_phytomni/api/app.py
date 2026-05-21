@@ -163,7 +163,13 @@ async def _invoke_agent_run(
     consume it directly; remote clients can read the raw payload for
     additional context but should track the run by ``id`` and
     ``task_ids`` since those are uniformly populated for every
-    remote agent regardless of formatter shape.
+    remote agent regardless of formatter shape, **except** on an
+    analyst dedup-hit passthrough: when ``result["dedup_hit"]`` is
+    ``True`` the chokepoint deliberately skips the registry write
+    so the prior caller's run id stays authoritative, and this
+    endpoint returns ``id=null`` with ``task_ids=[]`` while the
+    prior ``task_id`` remains available under ``result["task_id"]``
+    for the caller to poll directly.
 
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
@@ -229,8 +235,16 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
     Returns:
         ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
         ``task_ids`` is empty when the chokepoint did not bind a
-        run id (so the API caller still gets the raw result and an
-        unambiguous "no run was registered" signal).
+        run id — either because the registry write failed midway
+        (see ``_record_submitted_task``) or because the wrapper
+        returned an analyst dedup-hit passthrough that
+        intentionally skipped the write to preserve the prior
+        caller's run id. Callers that need to distinguish the
+        two should inspect ``result["dedup_hit"]`` on the
+        surrounding ``agent.run`` body: ``True`` means a
+        transparent passthrough whose prior ``task_id`` is in
+        ``result["task_id"]``; absent or ``False`` means the
+        recorder failed silently.
     """
     run_id = current_run_id()
     if run_id is None:
