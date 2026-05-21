@@ -1,364 +1,105 @@
 # Phytomni-Bot
 
 Phytomni-Bot is a Python 3.12-3.14 Model Context Protocol (MCP) server
-for plant science research. It exposes a set of domain-specific tools for chat,
+for plant science research. It exposes domain-specific agents for chat,
 literature retrieval, natural-language SQL, bioinformatics workflow
-orchestration, review generation, gene function analysis, in-silico research
-decomposition, gene networks, and digital design.
+orchestration, review generation, gene function analysis, in-silico
+research decomposition, gene networks, and digital design.
 
-The server package lives under `src/mcp_server_phytomni`. The main MCP
-entrypoint is `src/mcp_server_phytomni/server.py`. A companion CLI client
-package lives under `src/mcp_client_phytomni` and is shipped from the same
-wheel; after `pip install -e .` it exposes a `phytomni` console script.
+The package ships two importable libraries from one wheel:
 
-## Current Status
+- `mcp_server_phytomni`: the MCP server and authenticated HTTP API.
+- `mcp_client_phytomni`: a stdio client, CLI, and tool-result formatters.
 
-- The wheel packages two libraries: `mcp_server_phytomni` (the MCP server)
-  and `mcp_client_phytomni` (a stdio CLI client and tool-result formatters
-  for applications that drive the server).
-- The MCP server currently exposes 11 tools.
-- Several domain agents are LangGraph `StateGraph` workflows with compiled
-  apps invoked through a shared runner.
-- MCP dispatch lives in `mcp/app.py`, `mcp/schemas.py`,
-  `mcp/handlers.py`, and `mcp/result_formatting.py` (the dispatch-seam
-  formatter shared by the stdio and HTTP surfaces); `server.py` remains
-  the module startup entrypoint.
-- Domain wrappers live under `agents/<domain>/` packages and reuse agent
-  instances through a non-secret runtime registry where safe.
-- Legacy root Python modules such as `knowledge_agents.py`, `utils.py`, and
-  `tool_handlers.py` are not compatibility surfaces.
-- `func_cache` provides a tested SQLite-backed sync/async cache decorator.
-- Default pytest runs are offline, secret-free, and network-blocked.
-- CI runs `black`, `ruff`, `flake8`, `mypy`, `pyright`, `pylint`, default
-  offline `pytest`, `yamllint`, `actionlint`, `shellcheck`, `shfmt`,
-  `mdformat`, `pymarkdown`, `toml-sort`, `validate-pyproject`,
-  `jsonlint`, and `normalize_json.py --check`.
-- Ships small synthesized demo fixtures under [`demo_data/`](demo_data/)
-  and a live business-layer E2E suite under [`e2e/`](e2e/) that drives
-  every MCP tool against real backends through `PhytomniMcpClient`. See
-  the [Demo Data & E2E](#demo-data--e2e) section for the per-tool payloads
-  and the manual run command.
+## Quick Start
 
-## Available MCP Tools
-
-For tools that include `obs_file_list`, pass an empty list (`[]`) when no
-document upload is needed.
-
-| Tool                    | Main module                   | Required arguments                               | Purpose                                                                       |
-| ----------------------- | ----------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `ChatAgent`             | `agents/chat/service.py`      | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                    |
-| `KnowledgeAgent`        | `agents/knowledge/agent.py`   | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                 |
-| `DataAgent`             | `agents/data/agent.py`        | `user_query`                                     | Natural-language SQL query rewriting and database search.                     |
-| `AnalystAgent`          | `agents/analyst/agent.py`     | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
-| `ReviewAgent`           | `agents/review/agent.py`      | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                    |
-| `BriefGeneAgent`        | `agents/brief_gene/agent.py`  | `user_query`                                     | Concise gene function report from BI annotations and literature context.      |
-| `DeepGenomeAgent`       | `agents/deep_genome/agent.py` | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                           |
-| `InSilicoResearchAgent` | `agents/research/agent.py`    | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                  |
-| `DigitalDesignAgent`    | `agents/design/agent.py`      | `species`, `gene_id`, `obs_file_list`            | Protein and promoter design workflows.                                        |
-| `GeneNetworkAgent`      | `agents/network/agent.py`     | `species`, `to_id`, `obs_file_list`              | Gene network analysis for species and trait ontology IDs.                     |
-| `GetTaskStatus`         | `runtime/task_manager.py`     | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.             |
-
-### Submit-then-poll for async tools
-
-`AnalystAgent`, `DeepGenomeAgent`, `DigitalDesignAgent`,
-`GeneNetworkAgent`, and `InSilicoResearchAgent` submit work to a
-backend and return a `task_id` without waiting for completion. Use the
-two-step pattern:
-
-1. Call the submit tool; keep the returned `task_id`.
-1. Call `GetTaskStatus` with that `task_id` to check progress. It is
-   non-blocking — it reads the local task registry and merges one live
-   platform status check, and never waits, so it is safe to poll on
-   your own cadence. An unrecorded id returns `status: "unknown"`.
-
-**Identical AnalystAgent submissions reuse a prior task.**
-`AnalystAgent` SHA-256 hashes its
-`(goal_description, data_list, obs_file_list)` triple and returns the
-prior `task_id` directly when an in-flight (`submitted` / `running` /
-`pending`) or succeeded (`succeeded` / `success` / `completed` /
-`done`) row with the same fingerprint already exists, skipping a fresh
-30 min–3 h submission. Failed / cancelled prior rows are filtered out
-at the SQL layer, so a dead remote id never short-circuits a retry.
-`compute_resource` and the authenticated user are intentionally
-excluded from the fingerprint, so the same scientific question dedupes
-across small/medium/large tiers and across tenants.
-
-## Architecture
-
-```text
-src/mcp_server_phytomni/
-  server.py                  Compatibility startup module for MCP launchers
-  mcp/
-    app.py                   MCP server registration, dispatch, and serving
-    schemas.py               Public tool names and request schemas
-    handlers.py              Runtime handlers and config expansion
-    result_formatting.py     Tool-response formatter at the dispatch seam
-  agents/
-    chat/                    Chat service workflow
-    knowledge/               Retrieval, reranking, and synthesis workflow
-    data/                    NL2SQL and data query workflow
-    analyst/                 Analyst graph, storage, and wrapper
-    review/                  Deep research review workflow
-    brief_gene/              Brief gene function workflow
-    deep_genome/             Deep genome graph and helpers
-    research/                In-silico research decomposition workflow
-    design/                  Digital design workflow
-    network/                 Gene network workflow
-    environment/             Environment workflow (not MCP-bridged)
-    evolution/               Evolution workflow (not MCP-bridged)
-    shared/
-      analysis.py            Cross-agent Analyst-backed analysis helpers
-      analysis_storage.py    Cross-agent storage and OBS path helpers
-      options.py             Shared chat/submit kwargs builders
-      parallel_dispatch.py   Shared StateGraph builder for parallel agents
-  runtime/
-    langgraph_runner.py      Shared LangGraph invocation helpers
-    agent_registry.py        Reusable agent registry keyed by safe config
-    task_manager.py          Task lifecycle helper
-    workflow_mixins.py       Reusable workflow mixin helpers for nodes
-  common/
-    http.py                  JSON POST retry helpers
-    prompts.py               Prompt template and JSON file loading
-    responses.py             LLM response parsing helpers
-    docs.py                  Retrieved document formatting helpers
-    lists.py                 Small list helpers
-  auth/
-    iam.py                   IAM token loading helper
-  storage/
-    obs_storage.py           OBS object naming and upload helpers
-    path_policy.py           Runtime path and ID policy
-    downloads.py             OBS/obsfs download and conversion helpers
-    scratch.py               Obsfs-first per-run scratch directory resolver
-  config/
-    defaults.py              Non-secret defaults, agent config classes,
-                             and Pydantic schemas for static datasets
-    settings.py              Environment and secret loading
-    overrides.py             Wrapper argument to config override helpers
-    data_loaders.py          Validated loaders for the static datasets
-    .prompts.yaml            Prompt templates
-    species_data_list.json   Species metadata
-    region_map.json          Region metadata
-  func_cache/                SQLite-backed function cache package
-src/mcp_client_phytomni/
-  client.py                  PhytomniMcpClient, PhytomniToolRouter, and
-                             response models for stdio-driven applications
-  main.py                    `phytomni` CLI entry point
-  tool_result_formatters.py  FormattedToolResult model and parse-only
-                             shim that deserializes server-formatted
-                             results (the actual citation/doc dedup
-                             formatter lives server-side in
-                             mcp/result_formatting.py)
-```
-
-### MCP Boundary
-
-`mcp/app.py`, `mcp/schemas.py`, `mcp/handlers.py`, and
-`mcp/result_formatting.py` own the public MCP surface:
-
-- Pydantic request models for each tool in `mcp/schemas.py`.
-- JSON schema generation for `tools/list`.
-- Argument validation and MCP-compliant `INVALID_PARAMS` errors.
-- Tool name to handler routing through `dispatch_tool` and the shared
-  formatted seam `invoke_tool_formatted` (built on the unchanged raw
-  seam `invoke_tool_raw`), so MCP stdio and the HTTP API emit the
-  identical normalized envelope.
-- Tool-response formatting (citation dedup with inline `[N]` markers
-  preserved in `message.content` and deduplicated documents lifted to
-  the top-level `references` field for cited agents, DataAgent table
-  JSON, task-submission metadata) in `mcp/result_formatting.py`.
-- MCP `TextContent` response serialization.
-
-`mcp/handlers.py` owns runtime adaptation from MCP requests to agent calls:
-
-- Loading default config and sensitive config.
-- Expanding config values into compatibility wrapper arguments.
-- Calling wrapper functions or service methods in the domain agent packages.
-
-Keep public tool names and request schemas stable unless a change is planned
-as an API migration. The old root Python module paths are intentionally not
-kept as compatibility shims; import code should use the package paths shown
-above.
-
-### LangGraph Agents
-
-Most complex agents are implemented as LangGraph workflows:
-
-- `StateGraph` defines the workflow state and node transitions.
-- Agent classes compile a graph into `self.app`.
-- `runtime/langgraph_runner.py` centralizes `RunnableConfig`, `thread_id`,
-  checkpointer defaults, and async graph invocation.
-- Wrapper functions in the domain packages build config objects, preserve
-  tool-facing signatures, and call agent classes rather than exposing graph
-  internals.
-- `runtime/agent_registry.py` reuses agent instances by explicit non-secret
-  config fingerprints. Secret values are omitted from cache keys.
-
-The following wrapper function names are intentionally kept inside their new
-domain packages:
-
-- `rewrite_nl2sql`
-- `multi_retrieve_generate`
-- `retrieve_generate` (single-repo convenience helper; delegates to
-  `multi_retrieve_generate` with a one-key `repo_id_dict`. Public for
-  direct importers; not registered as an MCP tool.)
-- `deep_research`
-- `brief_gene_function`
-- `gene_function`
-- `design_module`
-- `network_analysis`
-- `in_silico_research`
-- `retrieve_plan_submit`
-
-`mcp/handlers.py` should call these wrappers or a shared service layer; it
-should not duplicate graph construction or reach into private graph builders.
-
-### Configuration
-
-Non-secret defaults live in `config/defaults.py`. Secrets and environment
-loading live in `config/settings.py` via `pydantic-settings`.
-
-Wrapper override logic lives in `config/overrides.py`. It maps historical
-keyword arguments such as `model_url`, `coder_api_key`, `output_dir`, and
-`deepgenome_data` onto the appropriate config or sensitive config fields
-without changing public wrapper signatures.
-
-For tests, `PHYTOMNI_TESTING=1` disables real `.env` file loading and lets
-the test suite inject dummy secrets. Do not use that mode for real service
-runs.
-
-The three bundled static datasets (`species_data_list.json`,
-`region_map.json`, `.prompts.yaml`) are validated by Pydantic schemas in
-`config/defaults.py` (`SpeciesDataIndex`, `RegionMap`, `PromptTemplates`)
-and consumed through `config/data_loaders.py`. If you edit the JSON or
-YAML directly, the next run of the offline test suite will fail with a
-`pydantic.ValidationError` whenever the new shape diverges from the
-schema, so prefer adjusting the schema and data together.
-
-### Caching
-
-`src/mcp_server_phytomni/func_cache` provides:
-
-- deterministic key building from function signatures,
-- pickle serialization with optional zlib compression,
-- SQLite storage with TTL support,
-- database-backed locks,
-- sync and async decorators with concurrent-miss protection,
-- `exclude_params` support for clients, sessions, checkpointers, and secrets,
-- `cache_info()` and `cache_clear()` helpers,
-- a `phytomni-cache` admin CLI (`stats` / `purge [--func-id]` /
-  `reexpire [--ttl | --permanent] [--func-id]` / `purge-expired`).
-
-The default cache database path is `PHYTOMNI_CACHE_DB` when set, otherwise
-`.cache/phytomni/func_cache.sqlite`. This path stays on local disk regardless
-of obsfs availability — SQLite over a network filesystem can deadlock under
-WAL locking, so the func_cache database is intentionally excluded from the
-scratch resolver's obsfs routing. Cache database files such as
-`.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars are ignored by git.
-
-The cache memoizes the most basic non-local primitives, keyed strictly on
-semantic inputs (infrastructure, secrets, and session identifiers are
-excluded from every key):
-
-- **Chat LLM completions** at
-  `agents/chat/service.py:run_phyto_chat_cached` — one chokepoint covers
-  chat, nl2sql query-rewrite, and follow-up paths; `api_key`,
-  `base_url`, `user`, `timeout`, and the `stream` flag are excluded.
-- **Knowledge retrieval** across three cooperating layers:
-  `_multi_retrieve` (per `user_query + repo_items + top_n`),
-  `_retrieve_cached` (per single-repo retrieve+rerank merged answer),
-  and `_retrieve_scope_docs` (per-scope HTTP primitive). Public clear
-  helper: `clear_retrieval_caches`.
-- **NL2SQL** at `agents/data/nl2sql.py:_execute_nl2sql_cached` keyed on
-  `message_content / subject / workspace / database / insight` only;
-  `dialog_id` and `token` are excluded so identical natural-language
-  questions share one cached BI answer regardless of which
-  conversation rotation produced it. Public clear helper:
-  `clear_nl2sql_cache`.
-- **DeepGenome BI lookups** — `gene_id → symbol` and
-  `gene_id → annotation` rows.
-- **Static template + pure local compute** — prompt template loads,
-  static metadata reads, and `network_to_string`.
-
-Remote-primitive entries use a central ~90-day TTL
-(`func_cache.LONG_TTL_SECONDS`) because remote LLM/GPU concurrency is
-the scarce resource on this fleet; template and pure-local caches keep
-their existing `ttl=3600`. Rendered prompts are not persisted because
-their parameters may contain user queries, uploaded document content,
-or retrieved text.
-
-The cache does **not** memoize task submission, polling, uploads, or
-downloads. Analyst duplicate submissions reuse the prior remote
-`task_id` through a separate mechanism — the `tasks.input_fingerprint`
-column plus `TaskManager.get_task_by_fingerprint` — described in the
-[Submit-then-poll](#submit-then-poll-for-async-tools) section above.
-
-This is separate from `runtime/agent_registry.py`. The registry only reuses
-in-memory agent instances and compiled LangGraph apps for matching non-secret
-configuration; it does not cache LLM responses, external API responses, task
-submissions, uploads, downloads, or polling results.
-
-## Installation
-
-### Requirements
-
-- Python `>=3.12,<3.15`
-- Linux is the primary supported runtime environment.
-- `uv` is recommended for local development.
-- A reasonably modern C toolchain (GCC ≥ 9 / glibc ≥ 2.28) **or**
-  conda-forge prebuilt wheels. `numpy`/`pandas` are pulled in
-  transitively by `markitdown[all]`; on an ancient compiler they fall
-  back to a source build that fails. See
-  [Building numpy/pandas from source on an old toolchain](#building-numpypandas-from-source-on-an-old-toolchain).
-
-### Using uv
+Install with `uv`:
 
 ```bash
 uv venv --python=3.12 .venv
 source .venv/bin/activate
-uv pip install -e .
-uv pip install -e ".[dev]"
-```
-
-To regenerate the bundled `demo_data/` fixtures, drive the live e2e
-suite, or run `./scripts/validate_local.sh` (which now verifies
-`demo_data/` idempotency before pytest), also install the `[demo]`
-extra:
-
-```bash
 uv pip install -e ".[dev,demo]"
 ```
 
-Python 3.12 remains the default local example, while Python 3.13 and 3.14
-are also supported and covered by CI compatibility checks.
-
-The project also keeps `dependency-groups.dev` for uv-oriented workflows, but
-the CI and standard editable install path use `[project.optional-dependencies]`
-with `.[dev]`.
-
-### Using conda or mamba
-
-```bash
-conda env create -f environment.yml
-conda activate phytomni-bot
-pip install -e .
-pip install -e ".[dev]"
-```
-
-> On a host with an old system compiler (GCC < 9), `conda env create`
-> can try to build `numpy`/`pandas` from source and fail. Install them
-> as conda-forge prebuilt wheels first — see
-> [Building numpy/pandas from source on an old toolchain](#building-numpypandas-from-source-on-an-old-toolchain).
-
-## Configuration
-
-Copy the example environment file and fill in real credentials:
+Copy the local environment template and fill in real credentials:
 
 ```bash
 cp src/mcp_server_phytomni/config/.env.example \
   src/mcp_server_phytomni/config/.env
 ```
 
-Expected variables:
+Run the MCP stdio server:
+
+```bash
+python -m mcp_server_phytomni.server
+```
+
+Or inspect tools through the bundled CLI:
+
+```bash
+phytomni list-tools
+phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
+```
+
+The HTTP API runs as a separate process:
+
+```bash
+phytomni-api
+phytomni-api-key create --user-id alice --name laptop
+```
+
+See [HTTP API](docs/http-api.md) for authentication, endpoint contracts,
+run polling, retention, and OpenAI-compatible chat examples.
+
+## Available MCP Tools
+
+For tools that include `obs_file_list`, pass an empty list (`[]`) when no
+document upload is needed.
+
+| Tool                    | Kind  | Required arguments                               | Purpose                                                                       |
+| ----------------------- | ----- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                    |
+| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                 |
+| `DataAgent`             | sync  | `user_query`                                     | Natural-language SQL query rewriting and database search.                     |
+| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                    |
+| `BriefGeneAgent`        | sync  | `user_query`                                     | Concise gene function report from BI annotations and literature context.      |
+| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
+| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                           |
+| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                  |
+| `DigitalDesignAgent`    | async | `species`, `gene_id`, `obs_file_list`            | Protein and promoter design workflows.                                        |
+| `GeneNetworkAgent`      | async | `species`, `to_id`, `obs_file_list`              | Gene network analysis for species and trait ontology IDs.                     |
+| `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.             |
+
+Async tools submit work to a backend and return a `task_id`. Poll that id
+through `GetTaskStatus`; the lookup is non-blocking and returns
+`status: "unknown"` for an unrecorded id.
+
+`AnalystAgent` also deduplicates identical submissions. It hashes
+`(goal_description, data_list, obs_file_list)` and reuses a prior in-flight
+or succeeded task instead of submitting the same scientific question again.
+Failed and cancelled rows are ignored so retries still create fresh work.
+
+## Architecture
+
+The MCP entrypoint is `src/mcp_server_phytomni/server.py`. The public MCP
+surface lives in `src/mcp_server_phytomni/mcp/`, domain implementations live
+under `src/mcp_server_phytomni/agents/<domain>/`, and shared runtime,
+storage, auth, configuration, and cache helpers live in `runtime/`,
+`storage/`, `auth/`, `config/`, `common/`, and `func_cache/`.
+
+For the full package map, dispatch boundary, LangGraph wrapper policy,
+configuration ownership, and cache policy, see
+[Architecture](docs/architecture.md).
+
+## Configuration
+
+Local development uses `src/mcp_server_phytomni/config/.env`.
+Trusted-customer images use an encrypted `.env.encrypted` envelope plus a
+runtime license key. The project never commits plaintext `.env` files, API
+keys, OBS credentials, generated cache databases, or local virtual
+environments.
+
+Common local variables:
 
 ```bash
 DOMAIN_NAME=your_domain_name
@@ -378,780 +119,78 @@ EMBED_API_KEY=your_embed_api_key
 BI_TOKEN=your_bi_token
 ```
 
-`EMBED_URL`, `EMBED_MODEL`, and `EMBED_API_KEY` are required;
-`BI_TOKEN` is optional and defaults to empty.
-
-Legacy `AccessKeyID` and `SecretAccessKey` environment names remain accepted
-for compatibility, but new local configuration should use the uppercase names.
-
-Never commit `.env`, API keys, OBS credentials, model keys, generated cache
-databases, or local virtual environments.
-
-### Distribution to Trusted Customers
-
-Phytomni-Bot ships to a small number of trusted customers as a Docker
-image that consumes **our** Huawei resources and **our** LLM quota, so the
-plaintext `.env` must never enter the image. Instead, each customer gets a
-per-customer encrypted envelope:
-
-1. **Build time (operator):** seal that customer's `.env` with their
-   license key:
-
-   ```bash
-   python scripts/encrypt_env.py \
-     --input src/mcp_server_phytomni/config/.env \
-     --license-key "<per-customer-license-key>" \
-     --output src/mcp_server_phytomni/config/.env.encrypted
-   ```
-
-   The output is an AES-256-GCM blob (`PHYBOT01` magic, PBKDF2-derived
-   key). Bake `.env.encrypted` — never the plaintext `.env` — into that
-   customer's image. The `.dockerignore` enforces this for any future
-   Dockerfile.
-
-1. **Runtime (customer):** the customer supplies only their license key,
-   from either source — the `PHYTOMNI_LICENSE_KEY` environment variable
-   (e.g. `docker -e`), **or** a `config/.license_key` file dropped on the
-   host at deploy time (or mounted as a Docker volume / k8s secret). The
-   environment variable wins when both are present, so an operator can
-   override without re-provisioning the file. The bot derives the key,
-   decrypts the envelope into the process environment at startup, and
-   never writes the plaintext to disk.
-
-   The license key is delivered **out-of-band** and must NEVER be baked
-   into the image: an image that carried both `.env.encrypted` and the
-   key would make an image leak equivalent to a plaintext leak, defeating
-   the envelope. `.dockerignore` (and `.gitignore`) therefore exclude
-   `.license_key` just as they exclude plaintext `.env`.
-
-A leaked license key compromises one customer's envelope only — rebuild
-and redistribute with a rotated key, no fleet-wide exposure.
-
-**Threat scope.** Encryption blocks casual inspection (`docker history`,
-`docker export`, `cat .env`). It does **not** stop a motivated operator
-with `gcore`, `py-spy`, or `tcpdump` on their own host; defending against
-that requires the request-forwarder relay tracked in the deferred plan,
-not this envelope.
-
-### OBSFS Storage
-
-The storage helpers prefer the obsfs mount at `/obs/phytomni` for OBS-backed
-file operations. When that mount or an individual filesystem operation is not
-usable, the code falls back to the existing OBS SDK path and credentials.
-There is no feature flag to enable obsfs; availability is detected at runtime.
-
-When obsfs is available, uploaded documents are converted directly from the
-mounted source path, generated Analyst metadata is written directly under
-`/obs/phytomni/agent_data/tmp_data/`, and DeepGenome reads completed Analyst
-result directories in place instead of downloading them to a local staging
-directory.
-
-Per-run scratch directories — handler-level temporary file roots
-(`server_dir`), Analyst download caches, DeepGenome's downloaded-result and
-synthesized-report directories — are resolved through `storage/scratch.py`.
-With obsfs available they land under
-`/obs/phytomni/agent_data/user_data/<user>/runs/<date>/<run>/<scope>/{downloads,tmp}/`;
-without it they fall back to run-scoped subdirectories of `TEMP_DIR`,
-`DOWNLOAD_PATH`, or `DEEPGENOME_OUT` so the repo root no longer accumulates
-flat `.out` and `.temp` directories. Use `storage.scratch.resolve_scratch_dir`
-for new agent-level call sites and `mcp.handlers.scratch_server_dir` for new
-handler wrappers.
-
-For root or sudo-enabled runtime checks:
-
-```bash
-sudo stat /obs/phytomni
-sudo test -r /obs/phytomni && sudo test -w /obs/phytomni
-```
-
-If those checks fail, normal execution should still work through the OBS SDK
-fallback as long as the configured OBS credentials are valid.
-
-## Running the Server
-
-After editable installation:
-
-```bash
-python -m mcp_server_phytomni.server
-```
-
-From the repository without relying on the active environment path:
-
-```bash
-PYTHONPATH=src python -m mcp_server_phytomni.server
-```
-
-The server uses MCP stdio transport.
-
-### `phytomni` CLI
-
-After `pip install -e .`, the `phytomni` console script is available for
-quick stdio-driven inspection of any MCP server that points at this
-package (or another one through `--server`):
-
-```bash
-phytomni list-tools
-phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
-```
-
-The CLI lives in `src/mcp_client_phytomni/main.py` and delegates to
-`PhytomniMcpClient` and the tool-result formatters in the same package.
-
-## HTTP API
-
-The same agents are also reachable over an authenticated HTTP API that
-runs as a **separate process** beside (never replacing) the stdio MCP
-server. It reuses the MCP handler layer through a single shared
-invocation seam, so MCP behavior is unchanged.
-
-### Start the service
-
-```bash
-phytomni-api                 # binds ApiConfig API_HOST/API_PORT
-python -m mcp_server_phytomni.api.server   # equivalent
-```
-
-`ApiConfig` (in `config/defaults.py`) carries non-secret, env-overridable
-settings; the SQLite stores are **local-only** (network filesystems
-deadlock under SQLite WAL):
-
-| Setting               | Env (either name)                           | Default                           |
-| --------------------- | ------------------------------------------- | --------------------------------- |
-| API bind host         | `API_HOST`                                  | `127.0.0.1`                       |
-| API bind port         | `API_PORT`                                  | `8080`                            |
-| API key store         | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
-| Runs + tasks registry | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
-| Per-key req/min       | `API_RATE_LIMIT_PER_MIN`                    | `120` (`<= 0` disables)           |
-| Succeeded-run TTL     | `API_RUN_TTL_OK_HOURS`                      | `24`                              |
-| Failed-run TTL        | `API_RUN_TTL_FAIL_DAYS`                     | `7`                               |
-
-The runs table (parent: run_id, owner, agent, origin, status, cached
-`result_json`, `expires_at`) and the tasks table (child: task_id with a
-`run_id` foreign key) share one SQLite file so the submit-side writer
-and the run-status reader address the same source of truth.
-
-### Per-user API keys
-
-Inbound auth is a per-user key, fully separate from the outbound LLM
-`API_KEY`. Keys are stored only as PBKDF2-HMAC-SHA256 hashes with a
-per-key salt; the plaintext is shown once at creation and never
-recoverable. Manage them with the admin CLI:
-
-```bash
-phytomni-api-key create --user-id alice --name laptop [--expires-days 90]
-phytomni-api-key list   [--user-id alice]
-phytomni-api-key revoke --prefix ptm_xxxxxxxx
-```
-
-Send the key as either header:
-
-```text
-Authorization: Bearer ptm_...
-X-API-Key: ptm_...
-```
-
-Every response carries an `X-Request-Id`; errors on native routes use a
-unified envelope `{"error": {"type", "code", "message", "request_id"}}`.
-Over-budget callers get `429` with `Retry-After`. Streaming is not
-supported (`stream: true` → `400`).
-
-### Endpoints
-
-- `GET /healthz` — liveness (no auth, no dependencies).
-- `GET /readyz` — readiness (no auth; checks the local store dirs are
-  writable without creating anything).
-- `GET /v1/models` — lists the OpenAI-compatible model ids.
-- `POST /v1/chat/completions` — OpenAI-compatible; `model` selects a
-  chat-like agent: `phyto-chat`, `phyto-knowledge`, `phyto-review`,
-  `phyto-brief-gene`. `follow_up_questions`, `references`, and
-  `metadata` are surfaced as extra top-level keys; cited-agent answers
-  (Knowledge/Review/BriefGene) emit plain markdown with inline `[N]`
-  citation markers as `message.content` and ship deduplicated
-  citation documents through the top-level `references` field;
-  `phyto-brief-gene` rejects a non-empty `obs_file_list`.
-
-```bash
-curl -s http://127.0.0.1:8080/v1/chat/completions \
-  -H "Authorization: Bearer ptm_..." \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"phyto-chat","messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
-```
-
-- `GET /v1/agents` — lists every agent reachable through the native
-  run endpoint. Each entry carries its public slug, the MCP tool name
-  it dispatches to, and an `origin` label (`local` for synchronous
-  agents that return their answer in the same request, `remote` for
-  submit-style agents that hand the job to the analysis platform).
-- `POST /v1/agents/{agent}/runs` — invoke one agent by slug with a
-  `{"arguments": {...}}` body whose keys match the MCP tool schema.
-  Synchronous agents (`chat`, `knowledge`, `data`, `review`,
-  `brief_gene`) respond `200` with
-  `{"id": run_id, "object": "agent.run", "agent": slug, "status": "succeeded", "task_ids": [], "result": <formatted>}`.
-  Remote agents (`analyst`, `deep_genome`, `research`, `design`,
-  `network`) respond `202` (submission ack) with `status: "running"`
-  and `task_ids` listing every child task the chokepoint registered;
-  poll `/v1/runs/{run_id}` for the live status.
-- `GET /v1/runs/{run_id}` — owner-isolated run state. Unknown ids and
-  runs owned by another caller collapse to one `404` envelope so an
-  attacker cannot enumerate other users' run ids. Terminal cached
-  runs are returned immediately; non-terminal runs reconcile each
-  child task exactly once per call (no `wait_for_completion` loop).
-- `GET /v1/runs?status=&agent=&origin=&limit=&offset=` —
-  owner-scoped, newest-first listing. The optional `status`, `agent`,
-  and `origin` query parameters compose conjunctively; `limit`
-  defaults to `10` and `offset` defaults to `0`. Each write path and
-  the listing itself trigger a best-effort `purge_expired` sweep so
-  the registry stays bounded under both submission-heavy and
-  listing-heavy workloads.
-
-```bash
-curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
-  -H "Authorization: Bearer ptm_..." \
-  -H 'Content-Type: application/json' \
-  -d '{"arguments":{"user_query":"Explain C3 photosynthesis.","obs_file_list":[]}}'
-
-curl -s -X POST http://127.0.0.1:8080/v1/agents/analyst/runs \
-  -H "Authorization: Bearer ptm_..." \
-  -H 'Content-Type: application/json' \
-  -d '{"arguments":{"goal_description":"...","data_list":{},"obs_file_list":[]}}'
-
-curl -s "http://127.0.0.1:8080/v1/runs/<run-id>" \
-  -H "Authorization: Bearer ptm_..."
-
-curl -s "http://127.0.0.1:8080/v1/runs?status=succeeded&limit=20" \
-  -H "Authorization: Bearer ptm_..."
-```
-
-**Polling recommendation.** A remote run typically takes minutes to
-finish. Poll `/v1/runs/{run_id}` with an exponential backoff bounded
-between `2s` and `30s` (for example: `2s, 4s, 8s, 16s, 30s, 30s, …`)
-until `status` flips to `succeeded` or `failed`. The endpoint is
-cheap once the run is terminal (the cached `result_json` is returned
-without re-polling the analysis platform), so periodic re-reads are
-safe even after completion.
-
-**Analyst dedup-hit passthrough.** `POST /v1/agents/analyst/runs`
-may return `202` with `id=null` and `task_ids=[]` when the
-submission fingerprint matches a prior in-flight or succeeded task
-(see the AnalystAgent dedup note under
-[Current Status](#current-status)). The chokepoint deliberately
-skips a fresh registry write so the prior caller's `run_id` stays
-authoritative; the prior `task_id` is still surfaced under
-`result["task_id"]` together with `result["dedup_hit"]: true`, so
-the client should poll the prior task through that id directly
-instead of `/v1/runs/{run_id}`.
-
-**Retention.** A terminal run row carries an `expires_at` set from
-`API_RUN_TTL_OK_HOURS` (defaults to 24 h) for `succeeded` and
-`API_RUN_TTL_FAIL_DAYS` (defaults to 7 d) for `failed`. The next API
-write or list call past that timestamp deletes the row plus its
-child task rows in one manual cascade. A non-terminal run carries no
-TTL; reconcile-on-read keeps it visible until it finishes.
-
-**Correlation.** Every response carries an `X-Request-Id` header
-that is also surfaced in the error envelope, so a `429`/`5xx` can be
-joined back to the corresponding server log line. The MCP stdio
-server remains `python -m mcp_server_phytomni.server` and is
-unaffected — none of the run-registry write paths run there, so the
-existing stdio response shape is byte-equivalent.
-
-## MCP Client Example
-
-```python
-import asyncio
-
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-
-async def main() -> None:
-    server_params = StdioServerParameters(
-        command="python",
-        args=["-m", "mcp_server_phytomni.server"],
-    )
-
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-
-            tools = await session.list_tools()
-            print([tool.name for tool in tools.tools])
-
-            result = await session.call_tool(
-                "ChatAgent",
-                {
-                    "user_query": "Explain C3 photosynthesis.",
-                    "obs_file_list": [],
-                },
-            )
-            print(result.content[0].text)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-Example payloads:
-
-```json
-{
-  "tool": "DataAgent",
-  "arguments": {
-    "user_query": "What are the homologous genes of AT1G75370 in wheat?"
-  }
-}
-```
-
-```json
-{
-  "tool": "BriefGeneAgent",
-  "arguments": {
-    "user_query": "AT1G01010"
-  }
-}
-```
-
-```json
-{
-  "tool": "AnalystAgent",
-  "arguments": {
-    "goal_description": "Run peak calling for rice ATAC-seq data.",
-    "data_list": {
-      "/obs/phytomni/path/to/sample_1.fq.gz": "ATAC-seq read 1",
-      "/obs/phytomni/path/to/sample_2.fq.gz": "ATAC-seq read 2"
-    },
-    "obs_file_list": []
-  }
-}
-```
-
-## Demo Data & E2E
-
-The repository ships small, fully-synthesized fixtures under
-[`demo_data/`](demo_data/) and a live business-layer end-to-end suite
-under [`e2e/`](e2e/). Together they let a freshly-cloned checkout drive
-every MCP tool against real backends with a single command.
-
-### What's in `demo_data/`
-
-```text
-demo_data/
-├── README.md                         # auto-generated index
-├── manifest.json                     # tool → payload + fixture map
-├── payloads/                         # 11 JSON payloads, one per MCP tool
-├── docs/                             # plant-science brief MD/PDF + xlsx
-├── sequences/                        # short Arabidopsis FASTA
-└── scripts/generate_demo_data.py     # idempotent regenerator
-```
-
-Every fixture is regenerated by
-[`demo_data/scripts/generate_demo_data.py`](demo_data/scripts/generate_demo_data.py)
-and pinned to deterministic timestamps so re-running produces a clean
-working tree (enforced by `./scripts/validate_local.sh`).
-
-### Per-tool demo payloads
-
-| Tool                  | Kind  | Payload                                                                           | Demo summary                                      |
-| --------------------- | ----- | --------------------------------------------------------------------------------- | ------------------------------------------------- |
-| ChatAgent             | sync  | [chat_agent.json](demo_data/payloads/chat_agent.json)                             | C3 photosynthesis explainer (no upload).          |
-| KnowledgeAgent        | sync  | [knowledge_agent.json](demo_data/payloads/knowledge_agent.json)                   | Wheat drought-tolerance evidence query.           |
-| DataAgent             | sync  | [data_agent.json](demo_data/payloads/data_agent.json)                             | NL2SQL homology lookup for AT1G75370.             |
-| ReviewAgent           | sync  | [review_agent.json](demo_data/payloads/review_agent.json)                         | Multi-section sorghum drought review.             |
-| BriefGeneAgent        | sync  | [brief_gene_agent.json](demo_data/payloads/brief_gene_agent.json)                 | Concise gene-card for AT1G01010.                  |
-| AnalystAgent          | async | [analyst_agent.json](demo_data/payloads/analyst_agent.json)                       | ATAC-seq peak-calling on rice replicates.         |
-| DeepGenomeAgent       | async | [deep_genome_agent.json](demo_data/payloads/deep_genome_agent.json)               | Deep gene-function analysis (ath, AT1G75370).     |
-| InSilicoResearchAgent | async | [in_silico_research_agent.json](demo_data/payloads/in_silico_research_agent.json) | Reproducibility tasks from the brief PDF.         |
-| DigitalDesignAgent    | async | [digital_design_agent.json](demo_data/payloads/digital_design_agent.json)         | Protein + promoter design for AT1G75370.          |
-| GeneNetworkAgent      | async | [gene_network_agent.json](demo_data/payloads/gene_network_agent.json)             | Trait-network analysis for rice (TO:0000207).     |
-| GetTaskStatus         | sync  | [get_task_status.json](demo_data/payloads/get_task_status.json)                   | Non-blocking status poll for a submitted task id. |
-
-OBS paths inside the committed payloads use the placeholder prefix
-`/obs/phytomni/demo/`. The e2e suite's [`conftest.py`](e2e/conftest.py)
-rewrites every placeholder at session start to the per-run upload
-location, so concurrent runs cannot collide.
-
-### Calling a tool from the CLI
+`EMBED_URL`, `EMBED_MODEL`, and `EMBED_API_KEY` are required. `BI_TOKEN`
+is optional and defaults to empty. Legacy `AccessKeyID` and
+`SecretAccessKey` names remain accepted, but new local configuration should
+use the uppercase names above.
+
+See [Deployment and Storage](docs/deployment.md) for encrypted customer
+distribution, license-key resolution, OBSFS-first storage, scratch path
+layout, and configuration troubleshooting.
+
+## Demo Data and Live E2E
+
+The repository ships deterministic demo fixtures under
+[`demo_data/`](demo_data/) and a live business-layer E2E suite under
+[`e2e/`](e2e/). The fixtures include one JSON payload per MCP tool plus
+small markdown, PDF, xlsx, and FASTA uploads.
+
+Call demo payloads through the CLI:
 
 ```bash
 phytomni call ChatAgent "$(cat demo_data/payloads/chat_agent.json)"
 phytomni call DataAgent "$(cat demo_data/payloads/data_agent.json)"
 ```
 
-### Running the live business E2E
-
-The `e2e/` suite is **not** part of default CI. It is invoked manually
-after the user has filled in their `.env`:
+Run the live suite only after `.env` is fully configured:
 
 ```bash
-cp src/mcp_server_phytomni/config/.env.example \
-   src/mcp_server_phytomni/config/.env
-# fill secrets in .env
-uv pip install -e ".[dev,demo]"
 PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
-    uv run pytest e2e/ -v
+  uv run pytest e2e/ -v
 ```
 
-Tunables (set as environment variables):
-
-| Variable                              | Purpose                                                                                                                                                                                                                                                                   | Default         |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS` | Per-call submit timeout for async tools.                                                                                                                                                                                                                                  | 1800            |
-| `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`   | Polling deadline for one async task.                                                                                                                                                                                                                                      | 600             |
-| `PHYTOMNI_E2E_TASKS_DB`               | Override `server_tasks.db` path.                                                                                                                                                                                                                                          | repo root       |
-| `PHYTOMNI_E2E_RUN_KA_UPLOAD`          | Set to `1` to also run the KnowledgeAgent uploaded-document variant. Skipped by default: with an attached document the retrieve→rerank fan-out is backend-bound and can exceed 30 min when the retrieval tier is degraded. The no-upload KnowledgeAgent test always runs. | unset (skipped) |
-
-See [`e2e/README.md`](e2e/README.md) for the full layout, entry-point
-rationale (client-stdio is the only path; handler-direct and
-wrapper-direct are already covered by `tests/server/` and
-`tests/agents/`), and the async polling caveats.
+The live suite is not part of default CI. See
+[`e2e/README.md`](e2e/README.md) for the full layout, timeout tunables,
+upload handling, and async polling caveats.
 
 ## Development
 
-### Offline Tests
-
-Default pytest is configured to skip `integration` and `network` tests:
+Default tests are offline, secret-free, and network-blocked:
 
 ```bash
 uv run pytest
 ```
 
-Equivalent explicit form:
+The full local gate mirrors CI and the pre-push hook:
 
 ```bash
-uv run pytest -m "not integration and not network"
+./scripts/validate_local.sh
 ```
 
-Coverage report form used by CI:
+For faster feedback on the active change region:
 
 ```bash
-uv run pytest \
-  --cov=mcp_server_phytomni \
-  --cov-report=term-missing \
-  --cov-report=xml
+make scoped
 ```
 
-Tests are grouped by directory and automatically marked as `unit`, `server`,
-`agent`, or `integration`. `integration` tests stay skipped unless
-`PHYTOMNI_RUN_INTEGRATION=1` is set. Tests marked `network` stay skipped unless
-`PHYTOMNI_ALLOW_NETWORK=1` is set.
+The gate covers secret scanning, compile checks, whitespace, Python
+format/lint/type checks, shell/YAML/JSON/Markdown/TOML checks,
+`demo_data/` idempotency, and offline pytest. See
+[Development](docs/development.md) for the full command matrix, CI scope,
+dependency policy, config normalization, and common troubleshooting.
 
-The test suite currently includes unit coverage for:
+## Documentation
 
-- `func_cache` serializer, key builder, storage, lock, and decorator behavior,
-- config defaults and sensitive settings test mode,
-- config override helpers for wrapper argument compatibility,
-- prompt/template helpers and `split_list`,
-- MCP tool schemas and dispatch routing,
-- package boundary tests that prevent legacy root module imports,
-- shared LangGraph runner and agent registry behavior,
-- wrapper override propagation for digital design, gene network, and
-  in-silico research entrypoints,
-- offline mock-LLM smoke tests for ChatAgent upload context and follow-up
-  question handling,
-- offline fake-graph smoke tests for Data, Knowledge, BriefGene, Review,
-  InSilicoResearch, GeneNetwork, DigitalDesign, Analyst, and DeepGenome
-  agents.
-
-### Lint and Type Checks
-
-Run the same gates as CI:
-
-```bash
-uv run black --check .
-uv run ruff check .
-uv run flake8 src tests --count --statistics
-uv run mypy src
-pyright src
-PYTHONPATH=src uv run pylint --persistent=no src tests
-uv run pytest \
-  --cov=mcp_server_phytomni \
-  --cov-report=term-missing \
-  --cov-report=xml
-uv run yamllint .
-git ls-files '*.json' | while IFS= read -r file; do
-  jsonlint "$file" --quiet
-done
-```
-
-In restricted local sandboxes, `uv run --no-sync ...` can be used to reuse an
-already installed environment when plain `uv run` tries to rebuild the package
-or access a read-only uv cache.
-
-Pylint now runs without global rule disables. Local Pylint waivers are guarded
-by the style tests and are reserved for documented framework boundaries.
-
-### Local Quality Gate
-
-`./scripts/validate_local.sh` runs the full gate (secret scan, compileall,
-whitespace, black, ruff, flake8, mypy, pyright, pylint, shellcheck, shfmt,
-yamllint, actionlint, mdformat, pymarkdown, toml-sort, validate-pyproject,
-jsonlint, `normalize_json.py --check`, `demo_data/` idempotency, then
-`pytest`) over every tracked file — the same checks as CI and the
-`.githooks/pre-push` hook.
-Shell scripts (`*.sh` and `.githooks/*`) get both static analysis
-(`shellcheck`) and a format check (`shfmt -d -i 4`); `shfmt` is resolved by
-`scripts/shfmt_runner.sh`, which uses an on-PATH `shfmt`, else a pinned
-`go install mvdan.cc/sh/v3/cmd/shfmt` cached under `.cache/phytomni/`.
-Markdown (`*.md`, excluding generator-owned `demo_data/*.md`) gets both a
-format check (`mdformat --check`, GFM) and static analysis (`pymarkdown`,
-configured through `[tool.pymarkdown]` in `pyproject.toml`). TOML
-(`*.toml`) gets both a format check (`toml-sort --check`, configured
-through `[tool.tomlsort]` to keep the existing table order, 4-space
-multiline arrays, and trailing commas) and schema validation
-(`validate-pyproject` over every tracked `pyproject.toml`). JSON config
-files (`src/mcp_server_phytomni/config/*.json`) get both a format check
-(`scripts/normalize_json.py --check`, sorted keys + two-space indent)
-and structural validation (`jsonlint`); `demo_data/*.json` is covered
-by the demo_data idempotency check instead. GitHub
-Actions workflow files (`.github/workflows/*`) get both yamllint shape
-coverage and `actionlint` workflow-semantic checks (action versions,
-missing inputs, shell errors in `run:` blocks via actionlint's
-shellcheck integration); actionlint has no pip or npx package, so
-`scripts/actionlint_runner.sh` resolves it from an on-PATH binary,
-else a pinned `go install github.com/rhysd/actionlint/cmd/actionlint`
-cached under `.cache/phytomni/`, mirroring `scripts/shfmt_runner.sh`.
-Type stubs under `typings/` are validated by mypy and pyright (the
-canonical stub checkers) and explicitly excluded from pylint and ruff
-via `[tool.pylint.main].ignore` and `[tool.ruff].exclude`, since their
-rules target executable-code semantics body-less stubs cannot satisfy.
-A `Makefile` wraps it and adds a **scoped** gate
-(`scripts/scoped_gate.sh`) that runs those same tools and
-flags but only over the files in the active change region, so parallel work is
-not blocked by unrelated whole-tree failures:
-
-```bash
-make help        # list targets
-make full        # full validate_local.sh (CI parity, no scoping)
-make precommit   # scoped gate over the staged index
-make prepush     # scoped gate over @{upstream}..work-tree (else merge-base main)
-make scoped      # alias of prepush (range scope)
-make push        # git push with an SSH keepalive (the hook still runs)
-```
-
-The scoped gate mirrors `validate_local.sh` exactly but skips any tool whose
-file kind did not change, runs `demo_data/` idempotency only when `demo_data/`
-changed, and always runs the whole-tree structural tests
-(`test_style_naming` / `test_pytest_layers` / `test_package_boundaries`)
-whenever any `.py` changed, and (like the full gate) runs `shellcheck` plus
-`shfmt -d -i 4` over any changed shell scripts, `mdformat --check` plus
-`pymarkdown` over any changed Markdown (excluding generator-owned
-`demo_data/*.md`), and `toml-sort --check` plus `validate-pyproject` (the
-latter only on changed `*pyproject.toml`) over any changed `*.toml`,
-and `scripts/actionlint_runner.sh` over any changed
-`.github/workflows/*`, and
-`python scripts/normalize_json.py --check` over any changed
-`src/mcp_server_phytomni/config/*.json`.
-`make push` uses an SSH
-keepalive instead of `--no-verify`, so the pre-push hook still runs. Exporting
-`PHYTOMNI_SCOPED_GATE=1` makes the `.githooks/pre-push` hook run the scoped
-gate instead of the full gate (e.g. `PHYTOMNI_SCOPED_GATE=1 git push`, or
-`PHYTOMNI_SCOPED_GATE=1 make push`); unset, the hook runs the full
-`validate_local.sh` exactly as before, so CI and other contributors are
-unaffected.
-
-### Config Normalization
-
-Prompt YAML and static JSON metadata are kept in deterministic, lint-friendly
-formats. Normalize prompt YAML after editing nested prompt content:
-
-```bash
-python scripts/normalize_yaml.py sort \
-  src/mcp_server_phytomni/config/.prompts.yaml
-```
-
-Normalize all config JSON files, or pass explicit JSON paths:
-
-```bash
-python scripts/normalize_json.py
-python scripts/normalize_json.py \
-  src/mcp_server_phytomni/config/species_data_list.json \
-  src/mcp_server_phytomni/config/region_map.json
-```
-
-### CI
-
-`.github/workflows/lint.yml` runs:
-
-- `black --check .`
-- `ruff check .`
-- `flake8 src tests`
-- `mypy src`
-- `pyright src`
-- `pylint --persistent=no $(git ls-files '*.py')` (its job installs
-  `[dev,demo]` so the `demo_data/scripts/generate_demo_data.py`
-  imports of `reportlab` and `openpyxl` resolve)
-- `pytest --cov=mcp_server_phytomni`
-- `yamllint .`
-- `scripts/actionlint_runner.sh` over every tracked
-  `.github/workflows/*` (Go binary, pinned via the runner)
-- `mdformat --check` and `pymarkdown --config pyproject.toml scan` over
-  tracked `*.md` (excluding generator-owned `demo_data/`)
-- `toml-sort --check` over tracked `*.toml` and `validate-pyproject`
-  over every tracked `*pyproject.toml` (`[tool.tomlsort]` config keeps
-  the existing table order and array style)
-- `shellcheck` and `shfmt -d -i 4` over tracked `*.sh` and `.githooks/*`
-- `jsonlint "$file" --quiet` for every tracked JSON file
-- `python scripts/normalize_json.py --check` over the config JSON files
-  it owns (`src/mcp_server_phytomni/config/*.json`); demo_data JSON is
-  covered by the demo_data idempotency check instead
-
-## Repository Hygiene
-
-- Follow [STYLE.md](STYLE.md) for naming, docstrings, copyright headers, and
-  import organization.
-- Keep public MCP tool names and schemas stable.
-- Keep generated caches and SQLite cache databases out of git.
-- `.env.encrypted` (the `PHYBOT01` envelope) is the only `.env*` artifact
-  permitted inside a shipped image; plaintext `.env` and its variants must
-  never enter a build context (enforced by `.dockerignore` and the
-  `scan_secrets.py` envelope check).
-- Prefer structured parsing and Pydantic validation over ad hoc string
-  handling.
-- Add or update focused tests for behavior changes.
-- Do not cache LLM generations, task submission, polling, uploads, downloads,
-  or other side-effecting operations unless a later design explicitly allows
-  it.
-- Regenerate `demo_data/` only through
-  [`demo_data/scripts/generate_demo_data.py`](demo_data/scripts/generate_demo_data.py)
-  and keep its output byte-deterministic; the
-  `./scripts/validate_local.sh` idempotency check fails on any drift.
-
-## Dependencies
-
-Runtime dependencies are declared in `pyproject.toml` and include:
-
-- `mcp`
-- `langgraph`
-- `langchain-core`
-- `openai`
-- `httpx`
-- `pydantic`
-- `pydantic-settings`
-- `python-dotenv`
-- `pyyaml`
-- `markitdown[all]`
-- `esdk-obs-python`
-
-Development dependencies include:
-
-- `black`
-- `ruff`
-- `flake8`
-- `mypy`
-- `pyright`
-- `pylint`
-- `pytest`
-- `pytest-asyncio`
-- `pytest-cov`
-- `yamllint`
-- `shellcheck-py`
-- `mdformat` and `mdformat-gfm`
-- `pymarkdownlnt`
-- `toml-sort`
-- `validate-pyproject`
-
-Demo / live-E2E dependencies (`[project.optional-dependencies].demo`) cover
-the `demo_data/` regenerator and the e2e suite's bundled imports:
-
-- `reportlab`
-- `openpyxl`
-
-CI also installs Node-based `jsonlint` with npm for tracked JSON validation.
-
-### Dependency Policy
-
-This repository does not commit `uv.lock`. The lock file may exist locally, but
-it stays ignored and must not be staged.
-
-CI installs from `pyproject.toml` using the configured official PyPI index.
-Dependency specifiers should stay as lower bounds (`>=`) unless a specific
-package needs a documented compatibility pin. Because CI does not use a
-committed lock file, dependency upgrades must update the relevant lower bounds
-in `pyproject.toml`.
-
-When changing dependencies:
-
-- update `project.dependencies` for runtime packages,
-- keep `[project.optional-dependencies].dev` and `[dependency-groups].dev`
-  version-aligned for development tools,
-- preserve compatibility with Python 3.12, 3.13, and 3.14 unless the
-  supported range is explicitly changed,
-- run `uv sync --extra dev --group dev`,
-- run `uv pip check --python .venv/bin/python`,
-- run the full lint, type, test, YAML, and JSON gates before committing.
-
-## Troubleshooting
-
-### Missing configuration
-
-If no configuration source is found, startup raises a `RuntimeError`
-that enumerates the three accepted provisioning paths:
-
-1. `PHYTOMNI_TESTING=1` — the test suites inject dummy secrets.
-1. A license key — `PHYTOMNI_LICENSE_KEY=<key>` or a
-   `config/.license_key` file — with a `.env.encrypted` envelope
-   beside `config/` — the customer-image path (see
-   [Distribution to Trusted Customers](#distribution-to-trusted-customers)).
-1. A plaintext `config/.env` — the local developer path:
-
-```bash
-cp src/mcp_server_phytomni/config/.env.example \
-  src/mcp_server_phytomni/config/.env
-```
-
-A wrong `PHYTOMNI_LICENSE_KEY` (or a corrupted envelope) raises
-`SecretEnvelopeError` and aborts startup rather than booting with
-empty secrets.
-
-### Building numpy/pandas from source on an old toolchain
-
-`numpy` and `pandas` are not direct dependencies; they are pulled in
-transitively by `markitdown[all]` (used for the document-upload
-agents). The project deliberately keeps open `>=` ranges and ships no
-`uv.lock` (see the Dependency Policy in [CLAUDE.md](CLAUDE.md)), so on
-a host with an old compiler `pip`/`conda` resolves the newest releases
-and tries to **compile them from source**, failing with errors like
-`gcc: error: unrecognized command line option` or a C99/C11 standard
-error.
-
-This is a host-toolchain limitation, not a project defect — the fix is
-to provide prebuilt binaries, **not** to pin versions. Pick one
-supported path:
-
-**Option 1 — modern toolchain.** Use a host or container with
-GCC ≥ 9 and glibc ≥ 2.28. Recent manylinux wheels then install with
-no local compilation.
-
-**Option 2 — conda-forge prebuilt wheels (no system compiler
-needed).** Install the heavy binary deps as conda-forge wheels
-*before* the editable install, so `pip` sees them already satisfied
-and skips the source build entirely:
-
-```bash
-conda create -n phytomni-bot python=3.12
-conda activate phytomni-bot
-# Prebuilt wheels — no source build, no system GCC required:
-conda install -c conda-forge numpy pandas lxml
-pip install -e ".[dev]"
-```
-
-Add any other C-extension dependency that still fails to the
-`conda install -c conda-forge ...` line. Do **not** pin these
-versions in `pyproject.toml`/`environment.yml`: the open-range
-dependency policy is intentional, and the toolchain — not the
-project — is what to upgrade.
-
-### Tool Argument Validation
-
-Tool schemas are strict. If a tool requires `obs_file_list`, pass `[]` when no
-files are used.
-
-### Network and External Services
-
-Most real agent calls depend on external services: LLM endpoints, retrieval
-services, NL2SQL services, OBS, BI APIs, or bioinformatics platforms. Default
-pytest deliberately blocks network access; mark tests with `network` only when
-they intentionally call real services.
+- [Architecture](docs/architecture.md): package layout, MCP dispatch,
+  LangGraph wrappers, configuration ownership, and cache policy.
+- [HTTP API](docs/http-api.md): service startup, per-user keys,
+  endpoints, polling, retention, and response shape.
+- [Deployment and Storage](docs/deployment.md): encrypted customer
+  configuration, OBSFS fallback behavior, and scratch directory policy.
+- [Development](docs/development.md): local gates, CI, dependency policy,
+  demo fixtures, E2E commands, and troubleshooting.
+- [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
+  and repository-specific code style.
 
 ## License
 
