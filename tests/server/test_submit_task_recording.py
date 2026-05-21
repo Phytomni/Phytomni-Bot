@@ -251,3 +251,77 @@ def test_record_skips_bind_when_task_row_write_fails(
         agent="analyst",
     )
     assert current_run_id() is None
+
+
+def test_record_short_circuits_on_dedup_hit_passthrough(
+    tasks_db_path: str,
+) -> None:
+    """A dedup-hit return must leave the prior task row + run untouched.
+
+    Reproduces the orphan-run scenario the dedup sentinel prevents:
+    a first submit records ``T1`` under freshly-minted ``R1``; a
+    second handler return for the same ``task_id`` carrying
+    ``dedup_hit=True`` would, without the short-circuit, mint a
+    sibling ``R2`` and ``INSERT OR REPLACE`` the tasks row so its
+    ``run_id`` flips from ``R1`` to ``R2``. The pin: after the second
+    call the tasks row's ``run_id`` is still ``R1``, the runs table
+    still has exactly one row, and ``current_run_id()`` still points
+    at ``R1`` (the chokepoint never minted a new id).
+    """
+    _record_submitted_task(
+        {"task_id": "T-dedup", "output_dir": "/obs/run"},
+        agent="analyst",
+    )
+    first_run = current_run_id()
+    assert first_run is not None
+    runs_before = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
+    assert len(runs_before) == 1
+
+    _record_submitted_task(
+        {
+            "task_id": "T-dedup",
+            "output_dir": "/obs/run",
+            "dedup_hit": True,
+        },
+        agent="analyst",
+    )
+
+    with sqlite3.connect(tasks_db_path) as conn:
+        row = conn.execute(
+            "SELECT run_id FROM tasks WHERE task_id = ?",
+            ("T-dedup",),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == first_run
+
+    runs_after = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
+    assert len(runs_after) == 1
+    assert runs_after[0].spec.run_id == first_run
+    assert runs_after[0].task_ids == ("T-dedup",)
+    # The chokepoint never minted a new id on the short-circuit, so the
+    # contextvar still points at the prior caller's run.
+    assert current_run_id() == first_run
+
+
+def test_record_dedup_hit_without_prior_does_not_bind_or_write(
+    tasks_db_path: str,
+) -> None:
+    """A dedup_hit short-circuit must not create state out of thin air.
+
+    Even if the chokepoint is called with ``dedup_hit=True`` before
+    any prior submission has been recorded (e.g., a stale registry
+    that has been purged), it must not mint a run id, must not write
+    any rows, and must not bind the contextvar.
+    """
+    assert current_run_id() is None
+    _record_submitted_task(
+        {
+            "task_id": "T-ghost",
+            "output_dir": "/obs/run",
+            "dedup_hit": True,
+        },
+        agent="analyst",
+    )
+    assert current_run_id() is None
+    assert TaskManager(tasks_db_path).get_task("T-ghost") is None
+    assert not RunRegistry(tasks_db_path).list_runs(owner="anonymous")

@@ -177,6 +177,18 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
     ids — the HTTP layer then sees ``current_run_id() is None`` and
     returns ``(None, [])`` as a clean silent failure.
 
+    A wrapper return carrying ``dedup_hit=True`` is a transparent
+    passthrough for a duplicate submission: the prior caller already
+    owns the task row through their own run, so minting a fresh run
+    and ``INSERT OR REPLACE`` of the task row here would overwrite the
+    prior ``run_id`` and orphan the original aggregate
+    (``RunRegistry.list_runs`` would return the prior run with empty
+    ``task_ids`` and the HTTP ``GET /v1/runs/{prior}`` aggregate would
+    stay pinned at ``running``). The chokepoint therefore bails out
+    before any registry mutation when it sees the sentinel; the second
+    caller still receives the prior ``task_id`` and reads status
+    through it directly.
+
     The MCP tool's return dict is *not* mutated (no ``run_id`` is
     surfaced to the client) so the existing stdio MCP contract stays
     byte-equivalent; the HTTP API path reads ``tasks.run_id`` back
@@ -188,6 +200,8 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
             run and task rows.
     """
     if not isinstance(result, dict):
+        return
+    if result.get("dedup_hit") is True:
         return
     submissions = _extract_task_submissions(result, agent)
     if not submissions:
