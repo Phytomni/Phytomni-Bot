@@ -630,6 +630,17 @@ cheap once the run is terminal (the cached `result_json` is returned
 without re-polling the analysis platform), so periodic re-reads are
 safe even after completion.
 
+**Analyst dedup-hit passthrough.** `POST /v1/agents/analyst/runs`
+may return `202` with `id=null` and `task_ids=[]` when the
+submission fingerprint matches a prior in-flight or succeeded task
+(see the AnalystAgent dedup note under
+[Current Status](#current-status)). The chokepoint deliberately
+skips a fresh registry write so the prior caller's `run_id` stays
+authoritative; the prior `task_id` is still surfaced under
+`result["task_id"]` together with `result["dedup_hit"]: true`, so
+the client should poll the prior task through that id directly
+instead of `/v1/runs/{run_id}`.
+
 **Retention.** A terminal run row carries an `expires_at` set from
 `API_RUN_TTL_OK_HOURS` (defaults to 24 h) for `succeeded` and
 `API_RUN_TTL_FAIL_DAYS` (defaults to 7 d) for `failed`. The next API
