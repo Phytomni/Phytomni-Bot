@@ -801,7 +801,11 @@ async def retrieve_plan_submit(
         AnalystAgent result payload, optionally augmented with
         ``meta_meta``. Always includes ``input_fingerprint`` so the
         submit chokepoint can persist the dedup key on the new task row
-        (or carries the prior row's identity on a reuse hit).
+        (or carries the prior row's identity on a reuse hit). The reuse
+        branch also sets ``dedup_hit=True`` so downstream chokepoints
+        can detect a transparent passthrough and skip the registry
+        write that would otherwise overwrite the prior row's ``run_id``
+        with a freshly minted one and orphan the original run.
     """
     meta_meta = kwargs.get("meta_meta")
     compute_resource = kwargs.get("compute_resource", "small")
@@ -820,6 +824,7 @@ async def retrieve_plan_submit(
             "job_name": "",
             "compute_resource": compute_resource,
             "input_fingerprint": fingerprint,
+            "dedup_hit": True,
         }
         if meta_meta:
             reused["meta_meta"] = meta_meta

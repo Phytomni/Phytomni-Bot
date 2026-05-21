@@ -201,6 +201,10 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
     # fingerprint ignores it.
     assert result["compute_resource"] == "large"
     assert result["meta_meta"] == {"caller": "pytest"}
+    # A reuse hit MUST carry the passthrough sentinel so the submit
+    # chokepoint can skip the registry write that would otherwise
+    # overwrite the prior task row's run_id and orphan its run.
+    assert result["dedup_hit"] is True
     assert forbid["build"] == 0
 
 
@@ -237,6 +241,10 @@ async def test_retrieve_plan_submit_reuses_succeeded_prior(
 
     assert result["task_id"] == "prior-done"
     assert result["output_dir"] == "/out/done"
+    # Succeeded-prior reuse is also a transparent passthrough, so the
+    # same dedup_hit sentinel flows through. The chokepoint then skips
+    # the registry write for the same orphan-prevention reason.
+    assert result["dedup_hit"] is True
     assert forbid["build"] == 0
 
 
@@ -279,6 +287,10 @@ async def test_retrieve_plan_submit_resubmits_when_only_prior_failed(
     assert counter["arun"] == 1
     assert result["task_id"] == "fresh-task-1"
     assert result["input_fingerprint"] == fingerprint
+    # A fresh submission is NOT a passthrough; the chokepoint should
+    # mint a brand new run id, so the sentinel must be absent (not
+    # just falsy — present-but-None would still trigger the skip).
+    assert "dedup_hit" not in result
 
 
 async def test_retrieve_plan_submit_misses_on_different_fingerprint(
@@ -315,6 +327,9 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     assert counter["arun"] == 1
     assert result["task_id"] == "fresh-task-2"
     assert result["input_fingerprint"] != other_fingerprint
+    # A miss falls through to a real submission, so the passthrough
+    # sentinel must be absent on the wrapper's return.
+    assert "dedup_hit" not in result
 
 
 def test_fingerprint_is_stable_across_runs() -> None:
