@@ -216,6 +216,40 @@ async def _post_agent_run(
     return str(result.get("answer", ""))
 
 
+def _collect_failure(
+    case: tuple[str, str | None, str, Callable[[str], None]],
+    result: str | BaseException,
+) -> tuple[str, BaseException] | None:
+    """Return a ``(tool_name, exception)`` pair when ``case`` failed.
+
+    Lifting the per-case decision into a helper keeps the try/except
+    outside the result-collection for-loop, so ruff's PERF203 (try/
+    except in a loop) no longer applies and the loop becomes a clean
+    list comprehension.
+
+    Args:
+        case: One ``_HTTP_CASES`` entry — tool name, model id, payload
+            filename, validator.
+        result: The corresponding element from ``asyncio.gather``'s
+            return list (either the assistant content string or the
+            captured exception when the call raised).
+
+    Returns:
+        ``None`` when both the HTTP call and the validator passed;
+        otherwise ``(tool_name, exception)`` recording the failure
+        for the aggregated assertion at the call site.
+    """
+    tool_name = case[0]
+    if isinstance(result, BaseException):
+        return (tool_name, result)
+    validator = case[3]
+    try:
+        validator(result)
+    except AssertionError as exc:
+        return (tool_name, exc)
+    return None
+
+
 async def test_concurrent_http_e2e_five_chat_like_agents(
     api_client: httpx.AsyncClient,
     api_server: ApiServer,
@@ -255,17 +289,14 @@ async def test_concurrent_http_e2e_five_chat_like_agents(
 
     results = await asyncio.gather(*coros, return_exceptions=True)
 
-    failures: list[tuple[str, BaseException | str]] = []
-    for case, result in zip(_HTTP_CASES, results):
-        tool_name = case[0]
-        validator = case[3]
-        if isinstance(result, BaseException):
-            failures.append((tool_name, result))
-            continue
-        try:
-            validator(result)
-        except AssertionError as exc:  # noqa: PERF203
-            failures.append((tool_name, exc))
+    failures = [
+        pair
+        for pair in (
+            _collect_failure(case, result)
+            for case, result in zip(_HTTP_CASES, results)
+        )
+        if pair is not None
+    ]
 
     assert not failures, "\n".join(
         f"{tool_name}: {detail!r}" for tool_name, detail in failures
