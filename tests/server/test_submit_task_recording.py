@@ -223,3 +223,31 @@ def test_record_handles_design_three_nested_tasks(
         "T-DP": "/obs/protein",
         "T-DM": "/obs/promoter",
     }
+
+
+def test_record_skips_bind_when_task_row_write_fails(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A half-success record must not leak a contextvar run_id.
+
+    When ``RunRegistry.create_run`` succeeds but ``TaskManager.record``
+    raises mid-loop, the recorder swallows the SQLite error under its
+    best-effort contract. The contextvar must stay ``None`` so the
+    HTTP layer surfaces ``(None, [])`` instead of a half-populated run
+    whose ``task_ids`` column is empty.
+    """
+    _ = tasks_db_path
+
+    def boom(self: TaskManager, submission: Any) -> None:
+        """Raise on every record call to simulate a partial write failure."""
+        _ = self, submission
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(TaskManager, "record", boom)
+    assert current_run_id() is None
+    _record_submitted_task(
+        {"task_id": "T-fail", "output_dir": "/obs/run"},
+        agent="analyst",
+    )
+    assert current_run_id() is None

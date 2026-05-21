@@ -171,6 +171,12 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
     Best-effort: a registry / SQLite / OS error must never break an
     already-successful submission, so failures are swallowed.
 
+    The chokepoint binds the freshly-minted ``run_id`` to the request
+    contextvar **only after** every child task row has been written,
+    so a half-failed record never surfaces a run id without its task
+    ids — the HTTP layer then sees ``current_run_id() is None`` and
+    returns ``(None, [])`` as a clean silent failure.
+
     The MCP tool's return dict is *not* mutated (no ``run_id`` is
     surfaced to the client) so the existing stdio MCP contract stays
     byte-equivalent; the HTTP API path reads ``tasks.run_id`` back
@@ -199,7 +205,6 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                 origin="remote",
             )
         )
-        bind_run_id(run_id)
         manager = TaskManager(db_path)
         for task_id, output_dir, input_fingerprint in submissions:
             manager.record(
@@ -218,6 +223,7 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                     input_fingerprint=input_fingerprint,
                 )
             )
+        bind_run_id(run_id)
     except (sqlite3.Error, OSError):
         return
 
