@@ -71,6 +71,18 @@ two-step pattern:
    platform status check, and never waits, so it is safe to poll on
    your own cadence. An unrecorded id returns `status: "unknown"`.
 
+**Identical AnalystAgent submissions reuse a prior task.**
+`AnalystAgent` SHA-256 hashes its
+`(goal_description, data_list, obs_file_list)` triple and returns the
+prior `task_id` directly when an in-flight (`submitted` / `running` /
+`pending`) or succeeded (`succeeded` / `success` / `completed` /
+`done`) row with the same fingerprint already exists, skipping a fresh
+30 min–3 h submission. Failed / cancelled prior rows are filtered out
+at the SQL layer, so a dead remote id never short-circuits a retry.
+`compute_resource` and the authenticated user are intentionally
+excluded from the fingerprint, so the same scientific question dedupes
+across small/medium/large tiers and across tenants.
+
 ## Architecture
 
 ```text
@@ -232,23 +244,53 @@ schema, so prefer adjusting the schema and data together.
 - database-backed locks,
 - sync and async decorators with concurrent-miss protection,
 - `exclude_params` support for clients, sessions, checkpointers, and secrets,
-- `cache_info()` and `cache_clear()` helpers.
+- `cache_info()` and `cache_clear()` helpers,
+- a `phytomni-cache` admin CLI (`stats` / `purge [--func-id]` /
+  `reexpire [--ttl | --permanent] [--func-id]` / `purge-expired`).
 
 The default cache database path is `PHYTOMNI_CACHE_DB` when set, otherwise
 `.cache/phytomni/func_cache.sqlite`. This path stays on local disk regardless
 of obsfs availability — SQLite over a network filesystem can deadlock under
 WAL locking, so the func_cache database is intentionally excluded from the
-scratch resolver's obsfs routing. The first low-risk integrations cache
-template file reads, static JSON/text metadata reads, `get_data_list`, and
-`network_to_string`, all with explicit TTLs and file fingerprints where local
-files are involved. Rendered prompts are not persisted because parameters may
-contain user queries, uploaded document content, or retrieved text.
-Second-wave retrieval integrations use short TTLs for knowledge retrieval,
-gene literature retrieval, and DeepGenome BI gene lookup/annotation helpers;
-API tokens, HTTP clients, semaphores, and checkpointers are excluded from
-cache keys. `nl2sql` is not cached by default because `dialog_id` may carry
-session context. Cache database files such as `.func_cache.db*`, `*.sqlite*`,
-and WAL/SHM sidecars are ignored by git.
+scratch resolver's obsfs routing. Cache database files such as
+`.func_cache.db*`, `*.sqlite*`, and WAL/SHM sidecars are ignored by git.
+
+The cache memoizes the most basic non-local primitives, keyed strictly on
+semantic inputs (infrastructure, secrets, and session identifiers are
+excluded from every key):
+
+- **Chat LLM completions** at
+  `agents/chat/service.py:run_phyto_chat_cached` — one chokepoint covers
+  chat, nl2sql query-rewrite, and follow-up paths; `api_key`,
+  `base_url`, `user`, `timeout`, and the `stream` flag are excluded.
+- **Knowledge retrieval** across three cooperating layers:
+  `_multi_retrieve` (per `user_query + repo_items + top_n`),
+  `_retrieve_cached` (per single-repo retrieve+rerank merged answer),
+  and `_retrieve_scope_docs` (per-scope HTTP primitive). Public clear
+  helper: `clear_retrieval_caches`.
+- **NL2SQL** at `agents/data/nl2sql.py:_execute_nl2sql_cached` keyed on
+  `message_content / subject / workspace / database / insight` only;
+  `dialog_id` and `token` are excluded so identical natural-language
+  questions share one cached BI answer regardless of which
+  conversation rotation produced it. Public clear helper:
+  `clear_nl2sql_cache`.
+- **DeepGenome BI lookups** — `gene_id → symbol` and
+  `gene_id → annotation` rows.
+- **Static template + pure local compute** — prompt template loads,
+  static metadata reads, and `network_to_string`.
+
+Remote-primitive entries use a central ~90-day TTL
+(`func_cache.LONG_TTL_SECONDS`) because remote LLM/GPU concurrency is
+the scarce resource on this fleet; template and pure-local caches keep
+their existing `ttl=3600`. Rendered prompts are not persisted because
+their parameters may contain user queries, uploaded document content,
+or retrieved text.
+
+The cache does **not** memoize task submission, polling, uploads, or
+downloads. Analyst duplicate submissions reuse the prior remote
+`task_id` through a separate mechanism — the `tasks.input_fingerprint`
+column plus `TaskManager.get_task_by_fingerprint` — described in the
+[Submit-then-poll](#submit-then-poll-for-async-tools) section above.
 
 This is separate from `runtime/agent_registry.py`. The registry only reuses
 in-memory agent instances and compiled LangGraph apps for matching non-secret
