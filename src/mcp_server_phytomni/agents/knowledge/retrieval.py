@@ -529,7 +529,6 @@ async def _retrieve_raw_docs(
 @func_cache(
     key_params=[
         "user_query",
-        "retrieve_url",
         "repo_id",
         "scope",
         "page_num",
@@ -556,13 +555,19 @@ async def _retrieve_scope_docs(
 ) -> Any:
     """Retrieve docs for a single knowledge-base scope.
 
-    Cached on the semantic inputs only (query, service URL, repo,
-    scope, paging, filter, extras) using LONG_TTL_SECONDS so identical
-    retrieval requests skip the remote HTTP roundtrip. Infrastructure
-    parameters — ``client`` / ``timeout`` / ``max_retries`` /
-    ``retriable_codes`` — are intentionally absent from ``key_params``
-    so flipping a retry policy or rotating the HTTP client does not
-    invalidate the cache.
+    Cached on the semantic inputs only (query, repo, scope, paging,
+    filter, extras) using LONG_TTL_SECONDS so identical retrieval
+    requests skip the remote HTTP roundtrip. Infrastructure parameters
+    — ``client`` / ``timeout`` / ``max_retries`` / ``retriable_codes``
+    — are intentionally absent from ``key_params`` so flipping a retry
+    policy or rotating the HTTP client does not invalidate the cache.
+
+    ``retrieve_url`` is also infrastructure and is excluded from the
+    key: the composite ``_retrieve_cached`` and ``_multi_retrieve``
+    layers above already exclude URLs, so a deploy URL rotation always
+    short-circuits on the composite layer first and would never reach
+    this primitive — keeping it in the key here was a dead bit that
+    contradicted the documented "key is semantic input only" policy.
     """
     result = await post_json_with_retries(
         client,
