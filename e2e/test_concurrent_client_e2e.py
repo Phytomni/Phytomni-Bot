@@ -16,7 +16,10 @@ Intended use: a single ``pytest e2e/test_concurrent_client_e2e.py``
 invocation before/after a large refactor of the MCP dispatch seam,
 result formatter, or agent layering. Returns an aggregated per-agent
 PASS/FAIL summary even when some calls error so one bad agent does
-not mask the rest.
+not mask the rest. The per-call read timeout is intentionally raised
+to ``DEFAULT_LONG_TIMEOUT_SECONDS`` so the ~10 min synchronous agents
+(Review / BriefGene) do not raise a read timeout under normal backend
+latency; that matches the HTTP smoke helper's 1200 s default.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ from .helpers.assertions import (
     assert_knowledge_answer,
     assert_review_answer,
 )
-from .helpers.client import call_tool
+from .helpers.client import DEFAULT_LONG_TIMEOUT_SECONDS, call_tool
 
 pytestmark = pytest.mark.live
 
@@ -72,7 +75,12 @@ async def _invoke_and_validate(
     Raises:
         AssertionError: Propagated from the per-agent validator.
     """
-    response = await call_tool(client, tool_name, payload)
+    response = await call_tool(
+        client,
+        tool_name,
+        payload,
+        timeout_seconds=DEFAULT_LONG_TIMEOUT_SECONDS,
+    )
     validator(response.formatted.answer)
     return response
 
