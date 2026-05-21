@@ -84,7 +84,7 @@ def to_chat_completion(
     A result that already looks like a ChatCompletion is passed through
     with required metadata ensured. Any other payload is wrapped into a
     single assistant message; selected extra keys are surfaced at the
-    top level so clients keep doc_list / follow_up_questions.
+    top level so clients keep follow_up_questions / references / metadata.
 
     Args:
         result: The raw wrapper payload.
