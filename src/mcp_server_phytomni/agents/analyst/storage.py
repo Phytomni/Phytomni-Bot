@@ -21,7 +21,7 @@ from typing import Any, Dict, Mapping, Optional
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
 from ...config.defaults import AnalystConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     bucket_colon_path,
@@ -34,10 +34,6 @@ from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..shared.analysis_storage import ObsAccessOptions
 
 ANALYST_CONFIG = AnalystConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 # Bound below the credential constants so this module's init block does
 # not share a contiguous 5+ line shape with the matching credential
 # block in agents/shared/analysis_storage.py (each file's logger sits
@@ -91,15 +87,8 @@ class ObsDownloadOptions:
         )
         return cls(
             download_path=download_path,
-            access=ObsAccessOptions(
-                access_key_id=values.get(
-                    "access_key_id", DEFAULT_ACCESS_KEY_ID
-                ),
-                secret_access_key=values.get(
-                    "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
-                ),
-                obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
-                bucket_name=bucket_name,
+            access=_obs_access_from_values(
+                {**values, "bucket_name": bucket_name}
             ),
             obsfs_mount_root=obsfs_mount_root,
             target_file_feature=tuple(target_file_feature),
@@ -142,11 +131,14 @@ def _resolved_download_path(
 
 def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
     """Build OBS access options from keyword-compatible values."""
+    default_access_key_id, default_secret_access_key = (
+        get_sensitive_config().obs_credentials()
+    )
     return ObsAccessOptions(
-        access_key_id=values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+        access_key_id=values.get("access_key_id", default_access_key_id),
         secret_access_key=values.get(
             "secret_access_key",
-            DEFAULT_SECRET_ACCESS_KEY,
+            default_secret_access_key,
         ),
         obs_server=values.get("obs_server", ANALYST_CONFIG.OBS_SERVER),
         bucket_name=values.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME),
@@ -155,8 +147,8 @@ def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
 
 def upload_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    access_key_id: Optional[str] = None,
+    secret_access_key: Optional[str] = None,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,
@@ -182,6 +174,12 @@ def upload_analyst_agents_data(
     Raises:
         OSError: If the file upload to OBS fails.
     """
+    if access_key_id is None or secret_access_key is None:
+        default_access_key_id, default_secret_access_key = (
+            get_sensitive_config().obs_credentials()
+        )
+        access_key_id = access_key_id or default_access_key_id
+        secret_access_key = secret_access_key or default_secret_access_key
     access = ObsAccessOptions(
         access_key_id,
         secret_access_key,
@@ -345,8 +343,8 @@ def _upload_content_sdk(
 
 def delete_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: str = DEFAULT_ACCESS_KEY_ID,
-    secret_access_key: str = DEFAULT_SECRET_ACCESS_KEY,
+    access_key_id: Optional[str] = None,
+    secret_access_key: Optional[str] = None,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,
@@ -371,6 +369,12 @@ def delete_analyst_agents_data(
     Raises:
         OSError: If the file deletion from OBS fails.
     """
+    if access_key_id is None or secret_access_key is None:
+        default_access_key_id, default_secret_access_key = (
+            get_sensitive_config().obs_credentials()
+        )
+        access_key_id = access_key_id or default_access_key_id
+        secret_access_key = secret_access_key or default_secret_access_key
     access = ObsAccessOptions(
         access_key_id,
         secret_access_key,

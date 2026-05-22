@@ -35,7 +35,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -46,10 +46,6 @@ from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 
 REVIEW_CONFIG = ReviewConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 REVIEW_CONFIG_FIELD_MAP = {
     **CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -279,15 +275,15 @@ class DeepResearchAgent:
         self,
         checkpointer: Optional[MemorySaver] = None,
         review_config: ReviewConfig = REVIEW_CONFIG,
-        sensitive_config: SensitiveConfig = SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
         knowledge_agent: Optional[KnowledgeAgent] = None,
     ):
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.review_config = review_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.ka = knowledge_agent or KnowledgeAgent(
             knowledge_config=review_config,
-            sensitive_config=sensitive_config,
+            sensitive_config=self.sensitive_config,
         )
         self.app = self._build_graph()
 
@@ -940,7 +936,7 @@ async def deep_research(
         REVIEW_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=REVIEW_SENSITIVE_FIELD_MAP,
         secret_field_map=REVIEW_SECRET_FIELD_MAP,

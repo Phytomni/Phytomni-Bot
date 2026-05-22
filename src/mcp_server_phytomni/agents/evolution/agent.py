@@ -16,7 +16,7 @@ from ...auth.iam import get_token
 from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...config.defaults import DeepGenomeConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import phyto_chat
@@ -28,16 +28,14 @@ from ..shared.options import (
 )
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 _manager_cache: Dict[str, Any] = {}
 
 
 def _evolution_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return chat kwargs for evolution target-species extraction."""
-    return build_chat_kwargs(kwargs, DEEP_GENOME_CONFIG, SENSITIVE_CONFIG)
+    return build_chat_kwargs(
+        kwargs, DEEP_GENOME_CONFIG, get_sensitive_config()
+    )
 
 
 def _evolution_submit_kwargs(
@@ -45,11 +43,12 @@ def _evolution_submit_kwargs(
     enable_auto_select: bool,
 ) -> dict[str, Any]:
     """Return Analyst submit kwargs for the evolution workflow."""
+    sensitive = get_sensitive_config()
     return build_submit_kwargs(
         kwargs,
         DEEP_GENOME_CONFIG,
-        SENSITIVE_CONFIG,
-        (DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY),
+        sensitive,
+        sensitive.obs_credentials(),
         SubmitKwargsSpec(
             task_name="evolution-agents-evo-task",
             compute_resource="medium",
@@ -128,12 +127,15 @@ def _evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
         user_id=user_id,
         scope="evolution_agents_task",
     )
+    default_access_key_id, default_secret_access_key = (
+        get_sensitive_config().obs_credentials()
+    )
     return create_output_dir(
         user_id=run_identity.user_id,
         task="evolution_agents_task",
-        access_key_id=kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+        access_key_id=kwargs.get("access_key_id", default_access_key_id),
         secret_access_key=kwargs.get(
-            "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+            "secret_access_key", default_secret_access_key
         ),
         obs_server=kwargs.get("obs_server", DEEP_GENOME_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", DEEP_GENOME_CONFIG.BUCKET_NAME),

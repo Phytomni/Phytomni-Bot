@@ -40,7 +40,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -52,7 +52,6 @@ from ..knowledge.retrieval import clear_retrieval_caches
 from ..shared.sql import sql_literal
 
 BRIEF_CONFIG = BriefGeneConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 
 BRIEF_GENE_CONFIG_FIELD_MAP = {
     **CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -248,7 +247,7 @@ async def run_bi_api(
     """
     bi_url = kwargs.get("bi_url", BRIEF_CONFIG.BI_URL)
     bi_token = kwargs.get(
-        "bi_token", SENSITIVE_CONFIG.BI_TOKEN.get_secret_value()
+        "bi_token", get_sensitive_config().BI_TOKEN.get_secret_value()
     )
     timeout = kwargs.get("timeout", BRIEF_CONFIG.TIMEOUT)
     retriable_codes = kwargs.get("retriable_codes")
@@ -466,14 +465,14 @@ class BriefGeneAgent:
         self,
         checkpointer: Optional[MemorySaver] = None,
         brief_config: BriefGeneConfig = BRIEF_CONFIG,
-        sensitive_config: SensitiveConfig = SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
         knowledge_agent: Optional[KnowledgeAgent] = None,
     ):
         self.brief_config = brief_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.ka = knowledge_agent or KnowledgeAgent(
             knowledge_config=brief_config,
-            sensitive_config=sensitive_config,
+            sensitive_config=self.sensitive_config,
         )
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
@@ -850,7 +849,7 @@ async def brief_gene_function(
         BRIEF_GENE_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
         secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,

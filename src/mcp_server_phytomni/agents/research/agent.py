@@ -23,7 +23,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -56,7 +56,6 @@ from ..shared.parallel_dispatch import (
 logger = logging.getLogger(__name__)
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 
 
 @dataclass(frozen=True)
@@ -125,8 +124,8 @@ class InSilicoResearchAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        IN_SILICO_CONFIG: In silico research configuration.
-        SENSITIVE_CONFIG: Sensitive configuration settings.
+        in_silico_config: In silico research configuration.
+        sensitive_config: Sensitive configuration settings.
         app: Compiled LangGraph application.
     """
 
@@ -135,7 +134,7 @@ class InSilicoResearchAgents:
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         in_silico_config=IN_SILICO_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the InSilicoResearchAgents.
 
@@ -148,10 +147,10 @@ class InSilicoResearchAgents:
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.in_silico_config = in_silico_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=in_silico_config,
-            sensitive_config=sensitive_config,
+            sensitive_config=self.sensitive_config,
         )
         self.app = self._build_graph()
 
@@ -501,7 +500,7 @@ async def in_silico_research(
         },
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,

@@ -14,7 +14,7 @@ from typing import Any
 
 from ...common.prompts import get_prompt, load_text_file
 from ...config.defaults import EnvironmentConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import phyto_chat
@@ -26,24 +26,23 @@ from ..shared.options import (
 )
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 
 def _environment_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return chat kwargs for environment code extraction."""
-    return build_chat_kwargs(kwargs, ENVIRONMENT_CONFIG, SENSITIVE_CONFIG)
+    return build_chat_kwargs(
+        kwargs, ENVIRONMENT_CONFIG, get_sensitive_config()
+    )
 
 
 def _environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return Analyst submit kwargs for the environment workflow."""
+    sensitive = get_sensitive_config()
     return build_submit_kwargs(
         kwargs,
         ENVIRONMENT_CONFIG,
-        SENSITIVE_CONFIG,
-        (DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY),
+        sensitive,
+        sensitive.obs_credentials(),
         SubmitKwargsSpec(
             task_name="environment-agents-vci-task",
             compute_resource="large",
@@ -87,12 +86,15 @@ def _environment_output_dir(
         user_id=user_id,
         scope="vci_analysis_task",
     )
+    default_access_key_id, default_secret_access_key = (
+        get_sensitive_config().obs_credentials()
+    )
     return create_output_dir(
         run_identity.user_id,
         "vci_analysis_task",
-        access_key_id=kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+        access_key_id=kwargs.get("access_key_id", default_access_key_id),
         secret_access_key=kwargs.get(
-            "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+            "secret_access_key", default_secret_access_key
         ),
         obs_server=kwargs.get("obs_server", ENVIRONMENT_CONFIG.OBS_SERVER),
         bucket_name=kwargs.get("bucket_name", ENVIRONMENT_CONFIG.BUCKET_NAME),

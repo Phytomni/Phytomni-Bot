@@ -25,7 +25,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -50,7 +50,6 @@ from ..shared.parallel_dispatch import (
 logger = logging.getLogger(__name__)
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 DIGITAL_DESIGN_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
@@ -108,8 +107,8 @@ class DigitalDesignAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        DIGITAL_DESIGN_CONFIG: Digital design configuration.
-        SENSITIVE_CONFIG: Sensitive configuration settings.
+        digital_design_config: Digital design configuration.
+        sensitive_config: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -125,7 +124,7 @@ class DigitalDesignAgents:
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         digital_design_config=DIGITAL_DESIGN_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the DigitalDesignAgents.
 
@@ -138,10 +137,10 @@ class DigitalDesignAgents:
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.digital_design_config = digital_design_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=digital_design_config,
-            sensitive_config=sensitive_config,
+            sensitive_config=self.sensitive_config,
         )
         self.app = self._build_graph()
 
@@ -349,7 +348,7 @@ async def design_module(
             user_id,
         ),
         kwargs,
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         lambda config, sensitive: DigitalDesignAgents(
             digital_design_config=config,
             sensitive_config=sensitive,

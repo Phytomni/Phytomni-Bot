@@ -20,7 +20,7 @@ from obs import ObsClient
 from ...common.prompts import file_cache_fingerprint
 from ...config.data_loaders import load_species_data
 from ...config.defaults import AnalystConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     obs_path_from_key,
@@ -39,10 +39,6 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 ANALYST_CONFIG = AnalystConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 
 class ObsAccessOptions(NamedTuple):
@@ -132,9 +128,12 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     Raises:
         OSError: If both obsfs creation and OBS SDK fallback fail.
     """
-    access_key_id = kwargs.get("access_key_id", DEFAULT_ACCESS_KEY_ID)
+    default_access_key_id, default_secret_access_key = (
+        get_sensitive_config().obs_credentials()
+    )
+    access_key_id = kwargs.get("access_key_id", default_access_key_id)
     secret_access_key = kwargs.get(
-        "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+        "secret_access_key", default_secret_access_key
     )
     obs_server = kwargs.get("obs_server", ANALYST_CONFIG.OBS_SERVER)
     bucket_name = kwargs.get("bucket_name", ANALYST_CONFIG.BUCKET_NAME)

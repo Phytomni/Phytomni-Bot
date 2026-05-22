@@ -25,7 +25,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -52,7 +52,6 @@ from .report import DeepGenomeReportMixin
 logger = logging.getLogger(__name__)
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 _manager_cache: Dict[str, Any] = {}
 __all__ = [
     "DeepGenomeAgents",
@@ -230,8 +229,8 @@ class DeepGenomeAgents(
         knowledge_agent: Knowledge agent for literature retrieval.
         analyst_agent: Analyst agent for submitting and managing tasks.
         checkpointer: LangGraph MemorySaver for state persistence.
-        DEEP_GENOME_CONFIG: Deep genome configuration object.
-        SENSITIVE_CONFIG: Sensitive configuration settings.
+        deep_genome_config: Deep genome configuration object.
+        sensitive_config: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -272,8 +271,8 @@ class DeepGenomeAgents(
         self.deep_genome_config = kwargs.get(
             "deep_genome_config", DEEP_GENOME_CONFIG
         )
-        self.sensitive_config = kwargs.get(
-            "sensitive_config", SENSITIVE_CONFIG
+        self.sensitive_config = (
+            kwargs.get("sensitive_config") or get_sensitive_config()
         )
         self._figure_index = 1
         self._sql_headers = {
@@ -503,7 +502,7 @@ async def gene_function(
         fixed_updates={"USER_ID": user_id},
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=DEEP_GENOME_SECRET_FIELD_MAP,

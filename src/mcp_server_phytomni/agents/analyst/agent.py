@@ -38,7 +38,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -64,10 +64,6 @@ from .storage import (
 )
 
 ANALYST_CONFIG = AnalystConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 __all__ = [
     "AnalystAgent",
@@ -194,12 +190,13 @@ class AnalystAgent(AnalystGraphMixin):
         analyst_config: Configuration for the analyst agent.
                         Defaults to the global ANALYST_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
-                          Defaults to the global SENSITIVE_CONFIG instance.
+                          Defaults to the cached ``get_sensitive_config()``
+                          instance when ``None``.
 
     Attributes:
         checkpointer: The checkpointer for state persistence.
-        ANALYST_CONFIG: The analyst configuration instance.
-        SENSITIVE_CONFIG: The sensitive configuration instance.
+        analyst_config: The analyst configuration instance.
+        sensitive_config: The sensitive configuration instance.
         app: The compiled LangGraph application.
     """
 
@@ -207,12 +204,12 @@ class AnalystAgent(AnalystGraphMixin):
         self,
         checkpointer: Optional[MemorySaver] = None,
         analyst_config=ANALYST_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the AnalystAgent and build the graph."""
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_config = analyst_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -593,7 +590,7 @@ _CONFIG_EXPLICIT_KEYS = frozenset(
 def _sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
     return copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=ANALYST_SENSITIVE_FIELD_MAP,
         secret_field_map=ANALYST_SECRET_FIELD_MAP,

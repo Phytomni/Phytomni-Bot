@@ -23,7 +23,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from ...common.prompts import get_prompt
 from ...config.defaults import GeneNetworkConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -48,7 +48,6 @@ from ..shared.parallel_dispatch import (
 logger = logging.getLogger(__name__)
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 GENE_NETWORK_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "deepgenome_data": "DEEPGENOME_DATA",
@@ -104,8 +103,8 @@ class GeneNetworkAgents:
     Attributes:
         checkpointer: LangGraph checkpointer for state persistence.
         analyst_agent: AnalystAgent instance for task execution.
-        GENE_NETWORK_CONFIG: Gene network configuration.
-        SENSITIVE_CONFIG: Sensitive configuration settings.
+        gene_network_config: Gene network configuration.
+        sensitive_config: Sensitive configuration settings.
         app: Compiled LangGraph application.
 
     Example:
@@ -121,7 +120,7 @@ class GeneNetworkAgents:
         checkpointer: Optional[MemorySaver] = None,
         analyst_agent: Optional[AnalystAgent] = None,
         gene_network_config=GENE_NETWORK_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the GeneNetworkAgents.
 
@@ -134,10 +133,10 @@ class GeneNetworkAgents:
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.gene_network_config = gene_network_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=gene_network_config,
-            sensitive_config=sensitive_config,
+            sensitive_config=self.sensitive_config,
         )
         self.app = self._build_graph()
 
@@ -342,7 +341,7 @@ async def network_analysis(
             user_id,
         ),
         kwargs,
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         lambda config, sensitive: GeneNetworkAgents(
             gene_network_config=config,
             sensitive_config=sensitive,
