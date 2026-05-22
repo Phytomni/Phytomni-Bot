@@ -75,10 +75,11 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
         return {"data": [{"symbol": "SYM1"}]}
 
     monkeypatch.setattr(deep_profile, "_post_bi_sql", _capture)
-    deep_profile._cached_gene_symbol_lookup.cache_clear()
+    symbol_lookup = getattr(deep_profile, "_cached_gene_symbol_lookup")
+    symbol_lookup.cache_clear()
 
     result = asyncio.run(
-        deep_profile._cached_gene_symbol_lookup(
+        symbol_lookup(
             bi_url="https://bi.example.invalid",
             sql_headers={},
             species_code="ATH",
@@ -91,7 +92,7 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
     assert "''" in sql
     assert "'o''malley'" in sql
     assert "'ATH'" in sql
-    deep_profile._cached_gene_symbol_lookup.cache_clear()
+    symbol_lookup.cache_clear()
 
 
 def test_cached_gene_annotation_lookup_uses_sql_literal(
@@ -117,10 +118,11 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
         return {"data": []}
 
     monkeypatch.setattr(deep_profile, "_post_bi_sql", _capture)
-    deep_profile._cached_gene_annotation_lookup.cache_clear()
+    annotation_lookup = getattr(deep_profile, "_cached_gene_annotation_lookup")
+    annotation_lookup.cache_clear()
 
     asyncio.run(
-        deep_profile._cached_gene_annotation_lookup(
+        annotation_lookup(
             bi_url="https://bi.example.invalid",
             sql_headers={},
             species_code="bad'species",
@@ -132,4 +134,4 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
     for sql in captured:
         assert "'bad''gene'" in sql
         assert "'bad''species'" in sql
-    deep_profile._cached_gene_annotation_lookup.cache_clear()
+    annotation_lookup.cache_clear()

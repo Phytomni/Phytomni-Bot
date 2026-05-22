@@ -471,17 +471,28 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         }
 
     async def _run_gene_summary_node(self: Any, state: DeepGenomeState):
-        """Generate gene summary based on retrieved information.
+        """Convergence pass-through when the data agent path is skipped.
+
+        ``use_data_agent=False`` routes around ``gene_annotation_node`` and
+        ``part1_node``, so LangGraph needs an intermediate node between
+        ``knowledge_node`` and ``experiment_node`` / ``introduction_node``
+        to keep the conditional edges well-formed. The node intentionally
+        carries no state output: ``DeepGenomeState`` has no summary slot
+        the downstream report nodes consume here, and the actual
+        end-of-workflow summarization runs in ``_run_report_summary``
+        with its own prompt. The previous body wrote ``"111"`` to a
+        ``summary_context`` field nothing read; removing the placeholder
+        makes the routing-only contract explicit.
 
         Args:
-            state: Current workflow state.
+            state: Current workflow state (unused; the node is a
+                topology pass-through).
 
         Returns:
-            Dict with summary_context.
+            Empty dict; no state mutation.
         """
-        _ = state
-        print("Summary ...")
-        return {"summary_context": "111"}
+        del state
+        return {}
 
     async def _run_data_agent(self: Any, state: DeepGenomeState):
         """Retrieve gene list for network analysis.
