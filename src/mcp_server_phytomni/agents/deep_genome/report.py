@@ -12,6 +12,7 @@ and follow-up questions into the final report state.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 else:
     DeepGenomeState = dict[str, Any]
 
+logger = logging.getLogger(__name__)
+
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 
 
@@ -51,22 +54,24 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         # Test mode: skip synthesize_node and use mock data directly
         if state.get("skip_synthesize", False):
-            print(
-                "  [Test Mode] Skipping synthesize_node, using "
+            logger.info(
+                "[Test Mode] Skipping synthesize_node, using "
                 "pre-prepared mock data"
             )
             return {"experiment_completed_branches": 1}
 
         if total_expected > 0 and completed < total_expected:
-            print(
-                "  [Barrier] Waiting for analysis completion: "
-                f"{completed}/{total_expected}"
+            logger.info(
+                "[Barrier] Waiting for analysis completion: %s/%s",
+                completed,
+                total_expected,
             )
             return {}
 
-        print(
-            "  [Barrier] All analysis completed "
-            f"({completed}/{total_expected}), starting synthesis..."
+        logger.info(
+            "[Barrier] All analysis completed (%s/%s), starting synthesis",
+            completed,
+            total_expected,
         )
 
         gene_results_data = state.get("analyst_summaries", {})
@@ -142,9 +147,9 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         if state.get("report_triggered", False):
             return {}
 
-        print(
-            "\n[Ultimate Convergence] Basic profile + Deep analysis merged! "
-            "Designing recommended experiments..."
+        logger.info(
+            "[Ultimate Convergence] Basic profile + Deep analysis merged; "
+            "designing recommended experiments"
         )
 
         part12_str = self._part12_profile(state)
@@ -222,7 +227,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with protocol_report.
         """
-        print("-> Generating experimental protocol summary...")
+        logger.info("Generating experimental protocol summary")
 
         part12_str = state.get("part12_combined") or ""
         experiment_report = state.get("experiment_report", "")
@@ -285,7 +290,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         if state.get("report_triggered", False):
             return {}
 
-        print("-> Generating introduction...")
+        logger.info("Generating introduction")
 
         species_code = state["species_code"]
         gene_annotation = state.get("gene_annotation", {})
@@ -363,7 +368,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with discussion_report.
         """
-        print("-> Generating discussion...")
+        logger.info("Generating discussion")
 
         gene_id = state["gene_id"]
         species_code = state["species_code"]
@@ -446,7 +451,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with summary_report.
         """
-        print("-> Generating conclusion and future outlook...")
+        logger.info("Generating conclusion and future outlook")
 
         summary_response = await phyto_chat(
             user_query=get_prompt(
@@ -490,7 +495,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with final_report and follow_up_questions list.
         """
-        print("-> Generating follow-up research questions...")
+        logger.info("Generating follow-up research questions")
 
         gene_id = state["gene_id"]
         use_analyst = state.get("config_params", {}).get(

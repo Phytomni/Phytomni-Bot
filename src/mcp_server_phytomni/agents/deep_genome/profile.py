@@ -13,6 +13,7 @@ context, and Part 1 profile summaries.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from httpx import Timeout
@@ -40,6 +41,8 @@ if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
     DeepGenomeState = Dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 _LOOKUP_CONFIG = DeepGenomeConfig()
 # Gene-id ↔ symbol and gene annotation rows from the BI gateway are
@@ -292,7 +295,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with updated orthologs_data including gene_symbol mapping.
         """
-        print("=> Retrieving orthologous genes...")
+        logger.info("Retrieving orthologous genes")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         orthologs_species_gene_list = state["orthologs_data"]["gene_list"]
         orthologs_symbol_tasks = [
@@ -313,7 +316,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             )
             if res and not isinstance(res, Exception)
         }
-        print("Orthologous genes retrieval completed <=")
+        logger.info("Orthologous genes retrieval completed")
         return {
             "orthologs_data": {
                 "gene_list": orthologs_species_gene_list,
@@ -333,7 +336,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with updated paralogs_data including gene_symbol mapping.
         """
-        print("=> Retrieving paralogous genes...")
+        logger.info("Retrieving paralogous genes")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         paralogs_species_gene_list = state["paralogs_data"]["gene_list"]
         paralogs_symbol_tasks = [
@@ -354,7 +357,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             )
             if res and not isinstance(res, Exception)
         }
-        print("Paralogous genes retrieval completed <=")
+        logger.info("Paralogous genes retrieval completed")
         return {
             "paralogs_data": {
                 "gene_list": paralogs_species_gene_list,
@@ -374,7 +377,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with updated interaction_data including gene_symbol mapping.
         """
-        print("=> Retrieving interacting genes...")
+        logger.info("Retrieving interacting genes")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
         interaction_genes = interaction_species_gene_list
@@ -396,7 +399,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             )
             if res and not isinstance(res, Exception)
         }
-        print("Interacting genes retrieval completed <=")
+        logger.info("Interacting genes retrieval completed")
         return {
             "interaction_data": {
                 "gene_list": interaction_species_gene_list,
@@ -418,7 +421,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with orthologs_summary and part1_completed_branches increment.
         """
-        print("=> Summarizing orthologous gene network...")
+        logger.info("Summarizing orthologous gene network")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         orthologs_species_gene_list = state["orthologs_data"]["gene_list"]
         species_orthologs_gene_symbol_dict = state["orthologs_data"].get(
@@ -451,7 +454,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             species_orthologs_gene_anno_dict,
             "Orthologous",
         )
-        print("Orthologous gene network summary completed <=")
+        logger.info("Orthologous gene network summary completed")
         return {
             "orthologs_summary": orthologs_string,
             "part1_completed_branches": 1,
@@ -469,7 +472,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with paralogs_summary and part1_completed_branches increment.
         """
-        print("=> Summarizing paralogous gene network...")
+        logger.info("Summarizing paralogous gene network")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         paralogs_species_gene_list = state["paralogs_data"]["gene_list"]
         species_paralogs_gene_symbol_dict = state["paralogs_data"].get(
@@ -502,7 +505,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             species_paralogs_gene_anno_dict,
             "Paralogous",
         )
-        print("Paralogous gene network summary completed <=")
+        logger.info("Paralogous gene network summary completed")
         return {
             "paralogs_summary": paralogs_string,
             "part1_completed_branches": 1,
@@ -522,7 +525,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         Returns:
             Dict with interaction_summary and part1 branch increment.
         """
-        print("=> Summarizing interacting gene network...")
+        logger.info("Summarizing interacting gene network")
         semaphore = asyncio.Semaphore(self.deep_genome_config.MAX_CONCURRENCY)
         interaction_species_gene_list = state["interaction_data"]["gene_list"]
         interaction_genes = interaction_species_gene_list
@@ -556,7 +559,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             species_interaction_gene_anno_dict,
             "Potential interacting",
         )
-        print("Interacting gene network summary completed <=")
+        logger.info("Interacting gene network summary completed")
         return {
             "interaction_summary": interaction_string,
             "part1_completed_branches": 1,
@@ -576,16 +579,16 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             or empty dict if barrier not yet satisfied.
         """
         # Barrier 1: Wait for 4 branches to complete
-        print(
-            "part1_completed_branches: ",
+        logger.debug(
+            "part1_completed_branches: %s",
             state.get("part1_completed_branches", 0),
         )
         if state.get("part1_completed_branches", 0) < 4:
             return {}
 
-        print(
-            "\n[Merging] Part 1 Gene Network Profile data ready, "
-            "generating integrated report..."
+        logger.info(
+            "[Merging] Part 1 Gene Network Profile data ready, "
+            "generating integrated report"
         )
 
         user_query = get_prompt(

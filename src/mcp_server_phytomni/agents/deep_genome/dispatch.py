@@ -12,6 +12,7 @@ downloads OBS results, and builds analyst sub-summaries.
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
@@ -39,6 +40,8 @@ if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
     DeepGenomeState = Dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 ANALYSIS_GOAL_TEMPLATE_MAP = {
     "evolution_analysis": "user/evolution_analysis",
@@ -300,8 +303,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         species = state["species"]
         analysis_type = state["analysis_type"]
 
-        print(
-            f"[Analyst-{task_index}] Executing: {analysis_type} for {gene_id}"
+        logger.info(
+            "[Analyst-%s] Executing: %s for %s",
+            task_index,
+            analysis_type,
+            gene_id,
         )
 
         async def run_analysis() -> dict[str, Any]:
@@ -381,7 +387,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         """
         gene_id = state["gene_id"]
         species_code = state["species_code"]
-        print(f"[{state['gene_id']}] Retrieving literature knowledge...")
+        logger.info("[%s] Retrieving literature knowledge", state["gene_id"])
 
         # Get gene symbol for the target gene
         gene_symbol_list = await self._gene_symbol(
@@ -412,8 +418,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             and self.deep_genome_config.TOP_N > 0
         ):
             sorted_docs = sorted_docs[: self.deep_genome_config.TOP_N]
-        print(sorted_docs)
-        print("Literature retrieval completed <=")
+        logger.debug("Retrieved %d literature documents", len(sorted_docs))
+        logger.info("Literature retrieval completed")
         return {"knowledge_context": {"literature": sorted_docs}}
 
     async def _run_gene_annotation_node(self: Any, state: DeepGenomeState):
@@ -431,7 +437,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         """
         gene_id = state["gene_id"]
         species_code = state["species_code"]
-        print(f"=> Retrieving gene {gene_id} annotation...")
+        logger.info("Retrieving gene %s annotation", gene_id)
 
         # Get gene symbol
         gene_symbol_list = await self._gene_symbol(
@@ -458,7 +464,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         mapman_string = "; ".join(
             mm["mapman_description"] for mm in gene_anno.get("mapman", [])
         )
-        print(f"Gene {gene_id} annotation query completed <=")
+        logger.info("Gene %s annotation query completed", gene_id)
         return {
             "gene_annotation": {
                 "gene_string": gene_string,
@@ -507,7 +513,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             Dict containing orthologs_data, paralogs_data, and
             interaction_data.
         """
-        print("=> Retrieving gene list...")
+        logger.info("Retrieving gene list")
         gene_id = state["gene_id"]
         species_code = state["species_code"]
         gene_literal = sql_literal(gene_id)
@@ -532,7 +538,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             gene_id,
             species_code,
         )
-        print("Gene list retrieval completed <=")
+        logger.info("Gene list retrieval completed")
         return {
             "orthologs_data": {"gene_list": gene_orthologs_list},
             "paralogs_data": {"gene_list": gene_paralogs_list},
@@ -672,7 +678,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             gene_id=gene_id,
             output_dir=resolved_output_dir,
         )
-        print(f"  -> Submitting {analysis_type} task via AnalystAgent...")
+        logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
         result = await self._submit_analysis_task(context, run_identity)
         self._raise_if_agent_failed(result)
@@ -681,9 +687,9 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         output_path = result.get("output_dir")
         if not isinstance(output_path, str):
             raise RuntimeError("AnalystAgent returned no output directory")
-        print(f"  -> {analysis_type} task completed (task_id: {task_id})")
+        logger.info("%s task completed (task_id: %s)", analysis_type, task_id)
 
-        print(f"  -> Preparing {analysis_type} results...")
+        logger.info("Preparing %s results", analysis_type)
         results_dir = self._download_analysis_result(
             context, output_path, run_identity
         )
@@ -814,7 +820,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 maxlen=0,
             )
         except OSError as exc:
-            print(f"  Warning: Failed to download results (continuing): {exc}")
+            logger.warning("Failed to download results (continuing): %s", exc)
         return str(local_results_dir)
 
     def _obsfs_analysis_result_dir(self: Any, output_path: str) -> str | None:

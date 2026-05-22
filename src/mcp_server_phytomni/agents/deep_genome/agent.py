@@ -10,6 +10,7 @@ management helpers, network formatting re-exports, and the gene_function
 compatibility wrapper used by MCP handlers.
 """
 
+import logging
 import operator
 from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 
@@ -47,6 +48,8 @@ from .profile import (
     clear_gene_lookup_caches,
 )
 from .report import DeepGenomeReportMixin
+
+logger = logging.getLogger(__name__)
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -443,7 +446,7 @@ class DeepGenomeAgents(
 
         mock_analyst_data = kwargs.get("mock_analyst_data")
         if kwargs.get("test_mode", False) and mock_analyst_data:
-            print("[TEST MODE] Using pre-prepared analyst data")
+            logger.info("[TEST MODE] Using pre-prepared analyst data")
             task_count = len(mock_analyst_data.get("analysis_tasks", []))
             initial_state.update(
                 {
@@ -462,7 +465,9 @@ class DeepGenomeAgents(
                     "skip_synthesize": True,
                 }
             )
-            print(f"skip_synthesize: {initial_state['skip_synthesize']}")
+            logger.debug(
+                "skip_synthesize: %s", initial_state["skip_synthesize"]
+            )
 
         result = await ainvoke_graph(
             self.app,
