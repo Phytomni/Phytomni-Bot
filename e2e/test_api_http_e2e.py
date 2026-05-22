@@ -370,3 +370,48 @@ async def test_brief_gene_completion(
     assert (
         matched
     ), f"phyto-brief-gene lacked every annotation cue {ANNOTATION_CUES}"
+
+
+async def test_brief_gene_resolve_gene_id_smoke(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+) -> None:
+    """resolve_gene_id rewrites a free-form Chinese query before BriefGene.
+
+    The free-form Chinese question wraps the rice locus Os01g0177400 in
+    a research-style sentence that BriefGene's plain path would
+    normally fall through to ``user/brief_gene_function_nogeneid``;
+    flipping ``resolve_gene_id=true`` should invoke the LLM resolver,
+    rewrite ``user_query`` to the canonical locus id, surface the
+    rewrite in ``metadata``, and produce a real gene card.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+    """
+    free_form_query = f"请介绍水稻 {GENE_ID} 基因的功能"
+
+    resp = await _chat(
+        api_client,
+        api_server,
+        model="phyto-brief-gene",
+        query=free_form_query,
+        resolve_gene_id=True,
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    metadata = body.get("metadata") or {}
+    assert (
+        metadata.get("resolve_gene_id") is True
+    ), f"resolver metadata missing; got: {metadata!r}"
+    resolved_id = metadata.get("resolved_gene_id") or ""
+    assert (
+        resolved_id
+    ), f"resolved_gene_id should be non-empty; got: {metadata!r}"
+    assert metadata.get("original_query") == free_form_query
+    lowered = _completion_text(body).lower()
+    assert resolved_id.lower() in lowered or GENE_ID.lower() in lowered, (
+        "BriefGene answer should mention the resolved or expected locus; "
+        f"resolved={resolved_id!r} expected={GENE_ID!r} got={lowered!r}"
+    )
