@@ -8,6 +8,7 @@ Classes: DataAgentState.
 Functions: rewrite_nl2sql, retrieve_and_generate.
 """
 
+import logging
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -38,6 +39,8 @@ from .nl2sql import (
     _default_dialog_id,
     execute_nl2sql_request,
 )
+
+logger = logging.getLogger(__name__)
 
 DATA_CONFIG = DataConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -356,7 +359,7 @@ class DataAgent:
                     message="No response received from SQL database",
                 )
             )
-        print(result)
+        logger.debug("nl2sql response: %s", result)
         return {"final_response": result}
 
     async def arun(

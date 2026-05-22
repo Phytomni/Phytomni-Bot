@@ -8,6 +8,7 @@ helpers, config-copy utilities, and graph invocation wrappers used by
 workflow agents that submit tasks through AnalystAgent.
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -32,6 +33,8 @@ from ..analyst.agent import (
     ANALYST_SENSITIVE_FIELD_MAP,
 )
 from .analysis_storage import create_output_dir
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AnalysisAgentCacheSpec",
@@ -186,7 +189,7 @@ async def submit_analyst_analysis(
         run_identity,
     )
     goal_description, meta, data_list = request["prompt_parts"]
-    print(f"  → Submitting {analysis_type} task via AnalystAgent...")
+    logger.info("Submitting %s task via AnalystAgent", analysis_type)
     result = await analyst_agent.arun(
         query=None,
         goal_description=goal_description,
@@ -203,9 +206,10 @@ async def submit_analyst_analysis(
             analysis_type,
         ),
     )
-    print(
-        f"=>{analysis_type} task completed "
-        f"(task_id: {result.get('task_id')})"
+    logger.info(
+        "%s task completed (task_id: %s)",
+        analysis_type,
+        result.get("task_id"),
     )
     return result
 
