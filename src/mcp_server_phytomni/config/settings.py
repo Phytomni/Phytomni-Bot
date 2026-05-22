@@ -9,6 +9,7 @@ Functions: load_env_file.
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -188,30 +189,22 @@ class SensitiveConfig(BaseSettings):
 
     @classmethod
     def load(cls) -> "SensitiveConfig":
-        """Initialize configuration by loading environment variables.
+        """Return the process-cached SensitiveConfig instance.
+
+        Delegates to ``get_sensitive_config()`` so callers across the
+        codebase share one decrypted bundle per process even when they
+        invoke ``SensitiveConfig.load()`` many times. Tests that mutate
+        env vars between calls must drop the cache via
+        ``get_sensitive_config.cache_clear()`` (the autouse fixture in
+        ``tests/conftest.py`` does this between every test).
 
         Returns:
-            SensitiveConfig: Fully populated configuration instance
+            SensitiveConfig: Fully populated configuration instance.
 
         Raises:
-            ValidationError: If any required fields are missing or invalid
+            ValidationError: If any required fields are missing or invalid.
         """
-        load_env_file()
-        settings_cls = cast(Any, cls)
-        if os.getenv("PHYTOMNI_TESTING") == "1":
-            return settings_cls(_env_file=None)
-        # Match load_env_file's resolution: either source (env var or
-        # the on-disk LICENSE_KEY_PATH file) counts as a license key.
-        # The previous os.getenv-only check missed the file-only Model
-        # A path, letting a stray plaintext .env shadow the decrypted
-        # envelope through the class-bound env_file=ENV_PATH default.
-        license_key = _resolve_license_key()
-        if license_key and ENCRYPTED_ENV_PATH.exists():
-            # Encrypted values are already in os.environ; the
-            # class-bound env_file=ENV_PATH must be ignored so a
-            # stray plaintext .env cannot leak in.
-            return settings_cls(_env_file=None)
-        return settings_cls()
+        return get_sensitive_config()
 
     def obs_credentials(self) -> tuple[str, str]:
         """Return OBS access and secret access key values.
@@ -224,3 +217,34 @@ class SensitiveConfig(BaseSettings):
             self.ACCESS_KEY_ID.get_secret_value(),
             self.SECRET_ACCESS_KEY.get_secret_value(),
         )
+
+
+@lru_cache(maxsize=1)
+def get_sensitive_config() -> SensitiveConfig:
+    """Return a process-cached ``SensitiveConfig`` instance.
+
+    The first call performs the full ``load_env_file()`` chain (which
+    decrypts ``.env.encrypted`` once or reads plaintext ``.env``), then
+    instantiates ``SensitiveConfig``. Subsequent calls return the same
+    instance from the in-process ``lru_cache`` so the 17+ callers
+    across the codebase do not each re-run the load/decode pipeline.
+    Tests reset the cache via ``get_sensitive_config.cache_clear()``;
+    the autouse fixture in ``tests/conftest.py`` runs this between
+    every test to keep monkeypatched env-var assertions independent.
+    """
+    load_env_file()
+    settings_cls = cast(Any, SensitiveConfig)
+    if os.getenv("PHYTOMNI_TESTING") == "1":
+        return settings_cls(_env_file=None)
+    # Match load_env_file's resolution: either source (env var or
+    # the on-disk LICENSE_KEY_PATH file) counts as a license key.
+    # The previous os.getenv-only check missed the file-only Model
+    # A path, letting a stray plaintext .env shadow the decrypted
+    # envelope through the class-bound env_file=ENV_PATH default.
+    license_key = _resolve_license_key()
+    if license_key and ENCRYPTED_ENV_PATH.exists():
+        # Encrypted values are already in os.environ; the
+        # class-bound env_file=ENV_PATH must be ignored so a
+        # stray plaintext .env cannot leak in.
+        return settings_cls(_env_file=None)
+    return settings_cls()

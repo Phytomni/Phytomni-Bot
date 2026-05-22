@@ -26,6 +26,7 @@ import pytest
 
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.config.settings import get_sensitive_config
 from mcp_server_phytomni.func_cache.storage import Storage
 from mcp_server_phytomni.runtime.request_context import request_context
 
@@ -126,6 +127,26 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                     )
                 )
             )
+
+
+@pytest.fixture(autouse=True)
+def _reset_sensitive_config_cache() -> Iterator[None]:
+    """Drop ``get_sensitive_config`` cache before every test.
+
+    SensitiveConfig is now lazily cached process-wide via
+    ``@lru_cache`` on ``get_sensitive_config``. Module-level imports
+    of agent files (which still call ``SensitiveConfig.load()`` at
+    import time on some paths) populate the cache before any test
+    runs; tests that monkeypatch env vars or settings module attrs
+    must see a fresh load. Clearing both before and after keeps
+    each test independent of its neighbours and of import-time
+    side effects.
+    """
+    get_sensitive_config.cache_clear()
+    try:
+        yield
+    finally:
+        get_sensitive_config.cache_clear()
 
 
 @pytest.fixture(autouse=True)
