@@ -10,6 +10,7 @@ This module exposes `GeneNetworkState`, `GeneNetworkAgents`, and
 them through AnalystAgent, and returns submitted task metadata.
 """
 
+import logging
 from typing import (
     Any,
     Dict,
@@ -43,6 +44,8 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchState,
     build_parallel_dispatch_graph,
 )
+
+logger = logging.getLogger(__name__)
 
 GENE_NETWORK_CONFIG = GeneNetworkConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -263,10 +266,13 @@ class GeneNetworkAgents:
         to_id = state["to_id"]
         analysis_type = state["analysis_type"]
 
-        print(
-            f"[Network-{task_index}] 🚀 Executing: {analysis_type} for {to_id}"
+        logger.info(
+            "[Network-%s] Executing: %s for %s",
+            task_index,
+            analysis_type,
+            to_id,
         )
-        print(species)
+        logger.debug("Species: %s", species)
 
         return await capture_dispatched_analysis(
             state,

@@ -10,6 +10,7 @@ This module exposes `DigitalDesignState`, `DigitalDesignAgents`, and
 them through AnalystAgent, and returns submitted task metadata.
 """
 
+import logging
 import operator
 from typing import (
     Annotated,
@@ -45,6 +46,8 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchState,
     build_parallel_dispatch_graph,
 )
+
+logger = logging.getLogger(__name__)
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -272,8 +275,11 @@ class DigitalDesignAgents:
         gene_id = state["gene_id"]
         analysis_type = state["analysis_type"]
 
-        print(
-            f"[Design-{task_index}] 🚀 Executing: {analysis_type} for {gene_id}"
+        logger.info(
+            "[Design-%s] Executing: %s for %s",
+            task_index,
+            analysis_type,
+            gene_id,
         )
 
         return await capture_dispatched_analysis(

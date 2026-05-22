@@ -9,6 +9,7 @@ Functions: in_silico_research, extract_goals_node, prepare_tasks,
     run_research_node.
 """
 
+import logging
 from dataclasses import dataclass
 from json import loads
 from typing import Any, Dict, List, Optional
@@ -51,6 +52,8 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchState,
     build_parallel_dispatch_graph,
 )
+
+logger = logging.getLogger(__name__)
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -276,8 +279,8 @@ class InSilicoResearchAgents:
         Returns:
             Dict containing task_id and output_dir.
         """
-        print(
-            f"  → Submitting research task via AnalystAgent: {task.task_name}"
+        logger.info(
+            "Submitting research task via AnalystAgent: %s", task.task_name
         )
 
         result = await self.analyst_agent.arun(
@@ -298,7 +301,7 @@ class InSilicoResearchAgents:
             )
 
         task_id = result.get("task_id")
-        print(f"  → {task.task_name} task completed (task_id: {task_id})")
+        logger.info("%s task completed (task_id: %s)", task.task_name, task_id)
 
         return {"task_id": task_id, "output_dir": result.get("output_dir")}
 
@@ -318,7 +321,7 @@ class InSilicoResearchAgents:
         paper_text = state["paper_text"]
         obs_file_list = state.get("obs_file_list", [])
 
-        print("  → Extracting research goals from paper...")
+        logger.info("Extracting research goals from paper")
 
         async def extract_goals() -> dict[str, Any]:
             """Extract goals and return the success state.
@@ -327,7 +330,7 @@ class InSilicoResearchAgents:
                 State update containing extracted goals and no error.
             """
             goals = await self._extract_goals(paper_text, obs_file_list)
-            print(f"  → Extracted {len(goals)} research goals")
+            logger.info("Extracted %d research goals", len(goals))
             return {"goals": goals, "error": None}
 
         def failure_state(exc: Exception) -> dict[str, Any]:
@@ -339,7 +342,7 @@ class InSilicoResearchAgents:
             Returns:
                 Failure state update with an empty goals list.
             """
-            print(f"  → Goal extraction failed: {str(exc)}")
+            logger.warning("Goal extraction failed: %s", exc)
             return {"goals": [], "error": str(exc)}
 
         return await capture_workflow_boundary(extract_goals, failure_state)
@@ -406,7 +409,7 @@ class InSilicoResearchAgents:
         if output_dir is None:
             raise ValueError("output_dir is required for research tasks")
 
-        print(f"[Research-{task_index}] 🚀 Executing: {task_name}")
+        logger.info("[Research-%s] Executing: %s", task_index, task_name)
 
         async def submit_call() -> dict[str, Any]:
             """Submit one research task and return its raw result.
