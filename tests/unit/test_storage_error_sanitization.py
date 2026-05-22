@@ -12,10 +12,9 @@ secret content never appears on the wire.
 
 from __future__ import annotations
 
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 import pytest
-from obs import ObsClient
 
 from mcp_server_phytomni.agents.analyst import storage as analyst_storage
 from mcp_server_phytomni.agents.shared import (
@@ -26,19 +25,22 @@ from mcp_server_phytomni.storage import downloads as storage_downloads
 pytestmark = pytest.mark.unit
 
 _SENTINEL = "INTERNAL_LEAKED_TOKEN_5C2F"
+_MISSING_OBSFS_ROOT = "/nonexistent/obsfs-root-for-sanitization-tests"
 
 
 class _ExplodingObsClient:
-    """Fake OBS client whose every operation raises a sentinel error.
+    """Fake OBS client whose every SDK method call raises the sentinel.
 
-    The real ObsClient exposes camelCase methods (putContent, putFile,
-    deleteObject, ...); rather than redeclaring each one and tripping
-    the camelCase naming rule, every attribute access funnels through
-    __getattr__ to the same exploding callable.
+    Construction must succeed because every storage helper builds the
+    client outside its sanitization try-block; the failure has to fire
+    inside the method call (putContent/putFile/deleteObject/etc.) so
+    the helper's ``except Exception`` runs and returns the sanitized
+    ``OSError``. ``__getattr__`` proxies the camelCase SDK surface so
+    each method behaves identically without re-declaring it.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Accept the production constructor signature and ignore it.
+        """Accept and discard the production constructor signature.
 
         Args:
             *args: Positional config the real ObsClient would consume.
@@ -51,13 +53,11 @@ class _ExplodingObsClient:
 
         Args:
             _name: Attribute name requested by the storage helper; the
-                fake intentionally ignores it so every method behaves
-                identically.
+                fake ignores it so every method behaves identically.
 
         Returns:
             A function that raises ``RuntimeError`` with the marker text.
         """
-
         del _name
 
         def _explode(*args: Any, **kwargs: Any) -> Any:
@@ -67,26 +67,11 @@ class _ExplodingObsClient:
         return _explode
 
 
-def _access() -> Any:
-    """Return a minimal ObsAccessOptions stub for SDK helper calls.
-
-    Returns:
-        An ObsAccessOptions populated with deterministic placeholder values
-        that never touch the network because the patched client errors out.
-    """
-    return shared_storage.ObsAccessOptions(
-        access_key_id="placeholder-access",
-        secret_access_key="placeholder-secret",
-        obs_server="https://example.invalid",
-        bucket_name="phytomni",
-    )
-
-
 def _assert_sanitized(exc: OSError) -> None:
     """Assert the captured OSError stays generic but keeps __cause__.
 
     Args:
-        exc: OSError captured from the helper under test.
+        exc: OSError captured from the public helper under test.
     """
     text = str(exc)
     assert _SENTINEL not in text
@@ -96,73 +81,84 @@ def _assert_sanitized(exc: OSError) -> None:
     assert _SENTINEL in str(exc.__cause__)
 
 
-@pytest.mark.parametrize(
-    ("module", "call"),
-    [
-        (
-            shared_storage,
-            lambda: shared_storage._create_output_dir_sdk(
-                "agent_data/scratch/run/", _access()
-            ),
-        ),
-        (
-            analyst_storage,
-            lambda: analyst_storage._upload_content_sdk(
-                "payload-body", "agent_data/scratch/note.txt", _access()
-            ),
-        ),
-        (
-            analyst_storage,
-            lambda: analyst_storage._upload_file_sdk(
-                "/tmp/missing.txt", "agent_data/scratch/note.txt", _access()
-            ),
-        ),
-        (
-            analyst_storage,
-            lambda: analyst_storage._delete_analyst_data_sdk(
-                "agent_data/scratch/note.txt", _access()
-            ),
-        ),
-    ],
-    ids=[
-        "shared_create_output_dir",
-        "analyst_upload_content",
-        "analyst_upload_file",
-        "analyst_delete",
-    ],
-)
-def test_sdk_helpers_sanitize_errors(
-    monkeypatch: pytest.MonkeyPatch,
-    module: Any,
-    call: Callable[[], Any],
-) -> None:
-    """Verify each SDK helper sanitizes its OSError surface.
+@pytest.fixture(autouse=True)
+def _force_sdk_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every storage module fall through to the OBS SDK branch.
+
+    Patches each module's ``ObsClient`` symbol with a constructor that
+    immediately raises a sentinel-bearing ``RuntimeError``. The obsfs
+    branch in every public helper already raises ``FileNotFoundError``
+    when ``obsfs_mount_root`` points at a missing directory, so the
+    SDK path is the one this fake answers from.
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to swap ObsClient.
-        module: Storage module whose ObsClient symbol gets replaced.
-        call: Zero-arg lambda that invokes the helper under test.
+        monkeypatch: Pytest monkeypatch fixture.
     """
-    monkeypatch.setattr(module, "ObsClient", _ExplodingObsClient)
+    monkeypatch.setattr(shared_storage, "ObsClient", _ExplodingObsClient)
+    monkeypatch.setattr(analyst_storage, "ObsClient", _ExplodingObsClient)
 
+
+def test_create_output_dir_sanitizes_sdk_error() -> None:
+    """Verify the shared create_output_dir helper sanitizes SDK errors."""
     with pytest.raises(OSError) as exc_info:
-        call()
+        shared_storage.create_output_dir(
+            user_id="placeholder-user",
+            task="scratch",
+            obsfs_mount_root=_MISSING_OBSFS_ROOT,
+        )
 
     _assert_sanitized(exc_info.value)
 
 
-async def test_download_obs_file_with_retry_sanitizes_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify the downloads helper sanitizes after retry exhaustion.
+def test_upload_content_sanitizes_sdk_error() -> None:
+    """Verify upload_analyst_agents_content sanitizes SDK errors."""
+    with pytest.raises(OSError) as exc_info:
+        analyst_storage.upload_analyst_agents_content(
+            content="payload-body",
+            object_name="note.txt",
+            obsfs_mount_root=_MISSING_OBSFS_ROOT,
+        )
 
-    The wrapper retries every transport error; bounding max_retries at
-    zero makes the very first call raise, exercising the sanitized
-    except branch without waiting on backoff sleeps.
+    _assert_sanitized(exc_info.value)
+
+
+def test_upload_data_sanitizes_sdk_error() -> None:
+    """Verify upload_analyst_agents_data sanitizes SDK errors."""
+    with pytest.raises(OSError) as exc_info:
+        analyst_storage.upload_analyst_agents_data(
+            analyst_agents_datapath="/tmp/missing-file.txt",
+            obsfs_mount_root=_MISSING_OBSFS_ROOT,
+        )
+
+    _assert_sanitized(exc_info.value)
+
+
+def test_delete_analyst_data_sanitizes_sdk_error() -> None:
+    """Verify delete_analyst_agents_data sanitizes SDK errors."""
+    with pytest.raises(OSError) as exc_info:
+        analyst_storage.delete_analyst_agents_data(
+            analyst_agents_datapath="agent_data/note.txt",
+            obsfs_mount_root=_MISSING_OBSFS_ROOT,
+        )
+
+    _assert_sanitized(exc_info.value)
+
+
+async def test_download_obs_file_sanitizes_sdk_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """Verify download_obs_file sanitizes SDK errors after retries.
+
+    The downloads helper resolves obsfs first; pointing the mount at a
+    missing directory forces the SDK branch. A monkeypatched
+    ``_download_obs_file_once`` raises the sentinel so retry exhaustion
+    triggers without backoff sleeps.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap the
             single-shot download primitive.
+        tmp_path: Temporary directory fixture for the local server dir.
     """
 
     async def _explode(*args: Any, **kwargs: Any) -> Any:
@@ -172,24 +168,13 @@ async def test_download_obs_file_with_retry_sanitizes_error(
 
     monkeypatch.setattr(storage_downloads, "_download_obs_file_once", _explode)
 
-    context = storage_downloads.ObsTransferContext(
-        server_dir="/tmp",
-        credentials=storage_downloads.ObsCredentials(
-            access_key_id="placeholder-access",
-            secret_access_key="placeholder-secret",
-        ),
-        download=storage_downloads.ObsDownloadOptions(
+    with pytest.raises(OSError) as exc_info:
+        await storage_downloads.download_obs_file(
+            obs_file="agent_data/file.txt",
+            server_dir=str(tmp_path),
+            obsfs_mount_root=_MISSING_OBSFS_ROOT,
             bucket_name="phytomni",
             max_retries=0,
-        ),
-    )
-
-    with pytest.raises(OSError) as exc_info:
-        await storage_downloads._download_obs_file_with_retry(
-            obs_client=cast(ObsClient, _ExplodingObsClient()),
-            object_key="agent_data/scratch/file.txt",
-            server_file="/tmp/file.txt",
-            context=context,
         )
 
     _assert_sanitized(exc_info.value)

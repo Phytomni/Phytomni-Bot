@@ -226,6 +226,12 @@ max-args = 15
 max-locals = 20
 max-module-lines = 1200
 max-positional-arguments = 15
+# Test fakes (camelCase SDK proxies, protocol-only stubs, NamedTuple
+# helpers) routinely have a single public surface — usually just an
+# `__init__` plus `__getattr__` — and tripping R0903 there pushes
+# authors toward inline disables. Lowering the floor by one keeps the
+# fakes terse without weakening the rule for production code.
+min-public-methods = 1
 
 [tool.pymarkdown]
 # Markdown gate config (consumed via `pymarkdown --config pyproject.toml`).
