@@ -196,6 +196,7 @@ async def submit_analyst_analysis(
         compute_resource=request["compute_resource"],
         is_auto_select=False,
         is_polling=False,
+        is_preset_plan=True,
         thread_id=run_identity.scoped_id(
             "thread",
             target_id,
