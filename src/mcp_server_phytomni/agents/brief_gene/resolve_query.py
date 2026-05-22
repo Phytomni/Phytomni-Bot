@@ -94,7 +94,7 @@ async def resolve_brief_gene_user_query(
     *,
     brief_config: BriefGeneConfig,
     sensitive_config: SensitiveConfig,
-    timeout_seconds: float = 30.0,
+    timeout_seconds: float = 90.0,
 ) -> BriefGeneResolveResult:
     """Resolve free-form text into the canonical gene id BriefGene expects.
 
