@@ -118,7 +118,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         results_path = Path(report_dir) / f"{state['gene_id']}_results.md"
         with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(gene_results)
-        # print(gene_results)
         return {
             "synthesize_report": gene_results,
             "experiment_completed_branches": 1,
