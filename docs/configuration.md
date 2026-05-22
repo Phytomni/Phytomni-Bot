@@ -87,6 +87,22 @@ working directory so restarts use the same stores.
 Function caches stay on local disk even when obsfs is available because
 SQLite over a network filesystem can deadlock under WAL locking.
 
+## Network and TLS Variables
+
+| Variable              | Default | Sensitive? | Purpose                                                                                               |
+| --------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `PHYTOMNI_TLS_VERIFY` | `true`  | no         | Disable peer certificate verification when set to `0`/`false`/`no` (dev or pinned on-prem only).      |
+| `PHYTOMNI_CA_BUNDLE`  | unset   | no         | Absolute path to a PEM CA bundle. Honoured when verification is on; ignored when verification is off. |
+
+Every async HTTP call in `mcp_server_phytomni` should flow through
+`common.httpx_client.get_async_client`, which reads these settings once
+per call and hands the resolved `verify` argument to `httpx.AsyncClient`.
+A missing or unreadable `PHYTOMNI_CA_BUNDLE` path surfaces as the same
+`ssl.SSLError` the underlying SDK would emit; flip
+`PHYTOMNI_TLS_VERIFY=0` in dev environments behind a corporate proxy or
+self-signed cluster ingress only — production deployments should ship a
+real CA bundle instead.
+
 ## Live E2E Variables
 
 | Variable                                | Default           | Purpose                                                       |

@@ -11,7 +11,7 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 """
 
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Union
+from typing import Annotated, Dict, List, Literal, Optional, Union
 
 from pydantic import AliasChoices, Field, RootModel
 from pydantic_settings import BaseSettings
@@ -110,6 +110,27 @@ class ServerConfig(BaseSettings):
 
     POLL_INTERVAL: float = 300
     MAX_POLL: float = 86400
+
+    # TLS deployment knobs read by common.httpx_client.get_async_client.
+    # Default verify=True is the safe production posture; on-prem and
+    # dev environments override via PHYTOMNI_TLS_VERIFY=0 (or supply a
+    # PHYTOMNI_CA_BUNDLE path when the corporate CA is not in the
+    # system trust store). The aliases let docs use the PHYTOMNI_*
+    # naming convention while keeping internal field names short.
+    TLS_VERIFY: Annotated[
+        bool,
+        Field(
+            default=True,
+            validation_alias=AliasChoices("TLS_VERIFY", "PHYTOMNI_TLS_VERIFY"),
+        ),
+    ] = True
+    CA_BUNDLE: Annotated[
+        Optional[str],
+        Field(
+            default=None,
+            validation_alias=AliasChoices("CA_BUNDLE", "PHYTOMNI_CA_BUNDLE"),
+        ),
+    ] = None
 
 
 class ChatConfig(ServerConfig):
