@@ -19,6 +19,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
+from ..common.logging_config import configure_logging
 from .handlers import (
     handle_analyst_agent,
     handle_brief_gene_agent,
@@ -280,6 +281,7 @@ async def serve() -> None:
         The server implements graceful shutdown handling and ensures all
         ongoing operations complete before termination.
     """
+    configure_logging()
     server = Server("Phytomni-Server")
 
     @server.list_tools()

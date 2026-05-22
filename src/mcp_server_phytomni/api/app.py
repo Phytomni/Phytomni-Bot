@@ -23,6 +23,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from ..common.logging_config import configure_logging
 from ..config.defaults import ApiConfig
 from ..mcp.app import invoke_tool_formatted
 from ..runtime.request_context import (
@@ -475,6 +476,7 @@ def create_app() -> FastAPI:
         unified error envelope. Authenticated routes are added by later
         API layers.
     """
+    configure_logging()
     app = FastAPI(title="Phytomni HTTP API", version="0.1.0")
     app.add_middleware(request_context_middleware)
     rate_limit = make_rate_limiter()
