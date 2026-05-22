@@ -24,6 +24,7 @@ from ...common.prompts import get_prompt
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
+from ..shared.options import build_chat_kwargs
 
 __all__ = [
     "BriefGeneIdCandidate",
@@ -125,28 +126,16 @@ async def resolve_brief_gene_user_query(
         {"user_query": raw_query},
     )
 
+    chat_kwargs = build_chat_kwargs(
+        {"prompt_path": _RESOLVER_SYSTEM_PROMPT_PATH},
+        brief_config,
+        sensitive_config,
+    )
+    chat_kwargs["response_format"] = _RESOLVER_JSON_SCHEMA
+
     try:
         phyto_response = await asyncio.wait_for(
-            phyto_chat(
-                user_query=rendered_user_query,
-                prompt_file=brief_config.PROMPT_FILE,
-                prompt_path=_RESOLVER_SYSTEM_PROMPT_PATH,
-                api_key=sensitive_config.API_KEY.get_secret_value(),
-                base_url=sensitive_config.BASE_URL,
-                model=sensitive_config.MODEL_ID,
-                frequency_penalty=brief_config.FREQUENCY_PENALTY,
-                n=brief_config.N,
-                presence_penalty=brief_config.PRESENCE_PENALTY,
-                reasoning_effort=brief_config.REASONING_EFFORT,
-                response_format=_RESOLVER_JSON_SCHEMA,
-                stream=brief_config.STREAM,
-                temperature=brief_config.TEMPERATURE,
-                top_p=brief_config.TOP_P,
-                user=brief_config.USER,
-                timeout=brief_config.TIMEOUT,
-                retriable_codes=brief_config.RETRIABLE_CODES,
-                max_retries=brief_config.MAX_RETRIES,
-            ),
+            phyto_chat(user_query=rendered_user_query, **chat_kwargs),
             timeout=timeout_seconds,
         )
     except asyncio.TimeoutError as exc:
