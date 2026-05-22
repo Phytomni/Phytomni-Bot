@@ -23,8 +23,13 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from ..agents.brief_gene.resolve_query import (
+    BriefGeneResolveError,
+    resolve_brief_gene_user_query,
+)
 from ..common.logging_config import configure_logging
-from ..config.defaults import ApiConfig
+from ..config.defaults import ApiConfig, BriefGeneConfig
+from ..config.settings import SensitiveConfig
 from ..mcp.app import invoke_tool_formatted
 from ..runtime.request_context import (
     bind_request_id,
@@ -44,6 +49,7 @@ from .openai_mapping import (
     flatten_messages,
     to_chat_completion,
     tool_accepts_obs,
+    tool_accepts_resolve_gene_id,
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
@@ -146,6 +152,65 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
         "updated_at": record.timestamps.updated_at,
         "expires_at": record.timestamps.expires_at,
         "task_ids": list(record.task_ids),
+    }
+
+
+async def _maybe_resolve_brief_gene_query(
+    *,
+    raw_query: str,
+    resolve_flag: bool,
+    tool_name: Optional[str],
+    agent_slug: Optional[str] = None,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve free-form text into a gene id when ``resolve_gene_id`` is on.
+
+    Both the OpenAI-compatible chat-completions route and the native
+    ``/v1/agents/brief_gene/runs`` route funnel through here so the
+    flag has identical semantics on both surfaces: BriefGene-only,
+    explicit 400 on misuse, explicit 400 on resolver failure, and a
+    deterministic metadata patch describing the rewrite.
+
+    Args:
+        raw_query: The original ``user_query`` text from the request.
+        resolve_flag: Whether the caller opted into LLM preprocessing.
+        tool_name: MCP tool name when the chat-completions path resolved
+            it; ``None`` for the native runs path which gates on slug.
+        agent_slug: Native agent slug when the runs path supplied one;
+            ``None`` for the chat-completions path which gates on tool.
+
+    Returns:
+        Tuple of ``(user_query_for_tool, metadata_patch)``. The metadata
+        patch is empty when the flag is off and otherwise carries the
+        ``original_query`` / ``resolved_gene_id`` / ``resolve_gene_id``
+        keys for caller observability.
+
+    Raises:
+        HTTPException: 400 when the flag is set on a non-BriefGene
+            tool/slug or the resolver raises ``BriefGeneResolveError``.
+    """
+    if not resolve_flag:
+        return raw_query, {}
+    brief_tool = tool_name is not None and tool_accepts_resolve_gene_id(
+        tool_name
+    )
+    brief_slug = agent_slug == "brief_gene"
+    if not (brief_tool or brief_slug):
+        raise HTTPException(
+            status_code=400,
+            detail="resolve_gene_id is only valid for BriefGene calls",
+        )
+    try:
+        result = await resolve_brief_gene_user_query(
+            raw_query,
+            brief_config=BriefGeneConfig(),
+            sensitive_config=SensitiveConfig.load(),
+        )
+    except BriefGeneResolveError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.gene_id, {
+        "original_query": raw_query,
+        "resolved_gene_id": result.gene_id,
+        "resolve_gene_id": True,
     }
 
 
@@ -567,11 +632,21 @@ def create_app() -> FastAPI:
             user_query = flatten_messages(payload.messages)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        user_query, resolve_meta = await _maybe_resolve_brief_gene_query(
+            raw_query=user_query,
+            resolve_flag=bool(payload.resolve_gene_id),
+            tool_name=tool_name,
+        )
         arguments: dict[str, object] = {"user_query": user_query}
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
         formatted = await invoke_tool_formatted(tool_name, arguments)
         result = asdict(formatted)
+        if resolve_meta:
+            existing_meta = result.get("metadata") or {}
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
+            result["metadata"] = {**existing_meta, **resolve_meta}
         agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
         if agent_slug is not None:
             _record_sync_run(

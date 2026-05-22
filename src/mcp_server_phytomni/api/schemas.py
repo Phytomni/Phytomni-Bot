@@ -72,6 +72,10 @@ class ChatCompletionRequest(BaseModel):
         messages: Ordered conversation messages.
         stream: Streaming flag; only False is supported.
         obs_file_list: Optional OBS document paths for the agent.
+        resolve_gene_id: When true and the model is BriefGene-shaped,
+            resolve the free-form user message into a canonical gene
+            id via an LLM call before invoking the tool. Other models
+            reject this flag with HTTP 400.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -80,6 +84,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     stream: bool = False
     obs_file_list: Optional[List[str]] = None
+    resolve_gene_id: Optional[bool] = None
 
 
 class AgentRunRequest(BaseModel):

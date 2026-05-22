@@ -21,6 +21,7 @@ __all__ = [
     "MODEL_TO_TOOL",
     "tool_for_model",
     "tool_accepts_obs",
+    "tool_accepts_resolve_gene_id",
     "flatten_messages",
     "to_chat_completion",
 ]
@@ -37,6 +38,11 @@ MODEL_TO_TOOL = {
 # only takes a single gene/transcript id, so it rejects document lists.
 _OBS_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
+# Tools that support HTTP-side resolve_gene_id LLM preprocessing. Only
+# BriefGene benefits because it requires a single canonical id and is
+# the agent advertised standalone to external clients.
+_RESOLVE_GENE_ID_CAPABLE_TOOLS = {"BriefGeneAgent"}
+
 
 def tool_for_model(model: str) -> Optional[str]:
     """Return the MCP tool name for an OpenAI-style model id."""
@@ -46,6 +52,11 @@ def tool_for_model(model: str) -> Optional[str]:
 def tool_accepts_obs(tool_name: str) -> bool:
     """Return True when the tool's schema accepts obs_file_list."""
     return tool_name in _OBS_CAPABLE_TOOLS
+
+
+def tool_accepts_resolve_gene_id(tool_name: str) -> bool:
+    """Return True when the tool supports resolve_gene_id preprocessing."""
+    return tool_name in _RESOLVE_GENE_ID_CAPABLE_TOOLS
 
 
 def flatten_messages(
