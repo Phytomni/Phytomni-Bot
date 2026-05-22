@@ -194,92 +194,23 @@ async def dispatch_tool(
 
 
 async def serve() -> None:
-    """Initialize and run the Phytomni MCP service endpoint.
+    """Initialize and run the Phytomni MCP stdio server.
 
-    This function orchestrates the complete service lifecycle for the Phytomni
-    Model Context Protocol (MCP) server, providing specialized AI agents for
-    plant science research and bioinformatics analysis. The server manages
-    multiple agent types with domain-specific capabilities and handles all
-    aspects of request processing, validation, and response generation.
+    Configures package-level logging, builds a ``Server("Phytomni-Server")``
+    instance, wires the ``list_tools`` and ``call_tool`` handlers, and runs
+    the server over stdio with ``raise_exceptions=True``. The function
+    blocks until the stdio streams close (interrupt or client disconnect);
+    there is no graceful shutdown drain — in-flight handler coroutines are
+    cancelled abruptly by ``asyncio`` when the surrounding task is
+    cancelled, and any resource cleanup must already be handled by each
+    handler's own ``async with`` / ``try / finally`` blocks.
 
-    The service exposes the following specialized agents:
-    - ChatAgent: Core language model interface for Q&A and document processing
-    - KnowledgeAgent: Literature synthesis with RAG (Retrieval-Augmented
-        Generation)
-    - DataAgent: Structured database queries using natural language to SQL
-    - AnalystAgent: Automated bioinformatics workflow execution
-    - ReviewAgent: Comprehensive research investigation and report generation
-    - DeepGenomeAgent: Multi-omics gene function analysis with experimental
-        data
-    - InSilicoResearchAgent: Scientific paper methodology decomposition
-    - DigitalDesignAgent: Protein and promoter design analysis with
-        computational modeling
-    - GeneNetworkAgent: Gene interaction and regulatory network analysis
-
-    Service Architecture:
-    - Tool registration with JSON schema validation for type safety
-    - Request routing to appropriate agent handlers based on tool name
-    - Comprehensive error handling with MCP-compliant error responses
-    - Automatic resource cleanup and memory management
-    - Standard I/O protocol implementation for cross-platform compatibility
-
-    Primary Endpoints:
-        /list_tools: Returns metadata for all registered agents including:
-            - Agent names and descriptions
-            - Input parameter schemas
-            - Capability specifications
-        /call_tool: Executes agent-specific operations with:
-            - Parameter validation against schemas
-            - Agent-specific configuration loading
-            - Response formatting and error handling
-
-    Args:
-        None: This function takes no parameters and uses configuration
-        from environment variables and default configuration classes.
-
-    Returns:
-        None: This function runs indefinitely until interrupted, serving
-        requests through the stdio interface.
+    The registered tools are listed in ``TOOL_ARGUMENT_MODELS`` /
+    ``TOOL_HANDLERS``; see ``mcp/schemas.py`` for their public schemas.
 
     Raises:
-        McpError: Wrapped exceptions for operational failures including:
-            - INVALID_PARAMS: Invalid parameter schemas or missing required
-                fields
-            - INTERNAL_ERROR: Agent execution failures, timeouts, or
-                infrastructure issues
-        ValueError: If agent parameters fail Pydantic model validation
-        ConnectionError: If underlying services (databases, APIs) are
-            unavailable
-        TimeoutError: If agent operations exceed configured timeout limits
-
-    Examples:
-        Running the server:
-            >>> import asyncio
-            >>> asyncio.run(serve())
-
-        The server can be integrated with MCP clients:
-            ```python
-            # Client connection example
-            from mcp import ClientSession
-
-            async with ClientSession() as session:
-                tools = await session.list_tools()
-                result = await session.call_tool(
-                    "ChatAgent",
-                    {"user_query": "What is photosynthesis?",
-                    "obs_file_list": []}
-                )
-            ```
-
-    Note:
-        The server maintains strict isolation between agent execution contexts
-        and implements automatic resource cleanup through context managers.
-        All agents are configured through their respective configuration
-        classes which load settings from environment variables and
-        configuration files.
-
-        The server implements graceful shutdown handling and ensures all
-        ongoing operations complete before termination.
+        McpError: Wrapped invalid-params / internal errors surface here
+            only when a handler raises them; serve itself does not raise.
     """
     configure_logging()
     server = Server("Phytomni-Server")
