@@ -12,7 +12,7 @@ when the mount is unavailable.
 
 from __future__ import annotations
 
-from traceback import format_exc
+import logging
 from typing import Any, Dict, NamedTuple
 
 from obs import ObsClient
@@ -35,6 +35,8 @@ __all__ = [
     "ensure_run_output_dir",
     "get_data_list",
 ]
+
+logger = logging.getLogger(__name__)
 
 ANALYST_CONFIG = AnalystConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -231,7 +233,8 @@ def _create_output_dir_sdk(
             return f"/obs/{access.bucket_name}/{output_dir}"
         raise OSError(_obs_error_message("Put File Failed", response))
     except Exception as exc:
-        raise OSError(f"Put File Failed\n{format_exc()}") from exc
+        logger.exception("OBS upload failed for output dir %s", output_dir)
+        raise OSError("upload failed") from exc
 
 
 def _obs_error_message(message: str, response: Any) -> str:

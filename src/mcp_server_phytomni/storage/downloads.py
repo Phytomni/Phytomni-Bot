@@ -12,10 +12,10 @@ Functions: download_upload_context, download_obs_file,
 """
 
 import asyncio
+import logging
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from traceback import format_exc
 from typing import Any, List, Mapping, Optional
 
 from markitdown import MarkItDown
@@ -30,6 +30,8 @@ from .obs_storage import (
     obsfs_path_for,
 )
 from .path_policy import RunIdentity
+
+logger = logging.getLogger(__name__)
 
 SERVER_CONFIG = ServerConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -312,7 +314,8 @@ async def _download_obs_file_with_retry(
             if attempt < context.download.max_retries:
                 await asyncio.sleep(1.5**attempt)
                 continue
-            raise OSError(f"Download File Failed\n{format_exc()}") from exc
+            logger.exception("OBS download failed for object %s", object_key)
+            raise OSError("download failed") from exc
     return server_file
 
 
