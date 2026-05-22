@@ -200,7 +200,12 @@ class SensitiveConfig(BaseSettings):
         settings_cls = cast(Any, cls)
         if os.getenv("PHYTOMNI_TESTING") == "1":
             return settings_cls(_env_file=None)
-        license_key = os.getenv(LICENSE_KEY_ENV)
+        # Match load_env_file's resolution: either source (env var or
+        # the on-disk LICENSE_KEY_PATH file) counts as a license key.
+        # The previous os.getenv-only check missed the file-only Model
+        # A path, letting a stray plaintext .env shadow the decrypted
+        # envelope through the class-bound env_file=ENV_PATH default.
+        license_key = _resolve_license_key()
         if license_key and ENCRYPTED_ENV_PATH.exists():
             # Encrypted values are already in os.environ; the
             # class-bound env_file=ENV_PATH must be ignored so a
