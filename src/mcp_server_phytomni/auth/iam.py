@@ -7,7 +7,7 @@
 Functions: get_token.
 """
 
-from httpx import AsyncClient, Timeout
+from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -16,6 +16,7 @@ from ..common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
+from ..common.httpx_client import get_async_client
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig
 
@@ -47,7 +48,7 @@ async def get_token(
             successful response omits the X-Subject-Token header.
     """
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         password = SENSITIVE_CONFIG.USER_PASSWORD.get_secret_value()
         data = {
             "auth": {

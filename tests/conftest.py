@@ -15,7 +15,8 @@ import importlib.util
 import os
 import socket
 import sys
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -264,6 +265,86 @@ def instant_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
 
+def _build_scripted_client_class(
+    behaviors: list[Any], calls: dict[str, int]
+) -> type:
+    """Return a scripted async HTTP client class shared by both fixtures.
+
+    The class is an async context manager whose ``post`` replays one
+    scripted behavior per call: an exception instance is raised,
+    anything else is returned. ``calls["n"]`` counts POST attempts.
+    """
+    script = list(behaviors)
+
+    class _FakeClient:
+        """Async context-manager HTTP client stub."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """Ignore client construction arguments."""
+            del args, kwargs
+
+        async def __aenter__(self) -> "_FakeClient":
+            """Enter the async context."""
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            """Exit the async context."""
+            del args
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            """Replay the next scripted behavior for one POST."""
+            del args, kwargs
+            calls["n"] += 1
+            behavior = script.pop(0)
+            if isinstance(behavior, BaseException):
+                raise behavior
+            return behavior
+
+    return _FakeClient
+
+
+def _build_async_factory(
+    behaviors: list[Any], calls: dict[str, int]
+) -> Callable[..., Any]:
+    """Return a ``get_async_client``-shaped factory around the scripted client.
+
+    Lives at module scope (not nested inside the fixture) because
+    pylint's W0135 generator-missing-cleanup heuristic only trusts
+    `yield` inside `async with` when the enclosing function is itself
+    top-level — nesting two levels deep inside a fixture closure
+    confuses the inference and trips a false positive.
+    """
+    client_cls = _build_scripted_client_class(behaviors, calls)
+
+    @asynccontextmanager
+    async def factory(
+        **factory_kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        """Yield one scripted client per call, ignoring factory kwargs."""
+        del factory_kwargs
+        async with client_cls() as opened:
+            yield opened
+
+    return factory
+
+
+@pytest.fixture
+def fake_async_factory() -> Callable[[list[Any], dict[str, int]], Any]:
+    """Build a ``get_async_client`` substitute around the scripted client.
+
+    The HTTP client factory introduced by the Phase 2 TLS audit yields
+    an open client from an ``@asynccontextmanager``; tests that
+    previously monkey-patched ``AsyncClient`` now monkey-patch
+    ``get_async_client`` instead. This fixture wraps the scripted
+    client class so callers do not have to redeclare the
+    context-manager boilerplate per migration step.
+
+    Returns:
+        ``make(behaviors, calls) -> async-context-manager factory``.
+    """
+    return _build_async_factory
+
+
 @pytest.fixture
 def fake_client_factory() -> Callable[[list[Any], dict[str, int]], type]:
     """Return a builder for a scripted fake async HTTP client.
@@ -277,33 +358,7 @@ def fake_client_factory() -> Callable[[list[Any], dict[str, int]], type]:
     """
 
     def _make(behaviors: list[Any], calls: dict[str, int]) -> type:
-        script = list(behaviors)
-
-        class _FakeClient:
-            """Async context-manager HTTP client stub."""
-
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                """Ignore client construction arguments."""
-                del args, kwargs
-
-            async def __aenter__(self) -> "_FakeClient":
-                """Enter the async context."""
-                return self
-
-            async def __aexit__(self, *args: Any) -> None:
-                """Exit the async context."""
-                del args
-
-            async def post(self, *args: Any, **kwargs: Any) -> Any:
-                """Replay the next scripted behavior for one POST."""
-                del args, kwargs
-                calls["n"] += 1
-                behavior = script.pop(0)
-                if isinstance(behavior, BaseException):
-                    raise behavior
-                return behavior
-
-        return _FakeClient
+        return _build_scripted_client_class(behaviors, calls)
 
     return _make
 

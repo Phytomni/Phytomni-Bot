@@ -50,23 +50,23 @@ def _resp(status_code: int, headers: dict[str, str]) -> SimpleNamespace:
 @pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_retries_transient_connect_error_then_succeeds(
     monkeypatch: pytest.MonkeyPatch,
-    fake_client_factory: _ClientFactory,
+    fake_async_factory: _ClientFactory,
 ) -> None:
     """A transient ConnectError is retried; the next 2xx yields the token.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
-        fake_client_factory: Scripted fake-client builder.
+        fake_async_factory: Scripted fake-factory builder.
     """
     calls = {"n": 0}
-    fake = fake_client_factory(
+    fake = fake_async_factory(
         [
             httpx.ConnectError("transient connect blip"),
             _resp(201, {"X-Subject-Token": "tok-abc-123"}),
         ],
         calls,
     )
-    monkeypatch.setattr(iam, "AsyncClient", fake)
+    monkeypatch.setattr(iam, "get_async_client", fake)
 
     token = await iam.get_token()
 
@@ -77,21 +77,21 @@ async def test_get_token_retries_transient_connect_error_then_succeeds(
 @pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_raises_mcperror_after_exhausting_retries(
     monkeypatch: pytest.MonkeyPatch,
-    fake_client_factory: _ClientFactory,
+    fake_async_factory: _ClientFactory,
 ) -> None:
     """Persistent ConnectError surfaces as McpError, not a raw exception.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
-        fake_client_factory: Scripted fake-client builder.
+        fake_async_factory: Scripted fake-factory builder.
     """
     attempts = iam.SERVER_CONFIG.MAX_RETRIES + 1
     calls = {"n": 0}
-    fake = fake_client_factory(
+    fake = fake_async_factory(
         [httpx.ConnectError("down") for _ in range(attempts)],
         calls,
     )
-    monkeypatch.setattr(iam, "AsyncClient", fake)
+    monkeypatch.setattr(iam, "get_async_client", fake)
 
     with pytest.raises(McpError) as excinfo:
         await iam.get_token()
@@ -103,17 +103,17 @@ async def test_get_token_raises_mcperror_after_exhausting_retries(
 @pytest.mark.usefixtures("instant_retry_sleep")
 async def test_get_token_raises_mcperror_when_header_missing(
     monkeypatch: pytest.MonkeyPatch,
-    fake_client_factory: _ClientFactory,
+    fake_async_factory: _ClientFactory,
 ) -> None:
     """A 2xx response without X-Subject-Token is an McpError, not KeyError.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
-        fake_client_factory: Scripted fake-client builder.
+        fake_async_factory: Scripted fake-factory builder.
     """
     calls = {"n": 0}
-    fake = fake_client_factory([_resp(200, {})], calls)
-    monkeypatch.setattr(iam, "AsyncClient", fake)
+    fake = fake_async_factory([_resp(200, {})], calls)
+    monkeypatch.setattr(iam, "get_async_client", fake)
 
     with pytest.raises(McpError) as excinfo:
         await iam.get_token()

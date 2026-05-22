@@ -213,6 +213,17 @@ py-version = "3.12"
 # (no rule conflicts there), so the stubs sit outside pylint's scope.
 ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 
+[tool.pylint."messages control"]
+# W0135 contextmanager-generator-missing-cleanup is a documented false
+# positive on the canonical `@asynccontextmanager` + `async with X() as y:
+# yield y` pattern when the inner context manager is referenced through a
+# closure variable instead of an inline external class (production
+# common.httpx_client.get_async_client passes; tests.conftest's
+# scripted-client factory cannot). The decorator already converts a thrown
+# GeneratorExit into the proper `__aexit__` call, so the warning never
+# matches real cleanup bugs in this codebase.
+disable = ["contextmanager-generator-missing-cleanup"]
+
 [tool.pylint.design]
 # Cache-key primitives (e.g. agents/knowledge/retrieval.py
 # _retrieve_scope_docs, _rerank_batch, agents/chat/service.py

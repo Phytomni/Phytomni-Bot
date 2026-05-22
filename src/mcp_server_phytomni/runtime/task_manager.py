@@ -14,16 +14,14 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from httpx import (
-    AsyncClient,
-    Timeout,
-)
+from httpx import Timeout
 
 from ..common.http import (
     JsonPostRequest,
     JsonPostRetry,
     post_json_with_retries,
 )
+from ..common.httpx_client import get_async_client
 from ..config.defaults import ApiConfig
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
@@ -522,7 +520,7 @@ def _retriable_codes(value: Any) -> tuple[int, ...]:
 async def _post_remote_task(request: RemoteTaskRequest):
     """Post one remote task-manager request with retry handling."""
     client_timeout = Timeout(request.timeout, connect=request.timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         return await post_json_with_retries(
             client,
             JsonPostRequest(url=request.url, data=request.data),
