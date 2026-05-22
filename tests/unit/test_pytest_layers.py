@@ -84,7 +84,7 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
     assert coverage_config["run"] == {
         "branch": True,
         "relative_files": True,
-        "source": ["mcp_server_phytomni"],
+        "source": ["mcp_server_phytomni", "mcp_client_phytomni"],
     }
     assert coverage_config["report"] == {
         "show_missing": True,

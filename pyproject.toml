@@ -197,7 +197,7 @@ markers = [
 [tool.coverage.run]
 branch = true
 relative_files = true
-source = ["mcp_server_phytomni"]
+source = ["mcp_server_phytomni", "mcp_client_phytomni"]
 
 [tool.coverage.report]
 show_missing = true

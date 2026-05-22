@@ -1,0 +1,179 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Tests for the mcp_client_phytomni CLI entry point.
+
+Pins ``_build_parser`` defaults, ``_json_object`` validation, and the
+``list-tools`` / ``call`` dispatch paths inside ``_main`` by patching
+``PhytomniMcpClient`` and ``server_command_from_target`` with stub
+implementations. No subprocess is spawned.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from mcp_client_phytomni import main as cli_main
+from mcp_client_phytomni.tool_result_formatters import FormattedToolResult
+
+pytestmark = pytest.mark.unit
+
+
+class _StubMcpClient:
+    """Async context manager standing in for PhytomniMcpClient."""
+
+    def __init__(
+        self,
+        *,
+        tools: list[SimpleNamespace] | None = None,
+        call_result: SimpleNamespace | None = None,
+    ) -> None:
+        self.tools = tools or []
+        self.call_result = call_result
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def __aenter__(self) -> "_StubMcpClient":
+        return self
+
+    async def __aexit__(
+        self,
+        _exc_type: Any,
+        _exc: Any,
+        _tb: Any,
+    ) -> None:
+        return None
+
+    async def list_tools(self) -> list[SimpleNamespace]:
+        """Return the canned tool list."""
+        return self.tools
+
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> SimpleNamespace:
+        """Record the call and return the canned response."""
+        self.calls.append((tool_name, arguments))
+        if self.call_result is None:  # defensive: tests must supply one
+            raise AssertionError("call_tool fixture missing")
+        return self.call_result
+
+
+def test_build_parser_defaults_to_phytomni_server_module() -> None:
+    """The CLI parser defaults --server to the in-repo server module."""
+    parser = cli_main._build_parser()
+    args = parser.parse_args(["list-tools"])
+
+    assert args.server == "mcp_server_phytomni.server"
+    assert args.command == "list-tools"
+
+
+def test_build_parser_call_subcommand_requires_tool_and_arguments() -> None:
+    """The ``call`` subcommand requires both positional args."""
+    parser = cli_main._build_parser()
+
+    args = parser.parse_args(["call", "ChatAgent", '{"user_query":"x"}'])
+
+    assert args.command == "call"
+    assert args.tool_name == "ChatAgent"
+    assert args.arguments == '{"user_query":"x"}'
+
+
+def test_json_object_parses_valid_object() -> None:
+    """A JSON object decodes into a dict for downstream call_tool use."""
+    assert cli_main._json_object('{"a": 1}') == {"a": 1}
+
+
+def test_json_object_rejects_non_object_payload() -> None:
+    """A JSON array (or any non-object) raises ArgumentTypeError.
+
+    Pins the type-check that prevents bad CLI input from reaching
+    ``client.call_tool`` as a list / scalar.
+    """
+    with pytest.raises(argparse.ArgumentTypeError):
+        cli_main._json_object("[1, 2]")
+
+
+def test_json_object_rejects_malformed_json() -> None:
+    """Malformed JSON propagates as ``json.JSONDecodeError`` to argparse."""
+    with pytest.raises(json.JSONDecodeError):
+        cli_main._json_object("not-json")
+
+
+def test_main_list_tools_prints_tool_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``list-tools`` prints a JSON array of name/description/inputSchema."""
+    tool = SimpleNamespace(
+        name="ChatAgent",
+        description="General chat",
+        inputSchema={"type": "object"},
+    )
+    stub = _StubMcpClient(tools=[tool])
+    monkeypatch.setattr(cli_main, "PhytomniMcpClient", lambda _command: stub)
+    monkeypatch.setattr(
+        cli_main, "server_command_from_target", lambda target: target
+    )
+    monkeypatch.setattr("sys.argv", ["phytomni-mcp-client", "list-tools"])
+
+    asyncio.run(cli_main._main())
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == [
+        {
+            "name": "ChatAgent",
+            "description": "General chat",
+            "input_schema": {"type": "object"},
+        }
+    ]
+
+
+def test_main_call_prints_formatted_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``call`` invokes the chosen tool and prints the formatted answer."""
+    response = SimpleNamespace(
+        formatted=FormattedToolResult(answer="Hello, world.")
+    )
+    stub = _StubMcpClient(call_result=response)
+    monkeypatch.setattr(cli_main, "PhytomniMcpClient", lambda _command: stub)
+    monkeypatch.setattr(
+        cli_main, "server_command_from_target", lambda target: target
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "phytomni-mcp-client",
+            "call",
+            "ChatAgent",
+            '{"user_query":"hello"}',
+        ],
+    )
+
+    asyncio.run(cli_main._main())
+
+    assert capsys.readouterr().out.strip() == "Hello, world."
+    assert stub.calls == [("ChatAgent", {"user_query": "hello"})]
+
+
+def test_main_entry_runs_async_main(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``main()`` is the sync wrapper around ``asyncio.run(_main())``."""
+    captured: dict[str, Any] = {}
+
+    async def fake_main() -> None:
+        captured["ran"] = True
+
+    monkeypatch.setattr(cli_main, "_main", fake_main)
+
+    cli_main.main()
+
+    assert captured == {"ran": True}
