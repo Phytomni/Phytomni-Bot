@@ -28,15 +28,11 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...config.defaults import ChatConfig
-from ...config.settings import SensitiveConfig
+from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.downloads import download_list_convert
 
 CHAT_CONFIG = ChatConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
-DEFAULT_ACCESS_KEY_ID, DEFAULT_SECRET_ACCESS_KEY = (
-    SENSITIVE_CONFIG.obs_credentials()
-)
 
 
 async def phyto_chat_with_follow(
@@ -277,16 +273,18 @@ async def phyto_chat(
 
 def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:
     """Resolve keyword-compatible chat and OBS options."""
+    sensitive = get_sensitive_config()
+    default_access_key_id, default_secret_access_key = (
+        sensitive.obs_credentials()
+    )
     response_format = values.get("response_format")
     retriable_codes = values.get("retriable_codes")
     return {
         "prompt_file": values.get("prompt_file", CHAT_CONFIG.PROMPT_FILE),
         "prompt_path": values.get("prompt_path", CHAT_CONFIG.PROMPT_PATH),
-        "api_key": values.get(
-            "api_key", SENSITIVE_CONFIG.API_KEY.get_secret_value()
-        ),
-        "base_url": values.get("base_url", SENSITIVE_CONFIG.BASE_URL),
-        "model": values.get("model", SENSITIVE_CONFIG.MODEL_ID),
+        "api_key": values.get("api_key", sensitive.API_KEY.get_secret_value()),
+        "base_url": values.get("base_url", sensitive.BASE_URL),
+        "model": values.get("model", sensitive.MODEL_ID),
         "frequency_penalty": values.get(
             "frequency_penalty", CHAT_CONFIG.FREQUENCY_PENALTY
         ),
@@ -307,9 +305,9 @@ def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:
         "top_p": values.get("top_p", CHAT_CONFIG.TOP_P),
         "user": values.get("user", CHAT_CONFIG.USER),
         "server_dir": values.get("server_dir", CHAT_CONFIG.TEMP_DIR),
-        "access_key_id": values.get("access_key_id", DEFAULT_ACCESS_KEY_ID),
+        "access_key_id": values.get("access_key_id", default_access_key_id),
         "secret_access_key": values.get(
-            "secret_access_key", DEFAULT_SECRET_ACCESS_KEY
+            "secret_access_key", default_secret_access_key
         ),
         "obs_server": values.get("obs_server", CHAT_CONFIG.OBS_SERVER),
         "bucket_name": values.get("bucket_name", CHAT_CONFIG.BUCKET_NAME),

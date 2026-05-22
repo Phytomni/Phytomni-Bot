@@ -26,7 +26,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -43,7 +43,6 @@ from .nl2sql import (
 logger = logging.getLogger(__name__)
 
 DATA_CONFIG = DataConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 
 DATA_CONFIG_FIELD_MAP = {
     "retrieve_url": "RETRIEVE_URL",
@@ -89,7 +88,7 @@ async def rewrite_nl2sql(
         DATA_CONFIG_FIELD_MAP,
     )
     sensitive_config = copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         arguments,
         field_map=DATA_SENSITIVE_FIELD_MAP,
         secret_field_map=DATA_SECRET_FIELD_MAP,
@@ -153,11 +152,12 @@ class DataAgent:
         data_config: Configuration for data retrieval and NL2SQL.
                      Defaults to the global DATA_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., API keys).
-                          Defaults to the global SENSITIVE_CONFIG instance.
+                          Defaults to the cached ``get_sensitive_config()``
+                          instance when ``None``.
 
     Attributes:
-        DATA_CONFIG: The data configuration instance.
-        SENSITIVE_CONFIG: The sensitive configuration instance.
+        data_config: The data configuration instance.
+        sensitive_config: The sensitive configuration instance.
         checkpointer: The checkpointer for state persistence.
         app: The compiled LangGraph application.
     """
@@ -166,11 +166,11 @@ class DataAgent:
         self,
         checkpointer: Optional[MemorySaver] = None,
         data_config=DATA_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the DataAgent with configuration and build the graph."""
         self.data_config = data_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 

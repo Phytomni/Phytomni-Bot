@@ -29,7 +29,7 @@ from ...config.overrides import (
     copy_config_with_overrides,
     copy_sensitive_config_with_overrides,
 )
-from ...config.settings import SensitiveConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -40,7 +40,6 @@ from ..chat.service import phyto_chat
 from .retrieval import multi_retrieve, rerank, retrieve
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
-SENSITIVE_CONFIG = SensitiveConfig.load()
 RETRIEVE_CACHE_TTL = 300
 
 KNOWLEDGE_CONFIG_FIELD_MAP = {
@@ -124,11 +123,12 @@ class KnowledgeAgent:
         knowledge_config: Configuration for knowledge base retrieval.
                           Defaults to the global KNOWLEDGE_CONFIG instance.
         sensitive_config: Configuration for sensitive data (e.g., credentials).
-                          Defaults to the global SENSITIVE_CONFIG instance.
+                          Defaults to the cached ``get_sensitive_config()``
+                          instance when ``None``.
 
     Attributes:
-        KNOWLEDGE_CONFIG: The knowledge configuration instance.
-        SENSITIVE_CONFIG: The sensitive configuration instance.
+        knowledge_config: The knowledge configuration instance.
+        sensitive_config: The sensitive configuration instance.
         checkpointer: The checkpointer for state persistence.
         app: The compiled LangGraph application.
     """
@@ -137,11 +137,11 @@ class KnowledgeAgent:
         self,
         checkpointer: Optional[MemorySaver] = None,
         knowledge_config=KNOWLEDGE_CONFIG,
-        sensitive_config=SENSITIVE_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
     ):
         """Initialize the KnowledgeAgent and build the graph."""
         self.knowledge_config = knowledge_config
-        self.sensitive_config = sensitive_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
@@ -545,7 +545,7 @@ def _knowledge_config_with_overrides(**kwargs: Any):
 def _knowledge_sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
     return copy_sensitive_config_with_overrides(
-        SENSITIVE_CONFIG,
+        get_sensitive_config(),
         kwargs,
         field_map=KNOWLEDGE_SENSITIVE_FIELD_MAP,
         secret_field_map=KNOWLEDGE_SECRET_FIELD_MAP,
