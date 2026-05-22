@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from mcp_client_phytomni import main as cli_main
+from mcp_client_phytomni.main import _build_parser, _json_object, _main, main
 from mcp_client_phytomni.tool_result_formatters import FormattedToolResult
 
 pytestmark = pytest.mark.unit
@@ -66,8 +67,7 @@ class _StubMcpClient:
 
 def test_build_parser_defaults_to_phytomni_server_module() -> None:
     """The CLI parser defaults --server to the in-repo server module."""
-    parser = cli_main._build_parser()
-    args = parser.parse_args(["list-tools"])
+    args = _build_parser().parse_args(["list-tools"])
 
     assert args.server == "mcp_server_phytomni.server"
     assert args.command == "list-tools"
@@ -75,9 +75,9 @@ def test_build_parser_defaults_to_phytomni_server_module() -> None:
 
 def test_build_parser_call_subcommand_requires_tool_and_arguments() -> None:
     """The ``call`` subcommand requires both positional args."""
-    parser = cli_main._build_parser()
-
-    args = parser.parse_args(["call", "ChatAgent", '{"user_query":"x"}'])
+    args = _build_parser().parse_args(
+        ["call", "ChatAgent", '{"user_query":"x"}']
+    )
 
     assert args.command == "call"
     assert args.tool_name == "ChatAgent"
@@ -86,7 +86,7 @@ def test_build_parser_call_subcommand_requires_tool_and_arguments() -> None:
 
 def test_json_object_parses_valid_object() -> None:
     """A JSON object decodes into a dict for downstream call_tool use."""
-    assert cli_main._json_object('{"a": 1}') == {"a": 1}
+    assert _json_object('{"a": 1}') == {"a": 1}
 
 
 def test_json_object_rejects_non_object_payload() -> None:
@@ -96,13 +96,13 @@ def test_json_object_rejects_non_object_payload() -> None:
     ``client.call_tool`` as a list / scalar.
     """
     with pytest.raises(argparse.ArgumentTypeError):
-        cli_main._json_object("[1, 2]")
+        _json_object("[1, 2]")
 
 
 def test_json_object_rejects_malformed_json() -> None:
     """Malformed JSON propagates as ``json.JSONDecodeError`` to argparse."""
     with pytest.raises(json.JSONDecodeError):
-        cli_main._json_object("not-json")
+        _json_object("not-json")
 
 
 def test_main_list_tools_prints_tool_metadata(
@@ -122,7 +122,7 @@ def test_main_list_tools_prints_tool_metadata(
     )
     monkeypatch.setattr("sys.argv", ["phytomni-mcp-client", "list-tools"])
 
-    asyncio.run(cli_main._main())
+    asyncio.run(_main())
 
     payload = json.loads(capsys.readouterr().out)
     assert payload == [
@@ -157,7 +157,7 @@ def test_main_call_prints_formatted_answer(
         ],
     )
 
-    asyncio.run(cli_main._main())
+    asyncio.run(_main())
 
     assert capsys.readouterr().out.strip() == "Hello, world."
     assert stub.calls == [("ChatAgent", {"user_query": "hello"})]
@@ -174,6 +174,6 @@ def test_main_entry_runs_async_main(
 
     monkeypatch.setattr(cli_main, "_main", fake_main)
 
-    cli_main.main()
+    main()
 
     assert captured == {"ran": True}

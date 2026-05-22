@@ -47,7 +47,7 @@ def _openai_client(completion: SimpleNamespace) -> SimpleNamespace:
     create = AsyncMock(return_value=completion)
     return SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
-        _create=create,  # exposed for assertion convenience
+        create=create,  # also exposed at top level for assertion convenience
     )
 
 
@@ -215,5 +215,5 @@ async def test_route_query_threads_history_into_openai_messages() -> None:
 
     await router.route_query("now", history=history)
 
-    sent_messages = openai._create.await_args.kwargs["messages"]
+    sent_messages = openai.create.await_args.kwargs["messages"]
     assert sent_messages == history + [{"role": "user", "content": "now"}]
