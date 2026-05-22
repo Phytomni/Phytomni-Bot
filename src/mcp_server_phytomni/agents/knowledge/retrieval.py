@@ -27,6 +27,7 @@ from ...common.http import (
     JsonPostRetry,
     post_json_with_retries,
 )
+from ...common.httpx_client import get_async_client
 from ...common.lists import split_list
 from ...config.defaults import KnowledgeConfig
 from ...func_cache import LONG_TTL_SECONDS, func_cache
@@ -502,9 +503,7 @@ async def _retrieve_raw_docs(
     options: RetrieveOptions,
 ) -> List[Dict[str, Any]]:
     """Return raw retrieve docs for the configured search scope."""
-    async with AsyncClient(
-        timeout=_timeout(options.timeout), verify=False
-    ) as client:
+    async with get_async_client(timeout=_timeout(options.timeout)) as client:
         if options.scope in ("doc", "keyword"):
             docs = await _retrieve_scope_docs(
                 client,
@@ -740,9 +739,7 @@ async def rerank(
     """
     options = RerankOptions.from_kwargs(kwargs)
     docs, id_doc_dict = _rerank_docs(doc_list)
-    async with AsyncClient(
-        timeout=_timeout(options.timeout), verify=False
-    ) as client:
+    async with get_async_client(timeout=_timeout(options.timeout)) as client:
         rank_docs = await _rank_docs(client, user_query, docs, options)
     return [
         {**id_doc_dict[doc["id"]].copy(), "score": doc["score"]}

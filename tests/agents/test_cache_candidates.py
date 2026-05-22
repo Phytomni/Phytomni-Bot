@@ -9,6 +9,7 @@ cache keys, and DeepGenome BI lookup cache behavior.
 """
 
 import json
+from contextlib import asynccontextmanager
 from typing import cast
 
 import pytest
@@ -201,7 +202,16 @@ async def test_retrieve_uses_composite_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    monkeypatch.setattr(knowledge_retrieval, "AsyncClient", FakeClient)
+    @asynccontextmanager
+    async def fake_async_client(**factory_kwargs):
+        """Yield the FakeClient as a get_async_client substitute."""
+        del factory_kwargs
+        async with FakeClient() as opened:
+            yield opened
+
+    monkeypatch.setattr(
+        knowledge_retrieval, "get_async_client", fake_async_client
+    )
     monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_retrieval.retrieve(
@@ -303,7 +313,16 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    monkeypatch.setattr(knowledge_retrieval, "AsyncClient", FakeClient)
+    @asynccontextmanager
+    async def fake_async_client(**factory_kwargs):
+        """Yield the FakeClient as a get_async_client substitute."""
+        del factory_kwargs
+        async with FakeClient() as opened:
+            yield opened
+
+    monkeypatch.setattr(
+        knowledge_retrieval, "get_async_client", fake_async_client
+    )
     monkeypatch.setattr(knowledge_retrieval, "rerank", fake_rerank)
 
     first = await knowledge_retrieval.multi_retrieve(

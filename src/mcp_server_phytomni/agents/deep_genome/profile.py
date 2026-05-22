@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from httpx import AsyncClient, Timeout
+from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -26,6 +26,7 @@ from ...common.http import (
     post_json_with_retries,
     require_json_object,
 )
+from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...config.defaults import DeepGenomeConfig
@@ -82,7 +83,7 @@ async def _post_bi_sql(
             line 1 column 1 (char 0)``.
     """
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         try:
             data = await post_json_with_retries(
                 client,

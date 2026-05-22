@@ -16,7 +16,7 @@ import json
 import time
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from httpx import AsyncClient, Timeout
+from httpx import Timeout
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph
 from mcp.shared.exceptions import McpError
@@ -28,6 +28,7 @@ from ...common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
+from ...common.httpx_client import get_async_client
 from ...config.defaults import AnalystConfig
 from ...config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -944,7 +945,7 @@ async def task_delete(
     else:
         retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         response = await request_response_with_retries(
             client,
             JsonPostRequest(
@@ -1011,7 +1012,7 @@ async def task_status(
     else:
         retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         response = await request_response_with_retries(
             client,
             JsonPostRequest(
@@ -1080,7 +1081,7 @@ async def task_log(
     else:
         retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         response = await request_response_with_retries(
             client,
             JsonPostRequest(

@@ -23,6 +23,7 @@ from ...common.http import (
     JsonPostRetry,
     post_json_with_retries,
 )
+from ...common.httpx_client import get_async_client
 from ...config.defaults import DataConfig
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.path_policy import IdFactory
@@ -237,7 +238,7 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     """
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     token = await get_token()
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         last_attempt = request.max_retries
         for attempt in range(last_attempt + 1):
             # Attempt 0 keeps the caller's conversation (honors an

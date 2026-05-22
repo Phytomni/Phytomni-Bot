@@ -15,10 +15,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TypedDict
 
-from httpx import (
-    AsyncClient,
-    Timeout,
-)
+from httpx import Timeout
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
@@ -28,6 +25,7 @@ from ...common.http import (
     post_json_with_retries,
     require_json_object,
 )
+from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...common.responses import (
     attach_message_payload,
@@ -260,7 +258,7 @@ async def run_bi_api(
     else:
         retriable_codes = list(retriable_codes)
     client_timeout = Timeout(timeout, connect=timeout)
-    async with AsyncClient(timeout=client_timeout, verify=False) as client:
+    async with get_async_client(timeout=client_timeout) as client:
         data = await post_json_with_retries(
             client,
             JsonPostRequest(
