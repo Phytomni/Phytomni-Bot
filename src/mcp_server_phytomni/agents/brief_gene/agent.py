@@ -51,6 +51,7 @@ from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.retrieval import clear_retrieval_caches
+from ..shared.sql import sql_literal
 
 BRIEF_CONFIG = BriefGeneConfig()
 SENSITIVE_CONFIG = SensitiveConfig.load()
@@ -90,11 +91,6 @@ class GeneRetrieveRequest:
     species: str
     symbols: tuple[str, ...]
     top_n: int
-
-
-def _sql_literal(value: str) -> str:
-    """Return a single-quoted SQL literal with basic quote escaping."""
-    return "'" + value.replace("'", "''") + "'"
 
 
 def _response_data(response: Any) -> List[Dict[str, Any]]:
@@ -528,7 +524,7 @@ class BriefGeneAgent:
         user_query = state["user_query"]
         query_response = await run_bi_api(
             "SELECT * FROM id2multispecies "
-            f"WHERE query_id = {_sql_literal(user_query)}",
+            f"WHERE query_id = {sql_literal(user_query)}",
             bi_url=self.brief_config.BI_URL,
             bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
             timeout=self.brief_config.TIMEOUT,
@@ -544,7 +540,7 @@ class BriefGeneAgent:
         gene_id_info_response, species_response = await asyncio.gather(
             run_bi_api(
                 "SELECT * FROM id2multispecies "
-                f"WHERE query_id = {_sql_literal(gene_id)}",
+                f"WHERE query_id = {sql_literal(gene_id)}",
                 bi_url=self.brief_config.BI_URL,
                 bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
                 timeout=self.brief_config.TIMEOUT,
@@ -553,7 +549,7 @@ class BriefGeneAgent:
             ),
             run_bi_api(
                 "SELECT * FROM species "
-                f"WHERE species_code = {_sql_literal(species_code)}",
+                f"WHERE species_code = {sql_literal(species_code)}",
                 bi_url=self.brief_config.BI_URL,
                 bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
                 timeout=self.brief_config.TIMEOUT,
@@ -591,7 +587,7 @@ class BriefGeneAgent:
             State updates containing symbols, coordinates, and formatted
             annotation strings.
         """
-        gene_id_literal = _sql_literal(state["gene_id"])
+        gene_id_literal = sql_literal(state["gene_id"])
         annotation_sqls = [
             f"SELECT * FROM id_table WHERE gene_id = {gene_id_literal}",
             "SELECT * FROM annotation_gene_structure_col "
