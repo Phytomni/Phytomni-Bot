@@ -16,10 +16,10 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
 
-import requests
 from langgraph.graph import END
 from langgraph.types import Send
 
+from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...runtime.langgraph_runner import capture_workflow_boundary
 from ...runtime.workflow_mixins import WorkflowMixinBase
@@ -511,12 +511,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         gene_id = state["gene_id"]
         species_code = state["species_code"]
         gene_literal = sql_literal(gene_id)
-        gene_homology_response = self._bi_json(
+        gene_homology_response = await self._bi_json(
             "SELECT query_gene_id, query_species, homology_gene_id, "
             "homology_species "
             f"FROM homology_gene WHERE query_gene_id = {gene_literal}"
         )
-        gene_interaction_response = self._bi_json(
+        gene_interaction_response = await self._bi_json(
             "SELECT query_gene_id, query_protein, interact_gene_id, "
             "interact_protein "
             "FROM protein_interaction_col "
@@ -539,15 +539,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "interaction_data": {"gene_list": gene_interaction_list},
         }
 
-    def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
-        """Query the BI SQL endpoint and return JSON payload."""
+    async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
+        """Query the BI SQL endpoint and return the parsed JSON payload."""
         payload = {"sql": sql, "returnType": "json"}
-        return requests.post(
-            url=self.deep_genome_config.BI_URL,
-            json=payload,
-            headers=self._sql_headers,
-            timeout=self.deep_genome_config.TIMEOUT,
-        ).json()
+        async with get_async_client(
+            timeout=self.deep_genome_config.TIMEOUT
+        ) as client:
+            response = await client.post(
+                self.deep_genome_config.BI_URL,
+                json=payload,
+                headers=self._sql_headers,
+            )
+        return response.json()
 
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.

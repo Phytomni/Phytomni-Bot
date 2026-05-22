@@ -13,7 +13,6 @@ compatibility wrapper used by MCP handlers.
 import operator
 from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 
-import requests
 from langgraph.graph import END, START, StateGraph
 
 from ...config.defaults import DeepGenomeConfig
@@ -57,7 +56,6 @@ __all__ = [
     "clear_gene_lookup_caches",
     "gene_function",
     "network_to_string",
-    "requests",
     "_cached_gene_annotation_lookup",
     "_cached_gene_symbol_lookup",
 ]

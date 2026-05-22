@@ -10,10 +10,12 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import (
@@ -186,6 +188,73 @@ def test_download_analysis_result_falls_back_to_sdk_download(
         ".summary",
         ".legend",
     ]
+
+
+async def test_bi_json_posts_via_async_factory(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify _bi_json sends the SQL payload via the shared async factory.
+
+    The previous implementation called ``requests.post`` synchronously
+    from inside ``async def _run_data_agent``, blocking the event loop
+    and bypassing the central TLS resolver. This test pins the new
+    async path: the factory is invoked with the configured TIMEOUT,
+    the SQL JSON body and headers reach client.post, and the returned
+    JSON flows back to the caller.
+
+    Args:
+        tmp_path: Unused; reserved for harness symmetry.
+        monkeypatch: Pytest monkeypatch fixture used to swap the
+            shared HTTP client factory with a recording stub.
+    """
+    del tmp_path
+    harness = DispatchHarness("/tmp/deep-out")
+    harness.deep_genome_config = SimpleNamespace(
+        BI_URL="https://bi.example.invalid/query",
+        TIMEOUT=42.0,
+    )
+    # _sql_headers lands on the real agent at __init__ time, not on
+    # this mixin-only harness; setattr injects it just for this test
+    # without forcing a typed subclass.
+    setattr(harness, "_sql_headers", {"X-BI-Token": "stub-token"})
+    recorded: dict[str, Any] = {}
+    bi_response = httpx.Response(
+        200, json={"message": "ok", "data": [{"x": 1}]}
+    )
+
+    class _PostStub:
+        """One-shot recorder for the BI ``post`` call inside the factory."""
+
+        def __init__(self) -> None:
+            """Initialise the recorder with the canned BI response."""
+            self._response = bi_response
+
+        async def post(self, url: str, **post_kwargs: Any) -> Any:
+            """Stash the URL plus kwargs and return the canned response."""
+            recorded["url"] = url
+            recorded["post_kwargs"] = post_kwargs
+            return self._response
+
+    @asynccontextmanager
+    async def fake_factory(**factory_kwargs: Any):
+        """Yield the recorder so the harness sees a post-capable client."""
+        recorded["factory_kwargs"] = factory_kwargs
+        yield _PostStub()
+
+    monkeypatch.setattr(deep_genome_dispatch, "get_async_client", fake_factory)
+    bi_json = getattr(harness, "_bi_json")
+
+    payload = await bi_json("SELECT 1")
+
+    assert payload == {"message": "ok", "data": [{"x": 1}]}
+    assert recorded["factory_kwargs"]["timeout"] == 42.0
+    assert recorded["url"] == "https://bi.example.invalid/query"
+    assert recorded["post_kwargs"]["json"] == {
+        "sql": "SELECT 1",
+        "returnType": "json",
+    }
+    assert recorded["post_kwargs"]["headers"] == {"X-BI-Token": "stub-token"}
 
 
 async def test_gene_summary_node_is_topology_passthrough(tmp_path) -> None:
