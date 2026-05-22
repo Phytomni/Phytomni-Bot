@@ -40,7 +40,6 @@ from ..config.defaults import (
     KnowledgeConfig,
     ReviewConfig,
 )
-from ..config.settings import SensitiveConfig
 from ..runtime.request_context import bind_run_id, current_request_user
 from ..runtime.run_registry import RunRegistry, RunSpec
 from ..runtime.task_manager import (
@@ -456,8 +455,7 @@ async def handle_deep_genome_agent(args: Any) -> Any:
         Any: DeepGenomeAgent response result.
     """
     deep_genome_config = DeepGenomeConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await gene_function(
         species_code=args.species_code,
         gene_id=args.gene_id,
@@ -471,52 +469,22 @@ async def handle_deep_genome_agent(args: Any) -> Any:
         subject_id=deep_genome_config.SUBJECT_ID,
         dialog_id=deep_genome_config.DIALOG_ID,
         need_insight=deep_genome_config.NEED_INSIGHT,
-        prompt_file=deep_genome_config.PROMPT_FILE,
         deepgenome_data=deep_genome_config.DEEPGENOME_DATA,
         output_dir=deep_genome_config.OUTPUT_DIR,
-        model_url=sensitive_config.CODER_URL,
-        model_name=sensitive_config.CODER_MODEL,
-        coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
         obs_server=deep_genome_config.OBS_SERVER,
         bucket_name=deep_genome_config.BUCKET_NAME,
-        analysis_url=deep_genome_config.ANALYSIS_URL,
-        region=deep_genome_config.ANALYSIS_REGION,
-        resource_dict=deep_genome_config.RESOURCE,
-        app_id_dict=deep_genome_config.APP_ID,
-        retrieve_url=deep_genome_config.RETRIEVE_URL,
-        repo_id_dict=deep_genome_config.REPO_ID_DICT,
-        page_num=deep_genome_config.PAGE_NUM,
-        filter_string=deep_genome_config.FILTER_STRING,
-        extra_repo_ids=deep_genome_config.EXTRA_REPO_IDS,
-        rerank_url=deep_genome_config.RERANK_URL,
-        rerank_batch_size=deep_genome_config.RERANK_BATCH_SIZE,
-        score_threshold=deep_genome_config.SCORE_THRESHOLD,
-        top_n=deep_genome_config.TOP_N,
-        prompt_path=deep_genome_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=deep_genome_config.FREQUENCY_PENALTY,
-        max_tokens=deep_genome_config.MAX_TOKENS,
-        n=deep_genome_config.N,
-        presence_penalty=deep_genome_config.PRESENCE_PENALTY,
-        reasoning_effort=deep_genome_config.REASONING_EFFORT,
-        response_format=deep_genome_config.RESPONSE_FORMAT,
-        stream=deep_genome_config.STREAM,
-        temperature=deep_genome_config.TEMPERATURE,
-        top_p=deep_genome_config.TOP_P,
-        user=deep_genome_config.USER,
         deepgenome_out=deep_genome_config.DEEPGENOME_OUT,
         download_path=deep_genome_config.DOWNLOAD_PATH,
         marker=deep_genome_config.DOWNLOAD_MARKER,
         max_keys=deep_genome_config.DOWNLOAD_MAX_KEYS,
-        timeout=deep_genome_config.TIMEOUT,
-        retriable_codes=deep_genome_config.RETRIABLE_CODES,
-        max_retries=deep_genome_config.MAX_RETRIES,
         max_concurrency=deep_genome_config.MAX_CONCURRENCY,
         max_poll=deep_genome_config.MAX_POLL,
+        access_key_id=runtime.obs_credentials[0],
+        secret_access_key=runtime.obs_credentials[1],
+        **chat_kwargs(deep_genome_config, runtime.sensitive),
+        **retrieve_kwargs(deep_genome_config),
+        **coder_kwargs(runtime.sensitive),
+        **analysis_platform_kwargs(deep_genome_config),
     )
 
 
@@ -533,52 +501,19 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
         Any: InSilicoResearchAgent response result.
     """
     in_silico_config = InSilicoResearchConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await in_silico_research(
         user_query=args.user_query,
         data_list=args.data_list,
         user_id=current_request_user(),
         output_dir=in_silico_config.OUTPUT_DIR,
-        repo_id_dict=in_silico_config.REPO_ID_DICT,
-        page_num=in_silico_config.PAGE_NUM,
-        filter_string=in_silico_config.FILTER_STRING,
-        scope=in_silico_config.SCOPE,
-        extra_repo_ids=in_silico_config.EXTRA_REPO_IDS,
-        score_threshold=in_silico_config.SCORE_THRESHOLD,
-        top_n=in_silico_config.TOP_N,
-        prompt_file=in_silico_config.PROMPT_FILE,
-        prompt_path=in_silico_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=in_silico_config.FREQUENCY_PENALTY,
-        max_tokens=in_silico_config.MAX_TOKENS,
-        n=in_silico_config.N,
-        presence_penalty=in_silico_config.PRESENCE_PENALTY,
-        reasoning_effort=in_silico_config.REASONING_EFFORT,
-        response_format=in_silico_config.RESPONSE_FORMAT,
-        stream=in_silico_config.STREAM,
-        temperature=in_silico_config.TEMPERATURE,
-        top_p=in_silico_config.TOP_P,
-        user=in_silico_config.USER,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(in_silico_config, "research"),
         execute_code=in_silico_config.EXECUTE_CODE,
-        model_url=sensitive_config.CODER_URL,
-        model_name=sensitive_config.CODER_MODEL,
-        coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=in_silico_config.OBS_SERVER,
-        bucket_name=in_silico_config.BUCKET_NAME,
-        part_size=in_silico_config.PART_SIZE,
-        task_num=in_silico_config.TASK_NUM,
-        max_concurrency=in_silico_config.MAX_CONCURRENCY,
-        max_workers=in_silico_config.MAX_WORKERS,
-        timeout=in_silico_config.TIMEOUT,
-        retriable_codes=in_silico_config.RETRIABLE_CODES,
-        max_retries=in_silico_config.MAX_RETRIES,
+        **chat_kwargs(in_silico_config, runtime.sensitive),
+        **retrieve_kwargs(in_silico_config),
+        **obs_kwargs(in_silico_config, runtime.obs_credentials),
+        **coder_kwargs(runtime.sensitive),
     )
 
 
@@ -594,8 +529,7 @@ async def handle_digital_design_agent(args: Any) -> Any:
         Any: DigitalDesignAgent response result.
     """
     design_config = DigitalDesignConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await design_module(
         species=args.species,
         gene_id=args.gene_id,
@@ -605,21 +539,16 @@ async def handle_digital_design_agent(args: Any) -> Any:
         prompt_file=design_config.PROMPT_FILE,
         deepgenome_data=design_config.DEEPGENOME_DATA,
         output_dir=design_config.OUTPUT_DIR,
-        model_url=sensitive_config.CODER_URL,
-        model_name=sensitive_config.CODER_MODEL,
-        coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
         obs_server=design_config.OBS_SERVER,
         bucket_name=design_config.BUCKET_NAME,
-        analysis_url=design_config.ANALYSIS_URL,
-        region=design_config.ANALYSIS_REGION,
-        resource_dict=design_config.RESOURCE,
-        app_id_dict=design_config.APP_ID,
+        max_poll=design_config.MAX_POLL,
+        access_key_id=runtime.obs_credentials[0],
+        secret_access_key=runtime.obs_credentials[1],
         timeout=design_config.TIMEOUT,
         retriable_codes=design_config.RETRIABLE_CODES,
         max_retries=design_config.MAX_RETRIES,
-        max_poll=design_config.MAX_POLL,
+        **coder_kwargs(runtime.sensitive),
+        **analysis_platform_kwargs(design_config),
     )
 
 
@@ -635,8 +564,7 @@ async def handle_gene_network_agent(args: Any) -> Any:
         Any: GeneNetworkAgent response result.
     """
     network_config = GeneNetworkConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await network_analysis(
         species=args.species,
         to_id=args.to_id,
@@ -645,21 +573,16 @@ async def handle_gene_network_agent(args: Any) -> Any:
         prompt_file=network_config.PROMPT_FILE,
         deepgenome_data=network_config.DEEPGENOME_DATA,
         output_dir=network_config.OUTPUT_DIR,
-        model_url=sensitive_config.CODER_URL,
-        model_name=sensitive_config.CODER_MODEL,
-        coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
         obs_server=network_config.OBS_SERVER,
         bucket_name=network_config.BUCKET_NAME,
-        analysis_url=network_config.ANALYSIS_URL,
-        region=network_config.ANALYSIS_REGION,
-        resource_dict=network_config.RESOURCE,
-        app_id_dict=network_config.APP_ID,
+        max_poll=network_config.MAX_POLL,
+        access_key_id=runtime.obs_credentials[0],
+        secret_access_key=runtime.obs_credentials[1],
         timeout=network_config.TIMEOUT,
         retriable_codes=network_config.RETRIABLE_CODES,
         max_retries=network_config.MAX_RETRIES,
-        max_poll=network_config.MAX_POLL,
+        **coder_kwargs(runtime.sensitive),
+        **analysis_platform_kwargs(network_config),
     )
 
 
