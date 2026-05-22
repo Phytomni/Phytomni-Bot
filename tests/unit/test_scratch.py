@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.storage import scratch as scratch_module
 from mcp_server_phytomni.storage.path_policy import (
     IdFactory,
     RunIdentity,
@@ -129,3 +130,43 @@ def test_resolve_scratch_dir_falls_back_to_local_when_bucket_missing(
     assert result == str(expected_dir)
     assert expected_dir.is_dir()
     assert not (tmp_path / bucket).exists()
+
+
+def test_resolve_scratch_dir_falls_back_when_obsfs_raises_oserror(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError from the obsfs mkdir routes to the local fallback.
+
+    Pins the defensive try/except around _resolve_obsfs_scratch_dir:
+    if the obsfs mount disappears mid-call (NFS hiccup, EACCES on the
+    parent dir), the resolver must still produce a usable scratch dir
+    on local disk rather than bubble the OSError up to the agent.
+    """
+    bucket = "phytomni"
+    (tmp_path / bucket).mkdir()
+    local_fallback = tmp_path / "fallback"
+
+    def boom(*_args: object, **_kwargs: object) -> str:
+        raise OSError("obsfs unavailable")
+
+    monkeypatch.setattr(scratch_module, "_resolve_obsfs_scratch_dir", boom)
+
+    result = resolve_scratch_dir(
+        "tmp",
+        _fixed_identity(),
+        "task-three",
+        ScratchTarget(
+            bucket_name=bucket,
+            local_fallback=local_fallback,
+            obsfs_mount_root=tmp_path,
+        ),
+    )
+
+    expected_dir = (
+        local_fallback
+        / "20260507T010203Z-scratch-run-alice-abcdef01"
+        / "task-three"
+    )
+    assert result == str(expected_dir)
+    assert expected_dir.is_dir()

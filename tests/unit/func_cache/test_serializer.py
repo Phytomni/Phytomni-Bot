@@ -8,6 +8,8 @@ Covers pickle round trips, optional compression, and wrapped errors for
 invalid serialized or compressed payloads.
 """
 
+import threading
+
 import pytest
 
 from mcp_server_phytomni.func_cache.exceptions import SerializationError
@@ -45,3 +47,17 @@ def test_loads_wraps_invalid_compressed_payload():
     """Verify loads wraps invalid compressed payload."""
     with pytest.raises(SerializationError, match="Decompression failed"):
         loads(b"not-zlib-data", compress=True)
+
+
+def test_dumps_wraps_unserializable_object_as_serialization_error():
+    """Verify dumps surfaces a wrapped SerializationError on failure.
+
+    Pins the symmetric error-wrapping contract: loads already wraps
+    decode failures, and dumps must wrap the dump-side branch the same
+    way so callers see one exception type for any cache write/read
+    failure regardless of which side the corruption is on. A threading
+    Lock is a stable unserializable sentinel that triggers the dump
+    path's try/except without changing module-level pickling behaviour.
+    """
+    with pytest.raises(SerializationError, match="Serialization failed"):
+        dumps(threading.Lock())

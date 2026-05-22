@@ -68,3 +68,28 @@ async def test_over_budget_returns_429_with_retry_after(
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) >= 1
     assert blocked.json()["error"]["code"] == 429
+
+
+async def test_zero_limit_disables_rate_limiting(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configured limit of 0 disables enforcement entirely.
+
+    Pins the limit-disabled branch in ratelimit.check: when
+    API_RATE_LIMIT_PER_MIN <= 0, every request must pass through
+    regardless of the per-key history so operators can quickly turn
+    enforcement off without touching the rest of the auth pipeline.
+    """
+    monkeypatch.setenv("API_RATE_LIMIT_PER_MIN", "0")
+    _stub_chat(monkeypatch)
+
+    first = await chat_completion(api_client, issued_api_key)
+    second = await chat_completion(api_client, issued_api_key)
+    third = await chat_completion(api_client, issued_api_key)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200

@@ -88,6 +88,27 @@ def test_agent_fingerprint_values_dump_pydantic_models():
     }
 
 
+def test_agent_fingerprint_values_unwraps_tuples_and_scalars():
+    """Tuples flatten to lists; scalars pass through unchanged.
+
+    Pins the two _dump_value fallback branches that the BaseModel +
+    Mapping + list coverage above never reaches: a tuple flattens via
+    list comprehension so fingerprint keys stay JSON-serialisable, and
+    primitive values (int, str, None) survive the recursion intact.
+    """
+    fingerprint = agent_fingerprint_values(
+        repos=("alpha", "beta"),
+        count=7,
+        flag=None,
+    )
+
+    assert fingerprint == {
+        "repos": ["alpha", "beta"],
+        "count": 7,
+        "flag": None,
+    }
+
+
 def test_agent_registry_omits_secret_fields_from_cache_key():
     """Verify agent registry omits secret fields from cache key."""
     clear_agent_registry()
