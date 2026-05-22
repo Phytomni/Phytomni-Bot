@@ -11,6 +11,7 @@ Functions: retry_http_status_or_raise, retry_network_or_raise,
 """
 
 import asyncio
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from random import uniform
@@ -28,6 +29,8 @@ from httpx import (
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+
+logger = logging.getLogger(__name__)
 
 # Transient transport faults worth retrying: connect / read / write /
 # close errors and all timeouts (NetworkError, TimeoutException), a
@@ -153,10 +156,14 @@ async def retry_http_status_or_raise(
     ):
         await asyncio.sleep((2**attempt) + uniform(0, 1))
         return True
+    # Full exception (including upstream URL and any response body)
+    # stays in operator logs; the MCP error message exposes only the
+    # caller-provided prefix so clients cannot read backend payloads.
+    logger.exception("%s: upstream HTTP failure", message)
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
-            message=f"{message}: {str(exc)}",
+            message=message,
         )
     ) from exc
 
@@ -189,10 +196,13 @@ async def retry_network_or_raise(
     if attempt < max_retries:
         await asyncio.sleep(1.5**attempt)
         return True
+    logger.exception(
+        "%s: transport failure after %s retries", message, attempt
+    )
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
-            message=f"{message}: {str(exc)}",
+            message=message,
         )
     ) from exc
 
@@ -244,7 +254,13 @@ async def request_response_with_retries(
                 attempt += 1
                 continue
         attempt += 1
-    return None
+    # Defensive: every retry helper either returns True (continue) or
+    # raises McpError on exhaustion, so the loop normally cannot exit
+    # here. Raising instead of returning None keeps callers from
+    # propagating a silent missing-response and matches the contract
+    # the function actually upholds in production.
+    logger.error("%s: retry loop exited without response", retry.message)
+    raise McpError(ErrorData(code=INTERNAL_ERROR, message=retry.message))
 
 
 async def post_json_with_retries(
