@@ -17,7 +17,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .handlers import (
     handle_analyst_agent,
@@ -93,6 +93,23 @@ def _invalid_params(message: str) -> McpError:
     return McpError(ErrorData(code=INVALID_PARAMS, message=message))
 
 
+def _format_validation_error(tool_name: str, exc: ValidationError) -> str:
+    """Render a pydantic ValidationError as a sanitized message.
+
+    Default `str(exc)` embeds the offending `input_value`, which leaks
+    request bodies (and occasionally credentials) back to MCP clients.
+    This helper emits only field paths and error categories so the
+    response cannot echo caller payloads.
+    """
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(part) for part in err.get("loc", ()) if part != "")
+        kind = err.get("type") or "invalid"
+        parts.append(f"{loc}: {kind}" if loc else kind)
+    summary = "; ".join(parts) if parts else "invalid arguments"
+    return f"Invalid arguments for {tool_name}: {summary}"
+
+
 def _text_response(response: Any) -> list[TextContent]:
     """Serialize a handler response into MCP text content."""
     return [TextContent(type="text", text=dumps(response))]
@@ -124,8 +141,10 @@ async def invoke_tool_raw(name: Any, arguments: Dict[str, Any]) -> Any:
 
     try:
         args = model(**arguments)
-    except ValueError as exc:
-        raise _invalid_params(str(exc)) from exc
+    except ValidationError as exc:
+        raise _invalid_params(
+            _format_validation_error(tool_name, exc)
+        ) from exc
 
     return await handler(args)
 
