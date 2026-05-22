@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, cast
 
 import pytest
+from _analyst_fakes import fake_analyst_sensitive_config
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import graph as analyst_graph
@@ -39,18 +40,12 @@ def _fake_self(plan_min_score: int, max_retries: int) -> SimpleNamespace:
     Returns:
         Object exposing analyst_config and sensitive_config.
     """
-    analyst_config = AnalystConfig(
-        PLAN_MIN_SCORE=plan_min_score,
-        MAX_RETRIES=max_retries,
-    )
-    sensitive_config = SimpleNamespace(
-        API_KEY=SimpleNamespace(get_secret_value=lambda: "k"),
-        BASE_URL="http://example.invalid",
-        MODEL_ID="model",
-    )
     return SimpleNamespace(
-        analyst_config=analyst_config,
-        sensitive_config=sensitive_config,
+        analyst_config=AnalystConfig(
+            PLAN_MIN_SCORE=plan_min_score,
+            MAX_RETRIES=max_retries,
+        ),
+        sensitive_config=fake_analyst_sensitive_config(),
     )
 
 
