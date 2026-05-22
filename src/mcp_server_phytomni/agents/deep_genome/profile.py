@@ -32,6 +32,7 @@ from ...config.defaults import DeepGenomeConfig
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..chat.service import phyto_chat
+from ..shared.sql import sql_literal
 from .formatting import SPECIES_CODE_MAP, network_to_string
 
 if TYPE_CHECKING:
@@ -127,8 +128,8 @@ async def _cached_gene_symbol_lookup(
 ) -> List[str]:
     """Retrieve and cache gene symbols for one species/gene pair."""
     sql = (
-        "SELECT * FROM id_table WHERE gene_id = "
-        f"'{gene_id}' AND species_code = '{species_code}'"
+        f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
+        f"AND species_code = {sql_literal(species_code)}"
     )
     response = await _post_bi_sql(bi_url, sql_headers, sql, timeout)
     gene_symbol_list: List[str] = []
@@ -157,21 +158,23 @@ async def _cached_gene_annotation_lookup(
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
     """Retrieve and cache gene annotations for one species/gene pair."""
+    gene_literal = sql_literal(gene_id)
+    species_literal = sql_literal(species_code)
     sql_list = (
         "SELECT description FROM annotation_gene_description "
-        f"WHERE gene_id = '{gene_id}' "
-        f"AND species_code = '{species_code}'",
+        f"WHERE gene_id = {gene_literal} "
+        f"AND species_code = {species_literal}",
         "SELECT go_id, go_name FROM annotation_gene_ontology WHERE "
-        f"gene_id = '{gene_id}' "
-        f"AND species_code = '{species_code}'",
+        f"gene_id = {gene_literal} "
+        f"AND species_code = {species_literal}",
         "SELECT interpro_id, interpro_name "
         "FROM annotation_gene_interpro "
-        f"WHERE gene_id = '{gene_id}' "
-        f"AND species_code = '{species_code}'",
+        f"WHERE gene_id = {gene_literal} "
+        f"AND species_code = {species_literal}",
         "SELECT mapman, mapman_description "
         "FROM annotation_gene_mapman "
-        f"WHERE gene_id = '{gene_id}' "
-        f"AND species_code = '{species_code}'",
+        f"WHERE gene_id = {gene_literal} "
+        f"AND species_code = {species_literal}",
     )
     responses = [
         await _post_bi_sql(bi_url, sql_headers, sql, timeout)

@@ -31,6 +31,7 @@ from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
 )
+from ..shared.sql import sql_literal
 from .formatting import SPECIES_CODE_MAP
 from .summary import build_sub_summary
 
@@ -498,17 +499,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         print("=> Retrieving gene list...")
         gene_id = state["gene_id"]
         species_code = state["species_code"]
+        gene_literal = sql_literal(gene_id)
         gene_homology_response = self._bi_json(
             "SELECT query_gene_id, query_species, homology_gene_id, "
             "homology_species "
-            f"FROM homology_gene WHERE query_gene_id = '{gene_id}'"
+            f"FROM homology_gene WHERE query_gene_id = {gene_literal}"
         )
         gene_interaction_response = self._bi_json(
             "SELECT query_gene_id, query_protein, interact_gene_id, "
             "interact_protein "
             "FROM protein_interaction_col "
-            f"WHERE query_gene_id = '{gene_id}' OR "
-            f"interact_gene_id = '{gene_id}'"
+            f"WHERE query_gene_id = {gene_literal} OR "
+            f"interact_gene_id = {gene_literal}"
         )
         gene_orthologs_list, gene_paralogs_list = _homology_gene_lists(
             gene_homology_response,
