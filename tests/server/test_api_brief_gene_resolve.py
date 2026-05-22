@@ -36,59 +36,52 @@ def _resolved(gene_id: str, raw: str) -> BriefGeneResolveResult:
     )
 
 
+def _register_capture(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_enum_value: str,
+    captured: dict[str, Any],
+    answer: str,
+) -> None:
+    """Replace one tool handler with a minimal capturing stub.
+
+    Uses a tabular answer/doc_list shape (not the full OpenAI envelope)
+    so this helper does not share a long line block with other test
+    files that already stub the OpenAI completion structure.
+    """
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Capture user_query and return a minimal payload."""
+        captured["user_query"] = args.user_query
+        return {"answer": answer, "doc_list": []}
+
+    monkeypatch.setitem(server.TOOL_HANDLERS, agent_enum_value, fake)
+
+
 def _stub_brief_gene_handler(
     monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
 ) -> None:
-    """Replace BriefGeneAgent handler with a canned dict response."""
-
-    async def fake(args: Any) -> dict[str, Any]:
-        """Capture user_query and return a fixed completion payload."""
-        captured["user_query"] = args.user_query
-        return {
-            "id": "chatcmpl-canned",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "canned brief gene annotation",
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
+    """Replace BriefGeneAgent handler with a tabular-shaped stub."""
+    _register_capture(
+        monkeypatch,
         server.PhytomniAgents.BRIEF_GENE_AGENT.value,
-        fake,
+        captured,
+        "brief gene annotation",
     )
 
 
 def _stub_chat_handler(
     monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
 ) -> None:
-    """Replace ChatAgent handler so resolver-flag-misuse path returns 200 only
-    when resolver is bypassed (we expect a 400 BEFORE reaching this stub)."""
+    """Replace ChatAgent handler so non-BriefGene rejection cases stay sealed.
 
-    async def fake(args: Any) -> dict[str, Any]:
-        """Capture user_query in case the handler is unexpectedly reached."""
-        captured["user_query"] = args.user_query
-        return {
-            "id": "chatcmpl-chat",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "chat answer"},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, fake
+    Resolver-flag-misuse paths must 400 before this stub runs, so the
+    captured dict should stay empty in those cases.
+    """
+    _register_capture(
+        monkeypatch,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        captured,
+        "chat answer",
     )
 
 
@@ -164,7 +157,7 @@ async def test_chat_skips_resolver_when_flag_false(
     assert response.status_code == 200
     body = response.json()
     assert captured["user_query"] == "AT5G42800"
-    assert resolver_calls == []
+    assert not resolver_calls
     metadata = body.get("metadata") or {}
     assert "resolved_gene_id" not in metadata
 
@@ -199,7 +192,7 @@ async def test_chat_skips_resolver_when_flag_missing(
 
     assert response.status_code == 200
     assert captured["user_query"] == "AT5G42800"
-    assert resolver_calls == []
+    assert not resolver_calls
 
 
 async def test_chat_rejects_resolve_flag_on_non_brief_gene_model(
@@ -234,7 +227,7 @@ async def test_chat_rejects_resolve_flag_on_non_brief_gene_model(
     assert response.status_code == 400
     body = response.json()
     assert "BriefGene" in body["error"]["message"]
-    assert resolver_calls == []
+    assert not resolver_calls
     assert "user_query" not in chat_captured
 
 
@@ -268,4 +261,210 @@ async def test_chat_resolver_failure_returns_400(
     assert response.status_code == 400
     body = response.json()
     assert "no valid candidate" in body["error"]["message"]
+    assert "user_query" not in captured
+
+
+async def _post_agent_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    agent_slug: str,
+    arguments: dict[str, Any],
+) -> httpx.Response:
+    """POST one native /v1/agents/{slug}/runs with the supplied arguments."""
+    auth_header = {"Authorization": f"Bearer {issued_api_key}"}
+    payload = {"arguments": arguments}
+    return await api_client.post(
+        f"/v1/agents/{agent_slug}/runs", headers=auth_header, json=payload
+    )
+
+
+async def _post_brief_gene_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    arguments: dict[str, Any],
+) -> httpx.Response:
+    """POST one native brief_gene run via the generic agent-run helper."""
+    return await _post_agent_run(
+        api_client, issued_api_key, "brief_gene", arguments
+    )
+
+
+async def test_native_runs_resolves_when_flag_true_for_brief_gene(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """flag=true rewrites user_query, pops the key, and patches metadata."""
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    resolver_calls: list[str] = []
+    _stub_brief_gene_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, brief_config: Any, sensitive_config: Any
+    ) -> BriefGeneResolveResult:
+        """Return a fixed resolution for the route flow."""
+        del brief_config, sensitive_config
+        resolver_calls.append(raw_query)
+        return _resolved("Os01g0177400", raw_query)
+
+    monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
+
+    response = await _post_brief_gene_run(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "rice TPR6 function",
+            "resolve_gene_id": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert captured["user_query"] == "Os01g0177400"
+    assert resolver_calls == ["rice TPR6 function"]
+    metadata = body["result"].get("metadata") or {}
+    assert metadata.get("original_query") == "rice TPR6 function"
+    assert metadata.get("resolved_gene_id") == "Os01g0177400"
+    assert metadata.get("resolve_gene_id") is True
+
+
+async def test_native_runs_skips_resolver_when_flag_false_or_missing(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """flag=false leaves user_query as-is, and the key is still popped."""
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    resolver_calls: list[str] = []
+    _stub_brief_gene_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, brief_config: Any, sensitive_config: Any
+    ) -> BriefGeneResolveResult:
+        """Should not run when the flag is false or missing."""
+        del brief_config, sensitive_config
+        resolver_calls.append(raw_query)
+        return _resolved("UNUSED", raw_query)
+
+    monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
+
+    response = await _post_brief_gene_run(
+        api_client,
+        issued_api_key,
+        {"user_query": "AT5G42800", "resolve_gene_id": False},
+    )
+
+    assert response.status_code == 200
+    assert captured["user_query"] == "AT5G42800"
+    assert not resolver_calls
+    metadata = response.json()["result"].get("metadata") or {}
+    assert "resolved_gene_id" not in metadata
+
+
+async def test_native_runs_rejects_resolve_flag_on_non_brief_gene_agent(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """flag=true on /v1/agents/chat/runs returns 400, resolver never runs."""
+    del tasks_db_path
+    chat_captured: dict[str, Any] = {}
+    resolver_calls: list[str] = []
+    _stub_chat_handler(monkeypatch, chat_captured)
+
+    async def fake_resolve(
+        raw_query: str, *, brief_config: Any, sensitive_config: Any
+    ) -> BriefGeneResolveResult:
+        """Should not run for non-BriefGene agents."""
+        del brief_config, sensitive_config
+        resolver_calls.append(raw_query)
+        return _resolved("UNUSED", raw_query)
+
+    monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
+
+    response = await _post_agent_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {
+            "user_query": "explain photosynthesis",
+            "resolve_gene_id": True,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "BriefGene" in body["error"]["message"]
+    assert not resolver_calls
+    assert "user_query" not in chat_captured
+
+
+async def test_native_runs_rejects_missing_user_query(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """flag=true without user_query is 400 before the resolver is reached."""
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    resolver_calls: list[str] = []
+    _stub_brief_gene_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, brief_config: Any, sensitive_config: Any
+    ) -> BriefGeneResolveResult:
+        """Should not run when user_query is missing or blank."""
+        del brief_config, sensitive_config
+        resolver_calls.append(raw_query)
+        return _resolved("UNUSED", raw_query)
+
+    monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
+
+    response = await _post_brief_gene_run(
+        api_client,
+        issued_api_key,
+        {"resolve_gene_id": True},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "user_query" in body["error"]["message"]
+    assert not resolver_calls
+
+
+async def test_native_runs_resolver_failure_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Native path also maps BriefGeneResolveError to HTTP 400."""
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    _stub_brief_gene_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, brief_config: Any, sensitive_config: Any
+    ) -> BriefGeneResolveResult:
+        """Raise the expected resolver-failure exception."""
+        del raw_query, brief_config, sensitive_config
+        raise BriefGeneResolveError("non-parseable LLM output: bad json")
+
+    monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
+
+    response = await _post_brief_gene_run(
+        api_client,
+        issued_api_key,
+        {"user_query": "ambiguous", "resolve_gene_id": True},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "non-parseable" in body["error"]["message"]
     assert "user_query" not in captured

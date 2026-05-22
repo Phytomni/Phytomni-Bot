@@ -255,8 +255,29 @@ async def _invoke_agent_run(
         raise HTTPException(
             status_code=404, detail=f"agent not found: {agent}"
         )
+    resolve_flag = bool(arguments.pop("resolve_gene_id", False))
+    resolve_meta: dict[str, Any] = {}
+    if resolve_flag:
+        raw_query = arguments.get("user_query")
+        if not isinstance(raw_query, str) or not raw_query.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="user_query is required when resolve_gene_id is true",
+            )
+        resolved, resolve_meta = await _maybe_resolve_brief_gene_query(
+            raw_query=raw_query,
+            resolve_flag=True,
+            tool_name=None,
+            agent_slug=agent,
+        )
+        arguments["user_query"] = resolved
     formatted = await invoke_tool_formatted(tool_name, arguments)
     result = asdict(formatted)
+    if resolve_meta:
+        existing_meta = result.get("metadata") or {}
+        if not isinstance(existing_meta, dict):
+            existing_meta = {}
+        result["metadata"] = {**existing_meta, **resolve_meta}
     owner = current_request_user() or "anonymous"
     if agent in _REMOTE_AGENT_SLUGS:
         run_id, task_ids = _resolve_remote_run(owner)
