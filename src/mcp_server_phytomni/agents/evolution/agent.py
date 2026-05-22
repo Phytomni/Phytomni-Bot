@@ -12,9 +12,8 @@ lookup, target extraction, output directory creation, and task submission.
 from json import loads
 from typing import Any, Dict, List
 
-import requests
-
 from ...auth.iam import get_token
+from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...config.defaults import DeepGenomeConfig
 from ...config.settings import SensitiveConfig
@@ -74,14 +73,16 @@ async def _find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
         "page_size": 10,
         "page_num": 1,
     }
-    disabled_proxies: Any = {"http": None, "https": None}
-    response = requests.get(
-        url,
-        headers=headers,
-        params=request_params,
-        proxies=disabled_proxies,
-        timeout=timeout,
-    )
+    # trust_env=False mirrors the previous proxies={'http': None,
+    # 'https': None} on the requests call: this endpoint sits on a
+    # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
+    # env would route it through a proxy that cannot reach it.
+    async with get_async_client(timeout=timeout, trust_env=False) as client:
+        response = await client.get(
+            url,
+            headers=headers,
+            params=request_params,
+        )
     if response.status_code != 200:
         return []
     response_taxid_data = response.json()

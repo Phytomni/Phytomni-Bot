@@ -11,8 +11,10 @@ returns no response and the wrapper short-circuits.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
 import pytest
 
 from mcp_server_phytomni.agents.evolution import agent as evolution_agent
@@ -216,3 +218,103 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
     )
 
     assert result == {"evolution_task": None}
+
+
+async def test_find_spa_taxids_uses_async_httpx_factory(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify the taxid lookup drives the shared async httpx factory.
+
+    The previous implementation called ``requests.get`` synchronously,
+    blocking the event loop and bypassing the central TLS resolver.
+    This test mocks ``get_async_client`` so the captured kwargs and the
+    JSON parsing both surface through the new async path.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to swap the auth
+            token loader and the shared HTTP client factory.
+    """
+    captured: dict[str, Any] = {}
+
+    async def fake_get_token() -> str:
+        """Return a deterministic IAM token for the request headers."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+
+    @asynccontextmanager
+    async def fake_factory(**factory_kwargs: Any):
+        """Hand out a stub client that records the parameters passed in."""
+        captured["factory_kwargs"] = factory_kwargs
+
+        class _Client:
+            """Stub async httpx client whose ``get`` returns a fixed body."""
+
+            async def get(self, url: str, **call_kwargs: Any) -> Any:
+                """Capture the request and return a two-record payload."""
+                captured["url"] = url
+                captured["call_kwargs"] = call_kwargs
+                return httpx.Response(
+                    200,
+                    json={
+                        "total": 2,
+                        "records": [
+                            {"answer": "9606. Homo sapiens"},
+                            {"answer": "10090. Mus musculus"},
+                        ],
+                    },
+                )
+
+        yield _Client()
+
+    monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
+
+    find_spa_taxids = getattr(evolution_agent, "_find_spa_taxids")
+    taxids = await find_spa_taxids("Arabidopsis", timeout=12.0)
+
+    assert taxids == ["9606", "10090"]
+    assert captured["factory_kwargs"]["timeout"] == 12.0
+    assert captured["factory_kwargs"]["trust_env"] is False
+    assert (
+        captured["call_kwargs"]["headers"]["X-Auth-Token"] == "fake-iam-token"
+    )
+    assert captured["call_kwargs"]["params"]["question"] == "Arabidopsis"
+
+
+async def test_find_spa_taxids_returns_empty_on_non_200(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify the lookup short-circuits to an empty list on non-200.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to swap the auth
+            token loader and the shared HTTP client factory.
+    """
+
+    async def fake_get_token() -> str:
+        """Return a deterministic IAM token."""
+        return "fake-iam-token"
+
+    monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
+
+    @asynccontextmanager
+    async def fake_factory(**factory_kwargs: Any):
+        """Yield a stub client that always returns a 502."""
+        del factory_kwargs
+
+        class _Client:
+            """Stub async httpx client whose ``get`` always errors."""
+
+            async def get(self, url: str, **call_kwargs: Any) -> Any:
+                """Discard the request and return a 502 response."""
+                del url, call_kwargs
+                return httpx.Response(502, text="bad gateway")
+
+        yield _Client()
+
+    monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
+
+    find_spa_taxids = getattr(evolution_agent, "_find_spa_taxids")
+    taxids = await find_spa_taxids("oryza", timeout=1.0)
+
+    assert taxids == []
