@@ -12,7 +12,6 @@ that split BI rows into ortholog / paralog / interaction groupings.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any, Dict, List, cast
 
 import pytest
@@ -26,6 +25,44 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+class _RouteProbe(DeepGenomeDispatchMixin):
+    """Test-only subclass exposing protected routing helpers publicly.
+
+    The mixin's ``_route_*`` methods are protected because production
+    code only calls them from the LangGraph workflow builder on the same
+    class. Tests exercise them through this subclass so the calls stay
+    inside the class hierarchy (no pylint W0212 protected-access escape).
+    """
+
+    def route_start(self, state: DeepGenomeState):
+        """Public proxy for ``_route_start``."""
+        return self._route_start(state)
+
+    def route_after_knowledge(self, state: DeepGenomeState):
+        """Public proxy for ``_route_after_knowledge``."""
+        return self._route_after_knowledge(state)
+
+    def route_after_gene_summary(self, state: DeepGenomeState):
+        """Public proxy for ``_route_after_gene_summary``."""
+        return self._route_after_gene_summary(state)
+
+    def route_after_part1(self, state: DeepGenomeState):
+        """Public proxy for ``_route_after_part1``."""
+        return self._route_after_part1(state)
+
+    def route_after_synthesize(self, state: DeepGenomeState):
+        """Public proxy for ``_route_after_synthesize``."""
+        return self._route_after_synthesize(state)
+
+    def route_analyst_tasks(self, state: DeepGenomeState):
+        """Public proxy for ``_route_analyst_tasks``."""
+        return self._route_analyst_tasks(state)
+
+    def route_after_analyst(self, state: DeepGenomeState):
+        """Public proxy for ``_route_after_analyst``."""
+        return self._route_after_analyst(state)
 
 
 def _state(**config_params: Any) -> DeepGenomeState:
@@ -98,7 +135,7 @@ def test_route_start_dispatches_per_config_flags(
     """All four (use_analyst, use_data) combos pick the right initial nodes."""
     state = _state(use_analyst_agent=use_analyst, use_data_agent=use_data)
 
-    result = DeepGenomeDispatchMixin._route_start(SimpleNamespace(), state)
+    result = _RouteProbe().route_start(state)
 
     assert result == expected
 
@@ -113,9 +150,7 @@ def test_route_after_knowledge_chooses_annotation_or_summary(
     """use_data picks between gene_annotation and gene_summary."""
     state = _state(use_data_agent=use_data)
 
-    result = DeepGenomeDispatchMixin._route_after_knowledge(
-        SimpleNamespace(), state
-    )
+    result = _RouteProbe().route_after_knowledge(state)
 
     assert result == expected
 
@@ -130,9 +165,7 @@ def test_route_after_gene_summary_chooses_experiment_or_introduction(
     """use_analyst picks between experiment_node and introduction_node."""
     state = _state(use_analyst_agent=use_analyst)
 
-    result = DeepGenomeDispatchMixin._route_after_gene_summary(
-        SimpleNamespace(), state
-    )
+    result = _RouteProbe().route_after_gene_summary(state)
 
     assert result == expected
 
@@ -147,9 +180,7 @@ def test_route_after_part1_chooses_experiment_or_introduction(
     """The post-part1 router mirrors post-gene-summary semantics."""
     state = _state(use_analyst_agent=use_analyst)
 
-    result = DeepGenomeDispatchMixin._route_after_part1(
-        SimpleNamespace(), state
-    )
+    result = _RouteProbe().route_after_part1(state)
 
     assert result == expected
 
@@ -164,9 +195,7 @@ def test_route_after_synthesize_chooses_experiment_or_introduction(
     """use_data picks between experiment_node and introduction_node."""
     state = _state(use_data_agent=use_data)
 
-    result = DeepGenomeDispatchMixin._route_after_synthesize(
-        SimpleNamespace(), state
-    )
+    result = _RouteProbe().route_after_synthesize(state)
 
     assert result == expected
 
@@ -183,9 +212,7 @@ def test_route_analyst_tasks_emits_send_per_task() -> None:
         },
     )
 
-    sends = DeepGenomeDispatchMixin._route_analyst_tasks(
-        SimpleNamespace(), state
-    )
+    sends = _RouteProbe().route_analyst_tasks(state)
 
     assert len(sends) == 2
     assert sends[0].node == "analyst_node"
@@ -204,8 +231,6 @@ def test_route_after_analyst_returns_end_sentinel() -> None:
     must terminate before ``synthesize_node`` runs, and the END sentinel
     is the routing signal that lets LangGraph collect the fan-out.
     """
-    result = DeepGenomeDispatchMixin._route_after_analyst(
-        SimpleNamespace(), _state()
-    )
+    result = _RouteProbe().route_after_analyst(_state())
 
     assert result is END
