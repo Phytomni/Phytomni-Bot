@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import re
 import textwrap
 from typing import TYPE_CHECKING, Any, Dict
@@ -44,6 +45,8 @@ if TYPE_CHECKING:
     from .agent import AnalystAgentsState
 else:
     AnalystAgentsState = Dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 
 class AnalystGraphMixin(WorkflowMixinBase):
@@ -226,9 +229,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
                 ) from exc
 
         final_data_list = {**data_list, **selected_data}
-        print("===================AutoSelect Data===================")
-        print(final_data_list)
-        print("=====================================================")
+        logger.debug("AutoSelect Data: %s", final_data_list)
 
         return {"data_list": final_data_list}
 
@@ -276,9 +277,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             max_tokens=self.analyst_config.MAX_TOKENS,
             initial_length=total_length,
         )
-        print("===================Retrieve Information===================")
-        print(retrieve_context)
-        print("==========================================================")
+        logger.debug("Retrieve Information: %s", retrieve_context)
         return {
             "method_context": {
                 "upload_context": upload_context,
@@ -398,9 +397,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
                     "Invalid response from language model",
                 )
             )
-        print("===================Plan===================")
-        print(content)
-        print("==========================================")
+        logger.debug("Plan: %s", content)
         return {
             "plan": content,
             "plan_retries": state.get("plan_retries", 0) + 1,
@@ -428,9 +425,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         # If is_preset_plan is True and method_context is None
         # (skipped retrieval), immediately approve the preset plan.
         if state.get("is_preset_plan") and state.get("method_context") is None:
-            print("===================Check (Reset Plan)===================")
-            print("Skipping validation for reset plan - immediately approved")
-            print("========================================================")
+            logger.info("Check (Reset Plan): skipping validation - approved")
             return {"plan_feedback": "APPROVED"}
 
         check_prompt = get_prompt(
@@ -489,11 +484,13 @@ class AnalystGraphMixin(WorkflowMixinBase):
             score = 0
             decision = "REJECTED"
             feedback = ""
-        print("===================Check===================")
-        print(f"Retries: {current_retries}/{max_retries}")
-        print(f"Score: {score}")
-        print(f"Feedback: {feedback}")
-        print("==========================================")
+        logger.info(
+            "Check: retries=%s/%s score=%s",
+            current_retries,
+            max_retries,
+            score,
+        )
+        logger.debug("Check feedback: %s", feedback)
         min_score = self.analyst_config.PLAN_MIN_SCORE
         if decision == "APPROVED" and (min_score == 0 or score >= min_score):
             return {"plan_feedback": "APPROVED"}
@@ -570,9 +567,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             result = json.loads(json_string)
         else:
             result = json.loads(content)
-        print("===================Tools===================")
-        print(result["tools"])
-        print("===========================================")
+        logger.debug("Extracted tools: %s", result["tools"])
         return {"extracted_tools": result["tools"]}
 
     async def tool_retrieve_node(self: Any, state: AnalystAgentsState) -> dict:
@@ -616,9 +611,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             for doc in tool_usage_info["doc_list"]:
                 tool_usages += f"{doc['content']}\n"
             tool_usages += f"[{tool} Usage END]\n\n\n"
-        print("===================Tools Usage===================")
-        print(tool_usages)
-        print("=================================================")
+        logger.debug("Tools usage: %s", tool_usages)
         return {"tool_usages": tool_usages}
 
     async def submit_node(self: Any, state: AnalystAgentsState):
@@ -920,12 +913,13 @@ class AnalystGraphMixin(WorkflowMixinBase):
             )
             if response is not None and response.status_code == 201:
                 payload = response.json()
-                print("===================Submit===================")
-                print(f"Job_Name: {job_name}")
-                print(f"Task_id: {payload['id']}")
-                print(f"Output_Dir: {output_dir}")
-                print("Task_Status: RUNNING")
-                print("============================================")
+                logger.info(
+                    "Submit: job_name=%s task_id=%s output_dir=%s "
+                    "task_status=RUNNING",
+                    job_name,
+                    payload["id"],
+                    output_dir,
+                )
                 return {
                     "task_id": payload["id"],
                     "task_status": "PENDING",
