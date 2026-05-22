@@ -53,7 +53,9 @@ from ..runtime.task_reconcile import reconcile_task
 from ..storage.path_policy import IdFactory, RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 from .handler_support import (
+    analysis_platform_kwargs,
     chat_kwargs,
+    coder_kwargs,
     load_handler_runtime,
     obs_kwargs,
     retrieve_kwargs,
@@ -378,63 +380,24 @@ async def handle_analyst_agent(args: Any) -> Any:
         Any: AnalystAgent response result.
     """
     analyst_config = AnalystConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await retrieve_plan_submit(
         goal_description=args.goal_description,
         data_list=args.data_list,
         user_id=current_request_user() or analyst_config.USER_ID,
         is_create_dir=analyst_config.CREATE_DIR,
         output_dir=analyst_config.OUTPUT_DIR,
-        retrieve_url=analyst_config.RETRIEVE_URL,
-        repo_id_dict=analyst_config.REPO_ID_DICT,
-        page_num=analyst_config.PAGE_NUM,
-        filter_string=analyst_config.FILTER_STRING,
-        scope=analyst_config.SCOPE,
-        extra_repo_ids=analyst_config.EXTRA_REPO_IDS,
-        rerank_url=analyst_config.RERANK_URL,
-        rerank_batch_size=analyst_config.RERANK_BATCH_SIZE,
-        score_threshold=analyst_config.SCORE_THRESHOLD,
-        top_n=analyst_config.TOP_N,
-        prompt_file=analyst_config.PROMPT_FILE,
-        prompt_path=analyst_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=analyst_config.FREQUENCY_PENALTY,
-        max_tokens=analyst_config.MAX_TOKENS,
-        n=analyst_config.N,
-        presence_penalty=analyst_config.PRESENCE_PENALTY,
-        reasoning_effort=analyst_config.REASONING_EFFORT,
-        response_format=analyst_config.RESPONSE_FORMAT,
-        stream=analyst_config.STREAM,
-        temperature=analyst_config.TEMPERATURE,
-        top_p=analyst_config.TOP_P,
-        user=analyst_config.USER,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(analyst_config, "analyst"),
         execute_code=analyst_config.EXECUTE_CODE,
-        model_url=sensitive_config.CODER_URL,
-        model_name=sensitive_config.CODER_MODEL,
-        coder_api_key=sensitive_config.CODER_API_KEY.get_secret_value(),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=analyst_config.OBS_SERVER,
-        bucket_name=analyst_config.BUCKET_NAME,
-        part_size=analyst_config.PART_SIZE,
-        task_num=analyst_config.TASK_NUM,
-        max_concurrency=analyst_config.MAX_CONCURRENCY,
-        max_workers=analyst_config.MAX_WORKERS,
-        analysis_url=analyst_config.ANALYSIS_URL,
-        region=analyst_config.ANALYSIS_REGION,
         task_name=analyst_config.TASK_NAME + "-retrieve-plan",
-        resource_dict=analyst_config.RESOURCE,
-        app_id_dict=analyst_config.APP_ID,
         compute_resource=analyst_config.COMPUTE_RESOURCE,
         meta_meta=None,
-        timeout=analyst_config.TIMEOUT,
-        retriable_codes=analyst_config.RETRIABLE_CODES,
-        max_retries=analyst_config.MAX_RETRIES,
+        **chat_kwargs(analyst_config, runtime.sensitive),
+        **retrieve_kwargs(analyst_config),
+        **obs_kwargs(analyst_config, runtime.obs_credentials),
+        **coder_kwargs(runtime.sensitive),
+        **analysis_platform_kwargs(analyst_config),
     )
 
 
@@ -449,48 +412,14 @@ async def handle_review_agent(args: Any) -> Any:
         Any: ReviewAgent response result.
     """
     review_config = ReviewConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await deep_research(
         user_query=args.user_query,
-        prompt_file=review_config.PROMPT_FILE,
-        prompt_path=review_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=review_config.FREQUENCY_PENALTY,
-        n=review_config.N,
-        presence_penalty=review_config.PRESENCE_PENALTY,
-        reasoning_effort=review_config.REASONING_EFFORT,
-        response_format=review_config.RESPONSE_FORMAT,
-        stream=review_config.STREAM,
-        temperature=review_config.TEMPERATURE,
-        top_p=review_config.TOP_P,
-        user=review_config.USER,
-        retrieve_url=review_config.RETRIEVE_URL,
-        repo_id_dict=review_config.REPO_ID_DICT,
-        page_num=review_config.PAGE_NUM,
-        filter_string=review_config.FILTER_STRING,
-        scope=review_config.SCOPE,
-        extra_repo_ids=review_config.EXTRA_REPO_IDS,
-        rerank_url=review_config.RERANK_URL,
-        rerank_batch_size=review_config.RERANK_BATCH_SIZE,
-        score_threshold=review_config.SCORE_THRESHOLD,
-        top_n=review_config.TOP_N,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(review_config, "review"),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=review_config.OBS_SERVER,
-        bucket_name=review_config.BUCKET_NAME,
-        part_size=review_config.PART_SIZE,
-        task_num=review_config.TASK_NUM,
-        max_concurrency=review_config.MAX_CONCURRENCY,
-        max_workers=review_config.MAX_WORKERS,
-        timeout=review_config.TIMEOUT,
-        retriable_codes=review_config.RETRIABLE_CODES,
-        max_retries=review_config.MAX_RETRIES,
-        max_tokens=review_config.MAX_TOKENS,
+        **chat_kwargs(review_config, runtime.sensitive),
+        **retrieve_kwargs(review_config),
+        **obs_kwargs(review_config, runtime.obs_credentials),
     )
 
 
@@ -505,40 +434,14 @@ async def handle_brief_gene_agent(args: Any) -> Any:
         Any: BriefGeneAgent response result.
     """
     brief_config = BriefGeneConfig()
-    sensitive_config = SensitiveConfig.load()
+    runtime = load_handler_runtime()
     return await brief_gene_function(
         user_query=args.user_query,
-        prompt_file=brief_config.PROMPT_FILE,
-        prompt_path=brief_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=brief_config.FREQUENCY_PENALTY,
-        n=brief_config.N,
-        presence_penalty=brief_config.PRESENCE_PENALTY,
-        reasoning_effort=brief_config.REASONING_EFFORT,
-        response_format=brief_config.RESPONSE_FORMAT,
-        stream=brief_config.STREAM,
-        temperature=brief_config.TEMPERATURE,
-        top_p=brief_config.TOP_P,
-        user=brief_config.USER,
-        retrieve_url=brief_config.RETRIEVE_URL,
-        repo_id_dict=brief_config.REPO_ID_DICT,
-        page_num=brief_config.PAGE_NUM,
-        filter_string=brief_config.FILTER_STRING,
-        scope=brief_config.SCOPE,
-        extra_repo_ids=brief_config.EXTRA_REPO_IDS,
-        rerank_url=brief_config.RERANK_URL,
-        rerank_batch_size=brief_config.RERANK_BATCH_SIZE,
-        score_threshold=brief_config.SCORE_THRESHOLD,
-        top_n=brief_config.TOP_N,
         bi_url=brief_config.BI_URL,
-        bi_token=sensitive_config.BI_TOKEN.get_secret_value(),
+        bi_token=runtime.sensitive.BI_TOKEN.get_secret_value(),
         max_concurrency=brief_config.MAX_CONCURRENCY,
-        timeout=brief_config.TIMEOUT,
-        retriable_codes=brief_config.RETRIABLE_CODES,
-        max_retries=brief_config.MAX_RETRIES,
-        max_tokens=brief_config.MAX_TOKENS,
+        **chat_kwargs(brief_config, runtime.sensitive),
+        **retrieve_kwargs(brief_config),
     )
 
 
