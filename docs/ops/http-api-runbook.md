@@ -333,6 +333,39 @@ for an in-flight or succeeded task. The response includes:
 The client should poll `result.task_id`. If `id` is `null` without
 `result.dedup_hit == true`, retry the request and escalate if it repeats.
 
+### BriefGene Answer Is Generic Or Hits `nogeneid`
+
+Clients sometimes report that `phyto-brief-gene` returns a vague answer
+even though their query mentioned a real gene. The root cause is almost
+always that the client submitted a research question or a gene symbol
+plus species rather than a single canonical locus id, so `BriefGeneAgent`
+fell into its `nogeneid` fallback prompt.
+
+Advise the client to set `resolve_gene_id: true` on the request:
+
+```bash
+curl -fsS -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  "$HOST/v1/chat/completions" \
+  -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user","content":"What does AT5G42800 do in Arabidopsis?"}]}'
+
+curl -fsS -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  "$HOST/v1/agents/brief_gene/runs" \
+  -d '{"arguments":{"user_query":"rice TPR6 function","resolve_gene_id":true}}'
+```
+
+The flag is BriefGene-only. Sending it to any other model or slug
+returns `400` with `error.message` naming `BriefGene`. Resolver
+failures (blank input, empty candidates, non-JSON LLM output) also
+return `400` and the response body's `error.message` carries the
+resolver reason for ticket triage. On success the response `metadata`
+includes `original_query`, `resolved_gene_id`, and `resolve_gene_id: true` so support can confirm which canonical id BriefGene actually saw.
+
+The resolver adds one shared-cache LLM call per unique free-form query,
+so heavy unsupervised opt-in does add LLM cost; the `~90d` `phyto_chat`
+cache keeps the marginal cost near zero for repeated identical queries.
+
 ### Startup Failure
 
 Common failures:

@@ -100,6 +100,42 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"phyto-chat","messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
 ```
 
+### BriefGene `resolve_gene_id`
+
+`POST /v1/chat/completions` and `POST /v1/agents/brief_gene/runs` accept an
+optional boolean `resolve_gene_id`. Default is `false`. When `true` the
+HTTP layer issues one structured LLM call (json_schema response format)
+to resolve the free-form user message into a single canonical
+gene/transcript identifier before invoking `BriefGeneAgent`. Use it when
+external clients submit symbols, species names, or full research
+questions rather than the bare locus id BriefGene expects.
+
+The flag is BriefGene-only. The chat path requires `model="phyto-brief-gene"`;
+the native path requires the `brief_gene` slug. Passing
+`resolve_gene_id=true` to any other model or slug returns `400`. A
+resolver failure (blank input, empty candidates, non-JSON LLM output,
+timeout) also returns `400` carrying the resolver reason in
+`error.message`; failed resolutions are never silently downgraded to a
+nogeneid call.
+
+When resolution succeeds the response `metadata` includes
+`original_query`, `resolved_gene_id`, and `resolve_gene_id: true` so
+clients can verify which canonical id BriefGene actually saw. The LLM
+call rides on the shared `~90d` `phyto_chat` cache, so repeated identical
+queries reuse the prior resolution at zero additional model cost.
+
+```bash
+curl -s http://127.0.0.1:8080/v1/chat/completions \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user","content":"What does AT5G42800 do in Arabidopsis?"}]}'
+
+curl -s http://127.0.0.1:8080/v1/agents/brief_gene/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"user_query":"rice TPR6 function","resolve_gene_id":true}}'
+```
+
 ## Native Agent Runs
 
 Synchronous agents (`chat`, `knowledge`, `data`, `review`, `brief_gene`)
