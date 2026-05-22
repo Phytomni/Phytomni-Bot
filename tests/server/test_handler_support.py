@@ -39,6 +39,7 @@ class _FakeSecret:
         self._value = value
 
     def get_secret_value(self) -> str:
+        """Return the wrapped plaintext value (SecretStr-shaped API)."""
         return self._value
 
 

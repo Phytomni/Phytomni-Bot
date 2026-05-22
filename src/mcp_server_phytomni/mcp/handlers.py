@@ -52,6 +52,12 @@ from ..runtime.task_manager import (
 from ..runtime.task_reconcile import reconcile_task
 from ..storage.path_policy import IdFactory, RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
+from .handler_support import (
+    chat_kwargs,
+    load_handler_runtime,
+    obs_kwargs,
+    retrieve_kwargs,
+)
 
 
 def scratch_server_dir(config: Any, scope: str) -> str:
@@ -294,38 +300,13 @@ async def handle_chat_agent(args: Any) -> Any:
         Any: ChatAgent response result.
     """
     chat_config = ChatConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await phyto_chat_with_follow(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
-        prompt_file=chat_config.PROMPT_FILE,
-        prompt_path=chat_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=chat_config.FREQUENCY_PENALTY,
-        n=chat_config.N,
-        presence_penalty=chat_config.PRESENCE_PENALTY,
-        reasoning_effort=chat_config.REASONING_EFFORT,
-        response_format=chat_config.RESPONSE_FORMAT,
-        stream=chat_config.STREAM,
-        temperature=chat_config.TEMPERATURE,
-        top_p=chat_config.TOP_P,
-        user=chat_config.USER,
         server_dir=scratch_server_dir(chat_config, "chat"),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=chat_config.OBS_SERVER,
-        bucket_name=chat_config.BUCKET_NAME,
-        part_size=chat_config.PART_SIZE,
-        task_num=chat_config.TASK_NUM,
-        timeout=chat_config.TIMEOUT,
-        retriable_codes=chat_config.RETRIABLE_CODES,
-        max_retries=chat_config.MAX_RETRIES,
-        max_concurrency=chat_config.MAX_CONCURRENCY,
-        max_workers=chat_config.MAX_WORKERS,
-        max_tokens=chat_config.MAX_TOKENS,
+        **chat_kwargs(chat_config, runtime.sensitive),
+        **obs_kwargs(chat_config, runtime.obs_credentials),
     )
 
 
@@ -340,48 +321,14 @@ async def handle_knowledge_agent(args: Any) -> Any:
         Any: KnowledgeAgent response result.
     """
     knowledge_config = KnowledgeConfig()
-    sensitive_config = SensitiveConfig.load()
-    access_key_id, secret_access_key = sensitive_config.obs_credentials()
+    runtime = load_handler_runtime()
     return await multi_retrieve_generate(
         user_query=args.user_query,
-        retrieve_url=knowledge_config.RETRIEVE_URL,
-        repo_id_dict=knowledge_config.REPO_ID_DICT,
-        page_num=knowledge_config.PAGE_NUM,
-        filter_string=knowledge_config.FILTER_STRING,
-        scope=knowledge_config.SCOPE,
-        extra_repo_ids=knowledge_config.EXTRA_REPO_IDS,
-        rerank_url=knowledge_config.RERANK_URL,
-        rerank_batch_size=knowledge_config.RERANK_BATCH_SIZE,
-        score_threshold=knowledge_config.SCORE_THRESHOLD,
-        top_n=knowledge_config.TOP_N,
-        prompt_file=knowledge_config.PROMPT_FILE,
-        prompt_path=knowledge_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=knowledge_config.FREQUENCY_PENALTY,
-        max_tokens=knowledge_config.MAX_TOKENS,
-        n=knowledge_config.N,
-        presence_penalty=knowledge_config.PRESENCE_PENALTY,
-        reasoning_effort=knowledge_config.REASONING_EFFORT,
-        response_format=knowledge_config.RESPONSE_FORMAT,
-        stream=knowledge_config.STREAM,
-        temperature=knowledge_config.TEMPERATURE,
-        top_p=knowledge_config.TOP_P,
-        user=knowledge_config.USER,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(knowledge_config, "knowledge"),
-        access_key_id=access_key_id,
-        secret_access_key=secret_access_key,
-        obs_server=knowledge_config.OBS_SERVER,
-        bucket_name=knowledge_config.BUCKET_NAME,
-        part_size=knowledge_config.PART_SIZE,
-        task_num=knowledge_config.TASK_NUM,
-        max_concurrency=knowledge_config.MAX_CONCURRENCY,
-        max_workers=knowledge_config.MAX_WORKERS,
-        timeout=knowledge_config.TIMEOUT,
-        retriable_codes=knowledge_config.RETRIABLE_CODES,
-        max_retries=knowledge_config.MAX_RETRIES,
+        **chat_kwargs(knowledge_config, runtime.sensitive),
+        **retrieve_kwargs(knowledge_config),
+        **obs_kwargs(knowledge_config, runtime.obs_credentials),
     )
 
 
@@ -396,7 +343,7 @@ async def handle_data_agent(args: Any) -> Any:
         Any: DataAgent response result.
     """
     data_config = DataConfig()
-    sensitive_config = SensitiveConfig.load()
+    runtime = load_handler_runtime()
     return await rewrite_nl2sql(
         user_query=args.user_query,
         retrieve_url=data_config.RETRIEVE_URL,
@@ -408,30 +355,13 @@ async def handle_data_agent(args: Any) -> Any:
         rerank_url=data_config.RERANK_URL,
         rerank_batch_size=data_config.RERANK_BATCH_SIZE,
         score_threshold=data_config.SCORE_THRESHOLD,
-        prompt_file=data_config.PROMPT_FILE,
-        prompt_path=data_config.PROMPT_PATH,
-        api_key=sensitive_config.API_KEY.get_secret_value(),
-        base_url=sensitive_config.BASE_URL,
-        model=sensitive_config.MODEL_ID,
-        frequency_penalty=data_config.FREQUENCY_PENALTY,
-        n=data_config.N,
-        presence_penalty=data_config.PRESENCE_PENALTY,
-        reasoning_effort=data_config.REASONING_EFFORT,
-        response_format=data_config.RESPONSE_FORMAT,
-        stream=data_config.STREAM,
-        temperature=data_config.TEMPERATURE,
-        top_p=data_config.TOP_P,
-        user=data_config.USER,
         database_url=data_config.DATABASE_URL,
         workspace_id=data_config.WORKSPACE_ID,
         subject_id=data_config.SUBJECT_ID,
         dialog_id=data_config.DIALOG_ID,
         need_insight=data_config.NEED_INSIGHT,
         simplify_response=data_config.SIMPLIFY_RESPONSE,
-        timeout=data_config.TIMEOUT,
-        retriable_codes=data_config.RETRIABLE_CODES,
-        max_retries=data_config.MAX_RETRIES,
-        max_tokens=data_config.MAX_TOKENS,
+        **chat_kwargs(data_config, runtime.sensitive),
     )
 
 
