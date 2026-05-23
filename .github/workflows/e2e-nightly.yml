@@ -1,0 +1,75 @@
+---
+name: E2E nightly
+
+# Live business-layer e2e suite. Marked deliberately separate from
+# Lint because every job here hits real OBS / BI / LLM endpoints and
+# costs real money; it must NOT run on every push/PR.
+#
+# Triggers:
+# - schedule: 03:00 UTC daily (11:00 Asia/Shanghai), low-traffic window
+# - workflow_dispatch: manual on-demand from the Actions tab
+#
+# Required repo secrets (set under Settings -> Secrets and variables
+# -> Actions -> Repository secrets):
+#   DOMAIN_NAME, USER_NAME, USER_PASSWORD, ACCESS_KEY_ID,
+#   SECRET_ACCESS_KEY, BASE_URL, MODEL_ID, API_KEY, CODER_URL,
+#   CODER_MODEL, CODER_API_KEY, EMBED_URL, EMBED_MODEL, EMBED_API_KEY,
+#   BI_TOKEN
+# These mirror src/mcp_server_phytomni/config/.env.example exactly so
+# operators can copy the secret names one-to-one. The workflow does
+# NOT attempt to read .env files; every secret flows through env: so
+# GitHub's secret-masking still applies to log output.
+"on":
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies (dev + demo extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install --system -e ".[dev,demo]"
+      - name: Run live e2e suite
+        env:
+          # Live-mode flags read by tests/conftest.py to skip the
+          # "block_external_http" / "integration deselect" guards.
+          PHYTOMNI_RUN_INTEGRATION: "1"
+          PHYTOMNI_ALLOW_NETWORK: "1"
+          # Backend secrets. Each value is a GitHub repo secret; the
+          # job fails fast at SensitiveConfig.load() during pytest
+          # collection if any required value is missing.
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          USER_NAME: ${{ secrets.USER_NAME }}
+          USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+          ACCESS_KEY_ID: ${{ secrets.ACCESS_KEY_ID }}
+          SECRET_ACCESS_KEY: ${{ secrets.SECRET_ACCESS_KEY }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          MODEL_ID: ${{ secrets.MODEL_ID }}
+          API_KEY: ${{ secrets.API_KEY }}
+          CODER_URL: ${{ secrets.CODER_URL }}
+          CODER_MODEL: ${{ secrets.CODER_MODEL }}
+          CODER_API_KEY: ${{ secrets.CODER_API_KEY }}
+          EMBED_URL: ${{ secrets.EMBED_URL }}
+          EMBED_MODEL: ${{ secrets.EMBED_MODEL }}
+          EMBED_API_KEY: ${{ secrets.EMBED_API_KEY }}
+          BI_TOKEN: ${{ secrets.BI_TOKEN }}
+        run: |
+          uv run pytest e2e/ -v --tb=short
+      - name: Upload e2e output artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: e2e/output/
+          if-no-files-found: ignore
+          retention-days: 14
