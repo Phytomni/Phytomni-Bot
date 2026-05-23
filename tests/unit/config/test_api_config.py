@@ -34,6 +34,7 @@ def test_api_config_defaults() -> None:
     assert config.API_RATE_LIMIT_PER_MIN == 120
     assert config.API_RUN_TTL_OK_HOURS == 24
     assert config.API_RUN_TTL_FAIL_DAYS == 7
+    assert config.API_SERVICE_TOKEN is None
 
 
 def test_api_config_env_override(
@@ -49,3 +50,29 @@ def test_api_config_env_override(
     assert config.API_KEYS_DB_PATH == "/tmp/keys.sqlite"
     assert config.API_TASKS_DB_PATH == "/tmp/tasks.sqlite"
     assert config.API_RATE_LIMIT_PER_MIN == 5
+
+
+def test_api_service_token_loads_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify API_SERVICE_TOKEN env populates the field as a SecretStr."""
+    monkeypatch.setenv("API_SERVICE_TOKEN", "svc-secret-123")
+
+    config = ApiConfig()
+
+    assert config.API_SERVICE_TOKEN is not None
+    assert config.API_SERVICE_TOKEN.get_secret_value() == "svc-secret-123"
+
+
+def test_api_service_token_repr_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify SecretStr wrapping keeps the token out of repr / model_dump."""
+    monkeypatch.setenv("API_SERVICE_TOKEN", "do-not-print-this")
+
+    config = ApiConfig()
+
+    rendered = repr(config)
+    dumped = str(config.model_dump())
+    assert "do-not-print-this" not in rendered
+    assert "do-not-print-this" not in dumped

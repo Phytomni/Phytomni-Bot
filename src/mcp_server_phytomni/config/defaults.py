@@ -13,7 +13,7 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 from pathlib import Path
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import AliasChoices, Field, RootModel
+from pydantic import AliasChoices, Field, RootModel, SecretStr
 from pydantic_settings import BaseSettings
 
 _MAX_TOKENS = 65536
@@ -410,6 +410,19 @@ class ApiConfig(BaseSettings):
         API_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute.
         API_RUN_TTL_OK_HOURS (int): Retention for terminal successful runs.
         API_RUN_TTL_FAIL_DAYS (int): Retention for failed or cancelled runs.
+        API_SERVICE_TOKEN (Optional[SecretStr]): Privileged service-to-service
+            credential read from the ``API_SERVICE_TOKEN`` environment
+            variable. When set, it authorises the upstream Web Go service
+            (or any operator caller) to mint, list, and revoke per-user
+            ``ptm_...`` keys via ``POST/GET/DELETE /v1/api-keys``. Treat as a
+            root credential: the holder can issue keys for any ``user_id``.
+            When unset, the ``/v1/api-keys/*`` routes return 503 so a
+            development deployment that forgets to configure ops never
+            silently exposes the path. The token is intentionally separate
+            from ``ApiKeyStore`` so a leaked or compromised per-user key
+            cannot escalate to issuance scope. No ``PHYTOMNI_``-prefixed
+            alias is exposed because this name is unique to the Bot HTTP
+            service and carries no risk of colliding with sibling tools.
     """
 
     API_HOST: str = "127.0.0.1"
@@ -430,6 +443,7 @@ class ApiConfig(BaseSettings):
     API_RATE_LIMIT_PER_MIN: int = 120
     API_RUN_TTL_OK_HOURS: int = 24
     API_RUN_TTL_FAIL_DAYS: int = 7
+    API_SERVICE_TOKEN: Optional[SecretStr] = None
 
 
 SpeciesEntryValue = Union[str, Dict[str, str]]
