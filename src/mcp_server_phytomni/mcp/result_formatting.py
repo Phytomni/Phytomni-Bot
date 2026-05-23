@@ -4,13 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Format Phytomni MCP tool responses at the server boundary.
 
-This module exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
+Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
 ``format_tool_result``, and ``build_tool_result_envelope``. Private
-helpers normalize tool-specific payloads, citations, task metadata,
-and JSON output. ``_sanitize_raw`` recursively strips
-credential-pattern keys before the raw handler payload reaches the
-envelope, so HTTP and MCP clients can inspect provider-returned fields
-without leaking secrets.
+helpers normalize tool payloads and citations, and ``_sanitize_raw``
+recursively strips credential-pattern keys before the raw handler
+payload reaches the envelope so HTTP and MCP clients can inspect
+provider-returned fields without leaking secrets.
 """
 
 import json

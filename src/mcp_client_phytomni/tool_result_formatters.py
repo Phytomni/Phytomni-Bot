@@ -4,16 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Deserialize formatted Phytomni MCP tool responses.
 
-The MCP server now formats tool output at its dispatch seam and wraps
-the formatted view alongside the sanitized raw handler payload in a
-``{"formatted": {...}, "raw": {...}}`` envelope. This module
-reconstructs ``FormattedToolResult`` from either the envelope shape
-(current server) or the legacy flat shape (historical dumps and
-pre-envelope servers); ``raw`` itself is left for callers that want
-the full server body. ``format_tool_result`` is a backward-compatible
-shim kept for existing importers; it ignores ``tool_name`` and any
-legacy ``field_mapper`` / ``reference_resolver`` keyword arguments and
-simply parses the payload.
+The MCP server wraps every dispatch in a
+``{"formatted": ..., "raw": ...}`` envelope; this module reconstructs
+``FormattedToolResult`` from envelope or legacy flat payloads while
+leaving ``raw`` for callers that want the full server body.
+``format_tool_result`` is a backward-compatible shim that ignores
+``tool_name`` and legacy keyword arguments.
 """
 
 from collections.abc import Mapping, Sequence
