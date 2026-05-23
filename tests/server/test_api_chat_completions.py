@@ -273,6 +273,8 @@ async def test_chat_completions_envelope_carries_formatted_and_raw(
         "follow_up_questions",
         "metadata",
         "references",
+        "tabular",
+        "output_dirs",
     }
     assert isinstance(body["raw"], dict)
     assert body["raw"]["choices"][0]["message"]["content"] == (

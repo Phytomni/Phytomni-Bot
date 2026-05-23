@@ -26,18 +26,28 @@ class FormattedToolResult:
     """Normalized client-facing representation of one tool response.
 
     Attributes:
-        answer: Client-facing answer text or serialized JSON payload.
+        answer: Client-facing answer text or a human-readable summary
+            for tabular responses.
         follow_up_questions: Suggested follow-up questions.
         metadata: Additional structured metadata for task-style
             responses.
         references: Normalized cited references for retrieval-style
             tools.
+        tabular: Optional tabular payload with ``headers`` / ``rows``
+            keys for DataAgent-style responses; ``None`` when the tool
+            does not produce a table.
+        output_dirs: Output directories for fan-out task agents (e.g.
+            DigitalDesign protein / promoter / terminator). Empty
+            tuple for single-task agents that surface one path via
+            ``metadata["output_dir"]``.
     """
 
     answer: str
     follow_up_questions: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     references: tuple[Mapping[str, Any], ...] = ()
+    tabular: Mapping[str, Any] | None = None
+    output_dirs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,18 +262,26 @@ def _format_cited_message_result(
 def _format_data_result(
     content: Mapping[str, Any],
 ) -> FormattedToolResult:
-    """Format natural-language SQL table output."""
+    """Format natural-language SQL table output.
+
+    Tabular payload moves into the structured ``tabular`` field so HTTP
+    clients no longer need to ``json.loads(answer)`` to read headers
+    and rows; ``answer`` carries a human-readable shape summary.
+    """
     headers = [
         str(column.get("caption") or column.get("name") or "")
         for column in _mapping_sequence(content.get("header"))
     ]
-    answer = _json_dumps(
-        {
-            "headers": headers,
-            "rows": content.get("data", []),
-        }
+    raw_rows = content.get("data", [])
+    rows = list(raw_rows) if isinstance(raw_rows, Sequence) else []
+    row_count = len(rows)
+    column_count = len(headers)
+    row_label = "row" if row_count == 1 else "rows"
+    column_label = "column" if column_count == 1 else "columns"
+    return FormattedToolResult(
+        answer=(f"{row_count} {row_label} x {column_count} {column_label}"),
+        tabular={"headers": headers, "rows": rows},
     )
-    return FormattedToolResult(answer=answer)
 
 
 def _format_task_result(content: Mapping[str, Any]) -> FormattedToolResult:
@@ -329,22 +347,23 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
         for task in tasks
         if task.get("task_id") is not None
     ]
-    output_dirs = [
+    output_dirs = tuple(
         str(task.get("output_dir"))
         for task in tasks
         if task.get("output_dir") is not None
-    ]
+    )
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",
         metadata={
             "task_id": _string_or_none(primary_task.get("task_id")),
-            "output_dir": _json_dumps(output_dirs) if output_dirs else None,
+            "output_dir": output_dirs[0] if output_dirs else None,
             "compute_resource": _string_or_none(
                 primary_task.get("compute_resource")
             ),
             "status": "RUNNING",
             "log_status": "sync_running",
         },
+        output_dirs=output_dirs,
     )
 
 

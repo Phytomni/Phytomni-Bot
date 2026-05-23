@@ -5,11 +5,9 @@
 """Tests for server-side MCP result formatting.
 
 Covers citation rewriting, document deduplication, follow-up
-extraction, DataAgent table serialization, envelope construction, and
+extraction, DataAgent tabular field shape, envelope construction, and
 credential-pattern sanitization at the MCP boundary.
 """
-
-import json
 
 import pytest
 
@@ -53,8 +51,13 @@ def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
     assert result.follow_up_questions == ("Next question?",)
 
 
-def test_data_result_serializes_headers_and_rows() -> None:
-    """Verify DataAgent headers and rows serialize without a mapper."""
+def test_data_result_returns_tabular_field_and_summary_answer() -> None:
+    """Verify DataAgent surfaces headers and rows as a structured field.
+
+    The ``tabular`` field carries the typed payload so HTTP clients no
+    longer need to ``json.loads`` the answer string; ``answer`` is a
+    human-readable shape summary that singular vs plural correctly.
+    """
     payload = {
         "header": [{"caption": "gene_id"}, {"caption": "score"}],
         "data": [["Os01g01010", 0.8]],
@@ -62,10 +65,11 @@ def test_data_result_serializes_headers_and_rows() -> None:
 
     result = format_tool_result("DataAgent", payload)
 
-    assert json.loads(result.answer) == {
+    assert result.tabular == {
         "headers": ["gene_id", "score"],
         "rows": [["Os01g01010", 0.8]],
     }
+    assert result.answer == "1 row x 2 columns"
 
 
 def test_envelope_preserves_raw_provider_fields() -> None:

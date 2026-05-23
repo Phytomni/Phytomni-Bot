@@ -100,6 +100,8 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
             "follow_up_questions": [],
             "metadata": {},
             "references": [],
+            "tabular": None,
+            "output_dirs": [],
         },
         "raw": {
             "answer": "hello",

@@ -135,7 +135,7 @@ async def test_invoke_data_agent_serializes_table(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DataAgent payloads serialize headers/rows into a JSON answer."""
+    """DataAgent payloads expose headers/rows on the tabular field."""
     raw = {
         "header": [{"caption": "Gene"}, {"name": "Identity"}],
         "data": [["Os01g0177400", 0.95]],
@@ -147,11 +147,11 @@ async def test_invoke_data_agent_serializes_table(
         _payload(demo_data_dir, "data_agent.json"),
     )
 
-    parsed = json.loads(result.answer)
-    assert parsed == {
+    assert result.tabular == {
         "headers": ["Gene", "Identity"],
         "rows": [["Os01g0177400", 0.95]],
     }
+    assert result.answer == "1 row x 2 columns"
 
 
 async def test_invoke_analyst_agent_formats_task_submission(
@@ -261,10 +261,14 @@ async def test_invoke_digital_design_agent_collects_subtasks(
     # DigitalDesign keeps the raw compute_resource string verbatim; the
     # analyst-agents-* normalisation only runs through _format_task_result.
     assert result.metadata["compute_resource"] == "large"
-    assert json.loads(result.metadata["output_dir"]) == [
+    # The fan-out paths now live on the typed output_dirs tuple; the
+    # legacy metadata["output_dir"] keeps the primary path so consumers
+    # of single-task shape keep working.
+    assert result.output_dirs == (
         "/obs/phytomni/prot",
         "/obs/phytomni/prom",
-    ]
+    )
+    assert result.metadata["output_dir"] == "/obs/phytomni/prot"
 
 
 async def test_invoke_in_silico_research_agent_falls_back_to_json(

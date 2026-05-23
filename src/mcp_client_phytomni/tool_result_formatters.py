@@ -76,6 +76,7 @@ def parse_formatted_result(payload: Any) -> FormattedToolResult:
         return parse_formatted_result(nested)
 
     metadata = payload.get("metadata")
+    tabular = payload.get("tabular")
     return FormattedToolResult(
         answer=str(payload.get("answer", "")),
         follow_up_questions=tuple(
@@ -84,6 +85,10 @@ def parse_formatted_result(payload: Any) -> FormattedToolResult:
         ),
         metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
         references=_mapping_sequence(payload.get("references")),
+        tabular=dict(tabular) if isinstance(tabular, Mapping) else None,
+        output_dirs=tuple(
+            str(entry) for entry in _list_sequence(payload.get("output_dirs"))
+        ),
     )
 
 
