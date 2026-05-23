@@ -33,14 +33,6 @@ ANNOTATION_CUES = (
     "literature",
     "tissue",
 )
-DATA_SQL_CUES = ("select", "from", "where", "join", "limit")
-DATA_HOMOLOG_CUES = (
-    "traes",
-    "homolog",
-    "ortholog",
-    "os01g0177400",
-    "identity",
-)
 MIN_REVIEW_SECTIONS = 3
 
 # A markdown section header: an ATX heading of depth >= 2 (## .. ######).
@@ -130,29 +122,38 @@ def assert_knowledge_answer(answer: str) -> None:
     )
 
 
-def assert_data_answer(answer: str) -> None:
-    """Assert DataAgent answer carries SQL or homology evidence.
+_DATA_SUMMARY_PATTERN = re.compile(r"^(\d+) rows? x (\d+) columns?$")
 
-    The current formatter still serializes ``{"headers","rows"}`` as a
-    JSON string inside ``answer`` (see the structured-as-string
-    backlog). A substring scan on the raw string covers both the
-    headers/rows JSON form and any plain-prose fallback the agent may
-    return when the SQL backend short-circuits.
+
+def assert_data_answer(answer: str) -> None:
+    """Assert DataAgent answer is a non-empty tabular summary.
+
+    The DataAgent formatter now emits a human-readable ``N rows x M
+    columns`` summary on ``answer`` and ships the actual tabular
+    payload through ``formatted.tabular`` instead of JSON-encoding it
+    inside the answer string. A real SQL backend call must produce at
+    least one row and one column; the substring cues (gene_id,
+    homolog, sequence, ...) live inside ``tabular.rows`` and are not
+    reachable from this answer-string-only signature.
 
     Args:
-        answer: Raw answer string from DataAgent.
+        answer: Raw answer string from DataAgent
+            (``formatted.answer`` from the envelope).
 
     Raises:
-        AssertionError: When the answer is empty or lacks every cue.
+        AssertionError: When the answer is empty, does not match the
+            summary pattern, or reports zero rows / zero columns.
     """
     assert answer, "DataAgent answer was empty"
-    lowered = answer.lower()
-    sql_hit = any(cue in lowered for cue in DATA_SQL_CUES)
-    homolog_hit = any(cue in lowered for cue in DATA_HOMOLOG_CUES)
-    assert sql_hit or homolog_hit, (
-        f"DataAgent answer lacked both SQL ({DATA_SQL_CUES}) and "
-        f"homolog ({DATA_HOMOLOG_CUES}) cues; got: {answer!r}"
+    match = _DATA_SUMMARY_PATTERN.match(answer.strip())
+    assert match, (
+        "DataAgent answer is not the new ``N rows x M columns`` summary; "
+        f"got: {answer!r}"
     )
+    rows = int(match.group(1))
+    cols = int(match.group(2))
+    assert rows > 0, f"DataAgent returned 0 rows; got: {answer!r}"
+    assert cols > 0, f"DataAgent returned 0 columns; got: {answer!r}"
 
 
 def assert_review_answer(answer: str) -> None:

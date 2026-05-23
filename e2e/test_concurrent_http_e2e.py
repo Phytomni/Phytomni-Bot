@@ -213,7 +213,8 @@ async def _post_agent_run(
     )
     body = response.json()
     result = body.get("result") or {}
-    return str(result.get("answer", ""))
+    formatted = result.get("formatted") or {}
+    return str(formatted.get("answer", ""))
 
 
 def _collect_failure(
