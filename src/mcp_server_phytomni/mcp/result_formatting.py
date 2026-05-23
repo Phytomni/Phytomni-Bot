@@ -4,10 +4,13 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Format Phytomni MCP tool responses at the server boundary.
 
-This module exposes ``FormattedToolResult`` and ``format_tool_result``.
-Private helpers normalize tool-specific payloads, citations, task
-metadata, and JSON output. It is applied at the MCP dispatch seam so
-the stdio and HTTP surfaces emit the same normalized result.
+This module exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
+``format_tool_result``, and ``build_tool_result_envelope``. Private
+helpers normalize tool-specific payloads, citations, task metadata,
+and JSON output. ``_sanitize_raw`` recursively strips
+credential-pattern keys before the raw handler payload reaches the
+envelope, so HTTP and MCP clients can inspect provider-returned fields
+without leaking secrets.
 """
 
 import json
@@ -36,6 +39,117 @@ class FormattedToolResult:
     follow_up_questions: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     references: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class ToolResultEnvelope:
+    """Full tool response carrying display and raw payloads.
+
+    The ``raw`` field receives the handler payload after
+    ``_sanitize_raw`` recursively strips credential-pattern keys, so
+    HTTP and MCP clients can inspect provider-returned fields
+    (reasoning_content, usage, finish_reason, tool_calls, unknown
+    extensions) without leaking secrets.
+
+    Attributes:
+        formatted: Normalized display-oriented result.
+        raw: Sanitized handler payload returned by the agent path.
+    """
+
+    formatted: FormattedToolResult
+    raw: Any
+
+
+_SECRET_KEY_PATTERNS: frozenset[str] = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "secret",
+        "token",
+        "bearer",
+        "authorization",
+        "session_id",
+        "password",
+        "credential",
+    }
+)
+_NON_SECRET_OVERRIDES: frozenset[str] = frozenset(
+    {
+        "tokens",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "max_tokens",
+        "max_completion_tokens",
+        "n_tokens",
+    }
+)
+
+
+def _is_sensitive_key(key: Any) -> bool:
+    """Return True when a mapping key looks like it carries a secret.
+
+    Lowercased key names containing any pattern in
+    ``_SECRET_KEY_PATTERNS`` are sensitive, except for explicit
+    overrides in ``_NON_SECRET_OVERRIDES`` (e.g. tokenizer counts
+    ``prompt_tokens`` / ``completion_tokens`` that share the word
+    "token" with the credential pattern but are plain metrics).
+    """
+    if not isinstance(key, str) or not key:
+        return False
+    lowered = key.lower()
+    if lowered in _NON_SECRET_OVERRIDES:
+        return False
+    return any(pattern in lowered for pattern in _SECRET_KEY_PATTERNS)
+
+
+def _sanitize_raw(payload: Any) -> Any:
+    """Return ``payload`` with secret-pattern keys recursively removed.
+
+    Walks mappings and list / tuple sequences. Drops mapping entries
+    whose key satisfies ``_is_sensitive_key``. Lists return as lists,
+    tuples as tuples; scalars (including strings and bytes) pass
+    through unchanged. The result is a fresh structure so callers can
+    mutate it without affecting the original payload.
+    """
+    if isinstance(payload, Mapping):
+        return {
+            key: _sanitize_raw(value)
+            for key, value in payload.items()
+            if not _is_sensitive_key(key)
+        }
+    if isinstance(payload, list):
+        return [_sanitize_raw(item) for item in payload]
+    if isinstance(payload, tuple):
+        return tuple(_sanitize_raw(item) for item in payload)
+    return payload
+
+
+def build_tool_result_envelope(
+    tool_name: str,
+    payload: Any,
+    *,
+    arguments: Mapping[str, Any] | None = None,
+) -> ToolResultEnvelope:
+    """Build a full result envelope for one tool response.
+
+    The raw payload is recursively sanitized through ``_sanitize_raw``
+    before being placed on the envelope, so credential-pattern keys
+    never reach client-facing surfaces.
+
+    Args:
+        tool_name: Public MCP tool name or legacy alias.
+        payload: Raw decoded handler payload to format and preserve.
+        arguments: Optional original tool arguments used by some
+            formatters.
+
+    Returns:
+        Envelope containing formatted and sanitized raw payload blocks.
+    """
+    return ToolResultEnvelope(
+        formatted=format_tool_result(tool_name, payload, arguments=arguments),
+        raw=_sanitize_raw(payload),
+    )
 
 
 def format_tool_result(

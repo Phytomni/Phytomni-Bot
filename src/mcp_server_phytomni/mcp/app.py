@@ -33,7 +33,11 @@ from .handlers import (
     handle_knowledge_agent,
     handle_review_agent,
 )
-from .result_formatting import FormattedToolResult, format_tool_result
+from .result_formatting import (
+    FormattedToolResult,
+    ToolResultEnvelope,
+    build_tool_result_envelope,
+)
 from .schemas import (
     AnalystAgent,
     BriefGeneAgent,
@@ -170,8 +174,34 @@ async def invoke_tool_formatted(
     Raises:
         McpError: If the tool is unknown or arguments fail validation.
     """
+    envelope = await invoke_tool_enveloped(name, arguments)
+    return envelope.formatted
+
+
+async def invoke_tool_enveloped(
+    name: Any, arguments: Dict[str, Any]
+) -> ToolResultEnvelope:
+    """Validate arguments, call a handler, and preserve raw payload.
+
+    This is the shared full-result seam built on top of
+    invoke_tool_raw. It keeps the formatted display payload beside the
+    raw handler payload so MCP and HTTP clients can inspect all fields
+    returned by the agent path.
+
+    Args:
+        name: Raw tool name supplied by the caller.
+        arguments: JSON object passed to the selected tool.
+
+    Returns:
+        Full result envelope for the selected tool.
+
+    Raises:
+        McpError: If the tool is unknown or arguments fail validation.
+    """
     raw = await invoke_tool_raw(name, arguments)
-    return format_tool_result(_tool_name(name), raw, arguments=arguments)
+    return build_tool_result_envelope(
+        _tool_name(name), raw, arguments=arguments
+    )
 
 
 async def dispatch_tool(
@@ -189,8 +219,13 @@ async def dispatch_tool(
     Raises:
         McpError: If the tool is unknown or arguments fail validation.
     """
-    formatted = await invoke_tool_formatted(name, arguments)
-    return _text_response(asdict(formatted))
+    envelope = await invoke_tool_enveloped(name, arguments)
+    return _text_response(
+        {
+            "formatted": asdict(envelope.formatted),
+            "raw": envelope.raw,
+        }
+    )
 
 
 async def serve() -> None:

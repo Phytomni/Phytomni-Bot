@@ -19,7 +19,9 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.mcp.result_formatting import format_tool_result
+from mcp_server_phytomni.mcp.result_formatting import (
+    build_tool_result_envelope,
+)
 
 pytestmark = pytest.mark.server
 
@@ -74,7 +76,12 @@ async def test_invoke_tool_raw_rejects_invalid_arguments() -> None:
 async def test_dispatch_tool_formats_invoke_tool_raw(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify dispatch_tool is invoke_tool_raw plus formatting + JSON."""
+    """Verify dispatch_tool wraps invoke_tool_raw in the result envelope.
+
+    The dispatch seam now emits ``{"formatted": ..., "raw": ...}`` so
+    HTTP and MCP clients can read both the normalized display payload
+    and the sanitized handler payload from a single body.
+    """
 
     async def fake_handler(args: Any) -> dict[str, Any]:
         """Return a deterministic payload for the dispatch comparison."""
@@ -97,15 +104,17 @@ async def test_dispatch_tool_formats_invoke_tool_raw(
     assert raw == {"echo": "hi"}
     assert len(wrapped) == 1
     assert wrapped[0].type == "text"
+    envelope = build_tool_result_envelope(
+        server.PhytomniAgents.CHAT_AGENT.value,
+        raw,
+        arguments=arguments,
+    )
     expected = loads(
         dumps(
-            asdict(
-                format_tool_result(
-                    server.PhytomniAgents.CHAT_AGENT.value,
-                    raw,
-                    arguments=arguments,
-                )
-            )
+            {
+                "formatted": asdict(envelope.formatted),
+                "raw": envelope.raw,
+            }
         )
     )
     assert loads(wrapped[0].text) == expected

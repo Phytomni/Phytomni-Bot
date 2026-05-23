@@ -50,10 +50,12 @@ def test_tool_dispatch_tables_cover_public_agents():
 async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify dispatch validates, calls handler, and wraps formatted JSON.
+    """Verify dispatch validates, calls handler, and wraps envelope JSON.
 
     The fake ChatAgent payload has no OpenAI ``choices``, so the server
     formatter yields an empty answer with the default envelope shape.
+    The handler payload survives sanitized inside ``raw`` because none
+    of its keys match a credential pattern.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap dispatch handler.
@@ -93,10 +95,16 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     assert len(result) == 1
     assert result[0].type == "text"
     assert loads(result[0].text) == {
-        "answer": "",
-        "follow_up_questions": [],
-        "metadata": {},
-        "references": [],
+        "formatted": {
+            "answer": "",
+            "follow_up_questions": [],
+            "metadata": {},
+            "references": [],
+        },
+        "raw": {
+            "answer": "hello",
+            "files": [],
+        },
     }
 
 
