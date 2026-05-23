@@ -1,0 +1,85 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Service-token authentication for /v1/api-keys management routes.
+
+Functions: require_service_principal.
+
+The service token is read from ``ApiConfig.API_SERVICE_TOKEN`` and grants
+the holder authority to mint, list, and revoke per-user ``ptm_...`` API
+keys. It is intentionally separate from ``ApiKeyStore`` so a leaked or
+compromised per-user key cannot escalate to issuance scope.
+"""
+
+from __future__ import annotations
+
+import secrets
+from typing import Optional
+
+from fastapi import Header, HTTPException
+
+from ..config.defaults import ApiConfig
+
+__all__ = ["require_service_principal"]
+
+_SERVICE_TOKEN_HEADERS = {"WWW-Authenticate": "Bearer"}
+
+
+def _extract_service_token(
+    authorization: Optional[str], x_service_token: Optional[str]
+) -> Optional[str]:
+    """Pull the service token from Bearer or X-Service-Token headers."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[len("Bearer ") :].strip()
+        return token or None
+    if x_service_token:
+        token = x_service_token.strip()
+        return token or None
+    return None
+
+
+async def require_service_principal(
+    authorization: Optional[str] = Header(default=None),
+    x_service_token: Optional[str] = Header(
+        default=None, alias="X-Service-Token"
+    ),
+) -> None:
+    """FastAPI dependency that gates a route on the configured service token.
+
+    Returns silently when the presented token matches. Raises 503 when
+    ops has not configured ``API_SERVICE_TOKEN`` so a fresh deployment
+    fails closed instead of silently exposing key issuance. Raises 401
+    when the token is absent or wrong. The comparison uses
+    ``secrets.compare_digest`` to resist timing analysis.
+
+    Args:
+        authorization: Bearer authorization header value, if any.
+        x_service_token: Alternative ``X-Service-Token`` header value.
+
+    Raises:
+        HTTPException: 503 when no service token is configured; 401 when
+            the presented token is missing or does not match.
+    """
+    configured = ApiConfig().API_SERVICE_TOKEN
+    if configured is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "/v1/api-keys/* admin path is not enabled "
+                "(no service token configured)"
+            ),
+        )
+    presented = _extract_service_token(authorization, x_service_token)
+    if presented is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing service token",
+            headers=dict(_SERVICE_TOKEN_HEADERS),
+        )
+    if not secrets.compare_digest(presented, configured.get_secret_value()):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid service token",
+            headers=dict(_SERVICE_TOKEN_HEADERS),
+        )
