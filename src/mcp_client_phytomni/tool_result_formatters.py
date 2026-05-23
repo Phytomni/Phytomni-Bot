@@ -4,9 +4,13 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Deserialize formatted Phytomni MCP tool responses.
 
-The MCP server now formats tool output at its dispatch seam, so this
-module only reconstructs ``FormattedToolResult`` from the already
-formatted payload. ``format_tool_result`` is a backward-compatible
+The MCP server now formats tool output at its dispatch seam and wraps
+the formatted view alongside the sanitized raw handler payload in a
+``{"formatted": {...}, "raw": {...}}`` envelope. This module
+reconstructs ``FormattedToolResult`` from either the envelope shape
+(current server) or the legacy flat shape (historical dumps and
+pre-envelope servers); ``raw`` itself is left for callers that want
+the full server body. ``format_tool_result`` is a backward-compatible
 shim kept for existing importers; it ignores ``tool_name`` and any
 legacy ``field_mapper`` / ``reference_resolver`` keyword arguments and
 simply parses the payload.
@@ -48,6 +52,17 @@ def format_tool_result(
 def parse_formatted_result(payload: Any) -> FormattedToolResult:
     """Reconstruct a FormattedToolResult from a formatted payload.
 
+    Accepts three shapes:
+
+    1. An already-built ``FormattedToolResult`` (returned unchanged).
+    2. The envelope dict ``{"formatted": {...}, "raw": {...}}`` emitted
+       by the current MCP server; the nested ``formatted`` block is
+       parsed recursively and the sibling ``raw`` is left for callers
+       that want the full server body.
+    3. The legacy flat dict ``{"answer", "follow_up_questions",
+       "metadata", "references"}`` from historical dumps or
+       pre-envelope servers (backward compatibility).
+
     Args:
         payload: The formatted mapping emitted by the MCP server, or an
             already-built FormattedToolResult.
@@ -59,6 +74,10 @@ def parse_formatted_result(payload: Any) -> FormattedToolResult:
         return payload
     if not isinstance(payload, Mapping):
         return FormattedToolResult(answer=str(payload))
+
+    nested = payload.get("formatted")
+    if isinstance(nested, Mapping):
+        return parse_formatted_result(nested)
 
     metadata = payload.get("metadata")
     return FormattedToolResult(
