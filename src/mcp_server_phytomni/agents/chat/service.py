@@ -481,12 +481,32 @@ async def _run_phyto_chat(
 
 
 async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
-    """Collect streaming chunks into an OpenAI-style response dictionary."""
+    """Collect streaming chunks into an OpenAI-style response dictionary.
+
+    Accumulates both ``delta.content`` and ``delta.reasoning_content``
+    so the rebuilt message keeps the reasoning trace returned by
+    reasoner-style backends (DeepSeek-R1, Qwen-Reasoner, etc.); the
+    field is read defensively with ``getattr`` to remain compatible
+    with providers that never expose it. The last seen non-empty
+    ``finish_reason`` survives so envelope clients can tell ``stop``
+    from ``length`` / ``tool_calls`` / ``content_filter``.
+    """
     full_content = ""
+    full_reasoning = ""
+    finish_reason: Optional[str] = None
     chunk = None
     async for chunk in stream_completions:
-        if chunk.choices and chunk.choices[0].delta.content:
-            full_content += chunk.choices[0].delta.content
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta.content:
+            full_content += delta.content
+        delta_reasoning = getattr(delta, "reasoning_content", None)
+        if delta_reasoning:
+            full_reasoning += delta_reasoning
+        chunk_finish = getattr(chunk.choices[0], "finish_reason", None)
+        if chunk_finish:
+            finish_reason = chunk_finish
     if chunk is None:
         raise McpError(
             ErrorData(
@@ -495,24 +515,43 @@ async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
             )
         )
     chat_completions = chunk.model_dump()
-    chat_completions.update({"choices": [_stream_choice(full_content)]})
+    chat_completions.update(
+        {
+            "choices": [
+                _stream_choice(full_content, full_reasoning, finish_reason)
+            ]
+        }
+    )
     return chat_completions
 
 
-def _stream_choice(full_content: str) -> Dict[str, Any]:
-    """Return the normalized final streaming choice."""
+def _stream_choice(
+    full_content: str,
+    full_reasoning: str,
+    finish_reason: Optional[str],
+) -> Dict[str, Any]:
+    """Return the normalized final streaming choice.
+
+    The ``reasoning_content`` field is omitted when the backend never
+    emitted any reasoning deltas so the rebuilt message stays compact
+    for non-reasoner providers; reasoner backends get the accumulated
+    trace placed beside ``content`` in OpenAI canonical position.
+    """
+    message: Dict[str, Any] = {
+        "content": full_content.strip(),
+        "refusal": None,
+        "role": "assistant",
+        "annotations": None,
+        "audio": None,
+        "function_call": None,
+        "tool_calls": [],
+    }
+    if full_reasoning:
+        message["reasoning_content"] = full_reasoning.strip()
     return {
-        "finish_reason": "stop",
+        "finish_reason": finish_reason or "stop",
         "index": 0,
         "logprobs": None,
-        "message": {
-            "content": full_content.strip(),
-            "refusal": None,
-            "role": "assistant",
-            "annotations": None,
-            "audio": None,
-            "function_call": None,
-            "tool_calls": [],
-        },
+        "message": message,
         "stop_reason": None,
     }
