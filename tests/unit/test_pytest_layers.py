@@ -76,11 +76,10 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
     """Verify pytest coverage reporting is configured for ci."""
     pyproject = _pyproject()
     optional_dev = pyproject["project"]["optional-dependencies"]["dev"]
-    group_dev = pyproject["dependency-groups"]["dev"]
     coverage_config = pyproject["tool"]["coverage"]
 
     assert any(dep.startswith("pytest-cov") for dep in optional_dev)
-    assert any(dep.startswith("pytest-cov") for dep in group_dev)
+    assert "dependency-groups" not in pyproject
     assert coverage_config["run"] == {
         "branch": True,
         "relative_files": True,
