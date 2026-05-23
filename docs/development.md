@@ -27,9 +27,9 @@ uv pip install -e ".[dev,demo]"
 Python 3.12 is the default local example. Python 3.13 and 3.14 are also
 supported and covered by CI compatibility checks.
 
-The project also keeps `dependency-groups.dev` for uv-oriented workflows,
-but CI and the standard editable install path use
-`[project.optional-dependencies]` with `.[dev]`.
+`[project.optional-dependencies]` is the single source of truth for the
+`dev` and `demo` extras. CI and the documented editable install path
+both consume it through `uv pip install -e ".[dev,demo]"`.
 
 Using conda or mamba:
 
@@ -97,11 +97,13 @@ Equivalent explicit form:
 uv run pytest -m "not integration and not network"
 ```
 
-Coverage report form used by CI:
+Coverage report form used by CI (both wheel packages are covered, and
+`[tool.coverage.report].fail_under` enforces a coverage floor):
 
 ```bash
 uv run pytest \
   --cov=mcp_server_phytomni \
+  --cov=mcp_client_phytomni \
   --cov-report=term-missing \
   --cov-report=xml
 ```
@@ -113,14 +115,14 @@ unless `PHYTOMNI_ALLOW_NETWORK=1` is set.
 
 ## Lint and Type Checks
 
-Useful individual checks:
+Useful individual checks (scopes match `.github/workflows/lint.yml`):
 
 ```bash
 uv run black --check .
 uv run ruff check .
-uv run flake8 src tests --count --statistics
-uv run mypy src
-pyright src
+uv run flake8 src tests e2e scripts --count --statistics
+uv run mypy src tests e2e scripts
+pyright src scripts
 PYTHONPATH=src uv run pylint --persistent=no $(git ls-files '*.py')
 uv run yamllint .
 ```
@@ -195,10 +197,18 @@ python scripts/normalize_json.py \
 
 ## CI
 
-`.github/workflows/lint.yml` runs black, ruff, flake8, mypy, pyright,
-pylint, pytest, yamllint, actionlint, shellcheck, shfmt, mdformat,
-pymarkdown, toml-sort, validate-pyproject, jsonlint, and
-`normalize_json.py --check` on Python 3.12.
+Three workflows live under `.github/workflows/`:
+
+- `lint.yml` runs black, ruff, flake8, mypy, pyright, pylint, pytest with
+  coverage, yamllint, actionlint, shellcheck, shfmt, mdformat,
+  pymarkdown, toml-sort, validate-pyproject, jsonlint, and
+  `normalize_json.py --check`. The matrix covers Python 3.12, 3.13, and
+  3.14 for the type checkers and pytest; the remaining tools run on 3.12.
+- `secret-scan.yml` runs `scripts/scan_secrets.py` over tracked files and
+  over each pushed commit range.
+- `e2e-nightly.yml` runs the live `e2e/` suite on a nightly cron and on
+  manual `workflow_dispatch`. It is NOT triggered by push or pull request
+  and uploads any `e2e/output/` artifacts on completion.
 
 The pylint job installs `[dev,demo]` so `demo_data/scripts` imports of
 `reportlab` and `openpyxl` resolve. GitHub workflow files are checked with
@@ -234,11 +244,11 @@ bounds in `pyproject.toml`.
 When changing dependencies:
 
 - update `project.dependencies` for runtime packages
-- keep `[project.optional-dependencies].dev` and `[dependency-groups].dev`
-  version-aligned for development tools
+- update `[project.optional-dependencies].dev` or `.demo` for development
+  and demo tools; there is no `[dependency-groups]` table to keep in sync
 - preserve compatibility with Python 3.12, 3.13, and 3.14 unless the
   supported range is explicitly changed
-- run `uv sync --extra dev --group dev`
+- run `uv pip install -e ".[dev,demo]"` (or `uv sync --extra dev --extra demo`)
 - run `uv pip check --python .venv/bin/python`
 - run the full local gate before committing
 
