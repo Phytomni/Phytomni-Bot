@@ -4,8 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review agent package exports.
 
-Re-exports DeepResearchAgent, its workflow state, the planning and
-report mixins that compose its workflow nodes, and the
+Re-exports DeepResearchAgent, its workflow state, the planning /
+report / summary mixins that compose its workflow nodes, and the
 review_agent_function compatibility wrapper for literature review
 generation.
 """
@@ -18,6 +18,7 @@ from .report import (
     SupplementaryFormatState,
     SupplementaryResultContext,
 )
+from .summary import ReviewSummaryMixin
 
 __all__ = [
     "DeepResearchAgent",
@@ -25,6 +26,7 @@ __all__ = [
     "RetrievalAccumulator",
     "ReviewPlanningMixin",
     "ReviewReportMixin",
+    "ReviewSummaryMixin",
     "SupplementaryCounters",
     "SupplementaryFormatState",
     "SupplementaryResultContext",
