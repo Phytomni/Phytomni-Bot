@@ -206,11 +206,10 @@ async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
         thread_id="in-silico-thread",
     )
 
-    assert result == {
-        "task_ids": {"goal-1": "task-1"},
-        "goals": ["goal-1"],
-        "error": None,
-    }
+    assert result["task_ids"] == {"goal-1": "task-1"}
+    assert result["goals"] == ["goal-1"]
+    assert result["error"] is None
+    assert "phytomni_state" in result
     assert fake_graph.state is not None
     assert fake_graph.state["paper_text"] == "A paper about root architecture."
     assert fake_graph.state["data_list"] == {
@@ -243,7 +242,9 @@ async def test_gene_network_agent_arun_invokes_graph_with_initial_state():
         thread_id="network-thread",
     )
 
-    assert result == {"network_task": {"task_id": "network-1"}, "error": None}
+    assert result["network_task"] == {"task_id": "network-1"}
+    assert result["error"] is None
+    assert "phytomni_state" in result
     assert fake_graph.state is not None
     assert fake_graph.state["species"] == "oryza sativa"
     assert fake_graph.state["to_id"] == "TO:0000621"
@@ -274,10 +275,9 @@ async def test_digital_design_agent_arun_invokes_graph_with_initial_state():
         thread_id="design-thread",
     )
 
-    assert result == {
-        "design_task_result": [{"task_id": "design-1"}],
-        "error": None,
-    }
+    assert result["design_task_result"] == [{"task_id": "design-1"}]
+    assert result["error"] is None
+    assert "phytomni_state" in result
     assert fake_graph.state is not None
     assert fake_graph.state["species"] == "arabidopsis thaliana"
     assert fake_graph.state["gene_id"] == "AT1G01010"
@@ -317,12 +317,11 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
         is_polling=False,
     )
 
-    assert result == {
-        "task_id": "task-1",
-        "output_dir": "/tmp/analysis",
-        "job_name": "pytest-job",
-        "compute_resource": "small",
-    }
+    assert result["task_id"] == "task-1"
+    assert result["output_dir"] == "/tmp/analysis"
+    assert result["job_name"] == "pytest-job"
+    assert result["compute_resource"] == "small"
+    assert "phytomni_state" in result
     assert fake_graph.state is not None
     assert fake_graph.state["query"] == "run differential expression"
     assert fake_graph.state["goal_description"] == (

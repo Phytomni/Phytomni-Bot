@@ -112,3 +112,58 @@ def test_non_dict_final_response_falls_back_to_empty_base() -> None:
     merged = merge_intermediate_state(final_state)
 
     assert merged == {"phytomni_state": {"rewrite_query": "SELECT 1"}}
+
+
+def test_surface_keys_promote_subset_and_nest_rest() -> None:
+    """Task-style: ``surface_keys`` selects the top-level subset.
+
+    Generic field names (``alpha`` / ``beta`` / ``gamma`` / ``delta``)
+    keep the helper contract decoupled from any specific agent's
+    surface schema; the production callers (Analyst, design / network /
+    research via ``invoke_analysis_agent``) pick their own surface
+    sets and the helper just promotes those keys verbatim while
+    nesting everything else under ``phytomni_state``.
+    """
+    final_state = {
+        "alpha": "a-value",
+        "beta": "b-value",
+        "gamma": "g-value",
+        "delta": "d-value",
+        "extra_one": "x1",
+        "extra_two": ["x2-list"],
+        "extra_three": {"x3": "nested"},
+    }
+
+    surfaced = merge_intermediate_state(
+        final_state,
+        surface_keys=("alpha", "beta", "gamma", "delta"),
+    )
+
+    assert surfaced["alpha"] == "a-value"
+    assert surfaced["beta"] == "b-value"
+    assert surfaced["gamma"] == "g-value"
+    assert surfaced["delta"] == "d-value"
+    assert surfaced["phytomni_state"] == {
+        "extra_one": "x1",
+        "extra_two": ["x2-list"],
+        "extra_three": {"x3": "nested"},
+    }
+
+
+def test_surface_keys_fills_missing_with_none() -> None:
+    """A requested surface key absent from final_state surfaces as None.
+
+    Mirrors the existing ``{key: final_state.get(key) for key in
+    result_keys}`` trim semantics that ``invoke_analysis_agent``
+    relies on, so swapping the trim for the helper does not change
+    observable shape on the surface side.
+    """
+    final_state = {"present_key": "present-value", "extra_key": "extra"}
+
+    surfaced = merge_intermediate_state(
+        final_state, surface_keys=("present_key", "absent_key")
+    )
+
+    assert surfaced["present_key"] == "present-value"
+    assert surfaced["absent_key"] is None
+    assert surfaced["phytomni_state"] == {"extra_key": "extra"}

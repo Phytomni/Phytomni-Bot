@@ -55,6 +55,7 @@ from ..shared.analysis_storage import (
     create_output_dir,
     get_data_list,
 )
+from ..shared.intermediate_state import merge_intermediate_state
 from .graph import AnalystGraphMixin
 from .storage import (
     ObsDownloadOptions,
@@ -534,12 +535,15 @@ class AnalystAgent(AnalystGraphMixin):
                 initial_state,
                 thread_id=kwargs.get("thread_id"),
             )
-            return {
-                "task_id": final_state["task_id"],
-                "output_dir": final_state["output_dir"],
-                "job_name": final_state["job_name"],
-                "compute_resource": final_state["compute_resource"],
-            }
+            return merge_intermediate_state(
+                final_state,
+                surface_keys=(
+                    "task_id",
+                    "output_dir",
+                    "job_name",
+                    "compute_resource",
+                ),
+            )
 
         def failure_state(exc: Exception) -> dict[str, Any]:
             """Return graph failures as agent state.

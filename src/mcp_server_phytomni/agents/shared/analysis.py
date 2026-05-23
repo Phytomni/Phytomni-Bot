@@ -33,6 +33,7 @@ from ..analyst.agent import (
     ANALYST_SENSITIVE_FIELD_MAP,
 )
 from .analysis_storage import create_output_dir
+from .intermediate_state import merge_intermediate_state
 
 logger = logging.getLogger(__name__)
 
@@ -361,23 +362,29 @@ async def invoke_analysis_agent(
     thread_id: str | None,
     result_keys: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Invoke an analysis graph and return selected result fields.
+    """Invoke an analysis graph and return surfaced + intermediate state.
 
     Args:
         app: Compiled LangGraph application.
         initial_state: Initial state passed to the graph.
         thread_id: Optional checkpoint thread id.
-        result_keys: Result fields to copy out of the final state.
+        result_keys: Result fields surfaced at the top level (mirrors
+            the historic trim allow-list). Everything else in the
+            final state is nested under ``phytomni_state`` so the
+            HTTP/MCP raw envelope can expose LangGraph intermediates
+            like plan, tool_usages, and method_context.
 
     Returns:
-        Mapping from each requested result key to its final-state value.
+        Mapping with the requested ``result_keys`` at the top level
+        plus a ``phytomni_state`` entry carrying the remaining final
+        state fields.
     """
     result = await ainvoke_graph(
         app,
         initial_state,
         thread_id=thread_id,
     )
-    return {key: result.get(key) for key in result_keys}
+    return merge_intermediate_state(result, surface_keys=result_keys)
 
 
 def copy_analyst_sensitive_config(
