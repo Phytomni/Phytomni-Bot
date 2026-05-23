@@ -467,7 +467,14 @@ def _build_list_where(
 def _terminal_payload(
     status: str, live: List[Dict[str, Any]]
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Return the (result_payload, error) pair for a terminal run."""
+    """Return the (result_payload, error) pair for a terminal run.
+
+    Failed runs keep ``task_results`` alongside ``error`` so HTTP/MCP
+    clients can show the failing task rows verbatim instead of only a
+    one-line aggregate error string; the live ``task_results`` blob is
+    the same shape ``reconcile_task`` returns per child task, so the
+    failure detail stays self-describing.
+    """
     if status == "succeeded":
         return {"task_results": live}, None
     failed = [
@@ -475,7 +482,10 @@ def _terminal_payload(
         for row in live
         if (row.get("status") or "").lower() in _FAILURE_STATUSES
     ]
-    return None, f"one or more tasks failed: {', '.join(failed)}"
+    return (
+        {"task_results": live},
+        f"one or more tasks failed: {', '.join(failed)}",
+    )
 
 
 def _row_to_record(

@@ -251,6 +251,11 @@ async def test_reconcile_propagates_failure_status(
     assert record.status == "failed"
     assert record.error is not None
     assert "t-2" in record.error
+    assert record.result is not None
+    assert record.result["task_results"] == [
+        {"task_id": "t-1", "status": "succeeded"},
+        {"task_id": "t-2", "status": "failed"},
+    ]
 
 
 def test_purge_expired_cascades_child_tasks(tmp_path: Path) -> None:
