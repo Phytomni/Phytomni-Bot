@@ -13,7 +13,7 @@ the wrapper review_agent_function is covered by test_wrapper_smoke.
 
 from __future__ import annotations
 
-from typing import Any, Dict, cast
+from typing import Any, Dict, Union, cast
 
 import pytest
 
@@ -31,10 +31,28 @@ def _agent() -> DeepResearchAgent:
     return DeepResearchAgent()
 
 
+class _AgentProbe(DeepResearchAgent):
+    """Public-named proxy so tests exercise protected ``_chat`` in-class.
+
+    Tests probe through a subclass so the protected ``_chat`` access
+    stays inside the class hierarchy and does not trip pylint W0212 on
+    the test module — same pattern the mixin tests use for their own
+    protected helpers.
+    """
+
+    async def chat(
+        self,
+        prompt: str,
+        response_format_override: Any = None,
+    ) -> Any:
+        """Public proxy for the protected ``_chat`` helper."""
+        return await self._chat(prompt, response_format_override)
+
+
 async def test_chat_threads_review_config_into_phyto_chat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_chat forwards every review_config / sensitive_config field to phyto_chat.
+    """_chat forwards review_config / sensitive_config into phyto_chat.
 
     Pins the contract that the configured LLM call carries the test-env
     api_key / base_url / model and the default response_format from
@@ -49,8 +67,8 @@ async def test_chat_threads_review_config_into_phyto_chat(
 
     monkeypatch.setattr(review_agent, "phyto_chat", fake_phyto_chat)
 
-    agent = _agent()
-    result = await agent._chat("hello question")
+    agent = _AgentProbe()
+    result = await agent.chat("hello question")
 
     assert result == {"choices": [{"message": {"content": "ok"}}]}
     assert captured["user_query"] == "hello question"
@@ -83,11 +101,11 @@ async def test_chat_uses_response_format_override_when_provided(
 
     monkeypatch.setattr(review_agent, "phyto_chat", fake_phyto_chat)
 
-    schema_override = {
+    schema_override: Dict[str, Union[str, Dict]] = {
         "type": "json_schema",
         "json_schema": {"type": "object"},
     }
-    await _agent()._chat("hi", response_format_override=schema_override)
+    await _AgentProbe().chat("hi", response_format_override=schema_override)
 
     assert captured["response_format"] == schema_override
 
@@ -117,7 +135,9 @@ async def test_draft_node_runs_one_chat_per_dimension(
     ) -> Dict[str, Any]:
         del response_format_override
         chat_prompts.append(prompt)
-        return {"choices": [{"message": {"content": f"draft#{len(chat_prompts)}"}}]}
+        return {
+            "choices": [{"message": {"content": f"draft#{len(chat_prompts)}"}}]
+        }
 
     monkeypatch.setattr(review_agent, "get_prompt", fake_get_prompt)
     monkeypatch.setattr(agent, "_chat", fake_chat)
@@ -164,11 +184,11 @@ async def test_draft_node_substitutes_empty_string_on_chat_exception(
         call_index["n"] += 1
         if call_index["n"] == 2:
             raise RuntimeError("transient backend hiccup")
-        return {"choices": [{"message": {"content": f"draft#{call_index['n']}"}}]}
+        return {
+            "choices": [{"message": {"content": f"draft#{call_index['n']}"}}]
+        }
 
-    monkeypatch.setattr(
-        review_agent, "get_prompt", lambda *_a, **_k: "PROMPT"
-    )
+    monkeypatch.setattr(review_agent, "get_prompt", lambda *_a, **_k: "PROMPT")
     monkeypatch.setattr(agent, "_chat", fake_chat)
 
     state: Dict[str, Any] = {
@@ -203,4 +223,4 @@ async def test_draft_node_returns_empty_list_when_no_dimensions(
     )
 
     assert result == {"draft_contents": []}
-    assert chat_calls == []
+    assert not chat_calls
