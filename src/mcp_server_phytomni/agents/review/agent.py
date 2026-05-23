@@ -15,7 +15,6 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from json import loads
 from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -41,9 +40,17 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
-from ...storage.downloads import download_upload_context
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from .helpers import (
+    CITATION_PATTERN,
+    _doc_content,
+    _extract_json_object,
+    _format_doc_fragment,
+    _normalize_citation_id,
+    _renumber_citations,
+)
+from .planning import ReviewPlanningMixin
 
 REVIEW_CONFIG = ReviewConfig()
 
@@ -63,10 +70,6 @@ REVIEW_SECRET_FIELD_MAP = {
     "secret_access_key": "SECRET_ACCESS_KEY",
 }
 
-CITATION_PATTERN = (
-    r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
-)
-
 
 @dataclass(frozen=True)
 class SupplementaryResultContext:
@@ -85,21 +88,6 @@ class SupplementaryResultContext:
     add_query_results: List[Any]
     add_doc_list: List[Dict[str, Any]]
     draft_content: str
-
-
-@dataclass
-class RetrievalAccumulator:
-    """Mutable counters for bounded document retrieval.
-
-    Attributes:
-        raw_docs: Accepted raw documents with internal doc ids.
-        current_length: Current prompt-context length.
-        file_id: Next sequential base document id.
-    """
-
-    raw_docs: List[Dict[str, Any]]
-    current_length: int
-    file_id: int = 0
 
 
 @dataclass
@@ -126,102 +114,6 @@ class SupplementaryFormatState:
 
     query_length: int
     counters: SupplementaryCounters
-
-
-def _extract_json_object(text: str) -> Dict[str, Any]:
-    """Extract a JSON object from model output."""
-    start_index = text.find("{")
-    end_index = text.rfind("}") + 1
-    if start_index == -1 or end_index <= start_index:
-        return {}
-    try:
-        parsed = loads(text[start_index:end_index])
-    except (ValueError, TypeError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _doc_content(doc: Dict[str, Any]) -> str:
-    """Return the best available document text field."""
-    return str(doc.get("big_content") or doc.get("content") or "")
-
-
-def _format_doc_fragment(doc: Dict[str, Any], doc_id: str) -> str:
-    """Format a retrieved document as a prompt fragment."""
-    title = doc.get("title", "")
-    subtitle = doc.get("subtitle", "")
-    content = _doc_content(doc)
-    body = f"{subtitle}\n{content}" if subtitle else content
-    return f"[{doc_id} begin] {title}\n{body} [{doc_id} end]"
-
-
-def _normalize_citation_id(raw_id: str) -> str:
-    """Normalize short citation aliases to internal document IDs."""
-    if re.match(r"^[Ss]\d+-\d{3}$", raw_id):
-        return f"add document {raw_id.upper()}"
-    if re.match(r"^\d{3}$", raw_id):
-        return f"document {raw_id}"
-    if re.match(r"^[Ss]\d{3}$", raw_id):
-        return f"document {raw_id[1:]}"
-    return raw_id
-
-
-def _renumber_citations(
-    summary_text: str, doc_list: List[Dict[str, Any]]
-) -> tuple[str, List[Dict[str, Any]]]:
-    """Convert internal citation IDs to public [document:N] references."""
-    final_doc_lookup = {
-        str(doc.get("doc_id", "")): doc
-        for doc in doc_list
-        if doc.get("doc_id")
-    }
-    raw_tags = list(dict.fromkeys(re.findall(CITATION_PATTERN, summary_text)))
-    tag_to_number: Dict[str, int] = {}
-    ordered_doc_list: List[Dict[str, Any]] = []
-    current_ref_number = 1
-
-    for tag in raw_tags:
-        norm_id = _normalize_citation_id(tag.strip("[]"))
-        norm_tag = f"[{norm_id}]"
-        if norm_tag in tag_to_number:
-            continue
-        tag_to_number[norm_tag] = current_ref_number
-        if norm_id in final_doc_lookup:
-            doc_copy = final_doc_lookup[norm_id].copy()
-            doc_copy["doc_id"] = current_ref_number
-            ordered_doc_list.append(doc_copy)
-        else:
-            ordered_doc_list.append(
-                {
-                    "doc_id": current_ref_number,
-                    "title": "Unknown Document",
-                    "content": "Content missing due to invalid reference.",
-                }
-            )
-        current_ref_number += 1
-
-    def replace_with_number(match: re.Match[str]) -> str:
-        norm_id = _normalize_citation_id(match.group(0).strip("[]"))
-        ref_number = tag_to_number.get(f"[{norm_id}]", "?")
-        return f"[document:{ref_number}]"
-
-    formatted_text = re.sub(
-        CITATION_PATTERN, replace_with_number, summary_text
-    )
-
-    def sort_citation_block(match: re.Match[str]) -> str:
-        nums = [
-            int(num)
-            for num in re.findall(r"\[document:(\d+)\]", match.group(0))
-        ]
-        return "".join(f"[document:{num}]" for num in sorted(set(nums)))
-
-    formatted_text = re.sub(
-        r"(?:\[document:\d+\][\s,]*){2,}",
-        sort_citation_block,
-        formatted_text,
-    )
-    return formatted_text, ordered_doc_list
 
 
 class DeepResearchState(TypedDict):
@@ -260,7 +152,7 @@ class DeepResearchState(TypedDict):
     final_response: Dict[str, Any]
 
 
-class DeepResearchAgent:
+class DeepResearchAgent(ReviewPlanningMixin):
     """LangGraph-based deep research agent from the lihu branch logic.
 
     Attributes:
@@ -334,149 +226,6 @@ class DeepResearchAgent:
             retriable_codes=self.review_config.RETRIABLE_CODES,
             max_retries=self.review_config.MAX_RETRIES,
         )
-
-    async def plan_node(self, state: DeepResearchState):
-        """Process uploaded files and decompose the topic into dimensions.
-
-        Args:
-            state: Current workflow state containing the original query and
-                optional uploaded OBS files.
-
-        Returns:
-            State updates containing expanded query text, upload context, token
-            length, and planned research dimensions.
-        """
-        user_query = state["original_user_query"]
-        total_length = 0
-        upload_context = ""
-
-        if state["obs_file_list"]:
-            upload_context, total_length = await download_upload_context(
-                state["obs_file_list"],
-                self.review_config,
-                self.sensitive_config,
-            )
-            user_query = get_prompt(
-                self.review_config.PROMPT_FILE,
-                "user/deep_research_query_file",
-                {
-                    "upload_context": upload_context,
-                    "user_query": user_query,
-                },
-            )
-        else:
-            user_query = get_prompt(
-                self.review_config.PROMPT_FILE,
-                "user/deep_research_query",
-                {"user_query": user_query},
-            )
-
-        query_response = await self._chat(
-            user_query,
-            {
-                "type": "json_schema",
-                "json_schema": {
-                    "type": "object",
-                    "properties": {
-                        "Research_dimensions": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        }
-                    },
-                    "required": ["Research_dimensions"],
-                },
-            },
-        )
-        dimensions_json = _extract_json_object(message_content(query_response))
-        dimensions = dimensions_json.get("Research_dimensions", [])
-        if not isinstance(dimensions, list) or not dimensions:
-            raise ValueError("Invalid research dimensions from phyto_chat")
-
-        return {
-            "user_query": user_query,
-            "upload_context": upload_context,
-            "total_length": total_length,
-            "research_dimensions": [
-                str(dimension) for dimension in dimensions[:4]
-            ],
-        }
-
-    async def retrieve_node(self, state: DeepResearchState):
-        """Retrieve documents for each research dimension.
-
-        Args:
-            state: Current workflow state with planned research dimensions and
-                upload context length.
-
-        Returns:
-            State updates containing raw documents, per-dimension prompt
-            parameters, and accumulated context length.
-        """
-        dimensions = state["research_dimensions"]
-        results = await asyncio.gather(
-            *[
-                self.ka.arun(
-                    user_query=dimension,
-                    is_generate=False,
-                    is_follow_up=False,
-                )
-                for dimension in dimensions
-            ],
-            return_exceptions=True,
-        )
-
-        accumulator = RetrievalAccumulator(
-            raw_docs=[],
-            current_length=state["total_length"],
-        )
-        dimension_params = []
-        dimension_length = (
-            self.review_config.MAX_TOKENS - state["total_length"]
-        ) / max(1, len(dimensions))
-
-        for index, result in enumerate(results):
-            fragments = self._dimension_fragments(
-                result,
-                accumulator,
-                state["total_length"] + dimension_length * (index + 1),
-            )
-            dimension_params.append(
-                {
-                    "subtopic": dimensions[index],
-                    "knowledge": "\n\n".join(fragments),
-                }
-            )
-
-        return {
-            "all_raw_doc_list": accumulator.raw_docs,
-            "dimension_params": dimension_params,
-            "total_length": accumulator.current_length,
-        }
-
-    def _dimension_fragments(
-        self,
-        dimension_result: Any,
-        accumulator: RetrievalAccumulator,
-        length_limit: float,
-    ) -> List[str]:
-        """Format bounded fragments for one research dimension."""
-        fragments: List[str] = []
-        if isinstance(dimension_result, BaseException):
-            return fragments
-
-        for doc in dimension_result:
-            current_doc_id = f"document {accumulator.file_id + 1:03d}"
-            doc_copy = doc.copy()
-            doc_copy["doc_id"] = current_doc_id
-            fragment = _format_doc_fragment(doc_copy, current_doc_id)
-            if accumulator.current_length + len(fragment) <= length_limit:
-                fragments.append(fragment)
-                accumulator.raw_docs.append(doc_copy)
-                accumulator.current_length += len(fragment)
-                accumulator.file_id += 1
-            else:
-                break
-        return fragments
 
     async def draft_node(self, state: DeepResearchState):
         """Create one draft subsection per dimension.
