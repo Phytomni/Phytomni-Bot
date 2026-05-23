@@ -19,11 +19,13 @@ import pytest
 from httpx import Timeout
 from mcp.shared.exceptions import McpError
 
-from mcp_server_phytomni.agents.knowledge import retrieval
 from mcp_server_phytomni.agents.knowledge.retrieval import (
     _collect_rank_results,
     _list_or_empty,
+    _multi_retrieve,
     _rerank_docs,
+    _retrieve_cached,
+    _retrieve_scope_docs,
     _sorted_merged_docs,
     _timeout,
     clear_retrieval_caches,
@@ -147,19 +149,13 @@ def test_clear_retrieval_caches_invokes_each_layer(
     """
     calls: list[str] = []
     monkeypatch.setattr(
-        retrieval._multi_retrieve,
-        "cache_clear",
-        lambda: calls.append("multi"),
+        _multi_retrieve, "cache_clear", lambda: calls.append("multi")
     )
     monkeypatch.setattr(
-        retrieval._retrieve_cached,
-        "cache_clear",
-        lambda: calls.append("single"),
+        _retrieve_cached, "cache_clear", lambda: calls.append("single")
     )
     monkeypatch.setattr(
-        retrieval._retrieve_scope_docs,
-        "cache_clear",
-        lambda: calls.append("scope"),
+        _retrieve_scope_docs, "cache_clear", lambda: calls.append("scope")
     )
 
     clear_retrieval_caches()
