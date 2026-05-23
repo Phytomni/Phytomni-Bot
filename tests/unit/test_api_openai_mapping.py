@@ -6,10 +6,9 @@
 
 Covers ``flatten_messages`` for single / multi message normalisation
 and ``to_chat_completion`` for the envelope shape: provider-shaped
-``raw`` payloads keep their ``choices`` / ``usage`` /
-``system_fingerprint`` at the OpenAI canonical positions, non-shaped
-payloads synthesise a single assistant message from
-``formatted["answer"]``, and both branches attach top-level
+raw payloads keep ``choices`` / ``usage`` / ``system_fingerprint`` at
+OpenAI canonical positions; non-shaped raw synthesises one assistant
+message from ``formatted["answer"]``; both branches attach top-level
 ``formatted`` and ``raw`` envelope blocks.
 """
 

@@ -5,13 +5,11 @@
 """Pure mapping helpers for the OpenAI-compatible chat surface.
 
 Functions: tool_for_model, flatten_messages, to_chat_completion.
-``to_chat_completion`` takes the formatted display block and the
-sanitized raw handler payload separately so the OpenAI-shaped response
-keeps provider fields (``reasoning_content``, ``tool_calls``,
-``usage``, ``finish_reason``, ``system_fingerprint``, unknown
-extensions) on the choices / top level while also surfacing the full
-envelope under top-level ``formatted`` and ``raw`` keys for clients
-that want the structured display view or the full sanitized payload.
+``to_chat_completion`` keeps provider fields (``reasoning_content``,
+``tool_calls``, ``usage``, ``finish_reason``, ``system_fingerprint``,
+unknown extensions) at OpenAI canonical positions and attaches
+top-level ``formatted`` and ``raw`` envelope blocks so clients can
+pick the display view or the full sanitized payload.
 """
 
 from __future__ import annotations
