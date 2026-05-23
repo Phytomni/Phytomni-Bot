@@ -12,6 +12,7 @@ covered by the live e2e suite and stay out of scope here.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from typing import Any
 
@@ -51,8 +52,8 @@ def test_supplementary_format_state_is_frozen() -> None:
         query_length=500, counters=SupplementaryCounters()
     )
 
-    with pytest.raises(Exception):  # FrozenInstanceError subclasses Exception.
-        state.query_length = 999  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        setattr(state, "query_length", 999)
 
     state.counters.file_id += 1
     assert state.counters.file_id == 1
@@ -69,8 +70,8 @@ def test_supplementary_result_context_is_frozen() -> None:
     )
 
     assert ctx.subtopic_idx == 2
-    with pytest.raises(Exception):  # FrozenInstanceError.
-        ctx.subtopic_idx = 99  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        setattr(ctx, "subtopic_idx", 99)
 
 
 class _ReportProbe(ReviewReportMixin):
