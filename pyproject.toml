@@ -219,6 +219,14 @@ max-args = 15
 max-locals = 20
 max-module-lines = 1200
 max-positional-arguments = 15
+# `api/app.py:create_app` is a FastAPI factory that registers every
+# HTTP route + exception handler in one closure. The default R0915 (50)
+# threshold is comfortable for typical helpers but too tight for the
+# factory pattern: each new endpoint adds a decorator + a route body
+# and the consolidation work pushes the count past 60. Bumping
+# project-wide keeps the rule meaningful for general code while
+# accommodating the factory.
+max-statements = 80
 # Test fakes (camelCase SDK proxies, protocol-only stubs, NamedTuple
 # helpers) routinely have a single public surface — usually just an
 # `__init__` plus `__getattr__` — and tripping R0903 there pushes

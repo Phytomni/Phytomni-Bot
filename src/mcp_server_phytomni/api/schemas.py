@@ -5,7 +5,9 @@
 """HTTP API request and response schemas.
 
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
-    ChatCompletionRequest, AgentRunRequest.
+    ChatCompletionRequest, AgentRunRequest, ApiKeyCreateRequest,
+    ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
+    ApiKeyDeleteResponse.
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ __all__ = [
     "AgentRunRequest",
     "ApiErrorDetail",
     "ApiErrorResponse",
+    "ApiKeyCreateRequest",
+    "ApiKeyCreateResponse",
+    "ApiKeyDeleteResponse",
+    "ApiKeyListResponse",
+    "ApiKeyRecordResponse",
     "ChatCompletionRequest",
     "ChatMessage",
 ]
@@ -100,3 +107,87 @@ class AgentRunRequest(BaseModel):
     """
 
     arguments: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ApiKeyCreateRequest(BaseModel):
+    """Body for ``POST /v1/api-keys`` issued by the upstream service.
+
+    Attributes:
+        user_id: Opaque identifier the key authenticates against.
+        name: Optional human label captured in the key store.
+        expires_days: Days until the key expires; None means never.
+    """
+
+    user_id: str
+    name: Optional[str] = None
+    expires_days: Optional[int] = None
+
+
+class ApiKeyCreateResponse(BaseModel):
+    """Response to ``POST /v1/api-keys`` carrying the one-time plaintext.
+
+    Attributes:
+        object: Stable type discriminator (``"api_key"``).
+        api_key: Full plaintext credential; shown exactly once.
+        prefix: Public ``ptm_xxxxxxxx`` lookup prefix.
+        user_id: User the key is bound to.
+        expires_at: ISO-8601 expiry timestamp, or None for never.
+    """
+
+    object: str = "api_key"
+    api_key: str
+    prefix: str
+    user_id: str
+    expires_at: Optional[str] = None
+
+
+class ApiKeyRecordResponse(BaseModel):
+    """Non-secret view of a stored key for ``GET /v1/api-keys``.
+
+    Attributes:
+        user_id: User the key is bound to.
+        name: Optional human label.
+        prefix: Public lookup prefix.
+        created_at: ISO-8601 creation timestamp.
+        revoked_at: ISO-8601 revoke timestamp, or None when active.
+        last_used_at: ISO-8601 last successful auth, or None.
+        expires_at: ISO-8601 expiry, or None for never.
+        active: True when neither revoked nor expired.
+    """
+
+    user_id: str
+    name: Optional[str] = None
+    prefix: str
+    created_at: str
+    revoked_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    active: bool
+
+
+class ApiKeyListResponse(BaseModel):
+    """Response to ``GET /v1/api-keys``.
+
+    Attributes:
+        object: Stable type discriminator (``"list"``).
+        data: Non-secret records ordered by creation time.
+    """
+
+    object: str = "list"
+    data: List[ApiKeyRecordResponse]
+
+
+class ApiKeyDeleteResponse(BaseModel):
+    """Response to ``DELETE /v1/api-keys/{prefix}``.
+
+    Attributes:
+        object: Stable type discriminator (``"api_key.deleted"``).
+        prefix: The prefix the caller asked to revoke.
+        deleted: True when an active key was revoked; False when no
+            active key with that prefix existed (already revoked or
+            never minted).
+    """
+
+    object: str = "api_key.deleted"
+    prefix: str
+    deleted: bool

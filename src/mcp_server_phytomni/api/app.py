@@ -13,6 +13,7 @@ import os
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -43,7 +44,8 @@ from ..runtime.request_context import (
 from ..runtime.run_registry import RunFilter, RunRegistry, RunSpec
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
-from .auth import ApiPrincipal, require_principal
+from .admin_auth import require_service_principal
+from .auth import ApiPrincipal, get_key_store, require_principal
 from .openai_mapping import (
     MODEL_TO_TOOL,
     flatten_messages,
@@ -57,6 +59,7 @@ from .schemas import (
     AgentRunRequest,
     ApiErrorDetail,
     ApiErrorResponse,
+    ApiKeyCreateRequest,
     ChatCompletionRequest,
 )
 
@@ -621,6 +624,85 @@ def create_app() -> FastAPI:
                     }
                     for model_id in MODEL_TO_TOOL
                 ],
+            }
+        )
+
+    @app.post("/v1/api-keys", status_code=201)
+    async def issue_api_key(
+        payload: ApiKeyCreateRequest,
+        _admin: None = Depends(require_service_principal),
+    ) -> JSONResponse:
+        """Mint a per-user API key for the upstream service.
+
+        The plaintext key is shown exactly once in the response. The
+        service-token dependency is the only gate so a leaked user key
+        cannot escalate to issuance.
+        """
+        del _admin  # Auth side-effect only.
+        expires_at: Optional[datetime] = None
+        if payload.expires_days is not None:
+            expires_at = datetime.now(timezone.utc) + timedelta(
+                days=payload.expires_days
+            )
+        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
+        created = store.create(
+            user_id=payload.user_id,
+            name=payload.name,
+            expires_at=expires_at,
+        )
+        return JSONResponse(
+            status_code=201,
+            content={
+                "object": "api_key",
+                "api_key": created.api_key,
+                "prefix": created.prefix,
+                "user_id": created.user_id,
+                "expires_at": (expires_at.isoformat() if expires_at else None),
+            },
+        )
+
+    @app.get("/v1/api-keys")
+    async def list_api_keys(
+        user_id: Optional[str] = None,
+        _admin: None = Depends(require_service_principal),
+    ) -> JSONResponse:
+        """List per-user API keys; ``user_id`` filters to one user."""
+        del _admin  # Auth side-effect only.
+        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
+        records = store.list(user_id=user_id)
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "user_id": record.user_id,
+                        "name": record.name,
+                        "prefix": record.prefix,
+                        "created_at": record.created_at,
+                        "revoked_at": record.revoked_at,
+                        "last_used_at": record.last_used_at,
+                        "expires_at": record.expires_at,
+                        "active": record.active,
+                    }
+                    for record in records
+                ],
+            }
+        )
+
+    @app.delete("/v1/api-keys/{prefix}")
+    async def revoke_api_key(
+        prefix: str,
+        _admin: None = Depends(require_service_principal),
+    ) -> JSONResponse:
+        """Revoke an active key by its public prefix."""
+        del _admin  # Auth side-effect only.
+        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
+        deleted = store.revoke(prefix)
+        return JSONResponse(
+            {
+                "object": "api_key.deleted",
+                "prefix": prefix,
+                "deleted": deleted,
             }
         )
 
