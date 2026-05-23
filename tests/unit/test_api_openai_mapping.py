@@ -115,7 +115,9 @@ def test_to_chat_completion_passes_through_provider_shaped_raw() -> None:
     assert completion["raw"] is raw
 
 
-def test_to_chat_completion_synthesizes_message_when_raw_lacks_choices() -> None:
+def test_to_chat_completion_synthesizes_message_when_raw_lacks_choices() -> (
+    None
+):
     """Non-provider payloads synthesise one assistant message from formatted.
 
     The synthesised choice always carries ``finish_reason="stop"`` and
