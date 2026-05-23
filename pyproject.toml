@@ -200,6 +200,11 @@ relative_files = true
 source = ["mcp_server_phytomni", "mcp_client_phytomni"]
 
 [tool.coverage.report]
+# Coverage floor. Set to 76 in Phase 7.1 — the actual baseline at the
+# end of Phase 7 was ~77%. Ratchet up as Phases 9-11 split the heavy
+# agent files (review/agent.py, analyst/graph.py, deep_genome/report.py)
+# and add tests alongside the splits.
+fail_under = 76
 show_missing = true
 skip_covered = false
 

@@ -87,6 +87,7 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
         "source": ["mcp_server_phytomni", "mcp_client_phytomni"],
     }
     assert coverage_config["report"] == {
+        "fail_under": 76,
         "show_missing": True,
         "skip_covered": False,
     }
@@ -101,6 +102,7 @@ def test_ci_pytest_job_writes_coverage_report():
 
     assert "Run offline tests with coverage" in workflow
     assert "--cov=mcp_server_phytomni" in workflow
+    assert "--cov=mcp_client_phytomni" in workflow
     assert "--cov-report=term-missing" in workflow
     assert "--cov-report=xml" in workflow
     assert "actions/upload-artifact@v4" in workflow
