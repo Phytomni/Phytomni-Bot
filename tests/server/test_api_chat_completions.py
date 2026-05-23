@@ -170,3 +170,111 @@ async def test_chat_completions_records_local_run(
     assert record.result is not None
     assert record.timestamps.expires_at is not None
     assert not record.task_ids
+
+
+async def test_chat_completions_preserves_provider_reasoning_and_usage(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reasoner-style raw fields survive in choices.message and top level.
+
+    When a provider returns ``reasoning_content`` on the message and
+    ``usage`` / ``system_fingerprint`` / ``finish_reason`` at the top
+    level, the envelope route keeps them at their OpenAI canonical
+    positions so SDK clients reading them by name continue to work, and
+    also exposes the full handler payload under ``raw`` for clients
+    that want every provider-returned field.
+    """
+
+    async def fake(args: Any) -> dict[str, Any]:
+        del args
+        return {
+            "id": "chatcmpl-reasoner",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Light energy is captured by chlorophyll.",
+                        "reasoning_content": "Step 1: identify photons...",
+                        "tool_calls": [],
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 42,
+                "completion_tokens": 11,
+                "total_tokens": 53,
+            },
+            "system_fingerprint": "fp_test",
+        }
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="why are leaves green?",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    message = body["choices"][0]["message"]
+    assert message["content"] == "Light energy is captured by chlorophyll."
+    assert message["reasoning_content"] == "Step 1: identify photons..."
+    assert body["choices"][0]["finish_reason"] == "stop"
+    assert body["usage"]["prompt_tokens"] == 42
+    assert body["usage"]["total_tokens"] == 53
+    assert body["system_fingerprint"] == "fp_test"
+    assert body["raw"]["choices"][0]["message"]["reasoning_content"] == (
+        "Step 1: identify photons..."
+    )
+    assert body["raw"]["usage"]["total_tokens"] == 53
+
+
+async def test_chat_completions_envelope_carries_formatted_and_raw(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every chat completion body exposes top-level formatted and raw blocks.
+
+    Locks the envelope contract end to end: the legacy duplicated top
+    level (``follow_up_questions`` / ``references`` / ``metadata``)
+    moved inside ``formatted``, ``raw`` carries the sanitized handler
+    payload, and the ChatCompletion shape stays OpenAI compatible.
+    """
+    _stub_chat(monkeypatch, {})
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="hi",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "formatted" in body
+    assert "raw" in body
+    assert "follow_up_questions" not in body
+    assert "references" not in body
+    assert "metadata" not in body
+    assert set(body["formatted"].keys()) == {
+        "answer",
+        "follow_up_questions",
+        "metadata",
+        "references",
+    }
+    assert isinstance(body["raw"], dict)
+    assert body["raw"]["choices"][0]["message"]["content"] == (
+        "photosynthesis converts light"
+    )

@@ -416,3 +416,102 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
 
     assert result["choices"][0]["message"]["content"] == "recovered"
     assert calls["create"] == 2
+
+
+async def test_stream_response_to_dict_accumulates_reasoning_deltas() -> None:
+    """Streaming aggregation merges delta.reasoning_content beside content.
+
+    Reasoner-style providers (DeepSeek-R1, Qwen-Reasoner, ...) emit
+    ``delta.reasoning_content`` chunks separately from
+    ``delta.content``. The aggregator must accumulate both, propagate
+    the last non-empty ``finish_reason``, and only attach
+    ``reasoning_content`` to the rebuilt message when at least one
+    reasoning chunk arrived so non-reasoner providers stay compact.
+    """
+
+    def _make_chunk(
+        content: str = "",
+        reasoning: str = "",
+        finish_reason: str | None = None,
+        seed: dict[str, Any] | None = None,
+    ) -> SimpleNamespace:
+        """Build one streaming chunk stand-in with the model_dump contract.
+
+        The final chunk's ``seed`` becomes the rebuilt response base so
+        provider metadata (id / usage / system_fingerprint) survives
+        the aggregation; interim chunks contribute only deltas.
+        """
+        delta = SimpleNamespace(content=content, reasoning_content=reasoning)
+        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
+        return SimpleNamespace(
+            choices=[choice],
+            model_dump=lambda payload=seed or {}: payload,
+        )
+
+    chunks = [
+        _make_chunk(content="The leaf ", reasoning="Identifying species. "),
+        _make_chunk(
+            content="is rice.",
+            reasoning="Locus prefix Os01.",
+            finish_reason="stop",
+            seed={
+                "id": "chatcmpl-stream",
+                "usage": {"prompt_tokens": 9, "completion_tokens": 6},
+            },
+        ),
+    ]
+
+    async def fake_stream() -> Any:
+        """Async generator that yields the prepared chunks in order."""
+        for chunk in chunks:
+            yield chunk
+
+    stream_to_dict = getattr(chat_agents, "_stream_response_to_dict")
+    result = await stream_to_dict(fake_stream())
+
+    choice = result["choices"][0]
+    assert choice["message"]["content"] == "The leaf is rice."
+    assert choice["message"]["reasoning_content"] == (
+        "Identifying species. Locus prefix Os01."
+    )
+    assert choice["finish_reason"] == "stop"
+    assert result["id"] == "chatcmpl-stream"
+    assert result["usage"]["prompt_tokens"] == 9
+
+
+async def test_stream_response_omits_reasoning_for_plain_providers() -> None:
+    """Non-reasoner streams keep the rebuilt message free of reasoning_content.
+
+    When every chunk's ``delta.reasoning_content`` is absent or empty,
+    the helper must not synthesise an empty ``reasoning_content`` key
+    so consumers can rely on its presence as a positive signal.
+    """
+
+    def _plain_chunk(
+        content: str, finish_reason: str | None = None
+    ) -> SimpleNamespace:
+        """Build a chunk stand-in whose reasoning_content stays None."""
+        delta = SimpleNamespace(content=content, reasoning_content=None)
+        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
+        return SimpleNamespace(
+            choices=[choice],
+            model_dump=lambda: {"id": "chatcmpl-plain"},
+        )
+
+    chunks = [
+        _plain_chunk("Hello "),
+        _plain_chunk("world.", finish_reason="stop"),
+    ]
+
+    async def fake_stream() -> Any:
+        """Async generator yielding the prepared non-reasoner chunks."""
+        for chunk in chunks:
+            yield chunk
+
+    stream_to_dict = getattr(chat_agents, "_stream_response_to_dict")
+    result = await stream_to_dict(fake_stream())
+
+    message = result["choices"][0]["message"]
+    assert message["content"] == "Hello world."
+    assert "reasoning_content" not in message
+    assert result["choices"][0]["finish_reason"] == "stop"
