@@ -86,12 +86,22 @@ agent:
 - `phyto-review`
 - `phyto-brief-gene`
 
-`follow_up_questions`, `references`, and `metadata` are surfaced as extra
-top-level keys. Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`, and
-`BriefGeneAgent`) emit plain markdown with inline `[N]` citation markers as
-`message.content` and ship deduplicated citation documents through the
-top-level `references` field. `phyto-brief-gene` rejects a non-empty
-`obs_file_list`.
+Every chat completion body is an OpenAI ChatCompletion envelope plus two
+extra top-level blocks: `formatted` (the normalized display view with
+`answer` / `follow_up_questions` / `metadata` / `references` / `tabular`
+/ `output_dirs`) and `raw` (the sanitized handler payload carrying
+`choices[].message.reasoning_content`, `usage`, `system_fingerprint`,
+provider-side `tool_calls` / `refusal`, and any forward-compatible
+extension keys). Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
+`BriefGeneAgent`) emit plain markdown with inline `[N]` citation markers
+as `message.content` and ship deduplicated citation documents through
+`formatted.references`. The `raw.phytomni_state` namespace carries the
+agent's LangGraph intermediate state (retrieved_docs, gene_id,
+rewrite_query, research_dimensions, plan, tool_usages, ...) when the
+agent populated them. `phyto-brief-gene` rejects a non-empty
+`obs_file_list`. The previous top-level duplication of
+`follow_up_questions` / `references` / `metadata` was removed — read
+them under `formatted` instead.
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/chat/completions \
@@ -148,9 +158,27 @@ respond `200` with a completed `agent.run`:
   "agent": "chat",
   "status": "succeeded",
   "task_ids": [],
-  "result": {}
+  "result": {
+    "formatted": {
+      "answer": "...",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": null,
+      "output_dirs": []
+    },
+    "raw": {}
+  }
 }
 ```
+
+`result` carries the same `{formatted, raw}` envelope as
+`/v1/chat/completions`. `formatted.tabular` is non-null only for
+DataAgent (`{"headers": [...], "rows": [...]}`); `formatted.output_dirs`
+is non-empty only for DigitalDesign fan-out (the primary path remains
+mirrored in `formatted.metadata.output_dir` for single-task consumers).
+`raw.phytomni_state` carries the LangGraph intermediate state for
+agents that populate it.
 
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
 respond `202` with `status: "running"` and `task_ids` listing every child

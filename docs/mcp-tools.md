@@ -9,6 +9,30 @@ For tools that accept `obs_file_list`, pass an empty list (`[]`) when no
 uploaded document context is available. Async tools return one or more
 task ids and should be polled with `GetTaskStatus`.
 
+## Response Envelope
+
+Every MCP tool response ships as a JSON envelope with two top-level
+blocks:
+
+- `formatted`: normalized display view (`answer` / `follow_up_questions`
+  / `metadata` / `references` / `tabular` / `output_dirs`). DataAgent
+  uses `tabular = {"headers": [...], "rows": [...]}` plus a human-readable
+  summary in `answer`; DigitalDesign uses `output_dirs` for fan-out
+  paths and mirrors the primary path in `metadata.output_dir`.
+- `raw`: sanitized handler payload preserving provider-returned
+  reasoning_content / usage / tool_calls / system_fingerprint /
+  finish_reason and any forward-compatible extension keys.
+  `raw.phytomni_state` carries the agent's LangGraph intermediate
+  state (retrieved_docs, gene_id, rewrite_query, research_dimensions,
+  plan, tool_usages, ...) when the agent populated them. Credential-
+  pattern keys are stripped recursively at this seam before clients
+  see them.
+
+The HTTP API and MCP stdio surfaces emit the identical envelope. The
+client-side `mcp_client_phytomni.tool_result_formatters.parse_formatted_result`
+deserializes the `formatted` block back into `FormattedToolResult`;
+clients that want the raw block read `payload["raw"]` directly.
+
 ## Tool Inventory
 
 | Tool                    | Kind  | Required arguments                               | Demo payload                                                                         |

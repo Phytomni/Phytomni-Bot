@@ -80,10 +80,17 @@ src/mcp_client_phytomni/
 - Argument validation and MCP-compliant `INVALID_PARAMS` errors.
 - Tool name to handler routing through `dispatch_tool`.
 - Shared raw invocation through `invoke_tool_raw(name, arguments)`.
-- Shared formatted invocation through `invoke_tool_formatted(name, arguments)`.
-- Citation/document formatting, DataAgent table JSON, and
-  task-submission metadata in `mcp/result_formatting.py`.
-- MCP `TextContent` response serialization.
+- Shared enveloped invocation through `invoke_tool_enveloped(name, arguments)`
+  returning a `ToolResultEnvelope(formatted, raw)`; `invoke_tool_formatted`
+  is a back-compat shim over the same seam returning only the formatted half.
+- Citation/document formatting, DataAgent `tabular` field, DigitalDesign
+  `output_dirs` tuple, and task-submission metadata in
+  `mcp/result_formatting.py`. The same module's `_sanitize_raw` strips
+  credential-pattern keys from the raw payload before it reaches the
+  envelope.
+- MCP `TextContent` response serialization. The dispatch seam emits
+  `{"formatted": {...}, "raw": {...}}` so the MCP stdio and HTTP API
+  surfaces ship the identical envelope shape.
 
 `mcp/handlers.py` adapts public tool requests to domain packages by loading
 configuration, expanding compatibility wrapper arguments, and calling agent
