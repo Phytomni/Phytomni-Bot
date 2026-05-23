@@ -140,6 +140,10 @@ class SensitiveConfig(BaseSettings):
         USER_PASSWORD (SecretStr): Encrypted user password or credentials for
             API access or service authentication. `SecretStr` helps prevent
             accidental exposure.
+        ACCESS_KEY_ID (SecretStr): OBS access key id; the legacy
+            ``AccessKeyID`` alias is accepted for backward compatibility.
+        SECRET_ACCESS_KEY (SecretStr): OBS secret access key; the legacy
+            ``SecretAccessKey`` alias is accepted for backward compatibility.
         BASE_URL (str): Base URL for a primary API service, typically for a
             large language model or a core platform API.
         MODEL_ID (str): Identifier for the specific model to be used with the
@@ -149,11 +153,17 @@ class SensitiveConfig(BaseSettings):
         CODER_URL (str): Base URL for a code generation API service.
         CODER_MODEL (str): Identifier for the AI model version to be used with
             the code generation service at `CODER_URL`.
-        CODER_API (SecretStr): Encrypted API key for accessing the code
+        CODER_API_KEY (SecretStr): Encrypted API key for accessing the code
             generation service at `CODER_URL`. `SecretStr` helps prevent
             accidental exposure.
         BI_TOKEN (SecretStr): Optional token for direct biological database
-            SQL API access.
+            SQL API access. Defaults to empty when not configured.
+        EMBED_URL (str): Base URL for the embedding service used by the
+            knowledge retrieval layer.
+        EMBED_MODEL (str): Identifier for the embedding model served at
+            `EMBED_URL`.
+        EMBED_API_KEY (SecretStr): Encrypted API key for the embedding
+            service at `EMBED_URL`.
     """
 
     DOMAIN_NAME: str
