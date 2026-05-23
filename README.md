@@ -174,6 +174,14 @@ dependency policy, config normalization, and common troubleshooting.
   configuration, OBSFS fallback behavior, and scratch directory policy.
 - [Development](docs/development.md): local gates, CI, dependency policy,
   demo fixtures, E2E commands, and troubleshooting.
+- [Web Consolidation Decisions](docs/integration/web-consolidation-decisions.md):
+  Bot-side answers to the Phytomni-Web Python service consolidation
+  handoff (OQ-1..10) — persistence, auth, streaming, file ingestion,
+  data migration, deployment, rate limit, and observability.
+- [Web Alias Mapping](docs/integration/tool-name-mapping.md): legacy
+  Web `tool_name` aliases mapped to Bot canonical agent slugs and
+  chat-completions model ids, with capability flags for `obs_file_list`,
+  SSE streaming, and `resolve_gene_id`.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.
 
