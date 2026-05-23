@@ -14,6 +14,8 @@ without surfacing on the integration smoke tests.
 
 from __future__ import annotations
 
+import re
+from types import SimpleNamespace
 from typing import Any, List
 
 import pytest
@@ -128,8 +130,6 @@ def test_renumber_citations_sorts_adjacent_citation_blocks() -> None:
 
 def test_citation_pattern_matches_supplementary_aliases() -> None:
     """The shared CITATION_PATTERN regex covers all three citation shapes."""
-    import re
-
     assert re.findall(CITATION_PATTERN, "[document 001]") == ["[document 001]"]
     assert re.findall(CITATION_PATTERN, "[add document S1-001]") == [
         "[add document S1-001]"
@@ -148,10 +148,7 @@ class _PlanningProbe(ReviewPlanningMixin):
     """
 
     def __init__(self, max_tokens: int = 1000) -> None:
-        class _Config:
-            MAX_TOKENS = max_tokens
-
-        self.review_config = _Config()
+        self.review_config = SimpleNamespace(MAX_TOKENS=max_tokens)
 
     def dimension_fragments(
         self,
@@ -159,6 +156,7 @@ class _PlanningProbe(ReviewPlanningMixin):
         accumulator: RetrievalAccumulator,
         length_limit: float,
     ) -> List[str]:
+        """Public proxy for the protected ``_dimension_fragments`` helper."""
         return self._dimension_fragments(
             dimension_result, accumulator, length_limit
         )
@@ -173,8 +171,8 @@ def test_dimension_fragments_returns_empty_on_exception_result() -> None:
         RuntimeError("retrieval broke"), accumulator, length_limit=10_000
     )
 
-    assert fragments == []
-    assert accumulator.raw_docs == []
+    assert not fragments
+    assert not accumulator.raw_docs
     assert accumulator.file_id == 0
 
 
