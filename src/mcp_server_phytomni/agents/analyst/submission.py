@@ -5,19 +5,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Analyst submission wrapper, dedup helpers, and per-call config copies.
 
-Exports the ``submit`` compatibility wrapper used by the deep_genome /
-network / design / research / environment / evolution agents, the
-input-fingerprint and reuse-decision helpers used by both ``submit``
-and ``retrieve_plan_submit``, plus the analyst-specific config / sensitive
-override builders consumed by the cached-agent factory.
-
-The AnalystAgent class reference is imported at module top from
-``agents.analyst.agent``. The reverse import (``agent.py`` re-exporting
-``submit``) is placed at the BOTTOM of ``agent.py`` so by the time this
-module loads, ``AnalystAgent`` is already defined on the partially-loaded
-``agents.analyst.agent`` module object. This is the standard
-"bottom-of-file late import" pattern for breaking a class-instantiation
-vs. re-export cycle without resorting to function-local imports.
+Exports the ``submit`` compatibility wrapper, input-fingerprint /
+reuse-decision helpers shared with ``retrieve_plan_submit``, and the
+analyst-specific override builders. ``agent.py`` re-exports these via a
+bottom-of-file late import to break the AnalystAgent class-instantiation
+vs. wrapper-re-export cycle.
 """
 
 from __future__ import annotations

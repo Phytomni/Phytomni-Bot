@@ -31,6 +31,14 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "src/mcp_server_phytomni/runtime/langgraph_runner.py": {
         "broad-exception-caught",
     },
+    # analyst/agent.py imports ``submit`` and the dedup helpers from
+    # ``submission`` at the bottom of the file so ``submission`` can do
+    # ``from .agent import AnalystAgent`` against the partially-loaded
+    # module. The wrong-import-position lint is the cost of that cycle
+    # break; relocating ``AnalystAgent`` to its own module would lift it.
+    "src/mcp_server_phytomni/agents/analyst/agent.py": {
+        "wrong-import-position",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
