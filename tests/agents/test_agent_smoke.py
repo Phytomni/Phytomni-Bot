@@ -108,7 +108,10 @@ async def test_knowledge_agent_arun_invokes_graph_with_initial_state():
         thread_id="knowledge-thread",
     )
 
-    assert result == {"answer": "ok"}
+    assert result["answer"] == "ok"
+    assert result["phytomni_state"]["user_query"] == "photosynthesis review"
+    assert result["phytomni_state"]["obs_file_list"] == ["obs://paper.pdf"]
+    assert result["phytomni_state"]["is_follow_up"] is False
     assert fake_graph.state is not None
     assert fake_graph.state["user_query"] == "photosynthesis review"
     assert fake_graph.state["obs_file_list"] == ["obs://paper.pdf"]
@@ -135,7 +138,10 @@ async def test_brief_gene_agent_arun_invokes_graph_with_initial_state():
         thread_id="brief-thread",
     )
 
-    assert result == {"gene": "AT1G01010", "summary": "ok"}
+    assert result["gene"] == "AT1G01010"
+    assert result["summary"] == "ok"
+    assert result["phytomni_state"]["user_query"] == "AT1G01010 function"
+    assert result["phytomni_state"]["gene_found"] is False
     assert fake_graph.state is not None
     assert fake_graph.state["user_query"] == "AT1G01010 function"
     assert fake_graph.state["gene_found"] is False
@@ -160,7 +166,11 @@ async def test_review_agent_arun_invokes_graph_with_initial_state():
         thread_id="review-thread",
     )
 
-    assert result == {"review": "ok"}
+    assert result["review"] == "ok"
+    assert result["phytomni_state"]["original_user_query"] == (
+        "write a rice drought review"
+    )
+    assert result["phytomni_state"]["research_dimensions"] == []
     assert fake_graph.state is not None
     assert fake_graph.state["original_user_query"] == (
         "write a rice drought review"

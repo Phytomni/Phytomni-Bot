@@ -37,6 +37,7 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...storage.downloads import download_list_convert
 from ..chat.service import phyto_chat
+from ..shared.intermediate_state import merge_intermediate_state
 from .retrieval import multi_retrieve, rerank, retrieve
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
@@ -530,7 +531,7 @@ class KnowledgeAgent:
 
         if not is_generate:
             return final_state["retrieved_docs"]
-        return final_state["final_response"]
+        return merge_intermediate_state(final_state)
 
 
 def _knowledge_config_with_overrides(**kwargs: Any):

@@ -36,6 +36,7 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from ..shared.intermediate_state import merge_intermediate_state
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
 from .summary import ReviewSummaryMixin
@@ -241,7 +242,7 @@ class DeepResearchAgent(
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
-        return final_state["final_response"]
+        return merge_intermediate_state(final_state)
 
 
 async def review_agent_function(

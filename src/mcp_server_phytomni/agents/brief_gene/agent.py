@@ -49,6 +49,7 @@ from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.retrieval import clear_retrieval_caches
+from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.sql import sql_literal
 
 BRIEF_CONFIG = BriefGeneConfig()
@@ -826,7 +827,7 @@ class BriefGeneAgent:
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
-        return final_state["final_response"]
+        return merge_intermediate_state(final_state)
 
 
 async def brief_gene_function(

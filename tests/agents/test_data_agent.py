@@ -227,10 +227,9 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
         thread_id="pytest-thread",
     )
 
-    assert result == {
-        "query": "plant height in rice",
-        "is_rewrite": False,
-    }
+    assert result["query"] == "plant height in rice"
+    assert result["is_rewrite"] is False
+    assert result["phytomni_state"] == {}
     assert fake_graph.state == {
         "user_query": "plant height in rice",
         "is_rewrite": False,

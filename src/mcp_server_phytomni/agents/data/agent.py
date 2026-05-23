@@ -34,6 +34,7 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.retrieval import retrieve
+from ..shared.intermediate_state import merge_intermediate_state
 from .nl2sql import (
     Nl2SqlRequest,
     _default_dialog_id,
@@ -395,4 +396,4 @@ class DataAgent:
             self.app, initial_state, thread_id=thread_id
         )
 
-        return final_state["final_response"]
+        return merge_intermediate_state(final_state)
