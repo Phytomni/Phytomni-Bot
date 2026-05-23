@@ -27,7 +27,7 @@ from ..agents.design.agent import design_module
 from ..agents.knowledge.agent import multi_retrieve_generate
 from ..agents.network.agent import network_analysis
 from ..agents.research.agent import in_silico_research
-from ..agents.review.agent import deep_research
+from ..agents.review.agent import review_agent_function
 from ..config.defaults import (
     AnalystConfig,
     BriefGeneConfig,
@@ -412,7 +412,7 @@ async def handle_review_agent(args: Any) -> Any:
     """
     review_config = ReviewConfig()
     runtime = load_handler_runtime()
-    return await deep_research(
+    return await review_agent_function(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(review_config, "review"),

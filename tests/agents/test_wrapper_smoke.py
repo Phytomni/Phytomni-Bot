@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline smoke tests for the public wrappers exported by domain agents.
 
-Covers multi_retrieve_generate, retrieve_generate, deep_research,
+Covers multi_retrieve_generate, retrieve_generate, review_agent_function,
 brief_gene_function, gene_function, and retrieve_plan_submit. Each test
 replaces the agent class and the cached-agent helper with fakes so the
 wrapper can be exercised without external services.
@@ -171,10 +171,10 @@ async def test_retrieve_generate_delegates_to_multi_retrieve_generate(
     assert arun["repo_id_dict"] == {"rice-repo": 3}
 
 
-async def test_deep_research_runs_review_workflow(
+async def test_review_agent_function_runs_review_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify deep_research constructs DeepResearchAgent and runs it.
+    """Verify review_agent_function builds DeepResearchAgent and runs it.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap agent class.
@@ -186,7 +186,7 @@ async def test_deep_research_runs_review_workflow(
     monkeypatch.setattr(review_agent, "get_cached_agent", _no_cache)
     _bind_fake_agent(review_agent, "DeepResearchAgent", captured)
 
-    result = await review_agent.deep_research(
+    result = await review_agent.review_agent_function(
         user_query="Drought tolerance review",
         obs_file_list=["obs://papers/p1.pdf"],
     )

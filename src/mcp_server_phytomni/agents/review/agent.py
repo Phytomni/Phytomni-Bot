@@ -7,8 +7,8 @@
 """LangGraph-based deep research and literature review generation.
 
 Exports DeepResearchAgent, its workflow state, citation/retrieval formatting
-models, and the deep_research compatibility wrapper used for literature
-review generation with optional uploaded-file context.
+models, and the review_agent_function compatibility wrapper used for
+literature review generation with optional uploaded-file context.
 """
 
 import asyncio
@@ -914,7 +914,7 @@ class DeepResearchAgent:
         return final_state["final_response"]
 
 
-async def deep_research(
+async def review_agent_function(
     user_query: str,
     obs_file_list: Optional[List[str]] = None,
     **kwargs: Any,

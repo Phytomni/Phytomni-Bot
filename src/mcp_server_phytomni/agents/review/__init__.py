@@ -4,14 +4,15 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Review agent package exports.
 
-Re-exports DeepResearchAgent, its workflow state, and the deep_research
-compatibility wrapper for literature review generation.
+Re-exports DeepResearchAgent, its workflow state, and the
+review_agent_function compatibility wrapper for literature review
+generation.
 """
 
-from .agent import DeepResearchAgent, DeepResearchState, deep_research
+from .agent import DeepResearchAgent, DeepResearchState, review_agent_function
 
 __all__ = [
     "DeepResearchAgent",
     "DeepResearchState",
-    "deep_research",
+    "review_agent_function",
 ]

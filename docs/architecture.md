@@ -114,7 +114,7 @@ packages:
 - `rewrite_nl2sql`
 - `multi_retrieve_generate`
 - `retrieve_generate`
-- `deep_research`
+- `review_agent_function`
 - `brief_gene_function`
 - `gene_function`
 - `design_module`
