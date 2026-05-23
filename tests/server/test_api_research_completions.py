@@ -97,7 +97,7 @@ async def test_knowledge_preserves_doc_list(
     assert response.status_code == 200
     body = response.json()
     assert body["model"] == "phyto-knowledge"
-    assert body["references"] == [
+    assert body["formatted"]["references"] == [
         {"file_id": "doc-a", "title": "Paper A"},
     ]
     assert body["choices"][0]["message"]["content"] == "Evidence in [1]."

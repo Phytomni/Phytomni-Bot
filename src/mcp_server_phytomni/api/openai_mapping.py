@@ -5,15 +5,19 @@
 """Pure mapping helpers for the OpenAI-compatible chat surface.
 
 Functions: tool_for_model, flatten_messages, to_chat_completion.
-
-These are side-effect-free so the request/response shaping can be unit
-tested without a server or network.
+``to_chat_completion`` takes the formatted display block and the
+sanitized raw handler payload separately so the OpenAI-shaped response
+keeps provider fields (``reasoning_content``, ``tool_calls``,
+``usage``, ``finish_reason``, ``system_fingerprint``, unknown
+extensions) on the choices / top level while also surfacing the full
+envelope under top-level ``formatted`` and ``raw`` keys for clients
+that want the structured display view or the full sanitized payload.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from ..storage.path_policy import IdFactory
 
@@ -88,22 +92,28 @@ def flatten_messages(
 
 
 def to_chat_completion(
-    result: Any, model: str, extra_keys: Sequence[str] = ()
+    formatted: Mapping[str, Any], raw: Any, model: str
 ) -> dict[str, Any]:
-    """Shape a wrapper result into an OpenAI ChatCompletion dict.
+    """Shape an envelope into an OpenAI ChatCompletion + envelope dict.
 
-    A result that already looks like a ChatCompletion is passed through
-    with required metadata ensured. Any other payload is wrapped into a
-    single assistant message; selected extra keys are surfaced at the
-    top level so clients keep follow_up_questions / references / metadata.
+    When ``raw`` already looks like a ChatCompletion (has ``choices``),
+    its provider-returned fields (``usage`` / ``system_fingerprint`` /
+    ``finish_reason`` / per-choice ``reasoning_content`` /
+    ``tool_calls`` / ``refusal`` / unknown extensions) survive at the
+    top level. Otherwise a single assistant message is synthesized from
+    ``formatted["answer"]``. Both branches attach the full
+    ``formatted`` and ``raw`` blocks at the top level so clients can
+    pick the display view or the full sanitized payload.
 
     Args:
-        result: The raw wrapper payload.
+        formatted: ``asdict(FormattedToolResult)`` carrying the
+            normalized display fields.
+        raw: Sanitized handler payload returned by the agent path.
         model: The requested model id, echoed back.
-        extra_keys: Top-level result keys to copy onto the response.
 
     Returns:
-        A JSON-serializable ChatCompletion-shaped dict.
+        A JSON-serializable ChatCompletion-shaped dict with top-level
+        ``formatted`` and ``raw`` envelope blocks.
     """
     base: dict[str, Any] = {
         "id": IdFactory().new_id("chatcmpl"),
@@ -111,29 +121,26 @@ def to_chat_completion(
         "created": int(time.time()),
         "model": model,
     }
-    if isinstance(result, dict) and result.get("choices"):
-        completion = {**result, **base, "model": model}
-        if "id" in result and result["id"]:
-            completion["id"] = result["id"]
-        return completion
-
-    content = ""
-    if isinstance(result, dict):
-        content = str(result.get("answer") or result.get("content") or "")
-    elif result is not None:
-        content = str(result)
-    completion = {
-        **base,
-        "choices": [
-            {
-                "index": 0,
-                "message": {"role": "assistant", "content": content},
-                "finish_reason": "stop",
-            }
-        ],
-    }
-    if isinstance(result, dict):
-        for key in extra_keys:
-            if key in result:
-                completion[key] = result[key]
+    if isinstance(raw, dict) and raw.get("choices"):
+        completion = {**raw, **base, "model": model}
+        if "id" in raw and raw["id"]:
+            completion["id"] = raw["id"]
+    else:
+        content = ""
+        if isinstance(formatted, Mapping):
+            content = str(formatted.get("answer") or "")
+        completion = {
+            **base,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    completion["formatted"] = (
+        dict(formatted) if isinstance(formatted, Mapping) else formatted
+    )
+    completion["raw"] = raw
     return completion

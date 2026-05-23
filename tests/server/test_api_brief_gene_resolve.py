@@ -119,7 +119,7 @@ async def test_chat_resolves_when_flag_true_for_brief_gene(
     body = response.json()
     assert captured["user_query"] == "AT5G42800"
     assert resolver_calls == [raw_query]
-    metadata = body.get("metadata") or {}
+    metadata = body["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == raw_query
     assert metadata.get("resolved_gene_id") == "AT5G42800"
     assert metadata.get("resolve_gene_id") is True

@@ -30,7 +30,7 @@ from ..agents.brief_gene.resolve_query import (
 from ..common.logging_config import configure_logging
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
-from ..mcp.app import invoke_tool_formatted
+from ..mcp.app import invoke_tool_enveloped, invoke_tool_formatted
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -661,29 +661,29 @@ def create_app() -> FastAPI:
         arguments: dict[str, object] = {"user_query": user_query}
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
-        formatted = await invoke_tool_formatted(tool_name, arguments)
-        result = asdict(formatted)
+        envelope = await invoke_tool_enveloped(tool_name, arguments)
+        formatted_dict = asdict(envelope.formatted)
         if resolve_meta:
-            existing_meta = result.get("metadata") or {}
+            existing_meta = formatted_dict.get("metadata") or {}
             if not isinstance(existing_meta, dict):
                 existing_meta = {}
-            result["metadata"] = {**existing_meta, **resolve_meta}
+            formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
+        envelope_dict = {
+            "formatted": formatted_dict,
+            "raw": envelope.raw,
+        }
         agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
         if agent_slug is not None:
             _record_sync_run(
                 agent=agent_slug,
                 owner=current_request_user() or "anonymous",
-                result=result,
+                result=envelope_dict,
             )
         return JSONResponse(
             to_chat_completion(
-                result,
+                formatted_dict,
+                envelope.raw,
                 payload.model,
-                extra_keys=(
-                    "follow_up_questions",
-                    "references",
-                    "metadata",
-                ),
             )
         )
 
