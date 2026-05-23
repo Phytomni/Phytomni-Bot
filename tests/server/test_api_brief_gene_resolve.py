@@ -324,7 +324,7 @@ async def test_native_runs_resolves_when_flag_true_for_brief_gene(
     body = response.json()
     assert captured["user_query"] == "Os01g0177400"
     assert resolver_calls == ["rice TPR6 function"]
-    metadata = body["result"].get("metadata") or {}
+    metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "rice TPR6 function"
     assert metadata.get("resolved_gene_id") == "Os01g0177400"
     assert metadata.get("resolve_gene_id") is True
