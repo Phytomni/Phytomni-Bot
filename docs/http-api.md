@@ -44,6 +44,10 @@ phytomni-api-key revoke --prefix ptm_xxxxxxxx
 
 See [CLI Reference](cli.md) for the full command reference.
 
+For service-to-service flows (Phytomni-Web Go provisioning per-user keys),
+set `API_SERVICE_TOKEN` in the deployment environment and use the
+authenticated `/v1/api-keys` HTTP routes documented below in *Endpoints*.
+
 Send the key as either header:
 
 ```text
@@ -62,19 +66,29 @@ supported; `stream: true` returns `400`.
 
 ## Endpoints
 
-| Method | Path                      | Auth | Purpose                                                           |
-| ------ | ------------------------- | ---- | ----------------------------------------------------------------- |
-| `GET`  | `/healthz`                | no   | Liveness, no dependencies.                                        |
-| `GET`  | `/readyz`                 | no   | Readiness, checks local store directories without creating files. |
-| `GET`  | `/v1/models`              | yes  | Lists OpenAI-compatible model ids.                                |
-| `POST` | `/v1/chat/completions`    | yes  | OpenAI-compatible chat endpoint.                                  |
-| `GET`  | `/v1/agents`              | yes  | Lists native agent-run slugs.                                     |
-| `POST` | `/v1/agents/{agent}/runs` | yes  | Invokes one agent by slug.                                        |
-| `GET`  | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
-| `GET`  | `/v1/runs`                | yes  | Lists owner-scoped runs newest-first.                             |
+| Method   | Path                      | Auth | Purpose                                                           |
+| -------- | ------------------------- | ---- | ----------------------------------------------------------------- |
+| `GET`    | `/healthz`                | no   | Liveness, no dependencies.                                        |
+| `GET`    | `/readyz`                 | no   | Readiness, checks local store directories without creating files. |
+| `GET`    | `/v1/models`              | yes  | Lists OpenAI-compatible model ids.                                |
+| `POST`   | `/v1/chat/completions`    | yes  | OpenAI-compatible chat endpoint.                                  |
+| `GET`    | `/v1/agents`              | yes  | Lists native agent-run slugs.                                     |
+| `POST`   | `/v1/agents/{agent}/runs` | yes  | Invokes one agent by slug.                                        |
+| `GET`    | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
+| `GET`    | `/v1/runs`                | yes  | Lists owner-scoped runs newest-first.                             |
+| `POST`   | `/v1/api-keys`            | svc  | Mints a per-user `ptm_...` API key.                               |
+| `GET`    | `/v1/api-keys`            | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter. |
+| `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revokes the key with the given public prefix.                     |
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`, and
 `offset` query parameters.
+
+Routes marked **svc** require the service token configured via
+`API_SERVICE_TOKEN`, sent as `Authorization: Bearer <token>` or
+`X-Service-Token: <token>`. When the env var is unset the routes return
+`503 admin path not enabled`; an absent or wrong token returns `401`.
+The service token is intentionally separate from `ptm_...` user keys
+so a leaked user key cannot escalate to key-issuance scope.
 
 ## OpenAI-compatible Chat
 
