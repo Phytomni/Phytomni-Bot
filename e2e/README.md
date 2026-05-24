@@ -36,6 +36,31 @@ calls — those layers are already covered by
 [`../tests/agents/`](../tests/agents/) respectively, and the failure
 itself is the bug worth surfacing.
 
+## Response shape
+
+`PhytomniMcpClient.call_tool(...)` returns a `FormattedToolResult`
+deserialised from the server's `{formatted, raw}` envelope. The
+client-path tests bind to `response.formatted.answer` (per-agent
+validators in [`helpers/assertions.py`](helpers/assertions.py)),
+`response.formatted.tabular` for DataAgent, and
+`response.formatted.output_dirs` for DigitalDesign fan-out.
+
+The HTTP-path smokes ([`test_api_http_e2e.py`](test_api_http_e2e.py)
+and [`test_concurrent_http_e2e.py`](test_concurrent_http_e2e.py))
+parse the same envelope from the wire:
+
+- Chat completions: `body["choices"][0]["message"]["content"]` for the
+  OpenAI canonical view, `body["formatted"][...]` for the typed
+  display view, `body["raw"][...]` for provider-returned
+  `reasoning_content` / `usage` / forward-compatible extensions.
+- Native agent runs: `body["result"]["formatted"][...]` for the
+  display view, `body["result"]["raw"][...]` for the same
+  raw block.
+
+See [`../docs/http-api.md`](../docs/http-api.md) for the full
+envelope contract and [`../docs/mcp-tools.md`](../docs/mcp-tools.md)
+for the per-tool formatted view.
+
 ## Setup
 
 1. Configure the server environment by copying the example `.env` and
