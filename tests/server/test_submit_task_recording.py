@@ -86,6 +86,25 @@ async def test_decorator_records_task_run_and_passes_result_through(
     assert listing[0].spec.origin == "remote"
     assert listing[0].status == "running"
     assert listing[0].task_ids == ("T-1",)
+    # Submit-time write seeds the envelope shape so a client polling
+    # /v1/runs/{id} during running sees the same key set as terminal.
+    assert listing[0].result == {
+        "task_results": [
+            {
+                "task_id": "T-1",
+                "status": "submitted",
+                "output_dir": "/obs/run",
+            }
+        ],
+        "live_status": [
+            {
+                "task_id": "T-1",
+                "status": "submitted",
+                "output_dir": "/obs/run",
+            }
+        ],
+        "artifacts": [],
+    }
 
 
 def test_record_submitted_task_ignores_malformed_results(

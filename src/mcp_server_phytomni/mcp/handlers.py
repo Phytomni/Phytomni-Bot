@@ -16,7 +16,7 @@ import sqlite3
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -217,6 +217,24 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
     run_id = IdFactory().new_id("run", agent)
     now = datetime.now(timezone.utc).isoformat()
     db_path = resolve_tasks_db_path()
+    # Seed the run row with the same envelope shape ``_terminal_payload``
+    # writes later so a client polling ``GET /v1/runs/{id}`` while the
+    # run is still in flight sees ``task_results`` / ``live_status`` /
+    # ``artifacts`` keyed exactly as on the terminal branch, just with
+    # placeholder ``submitted`` rows and an empty artifacts list.
+    initial_task_rows = [
+        {
+            "task_id": task_id,
+            "status": "submitted",
+            "output_dir": output_dir,
+        }
+        for task_id, output_dir, _input_fingerprint in submissions
+    ]
+    initial_result: Dict[str, Any] = {
+        "task_results": initial_task_rows,
+        "live_status": initial_task_rows,
+        "artifacts": [],
+    }
     try:
         RunRegistry(db_path).create_run(
             RunSpec(
@@ -224,7 +242,8 @@ def _record_submitted_task(result: Any, *, agent: str) -> None:
                 user_id=user_id,
                 agent=agent,
                 origin="remote",
-            )
+            ),
+            result=initial_result,
         )
         manager = TaskManager(db_path)
         for task_id, output_dir, input_fingerprint in submissions:
