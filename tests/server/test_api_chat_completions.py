@@ -67,6 +67,7 @@ async def test_chat_completions_passthrough(
             {"role": "system", "content": "be brief"},
             {"role": "user", "content": "what is photosynthesis?"},
         ],
+        debug=True,
     )
 
     assert response.status_code == 200
@@ -271,6 +272,7 @@ async def test_chat_completions_preserves_provider_reasoning_and_usage(
         api_client,
         issued_api_key,
         content="why are leaves green?",
+        debug=True,
     )
 
     assert response.status_code == 200
@@ -329,6 +331,7 @@ async def test_chat_completions_repairs_reasoning_content_answer_tail(
         api_client,
         issued_api_key,
         content="why are leaves green?",
+        debug=True,
     )
 
     assert response.status_code == 200
@@ -362,6 +365,7 @@ async def test_chat_completions_envelope_carries_formatted_and_raw(
         api_client,
         issued_api_key,
         content="hi",
+        debug=True,
     )
 
     assert response.status_code == 200

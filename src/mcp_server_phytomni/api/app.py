@@ -32,6 +32,11 @@ from ..common.logging_config import configure_logging
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..mcp.app import invoke_tool_enveloped
+from ..mcp.result_formatting import (
+    resolve_debug,
+    strip_agent_result,
+    strip_chat_completion,
+)
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -259,6 +264,7 @@ async def _invoke_agent_run(
     arguments: dict[str, Any],
     dialogue_id: Optional[str] = None,
     request_json: Optional[str] = None,
+    debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
 
@@ -283,6 +289,8 @@ async def _invoke_agent_run(
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
         arguments: Tool-specific kwargs forwarded to the agent.
+        debug: When True, include the raw handler payload in the
+            result block. Default strips it to reduce response volume.
 
     Returns:
         ``(body, status_code)`` — ``body`` is the ``agent.run``
@@ -322,6 +330,9 @@ async def _invoke_agent_run(
             existing_meta = {}
         formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
     result = {"formatted": formatted_dict, "raw": envelope.raw}
+    response_result = (
+        result if debug else strip_agent_result(result)
+    )
     owner = current_request_user() or "anonymous"
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
@@ -346,11 +357,14 @@ async def _invoke_agent_run(
             "agent": agent,
             "status": "running",
             "task_ids": task_ids,
-            "result": result,
+            "result": response_result,
         }
         return body, 202
     run_id = _record_sync_run(
-        agent=agent, owner=owner, result=result, request_info=request_info
+        agent=agent,
+        owner=owner,
+        result=result,
+        request_info=request_info,
     )
     body = {
         "id": run_id,
@@ -358,7 +372,7 @@ async def _invoke_agent_run(
         "agent": agent,
         "status": "succeeded",
         "task_ids": [],
-        "result": result,
+        "result": response_result,
     }
     return body, 200
 
@@ -400,6 +414,17 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
     if record is None:
         return run_id, []
     return run_id, list(record.task_ids)
+
+
+def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
+    """Strip raw from one run record's result for default-mode listing."""
+    result = record.get("result")
+    if isinstance(result, dict):
+        return {
+            **record,
+            "result": strip_agent_result(result),
+        }
+    return record
 
 
 def _list_owner_runs(
@@ -878,13 +903,14 @@ def create_app() -> FastAPI:
                     request_json=payload.model_dump_json(),
                 ),
             )
-        return JSONResponse(
-            to_chat_completion(
-                formatted_dict,
-                envelope.raw,
-                payload.model,
-            )
+        completion = to_chat_completion(
+            formatted_dict,
+            envelope.raw,
+            payload.model,
         )
+        if not resolve_debug(payload.debug):
+            completion = strip_chat_completion(completion)
+        return JSONResponse(completion)
 
     @app.get("/v1/agents")
     async def list_agents(
@@ -922,6 +948,7 @@ def create_app() -> FastAPI:
             agent=agent,
             arguments=payload.arguments,
             dialogue_id=payload.dialogue_id,
+            debug=resolve_debug(payload.debug),
             request_json=payload.model_dump_json(),
         )
         return JSONResponse(body, status_code=status_code)
@@ -930,10 +957,23 @@ def create_app() -> FastAPI:
     async def get_run(
         run_id: str,
         principal: ApiPrincipal = Depends(authorized),
+        debug: bool = False,
     ) -> JSONResponse:
-        """Return one owner-scoped run record by id."""
+        """Return one owner-scoped run record by id.
+
+        Default mode strips the raw handler payload from result;
+        pass ``debug=true`` to include it.
+        """
         del principal
-        return JSONResponse(await _fetch_owner_run(run_id))
+        record = await _fetch_owner_run(run_id)
+        if not resolve_debug(debug) and isinstance(
+            record.get("result"), dict
+        ):
+            record = {
+                **record,
+                "result": strip_agent_result(record["result"]),
+            }
+        return JSONResponse(record)
 
     @app.get("/v1/runs")
     async def list_runs(
@@ -947,6 +987,7 @@ def create_app() -> FastAPI:
         created_before: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
+        debug: bool = False,
         authorization: Optional[str] = Header(default=None),
         x_service_token: Optional[str] = Header(
             default=None, alias="X-Service-Token"
@@ -960,6 +1001,9 @@ def create_app() -> FastAPI:
         user instead of the caller — the path Phytomni-Web Go uses to
         render history pages for any tenant. Acts as the lazy GC
         trigger via ``_purge_expired_runs_best_effort``.
+
+        Default mode strips the raw handler payload from each result;
+        pass ``debug=true`` to include it.
         """
         del principal
         is_service = is_service_token_valid(authorization, x_service_token)
@@ -973,18 +1017,26 @@ def create_app() -> FastAPI:
             if user_id is not None
             else (current_request_user() or "anonymous")
         )
-        return JSONResponse(
-            _list_owner_runs(
-                owner=owner,
-                status=status,
-                agent=agent,
-                origin=origin,
-                created_after=created_after,
-                created_before=created_before,
-                limit=limit,
-                offset=offset,
-            )
+        body = _list_owner_runs(
+            owner=owner,
+            status=status,
+            agent=agent,
+            origin=origin,
+            created_after=created_after,
+            created_before=created_before,
+            limit=limit,
+            offset=offset,
         )
+        if not resolve_debug(debug):
+            data = body.get("data")
+            if isinstance(data, list):
+                body = {
+                    **body,
+                    "data": [
+                        _strip_run_result(r) for r in data
+                    ],
+                }
+        return JSONResponse(body)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
