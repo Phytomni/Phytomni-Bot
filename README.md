@@ -81,6 +81,26 @@ through `GetTaskStatus`; the lookup is non-blocking and returns
 or succeeded task instead of submitting the same scientific question again.
 Failed and cancelled rows are ignored so retries still create fresh work.
 
+## Response Envelope
+
+Every MCP tool and HTTP API response ships as a two-block envelope:
+
+- `formatted`: the normalized display view with `answer`,
+  `follow_up_questions`, `metadata`, `references`, plus `tabular` for
+  DataAgent (`{"headers": [...], "rows": [...]}`) and `output_dirs`
+  for DigitalDesign fan-out paths.
+- `raw`: the sanitized handler payload preserving provider-returned
+  `choices[].message.reasoning_content`, `usage`, `tool_calls`,
+  `system_fingerprint`, forward-compatible extensions, and a
+  `phytomni_state` namespace carrying the agent's LangGraph
+  intermediate state (`retrieved_docs`, `gene_id`, `rewrite_query`,
+  `research_dimensions`, `plan`, `tool_usages`, ...).
+
+Credential-pattern keys are stripped recursively before `raw` reaches the
+wire. See [MCP Tool Reference](docs/mcp-tools.md) for the per-tool
+formatted view and [HTTP API](docs/http-api.md) for the full envelope
+contract on `/v1/chat/completions` and `/v1/agents/{agent}/runs`.
+
 ## Architecture
 
 The MCP entrypoint is `src/mcp_server_phytomni/server.py`. The public MCP
