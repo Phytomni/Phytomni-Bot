@@ -207,16 +207,47 @@ ______________________________________________________________________
 
 Bot 提供**两种独立的鉴权凭证**,严格隔离:
 
-| 凭证类型                     | 颁发方式                                                                               | header                                                                        | 用途                                              | 失效                                        |
-| ---------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
-| **User API key** (`ptm_...`) | `POST /v1/api-keys`(Web Go 调)或 `phytomni-api-key create` CLI                         | `Authorization: Bearer ptm_...` 或 `X-API-Key: ptm_...`                       | chat-ai 等终端用户客户端的常规调用                | revoke(`DELETE` 或 CLI)或 `expires_at` 到期 |
-| **Service token**            | ops 配置 `PHYTOMNI_API_SERVICE_TOKEN` env(envelope 加密 `.env` 内,或 systemd unit env) | `Authorization: Bearer <service-token>` 或 `X-Service-Token: <service-token>` | Web Go 颁发 user key / delegated 查询其他用户历史 | 改 env + 重启服务                           |
+| 凭证类型                     | 颁发方式                                                                      | header                                                                        | 用途                                              | 失效                                        |
+| ---------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
+| **User API key** (`ptm_...`) | `POST /v1/api-keys`(Web Go 调)或 `phytomni-api-key create` CLI                | `Authorization: Bearer ptm_...` 或 `X-API-Key: ptm_...`                       | chat-ai 等终端用户客户端的常规调用                | revoke(`DELETE` 或 CLI)或 `expires_at` 到期 |
+| **Service token**            | ops 配置 `API_SERVICE_TOKEN` env(envelope 加密 `.env` 内,或 systemd unit env) | `Authorization: Bearer <service-token>` 或 `X-Service-Token: <service-token>` | Web Go 颁发 user key / delegated 查询其他用户历史 | 改 env + 重启服务                           |
 
 **关键设计**:
 
-- Service token 是**独立环境变量**,不入 `api_keys.sqlite`,不复用 `ApiKeyStore` 任何代码路径——降低普通 user key 提权风险面
+- Service token 是**独立环境变量**(只读 `API_SERVICE_TOKEN` 一个名,不带 `PHYTOMNI_` 别名 — 该名字在 Bot HTTP service 唯一,无与同生态工具冲突风险),不入 `api_keys.sqlite`,不复用 `ApiKeyStore` 任何代码路径——降低普通 user key 提权风险面
 - 未配置 service token 时,`/v1/api-keys/*` 与 `?user_id=<x>` delegated 查询全部返 503("admin path not enabled"),production 必须显式启用
 - Service token 等同 root 凭证,**90 天轮换**(runbook 落地)
+
+### `/v1/api-keys` 三 endpoint curl 示例
+
+```bash
+# 1. mint a per-user key (Web Go calls this after login flow)
+curl -X POST http://<bot>/v1/api-keys \
+  -H "Authorization: Bearer $API_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "alice@example.com", "name": "chat-ai", "expires_days": 90}'
+# -> 201
+# {
+#   "object": "api_key",
+#   "api_key": "ptm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",   # shown once
+#   "prefix":  "ptm_xxxxxxxx",
+#   "user_id": "alice@example.com",
+#   "expires_at": "2026-08-22T00:00:00+00:00"
+# }
+
+# 2. list (metadata only, never plaintext / hash / salt)
+curl http://<bot>/v1/api-keys?user_id=alice@example.com \
+  -H "Authorization: Bearer $API_SERVICE_TOKEN"
+# -> 200
+# {"object": "list", "data": [{"user_id": "...", "prefix": "...", "active": true, ...}]}
+
+# 3. revoke by prefix
+curl -X DELETE http://<bot>/v1/api-keys/ptm_xxxxxxxx \
+  -H "Authorization: Bearer $API_SERVICE_TOKEN"
+# -> 200 {"object": "api_key.deleted", "prefix": "ptm_xxxxxxxx", "deleted": true}
+```
+
+未配置 `API_SERVICE_TOKEN` env → 三个 endpoint 全返 503;token 错 → 401。
 
 ______________________________________________________________________
 
@@ -252,7 +283,7 @@ ______________________________________________________________________
 
 1. **首次部署**:
 
-   - ops 生成 `PHYTOMNI_API_SERVICE_TOKEN`(`openssl rand -hex 32`),写入部署系统的 secret store
+   - ops 生成 `API_SERVICE_TOKEN`(`openssl rand -hex 32`),写入部署系统的 secret store
    - 启动 `phytomni-api`,验证 `curl http://<bot>/healthz` 返 200
    - 用 service token 调 `POST /v1/api-keys` mint 一把测试 user key,验证 `POST /v1/chat/completions`
 
