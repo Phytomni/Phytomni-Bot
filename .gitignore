@@ -223,7 +223,7 @@ __marimo__/
 *.sqlite3-wal
 
 # Claude Code
-.claude/
+.claude
 CLAUDE.md
 
 # Local agent context
