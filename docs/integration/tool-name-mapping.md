@@ -49,12 +49,14 @@ ______________________________________________________________________
 
 本文件的所有 mapping 必须与下列代码源同步:
 
-- **`PhytomniAgents` enum**(MCP tool 规范名):`src/mcp_server_phytomni/mcp/schemas.py:491-585`
-- **`MODEL_TO_TOOL`**(chat-completions model → MCP tool):`src/mcp_server_phytomni/api/openai_mapping.py:32-37`
-- **`_AGENT_SLUG_TO_TOOL`**(agent-runs slug → MCP tool):`src/mcp_server_phytomni/api/app.py:92-103`
-- **`_REMOTE_AGENT_SLUGS`**(origin 判定):`src/mcp_server_phytomni/api/app.py:109-111`
+- **`PhytomniAgents` enum**(MCP tool 规范名):`src/mcp_server_phytomni/mcp/schemas.py:491`
+- **`MODEL_TO_TOOL`**(chat-completions model → MCP tool):`src/mcp_server_phytomni/api/openai_mapping.py:32`
+- **`_AGENT_SLUG_TO_TOOL`**(agent-runs slug → MCP tool):`src/mcp_server_phytomni/api/app.py:95`
+- **`_REMOTE_AGENT_SLUGS`**(origin 判定):`src/mcp_server_phytomni/api/app.py:112`
 - **`_OBS_CAPABLE_TOOLS`**(obs 能力):`src/mcp_server_phytomni/api/openai_mapping.py:41`
 - **`_RESOLVE_GENE_ID_CAPABLE_TOOLS`**(resolve_gene_id 能力):`src/mcp_server_phytomni/api/openai_mapping.py:46`
+
+> 行号会随上游 import / 装饰器调整漂移;给单行起点而非范围,定位时配合 `grep -n "<symbol>" <file>` 验证。
 
 Bot 侧每次新增 agent 或调整能力栏,必须同时更新本文件与 `GET /v1/agents` 响应中的 `legacy_aliases` 字段(详见 §4)。
 
