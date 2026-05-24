@@ -5,11 +5,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Analyst submission wrapper, dedup helpers, and per-call config copies.
 
-Exports the ``submit`` compatibility wrapper, input-fingerprint /
+Exports the ``submit`` compatibility wrapper, the input-fingerprint /
 reuse-decision helpers shared with ``retrieve_plan_submit``, and the
-analyst-specific override builders. ``agent.py`` re-exports these via a
-bottom-of-file late import to break the AnalystAgent class-instantiation
-vs. wrapper-re-export cycle.
+analyst-specific override builders. ``AnalystAgent`` comes from ``.core``
+to keep the import graph acyclic.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...storage.path_policy import RunIdentity
-from .agent import AnalystAgent
+from .core import AnalystAgent
 from .defaults import (
     ANALYST_CONFIG,
     ANALYST_CONFIG_FIELD_MAP,
@@ -41,6 +40,28 @@ from .defaults import (
 _CONFIG_EXPLICIT_KEYS = frozenset(
     {"user_id", "is_create_dir", "output_dir", "compute_resource"}
 )
+
+
+def _shared_arun_kwargs(
+    goal_description: str,
+    output_dir: str,
+    compute_resource: str,
+    data_list: Any,
+) -> Dict[str, Any]:
+    """Return the AnalystAgent.arun kwarg block shared by submit wrappers.
+
+    ``submit`` (here) and ``retrieve_plan_submit`` (agent.py) both call
+    ``agent.arun`` with the same first five kwargs in the same order.
+    Centralizing that block kills the pylint R0801 duplicate-code warning
+    and gives one seam to update when arun's signature evolves.
+    """
+    return {
+        "query": goal_description,
+        "goal_description": goal_description,
+        "output_dir": output_dir,
+        "compute_resource": compute_resource,
+        "preset_data_list": data_list,
+    }
 
 
 def _analyst_config_with_overrides(
@@ -156,11 +177,12 @@ async def submit(
         "AnalystAgent.submit",
     )
     return await agent.arun(
-        query=goal_description,
-        goal_description=goal_description,
-        output_dir=output_dir,
-        compute_resource=compute_resource,
-        preset_data_list=data_list,
+        **_shared_arun_kwargs(
+            goal_description=goal_description,
+            output_dir=output_dir,
+            compute_resource=compute_resource,
+            data_list=data_list,
+        ),
         preset_plan=meta + (meta_meta or ""),
         thread_id=thread_id,
         is_auto_select=enable_auto_select,

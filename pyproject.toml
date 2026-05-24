@@ -234,6 +234,18 @@ max-statements = 80
 # fakes terse without weakening the rule for production code.
 min-public-methods = 1
 
+[tool.pylint.similarities]
+# Compatibility wrappers around AnalystAgent.arun (analyst.submission.submit,
+# analyst.agent.retrieve_plan_submit) and the analyst task-platform helpers
+# (analyst.task_ops.task_status / task_log / task_delete) share short
+# 5-7 line kwarg/HTTP-header blocks by design — they fan out to one
+# backend with parallel signatures. The pylint default of 4 lines flags
+# every such wrapper pair as R0801 duplicate-code; raising the threshold
+# to 8 keeps the rule meaningful for genuine logic duplication (the
+# kind that should be extracted to a helper) without forcing kwargs
+# spreads to be hand-compressed into unreadable single-line calls.
+min-similarity-lines = 8
+
 [tool.pymarkdown]
 # Markdown gate config (consumed via `pymarkdown --config pyproject.toml`).
 # MD013 (line-length): mdformat runs with `--wrap keep` and never reflows

@@ -16,9 +16,6 @@ from ..shared.analysis_storage import (
     get_data_list,
 )
 from .agent import (
-    ANALYST_CONFIG_FIELD_MAP,
-    ANALYST_SECRET_FIELD_MAP,
-    ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
     AnalystAgentsState,
     retrieve_plan_submit,
@@ -27,6 +24,11 @@ from .agent import (
     task_log,
     task_status,
     wait_for_completion,
+)
+from .defaults import (
+    ANALYST_CONFIG_FIELD_MAP,
+    ANALYST_SECRET_FIELD_MAP,
+    ANALYST_SENSITIVE_FIELD_MAP,
 )
 from .graph import AnalystGraphMixin
 from .storage import (

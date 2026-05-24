@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.analyst import agent as analyst_agent
+from mcp_server_phytomni.agents.analyst import submission as analyst_submission
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
 from mcp_server_phytomni.agents.deep_genome import agent as deep_genome_agent
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
@@ -260,8 +261,8 @@ async def test_retrieve_plan_submit_runs_analyst_workflow(
         None after wrapper return and meta_meta passthrough assertions.
     """
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(analyst_agent, "get_cached_agent", _no_cache)
-    _bind_fake_agent(analyst_agent, "AnalystAgent", captured)
+    monkeypatch.setattr(analyst_submission, "get_cached_agent", _no_cache)
+    _bind_fake_agent(analyst_submission, "AnalystAgent", captured)
 
     result = await analyst_agent.retrieve_plan_submit(
         goal_description="Map QTLs in rice",
@@ -295,8 +296,8 @@ async def test_submit_wrappers_accept_user_and_compute_resource_kwargs(
         None after both wrappers run without a duplicate-kwarg TypeError.
     """
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(analyst_agent, "get_cached_agent", _no_cache)
-    _bind_fake_agent(analyst_agent, "AnalystAgent", captured)
+    monkeypatch.setattr(analyst_submission, "get_cached_agent", _no_cache)
+    _bind_fake_agent(analyst_submission, "AnalystAgent", captured)
 
     submit_result = await analyst_agent.submit(
         goal_description="Cluster single-cell data",
