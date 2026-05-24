@@ -57,12 +57,16 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
     The handler payload survives sanitized inside ``raw`` because none
     of its keys match a credential pattern.
 
+    ``PHYTOMNI_DEBUG=1`` is set so the full envelope (formatted + raw)
+    is returned; the default-mode stripping is tested separately.
+
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap dispatch handler.
 
     Returns:
         None after assertions pass.
     """
+    monkeypatch.setenv("PHYTOMNI_DEBUG", "1")
     captured: dict[str, Any] = {}
 
     async def fake_handler(args: Any) -> dict[str, Any]:
@@ -108,6 +112,36 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
             "files": [],
         },
     }
+
+
+async def test_dispatch_tool_default_mode_strips_raw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default mode strips raw from dispatch_tool output.
+
+    Without ``PHYTOMNI_DEBUG=1`` the MCP response contains only
+    the ``formatted`` block; the sanitized handler payload is
+    hidden to reduce response volume.
+    """
+    monkeypatch.delenv("PHYTOMNI_DEBUG", raising=False)
+
+    async def fake_handler(args: Any) -> dict[str, Any]:
+        return {"answer": args.user_query}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake_handler,
+    )
+
+    result = await server.dispatch_tool(
+        server.PhytomniAgents.CHAT_AGENT,
+        {"user_query": "hi", "obs_file_list": []},
+    )
+
+    body = loads(result[0].text)
+    assert "formatted" in body
+    assert "raw" not in body
 
 
 async def test_dispatch_tool_rejects_unknown_tool():

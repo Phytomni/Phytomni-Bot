@@ -37,6 +37,7 @@ from .result_formatting import (
     FormattedToolResult,
     ToolResultEnvelope,
     build_tool_result_envelope,
+    resolve_debug,
 )
 from .schemas import (
     AnalystAgent,
@@ -209,6 +210,10 @@ async def dispatch_tool(
 ) -> list[TextContent]:
     """Validate arguments, call a tool handler, and serialize the result.
 
+    In default mode the response contains only ``formatted``; set
+    ``PHYTOMNI_DEBUG=1`` to include the sanitized ``raw`` handler
+    payload alongside it.
+
     Args:
         name: Raw MCP tool name supplied by the client.
         arguments: JSON object passed to the selected MCP tool.
@@ -220,12 +225,12 @@ async def dispatch_tool(
         McpError: If the tool is unknown or arguments fail validation.
     """
     envelope = await invoke_tool_enveloped(name, arguments)
-    return _text_response(
-        {
-            "formatted": asdict(envelope.formatted),
-            "raw": envelope.raw,
-        }
-    )
+    payload: Dict[str, Any] = {
+        "formatted": asdict(envelope.formatted),
+    }
+    if resolve_debug(None):
+        payload["raw"] = envelope.raw
+    return _text_response(payload)
 
 
 async def serve() -> None:

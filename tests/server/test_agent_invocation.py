@@ -78,10 +78,10 @@ async def test_dispatch_tool_formats_invoke_tool_raw(
 ) -> None:
     """Verify dispatch_tool wraps invoke_tool_raw in the result envelope.
 
-    The dispatch seam now emits ``{"formatted": ..., "raw": ...}`` so
-    HTTP and MCP clients can read both the normalized display payload
-    and the sanitized handler payload from a single body.
+    The dispatch seam emits ``{"formatted": ..., "raw": ...}`` when
+    ``PHYTOMNI_DEBUG=1`` is set; default mode strips ``raw``.
     """
+    monkeypatch.setenv("PHYTOMNI_DEBUG", "1")
 
     async def fake_handler(args: Any) -> dict[str, Any]:
         """Return a deterministic payload for the dispatch comparison."""

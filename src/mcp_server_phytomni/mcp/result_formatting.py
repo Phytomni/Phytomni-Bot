@@ -5,14 +5,14 @@
 """Format Phytomni MCP tool responses at the server boundary.
 
 Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
-``format_tool_result``, and ``build_tool_result_envelope``. Private
-helpers normalize tool payloads and citations, and ``_sanitize_raw``
-recursively strips credential-pattern keys before the raw handler
-payload reaches the envelope so HTTP and MCP clients can inspect
-provider-returned fields without leaking secrets.
+``format_tool_result``, ``build_tool_result_envelope``, and
+response-projection helpers ``resolve_debug`` / ``strip_agent_result``
+(``PHYTOMNI_DEBUG=1`` forces full payloads). Private helpers normalize
+citations and ``_sanitize_raw`` strips credential-pattern keys.
 """
 
 import json
+import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -533,3 +533,44 @@ def _string_or_none(value: Any) -> str | None:
 def _json_dumps(value: Any) -> str:
     """Serialize a value using the repository JSON conventions."""
     return json.dumps(value, ensure_ascii=False)
+
+
+# --- Response projection (debug / default mode) ---
+
+_DEBUG_ENV = "PHYTOMNI_DEBUG"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def resolve_debug(per_request: bool | None) -> bool:
+    """Return True when debug mode is active.
+
+    PHYTOMNI_DEBUG=1 env var is a global operator override that
+    forces debug mode regardless of the per-request flag.
+
+    Args:
+        per_request: Per-request debug flag from HTTP API payload.
+            MCP stdio passes None since there is no per-request flag.
+
+    Returns:
+        True if either the env var or the per-request flag is truthy.
+    """
+    if _env_debug_enabled():
+        return True
+    return bool(per_request)
+
+
+def strip_agent_result(result: dict) -> dict:
+    """Remove 'raw' from a {formatted, raw} result dict.
+
+    Used by MCP dispatch_tool and agent runs endpoints to hide the
+    sanitized handler payload in default (non-debug) mode.
+
+    Returns a new dict; the original is not mutated.
+    """
+    return {k: v for k, v in result.items() if k != "raw"}
+
+
+def _env_debug_enabled() -> bool:
+    """Check whether PHYTOMNI_DEBUG env var is set to a truthy value."""
+    raw = os.getenv(_DEBUG_ENV, "").strip().lower()
+    return raw in _TRUTHY
