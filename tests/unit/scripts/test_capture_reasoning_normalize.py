@@ -85,3 +85,79 @@ def test_capture_record_reports_tagged_tail_preview():
         record["normalized_after"]["content_preview"]
         == "Leaves reflect green light."
     )
+
+
+def test_capture_record_reports_all_corrected_after_surfaces():
+    """Repair assertions prove normalized, MCP, and API fields agree."""
+    payload = {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "model": "fixture-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": (
+                        "<think>Identify chlorophyll.</think>"
+                        "Leaves reflect green light."
+                    ),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    record = capture_record(
+        mode="fixtures",
+        run_id="tagged-tail",
+        provider_raw=payload,
+        expect_repair=True,
+    )
+    assertion = record["repair_assertion"]
+
+    assert assertion["before_tagged_tail_present"] is True
+    assert assertion["before_content_blank_or_duplicate"] is True
+    assert assertion["normalized_corrected"] is True
+    assert assertion["mcp_raw_corrected"] is True
+    assert assertion["api_corrected"] is True
+    assert assertion["same_sample_real_anomaly_fixed"] is True
+
+
+def test_capture_record_does_not_treat_close_only_text_as_tagged_tail():
+    """Script evidence uses the same strict tag shape as production."""
+    payload = {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "model": "fixture-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": (
+                        "Identify chlorophyll.</think>"
+                        "Leaves reflect green light."
+                    ),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    record = capture_record(
+        mode="fixtures",
+        run_id="close-only",
+        provider_raw=payload,
+        expect_repair=False,
+    )
+
+    assert record["repaired"] is False
+    assert record["provider_before"]["reasoning_has_tail"] is False
+    assert record["provider_before"]["tagged_tail_preview"] == ""
+    assert record["repair_assertion"]["before_tagged_tail_present"] is False
+    assert (
+        record["repair_assertion"]["same_sample_real_anomaly_fixed"] is False
+    )

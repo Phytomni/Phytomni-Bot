@@ -40,6 +40,8 @@ FIXTURE_DIR = Path("tests/fixtures/reasoning_content")
 OUTPUT_DIR = Path("e2e/output")
 PREVIEW_CHARS = 200
 LIVE_REQUIRED_FLAGS = ("PHYTOMNI_RUN_INTEGRATION", "PHYTOMNI_ALLOW_NETWORK")
+THINK_OPEN = "<think>"
+THINK_CLOSE = "</think>"
 
 
 def main() -> int:
@@ -194,22 +196,51 @@ def _capture_record(
         },
         "api_response": _payload_summary(api_response),
     }
-    record["repair_assertion"] = _repair_assertion(provider_raw, envelope.raw)
+    record["repair_assertion"] = _repair_assertion(
+        before=provider_raw,
+        normalized=normalized,
+        mcp_raw=envelope.raw,
+        api_response=api_response,
+    )
     return record
 
 
-def _repair_assertion(before: Mapping[str, Any], after: Any) -> dict[str, Any]:
+def _repair_assertion(
+    *,
+    before: Mapping[str, Any],
+    normalized: Any,
+    mcp_raw: Any,
+    api_response: Any,
+) -> dict[str, Any]:
     """Return proof fields for one repair comparison."""
     before_message = _first_message(before)
-    after_message = _first_message(after)
     tail = _expected_tail(before_message)
-    after_content = str(after_message.get("content") or "")
-    after_reasoning = str(after_message.get("reasoning_content") or "")
+    before_content_blank_or_duplicate = _content_blank_or_duplicate(
+        before_message,
+        tail,
+    )
+    normalized_corrected = _payload_corrected(normalized, tail)
+    mcp_raw_corrected = _payload_corrected(mcp_raw, tail)
+    api_corrected = _payload_corrected(api_response, tail)
+    mcp_raw_message = _first_message(mcp_raw)
+    mcp_raw_reasoning = str(mcp_raw_message.get("reasoning_content") or "")
     return {
         "expected_tail": _preview(tail),
-        "after_content_matches_tail": bool(tail and after_content == tail),
+        "before_tagged_tail_present": tail is not None,
+        "before_content_blank_or_duplicate": before_content_blank_or_duplicate,
+        "normalized_corrected": normalized_corrected,
+        "mcp_raw_corrected": mcp_raw_corrected,
+        "api_corrected": api_corrected,
+        "same_sample_real_anomaly_fixed": bool(
+            tail
+            and before_content_blank_or_duplicate
+            and normalized_corrected
+            and mcp_raw_corrected
+            and api_corrected
+        ),
+        "after_content_matches_tail": mcp_raw_corrected,
         "after_reasoning_excludes_tail": bool(
-            tail and tail not in after_reasoning
+            tail and tail not in mcp_raw_reasoning
         ),
     }
 
@@ -265,18 +296,44 @@ def _expected_tail(message: Mapping[str, Any]) -> str | None:
     content_value = message.get("content")
     if isinstance(content_value, str):
         stripped = content_value.lstrip()
-        if stripped.startswith("<think>"):
+        if stripped.startswith(THINK_OPEN):
             return _tail_after_think(stripped)
     return None
 
 
 def _tail_after_think(text: str) -> str | None:
-    """Return non-empty text after the first closed ``</think>`` tag."""
-    close = text.find("</think>")
+    """Return non-empty text after one closed lowercase think block."""
+    start = text.find(THINK_OPEN)
+    if start == -1:
+        return None
+    close = text.find(THINK_CLOSE, start + len(THINK_OPEN))
     if close == -1:
         return None
-    tail = text[close + len("</think>") :].strip()
+    tail = text[close + len(THINK_CLOSE) :].strip()
     return tail or None
+
+
+def _content_blank_or_duplicate(
+    message: Mapping[str, Any],
+    tail: str | None,
+) -> bool:
+    """Return True for the primary blank/duplicate reasoning-tail fault."""
+    if tail is None:
+        return False
+    content = message.get("content")
+    content_text = "" if content is None else str(content).strip()
+    return not content_text or content_text == tail
+
+
+def _payload_corrected(payload: Any, tail: str | None) -> bool:
+    """Return True when one payload exposes tail as content only."""
+    if tail is None:
+        return False
+    message = _first_message(payload)
+    content = message.get("content")
+    reasoning = message.get("reasoning_content")
+    reasoning_text = reasoning if isinstance(reasoning, str) else ""
+    return content == tail and tail not in reasoning_text
 
 
 def _safe_usage(payload: Any) -> dict[str, Any]:
@@ -296,10 +353,13 @@ def _validate_records(records: list[dict[str, Any]]) -> int:
             failures.append(f"{record['run_id']}: repair expectation failed")
         if record["repaired"]:
             assertion = record["repair_assertion"]
-            if not assertion["after_content_matches_tail"]:
-                failures.append(f"{record['run_id']}: content mismatch")
-            if not assertion["after_reasoning_excludes_tail"]:
-                failures.append(f"{record['run_id']}: tail still in reasoning")
+            for key in (
+                "normalized_corrected",
+                "mcp_raw_corrected",
+                "api_corrected",
+            ):
+                if not assertion[key]:
+                    failures.append(f"{record['run_id']}: {key} failed")
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)
