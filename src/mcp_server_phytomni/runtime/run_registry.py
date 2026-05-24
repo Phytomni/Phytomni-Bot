@@ -23,10 +23,11 @@ from .task_manager import TaskManager, resolve_tasks_db_path
 from .task_reconcile import reconcile_task
 
 __all__ = [
+    "RunFilter",
     "RunRecord",
     "RunRegistry",
+    "RunRequestInfo",
     "RunSpec",
-    "RunFilter",
     "Timestamps",
 ]
 
@@ -47,9 +48,26 @@ CREATE TABLE IF NOT EXISTS runs (
     error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    expires_at TEXT
+    expires_at TEXT,
+    dialogue_id TEXT,
+    query TEXT,
+    tool_name TEXT,
+    model TEXT,
+    request_json TEXT
 )
 """
+
+# Request-context columns added after the initial schema shipped.
+# ``_init_db`` walks the list and runs an idempotent ``ALTER TABLE``
+# per name so an upgraded database catches up to the same shape a
+# fresh ``CREATE TABLE`` would produce.
+_REQUEST_INFO_COLUMNS = (
+    ("dialogue_id", "TEXT"),
+    ("query", "TEXT"),
+    ("tool_name", "TEXT"),
+    ("model", "TEXT"),
+    ("request_json", "TEXT"),
+)
 
 _CREATE_RUNS_USER_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
@@ -98,6 +116,34 @@ class RunSpec:
 
 
 @dataclass(frozen=True)
+class RunRequestInfo:
+    """Per-request metadata persisted alongside the run row.
+
+    These fields are captured at the request boundary so chat-ai's
+    history page can render past conversations without re-deriving the
+    surface from the agent payload. ``None`` is acceptable on every
+    field so legacy MCP-only runs that predate the columns still hydrate
+    without backfill.
+
+    Attributes:
+        dialogue_id: Chat-ai conversation id; groups runs into one
+            visible thread.
+        query: Verbatim user query text the agent saw.
+        tool_name: MCP tool name dispatched (e.g. ``"KnowledgeAgent"``).
+        model: OpenAI-compat model id when the request came through
+            ``/v1/chat/completions``; ``None`` for native agent runs.
+        request_json: Full JSON snapshot of the request body so an
+            auditor can replay or diff the call.
+    """
+
+    dialogue_id: Optional[str] = None
+    query: Optional[str] = None
+    tool_name: Optional[str] = None
+    model: Optional[str] = None
+    request_json: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class RunFilter:
     """Optional list-time filters for ``list_runs``.
 
@@ -143,6 +189,10 @@ class RunRecord:
         error: Terminal error message, when cached.
         timestamps: Created / updated / expires-at bundle.
         task_ids: Child task ids (empty for sync runs).
+        request_info: Per-request metadata captured at the HTTP boundary
+            (dialogue_id / query / tool_name / model / request_json).
+            Always populated; field values default to ``None`` for
+            legacy rows that predate the columns.
     """
 
     spec: RunSpec
@@ -151,6 +201,7 @@ class RunRecord:
     error: Optional[str]
     timestamps: Timestamps
     task_ids: Tuple[str, ...]
+    request_info: RunRequestInfo = RunRequestInfo()
 
 
 class RunRegistry:
@@ -176,12 +227,24 @@ class RunRegistry:
         Eagerly initialises the ``tasks`` table via ``TaskManager`` (its
         constructor is idempotent) so the ``idx_tasks_run`` index can be
         created even when the registry is opened before any task write.
+        The request-context columns are added via per-column
+        ``ALTER TABLE`` so a database created before they shipped
+        catches up without losing the existing rows; a fresh database
+        already has them via ``CREATE TABLE`` and the ALTER simply
+        raises ``OperationalError`` which is swallowed.
         """
         TaskManager(self.db_path)
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_RUNS_DDL)
+            for column, column_type in _REQUEST_INFO_COLUMNS:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
+                    )
+                except sqlite3.OperationalError:
+                    pass
             conn.execute(_CREATE_RUNS_USER_INDEX)
             conn.execute(_CREATE_TASKS_RUN_INDEX)
             conn.commit()
@@ -195,6 +258,7 @@ class RunRegistry:
         status: str = "running",
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
+        request_info: Optional[RunRequestInfo] = None,
     ) -> None:
         """Insert a new run row.
 
@@ -208,17 +272,23 @@ class RunRegistry:
             status: Initial run status; defaults to ``"running"``.
             result: Terminal result payload for sync runs.
             error: Terminal error message for failed sync runs.
+            request_info: Per-request metadata captured at the HTTP
+                boundary; ``None`` (default) leaves every column NULL
+                so MCP-path runs that never see request context
+                continue to write the same five fields as before.
         """
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
+        info = request_info or RunRequestInfo()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO runs (
                     run_id, user_id, agent, origin, status,
                     result_json, error, created_at, updated_at,
-                    expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    expires_at,
+                    dialogue_id, query, tool_name, model, request_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     spec.run_id,
@@ -231,8 +301,61 @@ class RunRegistry:
                     now,
                     now,
                     expires_at,
+                    info.dialogue_id,
+                    info.query,
+                    info.tool_name,
+                    info.model,
+                    info.request_json,
                 ),
             )
+
+    def update_request_info(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        request_info: RunRequestInfo,
+    ) -> bool:
+        """Backfill request-context columns on an already-created run.
+
+        The HTTP layer calls this after the agent dispatch returns, so
+        the chokepoint that minted the run row never has to know about
+        request context. Owner-scoped so a foreign-owned row cannot be
+        retro-stamped.
+
+        Args:
+            run_id: Run id to update.
+            owner: Required user id; mismatched owner is a silent miss.
+            request_info: Field values to write.
+
+        Returns:
+            True when a row was updated; False when no owned row
+            matched (caller logs but does not raise).
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs SET
+                    dialogue_id = ?,
+                    query = ?,
+                    tool_name = ?,
+                    model = ?,
+                    request_json = ?,
+                    updated_at = ?
+                WHERE run_id = ? AND user_id = ?
+                """,
+                (
+                    request_info.dialogue_id,
+                    request_info.query,
+                    request_info.tool_name,
+                    request_info.model,
+                    request_info.request_json,
+                    _now_iso(),
+                    run_id,
+                    owner,
+                ),
+            )
+            return cursor.rowcount > 0
 
     def get_run(self, run_id: str, *, owner: str) -> Optional[RunRecord]:
         """Return the run owned by ``owner`` or ``None``.
@@ -253,7 +376,8 @@ class RunRegistry:
             row = conn.execute(
                 """
                 SELECT user_id, agent, origin, status, result_json,
-                       error, created_at, updated_at, expires_at
+                       error, created_at, updated_at, expires_at,
+                       dialogue_id, query, tool_name, model, request_json
                 FROM runs WHERE run_id = ? AND user_id = ?
                 """,
                 (run_id, owner),
@@ -300,7 +424,8 @@ class RunRegistry:
                 f"""
                 SELECT run_id, user_id, agent, origin, status,
                        result_json, error, created_at, updated_at,
-                       expires_at
+                       expires_at,
+                       dialogue_id, query, tool_name, model, request_json
                 FROM runs WHERE {where}
                 ORDER BY created_at DESC, run_id
                 LIMIT ? OFFSET ?
@@ -504,6 +629,11 @@ def _row_to_record(
         created_at,
         updated_at,
         expires_at,
+        dialogue_id,
+        query,
+        tool_name,
+        model,
+        request_json,
     ) = row
     return RunRecord(
         spec=RunSpec(
@@ -521,6 +651,13 @@ def _row_to_record(
             expires_at=expires_at,
         ),
         task_ids=tuple(t[0] for t in task_rows),
+        request_info=RunRequestInfo(
+            dialogue_id=dialogue_id,
+            query=query,
+            tool_name=tool_name,
+            model=model,
+            request_json=request_json,
+        ),
     )
 
 

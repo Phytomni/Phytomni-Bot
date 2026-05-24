@@ -22,6 +22,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunFilter,
     RunRecord,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
     Timestamps,
 )
@@ -315,3 +316,152 @@ def test_run_record_is_frozen_dataclass() -> None:
 
     with pytest.raises(Exception):
         setattr(record, "status", "running")
+
+
+def test_create_run_persists_request_info(tmp_path: Path) -> None:
+    """A request_info bundle round-trips through create_run + get_run."""
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-ri-1", "alice", "knowledge", "local")
+    info = RunRequestInfo(
+        dialogue_id="dlg-1",
+        query="What does AT1G01010 do?",
+        tool_name="KnowledgeAgent",
+        model="phyto-knowledge",
+        request_json='{"messages": []}',
+    )
+
+    registry.create_run(
+        spec, status="succeeded", result={"answer": "x"}, request_info=info
+    )
+    record = registry.get_run("run-ri-1", owner="alice")
+
+    assert record is not None
+    assert record.request_info == info
+
+
+def test_create_run_without_request_info_defaults_to_null(
+    tmp_path: Path,
+) -> None:
+    """Omitting request_info leaves every per-request column NULL."""
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-noreq", "alice", "chat", "local")
+
+    registry.create_run(spec, status="succeeded", result={"answer": "x"})
+    record = registry.get_run("run-noreq", owner="alice")
+
+    assert record is not None
+    assert record.request_info == RunRequestInfo()
+
+
+def test_update_request_info_overwrites_existing(tmp_path: Path) -> None:
+    """update_request_info replaces every column on an owned run."""
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-up", "alice", "chat", "local")
+    registry.create_run(spec, status="running")
+
+    new_info = RunRequestInfo(
+        dialogue_id="dlg-7",
+        query="hello world",
+        tool_name="ChatAgent",
+        model="phyto-chat",
+        request_json='{"x": 1}',
+    )
+    updated = registry.update_request_info(
+        "run-up", owner="alice", request_info=new_info
+    )
+
+    assert updated is True
+    record = registry.get_run("run-up", owner="alice")
+    assert record is not None
+    assert record.request_info == new_info
+
+
+def test_update_request_info_returns_false_for_unknown_run(
+    tmp_path: Path,
+) -> None:
+    """update_request_info silently returns False for missing rows."""
+    registry, _, _ = _make_registry(tmp_path)
+
+    updated = registry.update_request_info(
+        "run-missing", owner="alice", request_info=RunRequestInfo()
+    )
+
+    assert updated is False
+
+
+def test_update_request_info_enforces_owner_isolation(
+    tmp_path: Path,
+) -> None:
+    """A foreign owner cannot retro-stamp another user's run."""
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-iso", "alice", "chat", "local")
+    registry.create_run(spec, status="running")
+
+    updated = registry.update_request_info(
+        "run-iso",
+        owner="bob",
+        request_info=RunRequestInfo(query="injected"),
+    )
+
+    assert updated is False
+    record = registry.get_run("run-iso", owner="alice")
+    assert record is not None
+    assert record.request_info.query is None
+
+
+def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
+    """An old database without request-info columns migrates cleanly."""
+    db = str(tmp_path / "legacy.db")
+    # Build a pre-migration table shape and seed one row. The DDL is
+    # inlined into one string (no per-column newlines) so pylint's
+    # R0801 similarity scan does not group it with the production
+    # _CREATE_RUNS_DDL constant: the schemas overlap by design for the
+    # legacy fixture, and extracting a shared helper would couple
+    # tests to internal schema strings that are meant to be free to
+    # drift.
+    legacy_columns = (
+        "run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
+        "agent TEXT NOT NULL, origin TEXT NOT NULL, "
+        "status TEXT NOT NULL, result_json TEXT, error TEXT, "
+        "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+        "expires_at TEXT"
+    )
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(f"CREATE TABLE runs ({legacy_columns})")
+        conn.execute(
+            """
+            INSERT INTO runs (
+                run_id, user_id, agent, origin, status, result_json,
+                error, created_at, updated_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-run",
+                "alice",
+                "chat",
+                "local",
+                "succeeded",
+                None,
+                None,
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+                None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Opening the registry against the legacy DB must migrate in place.
+    registry = RunRegistry(db)
+    record = registry.get_run("legacy-run", owner="alice")
+
+    assert record is not None
+    # Legacy row keeps its data and the new columns default to NULL.
+    assert record.spec.user_id == "alice"
+    assert record.status == "succeeded"
+    assert record.request_info == RunRequestInfo()
+    # The migration is rerun-safe; opening again does not raise.
+    RunRegistry(db)
