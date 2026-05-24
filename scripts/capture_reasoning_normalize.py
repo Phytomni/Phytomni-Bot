@@ -221,13 +221,20 @@ def _payload_summary(payload: Any) -> dict[str, Any]:
     reasoning = message.get("reasoning_content")
     content_text = str(content or "")
     reasoning_text = str(reasoning or "")
+    tagged_tail = _expected_tail(message)
+    content_probe = content_text.strip()
     return {
         "content_len": len(content_text),
         "content_preview": _preview(content_text),
+        "content_in_reasoning": bool(
+            content_probe and content_probe in reasoning_text
+        ),
         "content_starts_think": content_text.lstrip().startswith("<think>"),
         "reasoning_len": len(reasoning_text),
-        "reasoning_has_tail": _expected_tail(message) is not None,
+        "reasoning_has_tail": tagged_tail is not None,
         "reasoning_preview": _preview(reasoning_text),
+        "reasoning_tail_preview": _tail_preview(reasoning_text),
+        "tagged_tail_preview": _preview(tagged_tail),
         "usage": _safe_usage(payload),
     }
 
@@ -337,6 +344,12 @@ def _preview(value: Any) -> str:
     """Return a bounded single-line preview for JSONL evidence."""
     text = "" if value is None else str(value)
     return text.replace("\n", "\\n")[:PREVIEW_CHARS]
+
+
+def _tail_preview(value: Any) -> str:
+    """Return a bounded single-line tail preview for JSONL evidence."""
+    text = "" if value is None else str(value)
+    return text.replace("\n", "\\n")[-PREVIEW_CHARS:]
 
 
 if __name__ == "__main__":
