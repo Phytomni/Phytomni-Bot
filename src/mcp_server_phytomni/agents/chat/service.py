@@ -533,7 +533,7 @@ def _stream_choice(
     full_reasoning: str,
     finish_reason: Optional[str],
 ) -> Dict[str, Any]:
-    """Return the normalized final streaming choice.
+    """Return the assembled final streaming choice.
 
     The ``reasoning_content`` field is omitted when the backend never
     emitted any reasoning deltas so the rebuilt message stays compact

@@ -66,6 +66,66 @@ def test_unclosed_think_tag_is_noop() -> None:
     assert changed is False
 
 
+def test_orphan_close_think_moves_tail_into_blank_content() -> None:
+    """An orphan close tag tail becomes the display answer."""
+    content, reasoning, changed = normalize_message_fields(
+        None,
+        "identify chlorophyll</think>491",
+    )
+
+    assert content == "491"
+    assert reasoning == "identify chlorophyll"
+    assert changed is True
+
+
+def test_orphan_close_think_dedupes_duplicate_content() -> None:
+    """Duplicate content is deduped when reasoning has orphan close tail."""
+    content, reasoning, changed = normalize_message_fields(
+        "491",
+        "identify chlorophyll</think>491",
+    )
+
+    assert content == "491"
+    assert reasoning == "identify chlorophyll"
+    assert changed is True
+
+
+def test_orphan_close_think_with_substantive_content_is_noop() -> None:
+    """Orphan close tag is ignored when content has substantive text."""
+    content, reasoning, changed = normalize_message_fields(
+        "Leaves capture light.",
+        "identify chlorophyll</think>491",
+    )
+
+    assert content == "Leaves capture light."
+    assert reasoning == "identify chlorophyll</think>491"
+    assert changed is False
+
+
+def test_orphan_close_think_with_empty_tail_is_noop() -> None:
+    """An orphan close tag with no tail text is not repaired."""
+    content, reasoning, changed = normalize_message_fields(
+        None,
+        "identify chlorophyll</think>  ",
+    )
+
+    assert content == ""
+    assert reasoning == "identify chlorophyll</think>  "
+    assert changed is False
+
+
+def test_multiple_orphan_close_think_tags_is_noop() -> None:
+    """Multiple close tags without open tags are not repaired."""
+    content, reasoning, changed = normalize_message_fields(
+        None,
+        "identify</think>chlorophyll</think>491",
+    )
+
+    assert content == ""
+    assert reasoning == "identify</think>chlorophyll</think>491"
+    assert changed is False
+
+
 def test_content_prefix_think_tag_is_split_when_reasoning_empty() -> None:
     """Support providers that put the full tagged text in content."""
     content, reasoning, changed = normalize_message_fields(

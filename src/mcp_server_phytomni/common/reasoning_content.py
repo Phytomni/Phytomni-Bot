@@ -24,7 +24,8 @@ def normalize_message_fields(
 
     Some OpenAI-compatible reasoner providers occasionally place the
     final answer after a closed ``<think>...</think>`` block in the
-    wrong field. This helper only repairs that narrow shape.
+    wrong field, or emit an orphan ``</think>`` close tag without a
+    matching open tag. This helper only repairs those narrow shapes.
 
     Args:
         content: Assistant ``message.content`` value.
@@ -38,6 +39,14 @@ def normalize_message_fields(
 
     if reasoning_text:
         split = _split_tagged_tail(reasoning_text)
+        if split is not None:
+            reasoning, tail = split
+            content_stripped = content_text.strip()
+            if not content_stripped or content_stripped == tail:
+                return tail, reasoning or None, True
+
+    if reasoning_text:
+        split = _split_orphan_close_tail(reasoning_text)
         if split is not None:
             reasoning, tail = split
             content_stripped = content_text.strip()
@@ -126,3 +135,24 @@ def _split_tagged_tail(text: str) -> tuple[str, str] | None:
     if not tail:
         return None
     return text[body_start:close].strip(), tail
+
+
+def _split_orphan_close_tail(text: str) -> tuple[str, str] | None:
+    """Return body and non-empty tail for an orphan close tag.
+
+    Handles the provider shape where ``</think>`` appears without
+    a matching ``<think>``.  Requires no open tag anywhere in
+    the text and exactly one close tag with a non-empty tail.
+    """
+    if text.find(_THINK_OPEN) != -1:
+        return None
+    close = text.find(_THINK_CLOSE)
+    if close == -1:
+        return None
+    if text.find(_THINK_CLOSE, close + len(_THINK_CLOSE)) != -1:
+        return None
+    body = text[:close].strip()
+    tail = text[close + len(_THINK_CLOSE) :].strip()
+    if not tail:
+        return None
+    return body, tail

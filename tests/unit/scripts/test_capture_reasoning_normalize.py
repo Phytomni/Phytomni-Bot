@@ -125,8 +125,8 @@ def test_capture_record_reports_all_corrected_after_surfaces():
     assert assertion["same_sample_real_anomaly_fixed"] is True
 
 
-def test_capture_record_does_not_treat_close_only_text_as_tagged_tail():
-    """Script evidence uses the same strict tag shape as production."""
+def test_capture_record_repairs_orphan_close_reasoning_tail():
+    """Orphan close-only reasoning is repaired by the normalizer."""
     payload = {
         "id": "chatcmpl-test",
         "object": "chat.completion",
@@ -151,12 +151,50 @@ def test_capture_record_does_not_treat_close_only_text_as_tagged_tail():
         mode="fixtures",
         run_id="close-only",
         provider_raw=payload,
+        expect_repair=True,
+    )
+
+    assert record["repaired"] is True
+    assert record["provider_before"]["reasoning_has_tail"] is True
+    assert (
+        record["provider_before"]["tagged_tail_preview"]
+        == "Leaves reflect green light."
+    )
+    assert record["repair_assertion"]["before_tagged_tail_present"] is True
+    assert record["repair_assertion"]["same_sample_real_anomaly_fixed"] is True
+
+
+def test_capture_record_does_not_repair_multiple_orphan_close_tags():
+    """Multiple close tags without open tags remain no-op."""
+    multi_close = (
+        "Identify</think>chlorophyll.</think>Leaves reflect green light."
+    )
+    payload = {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "model": "fixture-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": multi_close,
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+    record = capture_record(
+        mode="fixtures",
+        run_id="multi-close",
+        provider_raw=payload,
         expect_repair=False,
     )
 
     assert record["repaired"] is False
     assert record["provider_before"]["reasoning_has_tail"] is False
-    assert record["provider_before"]["tagged_tail_preview"] == ""
     assert record["repair_assertion"]["before_tagged_tail_present"] is False
     assert (
         record["repair_assertion"]["same_sample_real_anomaly_fixed"] is False

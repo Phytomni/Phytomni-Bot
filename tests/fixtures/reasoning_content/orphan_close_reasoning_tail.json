@@ -1,0 +1,25 @@
+{
+  "fixture_id": "orphan_close_reasoning_tail",
+  "expect_repair": true,
+  "provider_raw": {
+    "id": "chatcmpl-fixture-orphan-close",
+    "object": "chat.completion",
+    "model": "fixture-model",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "reasoning_content": "identify chlorophyll</think>Leaves capture light."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5,
+      "completion_tokens": 7,
+      "total_tokens": 12
+    }
+  }
+}

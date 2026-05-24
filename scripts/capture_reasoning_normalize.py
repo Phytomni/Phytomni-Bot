@@ -302,12 +302,23 @@ def _expected_tail(message: Mapping[str, Any]) -> str | None:
 
 
 def _tail_after_think(text: str) -> str | None:
-    """Return non-empty text after one closed lowercase think block."""
+    """Return non-empty text after one closed lowercase think block.
+
+    Handles both paired ``<think>...</think>`` and orphan ``</think>``
+    close-only shapes.  For orphan close, requires no open tag and
+    exactly one close tag.
+    """
     start = text.find(THINK_OPEN)
-    if start == -1:
-        return None
-    close = text.find(THINK_CLOSE, start + len(THINK_OPEN))
+    if start != -1:
+        close = text.find(THINK_CLOSE, start + len(THINK_OPEN))
+        if close == -1:
+            return None
+        tail = text[close + len(THINK_CLOSE) :].strip()
+        return tail or None
+    close = text.find(THINK_CLOSE)
     if close == -1:
+        return None
+    if text.find(THINK_CLOSE, close + len(THINK_CLOSE)) != -1:
         return None
     tail = text[close + len(THINK_CLOSE) :].strip()
     return tail or None
