@@ -151,11 +151,20 @@ class RunFilter:
         status: Exact-match run status filter.
         agent: Exact-match agent alias filter.
         origin: Exact-match origin filter (``"local"``/``"remote"``).
+        created_after: ISO-8601 lower bound (inclusive); rows with
+            ``created_at >= created_after`` are kept. Both bounds are
+            compared as TEXT directly: ISO-8601 timestamps are
+            lexicographically ordered when normalised to UTC + the same
+            offset form, which matches every ``_now_iso()`` write here.
+        created_before: ISO-8601 upper bound (inclusive); rows with
+            ``created_at <= created_before`` are kept.
     """
 
     status: Optional[str] = None
     agent: Optional[str] = None
     origin: Optional[str] = None
+    created_after: Optional[str] = None
+    created_before: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -586,6 +595,12 @@ def _build_list_where(
         if value is not None:
             clauses.append(f"{column} = ?")
             params.append(value)
+    if run_filter.created_after is not None:
+        clauses.append("created_at >= ?")
+        params.append(run_filter.created_after)
+    if run_filter.created_before is not None:
+        clauses.append("created_at <= ?")
+        params.append(run_filter.created_before)
     return " AND ".join(clauses), params
 
 

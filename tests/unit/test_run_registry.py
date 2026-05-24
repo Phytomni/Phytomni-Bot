@@ -318,6 +318,105 @@ def test_run_record_is_frozen_dataclass() -> None:
         setattr(record, "status", "running")
 
 
+def test_list_runs_filters_by_created_after(tmp_path: Path) -> None:
+    """RunFilter.created_after keeps rows with created_at >= bound."""
+    registry, _, db = _make_registry(tmp_path)
+    registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
+    registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
+    # Stamp deterministic created_at so the bound comparison is stable.
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-01-01T00:00:00+00:00", "run-old"),
+        )
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-06-01T00:00:00+00:00", "run-new"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    listing = registry.list_runs(
+        owner="alice",
+        run_filter=RunFilter(created_after="2026-03-01T00:00:00+00:00"),
+    )
+
+    assert [r.spec.run_id for r in listing] == ["run-new"]
+
+
+def test_list_runs_filters_by_created_before(tmp_path: Path) -> None:
+    """RunFilter.created_before keeps rows with created_at <= bound."""
+    registry, _, db = _make_registry(tmp_path)
+    registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
+    registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-01-01T00:00:00+00:00", "run-old"),
+        )
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-06-01T00:00:00+00:00", "run-new"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    listing = registry.list_runs(
+        owner="alice",
+        run_filter=RunFilter(created_before="2026-03-01T00:00:00+00:00"),
+    )
+
+    assert [r.spec.run_id for r in listing] == ["run-old"]
+
+
+def test_list_runs_composes_date_range_with_other_filters(
+    tmp_path: Path,
+) -> None:
+    """created_after / created_before stack with status / agent / origin."""
+    registry, _, db = _make_registry(tmp_path)
+    registry.create_run(
+        RunSpec("run-a-old", "alice", "analyst", "remote"), status="failed"
+    )
+    registry.create_run(
+        RunSpec("run-a-new", "alice", "analyst", "remote"), status="failed"
+    )
+    registry.create_run(
+        RunSpec("run-c-new", "alice", "chat", "local"), status="failed"
+    )
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-01-01T00:00:00+00:00", "run-a-old"),
+        )
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-06-01T00:00:00+00:00", "run-a-new"),
+        )
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-06-01T00:00:00+00:00", "run-c-new"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    listing = registry.list_runs(
+        owner="alice",
+        run_filter=RunFilter(
+            status="failed",
+            agent="analyst",
+            created_after="2026-03-01T00:00:00+00:00",
+        ),
+    )
+
+    assert [r.spec.run_id for r in listing] == ["run-a-new"]
+
+
 def test_create_run_persists_request_info(tmp_path: Path) -> None:
     """A request_info bundle round-trips through create_run + get_run."""
     registry, _, _ = _make_registry(tmp_path)
