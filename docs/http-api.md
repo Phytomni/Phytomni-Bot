@@ -106,7 +106,12 @@ extra top-level blocks: `formatted` (the normalized display view with
 / `output_dirs`) and `raw` (the sanitized handler payload carrying
 `choices[].message.reasoning_content`, `usage`, `system_fingerprint`,
 provider-side `tool_calls` / `refusal`, and any forward-compatible
-extension keys). Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
+extension keys). Before the envelope is built, the shared chat boundary
+repairs the narrow provider fault where a closed `<think>...</think>`
+block contains the final answer tail in `reasoning_content` or at the
+front of `content`; clients should treat both `choices[].message.content`
+and `raw.choices[].message.content` as the normalized answer field.
+Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
 `BriefGeneAgent`) emit plain markdown with inline `[N]` citation markers
 as `message.content` and ship deduplicated citation documents through
 `formatted.references`. The `raw.phytomni_state` namespace carries the

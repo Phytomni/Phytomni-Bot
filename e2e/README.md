@@ -92,6 +92,33 @@ even though `e2e/` does not inherit those checks, keeping them in the
 invocation is a useful reminder that this command will make real
 network and platform calls.
 
+### Reasoning/content normalization evidence
+
+The offline and live evidence helper
+[`../scripts/capture_reasoning_normalize.py`](../scripts/capture_reasoning_normalize.py)
+records compact before/after JSONL summaries for the narrow provider
+fault where a closed `<think>...</think>` block carries the final answer
+tail in `reasoning_content` or at the front of `content`.
+
+Fixture mode is deterministic and does not call the network:
+
+```bash
+uv run python scripts/capture_reasoning_normalize.py --fixtures
+```
+
+Live mode calls the configured provider repeatedly and writes the same
+summary shape under `e2e/output/`. A live run only proves that the
+normalizer corrected the intermittent fault when a record has
+`repaired=true`, a before-state with the answer tail in a tagged field,
+and matching MCP/API after-state content. If no live record triggers
+repair, the anomaly was not observed in that sample; it is not evidence
+that the upstream issue disappeared.
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+    uv run python scripts/capture_reasoning_normalize.py --live --runs 30
+```
+
 ### Async polling tunables
 
 Tools that return task handles (`AnalystAgent`, `DeepGenomeAgent`,

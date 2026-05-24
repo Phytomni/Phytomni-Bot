@@ -1,0 +1,25 @@
+{
+  "fixture_id": "clean_reasoner",
+  "expect_repair": false,
+  "provider_raw": {
+    "id": "chatcmpl-fixture-clean",
+    "object": "chat.completion",
+    "model": "fixture-model",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Leaves capture light.",
+          "reasoning_content": "identify chlorophyll"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5,
+      "completion_tokens": 7,
+      "total_tokens": 12
+    }
+  }
+}

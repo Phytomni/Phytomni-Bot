@@ -1,0 +1,24 @@
+{
+  "fixture_id": "content_prefix_tail",
+  "expect_repair": true,
+  "provider_raw": {
+    "id": "chatcmpl-fixture-content-prefix",
+    "object": "chat.completion",
+    "model": "fixture-model",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "<think>identify chlorophyll</think>Leaves capture light."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5,
+      "completion_tokens": 7,
+      "total_tokens": 12
+    }
+  }
+}

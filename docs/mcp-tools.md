@@ -26,7 +26,11 @@ blocks:
   state (retrieved_docs, gene_id, rewrite_query, research_dimensions,
   plan, tool_usages, ...) when the agent populated them. Credential-
   pattern keys are stripped recursively at this seam before clients
-  see them.
+  see them. The chat boundary also normalizes the narrow provider fault
+  where a closed `<think>...</think>` block carries the final answer tail
+  in `reasoning_content` or at the front of `content`; after this repair,
+  `formatted.answer` and `raw.choices[].message.content` both carry the
+  display answer.
 
 The HTTP API and MCP stdio surfaces emit the identical envelope. The
 client-side `mcp_client_phytomni.tool_result_formatters.parse_formatted_result`
