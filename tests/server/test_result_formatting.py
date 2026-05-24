@@ -72,6 +72,69 @@ def test_data_result_returns_tabular_field_and_summary_answer() -> None:
     assert result.answer == "1 row x 2 columns"
 
 
+def test_get_task_status_terminal_success_emits_artifacts_descriptor() -> None:
+    """``GetTaskStatus`` surfaces an artifacts entry on success terminal.
+
+    The MCP tool's raw payload is the per-task row ``reconcile_task``
+    returns; the formatter mirrors the run-aggregate envelope by
+    advertising one artifact descriptor when the task is in a success
+    terminal state with a non-empty output_dir. Non-terminal and
+    failed branches expose an empty artifacts list.
+    """
+    raw = {
+        "task_id": "T-1",
+        "status": "succeeded",
+        "output_dir": "/obs/run/output",
+        "analysis_id": "an-1",
+        "live_status": {"phase": "completed"},
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.answer == "Task T-1: succeeded"
+    assert result.metadata["task_id"] == "T-1"
+    assert result.metadata["status"] == "succeeded"
+    assert result.metadata["output_dir"] == "/obs/run/output"
+    assert result.metadata["analysis_id"] == "an-1"
+    assert result.metadata["live_status"] == {"phase": "completed"}
+    assert result.metadata["artifacts"] == [
+        {"task_id": "T-1", "output_dir": "/obs/run/output", "paths": []},
+    ]
+
+
+def test_get_task_status_running_emits_empty_artifacts() -> None:
+    """Non-terminal status keeps artifacts empty (no products to advertise)."""
+    raw = {
+        "task_id": "T-2",
+        "status": "running",
+        "output_dir": "/obs/run/wip",
+        "analysis_id": "an-2",
+        "live_status": None,
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.answer == "Task T-2: running"
+    assert not result.metadata["artifacts"]
+
+
+def test_get_task_status_unknown_id_returns_unknown_status() -> None:
+    """An unrecorded task id surfaces status=unknown with no artifacts."""
+    raw = {
+        "task_id": "T-nope",
+        "status": "unknown",
+        "output_dir": "",
+        "analysis_id": "",
+        "live_status": None,
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.answer == "Task T-nope: unknown"
+    assert result.metadata["status"] == "unknown"
+    assert not result.metadata["artifacts"]
+
+
 def test_envelope_preserves_raw_provider_fields() -> None:
     """Verify envelope keeps reasoning_content, usage, and unknown keys.
 

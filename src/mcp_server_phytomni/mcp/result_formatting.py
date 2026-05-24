@@ -18,6 +18,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..runtime.terminal_artifacts import collect_terminal_artifacts
+
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
 
 
@@ -198,6 +200,8 @@ def format_tool_result(
         result = _format_task_result(_network_task_payload(content))
     elif normalized_name == "DigitalDesignAgent":
         result = _format_design_result(content)
+    elif normalized_name == "GetTaskStatus":
+        result = _format_task_status_result(content)
     else:
         result = FormattedToolResult(answer=_json_dumps(payload))
     return result
@@ -364,6 +368,34 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
             "log_status": "sync_running",
         },
         output_dirs=output_dirs,
+    )
+
+
+def _format_task_status_result(
+    content: Mapping[str, Any],
+) -> FormattedToolResult:
+    """Format a ``GetTaskStatus`` lookup result with artifacts summary.
+
+    Mirrors the run-aggregate envelope's ``artifacts`` block at the
+    single-task level: when the task is in a success terminal state and
+    carries an ``output_dir``, surface one descriptor; otherwise expose
+    an empty list. ``collect_terminal_artifacts`` owns the eligibility
+    rule so success vocabulary stays consistent with the run-poll path.
+    """
+    task_id = _string_or_none(content.get("task_id"))
+    status = _string_or_none(content.get("status")) or "unknown"
+    output_dir = _string_or_none(content.get("output_dir"))
+    artifacts = collect_terminal_artifacts([dict(content)])
+    return FormattedToolResult(
+        answer=f"Task {task_id or '?'}: {status}",
+        metadata={
+            "task_id": task_id,
+            "status": status,
+            "output_dir": output_dir,
+            "analysis_id": _string_or_none(content.get("analysis_id")),
+            "live_status": content.get("live_status"),
+            "artifacts": artifacts,
+        },
     )
 
 

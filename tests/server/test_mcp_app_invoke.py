@@ -291,12 +291,21 @@ async def test_invoke_in_silico_research_agent_falls_back_to_json(
     assert result.references == ()
 
 
-async def test_invoke_get_task_status_falls_back_to_json(
+async def test_invoke_get_task_status_emits_artifacts_on_success(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GetTaskStatus has no formatter branch; payload serialises as-is."""
-    raw = {"status": "success", "task_id": "task-1"}
+    """GetTaskStatus formatter surfaces a per-task artifacts descriptor.
+
+    Mirrors the run-aggregate artifacts block at the single-task level
+    so a polling client gets the same product index regardless of
+    whether it polls the run or the task surface.
+    """
+    raw = {
+        "task_id": "task-1",
+        "status": "success",
+        "output_dir": "/obs/run/out",
+    }
     _patch_handler(monkeypatch, PhytomniAgents.GET_TASK_STATUS.value, raw)
 
     result = await mcp_app.invoke_tool_formatted(
@@ -304,4 +313,8 @@ async def test_invoke_get_task_status_falls_back_to_json(
         _payload(demo_data_dir, "get_task_status.json"),
     )
 
-    assert json.loads(result.answer) == raw
+    assert result.answer == "Task task-1: success"
+    assert result.metadata["status"] == "success"
+    assert result.metadata["artifacts"] == [
+        {"task_id": "task-1", "output_dir": "/obs/run/out", "paths": []},
+    ]
