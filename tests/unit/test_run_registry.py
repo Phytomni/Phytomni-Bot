@@ -208,10 +208,15 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
         ("t-1", "t-2"),
     )
     statuses = {"t-1": "succeeded", "t-2": "completed"}
+    output_dirs = {"t-1": "/obs/a", "t-2": "/obs/b"}
 
     async def fake(task_id: str) -> Dict[str, Any]:
         """Return one terminal status per child task id."""
-        return {"task_id": task_id, "status": statuses[task_id]}
+        return {
+            "task_id": task_id,
+            "status": statuses[task_id],
+            "output_dir": output_dirs[task_id],
+        }
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
 
@@ -221,6 +226,11 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
     assert record.status == "succeeded"
     assert record.timestamps.expires_at is not None
     assert record.result is not None
+    assert record.result["task_results"] == record.result["live_status"]
+    assert record.result["artifacts"] == [
+        {"task_id": "t-1", "output_dir": "/obs/a", "paths": []},
+        {"task_id": "t-2", "output_dir": "/obs/b", "paths": []},
+    ]
     cached = registry.get_run("run-r", owner="alice")
     assert cached is not None
     assert cached.status == "succeeded"
@@ -257,6 +267,8 @@ async def test_reconcile_propagates_failure_status(
         {"task_id": "t-1", "status": "succeeded"},
         {"task_id": "t-2", "status": "failed"},
     ]
+    assert record.result["live_status"] == record.result["task_results"]
+    assert not record.result["artifacts"]
 
 
 def test_purge_expired_cascades_child_tasks(tmp_path: Path) -> None:

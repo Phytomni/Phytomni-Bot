@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..config.defaults import ApiConfig
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .task_reconcile import reconcile_task
+from .terminal_artifacts import collect_terminal_artifacts
 
 __all__ = [
     "RunFilter",
@@ -609,23 +610,36 @@ def _terminal_payload(
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Return the (result_payload, error) pair for a terminal run.
 
-    Failed runs keep ``task_results`` alongside ``error`` so HTTP/MCP
-    clients can show the failing task rows verbatim instead of only a
-    one-line aggregate error string; the live ``task_results`` blob is
-    the same shape ``reconcile_task`` returns per child task, so the
-    failure detail stays self-describing.
+    Both branches now ship the same three structured blocks so clients
+    polling /v1/runs/{id} get a uniform shape regardless of terminal
+    direction:
+
+    - ``task_results``: the reconciled task rows (the existing field).
+    - ``live_status``: the same reconciled rows surfaced under a stable
+      "raw live blob" namespace; future work may decouple a simplified
+      task_results view from the full live blob, so consumers wanting
+      the unredacted view bind to this key now.
+    - ``artifacts``: succeeded-task product index emitted by
+      ``collect_terminal_artifacts``; the field is always present so
+      clients can iterate it without a key-check, but it is empty on
+      the failed branch because failed tasks have no products.
     """
+    artifacts = (
+        collect_terminal_artifacts(live) if status == "succeeded" else []
+    )
+    payload: Dict[str, Any] = {
+        "task_results": live,
+        "live_status": live,
+        "artifacts": artifacts,
+    }
     if status == "succeeded":
-        return {"task_results": live}, None
+        return payload, None
     failed = [
         row.get("task_id", "?")
         for row in live
         if (row.get("status") or "").lower() in _FAILURE_STATUSES
     ]
-    return (
-        {"task_results": live},
-        f"one or more tasks failed: {', '.join(failed)}",
-    )
+    return payload, f"one or more tasks failed: {', '.join(failed)}"
 
 
 def _row_to_record(
