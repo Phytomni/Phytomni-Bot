@@ -31,14 +31,17 @@ src/mcp_server_phytomni/
     shared/
       analysis.py            Cross-agent Analyst-backed analysis helpers
       analysis_storage.py    Cross-agent storage and OBS path helpers
+      intermediate_state.py  LangGraph final-state lifter to phytomni_state
       options.py             Shared chat and submit kwargs builders
       parallel_dispatch.py   Shared StateGraph builder for parallel agents
+      sql.py                 Shared SQL literal escaping helper
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
     request_context.py       Per-request user and run contextvars
     run_registry.py          HTTP API parent-run registry
     task_manager.py          Task lifecycle helper
+    task_reconcile.py        Per-task status reconciliation against backend
     workflow_mixins.py       Reusable workflow mixin helpers for nodes
   common/
     http.py                  JSON POST retry helpers
