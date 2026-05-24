@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
@@ -49,7 +49,7 @@ from ..runtime.run_registry import (
 )
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
-from .admin_auth import require_service_principal
+from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import ApiPrincipal, get_key_store, require_principal
 from .openai_mapping import (
     MODEL_TO_TOOL,
@@ -134,13 +134,38 @@ def _purge_expired_runs_best_effort() -> None:
         pass
 
 
+def _extract_answer(result: Any) -> Optional[str]:
+    """Pull a display-ready answer string from a stored run result.
+
+    Tolerates the two envelope shapes the API writes today: the chat /
+    agent-run path stores ``{"formatted": {"answer": ...}, "raw": ...}``
+    while older sync writers may carry a top-level ``answer``. Returns
+    ``None`` when neither shape carries a string answer so chat-ai can
+    render an "ongoing" placeholder without crashing.
+    """
+    if not isinstance(result, dict):
+        return None
+    formatted = result.get("formatted")
+    if isinstance(formatted, dict):
+        candidate = formatted.get("answer")
+        if isinstance(candidate, str):
+            return candidate
+    candidate = result.get("answer")
+    if isinstance(candidate, str):
+        return candidate
+    return None
+
+
 def _run_record_to_dict(record: Any) -> dict[str, Any]:
     """Flatten a ``RunRecord`` into the JSON envelope the API returns.
 
-    Unpacks ``spec`` (identity bundle) and ``timestamps`` (lifecycle
-    bundle) so the on-wire shape stays a flat object rather than the
-    nested dataclass tree, and serialises ``task_ids`` as a list so
-    clients consume it as a JSON array.
+    Unpacks ``spec`` (identity bundle), ``timestamps`` (lifecycle
+    bundle), and ``request_info`` (per-request metadata bundle) so the
+    on-wire shape stays a flat object rather than the nested dataclass
+    tree, and serialises ``task_ids`` as a list so clients consume it
+    as a JSON array. The ``answer`` shortcut surfaces the formatted
+    response text directly so chat-ai's history page does not have to
+    descend into ``result.formatted.answer`` per row.
 
     Args:
         record: The ``RunRegistry`` record to flatten.
@@ -148,6 +173,7 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
     Returns:
         A JSON-serialisable dict.
     """
+    info = record.request_info
     return {
         "run_id": record.spec.run_id,
         "agent": record.spec.agent,
@@ -160,6 +186,11 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
         "updated_at": record.timestamps.updated_at,
         "expires_at": record.timestamps.expires_at,
         "task_ids": list(record.task_ids),
+        "dialogue_id": info.dialogue_id,
+        "query": info.query,
+        "tool_name": info.tool_name,
+        "model": info.model,
+        "answer": _extract_answer(record.result),
     }
 
 
@@ -373,13 +404,16 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
 
 def _list_owner_runs(
     *,
+    owner: str,
     status: Optional[str],
     agent: Optional[str],
     origin: Optional[str],
+    created_after: Optional[str],
+    created_before: Optional[str],
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    """Return one ``GET /v1/runs`` body for the authenticated owner.
+    """Return one ``GET /v1/runs`` body scoped to ``owner``.
 
     Drives the lazy GC via ``_purge_expired_runs_best_effort`` (the
     same helper the sync chat and native agent run write paths use)
@@ -387,20 +421,31 @@ def _list_owner_runs(
     submission-heavy workloads alike.
 
     Args:
+        owner: User id whose runs to return. Set by the route from
+            ``current_request_user()`` for owner-only calls, or from
+            the ``user_id`` query parameter for delegated calls that
+            already passed the service-token check.
         status: Optional exact-match status filter.
         agent: Optional exact-match agent slug filter.
         origin: Optional exact-match origin filter.
+        created_after: Optional ISO-8601 lower bound (inclusive).
+        created_before: Optional ISO-8601 upper bound (inclusive).
         limit: Max rows to return.
         offset: Rows to skip (paging).
 
     Returns:
         ``{"object", "data"}`` envelope with the flat run records.
     """
-    owner = current_request_user() or "anonymous"
     _purge_expired_runs_best_effort()
     records = RunRegistry(resolve_tasks_db_path()).list_runs(
         owner=owner,
-        run_filter=RunFilter(status=status, agent=agent, origin=origin),
+        run_filter=RunFilter(
+            status=status,
+            agent=agent,
+            origin=origin,
+            created_after=created_after,
+            created_before=created_before,
+        ),
         limit=limit,
         offset=offset,
     )
@@ -897,20 +942,45 @@ def create_app() -> FastAPI:
         status: Optional[str] = None,
         agent: Optional[str] = None,
         origin: Optional[str] = None,
+        user_id: Optional[str] = None,
+        created_after: Optional[str] = None,
+        created_before: Optional[str] = None,
         limit: int = 10,
         offset: int = 0,
+        authorization: Optional[str] = Header(default=None),
+        x_service_token: Optional[str] = Header(
+            default=None, alias="X-Service-Token"
+        ),
     ) -> JSONResponse:
-        """List owner-scoped runs with optional filters and paging.
+        """List runs with owner-only or service-token-delegated scoping.
 
-        Acts as the lazy GC trigger for the registry by calling
-        ``purge_expired`` once per request before the listing.
+        Without ``user_id`` the route returns the authenticated user's
+        runs only. With ``user_id`` it requires a valid service token
+        in addition to the user key, then scopes the listing to that
+        user instead of the caller — the path Phytomni-Web Go uses to
+        render history pages for any tenant. Acts as the lazy GC
+        trigger via ``_purge_expired_runs_best_effort``.
         """
         del principal
+        is_service = is_service_token_valid(authorization, x_service_token)
+        if user_id is not None and not is_service:
+            raise HTTPException(
+                status_code=403,
+                detail=("user_id query parameter requires the service token"),
+            )
+        owner = (
+            user_id
+            if user_id is not None
+            else (current_request_user() or "anonymous")
+        )
         return JSONResponse(
             _list_owner_runs(
+                owner=owner,
                 status=status,
                 agent=agent,
                 origin=origin,
+                created_after=created_after,
+                created_before=created_before,
                 limit=limit,
                 offset=offset,
             )

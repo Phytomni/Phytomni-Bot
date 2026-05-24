@@ -269,3 +269,167 @@ async def test_agent_run_purges_expired(
     assert response.status_code == 200
     purged = RunRegistry(tasks_db_path).get_run("run-stale", owner="u1")
     assert purged is None
+
+
+async def test_list_runs_rejects_user_id_without_service_token(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user key cannot use ``?user_id=`` to escape owner scope."""
+    del tasks_db_path
+    monkeypatch.delenv("API_SERVICE_TOKEN", raising=False)
+
+    response = await api_client.get(
+        "/v1/runs?user_id=other-user",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 403
+    assert "service token" in response.json()["error"]["message"].lower()
+
+
+async def test_list_runs_delegated_query_with_service_token(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user key + valid service token returns the target user's runs."""
+    monkeypatch.setenv("API_SERVICE_TOKEN", "svc-token-xyz")
+    registry = RunRegistry(tasks_db_path)
+    _seed(
+        registry,
+        run_id="run-other-1",
+        user_id="alice@example.com",
+        agent="chat",
+        origin="local",
+    )
+    _seed(
+        registry,
+        run_id="run-mine-1",
+        user_id="u1",
+        agent="chat",
+        origin="local",
+    )
+
+    response = await api_client.get(
+        "/v1/runs?user_id=alice@example.com",
+        headers={
+            "Authorization": f"Bearer {issued_api_key}",
+            "X-Service-Token": "svc-token-xyz",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    ids = {row["run_id"] for row in body["data"]}
+    assert ids == {"run-other-1"}
+
+
+async def test_list_runs_created_after_filter(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """The created_after query parameter trims older rows."""
+    registry = RunRegistry(tasks_db_path)
+    _seed(
+        registry,
+        run_id="run-old",
+        user_id="u1",
+        agent="chat",
+        origin="local",
+    )
+    _seed(
+        registry,
+        run_id="run-new",
+        user_id="u1",
+        agent="chat",
+        origin="local",
+    )
+    conn = sqlite3.connect(tasks_db_path)
+    try:
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-01-01T00:00:00+00:00", "run-old"),
+        )
+        conn.execute(
+            "UPDATE runs SET created_at = ? WHERE run_id = ?",
+            ("2026-06-01T00:00:00+00:00", "run-new"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = await api_client.get(
+        "/v1/runs?created_after=2026-03-01T00:00:00%2B00:00",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    ids = [row["run_id"] for row in response.json()["data"]]
+    assert ids == ["run-new"]
+
+
+async def test_list_runs_response_row_shape(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Response rows expose dialogue/query/tool/model/answer fields."""
+    del tasks_db_path
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return an OpenAI ChatCompletion-shaped payload."""
+        _ = args
+        return {
+            "id": "chatcmpl-canned",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            "C3 photosynthesis fixes CO2 in the Calvin cycle."
+                        ),
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+
+    chat_response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-chat",
+            "messages": [{"role": "user", "content": "Explain C3."}],
+            "dialogue_id": "dlg-resp",
+        },
+    )
+    assert chat_response.status_code == 200
+
+    listing = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert listing.status_code == 200
+    rows = listing.json()["data"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["dialogue_id"] == "dlg-resp"
+    assert row["tool_name"] == "ChatAgent"
+    assert row["model"] == "phyto-chat"
+    assert row["query"] is not None
+    assert "Explain C3" in row["query"]
+    assert "Calvin cycle" in row["answer"]

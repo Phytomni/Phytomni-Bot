@@ -21,7 +21,7 @@ from fastapi import Header, HTTPException
 
 from ..config.defaults import ApiConfig
 
-__all__ = ["require_service_principal"]
+__all__ = ["is_service_token_valid", "require_service_principal"]
 
 _SERVICE_TOKEN_HEADERS = {"WWW-Authenticate": "Bearer"}
 
@@ -37,6 +37,45 @@ def _extract_service_token(
         token = x_service_token.strip()
         return token or None
     return None
+
+
+def is_service_token_valid(
+    authorization: Optional[str], x_service_token: Optional[str]
+) -> bool:
+    """Return True when the headers carry the configured service token.
+
+    Soft variant of ``require_service_principal``: it never raises so a
+    route can fall back to user-key auth when the headers do not match.
+    Used by endpoints that accept either credential (e.g. delegated
+    ``GET /v1/runs?user_id=`` queries that elevate to admin scope when
+    the service token is present).
+
+    The check prefers ``X-Service-Token`` over ``Authorization: Bearer``
+    so a caller who already carries a user-key Bearer header can still
+    elevate by passing the service token in the dedicated header. The
+    admin-only routes (``/v1/api-keys/*``) still go through
+    ``require_service_principal`` which accepts either header
+    interchangeably because there is no user-key path to confuse them
+    with.
+
+    Args:
+        authorization: Raw ``Authorization`` header value, if any.
+        x_service_token: Alternative ``X-Service-Token`` header value.
+
+    Returns:
+        True when ``API_SERVICE_TOKEN`` is configured and the
+        presented token matches it; False otherwise.
+    """
+    configured = ApiConfig().API_SERVICE_TOKEN
+    if configured is None:
+        return False
+    if x_service_token:
+        presented = x_service_token.strip() or None
+    else:
+        presented = _extract_service_token(authorization, x_service_token)
+    if presented is None:
+        return False
+    return secrets.compare_digest(presented, configured.get_secret_value())
 
 
 async def require_service_principal(
