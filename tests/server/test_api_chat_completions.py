@@ -172,6 +172,54 @@ async def test_chat_completions_records_local_run(
     assert not record.task_ids
 
 
+async def test_chat_completions_persists_request_info(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Chat completions write dialogue / query / tool / model into runs."""
+    _stub_chat(monkeypatch, {})
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="what is photosynthesis?",
+        dialogue_id="dlg-42",
+    )
+    assert response.status_code == 200
+
+    listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert len(listing) == 1
+    info = listing[0].request_info
+    assert info.dialogue_id == "dlg-42"
+    assert info.query is not None
+    assert "what is photosynthesis?" in info.query
+    assert info.tool_name == "ChatAgent"
+    assert info.model == "phyto-chat"
+    assert info.request_json is not None
+    assert "phyto-chat" in info.request_json
+
+
+async def test_chat_completions_omits_dialogue_id_keeps_field_null(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A request without dialogue_id persists with the field NULL."""
+    _stub_chat(monkeypatch, {})
+
+    await chat_completion(api_client, issued_api_key)
+
+    listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    info = listing[0].request_info
+    assert info.dialogue_id is None
+    assert info.model == "phyto-chat"
+
+
 async def test_chat_completions_preserves_provider_reasoning_and_usage(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

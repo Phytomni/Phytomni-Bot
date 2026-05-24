@@ -41,7 +41,12 @@ from ..runtime.request_context import (
     current_run_id,
     reset_request_var,
 )
-from ..runtime.run_registry import RunFilter, RunRegistry, RunSpec
+from ..runtime.run_registry import (
+    RunFilter,
+    RunRegistry,
+    RunRequestInfo,
+    RunSpec,
+)
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 from .admin_auth import require_service_principal
@@ -218,7 +223,11 @@ async def _maybe_resolve_brief_gene_query(
 
 
 async def _invoke_agent_run(
-    *, agent: str, arguments: dict[str, Any]
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    dialogue_id: Optional[str] = None,
+    request_json: Optional[str] = None,
 ) -> tuple[dict[str, Any], int]:
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
 
@@ -283,8 +292,22 @@ async def _invoke_agent_run(
         formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
     result = {"formatted": formatted_dict, "raw": envelope.raw}
     owner = current_request_user() or "anonymous"
+    request_info = RunRequestInfo(
+        dialogue_id=dialogue_id,
+        query=(
+            arguments.get("user_query")
+            if isinstance(arguments.get("user_query"), str)
+            else None
+        ),
+        tool_name=tool_name,
+        model=None,
+        request_json=request_json,
+    )
     if agent in _REMOTE_AGENT_SLUGS:
         run_id, task_ids = _resolve_remote_run(owner)
+        _stamp_remote_request_info(
+            run_id=run_id, owner=owner, request_info=request_info
+        )
         _purge_expired_runs_best_effort()
         body = {
             "id": run_id,
@@ -295,7 +318,9 @@ async def _invoke_agent_run(
             "result": result,
         }
         return body, 202
-    run_id = _record_sync_run(agent=agent, owner=owner, result=result)
+    run_id = _record_sync_run(
+        agent=agent, owner=owner, result=result, request_info=request_info
+    )
     body = {
         "id": run_id,
         "object": "agent.run",
@@ -406,7 +431,11 @@ async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
 
 
 def _record_sync_run(
-    *, agent: str, owner: str, result: dict[str, Any]
+    *,
+    agent: str,
+    owner: str,
+    result: dict[str, Any],
+    request_info: Optional[RunRequestInfo] = None,
 ) -> Optional[str]:
     """Persist a terminal ``origin="local"`` run for a sync agent call.
 
@@ -426,6 +455,8 @@ def _record_sync_run(
         owner: Authenticated user id (``"anonymous"`` for stdio).
         result: The formatted result dict (stored as JSON in
             ``result_json``).
+        request_info: Per-request metadata captured at the HTTP
+            boundary; ``None`` keeps every per-request column NULL.
 
     Returns:
         The minted ``run_id`` on a successful write, otherwise
@@ -442,11 +473,44 @@ def _record_sync_run(
             ),
             status="succeeded",
             result=result,
+            request_info=request_info,
         )
     except (sqlite3.Error, OSError):
         return None
     _purge_expired_runs_best_effort()
     return run_id
+
+
+def _stamp_remote_request_info(
+    *,
+    run_id: Optional[str],
+    owner: str,
+    request_info: RunRequestInfo,
+) -> None:
+    """Back-fill request-info columns on a chokepoint-minted run row.
+
+    Remote agents (analyst / deep_genome / research / design / network)
+    have their run row created inside the submit chokepoint before the
+    API layer can attach request metadata. Once the response returns
+    and ``_resolve_remote_run`` recovers the run id, this helper
+    updates the five per-request columns owner-scoped so the history
+    page sees the same shape as sync runs. SQLite / OS failures are
+    swallowed — the user already got their 202 response.
+
+    Args:
+        run_id: Run id minted by the chokepoint; ``None`` skips the
+            write (analyst dedup-hit passthrough or chokepoint failure).
+        owner: Authenticated user id used for the owner check.
+        request_info: Field values to write.
+    """
+    if run_id is None:
+        return
+    try:
+        RunRegistry(resolve_tasks_db_path()).update_request_info(
+            run_id, owner=owner, request_info=request_info
+        )
+    except (sqlite3.Error, OSError):
+        return
 
 
 def _error_response(
@@ -761,6 +825,13 @@ def create_app() -> FastAPI:
                 agent=agent_slug,
                 owner=current_request_user() or "anonymous",
                 result=envelope_dict,
+                request_info=RunRequestInfo(
+                    dialogue_id=payload.dialogue_id,
+                    query=user_query,
+                    tool_name=tool_name,
+                    model=payload.model,
+                    request_json=payload.model_dump_json(),
+                ),
             )
         return JSONResponse(
             to_chat_completion(
@@ -803,7 +874,10 @@ def create_app() -> FastAPI:
         """Invoke one agent by slug and return its agent.run envelope."""
         del principal
         body, status_code = await _invoke_agent_run(
-            agent=agent, arguments=payload.arguments
+            agent=agent,
+            arguments=payload.arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=payload.model_dump_json(),
         )
         return JSONResponse(body, status_code=status_code)
 

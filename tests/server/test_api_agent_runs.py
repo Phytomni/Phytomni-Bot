@@ -117,6 +117,49 @@ async def test_agent_run_sync_writes_local_run(
     assert record.status == "succeeded"
 
 
+async def test_agent_run_sync_persists_request_info(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A sync agent run captures dialogue / query / tool_name on the row."""
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return a stub chat completion-shaped result."""
+        _ = args
+        return {"answer": "ok", "doc_list": []}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+
+    response = await api_client.post(
+        "/v1/agents/chat/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "user_query": "summarise C3 photosynthesis",
+                "obs_file_list": [],
+            },
+            "dialogue_id": "dlg-agent-7",
+        },
+    )
+    assert response.status_code == 200
+
+    listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert len(listing) == 1
+    info = listing[0].request_info
+    assert info.dialogue_id == "dlg-agent-7"
+    assert info.query == "summarise C3 photosynthesis"
+    assert info.tool_name == "ChatAgent"
+    # Native agent runs never carry an OpenAI-compat model id.
+    assert info.model is None
+    assert info.request_json is not None
+
+
 _REMOTE_CASES = [
     pytest.param(
         "analyst",

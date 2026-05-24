@@ -92,6 +92,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     obs_file_list: Optional[List[str]] = None
     resolve_gene_id: Optional[bool] = None
+    dialogue_id: Optional[str] = None
 
 
 class AgentRunRequest(BaseModel):
@@ -104,9 +105,13 @@ class AgentRunRequest(BaseModel):
 
     Attributes:
         arguments: Tool-specific kwargs forwarded to the agent.
+        dialogue_id: Optional chat-ai conversation id captured on the
+            run row so the history page can group runs into one
+            visible thread.
     """
 
     arguments: Dict[str, Any] = Field(default_factory=dict)
+    dialogue_id: Optional[str] = None
 
 
 class ApiKeyCreateRequest(BaseModel):
