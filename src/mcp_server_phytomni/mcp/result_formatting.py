@@ -576,28 +576,34 @@ def _env_debug_enabled() -> bool:
     return raw in _TRUTHY
 
 
-_CHAT_COMPLETION_KEEP = frozenset({
-    "id",
-    "object",
-    "created",
-    "model",
-    "choices",
-    "usage",
-    "formatted",
-})
-_MESSAGE_KEEP = frozenset({
-    "role",
-    "content",
-    "reasoning_content",
-    "tool_calls",
-    "finish_reason",
-    "index",
-})
-_USAGE_KEEP = frozenset({
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-})
+_CHAT_COMPLETION_KEEP = frozenset(
+    {
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices",
+        "usage",
+        "formatted",
+    }
+)
+_MESSAGE_KEEP = frozenset(
+    {
+        "role",
+        "content",
+        "reasoning_content",
+        "tool_calls",
+        "finish_reason",
+        "index",
+    }
+)
+_USAGE_KEEP = frozenset(
+    {
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+    }
+)
 
 
 def strip_chat_completion(completion: dict) -> dict:
@@ -614,28 +620,19 @@ def strip_chat_completion(completion: dict) -> dict:
     """
     normalized_answer = _extract_formatted_answer(completion)
     result = {
-        k: v
-        for k, v in completion.items()
-        if k in _CHAT_COMPLETION_KEEP
+        k: v for k, v in completion.items() if k in _CHAT_COMPLETION_KEEP
     }
     if "choices" in result:
         result["choices"] = [
-            _strip_choice(c, normalized_answer)
-            for c in result["choices"]
+            _strip_choice(c, normalized_answer) for c in result["choices"]
         ]
     if "usage" in result and isinstance(result["usage"], dict):
         result["usage"] = {
-            k: v
-            for k, v in result["usage"].items()
-            if k in _USAGE_KEEP
+            k: v for k, v in result["usage"].items() if k in _USAGE_KEEP
         }
-    if "formatted" in result and isinstance(
-        result["formatted"], dict
-    ):
+    if "formatted" in result and isinstance(result["formatted"], dict):
         result["formatted"] = {
-            k: v
-            for k, v in result["formatted"].items()
-            if k != "answer"
+            k: v for k, v in result["formatted"].items() if k != "answer"
         }
     return result
 
@@ -662,15 +659,11 @@ def _strip_choice(
     content so the consumer sees the [N]-style citations that
     match formatted.references.
     """
-    stripped = {
-        k: v for k, v in choice.items() if k != "message"
-    }
+    stripped = {k: v for k, v in choice.items() if k != "message"}
     message = choice.get("message")
     if isinstance(message, dict):
         clean_message = {
-            k: v
-            for k, v in message.items()
-            if k in _MESSAGE_KEEP
+            k: v for k, v in message.items() if k in _MESSAGE_KEEP
         }
         if normalized_answer is not None:
             clean_message["content"] = normalized_answer

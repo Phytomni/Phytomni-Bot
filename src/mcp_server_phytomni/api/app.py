@@ -330,9 +330,7 @@ async def _invoke_agent_run(
             existing_meta = {}
         formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
     result = {"formatted": formatted_dict, "raw": envelope.raw}
-    response_result = (
-        result if debug else strip_agent_result(result)
-    )
+    response_result = result if debug else strip_agent_result(result)
     owner = current_request_user() or "anonymous"
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
@@ -966,9 +964,7 @@ def create_app() -> FastAPI:
         """
         del principal
         record = await _fetch_owner_run(run_id)
-        if not resolve_debug(debug) and isinstance(
-            record.get("result"), dict
-        ):
+        if not resolve_debug(debug) and isinstance(record.get("result"), dict):
             record = {
                 **record,
                 "result": strip_agent_result(record["result"]),
@@ -1032,9 +1028,7 @@ def create_app() -> FastAPI:
             if isinstance(data, list):
                 body = {
                     **body,
-                    "data": [
-                        _strip_run_result(r) for r in data
-                    ],
+                    "data": [_strip_run_result(r) for r in data],
                 }
         return JSONResponse(body)
 

@@ -248,7 +248,9 @@ def test_strip_chat_completion_cleans_message_keeps_reasoning() -> None:
     assert "function_call" not in msg
 
 
-def test_strip_chat_completion_replaces_content_with_normalized_answer() -> None:
+def test_strip_chat_completion_replaces_content_with_normalized_answer() -> (
+    None
+):
     """choices[].message.content gets the normalized [N] answer."""
     completion = _build_full_completion()
     stripped = strip_chat_completion(completion)
@@ -310,9 +312,7 @@ def test_strip_chat_completion_no_formatted_keeps_content() -> None:
         },
     }
     stripped = strip_chat_completion(completion)
-    assert stripped["choices"][0]["message"]["content"] == (
-        "original content"
-    )
+    assert stripped["choices"][0]["message"]["content"] == ("original content")
 
 
 def test_strip_chat_completion_preserves_choice_index_and_finish() -> None:
