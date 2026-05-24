@@ -163,16 +163,19 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 
-| Method | Path                      | Auth | Operational use                             |
-| ------ | ------------------------- | ---- | ------------------------------------------- |
-| `GET`  | `/healthz`                | no   | Process liveness.                           |
-| `GET`  | `/readyz`                 | no   | Store-directory writability check.          |
-| `GET`  | `/v1/models`              | yes  | Authenticated liveness and model map check. |
-| `POST` | `/v1/chat/completions`    | yes  | OpenAI-compatible chat-like agents.         |
-| `GET`  | `/v1/agents`              | yes  | Native agent slug discovery.                |
-| `POST` | `/v1/agents/{agent}/runs` | yes  | Native agent submission.                    |
-| `GET`  | `/v1/runs/{run_id}`       | yes  | Owner-scoped run lookup.                    |
-| `GET`  | `/v1/runs`                | yes  | Owner-scoped run listing.                   |
+| Method   | Path                      | Auth | Operational use                                  |
+| -------- | ------------------------- | ---- | ------------------------------------------------ |
+| `GET`    | `/healthz`                | no   | Process liveness.                                |
+| `GET`    | `/readyz`                 | no   | Store-directory writability check.               |
+| `GET`    | `/v1/models`              | yes  | Authenticated liveness and model map check.      |
+| `POST`   | `/v1/chat/completions`    | yes  | OpenAI-compatible chat-like agents.              |
+| `GET`    | `/v1/agents`              | yes  | Native agent slug discovery.                     |
+| `POST`   | `/v1/agents/{agent}/runs` | yes  | Native agent submission.                         |
+| `GET`    | `/v1/runs/{run_id}`       | yes  | Owner-scoped run lookup.                         |
+| `GET`    | `/v1/runs`                | yes  | Owner-scoped run listing.                        |
+| `POST`   | `/v1/api-keys`            | svc  | Mint a per-user `ptm_...` API key (service tok). |
+| `GET`    | `/v1/api-keys`            | svc  | List per-user keys (metadata only).              |
+| `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revoke the key with the given public prefix.     |
 
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
