@@ -37,6 +37,12 @@ client-side `mcp_client_phytomni.tool_result_formatters.parse_formatted_result`
 deserializes the `formatted` block back into `FormattedToolResult`;
 clients that want the raw block read `payload["raw"]` directly.
 
+**Default mode**: MCP stdio responses contain only `formatted`; the
+`raw` block is omitted to reduce response volume. Set
+`PHYTOMNI_DEBUG=1` to include `raw` in every response. The HTTP API
+supports a per-request `debug` flag (see
+[HTTP API](http-api.md#response-projection)).
+
 ## Tool Inventory
 
 | Tool                    | Kind  | Required arguments                               | Demo payload                                                                         |

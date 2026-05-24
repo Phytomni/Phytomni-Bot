@@ -225,6 +225,42 @@ curl -s "http://127.0.0.1:8080/v1/runs?status=succeeded&limit=20" \
 Unknown run ids and runs owned by another caller collapse to one `404`
 envelope so callers cannot enumerate other users' run ids.
 
+## Response Projection
+
+By default, HTTP API responses strip debug-only fields to reduce
+payload volume. A BriefGene response drops from ~705 KB to ~5 KB.
+
+**`debug` flag**: pass `"debug": true` in the request body (POST
+endpoints) or `?debug=true` as a query parameter (GET endpoints) to
+receive the full payload including `raw`, provider extensions, and
+retrieved documents.
+
+**`PHYTOMNI_DEBUG=1`** environment variable forces full payloads
+regardless of the per-request flag.
+
+### `/v1/chat/completions` default mode
+
+Removed: `raw`, `phytomni_state`, `system_fingerprint`, `service_tier`,
+`prompt_logprobs`, `choices[].message.doc_list`,
+`choices[].message.total`, `choices[].message.follow_up_questions`,
+null provider fields (`refusal`, `annotations`, `audio`,
+`function_call`), and `formatted.answer`.
+
+`choices[].message.content` is replaced with the normalized
+`formatted.answer` (using `[N]` citation format consistent with
+`formatted.references`).
+
+Kept: `id`, `object`, `created`, `model`, `choices` (with `role`,
+`content`, `reasoning_content`, `tool_calls`, `finish_reason`,
+`index`), `usage` (3 token fields), `formatted` (without `answer`).
+
+### `/v1/agents/{agent}/runs` and `/v1/runs` default mode
+
+Removed: `raw` from `result`.
+
+Kept: `formatted` (all fields including `answer`), `id`, `object`,
+`agent`, `status`, `task_ids`.
+
 ## Polling
 
 A remote run typically takes minutes to finish. Poll `/v1/runs/{run_id}`
