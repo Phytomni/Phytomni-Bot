@@ -22,6 +22,7 @@ from ...common.http import (
     retry_network_or_raise,
 )
 from ...common.prompts import get_prompt
+from ...common.reasoning_content import normalize_chat_completion_dict
 from ...common.responses import (
     first_message,
     message_content,
@@ -425,8 +426,10 @@ async def run_phyto_chat_cached(
         params["reasoning_effort"] = reasoning_effort
     chat_completions = await client.chat.completions.create(**params)
     if stream:
-        return await _stream_response_to_dict(chat_completions)
-    return chat_completions.model_dump()
+        payload = await _stream_response_to_dict(chat_completions)
+    else:
+        payload = chat_completions.model_dump()
+    return normalize_chat_completion_dict(payload)
 
 
 async def _run_phyto_chat(

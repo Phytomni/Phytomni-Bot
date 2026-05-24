@@ -114,6 +114,38 @@ def test_to_chat_completion_passes_through_provider_shaped_raw() -> None:
     assert completion["raw"] is raw
 
 
+def test_to_chat_completion_keeps_repaired_reasoning_fields() -> None:
+    """Mapping does not rebuild messages when raw choices already exist."""
+    formatted = {
+        "answer": "Leaves capture light.",
+        "follow_up_questions": (),
+        "metadata": {},
+        "references": (),
+    }
+    raw = {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Leaves capture light.",
+                    "reasoning_content": "identify chlorophyll",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"total_tokens": 12},
+    }
+
+    completion = to_chat_completion(formatted, raw, "phyto-chat")
+
+    message = completion["choices"][0]["message"]
+    assert message["content"] == "Leaves capture light."
+    assert message["reasoning_content"] == "identify chlorophyll"
+    assert completion["formatted"] == formatted
+    assert completion["raw"] is raw
+
+
 def test_to_chat_completion_synthesizes_message_when_raw_lacks_choices() -> (
     None
 ):

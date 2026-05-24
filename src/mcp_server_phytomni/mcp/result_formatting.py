@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
@@ -157,6 +158,7 @@ def build_tool_result_envelope(
     Returns:
         Envelope containing formatted and sanitized raw payload blocks.
     """
+    payload = normalize_chat_completion_dict(payload)
     return ToolResultEnvelope(
         formatted=format_tool_result(tool_name, payload, arguments=arguments),
         raw=_sanitize_raw(payload),

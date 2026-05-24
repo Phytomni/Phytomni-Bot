@@ -418,6 +418,71 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
     assert calls["create"] == 2
 
 
+async def test_non_streaming_repairs_reasoning_content_answer_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-stream completions repair answers misplaced in reasoning_content."""
+    chat_agents.run_phyto_chat_cached.cache_clear()
+
+    class MisplacedReasoningCompletion:
+        """Response stand-in with the answer tail in reasoning_content."""
+
+        def model_dump(self) -> dict[str, Any]:
+            """Return a provider-shaped payload with blank content."""
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": (
+                                "<think>identify chlorophyll</think>"
+                                "Leaves capture light."
+                            ),
+                        }
+                    }
+                ]
+            }
+
+    async def fake_create(**kwargs: Any) -> MisplacedReasoningCompletion:
+        """Return the misplaced provider response."""
+        assert kwargs["stream"] is False
+        return MisplacedReasoningCompletion()
+
+    def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
+        """Return a fake AsyncOpenAI client."""
+        del api_key, base_url
+        return SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=fake_create),
+            ),
+        )
+
+    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+
+    result = await chat_agents.run_phyto_chat_cached(
+        messages=[{"role": "user", "content": "leaf color"}],
+        model="pytest-misplaced-nonstream",
+        temperature=0.3,
+        top_p=1.0,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+        n=1,
+        max_tokens=None,
+        response_format={"type": "text"},
+        reasoning_effort=None,
+        api_key="k",
+        base_url="https://example.invalid/v1",
+        user="u",
+        timeout=3.0,
+        stream=False,
+    )
+
+    message = result["choices"][0]["message"]
+    assert message["content"] == "Leaves capture light."
+    assert message["reasoning_content"] == "identify chlorophyll"
+
+
 async def test_stream_response_to_dict_accumulates_reasoning_deltas() -> None:
     """Streaming aggregation merges delta.reasoning_content beside content.
 
@@ -477,6 +542,74 @@ async def test_stream_response_to_dict_accumulates_reasoning_deltas() -> None:
     assert choice["finish_reason"] == "stop"
     assert result["id"] == "chatcmpl-stream"
     assert result["usage"]["prompt_tokens"] == 9
+
+
+async def test_streaming_repairs_reasoning_content_after_aggregation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streamed reasoning tail is repaired after chunk aggregation."""
+    chat_agents.run_phyto_chat_cached.cache_clear()
+
+    def _make_chunk(
+        reasoning: str = "",
+        finish_reason: str | None = None,
+        seed: dict[str, Any] | None = None,
+    ) -> SimpleNamespace:
+        """Build one stream chunk with only reasoning deltas."""
+        delta = SimpleNamespace(content="", reasoning_content=reasoning)
+        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
+        return SimpleNamespace(
+            choices=[choice],
+            model_dump=lambda payload=seed or {}: payload,
+        )
+
+    async def fake_stream() -> Any:
+        """Yield chunks whose aggregate reasoning carries the answer tail."""
+        chunks = [
+            _make_chunk("<think>identify chlorophyll"),
+            _make_chunk("</think>Leaves capture light.", "stop"),
+        ]
+        for chunk in chunks:
+            yield chunk
+
+    async def fake_create(**kwargs: Any) -> Any:
+        """Return the fake async stream."""
+        assert kwargs["stream"] is True
+        return fake_stream()
+
+    def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
+        """Return a fake AsyncOpenAI client."""
+        del api_key, base_url
+        return SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=fake_create),
+            ),
+        )
+
+    monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
+
+    result = await chat_agents.run_phyto_chat_cached(
+        messages=[{"role": "user", "content": "leaf color"}],
+        model="pytest-misplaced-stream",
+        temperature=0.3,
+        top_p=1.0,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+        n=1,
+        max_tokens=None,
+        response_format={"type": "text"},
+        reasoning_effort=None,
+        api_key="k",
+        base_url="https://example.invalid/v1",
+        user="u",
+        timeout=3.0,
+        stream=True,
+    )
+
+    choice = result["choices"][0]
+    assert choice["message"]["content"] == "Leaves capture light."
+    assert choice["message"]["reasoning_content"] == "identify chlorophyll"
+    assert choice["finish_reason"] == "stop"
 
 
 async def test_stream_response_omits_reasoning_for_plain_providers() -> None:

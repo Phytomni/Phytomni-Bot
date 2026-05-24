@@ -288,6 +288,61 @@ async def test_chat_completions_preserves_provider_reasoning_and_usage(
     assert body["raw"]["usage"]["total_tokens"] == 53
 
 
+async def test_chat_completions_repairs_reasoning_content_answer_tail(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canonical, formatted, and raw views share the repaired answer."""
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return a provider payload with the answer misplaced."""
+        del args
+        return {
+            "id": "chatcmpl-misplaced",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": (
+                            "<think>identify chlorophyll</think>"
+                            "Leaves capture light."
+                        ),
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"total_tokens": 12},
+        }
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="why are leaves green?",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    message = body["choices"][0]["message"]
+    assert message["content"] == "Leaves capture light."
+    assert message["reasoning_content"] == "identify chlorophyll"
+    assert body["formatted"]["answer"] == "Leaves capture light."
+    raw_message = body["raw"]["choices"][0]["message"]
+    assert raw_message["content"] == "Leaves capture light."
+    assert raw_message["reasoning_content"] == "identify chlorophyll"
+    assert body["usage"]["total_tokens"] == 12
+
+
 async def test_chat_completions_envelope_carries_formatted_and_raw(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

@@ -178,6 +178,33 @@ def test_envelope_preserves_raw_provider_fields() -> None:
     assert envelope.raw["unknown_provider_field"] == {"version": 2}
 
 
+def test_envelope_repairs_reasoning_content_answer_tail() -> None:
+    """Envelope raw and formatted views agree after reasoning repair."""
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "reasoning_content": (
+                        "<think>identify chlorophyll</think>"
+                        "Leaves capture light."
+                    ),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"total_tokens": 12},
+    }
+
+    envelope = build_tool_result_envelope("ChatAgent", payload)
+
+    assert envelope.formatted.answer == "Leaves capture light."
+    raw_message = envelope.raw["choices"][0]["message"]
+    assert raw_message["content"] == "Leaves capture light."
+    assert raw_message["reasoning_content"] == "identify chlorophyll"
+    assert envelope.raw["usage"]["total_tokens"] == 12
+
+
 def test_envelope_sanitizes_credential_pattern_keys() -> None:
     """Verify _sanitize_raw recursively drops secret-pattern keys.
 
