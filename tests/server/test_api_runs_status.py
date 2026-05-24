@@ -149,9 +149,15 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
         )
     )
 
+    output_dirs = {"t-1": "/obs/x", "t-2": "/obs/y"}
+
     async def fake(task_id: str) -> Dict[str, Any]:
-        """Return a terminal success for every child task."""
-        return {"task_id": task_id, "status": "succeeded"}
+        """Return a terminal success for every child task with output_dir."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": output_dirs[task_id],
+        }
 
     monkeypatch.setattr(run_registry_module, "reconcile_task", fake)
 
@@ -165,3 +171,11 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     assert body["origin"] == "remote"
     assert sorted(body["task_ids"]) == ["t-1", "t-2"]
     assert body["expires_at"] is not None
+    # The terminal envelope keeps task_results / live_status pointed at
+    # the reconciled blob and exposes one artifacts descriptor per
+    # succeeded child task that carries an output_dir.
+    assert body["result"]["task_results"] == body["result"]["live_status"]
+    assert body["result"]["artifacts"] == [
+        {"task_id": "t-1", "output_dir": "/obs/x", "paths": []},
+        {"task_id": "t-2", "output_dir": "/obs/y", "paths": []},
+    ]
