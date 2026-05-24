@@ -3,17 +3,21 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Unit tests for response projection helpers.
 
-Covers ``resolve_debug`` (env override + per-request flag) and
-``strip_agent_result`` (raw removal without mutation).
+Covers ``resolve_debug`` (env override + per-request flag),
+``strip_agent_result`` (raw removal without mutation), and
+``strip_chat_completion`` (OpenAI-shaped response projection).
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
 
 import pytest
 
 from mcp_server_phytomni.mcp.result_formatting import (
     resolve_debug,
     strip_agent_result,
+    strip_chat_completion,
 )
 
 pytestmark = pytest.mark.unit
@@ -139,3 +143,182 @@ def test_strip_agent_result_preserves_extra_keys() -> None:
     }
     stripped = strip_agent_result(result)
     assert stripped == {"formatted": {"answer": "a"}, "extra": "kept"}
+
+
+# --- strip_chat_completion ---
+
+
+def _build_full_completion() -> dict:
+    """Build a realistic full completion matching to_chat_completion output."""
+    return {
+        "id": "chatcmpl-abc123",
+        "object": "chat.completion",
+        "created": 1779625485,
+        "model": "phyto-brief-gene",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Gene report [document:1] text.",
+                    "refusal": None,
+                    "annotations": None,
+                    "audio": None,
+                    "function_call": None,
+                    "tool_calls": None,
+                    "reasoning_content": "Let me analyze...",
+                    "doc_list": [
+                        {
+                            "file_id": "doc-1",
+                            "title": "Paper 1",
+                            "semantic_vector": [0.1] * 768,
+                        },
+                    ],
+                    "total": 32,
+                    "follow_up_questions": ["Next?"],
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 5000,
+            "completion_tokens": 800,
+            "total_tokens": 5800,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+        "system_fingerprint": "fp_abc",
+        "service_tier": "default",
+        "prompt_logprobs": None,
+        "phytomni_state": {"gene_id": "Os01g0177400"},
+        "raw": {"choices": [{"message": {"content": "raw"}}]},
+        "formatted": {
+            "answer": "Gene report [1] text.",
+            "references": [
+                {"file_id": "doc-1", "title": "Paper 1"},
+            ],
+            "follow_up_questions": ["Next?"],
+            "metadata": {},
+            "tabular": None,
+            "output_dirs": [],
+        },
+    }
+
+
+def test_strip_chat_completion_removes_raw_and_provider_fields() -> None:
+    """raw, phytomni_state, system_fingerprint, service_tier removed."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    assert "raw" not in stripped
+    assert "phytomni_state" not in stripped
+    assert "system_fingerprint" not in stripped
+    assert "service_tier" not in stripped
+    assert "prompt_logprobs" not in stripped
+
+
+def test_strip_chat_completion_keeps_standard_top_level() -> None:
+    """id, object, created, model, choices, usage, formatted kept."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    assert set(stripped.keys()) == {
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices",
+        "usage",
+        "formatted",
+    }
+
+
+def test_strip_chat_completion_cleans_message_keeps_reasoning() -> None:
+    """Message keeps role, content, reasoning_content; drops doc_list."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    msg = stripped["choices"][0]["message"]
+    assert "role" in msg
+    assert "content" in msg
+    assert "reasoning_content" in msg
+    assert msg["reasoning_content"] == "Let me analyze..."
+    assert "doc_list" not in msg
+    assert "total" not in msg
+    assert "follow_up_questions" not in msg
+    assert "refusal" not in msg
+    assert "annotations" not in msg
+    assert "audio" not in msg
+    assert "function_call" not in msg
+
+
+def test_strip_chat_completion_replaces_content_with_normalized_answer() -> None:
+    """choices[].message.content gets the normalized [N] answer."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    msg = stripped["choices"][0]["message"]
+    assert msg["content"] == "Gene report [1] text."
+
+
+def test_strip_chat_completion_removes_answer_from_formatted() -> None:
+    """formatted.answer is removed (already in content)."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    assert "answer" not in stripped["formatted"]
+    assert "references" in stripped["formatted"]
+    assert "follow_up_questions" in stripped["formatted"]
+    assert "metadata" in stripped["formatted"]
+
+
+def test_strip_chat_completion_trims_usage() -> None:
+    """usage keeps only 3 token fields."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    assert set(stripped["usage"].keys()) == {
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+    }
+
+
+def test_strip_chat_completion_does_not_mutate_input() -> None:
+    """Original dict is not modified by strip_chat_completion."""
+    completion = _build_full_completion()
+    original = deepcopy(completion)
+    strip_chat_completion(completion)
+    assert completion == original
+
+
+def test_strip_chat_completion_no_formatted_keeps_content() -> None:
+    """Without formatted.answer, original content is preserved."""
+    completion = {
+        "id": "chatcmpl-x",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "test",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "original content",
+                    "reasoning_content": "thinking",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2,
+        },
+    }
+    stripped = strip_chat_completion(completion)
+    assert stripped["choices"][0]["message"]["content"] == (
+        "original content"
+    )
+
+
+def test_strip_chat_completion_preserves_choice_index_and_finish() -> None:
+    """choice-level index and finish_reason survive projection."""
+    completion = _build_full_completion()
+    stripped = strip_chat_completion(completion)
+    choice = stripped["choices"][0]
+    assert choice["index"] == 0
+    assert choice["finish_reason"] == "stop"

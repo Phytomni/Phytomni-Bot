@@ -574,3 +574,105 @@ def _env_debug_enabled() -> bool:
     """Check whether PHYTOMNI_DEBUG env var is set to a truthy value."""
     raw = os.getenv(_DEBUG_ENV, "").strip().lower()
     return raw in _TRUTHY
+
+
+_CHAT_COMPLETION_KEEP = frozenset({
+    "id",
+    "object",
+    "created",
+    "model",
+    "choices",
+    "usage",
+    "formatted",
+})
+_MESSAGE_KEEP = frozenset({
+    "role",
+    "content",
+    "reasoning_content",
+    "tool_calls",
+    "finish_reason",
+    "index",
+})
+_USAGE_KEEP = frozenset({
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+})
+
+
+def strip_chat_completion(completion: dict) -> dict:
+    """Remove debug-only fields from a to_chat_completion() result.
+
+    Replaces ``choices[].message.content`` with ``formatted.answer``
+    (normalized ``[N]`` citation format consistent with references),
+    strips ``answer`` from ``formatted`` (already in content),
+    trims ``usage`` to three token fields, and drops provider
+    extensions (``raw``, ``phytomni_state``, ``system_fingerprint``,
+    ``service_tier``, ``prompt_logprobs``).
+
+    Returns a new dict; the original is not mutated.
+    """
+    normalized_answer = _extract_formatted_answer(completion)
+    result = {
+        k: v
+        for k, v in completion.items()
+        if k in _CHAT_COMPLETION_KEEP
+    }
+    if "choices" in result:
+        result["choices"] = [
+            _strip_choice(c, normalized_answer)
+            for c in result["choices"]
+        ]
+    if "usage" in result and isinstance(result["usage"], dict):
+        result["usage"] = {
+            k: v
+            for k, v in result["usage"].items()
+            if k in _USAGE_KEEP
+        }
+    if "formatted" in result and isinstance(
+        result["formatted"], dict
+    ):
+        result["formatted"] = {
+            k: v
+            for k, v in result["formatted"].items()
+            if k != "answer"
+        }
+    return result
+
+
+def _extract_formatted_answer(
+    completion: dict,
+) -> str | None:
+    """Read formatted.answer for content normalization."""
+    formatted = completion.get("formatted")
+    if isinstance(formatted, dict):
+        answer = formatted.get("answer")
+        if isinstance(answer, str):
+            return answer
+    return None
+
+
+def _strip_choice(
+    choice: dict,
+    normalized_answer: str | None,
+) -> dict:
+    """Keep only standard fields in one choice dict.
+
+    When normalized_answer is provided, it replaces the message
+    content so the consumer sees the [N]-style citations that
+    match formatted.references.
+    """
+    stripped = {
+        k: v for k, v in choice.items() if k != "message"
+    }
+    message = choice.get("message")
+    if isinstance(message, dict):
+        clean_message = {
+            k: v
+            for k, v in message.items()
+            if k in _MESSAGE_KEEP
+        }
+        if normalized_answer is not None:
+            clean_message["content"] = normalized_answer
+        stripped["message"] = clean_message
+    return stripped

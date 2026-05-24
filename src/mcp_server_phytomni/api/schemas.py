@@ -83,6 +83,10 @@ class ChatCompletionRequest(BaseModel):
             resolve the free-form user message into a canonical gene
             id via an LLM call before invoking the tool. Other models
             reject this flag with HTTP 400.
+        debug: When true, return the full response payload including
+            raw handler data, provider extensions, and doc_list.
+            Default mode strips debug-only fields to reduce volume.
+            PHYTOMNI_DEBUG=1 overrides this to always return full.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -93,6 +97,7 @@ class ChatCompletionRequest(BaseModel):
     obs_file_list: Optional[List[str]] = None
     resolve_gene_id: Optional[bool] = None
     dialogue_id: Optional[str] = None
+    debug: Optional[bool] = None
 
 
 class AgentRunRequest(BaseModel):
@@ -108,10 +113,14 @@ class AgentRunRequest(BaseModel):
         dialogue_id: Optional chat-ai conversation id captured on the
             run row so the history page can group runs into one
             visible thread.
+        debug: When true, include the raw handler payload in the
+            result block. Default mode strips it to reduce volume.
+            PHYTOMNI_DEBUG=1 overrides this to always return full.
     """
 
     arguments: Dict[str, Any] = Field(default_factory=dict)
     dialogue_id: Optional[str] = None
+    debug: Optional[bool] = None
 
 
 class ApiKeyCreateRequest(BaseModel):
