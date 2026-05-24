@@ -324,19 +324,15 @@ def test_list_runs_filters_by_created_after(tmp_path: Path) -> None:
     registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
     registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
     # Stamp deterministic created_at so the bound comparison is stable.
-    conn = sqlite3.connect(db)
-    try:
-        conn.execute(
+    with sqlite3.connect(db) as conn:
+        conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-01-01T00:00:00+00:00", "run-old"),
-        )
-        conn.execute(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-06-01T00:00:00+00:00", "run-new"),
+            [
+                ("2026-01-01T00:00:00+00:00", "run-old"),
+                ("2026-06-01T00:00:00+00:00", "run-new"),
+            ],
         )
         conn.commit()
-    finally:
-        conn.close()
 
     listing = registry.list_runs(
         owner="alice",
@@ -351,19 +347,15 @@ def test_list_runs_filters_by_created_before(tmp_path: Path) -> None:
     registry, _, db = _make_registry(tmp_path)
     registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
     registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
-    conn = sqlite3.connect(db)
-    try:
-        conn.execute(
+    with sqlite3.connect(db) as conn:
+        conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-01-01T00:00:00+00:00", "run-old"),
-        )
-        conn.execute(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-06-01T00:00:00+00:00", "run-new"),
+            [
+                ("2026-01-01T00:00:00+00:00", "run-old"),
+                ("2026-06-01T00:00:00+00:00", "run-new"),
+            ],
         )
         conn.commit()
-    finally:
-        conn.close()
 
     listing = registry.list_runs(
         owner="alice",
@@ -387,23 +379,16 @@ def test_list_runs_composes_date_range_with_other_filters(
     registry.create_run(
         RunSpec("run-c-new", "alice", "chat", "local"), status="failed"
     )
-    conn = sqlite3.connect(db)
-    try:
-        conn.execute(
+    with sqlite3.connect(db) as conn:
+        conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-01-01T00:00:00+00:00", "run-a-old"),
-        )
-        conn.execute(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-06-01T00:00:00+00:00", "run-a-new"),
-        )
-        conn.execute(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-06-01T00:00:00+00:00", "run-c-new"),
+            [
+                ("2026-01-01T00:00:00+00:00", "run-a-old"),
+                ("2026-06-01T00:00:00+00:00", "run-a-new"),
+                ("2026-06-01T00:00:00+00:00", "run-c-new"),
+            ],
         )
         conn.commit()
-    finally:
-        conn.close()
 
     listing = registry.list_runs(
         owner="alice",

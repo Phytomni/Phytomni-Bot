@@ -349,19 +349,15 @@ async def test_list_runs_created_after_filter(
         agent="chat",
         origin="local",
     )
-    conn = sqlite3.connect(tasks_db_path)
-    try:
-        conn.execute(
+    with sqlite3.connect(tasks_db_path) as conn:
+        conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-01-01T00:00:00+00:00", "run-old"),
-        )
-        conn.execute(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            ("2026-06-01T00:00:00+00:00", "run-new"),
+            [
+                ("2026-01-01T00:00:00+00:00", "run-old"),
+                ("2026-06-01T00:00:00+00:00", "run-new"),
+            ],
         )
         conn.commit()
-    finally:
-        conn.close()
 
     response = await api_client.get(
         "/v1/runs?created_after=2026-03-01T00:00:00%2B00:00",
