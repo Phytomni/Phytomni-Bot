@@ -46,7 +46,7 @@ class _FakeApp:
         self.invocations: list[dict[str, Any]] = []
 
     async def ainvoke(self, initial_state: Any, config: Any = None) -> Any:
-        """Mimic LangGraph's ``ainvoke`` signature with a controlled outcome."""
+        """Mimic LangGraph ``ainvoke`` with a controlled outcome."""
         _ = config
         self.invocations.append(initial_state)
         if self._raises is not None:
@@ -96,7 +96,9 @@ async def _drain_background_tasks() -> None:
     explicit awaits these tasks never get to run on the event loop.
     """
     pending = [
-        task for task in asyncio.all_tasks() if task is not asyncio.current_task()
+        task
+        for task in asyncio.all_tasks()
+        if task is not asyncio.current_task()
     ]
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
@@ -106,7 +108,7 @@ async def test_arun_returns_immediately_with_submit_envelope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``arun`` returns ``{task_id, output_dir, compute_resource}`` synchronously.
+    """``arun`` returns a submit envelope synchronously.
 
     The submit envelope must carry a populated ``task_id`` (so the
     chokepoint can persist the umbrella row) and an ``output_dir`` that

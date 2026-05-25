@@ -220,7 +220,7 @@ async def test_upload_file_byte_budget_breach_returns_413_without_writing(
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client: Any,
 ) -> None:
-    """A chunked-transfer body that breaches max_bytes returns 413 and never calls OBS.
+    """A body that breaches ``max_bytes`` returns 413 before OBS upload.
 
     Covers AF-001 (audit 2026-05-26): when the Content-Length header is
     absent or falsified, the route must still bound peak memory and
