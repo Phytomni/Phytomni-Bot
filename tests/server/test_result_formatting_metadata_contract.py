@@ -62,9 +62,11 @@ def _analyst_payload() -> dict[str, Any]:
 
 
 def _deep_genome_payload() -> dict[str, Any]:
-    """DeepGenomeAgent kitchen-sink payload."""
+    """DeepGenomeAgent kitchen-sink submit envelope."""
     return {
         "task_id": "dg-task-1",
+        "output_dir": "/obs/phytomni/deep_genome/dg-task-1",
+        "compute_resource": "deep-genome",
         "phytomni_state": _KITCHEN_SINK_STATE,
     }
 
@@ -141,7 +143,17 @@ def _deep_genome_arguments() -> dict[str, Any]:
         (
             "DeepGenomeAgent",
             _deep_genome_payload(),
-            frozenset({"server_id", "species_code", "gene_id", "status"}),
+            frozenset(
+                {
+                    "task_id",
+                    "output_dir",
+                    "species_code",
+                    "gene_id",
+                    "compute_resource",
+                    "status",
+                    "log_status",
+                }
+            ),
             _deep_genome_arguments(),
         ),
         (

@@ -222,7 +222,11 @@ async def test_invoke_deep_genome_agent_threads_arguments_to_formatter(
     Pins the ``arguments=`` keyword threading from invoke_tool_formatted
     into format_tool_result.
     """
-    raw = {"task_id": "dg-task-1"}
+    raw = {
+        "task_id": "dg-task-1",
+        "output_dir": "/obs/phytomni/deep_genome/dg-task-1",
+        "compute_resource": "deep-genome",
+    }
     _patch_handler(monkeypatch, PhytomniAgents.DEEP_GENOME_AGENT.value, raw)
     arguments = _payload(demo_data_dir, "deep_genome_agent.json")
 
@@ -230,12 +234,15 @@ async def test_invoke_deep_genome_agent_threads_arguments_to_formatter(
         PhytomniAgents.DEEP_GENOME_AGENT.value, arguments
     )
 
-    assert result.answer == "Server task created successfully:dg-task-1"
+    assert result.answer == "Task created successfully:dg-task-1"
     assert result.metadata == {
-        "server_id": "dg-task-1",
+        "task_id": "dg-task-1",
+        "output_dir": "/obs/phytomni/deep_genome/dg-task-1",
         "species_code": "osa",
         "gene_id": "Os01g0177400",
+        "compute_resource": "deep-genome",
         "status": "RUNNING",
+        "log_status": "sync_running",
     }
 
 

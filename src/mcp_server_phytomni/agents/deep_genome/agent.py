@@ -10,6 +10,7 @@ management helpers, network formatting re-exports, and the gene_function
 compatibility wrapper used by MCP handlers.
 """
 
+import asyncio
 import logging
 import operator
 from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
@@ -31,6 +32,8 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ...storage.path_policy import IdFactory
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     ANALYST_SECRET_FIELD_MAP,
@@ -184,6 +187,9 @@ class DeepGenomeState(TypedDict):
     species: str
     analysis_type: str
     part12_combined: Optional[str]
+    task_id: Optional[str]
+    output_dir: Optional[str]
+    error: Optional[str]
 
 
 class DeepGenomeAgentDeps(NamedTuple):
@@ -383,37 +389,34 @@ class DeepGenomeAgents(
         gene_id: str,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Main entry function for gene analysis workflow.
+        """Submit a deep gene analysis run; return task identity immediately.
+
+        DeepGenome is wired into the submit-style chokepoint
+        (``mcp/handlers._records_submission("deep_genome")``) and the
+        HTTP run-aggregate path (``api/app.py``). To match that
+        contract, ``arun`` mints an umbrella ``task_id`` synchronously,
+        derives a placeholder ``output_dir`` under
+        ``deep_genome_config.DEEPGENOME_OUT``, spawns the LangGraph
+        workflow on the running event loop via
+        ``asyncio.create_task`` (best-effort: a process exit before
+        terminal loses the workflow), and returns the submit envelope
+        so the caller can poll the umbrella row through
+        ``GetTaskStatus`` / ``GET /v1/runs/{id}``.
 
         Args:
             species_code: Three-letter species code (e.g., 'osa', 'ath').
             gene_id: Target gene identifier.
-            config_params: Optional configuration parameters:
-                - use_analyst_agent: bool, whether to run deep analyst
-                  analysis.
-                - use_data_agent: bool, whether to fetch gene network data.
-            thread_id: Optional thread ID for checkpointer.
-            test_mode: If True, skip actual analyst tasks and use mock data.
-            mock_analyst_data: Pre-prepared analyst data. Should contain:
-                - analyst_summaries: Dict mapping task names to summary strings
-                - synthesis_report: Optional pre-generated synthesis report
-                - analysis_tasks: List of task dicts (for counter purposes)
+            **kwargs: Optional ``config_params``, ``thread_id``,
+                ``test_mode``, ``mock_analyst_data``.
 
         Returns:
-            Final state containing all analysis results including:
-            - part1_report: Gene function and network summary
-            - synthesize_report: Deep analysis synthesis
-            - experiment_report: Recommended experiments
-            - protocol_report: Experimental protocols
-            - introduction_report: Report introduction
-            - discussion_report: Report discussion
-            - summary_report: Report summary
-            - final_report: Complete final report
-            - follow_up_questions: Suggested follow-up questions
+            Submit envelope ``{"task_id", "output_dir",
+            "compute_resource"}``. The chokepoint persists the
+            umbrella row from this dict; the background coroutine
+            updates that row with ``"succeeded"`` / ``"failed"`` when
+            the LangGraph workflow returns.
         """
-        config_params = kwargs.get("config_params")
-        if config_params is None:
-            config_params = {}
+        config_params = kwargs.get("config_params") or {}
 
         initial_state: Dict[str, Any] = {
             "species_code": species_code,
@@ -468,12 +471,81 @@ class DeepGenomeAgents(
                 "skip_synthesize: %s", initial_state["skip_synthesize"]
             )
 
-        result = await ainvoke_graph(
-            self.app,
-            initial_state,
-            thread_id=kwargs.get("thread_id"),
+        umbrella_id = IdFactory().new_id("task", "deep_genome")
+        output_root = (
+            self.deep_genome_config.DEEPGENOME_OUT
+            or self.deep_genome_config.OUTPUT_DIR
+            or "/tmp"
         )
-        return result
+        umbrella_output_dir = f"{output_root.rstrip('/')}/{umbrella_id}"
+        initial_state["task_id"] = umbrella_id
+        initial_state["output_dir"] = umbrella_output_dir
+
+        asyncio.create_task(
+            self._run_workflow_background(
+                umbrella_id=umbrella_id,
+                output_dir=umbrella_output_dir,
+                initial_state=initial_state,
+                thread_id=kwargs.get("thread_id"),
+            )
+        )
+
+        return {
+            "task_id": umbrella_id,
+            "output_dir": umbrella_output_dir,
+            "compute_resource": "deep-genome",
+        }
+
+    async def _run_workflow_background(
+        self,
+        umbrella_id: str,
+        output_dir: str,
+        initial_state: Dict[str, Any],
+        thread_id: Optional[str],
+    ) -> None:
+        """Run the LangGraph workflow off the submit response path.
+
+        Fire-and-forget coroutine: any exception MUST be caught so the
+        umbrella ``tasks`` row reaches a terminal status, otherwise a
+        polling client would wait forever on a dead background. The
+        terminal update is best-effort — if the SQLite write itself
+        raises, log and move on; the alternative (re-raising into an
+        unwatched task) only triggers the asyncio "Task exception was
+        never retrieved" warning without any recovery.
+
+        Args:
+            umbrella_id: Synthetic task id stamped by ``arun``.
+            output_dir: Placeholder path returned to the caller; the
+                background does not yet write artifacts there, but the
+                terminal update keeps the column in sync.
+            initial_state: LangGraph initial state mapping.
+            thread_id: Optional checkpointer thread id.
+        """
+        manager = TaskManager(resolve_tasks_db_path())
+        try:
+            await ainvoke_graph(
+                self.app,
+                initial_state,
+                thread_id=thread_id,
+            )
+            manager.update_task(
+                umbrella_id, "succeeded", "", output_dir
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception(
+                "DeepGenome background workflow failed for %s: %s",
+                umbrella_id,
+                exc,
+            )
+            try:
+                manager.update_task(
+                    umbrella_id, "failed", "", output_dir
+                )
+            except Exception:  # pylint: disable=broad-except
+                logger.exception(
+                    "Failed to mark umbrella task %s as failed",
+                    umbrella_id,
+                )
 
 
 async def gene_function(

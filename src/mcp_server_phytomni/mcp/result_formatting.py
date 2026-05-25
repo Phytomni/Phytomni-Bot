@@ -441,16 +441,39 @@ def _format_deep_genome_result(
     content: Mapping[str, Any],
     arguments: Mapping[str, Any] | None,
 ) -> FormattedToolResult:
-    """Format a DeepGenome task submission response."""
-    server_id = _string_or_none(content.get("task_id"))
+    """Format a DeepGenome submit envelope.
+
+    DeepGenome's ``arun`` mints a synthetic umbrella ``task_id``
+    synchronously, spawns the LangGraph workflow on the running
+    event loop, and returns ``{"task_id", "output_dir",
+    "compute_resource"}`` so the chokepoint can persist the row and
+    the HTTP layer can return a poll handle. The formatter mirrors
+    the analyst answer shape (``"Task created successfully:<id>"``)
+    instead of the legacy ``Server task...:None`` line that the prior
+    formatter produced when no top-level ``task_id`` was ever
+    populated. ``species_code`` / ``gene_id`` continue to come from
+    the request arguments since they identify the submission target,
+    not anything the workflow added.
+    """
     arguments = arguments or {}
+    server_id = _string_or_none(content.get("task_id"))
+    answer = (
+        f"Task created successfully:{server_id}"
+        if server_id
+        else "Task created successfully:"
+    )
     return FormattedToolResult(
-        answer=f"Server task created successfully:{server_id}",
+        answer=answer,
         metadata={
-            "server_id": server_id,
+            "task_id": server_id,
+            "output_dir": _string_or_none(content.get("output_dir")),
             "species_code": _string_or_none(arguments.get("species_code")),
             "gene_id": _string_or_none(arguments.get("gene_id")),
+            "compute_resource": _string_or_none(
+                content.get("compute_resource")
+            ),
             "status": "RUNNING",
+            "log_status": "sync_running",
         },
     )
 

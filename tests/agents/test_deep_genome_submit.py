@@ -1,0 +1,193 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+"""Submit-style behavior tests for ``DeepGenomeAgents.arun``.
+
+Pin the B.3 contract: ``arun`` mints a synthetic umbrella ``task_id``
+synchronously, spawns the LangGraph workflow on the running event
+loop, and returns the submit envelope so the chokepoint can write
+the umbrella row immediately. The background coroutine must reach
+a terminal ``"succeeded"`` / ``"failed"`` status on the umbrella
+row even when the workflow raises, otherwise a polling client
+would hang on a dead background.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.config.defaults import DeepGenomeConfig
+from mcp_server_phytomni.runtime.task_manager import (
+    Submission,
+    TaskManager,
+)
+
+pytestmark = pytest.mark.agent
+
+
+class _FakeApp:
+    """Stub LangGraph app whose ``ainvoke`` is fully controlled by the test."""
+
+    def __init__(self, result: Any = None, raises: Exception | None = None):
+        """Capture the desired ainvoke outcome.
+
+        Args:
+            result: Value to return from ``ainvoke``.
+            raises: Exception to raise from ``ainvoke`` instead of returning.
+        """
+        self._result = result
+        self._raises = raises
+        self.invocations: list[dict[str, Any]] = []
+
+    async def ainvoke(self, initial_state: Any, config: Any = None) -> Any:
+        """Mimic LangGraph's ``ainvoke`` signature with a controlled outcome."""
+        _ = config
+        self.invocations.append(initial_state)
+        if self._raises is not None:
+            raise self._raises
+        return self._result
+
+
+def _build_agent(app: _FakeApp, tmp_path: Path) -> DeepGenomeAgents:
+    """Construct a DeepGenomeAgents with the fake graph wired in.
+
+    Args:
+        app: Stub app placed on ``self.app`` to skip the real graph
+            compilation cost.
+        tmp_path: Pytest temp dir used as the umbrella ``output_dir``
+            root through ``deep_genome_config.DEEPGENOME_OUT``.
+
+    Returns:
+        A ready-to-call agent instance with the fake graph installed.
+    """
+    agent = DeepGenomeAgents.__new__(DeepGenomeAgents)
+    agent.app = app  # type: ignore[attr-defined]
+    config = DeepGenomeConfig()
+    config.DEEPGENOME_OUT = str(tmp_path)
+    agent.deep_genome_config = config  # type: ignore[attr-defined]
+    return agent
+
+
+def _patch_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Redirect the agent's task registry writes at the temp SQLite file."""
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.agent.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    return db_path
+
+
+async def _drain_background_tasks() -> None:
+    """Yield control until every pending background task completes.
+
+    The arun seam uses fire-and-forget ``asyncio.create_task``; without
+    explicit awaits these tasks never get to run on the event loop.
+    """
+    pending = [
+        task for task in asyncio.all_tasks() if task is not asyncio.current_task()
+    ]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def test_arun_returns_immediately_with_submit_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``arun`` returns ``{task_id, output_dir, compute_resource}`` synchronously.
+
+    The submit envelope must carry a populated ``task_id`` (so the
+    chokepoint can persist the umbrella row) and an ``output_dir`` that
+    falls under the configured ``DEEPGENOME_OUT`` root. The background
+    coroutine continues afterwards; the test waits for it so the row
+    can be inspected at terminal status.
+    """
+    _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(result={"final_report": "ok"})
+    agent = _build_agent(fake_app, tmp_path)
+
+    envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
+
+    assert envelope["task_id"]
+    assert "task-deep_genome" in envelope["task_id"]
+    assert envelope["compute_resource"] == "deep-genome"
+    assert envelope["output_dir"].startswith(str(tmp_path))
+    assert envelope["output_dir"].endswith(envelope["task_id"])
+    await _drain_background_tasks()
+
+
+async def test_arun_background_writes_succeeded_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Background workflow completion stamps ``status="succeeded"``.
+
+    The MCP dispatch chokepoint (``_record_submitted_task``) writes
+    the umbrella ``tasks`` row from ``arun``'s submit envelope before
+    the background coroutine eventually flips ``status``. The test
+    mimics that prerequisite write so the background's
+    ``update_task`` lands on an existing row.
+    """
+    db_path = _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(result={"final_report": "ok"})
+    agent = _build_agent(fake_app, tmp_path)
+
+    envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
+    TaskManager(db_path).record(
+        Submission(
+            task_id=envelope["task_id"],
+            status="submitted",
+            output_dir=envelope["output_dir"],
+        )
+    )
+    await _drain_background_tasks()
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status, output_dir FROM tasks WHERE task_id = ?",
+            (envelope["task_id"],),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "succeeded"
+    assert row[1] == envelope["output_dir"]
+
+
+async def test_arun_background_writes_failed_on_workflow_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A LangGraph exception MUST mark the umbrella row ``"failed"``.
+
+    Without this terminal write a polling client would hang forever on
+    a dead background; the chokepoint's submit row alone never reaches
+    a terminal status. The bare ``"failed"`` matches the live-status
+    bridge's lowercase contract used by the live-status reader.
+    """
+    db_path = _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(raises=RuntimeError("boom"))
+    agent = _build_agent(fake_app, tmp_path)
+
+    envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
+    TaskManager(db_path).record(
+        Submission(
+            task_id=envelope["task_id"],
+            status="submitted",
+            output_dir=envelope["output_dir"],
+        )
+    )
+    await _drain_background_tasks()
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE task_id = ?",
+            (envelope["task_id"],),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "failed"
