@@ -172,6 +172,7 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `GET`    | `/v1/agents`              | yes  | Native agent slug discovery.                     |
 | `POST`   | `/v1/agents/{agent}/runs` | yes  | Native agent submission.                         |
 | `GET`    | `/v1/runs/{run_id}`       | yes  | Owner-scoped run lookup.                         |
+| `GET`    | `/v1/runs/{run_id}/logs`  | yes  | Reconciled task logs for a run.                  |
 | `GET`    | `/v1/runs`                | yes  | Owner-scoped + service-token delegated listing.  |
 | `POST`   | `/v1/api-keys`            | svc  | Mint a per-user `ptm_...` API key (service tok). |
 | `GET`    | `/v1/api-keys`            | svc  | List per-user keys (metadata only).              |
@@ -188,6 +189,12 @@ it) and lists any tenant's runs; `created_after=<iso-8601>` /
 row carries `dialogue_id` / `query` / `tool_name` / `model` /
 `answer` alongside the standard fields, sourced from
 `result.formatted.answer`.
+
+`GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
+The endpoint verifies ownership, then fetches or retrieves cached logs
+for each task in the run. Default mode strips the raw handler payload
+from each task log; pass `debug=true` to include it. Returns `404` if
+the run is unknown or owned by another user.
 
 ## Health Checks
 

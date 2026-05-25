@@ -75,6 +75,7 @@ supported; `stream: true` returns `400`.
 | `GET`    | `/v1/agents`              | yes  | Lists native agent-run slugs.                                     |
 | `POST`   | `/v1/agents/{agent}/runs` | yes  | Invokes one agent by slug.                                        |
 | `GET`    | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
+| `GET`    | `/v1/runs/{run_id}/logs`  | yes  | Returns reconciled task logs for a run.                           |
 | `GET`    | `/v1/runs`                | yes  | Lists owner-scoped runs newest-first.                             |
 | `POST`   | `/v1/api-keys`            | svc  | Mints a per-user `ptm_...` API key.                               |
 | `GET`    | `/v1/api-keys`            | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter. |
@@ -101,6 +102,12 @@ dedicated header so a Bearer-carried user key cannot get confused
 for the service token). Missing or wrong service token returns
 `403 user_id query parameter requires the service token`. The
 owner-only path (no `user_id`) keeps its existing contract.
+
+`GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
+The endpoint verifies ownership, then fetches or retrieves cached logs
+for each task in the run. Default mode strips the raw handler payload
+from each task log; pass `debug=true` to include it. Returns `404` if
+the run is unknown or owned by another user.
 
 `POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
 an optional `dialogue_id` field that groups runs into one visible

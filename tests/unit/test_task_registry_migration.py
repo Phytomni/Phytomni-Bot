@@ -36,6 +36,7 @@ _EXPECTED_COLUMNS = {
     "created_at",
     "updated_at",
     "input_fingerprint",
+    "task_log",
 }
 
 
