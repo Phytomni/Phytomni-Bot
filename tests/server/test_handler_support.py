@@ -13,7 +13,7 @@ forgotten field cannot silently drift the wrapper contract.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -62,12 +62,14 @@ def _fake_sensitive() -> SensitiveConfig:
     return cast(SensitiveConfig, namespace)
 
 
-def _fake_config() -> SimpleNamespace:
+def _fake_config() -> Any:
     """Build a chat/retrieve/OBS/retry/analysis config fake.
 
     Every attribute name mirrors a UPPERCASE config field name read by
     one of the helpers, so a missing attribute would surface as a
-    direct AttributeError rather than a silent kwarg gap.
+    direct AttributeError rather than a silent kwarg gap. The helpers
+    now expose concrete config types, but the tests intentionally use a
+    duck-typed namespace to pin only the attributes each helper reads.
     """
     return SimpleNamespace(
         PROMPT_FILE="prompts.yaml",

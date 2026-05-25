@@ -13,10 +13,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import httpx
 import pytest
 
+from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.request_context import (
     current_request_id,
@@ -30,11 +32,14 @@ pytestmark = pytest.mark.server
 scratch_server_dir = mcp_handlers.scratch_server_dir
 
 
-def _fake_config(tmp_path: Path) -> SimpleNamespace:
+def _fake_config(tmp_path: Path) -> ServerConfig:
     """Return a minimal config namespace usable by scratch_server_dir."""
-    return SimpleNamespace(
-        BUCKET_NAME="phytomni",
-        TEMP_DIR=str(tmp_path / "fallback"),
+    return cast(
+        ServerConfig,
+        SimpleNamespace(
+            BUCKET_NAME="phytomni",
+            TEMP_DIR=str(tmp_path / "fallback"),
+        ),
     )
 
 

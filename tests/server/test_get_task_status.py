@@ -38,6 +38,7 @@ async def test_unknown_task_returns_unknown(tasks_db_path: str) -> None:
 
     result = await handle_get_task_status(GetTaskStatus(task_id="nope"))
 
+    assert result is not None
     assert result["status"] == "unknown"
     assert result["live_status"] is None
 
@@ -75,6 +76,7 @@ async def test_recorded_task_merges_live_status(
 
     result = await handle_get_task_status(GetTaskStatus(task_id="T-9"))
 
+    assert result is not None
     assert result["status"] == "SUCCEEDED"
     assert result["output_dir"] == "/obs/o"
     assert result["live_status"] == {"status": "SUCCEEDED"}
@@ -113,6 +115,7 @@ async def test_live_failure_degrades_to_recorded(
 
     result = await handle_get_task_status(GetTaskStatus(task_id="T-7"))
 
+    assert result is not None
     assert result["status"] == "submitted"
     assert result["output_dir"] == "/obs/x"
     assert result["live_status"] is None
