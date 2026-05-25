@@ -4,13 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the SensitiveConfig encrypted/plaintext load chain.
 
-Covers the three provisioning paths of load_env_file (testing
-bypass, plaintext ``.env`` first, encrypted ``.env.encrypted`` +
-license key as customer-image fallback, no-source RuntimeError)
-plus the once-per-process decrypt memo, the env-wins setdefault
-rule, wrong-key propagation, the plaintext-wins-over-encrypted
-regression, and an end-to-end ``SensitiveConfig.load()`` on each
-path.
+Covers the three load_env_file() paths (testing bypass, plaintext
+.env first, encrypted envelope fallback), the once-per-process
+decrypt memo, the env-wins setdefault rule, and the
+plaintext-wins-over-encrypted regression.
 """
 
 import os

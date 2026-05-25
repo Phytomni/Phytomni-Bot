@@ -4,15 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Cross-cutting metadata key-set contract test.
 
-One parametrized test per agent with a "kitchen sink" ``phytomni_state``
-fixture asserting the **exact** allowed metadata key set. Catches future
-agent-state-key renames, extra keys leaking from raw, and expected keys
-going missing. The contract is pinned at the formatter boundary so a
-drift in ``result_formatting.py`` or an agent wrapper fails fast in CI.
-
-Agents that do not populate ``formatted.metadata`` beyond the shared
-task fields (KnowledgeAgent / ReviewAgent / BriefGeneAgent) are pinned
-as "no extra metadata" to lock the stability guarantee.
+One parametrized test per agent with a kitchen-sink
+``phytomni_state`` fixture asserting the exact allowed metadata
+key set at the formatter boundary. Agents without extra metadata
+(Knowledge / Review / BriefGene) are pinned as "no extra metadata"
+to lock the stability guarantee.
 """
 
 from __future__ import annotations
