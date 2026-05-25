@@ -511,14 +511,8 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
     top-level keys.
     """
     design_results = content.get("design_task_result")
-    results_list = (
-        design_results if isinstance(design_results, list) else []
-    )
-    tasks = [
-        task
-        for task in results_list
-        if isinstance(task, Mapping)
-    ]
+    results_list = design_results if isinstance(design_results, list) else []
+    tasks = [task for task in results_list if isinstance(task, Mapping)]
     if not tasks:
         return FormattedToolResult(
             answer="No tasks found",
