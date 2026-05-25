@@ -4,14 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for ``_stamp_remote_request_info`` (api/app.py).
 
-Pins the three documented branches of the remote-agent backfill
-helper that the 2026-05-25 audit (AF-002) flagged as untested:
-``run_id=None`` no-op, normal stamp + SQL verification, and the
-swallow path when ``RunRegistry.update_request_info`` raises
-``sqlite3.Error``. The remote chokepoint already returns a 202 to
-the user before the backfill fires, so a swallow that re-raised
-would crash the worker without changing the user-visible outcome —
-hence the silent swallow that this suite locks behaviour-wise.
+Pins the three branches the 2026-05-25 audit (AF-002) flagged as
+untested: ``run_id=None`` no-op (analyst dedup-hit), normal stamp
+with SQL verification, and the silent swallow path when
+``RunRegistry.update_request_info`` raises ``sqlite3.Error``.
 """
 
 from __future__ import annotations
