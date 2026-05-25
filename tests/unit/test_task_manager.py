@@ -12,6 +12,7 @@ record_submission upserts a caller-known task_id.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,34 @@ def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
     assert row is not None
     assert row["status"] == "succeeded"
     assert row["analysis_id"] == "rem-9"
+
+
+def test_init_db_adds_task_log_column_to_legacy_four_column_db(
+    tmp_path: Path,
+) -> None:
+    """A pre-existing legacy tasks DB gets task_log added in place.
+
+    A fresh image carries task_log via _CREATE_TASKS_DDL, but customer
+    databases that pre-date Phase 3 only have the original four columns.
+    _init_db must widen them via guarded ALTER TABLE so /v1/runs/logs
+    has a column to read from instead of crashing on a missing column.
+    """
+    db_path = str(tmp_path / "legacy.db")
+    legacy_ddl = (
+        "CREATE TABLE tasks ("
+        "task_id TEXT PRIMARY KEY, "
+        "status TEXT, "
+        "analysis_id TEXT, "
+        "output_dir TEXT)"
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(legacy_ddl)
+
+    TaskManager(db_path=db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    assert "task_log" in columns
 
 
 def test_resolve_tasks_db_path_honors_env_override(

@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     origin TEXT,
     created_at TEXT,
     updated_at TEXT,
-    input_fingerprint TEXT
+    input_fingerprint TEXT,
+    task_log TEXT
 )
 """
 
@@ -142,6 +143,7 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
         "input_fingerprint",
         "ALTER TABLE tasks ADD COLUMN input_fingerprint TEXT",
     ),
+    ("task_log", "ALTER TABLE tasks ADD COLUMN task_log TEXT"),
 )
 
 # Status values that disqualify a prior row from being reused via
