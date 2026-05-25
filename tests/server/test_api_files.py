@@ -159,6 +159,40 @@ async def test_upload_file_post_read_rejects_oversize_when_header_absent(
     assert response.status_code == 413
 
 
+async def test_upload_file_byte_budget_breach_returns_413_without_writing(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client: Any,
+) -> None:
+    """A chunked-transfer body that breaches max_bytes returns 413 and never calls OBS.
+
+    Covers AF-001 (audit 2026-05-26): when the Content-Length header is
+    absent or falsified, the route must still bound peak memory and
+    never reach ``upload_user_file``. We monkeypatch
+    ``read_with_byte_budget`` to return ``None`` (the helper's "budget
+    breached" signal) so the route's None-branch fires regardless of
+    what the in-process ASGI client claims for Content-Length.
+    """
+
+    async def _budget_breach(*_args: Any, **_kwargs: Any) -> Any:
+        return None
+
+    monkeypatch.setattr(
+        file_upload_module, "read_with_byte_budget", _budget_breach
+    )
+
+    response = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("x.bin", b"tiny", "application/octet-stream")},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == 413
+    assert "put_content" not in fake_obs_client.captured
+
+
 async def test_upload_file_rejects_empty_body(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
