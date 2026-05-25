@@ -394,8 +394,8 @@ class DeepGenomeAgents(
         """Submit a deep gene analysis run; return task identity immediately.
 
         DeepGenome is wired into the submit-style chokepoint
-        (``mcp/handlers._records_submission("deep_genome")``) and the
-        HTTP run-aggregate path (``api/app.py``). To match that
+        (``runtime.submit_recorder.records_submission("deep_genome")``)
+        and the HTTP run-aggregate path (``api/app.py``). To match that
         contract, ``arun`` mints an umbrella ``task_id`` synchronously,
         derives a placeholder ``output_dir`` under
         ``deep_genome_config.DEEPGENOME_OUT``, spawns the LangGraph

@@ -129,9 +129,9 @@ _AGENT_SLUG_TO_TOOL = {
 }
 
 # Slugs whose handlers submit a remote analysis task and rely on the
-# ``_records_submission`` chokepoint in ``mcp/handlers`` to write the
-# runs row with ``origin="remote"`` and bind the freshly-minted run id
-# to ``current_run_id()`` so the API layer can recover it directly.
+# ``records_submission`` chokepoint in ``runtime.submit_recorder`` to
+# write the runs row with ``origin="remote"`` and bind the freshly-minted
+# run id to ``current_run_id()`` so the API layer can recover it directly.
 _REMOTE_AGENT_SLUGS = frozenset(
     {"analyst", "deep_genome", "research", "design", "network"}
 )
@@ -408,7 +408,8 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
         ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
         ``task_ids`` is empty when the chokepoint did not bind a
         run id — either because the registry write failed midway
-        (see ``_record_submitted_task``) or because the wrapper
+        (see ``runtime.submit_recorder.record_submitted_task``) or
+        because the wrapper
         returned an analyst dedup-hit passthrough that
         intentionally skipped the write to preserve the prior
         caller's run id. Callers that need to distinguish the

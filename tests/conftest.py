@@ -477,7 +477,7 @@ def tasks_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
     """
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setattr(
-        "mcp_server_phytomni.mcp.handlers.resolve_tasks_db_path",
+        "mcp_server_phytomni.runtime.submit_recorder.resolve_tasks_db_path",
         lambda: db_path,
     )
     monkeypatch.setattr(

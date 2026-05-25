@@ -18,8 +18,8 @@ import httpx
 import pytest
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.mcp.handlers import _records_submission
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
 
@@ -232,7 +232,7 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
         tool_name,
-        _records_submission(slug)(fake),
+        records_submission(slug)(fake),
     )
 
     response = await api_client.post(

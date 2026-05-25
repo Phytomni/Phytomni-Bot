@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for submit-handler unified run+task registry recording.
 
-Pin the chokepoint: ``_records_submission(agent)`` forwards a submit
+Pin the chokepoint: ``records_submission(agent)`` forwards a submit
 handler's result unchanged while persisting both the child task row
 and an owning ``runs`` row (``origin="remote"``), the recorder is
 best-effort on malformed results, and all five submit-style handlers
@@ -19,8 +19,6 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.mcp.handlers import (
-    _record_submitted_task,
-    _records_submission,
     handle_analyst_agent,
     handle_deep_genome_agent,
     handle_digital_design_agent,
@@ -29,6 +27,10 @@ from mcp_server_phytomni.mcp.handlers import (
 )
 from mcp_server_phytomni.runtime.request_context import current_run_id
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.submit_recorder import (
+    record_submitted_task,
+    records_submission,
+)
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.server
@@ -56,7 +58,7 @@ async def test_decorator_records_task_run_and_passes_result_through(
         _ = args
         return submitted
 
-    wrapped = _records_submission("analyst")(fake_handler)
+    wrapped = records_submission("analyst")(fake_handler)
 
     result = await wrapped(object())
 
@@ -107,7 +109,7 @@ async def test_decorator_records_task_run_and_passes_result_through(
     }
 
 
-def test_record_submitted_task_ignores_malformed_results(
+def testrecord_submitted_task_ignores_malformed_results(
     tasks_db_path: str,
 ) -> None:
     """Verify non-dict / missing-id results record nothing, no raise.
@@ -115,9 +117,9 @@ def test_record_submitted_task_ignores_malformed_results(
     Args:
         tasks_db_path: Temp registry DB fixture.
     """
-    _record_submitted_task("not a dict", agent="analyst")
-    _record_submitted_task({}, agent="analyst")
-    _record_submitted_task({"task_id": ""}, agent="analyst")
+    record_submitted_task("not a dict", agent="analyst")
+    record_submitted_task({}, agent="analyst")
+    record_submitted_task({"task_id": ""}, agent="analyst")
 
     assert TaskManager(tasks_db_path).get_task("") is None
     assert not RunRegistry(tasks_db_path).list_runs(owner="anonymous")
@@ -148,7 +150,7 @@ def test_record_binds_run_id_contextvar(tasks_db_path: str) -> None:
     contextvar without re-reading a formatter-specific metadata key.
     """
     assert current_run_id() is None
-    _record_submitted_task(
+    record_submitted_task(
         {"task_id": "T-bind", "output_dir": "/obs/run"},
         agent="analyst",
     )
@@ -167,7 +169,7 @@ def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
     one shared ``run_id``; the top-level ``output_dir`` is shared by
     each child since the research wrapper does not nest one per task.
     """
-    _record_submitted_task(
+    record_submitted_task(
         {
             "task_ids": {"goal-a": "T-RA", "goal-b": "T-RB"},
             "output_dir": "/obs/research",
@@ -190,7 +192,7 @@ def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
 
 def test_record_handles_network_nested_task(tasks_db_path: str) -> None:
     """``network`` returns one task nested under ``network_task``."""
-    _record_submitted_task(
+    record_submitted_task(
         {
             "network_task": {
                 "task_id": "T-NET",
@@ -215,7 +217,7 @@ def test_record_handles_design_task_result_list(
     ``operator.add`` reducer. The chokepoint writes one child row per
     present item under a single shared run.
     """
-    _record_submitted_task(
+    record_submitted_task(
         {
             "design_task_result": [
                 {
@@ -268,7 +270,7 @@ def test_record_skips_bind_when_task_row_write_fails(
 
     monkeypatch.setattr(TaskManager, "record", boom)
     assert current_run_id() is None
-    _record_submitted_task(
+    record_submitted_task(
         {"task_id": "T-fail", "output_dir": "/obs/run"},
         agent="analyst",
     )
@@ -290,7 +292,7 @@ def test_record_short_circuits_on_dedup_hit_passthrough(
     still has exactly one row, and ``current_run_id()`` still points
     at ``R1`` (the chokepoint never minted a new id).
     """
-    _record_submitted_task(
+    record_submitted_task(
         {"task_id": "T-dedup", "output_dir": "/obs/run"},
         agent="analyst",
     )
@@ -299,7 +301,7 @@ def test_record_short_circuits_on_dedup_hit_passthrough(
     runs_before = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
     assert len(runs_before) == 1
 
-    _record_submitted_task(
+    record_submitted_task(
         {
             "task_id": "T-dedup",
             "output_dir": "/obs/run",
@@ -336,7 +338,7 @@ def test_record_dedup_hit_without_prior_does_not_bind_or_write(
     any rows, and must not bind the contextvar.
     """
     assert current_run_id() is None
-    _record_submitted_task(
+    record_submitted_task(
         {
             "task_id": "T-ghost",
             "output_dir": "/obs/run",

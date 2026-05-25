@@ -1,0 +1,260 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Submit-handler recorder: persist run + task rows for remote agents.
+
+Owns the chokepoint that turns a successful submit-style handler return
+into one ``runs`` row plus N child ``tasks`` rows in the local SQLite
+registry, then binds the freshly-minted ``run_id`` to the request
+contextvar so the HTTP layer can echo it back. Extracted from
+``mcp/handlers.py`` so the dispatcher stays a thin schema-validation
+shell (Phase 14 finally hits the original Phase 4 < 550 target).
+"""
+
+import functools
+import sqlite3
+from collections.abc import Mapping
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+
+from ..storage.path_policy import IdFactory
+from .request_context import bind_run_id, current_request_user
+from .run_registry import RunRegistry, RunSpec
+from .task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+    resolve_tasks_db_path,
+)
+
+__all__ = [
+    "extract_task_submissions",
+    "record_submitted_task",
+    "records_submission",
+]
+
+
+def extract_task_submissions(
+    result: Mapping[str, Any], agent: str
+) -> Tuple[Tuple[str, str, Optional[str]], ...]:
+    """Extract per-task identity triples by per-agent wrapper shape.
+
+    Each public submit wrapper returns task identity in its own shape,
+    so the chokepoint dispatches by agent slug rather than guessing:
+
+    - ``analyst`` / ``deep_genome``: ``task_id`` at the top level (with
+      ``output_dir`` alongside). Analyst additionally carries
+      ``input_fingerprint`` for the duplicate-submission dedup contract;
+      other agents leave the slot ``None``.
+    - ``research``: a ``task_ids`` dict mapping research-goal names to
+      task ids; the top-level ``output_dir`` is shared across children.
+    - ``network``: nested under ``network_task`` (``task_id`` +
+      ``output_dir`` inside).
+    - ``design``: a ``design_task_result`` list of AnalystAgent
+      submission dicts (one per design kind: protein / promoter /
+      terminator), each with its own ``task_id`` and ``output_dir``.
+
+    Args:
+        result: Raw wrapper result dict (pre-formatter).
+        agent: Public agent alias (e.g. ``"analyst"``).
+
+    Returns:
+        Tuple of ``(task_id, output_dir, input_fingerprint)`` triples;
+        empty when nothing recognizable is present so the caller skips
+        writing. ``input_fingerprint`` is ``None`` for agents that do
+        not participate in the dedup contract.
+    """
+    pairs: list[tuple[str, str, Optional[str]]] = []
+    if agent in ("analyst", "deep_genome"):
+        task_id = result.get("task_id")
+        if isinstance(task_id, str) and task_id:
+            fingerprint = result.get("input_fingerprint")
+            pairs.append(
+                (
+                    task_id,
+                    str(result.get("output_dir") or ""),
+                    fingerprint if isinstance(fingerprint, str) else None,
+                )
+            )
+    elif agent == "research":
+        mapping = result.get("task_ids")
+        if isinstance(mapping, Mapping):
+            shared_output = str(result.get("output_dir") or "")
+            pairs.extend(
+                (str(value), shared_output, None)
+                for value in mapping.values()
+                if isinstance(value, str) and value
+            )
+    elif agent == "network":
+        nested = result.get("network_task")
+        if isinstance(nested, Mapping):
+            task_id = nested.get("task_id")
+            if isinstance(task_id, str) and task_id:
+                pairs.append(
+                    (
+                        task_id,
+                        str(nested.get("output_dir") or ""),
+                        None,
+                    )
+                )
+    elif agent == "design":
+        design_results = result.get("design_task_result")
+        if isinstance(design_results, list):
+            for nested in design_results:
+                if not isinstance(nested, Mapping):
+                    continue
+                task_id = nested.get("task_id")
+                if isinstance(task_id, str) and task_id:
+                    pairs.append(
+                        (
+                            task_id,
+                            str(nested.get("output_dir") or ""),
+                            None,
+                        )
+                    )
+    return tuple(pairs)
+
+
+def record_submitted_task(result: Any, *, agent: str) -> None:
+    """Persist submitted tasks plus their owning run row.
+
+    Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``,
+    writes one ``runs`` row (``origin="remote"``, ``status="running"``)
+    via ``RunRegistry.create_run``, then writes one child task row per
+    extracted task id — all sharing the same ``run_id`` so
+    ``RunRegistry.reconcile`` can join them by ``tasks.run_id``.
+    Best-effort: a registry / SQLite / OS error must never break an
+    already-successful submission, so failures are swallowed.
+
+    The chokepoint binds the freshly-minted ``run_id`` to the request
+    contextvar **only after** every child task row has been written,
+    so a half-failed record never surfaces a run id without its task
+    ids — the HTTP layer then sees ``current_run_id() is None`` and
+    returns ``(None, [])`` as a clean silent failure.
+
+    A wrapper return carrying ``dedup_hit=True`` is a transparent
+    passthrough for a duplicate submission: the prior caller already
+    owns the task row through their own run, so minting a fresh run
+    and ``INSERT OR REPLACE`` of the task row here would overwrite the
+    prior ``run_id`` and orphan the original aggregate
+    (``RunRegistry.list_runs`` would return the prior run with empty
+    ``task_ids`` and the HTTP ``GET /v1/runs/{prior}`` aggregate would
+    stay pinned at ``running``). The chokepoint therefore bails out
+    before any registry mutation when it sees the sentinel; the second
+    caller still receives the prior ``task_id`` and reads status
+    through it directly.
+
+    The MCP tool's return dict is *not* mutated (no ``run_id`` is
+    surfaced to the client) so the existing stdio MCP contract stays
+    byte-equivalent; the HTTP API path reads ``tasks.run_id`` back
+    when it needs the run identity.
+
+    Args:
+        result: The wrapper result returned by a submit-style handler.
+        agent: Public agent alias (e.g. ``"analyst"``) recorded on the
+            run and task rows.
+    """
+    if not isinstance(result, dict):
+        return
+    if result.get("dedup_hit") is True:
+        return
+    submissions = extract_task_submissions(result, agent)
+    if not submissions:
+        return
+    user_id = current_request_user() or "anonymous"
+    run_id = IdFactory().new_id("run", agent)
+    now = datetime.now(timezone.utc).isoformat()
+    db_path = resolve_tasks_db_path()
+    # Seed the run row with the same envelope shape ``_terminal_payload``
+    # writes later so a client polling ``GET /v1/runs/{id}`` while the
+    # run is still in flight sees ``task_results`` / ``live_status`` /
+    # ``artifacts`` keyed exactly as on the terminal branch, just with
+    # placeholder ``submitted`` rows and an empty artifacts list.
+    initial_task_rows = [
+        {
+            "task_id": task_id,
+            "status": "submitted",
+            "output_dir": output_dir,
+        }
+        for task_id, output_dir, _input_fingerprint in submissions
+    ]
+    initial_result: Dict[str, Any] = {
+        "task_results": initial_task_rows,
+        "live_status": initial_task_rows,
+        "artifacts": [],
+    }
+    try:
+        RunRegistry(db_path).create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=user_id,
+                agent=agent,
+                origin="remote",
+            ),
+            result=initial_result,
+        )
+        manager = TaskManager(db_path)
+        for task_id, output_dir, input_fingerprint in submissions:
+            manager.record(
+                Submission(
+                    task_id=task_id,
+                    status="submitted",
+                    output_dir=output_dir,
+                    run_context=RunContext(
+                        run_id=run_id,
+                        user_id=user_id,
+                        agent=agent,
+                        origin="remote",
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                    input_fingerprint=input_fingerprint,
+                )
+            )
+        bind_run_id(run_id)
+    except (sqlite3.Error, OSError):
+        return
+
+
+def records_submission(
+    agent: str,
+) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
+    """Decorator factory: log a submit handler's run + task on return.
+
+    The handler runs unchanged; its result is forwarded verbatim and
+    also recorded in the unified run+task registry. ``functools.wraps``
+    preserves the handler name so the ``TOOL_HANDLERS`` mapping in
+    ``mcp/app.py`` is unaffected, and the static ``agent`` slug avoids
+    name-introspection at call time.
+
+    Args:
+        agent: Public agent alias (e.g. ``"analyst"``) recorded on the
+            run and task rows.
+
+    Returns:
+        Decorator that wraps an async submit handler.
+    """
+
+    def decorator(
+        handler: Callable[..., Awaitable[Any]],
+    ) -> Callable[..., Awaitable[Any]]:
+        """Wrap one async submit handler with the recorder hook."""
+
+        @functools.wraps(handler)
+        async def _wrapper(args: Any) -> Any:
+            """Await the handler, record the run + task, return the result.
+
+            Args:
+                args: The validated tool-argument model.
+
+            Returns:
+                The handler's result, unchanged.
+            """
+            result = await handler(args)
+            record_submitted_task(result, agent=agent)
+            return result
+
+        return _wrapper
+
+    return decorator
