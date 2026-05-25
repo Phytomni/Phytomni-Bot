@@ -19,11 +19,11 @@ from typing import Any, Dict
 
 import pytest
 
-from mcp_server_phytomni.agents.analyst import agent as analyst_agent_module
-from mcp_server_phytomni.agents.analyst.agent import (
+from mcp_server_phytomni.agents.analyst import planning as analyst_planning
+from mcp_server_phytomni.agents.analyst.agent import retrieve_plan_submit
+from mcp_server_phytomni.agents.analyst.submission import (
     _analyst_task_fingerprint,
     _should_reuse_prior_task,
-    retrieve_plan_submit,
 )
 from mcp_server_phytomni.runtime.task_manager import (
     Submission,
@@ -60,7 +60,7 @@ def _seed_task(
 def _patch_db_path(monkeypatch: pytest.MonkeyPatch, db_path: str) -> None:
     """Point ``retrieve_plan_submit`` at a tmp_path tasks SQLite."""
     monkeypatch.setattr(
-        analyst_agent_module,
+        analyst_planning,
         "resolve_tasks_db_path",
         lambda: db_path,
     )
@@ -81,7 +81,7 @@ def _forbid_submit_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, int]:
             "_build_submit_agent must not run on a dedup hit",
         )
 
-    monkeypatch.setattr(analyst_agent_module, "_build_submit_agent", fail)
+    monkeypatch.setattr(analyst_planning, "_build_submit_agent", fail)
     return calls
 
 
@@ -116,9 +116,7 @@ def _patch_submit_agent(
             "thread-1",
         )
 
-    monkeypatch.setattr(
-        analyst_agent_module, "_build_submit_agent", fake_build
-    )
+    monkeypatch.setattr(analyst_planning, "_build_submit_agent", fake_build)
     return calls
 
 

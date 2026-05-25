@@ -50,10 +50,10 @@ def _shared_arun_kwargs(
 ) -> Dict[str, Any]:
     """Return the AnalystAgent.arun kwarg block shared by submit wrappers.
 
-    ``submit`` (here) and ``retrieve_plan_submit`` (agent.py) both call
-    ``agent.arun`` with the same first five kwargs in the same order.
-    Centralizing that block kills the pylint R0801 duplicate-code warning
-    and gives one seam to update when arun's signature evolves.
+    ``submit`` (here) and ``retrieve_plan_submit`` (``.planning``) both
+    call ``agent.arun`` with the same first five kwargs in the same
+    order. Centralizing that block kills the pylint R0801 duplicate-code
+    warning and gives one seam to update when arun's signature evolves.
     """
     return {
         "query": goal_description,
