@@ -80,8 +80,34 @@ supported; `stream: true` returns `400`.
 | `GET`    | `/v1/api-keys`            | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter. |
 | `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revokes the key with the given public prefix.                     |
 
-`GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`, and
-`offset` query parameters.
+`GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
+`offset`, `created_after`, `created_before`, `user_id`, and `debug`
+query parameters. `created_after` / `created_before` take ISO-8601
+strings and are compared inclusively against the row's `created_at`;
+ISO-8601 UTC strings sort lexicographically so the SQL predicate
+matches chronological intent without conversion. Filters compose
+conjunctively. Each response row carries `dialogue_id`, `query`,
+`tool_name`, `model`, and `answer` alongside the standard run
+fields; `answer` is sourced from `result.formatted.answer`. The
+`debug=true` flag keeps the full `result.raw` block (default mode
+strips it, see *Response Projection* below).
+
+`GET /v1/runs?user_id=<other-user>` lets an upstream operator list
+any tenant's runs. The user key in `Authorization: Bearer ptm_...`
+still authenticates the caller for rate-limit + audit, but the
+`user_id` parameter is honoured only when a valid service token
+arrives in `X-Service-Token: <token>` (the soft-check prefers the
+dedicated header so a Bearer-carried user key cannot get confused
+for the service token). Missing or wrong service token returns
+`403 user_id query parameter requires the service token`. The
+owner-only path (no `user_id`) keeps its existing contract.
+
+`POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
+an optional `dialogue_id` field that groups runs into one visible
+thread on the chat-ai history page. The Bot persists it onto the
+`runs` row alongside `query` / `tool_name` / `model`; a missing
+`dialogue_id` stays NULL. `dialogue_id` is opaque to the Bot — Web
+Go assigns it.
 
 Routes marked **svc** require the service token configured via
 `API_SERVICE_TOKEN`, sent as `Authorization: Bearer <token>` or
