@@ -53,6 +53,7 @@ from ..runtime.run_registry import (
     RunSpec,
 )
 from ..runtime.task_manager import resolve_tasks_db_path
+from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import ApiPrincipal, get_key_store, require_principal
@@ -950,6 +951,38 @@ def create_app() -> FastAPI:
             request_json=payload.model_dump_json(),
         )
         return JSONResponse(body, status_code=status_code)
+
+    @app.get("/v1/runs/{run_id}/logs")
+    async def get_run_logs(
+        run_id: str,
+        principal: ApiPrincipal = Depends(authorized),
+        debug: bool = False,
+    ) -> JSONResponse:
+        """Return reconciled task logs for a run.
+
+        Fetches the run to verify ownership, then reconciles logs for
+        each task in the run. Default mode strips the raw handler payload
+        from each task log; pass ``debug=true`` to include it.
+        """
+        del principal
+        record = await _fetch_owner_run(run_id)
+        task_ids = record.get("task_ids", [])
+
+        task_logs = []
+        for task_id in task_ids:
+            log = await reconcile_task_log(task_id)
+            if log is not None:
+                if not resolve_debug(debug):
+                    log = strip_agent_result(log)
+                task_logs.append(log)
+
+        return JSONResponse(
+            {
+                "run_id": run_id,
+                "task_ids": task_ids,
+                "task_logs": task_logs,
+            }
+        )
 
     @app.get("/v1/runs/{run_id}")
     async def get_run(
