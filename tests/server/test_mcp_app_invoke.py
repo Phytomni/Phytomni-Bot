@@ -135,10 +135,20 @@ async def test_invoke_data_agent_serializes_table(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DataAgent payloads expose headers/rows on the tabular field."""
+    """DataAgent payloads expose headers/rows on the tabular field.
+
+    The NL2SQL ``phytomni_state`` lifts ``user_query`` / ``rewrite_query``
+    / ``is_rewrite`` into ``metadata`` so the rewrite context survives
+    default-mode projection.
+    """
     raw = {
         "header": [{"caption": "Gene"}, {"name": "Identity"}],
         "data": [["Os01g0177400", 0.95]],
+        "phytomni_state": {
+            "user_query": "List rice gene Os01g0177400 identity.",
+            "rewrite_query": "SELECT * FROM rice WHERE id='Os01g0177400';",
+            "is_rewrite": True,
+        },
     }
     _patch_handler(monkeypatch, PhytomniAgents.DATA_AGENT.value, raw)
 
@@ -152,6 +162,11 @@ async def test_invoke_data_agent_serializes_table(
         "rows": [["Os01g0177400", 0.95]],
     }
     assert result.answer == "1 row x 2 columns"
+    assert result.metadata == {
+        "user_query": "List rice gene Os01g0177400 identity.",
+        "rewrite_query": "SELECT * FROM rice WHERE id='Os01g0177400';",
+        "is_rewrite": True,
+    }
 
 
 async def test_invoke_analyst_agent_formats_task_submission(

@@ -23,6 +23,8 @@ from ..runtime.terminal_artifacts import collect_terminal_artifacts
 
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
 
+_PHYTOMNI_STATE_KEY = "phytomni_state"
+
 
 @dataclass(frozen=True)
 class FormattedToolResult:
@@ -272,7 +274,10 @@ def _format_data_result(
 
     Tabular payload moves into the structured ``tabular`` field so HTTP
     clients no longer need to ``json.loads(answer)`` to read headers
-    and rows; ``answer`` carries a human-readable shape summary.
+    and rows; ``answer`` carries a human-readable shape summary. The
+    ``user_query`` / ``rewrite_query`` / ``is_rewrite`` keys lifted
+    from ``phytomni_state`` let default-mode clients read the actual
+    NL2SQL rewrite without inspecting ``raw.phytomni_state``.
     """
     headers = [
         str(column.get("caption") or column.get("name") or "")
@@ -284,10 +289,22 @@ def _format_data_result(
     column_count = len(headers)
     row_label = "row" if row_count == 1 else "rows"
     column_label = "column" if column_count == 1 else "columns"
+    state = _phytomni_state(content)
     return FormattedToolResult(
         answer=(f"{row_count} {row_label} x {column_count} {column_label}"),
+        metadata={
+            "user_query": state.get("user_query"),
+            "rewrite_query": state.get("rewrite_query"),
+            "is_rewrite": state.get("is_rewrite"),
+        },
         tabular={"headers": headers, "rows": rows},
     )
+
+
+def _phytomni_state(content: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the ``phytomni_state`` mapping or an empty mapping."""
+    state = content.get(_PHYTOMNI_STATE_KEY)
+    return state if isinstance(state, Mapping) else {}
 
 
 def _format_task_result(content: Mapping[str, Any]) -> FormattedToolResult:

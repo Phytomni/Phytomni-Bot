@@ -280,3 +280,59 @@ def test_envelope_returns_fresh_structure_for_safe_mutation() -> None:
 
     envelope.raw["items"].append(3)
     assert payload["items"] == [1, 2]
+
+
+def test_data_result_lifts_rewrite_metadata_from_phytomni_state() -> None:
+    """DataAgent metadata surfaces NL2SQL rewrite context.
+
+    The handler payload carries the NL2SQL final response at the top
+    level and the LangGraph intermediate fields under
+    ``phytomni_state`` (cited mode of ``merge_intermediate_state``).
+    The formatter lifts ``user_query`` / ``rewrite_query`` /
+    ``is_rewrite`` into ``formatted.metadata`` so default-mode HTTP /
+    MCP clients can read the actually-executed query without
+    requesting ``debug=true`` to inspect ``raw.phytomni_state``.
+    """
+    payload = {
+        "header": [{"caption": "gene_id"}],
+        "data": [["Os01g01010"]],
+        "phytomni_state": {
+            "user_query": "Show me rice genes on chromosome 1.",
+            "rewrite_query": "SELECT gene_id FROM rice WHERE chr = 1;",
+            "is_rewrite": True,
+            "retrieve_prompt": "irrelevant intermediate scratch",
+        },
+    }
+
+    result = format_tool_result("DataAgent", payload)
+
+    assert result.tabular == {
+        "headers": ["gene_id"],
+        "rows": [["Os01g01010"]],
+    }
+    assert result.metadata == {
+        "user_query": "Show me rice genes on chromosome 1.",
+        "rewrite_query": "SELECT gene_id FROM rice WHERE chr = 1;",
+        "is_rewrite": True,
+    }
+
+
+def test_data_result_handles_missing_phytomni_state() -> None:
+    """Absent intermediate state keeps the contract keys with None values.
+
+    A stable key set lets the cross-cutting metadata contract test
+    assert presence regardless of whether the agent populated the
+    LangGraph fields.
+    """
+    payload = {
+        "header": [{"caption": "gene_id"}],
+        "data": [["Os01g01010"]],
+    }
+
+    result = format_tool_result("DataAgent", payload)
+
+    assert result.metadata == {
+        "user_query": None,
+        "rewrite_query": None,
+        "is_rewrite": None,
+    }
