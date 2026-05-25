@@ -240,15 +240,15 @@ actually-executed query, plan, or goal list without toggling
 `debug=true`. Full intermediate state remains in
 `raw.phytomni_state` under debug mode; metadata is a curated subset.
 
-| Agent | Default-mode `formatted.metadata` keys |
-|---|---|
-| DataAgent | `user_query`, `rewrite_query`, `is_rewrite` |
-| KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note) |
-| AnalystAgent | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields |
-| DeepGenomeAgent | `server_id`, `species_code`, `gene_id` |
-| InSilicoResearchAgent | `task_ids`, `goals`, `output_dir`, `error`, plus task fields |
-| DigitalDesignAgent | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field |
-| GeneNetworkAgent | `goal_description` (≤256 B), plus task fields |
+| Agent                                         | Default-mode `formatted.metadata` keys                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                |
+| KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note)                                           |
+| AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields |
+| DeepGenomeAgent                               | `server_id`, `species_code`, `gene_id`                                                     |
+| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields                               |
+| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field          |
+| GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                              |
 
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.

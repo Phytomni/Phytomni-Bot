@@ -42,8 +42,8 @@ compatibility. New local configuration should use `ACCESS_KEY_ID` and
 At startup `load_env_file()` tries sources in this order:
 
 1. `PHYTOMNI_TESTING=1` — test suites only.
-2. `src/mcp_server_phytomni/config/.env` — plaintext, local dev.
-3. `src/mcp_server_phytomni/config/.env.encrypted` plus
+1. `src/mcp_server_phytomni/config/.env` — plaintext, local dev.
+1. `src/mcp_server_phytomni/config/.env.encrypted` plus
    `PHYTOMNI_LICENSE_KEY` (env var) or `config/.license_key` (file) —
    customer-image fallback.
 
