@@ -10,6 +10,7 @@ asserting initial state and LangGraph thread config construction.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -366,8 +367,14 @@ async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
         thread_id="deep-genome-thread",
     )
 
-    assert result["final_report"] == "complete report"
-    assert result["follow_up_questions"] == ["What next?"]
+    for _ in range(3):
+        if fake_graph.state is not None:
+            break
+        await asyncio.sleep(0)
+
+    assert result["task_id"]
+    assert result["output_dir"].endswith(result["task_id"])
+    assert result["compute_resource"] == "deep-genome"
     assert fake_graph.state is not None
     assert fake_graph.state["species_code"] == "osa"
     assert fake_graph.state["gene_id"] == "Os01g0177400"

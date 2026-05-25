@@ -1,6 +1,6 @@
 # Web Python Service 合并 - Bot 侧决策参考
 
-> **对接 handoff**:[../../.claude/handoff/2026-05-23-python-service-consolidation.md](../../.claude/handoff/2026-05-23-python-service-consolidation.md)
+> **对接 handoff**:`.claude/handoff/2026-05-23-python-service-consolidation.md`
 > **目标读者**:Phytomni-Web 维护方(chat-ai / Go service 改造侧)、Phytomni-Bot dev team、运维
 > **状态**:Bot 团队侧固化决策,供 Web T1 review
 

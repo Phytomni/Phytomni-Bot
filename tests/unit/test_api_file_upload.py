@@ -4,13 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for ``api/file_upload.read_with_byte_budget`` helper.
 
-Covers the chunked-accumulation guard introduced for AF-001 audit
-remediation: the helper must return the joined body when the cumulative
-read stays at or below ``max_bytes``, must return ``None`` the moment a
-chunk pushes the running total past the budget, and must stop reading
-from the source as soon as the budget is breached so an attacker who
-streams a chunked-transfer body without ``Content-Length`` cannot OOM
-the worker.
+Covers the AF-001 chunked-accumulation guard: the helper returns the
+joined body within ``max_bytes``, returns ``None`` at the first budget
+breach, and stops reading immediately so a chunked upload without
+``Content-Length`` cannot OOM the worker.
 """
 
 from __future__ import annotations

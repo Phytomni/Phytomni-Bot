@@ -28,6 +28,9 @@ AUTHOR_CONTINUATION_PATTERN = re.compile(
 )
 PYLINT_DISABLE_MARKER = "".join(("pylint:", " disable="))
 ALLOWED_LOCAL_PYLINT_DISABLES = {
+    "src/mcp_server_phytomni/agents/deep_genome/agent.py": {
+        "broad-exception-caught",
+    },
     "src/mcp_server_phytomni/runtime/langgraph_runner.py": {
         "broad-exception-caught",
     },

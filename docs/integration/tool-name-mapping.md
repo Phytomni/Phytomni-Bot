@@ -1,6 +1,6 @@
 # Web alias → Bot agent name 映射参考
 
-> **对接 handoff**:[../../.claude/handoff/2026-05-23-python-service-consolidation.md](../../.claude/handoff/2026-05-23-python-service-consolidation.md) §4.4
+> **对接 handoff**:`.claude/handoff/2026-05-23-python-service-consolidation.md` §4.4
 > **配套文档**:[web-consolidation-decisions.md](web-consolidation-decisions.md) §4
 > **目标读者**:Phytomni-Web chat-ai 改造侧(LLM tool selection prompt + 前端 mapping 表)、Phytomni-Bot dev team
 

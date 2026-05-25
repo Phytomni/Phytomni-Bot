@@ -3,13 +3,11 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Submit-style behavior tests for ``DeepGenomeAgents.arun``.
 
-Pin the B.3 contract: ``arun`` mints a synthetic umbrella ``task_id``
-synchronously, spawns the LangGraph workflow on the running event
-loop, and returns the submit envelope so the chokepoint can write
-the umbrella row immediately. The background coroutine must reach
-a terminal ``"succeeded"`` / ``"failed"`` status on the umbrella
-row even when the workflow raises, otherwise a polling client
-would hang on a dead background.
+Pin the B.3 contract: ``arun`` mints an umbrella ``task_id``
+synchronously, spawns the LangGraph workflow on the running loop,
+and returns the submit envelope. The background coroutine must
+eventually stamp a terminal umbrella-row status even when the
+workflow raises.
 """
 
 from __future__ import annotations

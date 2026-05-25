@@ -4,13 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for ``POST /v1/files`` multipart upload endpoint.
 
-Covers the happy path (response shape + ``path`` aliasing), unauthenticated
-calls (401), the pre-read Content-Length guard (413 without buffering the
-body), the post-read size guard (413 after read), the empty-body rejection
-(400), the filename sanitization path through the route (traversal becomes
-the basename, unsafe stem characters collapse to ``-``), and the request-id
-correlation between the ``X-Request-Id`` response header and the
-``obs_path`` segment that embeds the request id.
+Covers response shape, auth, pre-read and post-read 413 guards, empty
+body rejection, filename sanitization, allowed purpose literals, and
+request-id correlation between the response header and ``obs_path``.
 """
 
 from __future__ import annotations
