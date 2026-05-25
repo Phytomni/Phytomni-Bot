@@ -211,7 +211,7 @@ async def request_response_with_retries(
     client: AsyncClient,
     request: JsonPostRequest,
     retry: JsonPostRetry,
-) -> Response | None:
+) -> Response:
     """Request with shared HTTP/network retry handling and return response.
 
     Args:
@@ -222,8 +222,14 @@ async def request_response_with_retries(
             retriable_codes, and messages.
 
     Returns:
-        Response | None: httpx.Response on success,
-            None after all retries exhausted.
+        httpx.Response on success. Retry exhaustion never returns
+        ``None`` — it raises ``McpError`` below so callers see the
+        upstream-exhausted path explicitly.
+
+    Raises:
+        McpError: On non-retriable HTTP status, retry exhaustion, or
+            an empty retry loop (defensive — every retry helper raises
+            on exhaustion in production).
     """
     attempt = 0
     while attempt <= retry.max_retries:
@@ -270,6 +276,14 @@ async def post_json_with_retries(
 ) -> Any:
     """POST with shared HTTP/network retry handling and return JSON.
 
+    ``request_response_with_retries`` raises ``McpError`` on retry
+    exhaustion (the upstream-exhausted path is observable, not silent),
+    so this helper never returns ``None`` and the parsed JSON it
+    forwards is whatever the backend produced (object, array, scalar).
+    Callers that need a dict (``response["..."]``) should funnel through
+    ``require_json_object`` to surface a non-object shape as an explicit
+    ``McpError`` instead of an opaque downstream ``KeyError``.
+
     Args:
         client: Async HTTP client (httpx.AsyncClient).
         request: JSON POST request payload including url,
@@ -278,20 +292,26 @@ async def post_json_with_retries(
             retriable_codes, and messages.
 
     Returns:
-        Any: Parsed JSON response body, or None if all
-            retries exhausted.
+        Parsed JSON response body. Shape is whatever the backend
+        produced — dict, list, scalar, or ``None`` only when the
+        backend itself sent a JSON ``null``.
+
+    Raises:
+        McpError: Propagated from ``request_response_with_retries``
+            on non-retriable HTTP status or retry exhaustion.
     """
     response = await request_response_with_retries(client, request, retry)
-    return response.json() if response is not None else None
+    return response.json()
 
 
 def require_json_object(data: Any, message: str) -> dict[str, Any]:
     """Return data when it is a JSON object, else raise McpError.
 
-    ``post_json_with_retries`` returns ``None`` once retries are
-    exhausted and may yield a non-object JSON value; callers that need
-    a mapping use this to fail with a clear MCP error instead of an
-    opaque downstream ``KeyError``/``TypeError``.
+    ``post_json_with_retries`` forwards whatever JSON shape the backend
+    produced; callers that need a mapping use this to fail with a clear
+    MCP error instead of an opaque downstream ``KeyError`` /
+    ``TypeError`` when a backend regression substitutes an array, a
+    scalar, or a JSON ``null`` for the documented object shape.
 
     Args:
         data: Parsed JSON returned by ``post_json_with_retries``.

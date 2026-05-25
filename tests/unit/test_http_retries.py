@@ -23,6 +23,7 @@ from mcp.shared.exceptions import McpError
 from mcp_server_phytomni.common.http import (
     JsonPostRequest,
     JsonPostRetry,
+    post_json_with_retries,
     request_response_with_retries,
 )
 
@@ -151,3 +152,54 @@ async def test_retriable_http_status_then_succeeds(
     assert result is not None
     assert result.status_code == 200
     assert calls["n"] == 2
+
+
+@pytest.mark.usefixtures("instant_retry_sleep")
+async def test_post_json_returns_parsed_body_on_success(
+    fake_client_factory: _ClientFactory,
+) -> None:
+    """``post_json_with_retries`` decodes the JSON body of a 200 response.
+
+    Args:
+        fake_client_factory: Scripted fake-client builder.
+    """
+    calls = {"n": 0}
+    client = fake_client_factory([_ok()], calls)()
+
+    body = await post_json_with_retries(
+        client,
+        JsonPostRequest(url=_URL, json_body={"q": 1}),
+        _retry(),
+    )
+
+    assert body == {"ok": True}
+    assert calls["n"] == 1
+
+
+@pytest.mark.usefixtures("instant_retry_sleep")
+async def test_post_json_raises_mcperror_on_retry_exhaustion(
+    fake_client_factory: _ClientFactory,
+) -> None:
+    """Exhausted transient retries surface ``McpError``, never ``None``.
+
+    Pins the post layer of the contract: ``request_response_with_retries``
+    raises on exhaustion (no silent fallthrough) so ``post_json_with_retries``
+    forwards the exception instead of yielding ``None`` to the caller.
+
+    Args:
+        fake_client_factory: Scripted fake-client builder.
+    """
+    calls = {"n": 0}
+    client = fake_client_factory(
+        [httpx.RemoteProtocolError("down")] * 4, calls
+    )()
+
+    with pytest.raises(McpError) as excinfo:
+        await post_json_with_retries(
+            client,
+            JsonPostRequest(url=_URL, json_body={"q": 1}),
+            _retry(3),
+        )
+
+    assert "neterr" in str(excinfo.value)
+    assert calls["n"] == 4  # initial + 3 retries
