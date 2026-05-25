@@ -16,6 +16,12 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 from ..agents.shared.options import build_chat_kwargs
+from ..config.defaults import (
+    AnalystConfig,
+    ChatConfig,
+    KnowledgeConfig,
+    ServerConfig,
+)
 from ..config.settings import SensitiveConfig
 
 __all__ = [
@@ -53,7 +59,9 @@ def load_handler_runtime() -> HandlerRuntime:
     )
 
 
-def chat_kwargs(config: Any, sensitive: SensitiveConfig) -> dict[str, Any]:
+def chat_kwargs(
+    config: ChatConfig, sensitive: SensitiveConfig
+) -> dict[str, Any]:
     """Return phyto_chat-flavored kwargs for a handler wrapper call.
 
     Delegates to the shared ``build_chat_kwargs`` for the 17-field
@@ -61,6 +69,9 @@ def chat_kwargs(config: Any, sensitive: SensitiveConfig) -> dict[str, Any]:
     retries) and overlays ``response_format`` and ``max_tokens`` from
     the handler's config defaults so wrappers that take those extras
     can spread one dict instead of two.
+
+    Typed to ``ChatConfig`` because ``RESPONSE_FORMAT`` first appears
+    on that subclass; ServerConfig alone is not enough.
     """
     kwargs = build_chat_kwargs({}, config, sensitive)
     kwargs["response_format"] = config.RESPONSE_FORMAT
@@ -68,8 +79,13 @@ def chat_kwargs(config: Any, sensitive: SensitiveConfig) -> dict[str, Any]:
     return kwargs
 
 
-def retrieve_kwargs(config: Any) -> dict[str, Any]:
-    """Return retrieve and rerank kwargs sourced from a handler's config."""
+def retrieve_kwargs(config: KnowledgeConfig) -> dict[str, Any]:
+    """Return retrieve and rerank kwargs sourced from a handler's config.
+
+    Typed to ``KnowledgeConfig`` because the retrieve-pipeline knobs
+    (PAGE_NUM / FILTER_STRING / SCOPE / EXTRA_REPO_IDS / TOP_N /
+    SCORE_THRESHOLD / RERANK_BATCH_SIZE) first appear there.
+    """
     return {
         "retrieve_url": config.RETRIEVE_URL,
         "repo_id_dict": config.REPO_ID_DICT,
@@ -84,7 +100,9 @@ def retrieve_kwargs(config: Any) -> dict[str, Any]:
     }
 
 
-def obs_kwargs(config: Any, credentials: tuple[str, str]) -> dict[str, Any]:
+def obs_kwargs(
+    config: ServerConfig, credentials: tuple[str, str]
+) -> dict[str, Any]:
     """Return OBS storage kwargs from a handler's config and credentials."""
     access_key_id, secret_access_key = credentials
     return {
@@ -99,7 +117,7 @@ def obs_kwargs(config: Any, credentials: tuple[str, str]) -> dict[str, Any]:
     }
 
 
-def retry_kwargs(config: Any) -> dict[str, Any]:
+def retry_kwargs(config: ServerConfig) -> dict[str, Any]:
     """Return retry policy kwargs sourced from a handler's config.
 
     Returned separately from ``chat_kwargs`` so non-chat handlers
@@ -122,8 +140,13 @@ def coder_kwargs(sensitive: SensitiveConfig) -> dict[str, Any]:
     }
 
 
-def analysis_platform_kwargs(config: Any) -> dict[str, Any]:
-    """Return analysis-platform kwargs sourced from a handler's config."""
+def analysis_platform_kwargs(config: AnalystConfig) -> dict[str, Any]:
+    """Return analysis-platform kwargs sourced from a handler's config.
+
+    Typed to ``AnalystConfig`` because the analysis-platform knobs
+    (RESOURCE / APP_ID) first appear on that subclass; the simpler
+    URL fields exist on the ServerConfig base.
+    """
     return {
         "analysis_url": config.ANALYSIS_URL,
         "region": config.ANALYSIS_REGION,

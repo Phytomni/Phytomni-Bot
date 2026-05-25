@@ -39,6 +39,7 @@ from ..config.defaults import (
     InSilicoResearchConfig,
     KnowledgeConfig,
     ReviewConfig,
+    ServerConfig,
 )
 from ..runtime.request_context import bind_run_id, current_request_user
 from ..runtime.run_registry import RunRegistry, RunSpec
@@ -59,9 +60,31 @@ from .handler_support import (
     obs_kwargs,
     retrieve_kwargs,
 )
+from .schemas import (
+    AnalystAgent,
+    BriefGeneAgent,
+    ChatAgent,
+    DataAgent,
+    DeepGenomeAgent,
+    DigitalDesignAgent,
+    GeneNetworkAgent,
+    GetTaskStatus,
+    InSilicoResearchAgent,
+    KnowledgeAgent,
+    ReviewAgent,
+)
+
+# Public alias for handler return shape: every ``handle_*_agent`` ends
+# up returning the wrapper's dict envelope. ``Optional`` honours the
+# upstream chat/service.py signature (``phyto_chat_with_follow`` is
+# typed ``Optional[Dict[str, Any]]`` because its retry helpers carry a
+# stale dead-code ``return None`` path — same pattern Phase 13.2
+# tightened on ``request_response_with_retries`` and that deserves its
+# own follow-up audit step for ``agents/chat/service.py``).
+HandlerResult = Optional[Dict[str, Any]]
 
 
-def scratch_server_dir(config: Any, scope: str) -> str:
+def scratch_server_dir(config: ServerConfig, scope: str) -> str:
     """Return an obsfs-or-local scratch dir for handler ``server_dir`` use.
 
     Builds a fresh RunIdentity scoped to the handler call, then routes
@@ -306,15 +329,14 @@ def _records_submission(
     return decorator
 
 
-async def handle_chat_agent(args: Any) -> Any:
+async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
     """Execute ChatAgent with default runtime configuration.
 
     Args:
-        args: ChatAgent arguments. Must be a ChatAgent Pydantic model with
-            user_query (str) and obs_file_list (list[str]).
+        args: Validated ChatAgent request schema.
 
     Returns:
-        Any: ChatAgent response result.
+        ChatAgent response envelope dict.
     """
     chat_config = ChatConfig()
     runtime = load_handler_runtime()
@@ -327,15 +349,14 @@ async def handle_chat_agent(args: Any) -> Any:
     )
 
 
-async def handle_knowledge_agent(args: Any) -> Any:
+async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
     """Execute KnowledgeAgent with default runtime configuration.
 
     Args:
-        args: KnowledgeAgent arguments. Must be a KnowledgeAgent Pydantic model
-            with user_query (str) and obs_file_list (list[str]).
+        args: Validated KnowledgeAgent request schema.
 
     Returns:
-        Any: KnowledgeAgent response result.
+        KnowledgeAgent response envelope dict.
     """
     knowledge_config = KnowledgeConfig()
     runtime = load_handler_runtime()
@@ -349,15 +370,14 @@ async def handle_knowledge_agent(args: Any) -> Any:
     )
 
 
-async def handle_data_agent(args: Any) -> Any:
+async def handle_data_agent(args: DataAgent) -> HandlerResult:
     """Execute DataAgent with default runtime configuration.
 
     Args:
-        args: DataAgent arguments. Must be a DataAgent Pydantic model with
-            user_query (str): Natural-language database question.
+        args: Validated DataAgent request schema (NL question).
 
     Returns:
-        Any: DataAgent response result.
+        DataAgent response envelope dict.
     """
     data_config = DataConfig()
     runtime = load_handler_runtime()
@@ -383,16 +403,15 @@ async def handle_data_agent(args: Any) -> Any:
 
 
 @_records_submission("analyst")
-async def handle_analyst_agent(args: Any) -> Any:
+async def handle_analyst_agent(args: AnalystAgent) -> HandlerResult:
     """Execute AnalystAgent with default runtime configuration.
 
     Args:
-        args: AnalystAgent arguments. Must be an AnalystAgent Pydantic model
-            with goal_description (str), data_list (dict[str, str]),
-            and obs_file_list (list[str]).
+        args: Validated AnalystAgent request schema.
 
     Returns:
-        Any: AnalystAgent response result.
+        AnalystAgent submission envelope dict (task_id + output_dir +
+        optional input_fingerprint for the dedup contract).
     """
     analyst_config = AnalystConfig()
     runtime = load_handler_runtime()
@@ -416,15 +435,14 @@ async def handle_analyst_agent(args: Any) -> Any:
     )
 
 
-async def handle_review_agent(args: Any) -> Any:
+async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
     """Execute ReviewAgent with default runtime configuration.
 
     Args:
-        args: ReviewAgent arguments. Must be a ReviewAgent Pydantic model with
-            user_query (str) and obs_file_list (list[str]).
+        args: Validated ReviewAgent request schema.
 
     Returns:
-        Any: ReviewAgent response result.
+        ReviewAgent response envelope dict.
     """
     review_config = ReviewConfig()
     runtime = load_handler_runtime()
@@ -438,15 +456,14 @@ async def handle_review_agent(args: Any) -> Any:
     )
 
 
-async def handle_brief_gene_agent(args: Any) -> Any:
+async def handle_brief_gene_agent(args: BriefGeneAgent) -> HandlerResult:
     """Execute BriefGeneAgent with default runtime configuration.
 
     Args:
-        args: BriefGeneAgent arguments. Must be a BriefGeneAgent Pydantic model
-            with user_query (str): One plant gene ID or transcript ID.
+        args: Validated BriefGeneAgent request schema (gene/transcript id).
 
     Returns:
-        Any: BriefGeneAgent response result.
+        BriefGeneAgent response envelope dict.
     """
     brief_config = BriefGeneConfig()
     runtime = load_handler_runtime()
@@ -461,14 +478,14 @@ async def handle_brief_gene_agent(args: Any) -> Any:
 
 
 @_records_submission("deep_genome")
-async def handle_deep_genome_agent(args: Any) -> Any:
+async def handle_deep_genome_agent(args: DeepGenomeAgent) -> HandlerResult:
     """Execute DeepGenomeAgent with default runtime configuration.
 
     Args:
-        args: DeepGenomeAgent Pydantic: species_code (str), gene_id (str).
+        args: Validated DeepGenomeAgent request schema.
 
     Returns:
-        Any: DeepGenomeAgent response result.
+        DeepGenomeAgent submission envelope dict (task_id + output_dir).
     """
     deep_genome_config = DeepGenomeConfig()
     runtime = load_handler_runtime()
@@ -505,16 +522,17 @@ async def handle_deep_genome_agent(args: Any) -> Any:
 
 
 @_records_submission("research")
-async def handle_in_silico_research_agent(args: Any) -> Any:
+async def handle_in_silico_research_agent(
+    args: InSilicoResearchAgent,
+) -> HandlerResult:
     """Execute InSilicoResearchAgent with default runtime configuration.
 
     Args:
-        args: InSilicoResearchAgent arguments. Must be an InSilicoResearchAgent
-            Pydantic model with user_query (str), data_list (dict[str, str]),
-            and obs_file_list (list[str]).
+        args: Validated InSilicoResearchAgent request schema.
 
     Returns:
-        Any: InSilicoResearchAgent response result.
+        InSilicoResearchAgent submission envelope dict (task_ids dict
+        keyed by research goal + shared output_dir).
     """
     in_silico_config = InSilicoResearchConfig()
     runtime = load_handler_runtime()
@@ -534,15 +552,18 @@ async def handle_in_silico_research_agent(args: Any) -> Any:
 
 
 @_records_submission("design")
-async def handle_digital_design_agent(args: Any) -> Any:
+async def handle_digital_design_agent(
+    args: DigitalDesignAgent,
+) -> HandlerResult:
     """Execute DigitalDesignAgent with default runtime configuration.
 
     Args:
-        args: DigitalDesignAgent Pydantic model: species (str), gene_id (str),
-            obs_file_list (list[str]).
+        args: Validated DigitalDesignAgent request schema.
 
     Returns:
-        Any: DigitalDesignAgent response result.
+        DigitalDesignAgent submission envelope dict (design_task_result
+        list with one entry per design kind: protein / promoter /
+        terminator).
     """
     design_config = DigitalDesignConfig()
     runtime = load_handler_runtime()
@@ -569,15 +590,17 @@ async def handle_digital_design_agent(args: Any) -> Any:
 
 
 @_records_submission("network")
-async def handle_gene_network_agent(args: Any) -> Any:
+async def handle_gene_network_agent(
+    args: GeneNetworkAgent,
+) -> HandlerResult:
     """Execute GeneNetworkAgent with default runtime configuration.
 
     Args:
-        args: GeneNetworkAgent Pydantic model with species (str), to_id (str),
-            obs_file_list (list[str]).
+        args: Validated GeneNetworkAgent request schema.
 
     Returns:
-        Any: GeneNetworkAgent response result.
+        GeneNetworkAgent submission envelope dict (nested network_task
+        with task_id + output_dir).
     """
     network_config = GeneNetworkConfig()
     runtime = load_handler_runtime()
@@ -602,7 +625,7 @@ async def handle_gene_network_agent(args: Any) -> Any:
     )
 
 
-async def handle_get_task_status(args: Any) -> Any:
+async def handle_get_task_status(args: GetTaskStatus) -> HandlerResult:
     """Return a submitted task's status without ever blocking.
 
     Delegates to ``runtime.task_reconcile.reconcile_task`` so the MCP
@@ -613,10 +636,10 @@ async def handle_get_task_status(args: Any) -> Any:
     MCP timeout).
 
     Args:
-        args: GetTaskStatus arguments with task_id (str).
+        args: Validated GetTaskStatus request schema (task_id).
 
     Returns:
-        Any: ``{task_id, status, output_dir, analysis_id,
-        live_status}``; status is ``"unknown"`` for an unrecorded id.
+        ``{task_id, status, output_dir, analysis_id, live_status}``;
+        status is ``"unknown"`` for an unrecorded id.
     """
     return await reconcile_task(args.task_id)
