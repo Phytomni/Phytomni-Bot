@@ -11,8 +11,10 @@ compatibility wrapper used by MCP handlers.
 """
 
 import asyncio
+import contextlib
 import logging
 import operator
+import sqlite3
 from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -505,13 +507,21 @@ class DeepGenomeAgents(
     ) -> None:
         """Run the LangGraph workflow off the submit response path.
 
-        Fire-and-forget coroutine: any exception MUST be caught so the
-        umbrella ``tasks`` row reaches a terminal status, otherwise a
-        polling client would wait forever on a dead background. The
-        terminal update is best-effort — if the SQLite write itself
-        raises, log and move on; the alternative (re-raising into an
-        unwatched task) only triggers the asyncio "Task exception was
-        never retrieved" warning without any recovery.
+        Fire-and-forget coroutine: the workflow status is recorded
+        regardless of outcome so a polling client never hangs on a
+        dead background. The success/failure decision is made before
+        the terminal write so a SQLite hiccup on the success row
+        cannot flip a succeeded run to ``"failed"`` (which the prior
+        nested-except shape would do — the outer except caught the
+        SQLite exception from the success-side ``update_task`` and
+        then wrote the misleading ``"failed"`` status).
+
+        The terminal write is wrapped in ``contextlib.suppress`` for
+        the realistic registry-side error types (``sqlite3.Error``
+        for WAL / lock failures, ``OSError`` for full-disk / FS
+        unavailable). Any wider exception escapes the suppress and
+        is recorded by the asyncio "Task exception was never
+        retrieved" warning — no recovery exists at that point.
 
         Args:
             umbrella_id: Synthetic task id stamped by ``arun``.
@@ -521,31 +531,32 @@ class DeepGenomeAgents(
             initial_state: LangGraph initial state mapping.
             thread_id: Optional checkpointer thread id.
         """
-        manager = TaskManager(resolve_tasks_db_path())
+        # Fire-and-forget: any escape from this catch would only
+        # trigger asyncio's "Task exception was never retrieved"
+        # warning and leave the umbrella row pinned at the initial
+        # "failed" status with no recovery. broad-except is
+        # load-bearing here (LangGraph + LLM + storage + state-shape
+        # errors all surface through this single seam).
+        status = "failed"
         try:
             await ainvoke_graph(
                 self.app,
                 initial_state,
                 thread_id=thread_id,
             )
-            manager.update_task(
-                umbrella_id, "succeeded", "", output_dir
-            )
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.exception(
                 "DeepGenome background workflow failed for %s: %s",
                 umbrella_id,
                 exc,
             )
-            try:
-                manager.update_task(
-                    umbrella_id, "failed", "", output_dir
-                )
-            except Exception:  # pylint: disable=broad-except
-                logger.exception(
-                    "Failed to mark umbrella task %s as failed",
-                    umbrella_id,
-                )
+        else:
+            status = "succeeded"
+
+        with contextlib.suppress(sqlite3.Error, OSError):
+            TaskManager(resolve_tasks_db_path()).update_task(
+                umbrella_id, status, "", output_dir
+            )
 
 
 async def gene_function(

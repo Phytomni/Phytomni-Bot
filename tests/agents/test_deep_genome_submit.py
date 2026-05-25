@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -67,10 +67,15 @@ def _build_agent(app: _FakeApp, tmp_path: Path) -> DeepGenomeAgents:
         A ready-to-call agent instance with the fake graph installed.
     """
     agent = DeepGenomeAgents.__new__(DeepGenomeAgents)
-    agent.app = app  # type: ignore[attr-defined]
+    # ``self.app`` is annotated as the LangGraph ``CompiledStateGraph``
+    # subscripted with DeepGenomeState; ``_FakeApp`` only mimics the
+    # ``ainvoke`` shape the background coroutine actually calls, so
+    # widen to ``Any`` at the assignment to keep pyright honest about
+    # the runtime substitution.
+    agent.app = cast(Any, app)
     config = DeepGenomeConfig()
     config.DEEPGENOME_OUT = str(tmp_path)
-    agent.deep_genome_config = config  # type: ignore[attr-defined]
+    agent.deep_genome_config = config
     return agent
 
 
@@ -191,3 +196,48 @@ async def test_arun_background_writes_failed_on_workflow_exception(
         ).fetchone()
     assert row is not None
     assert row[0] == "failed"
+
+
+async def test_succeeded_workflow_keeps_status_when_db_write_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A SQLite hiccup on the success path must not flip status to "failed".
+
+    Pins AF-002 from the post-B.3 audit. Earlier the success-side
+    ``update_task`` sat inside the same try as ``ainvoke_graph``, so
+    a SQLite write exception there got caught by the outer except
+    and rewrote the umbrella row to ``"failed"`` — a successful
+    workflow misclassified as failed. The new try/except/else +
+    ``contextlib.suppress`` shape decides the status before the
+    terminal write, so an update failure leaves the row at its
+    prior status (``"submitted"`` from the chokepoint write) rather
+    than fabricating a misleading ``"failed"``.
+    """
+    db_path = _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(result={"final_report": "ok"})
+    agent = _build_agent(fake_app, tmp_path)
+    envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
+    TaskManager(db_path).record(
+        Submission(
+            task_id=envelope["task_id"],
+            status="submitted",
+            output_dir=envelope["output_dir"],
+        )
+    )
+
+    def boom(*args: Any, **kwargs: Any) -> None:
+        """Simulate a registry write failing under contention."""
+        _ = (args, kwargs)
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(TaskManager, "update_task", boom)
+    await _drain_background_tasks()
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT status FROM tasks WHERE task_id = ?",
+            (envelope["task_id"],),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "submitted"
