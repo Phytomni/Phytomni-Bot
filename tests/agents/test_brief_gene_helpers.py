@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for BriefGene pure helper functions.
 
-Pins the small synchronous helpers in agents/brief_gene/agent.py that
+Pins the small synchronous helpers in agents/brief_gene/pipeline.py that
 shape BI response rows, document context, and annotation strings into
 the BriefGene prompt and final-payload formats. These helpers feed
 every BriefGene live e2e run so a small contract drift here would
@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from mcp_server_phytomni.agents.brief_gene.agent import (
+from mcp_server_phytomni.agents.brief_gene.pipeline import (
     _attach_metadata,
     _dedupe,
     _doc_content,
