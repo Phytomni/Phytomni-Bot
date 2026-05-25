@@ -90,7 +90,7 @@ async def test_get_async_client_falls_back_to_ephemeral_for_extra_kwargs(
         monkeypatch: Pytest monkeypatch fixture used to swap AsyncClient
             so we can assert ephemeral construction without TLS calls.
     """
-    init_shared_client(config=ServerConfig())
+    shared = init_shared_client(config=ServerConfig())
     constructed: list[Dict[str, Any]] = []
 
     class _RecordingClient(AsyncClient):
@@ -102,7 +102,7 @@ async def test_get_async_client_falls_back_to_ephemeral_for_extra_kwargs(
 
     async with get_async_client(timeout=1.0, trust_env=False) as client:
         assert isinstance(client, AsyncClient)
-        assert client is not module._HTTPX_STATE["client"]
+        assert client is not shared
 
     assert len(constructed) == 1
     assert constructed[0]["trust_env"] is False

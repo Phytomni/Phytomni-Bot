@@ -74,7 +74,7 @@ def _build_agent(app: _FakeApp, tmp_path: Path) -> DeepGenomeAgents:
     # the runtime substitution.
     agent.app = cast(Any, app)
     config = DeepGenomeConfig()
-    config.DEEPGENOME_OUT = str(tmp_path)
+    setattr(config, "DEEPGENOME_OUT", str(tmp_path))
     agent.deep_genome_config = config
     return agent
 
