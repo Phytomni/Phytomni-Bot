@@ -4,10 +4,13 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the SensitiveConfig encrypted/plaintext load chain.
 
-Covers the four resolution paths of load_env_file (testing bypass,
-encrypted envelope, plaintext fallback, no-source RuntimeError) plus
-the once-per-process decrypt memo, the env-wins setdefault rule,
-wrong-key propagation, and an end-to-end encrypted load().
+Covers the three provisioning paths of load_env_file (testing
+bypass, plaintext ``.env`` first, encrypted ``.env.encrypted`` +
+license key as customer-image fallback, no-source RuntimeError)
+plus the once-per-process decrypt memo, the env-wins setdefault
+rule, wrong-key propagation, the plaintext-wins-over-encrypted
+regression, and an end-to-end ``SensitiveConfig.load()`` on each
+path.
 """
 
 import os
@@ -120,6 +123,9 @@ def test_encrypted_load_injects_absent_keys(tmp_path, monkeypatch):
     monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
     os.environ.pop(MARKER, None)
     os.environ.pop("DOMAIN_NAME", None)
+    # Precondition: no plaintext .env so we reach the encrypted
+    # fallback branch, not the plaintext-first branch.
+    assert not settings.ENV_PATH.exists()
 
     assert settings.load_env_file() is True
     assert os.environ[MARKER] == "marker-value"
@@ -139,6 +145,8 @@ def test_environment_wins_over_envelope(tmp_path, monkeypatch):
     monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
     monkeypatch.setenv("API_KEY", "operator-override")
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     assert settings.load_env_file() is True
     assert os.environ["API_KEY"] == "operator-override"
@@ -183,6 +191,8 @@ def test_wrong_license_key_propagates(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
     monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", "wrong-key")
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     with pytest.raises(SecretEnvelopeError):
         settings.load_env_file()
@@ -210,8 +220,13 @@ def test_no_source_raises_runtime_error(tmp_path, monkeypatch):
     assert ".env.example" in message
 
 
-def test_plaintext_fallback_loads_env(tmp_path, monkeypatch):
-    """Verify a plaintext .env is still loaded when no envelope.
+def test_plaintext_loads_env_when_sole_source(tmp_path, monkeypatch):
+    """Verify a plaintext .env is loaded when no envelope is present.
+
+    Plaintext is the primary (not fallback) source after the
+    resolution-order inversion; this test's assertion is byte-
+    identical to the legacy ``_fallback_`` variant, renamed because
+    the "fallback" framing no longer matches the new precedence.
 
     Args:
         tmp_path: Temporary directory fixture for file I/O.
@@ -244,6 +259,8 @@ def test_load_end_to_end_encrypted(tmp_path, monkeypatch):
     monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
     for line in FULL_ENV.splitlines():
         os.environ.pop(line.split("=", 1)[0], None)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     config = settings.SensitiveConfig.load()
 
@@ -286,6 +303,8 @@ def test_license_key_file_drives_decryption(tmp_path, monkeypatch):
     monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     monkeypatch.delenv("PHYTOMNI_LICENSE_KEY", raising=False)
     os.environ.pop(MARKER, None)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     assert settings.load_env_file() is True
     assert os.environ[MARKER] == "marker-value"
@@ -309,6 +328,8 @@ def test_env_var_wins_over_license_key_file(tmp_path, monkeypatch):
     monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
     os.environ.pop(MARKER, None)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     assert settings.load_env_file() is True
     assert os.environ[MARKER] == "marker-value"
@@ -333,6 +354,127 @@ def test_empty_license_key_file_is_treated_as_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
     monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     monkeypatch.delenv("PHYTOMNI_LICENSE_KEY", raising=False)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
 
     with pytest.raises(RuntimeError):
         settings.load_env_file()
+
+
+def test_plaintext_wins_over_encrypted(tmp_path, monkeypatch):
+    """Both .env and .env.encrypted + valid key → plaintext wins.
+
+    Regression test for a dev-host scenario where a stale
+    ``.env.encrypted`` left over from a customer-image dry run
+    silently shadowed the developer's freshly edited ``.env``
+    because the encrypted branch in ``load_env_file`` ran before
+    the plaintext branch. After the priority inversion
+    (plaintext-first), both the plaintext marker AND the absence
+    of the encrypted marker must hold, and
+    ``decrypt_env_blob`` must NOT be invoked.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    # Build an encrypted envelope holding a distinct marker key.
+    blob = _seal(tmp_path, text=f"{FULL_ENV}{MARKER}=from-envelope\n")
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+
+    # Build a plaintext .env holding a DIFFERENT marker that must win.
+    plain = tmp_path / ".env"
+    plain.write_text("PLAINTEXT_WINS=yes\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "ENV_PATH", plain)
+
+    # A valid license key is available, so encrypted WOULD run if the
+    # plaintext branch didn't short-circuit it.
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
+
+    # Pre-populated markers must not be in the environment before load.
+    os.environ.pop("PLAINTEXT_WINS", None)
+    os.environ.pop(MARKER, None)
+
+    # Replace decrypt_env_blob with a sentinel so that any invocation
+    # of the encrypted path raises immediately — the assertion is that
+    # this stub is NEVER called when plaintext .env is present.
+    def _must_not_run(*_):
+        raise AssertionError(
+            "decrypt_env_blob must not run when plaintext .env exists"
+        )
+
+    monkeypatch.setattr(settings, "decrypt_env_blob", _must_not_run)
+    monkeypatch.setattr(MEMO_PATH, {"done": False})
+
+    assert settings.load_env_file() is True
+    assert os.environ["PLAINTEXT_WINS"] == "yes"
+    # Encrypted-only marker must be absent — decrypt did not run. The
+    # sentinel above is strictly stronger than a memo-state check: if
+    # ``decrypt_env_blob`` was never invoked, the memo could not have
+    # been set to ``done=True`` either.
+    assert MARKER not in os.environ
+
+
+def test_get_sensitive_config_plaintext_path(tmp_path, monkeypatch):
+    """Plaintext .env present → get_sensitive_config binds to ENV_PATH.
+
+    After the priority inversion, ``ENV_PATH.exists()`` is the
+    authoritative signal that plaintext was used; pydantic-settings
+    re-reads the same file via its class-bound ``env_file=ENV_PATH``
+    default, which is consistent because the file is identical to
+    what ``load_dotenv`` already loaded into ``os.environ``.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    plain = tmp_path / ".env"
+    plain.write_text(FULL_ENV, encoding="utf-8")
+    monkeypatch.setattr(settings, "ENV_PATH", plain)
+    monkeypatch.setattr(
+        settings, "ENCRYPTED_ENV_PATH", tmp_path / "absent.encrypted"
+    )
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.delenv("PHYTOMNI_LICENSE_KEY", raising=False)
+    for line in FULL_ENV.splitlines():
+        os.environ.pop(line.split("=", 1)[0], None)
+    settings.get_sensitive_config.cache_clear()
+
+    config = settings.get_sensitive_config()
+
+    assert config.DOMAIN_NAME == "enc-domain"
+    assert config.API_KEY.get_secret_value() == "enc-api-key"
+    assert config.EMBED_MODEL == "enc-embed-model"
+
+
+def test_get_sensitive_config_encrypted_fallback(tmp_path, monkeypatch):
+    """No plaintext .env, envelope + key present → bind _env_file=None.
+
+    On the encrypted fallback path, decrypted values are already in
+    ``os.environ`` via ``setdefault`` before
+    ``get_sensitive_config`` instantiates ``SensitiveConfig``.
+    Binding ``_env_file=None`` keeps the class-bound
+    ``env_file=ENV_PATH`` default from trying to re-load a nonexistent
+    plaintext file; the config is assembled purely from the injected
+    environment variables.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal(tmp_path, text=FULL_ENV)
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
+    for line in FULL_ENV.splitlines():
+        os.environ.pop(line.split("=", 1)[0], None)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
+    settings.get_sensitive_config.cache_clear()
+
+    config = settings.get_sensitive_config()
+
+    assert config.DOMAIN_NAME == "enc-domain"
+    assert config.API_KEY.get_secret_value() == "enc-api-key"
+    assert config.EMBED_MODEL == "enc-embed-model"

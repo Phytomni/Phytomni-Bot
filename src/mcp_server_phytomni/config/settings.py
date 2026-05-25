@@ -75,31 +75,40 @@ def _resolve_license_key() -> str | None:
 def load_env_file() -> bool:
     """Load and validate environment variables from .env file.
 
-    Checks for the existence of the .env file and raises an error if not found.
-    Automatically loads environment variables into the application context.
+    Checks for the existence of a configuration source and raises an
+    error if none is found. Automatically loads environment variables
+    into the application context.
 
     Resolution order:
         1. ``PHYTOMNI_TESTING=1`` — tests inject dummy secrets; no
            file is read.
-        2. A license key (``PHYTOMNI_LICENSE_KEY`` env var or the
+        2. A plaintext ``ENV_PATH`` — local developer / operator
+           path. ``load_dotenv(..., override=True)`` is used so an
+           explicit edit wins, matching legacy developer expectations.
+        3. A license key (``PHYTOMNI_LICENSE_KEY`` env var or the
            ``LICENSE_KEY_PATH`` file, resolved by
-           ``_resolve_license_key``) and an encrypted envelope at
-           ``ENCRYPTED_ENV_PATH`` — decrypt once per process and
-           inject into ``os.environ`` (existing env wins).
-        3. A plaintext ``ENV_PATH`` — load it (file wins, legacy
-           developer behaviour).
+           ``_resolve_license_key``) plus an encrypted envelope at
+           ``ENCRYPTED_ENV_PATH`` — customer-image fallback. Decrypt
+           once per process and inject into ``os.environ`` via
+           ``setdefault`` (existing env wins). Customer images ship
+           only the envelope; ``.dockerignore`` blocks plaintext
+           ``.env`` from build contexts, so this branch is reached
+           unconditionally on customer images.
 
     Raises:
-        SecretEnvelopeError: If the encrypted envelope cannot be
-            opened (wrong license key or corrupted file). Propagated
-            uncaught so the process refuses to start rather than
-            booting with empty secrets.
+        SecretEnvelopeError: If the encrypted envelope is reached
+            and cannot be opened (wrong license key or corrupted
+            file). Propagated uncaught so the process refuses to
+            start rather than booting with empty secrets.
         RuntimeError: If none of the three provisioning paths apply.
 
     Returns:
-        bool: True if environment variables were successfully loaded
+        bool: True if environment variables were successfully loaded.
     """
     if os.getenv("PHYTOMNI_TESTING") == "1":
+        return True
+    if ENV_PATH.exists():
+        load_dotenv(ENV_PATH, override=True)
         return True
     license_key = _resolve_license_key()
     if license_key and ENCRYPTED_ENV_PATH.exists():
@@ -112,17 +121,15 @@ def load_env_file() -> bool:
             decrypted.clear()
             _ENV_DECRYPT_MEMO["done"] = True
         return True
-    if ENV_PATH.exists():
-        load_dotenv(ENV_PATH, override=True)
-        return True
     raise RuntimeError(
         "No configuration source found. Provide exactly one of:\n"
-        "  1. PHYTOMNI_TESTING=1 (test suites inject dummy secrets)\n"
-        f"  2. {LICENSE_KEY_ENV}=<license-key> (or the key in "
+        "  1. PHYTOMNI_TESTING=1 (test suites inject dummy secrets)"
+        "\n"
+        f"  2. a plaintext .env at {ENV_PATH} (copy "
+        f"{PROJECT_ROOT}/config/.env.example)\n"
+        f"  3. {LICENSE_KEY_ENV}=<license-key> (or the key in "
         f"{LICENSE_KEY_PATH}) with an encrypted envelope at "
-        f"{ENCRYPTED_ENV_PATH}\n"
-        f"  3. a plaintext .env at {ENV_PATH} (copy "
-        f"{PROJECT_ROOT}/config/.env.example)"
+        f"{ENCRYPTED_ENV_PATH}"
     )
 
 
@@ -233,28 +240,28 @@ class SensitiveConfig(BaseSettings):
 def get_sensitive_config() -> SensitiveConfig:
     """Return a process-cached ``SensitiveConfig`` instance.
 
-    The first call performs the full ``load_env_file()`` chain (which
-    decrypts ``.env.encrypted`` once or reads plaintext ``.env``), then
-    instantiates ``SensitiveConfig``. Subsequent calls return the same
-    instance from the in-process ``lru_cache`` so the 17+ callers
-    across the codebase do not each re-run the load/decode pipeline.
-    Tests reset the cache via ``get_sensitive_config.cache_clear()``;
-    the autouse fixture in ``tests/conftest.py`` runs this between
-    every test to keep monkeypatched env-var assertions independent.
+    The first call performs the full ``load_env_file()`` chain
+    (which loads plaintext ``.env`` when present, or decrypts
+    ``.env.encrypted`` once when falling back), then instantiates
+    ``SensitiveConfig``. Subsequent calls return the same instance
+    from the in-process ``lru_cache`` so the 17+ callers across the
+    codebase do not each re-run the load/decode pipeline. Tests reset
+    the cache via ``get_sensitive_config.cache_clear()``; the autouse
+    fixture in ``tests/conftest.py`` runs this between every test to
+    keep monkeypatched env-var assertions independent.
     """
     load_env_file()
     settings_cls = cast(Any, SensitiveConfig)
     if os.getenv("PHYTOMNI_TESTING") == "1":
         return settings_cls(_env_file=None)
-    # Match load_env_file's resolution: either source (env var or
-    # the on-disk LICENSE_KEY_PATH file) counts as a license key.
-    # The previous os.getenv-only check missed the file-only Model
-    # A path, letting a stray plaintext .env shadow the decrypted
-    # envelope through the class-bound env_file=ENV_PATH default.
-    license_key = _resolve_license_key()
-    if license_key and ENCRYPTED_ENV_PATH.exists():
-        # Encrypted values are already in os.environ; the
-        # class-bound env_file=ENV_PATH must be ignored so a
-        # stray plaintext .env cannot leak in.
-        return settings_cls(_env_file=None)
-    return settings_cls()
+    # After the load_env_file priority inversion, ENV_PATH.exists()
+    # is the authoritative "plaintext was used" signal: if .env is
+    # there, load_dotenv has already loaded it and pydantic-settings
+    # can safely re-bind to ENV_PATH (file/env are consistent). If
+    # .env is absent we fell through to the encrypted envelope and
+    # the decrypted values are already in os.environ via setdefault;
+    # binding _env_file=None keeps a stray plaintext (which does
+    # not exist here) from ever shadowing them.
+    if ENV_PATH.exists():
+        return settings_cls()
+    return settings_cls(_env_file=None)

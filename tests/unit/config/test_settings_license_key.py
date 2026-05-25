@@ -143,6 +143,10 @@ def test_load_resolves_license_key(
         env_value=env_value,
         file_content=file_content,
     )
+    # Precondition: no plaintext .env so each parametrized case reaches
+    # the encrypted fallback branch, exercising the license-key
+    # resolution end-to-end rather than short-circuiting to plaintext.
+    assert not settings.ENV_PATH.exists()
 
     config = settings.SensitiveConfig.load()
 
