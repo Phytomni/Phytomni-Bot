@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import AsyncGenerator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ from ..agents.brief_gene.resolve_query import (
     BriefGeneResolveError,
     resolve_brief_gene_user_query,
 )
+from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
@@ -729,6 +731,24 @@ async def _reconcile_run_task_logs(run_id: str, debug: bool) -> dict[str, Any]:
     }
 
 
+@asynccontextmanager
+async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Own the process-wide shared ``AsyncClient`` for the API lifetime.
+
+    The shared client carries a keep-alive connection pool used by
+    every agent call site that opens ``get_async_client(timeout=...)``;
+    initialising it once here avoids a per-request TLS handshake on
+    the high-frequency LLM / retrieval paths. Teardown is wrapped in
+    ``try / finally`` so a startup error never prevents the rest of
+    the FastAPI shutdown chain from running.
+    """
+    init_shared_client()
+    try:
+        yield
+    finally:
+        await aclose_shared_client()
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI application.
 
@@ -738,7 +758,11 @@ def create_app() -> FastAPI:
         API layers.
     """
     configure_logging()
-    app = FastAPI(title="Phytomni HTTP API", version="0.1.0")
+    app = FastAPI(
+        title="Phytomni HTTP API",
+        version="0.1.0",
+        lifespan=_http_lifespan,
+    )
     app.add_middleware(request_context_middleware)
     rate_limit = make_rate_limiter()
 

@@ -548,13 +548,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
         """Query the BI SQL endpoint and return the parsed JSON payload."""
         payload = {"sql": sql, "returnType": "json"}
-        async with get_async_client(
-            timeout=self.deep_genome_config.TIMEOUT
-        ) as client:
+        bi_timeout = self.deep_genome_config.TIMEOUT
+        async with get_async_client(timeout=bi_timeout) as client:
             response = await client.post(
                 self.deep_genome_config.BI_URL,
                 json=payload,
                 headers=self._sql_headers,
+                timeout=bi_timeout,
             )
         return response.json()
 

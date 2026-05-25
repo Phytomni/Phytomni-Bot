@@ -19,6 +19,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
+from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from .handlers import (
     handle_analyst_agent,
@@ -237,13 +238,15 @@ async def serve() -> None:
     """Initialize and run the Phytomni MCP stdio server.
 
     Configures package-level logging, builds a ``Server("Phytomni-Server")``
-    instance, wires the ``list_tools`` and ``call_tool`` handlers, and runs
-    the server over stdio with ``raise_exceptions=True``. The function
-    blocks until the stdio streams close (interrupt or client disconnect);
-    there is no graceful shutdown drain — in-flight handler coroutines are
-    cancelled abruptly by ``asyncio`` when the surrounding task is
-    cancelled, and any resource cleanup must already be handled by each
-    handler's own ``async with`` / ``try / finally`` blocks.
+    instance, wires the ``list_tools`` and ``call_tool`` handlers, owns the
+    process-wide shared ``AsyncClient`` (initialised before stdio comes
+    up, closed in ``finally`` so a stdio crash never leaks the pool), and
+    runs the server over stdio with ``raise_exceptions=True``. The
+    function blocks until the stdio streams close (interrupt or client
+    disconnect); there is no graceful shutdown drain — in-flight handler
+    coroutines are cancelled abruptly by ``asyncio`` when the surrounding
+    task is cancelled, and any resource cleanup must already be handled
+    by each handler's own ``async with`` / ``try / finally`` blocks.
 
     The registered tools are listed in ``TOOL_ARGUMENT_MODELS`` /
     ``TOOL_HANDLERS``; see ``mcp/schemas.py`` for their public schemas.
@@ -336,7 +339,11 @@ async def serve() -> None:
         return await dispatch_tool(name, arguments)
 
     options = server.create_initialization_options()
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, options, raise_exceptions=True
-        )
+    init_shared_client()
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, options, raise_exceptions=True
+            )
+    finally:
+        await aclose_shared_client()
