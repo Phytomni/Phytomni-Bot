@@ -691,6 +691,44 @@ def _store_path_writable(raw_path: str) -> bool:
     return os.access(_nearest_existing(parent), os.W_OK)
 
 
+async def _reconcile_run_task_logs(run_id: str, debug: bool) -> dict[str, Any]:
+    """Reconcile task logs for every task in a run.
+
+    Fetches the run to verify ownership, iterates its task ids, and
+    returns a JSON-ready envelope with one reconciled log per task.
+    When ``debug`` is False, the raw handler payload is stripped from
+    each log via ``strip_agent_result`` so default-mode responses stay
+    compact.
+
+    Args:
+        run_id: Run whose task logs are being reconciled.
+        debug: When True, keep the raw handler payload in each log.
+
+    Returns:
+        ``{"run_id", "task_ids", "task_logs"}`` envelope ready for
+        ``JSONResponse``.
+
+    Raises:
+        HTTPException: Propagated from ``_fetch_owner_run`` when the
+            run is unknown or foreign-owned.
+    """
+    record = await _fetch_owner_run(run_id)
+    task_ids = record.get("task_ids", [])
+    task_logs: list[dict[str, Any]] = []
+    for task_id in task_ids:
+        log = await reconcile_task_log(task_id)
+        if log is None:
+            continue
+        if not debug:
+            log = strip_agent_result(log)
+        task_logs.append(log)
+    return {
+        "run_id": run_id,
+        "task_ids": task_ids,
+        "task_logs": task_logs,
+    }
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI application.
 
@@ -961,27 +999,12 @@ def create_app() -> FastAPI:
         """Return reconciled task logs for a run.
 
         Fetches the run to verify ownership, then reconciles logs for
-        each task in the run. Default mode strips the raw handler payload
-        from each task log; pass ``debug=true`` to include it.
+        each task in the run. Default mode strips the raw handler
+        payload from each task log; pass ``debug=true`` to include it.
         """
         del principal
-        record = await _fetch_owner_run(run_id)
-        task_ids = record.get("task_ids", [])
-
-        task_logs = []
-        for task_id in task_ids:
-            log = await reconcile_task_log(task_id)
-            if log is not None:
-                if not resolve_debug(debug):
-                    log = strip_agent_result(log)
-                task_logs.append(log)
-
         return JSONResponse(
-            {
-                "run_id": run_id,
-                "task_ids": task_ids,
-                "task_logs": task_logs,
-            }
+            await _reconcile_run_task_logs(run_id, resolve_debug(debug))
         )
 
     @app.get("/v1/runs/{run_id}")

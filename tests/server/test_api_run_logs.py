@@ -151,7 +151,7 @@ async def test_get_run_logs_debug_includes_raw(
         )
     )
 
-    async def fake_reconcile(task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile(_task_id: str) -> Dict[str, Any]:
         """Return log with raw field."""
         return {
             "formatted": {"answer": "debug log"},
@@ -243,7 +243,7 @@ async def test_get_run_logs_cache_reuse(
 
     remote_calls = []
 
-    async def fake_remote(task_id: str, **kwargs: Any) -> Dict[str, Any]:
+    async def fake_remote(task_id: str, **_: Any) -> Dict[str, Any]:
         """Track remote calls (should not happen for cached logs)."""
         remote_calls.append(task_id)
         return {"formatted": {"answer": "fresh"}, "raw": {}}
