@@ -12,8 +12,7 @@ shell metacharacters), and the size/empty-body guard rails that the
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -29,39 +28,14 @@ from mcp_server_phytomni.storage.uploads import (
 pytestmark = pytest.mark.unit
 
 
-class _FakeObsClient:
-    """Capture-only OBS SDK stand-in for the SDK-fallback write path."""
-
-    captured: dict[str, Any] = {}
-
-    def __init__(self, **kwargs: Any) -> None:
-        _FakeObsClient.captured["init"] = kwargs
-
-    def __getattr__(self, name: str) -> Any:
-        """Map OBS SDK camelCase methods to snake-case fakes."""
-        if name == "putContent":
-            return self._put_content
-        raise AttributeError(name)
-
-    def _put_content(self, **kwargs: Any) -> Any:
-        _FakeObsClient.captured["put_content"] = kwargs
-        return SimpleNamespace(
-            status=200, requestId="request-id", errorCode=None
-        )
-
-
-@pytest.fixture(autouse=True)
-def _reset_fake_obs() -> None:
-    """Clear the shared capture dict between tests."""
-    _FakeObsClient.captured = {}
-
-
 def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
 ) -> None:
     """SDK fallback writes the object and returns the public OBS path."""
-    monkeypatch.setattr(uploads_module, "ObsClient", _FakeObsClient)
+    fake = fake_obs_client_factory()
+    monkeypatch.setattr(uploads_module, "ObsClient", fake)
 
     record = upload_user_file(
         file_bytes=b"hello-bytes",
@@ -83,7 +57,7 @@ def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     assert record.obs_path.endswith("/report.pdf")
     assert record.file_id in record.obs_path
 
-    put_kwargs = _FakeObsClient.captured["put_content"]
+    put_kwargs = fake.captured["put_content"]
     assert put_kwargs["bucketName"] == "phytomni"
     assert put_kwargs["content"] == b"hello-bytes"
     assert put_kwargs["objectKey"].startswith(
@@ -95,11 +69,13 @@ def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
 def test_upload_user_file_writes_to_obsfs_when_mounted(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
 ) -> None:
     """When obsfs is mounted the upload writes to the mount path directly."""
     mount = tmp_path / "obs"
     (mount / "phytomni").mkdir(parents=True)
-    monkeypatch.setattr(uploads_module, "ObsClient", _FakeObsClient)
+    fake = fake_obs_client_factory()
+    monkeypatch.setattr(uploads_module, "ObsClient", fake)
 
     record = upload_user_file(
         file_bytes=b"data",
@@ -112,7 +88,7 @@ def test_upload_user_file_writes_to_obsfs_when_mounted(
         obsfs_mount_root=str(mount),
     )
 
-    assert "put_content" not in _FakeObsClient.captured
+    assert "put_content" not in fake.captured
     written = (
         mount
         / "phytomni"
@@ -131,10 +107,12 @@ def test_upload_user_file_writes_to_obsfs_when_mounted(
 
 
 def test_upload_user_file_rejects_empty_body(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
 ) -> None:
     """An empty payload raises InvalidUploadError (HTTP 400)."""
-    monkeypatch.setattr(uploads_module, "ObsClient", _FakeObsClient)
+    monkeypatch.setattr(uploads_module, "ObsClient", fake_obs_client_factory())
     with pytest.raises(InvalidUploadError, match="empty"):
         upload_user_file(
             file_bytes=b"",
@@ -148,10 +126,12 @@ def test_upload_user_file_rejects_empty_body(
 
 
 def test_upload_user_file_rejects_oversize(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
 ) -> None:
     """Exceeding max_bytes raises UploadTooLargeError (HTTP 413)."""
-    monkeypatch.setattr(uploads_module, "ObsClient", _FakeObsClient)
+    monkeypatch.setattr(uploads_module, "ObsClient", fake_obs_client_factory())
     with pytest.raises(UploadTooLargeError, match="exceeds"):
         upload_user_file(
             file_bytes=b"x" * 11,
@@ -194,10 +174,12 @@ def test_safe_upload_filename_rejects_empty_and_dot_names() -> None:
 
 
 def test_upload_user_file_anonymizes_missing_user_id(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
 ) -> None:
     """Empty user_id falls back to the shared anonymous bucket."""
-    monkeypatch.setattr(uploads_module, "ObsClient", _FakeObsClient)
+    monkeypatch.setattr(uploads_module, "ObsClient", fake_obs_client_factory())
     record = upload_user_file(
         file_bytes=b"data",
         original_filename="x.bin",

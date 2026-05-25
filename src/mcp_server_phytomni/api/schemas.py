@@ -7,7 +7,7 @@
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
     ChatCompletionRequest, AgentRunRequest, ApiKeyCreateRequest,
     ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
-    ApiKeyDeleteResponse.
+    ApiKeyDeleteResponse, FileUploadResponse.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ __all__ = [
     "ApiKeyRecordResponse",
     "ChatCompletionRequest",
     "ChatMessage",
+    "FileUploadResponse",
 ]
 
 
@@ -205,3 +206,41 @@ class ApiKeyDeleteResponse(BaseModel):
     object: str = "api_key.deleted"
     prefix: str
     deleted: bool
+
+
+class FileUploadResponse(BaseModel):
+    """Response to ``POST /v1/files`` multipart upload.
+
+    The shape stays OpenAI-files-compatible (``id``, ``object``,
+    ``bytes``, ``filename``, ``purpose``, ``created_at``) so chat-ai
+    clients that already speak the OpenAI files schema can integrate
+    without an adapter, plus two Phytomni-specific fields:
+
+    Attributes:
+        id: Per-request file id (``upload_...`` token from IdFactory)
+            that also appears as the second-to-last segment of
+            ``obs_path``.
+        object: Stable type discriminator (``"file"``).
+        bytes: Byte length of the stored payload.
+        filename: Sanitized basename actually written to OBS; may
+            differ from the original upload name if the client sent
+            shell metacharacters, Unicode, or path traversal segments.
+        purpose: Caller-declared intent for the file. Defaults to
+            ``agent_context`` so chat-ai's attachment flow can omit it.
+        created_at: Unix epoch seconds (UTC) when the upload was
+            stored.
+        obs_path: Public ``/obs/<bucket>/<key>`` path that clients can
+            replay in a later ``obs_file_list`` argument.
+        path: Alias of ``obs_path`` preserved so chat-ai's existing
+            ``obs_file_list`` builder, which already reads ``path``
+            from the legacy local upload bridge, can plug in unchanged.
+    """
+
+    id: str
+    object: str = "file"
+    bytes: int
+    filename: str
+    purpose: str
+    created_at: int
+    obs_path: str
+    path: str

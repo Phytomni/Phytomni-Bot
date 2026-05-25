@@ -18,7 +18,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
@@ -59,6 +68,7 @@ from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import ApiPrincipal, get_key_store, require_principal
+from .file_upload import handle_file_upload
 from .openai_mapping import (
     MODEL_TO_TOOL,
     flatten_messages,
@@ -1013,6 +1023,32 @@ def create_app() -> FastAPI:
             request_json=payload.model_dump_json(),
         )
         return JSONResponse(body, status_code=status_code)
+
+    @app.post("/v1/files", status_code=201)
+    async def upload_file(
+        request: Request,
+        file: UploadFile = File(...),
+        purpose: str = Form("agent_context"),
+        principal: ApiPrincipal = Depends(authorized),
+    ) -> JSONResponse:
+        """Accept one multipart file upload and store it in OBS.
+
+        Pre-checks ``Content-Length`` so oversize requests are rejected
+        before the body is buffered; falls back to a post-read size
+        guard inside ``upload_user_file`` so missing or falsified
+        Content-Length (e.g. chunked transfer) is still caught. The
+        sanitized filename, byte length, and public OBS path are
+        returned in a ``FileUploadResponse`` shape with ``path`` aliased
+        to ``obs_path`` so existing chat-ai code that already reads
+        ``path`` from the legacy upload bridge can plug in unchanged.
+        """
+        return await handle_file_upload(
+            request=request,
+            file=file,
+            purpose=purpose,
+            user_id=principal.user_id,
+            error_response=_error_response,
+        )
 
     @app.get("/v1/runs/{run_id}/logs")
     async def get_run_logs(

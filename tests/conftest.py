@@ -18,7 +18,7 @@ import sys
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import httpx
@@ -29,6 +29,7 @@ from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.config.settings import get_sensitive_config
 from mcp_server_phytomni.func_cache.storage import Storage
 from mcp_server_phytomni.runtime.request_context import request_context
+from mcp_server_phytomni.storage import uploads as uploads_module
 
 # Captured at import time, before block_external_http monkeypatches
 # httpx.AsyncClient.request for offline runs, so the in-process ASGI
@@ -549,3 +550,75 @@ def cache_db_two_funcs_fixture(cache_db: str) -> str:
     storage.set("alpha", "k2", b"v")
     storage.set("beta", "k1", b"v")
     return cache_db
+
+
+def _build_fake_obs_client() -> Any:
+    """Return a fresh OBS SDK stand-in class with class-level capture state.
+
+    Two fixtures share this helper: ``fake_obs_client_factory`` exposes
+    it raw for unit tests that want to control creation timing, and
+    ``fake_obs_client`` patches ``storage.uploads.ObsClient`` for server
+    tests. Each call yields a new class so capture state never leaks
+    between cases.
+    """
+
+    class _FakeObsClient:
+        """Capture-only OBS SDK stand-in for the SDK fallback path."""
+
+        captured: dict[str, Any] = {}
+
+        def __init__(self, **kwargs: Any) -> None:
+            _FakeObsClient.captured = {"init": kwargs}
+
+        def __getattr__(self, name: str) -> Any:
+            """Map OBS SDK camelCase methods to snake-case fakes."""
+            if name == "putContent":
+                return self._put_content
+            raise AttributeError(name)
+
+        def _put_content(self, **kwargs: Any) -> Any:
+            _FakeObsClient.captured["put_content"] = kwargs
+            return SimpleNamespace(
+                status=200,
+                requestId="request-id",
+                errorCode=None,
+            )
+
+    return _FakeObsClient
+
+
+@pytest.fixture
+def fake_obs_client_factory() -> Callable[..., Any]:
+    """Expose ``_build_fake_obs_client`` as a per-test factory.
+
+    Tests bind the returned class with
+    ``monkeypatch.setattr(module, "ObsClient", fake)`` and then read
+    ``fake.captured`` (a dict) to assert OBS init kwargs and
+    ``putContent`` call arguments. The return type is ``Any`` so static
+    checkers do not lose ``captured`` to the bare ``type`` upcast.
+
+    Returns:
+        Factory returning a new class on each call.
+    """
+    return _build_fake_obs_client
+
+
+@pytest.fixture
+def fake_obs_client(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Patch ``storage.uploads.ObsClient`` with a fresh capturing fake.
+
+    Yields the patched class so tests can inspect ``.captured`` for
+    OBS init kwargs and ``putContent`` call arguments. Defined in
+    conftest (not the test file) so test parameters of the same name
+    do not trigger pylint W0621 redefined-outer-name.
+
+    Args:
+        monkeypatch: Pytest monkeypatch used to bind the fake into
+            ``storage.uploads``.
+
+    Returns:
+        The patched fake OBS client class.
+    """
+    fake = _build_fake_obs_client()
+    monkeypatch.setattr(uploads_module, "ObsClient", fake)
+    return fake
