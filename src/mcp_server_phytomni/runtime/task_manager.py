@@ -27,6 +27,13 @@ from ..config.defaults import ApiConfig
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
+# Per-request timeout (seconds) for the remote task-manager create/update
+# calls when the caller passes no explicit ``timeout=`` kwarg. Lives at
+# module scope so the value is observable to tests / operators and shares
+# one source of truth between ``create_task`` and ``update_task`` instead
+# of repeating the magic number at each call site.
+DEFAULT_REMOTE_TASK_TIMEOUT = 60
+
 
 @dataclass(frozen=True)
 class RemoteTaskRequest:
@@ -510,7 +517,7 @@ async def create_task(
             "server_status": kwargs["server_status"],
             "tool_name": kwargs["tool_name"],
         },
-        timeout=kwargs.get("timeout", 60),
+        timeout=kwargs.get("timeout", DEFAULT_REMOTE_TASK_TIMEOUT),
         retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
         max_retries=kwargs.get("max_retries", 5),
         message="Failed to create task",
@@ -557,7 +564,7 @@ async def update_task(
             "server_file_path": kwargs["server_file_path"],
             "tool_result": kwargs["tool_result"],
         },
-        timeout=kwargs.get("timeout", 60),
+        timeout=kwargs.get("timeout", DEFAULT_REMOTE_TASK_TIMEOUT),
         retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
         max_retries=kwargs.get("max_retries", 5),
         message="Failed to update task",

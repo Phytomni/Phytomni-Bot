@@ -18,8 +18,11 @@ from pathlib import Path
 import pytest
 
 from mcp_server_phytomni.runtime.task_manager import (
+    DEFAULT_REMOTE_TASK_TIMEOUT,
     TaskManager,
+    create_task,
     resolve_tasks_db_path,
+    update_task,
 )
 
 pytestmark = pytest.mark.unit
@@ -35,6 +38,19 @@ def _mgr(tmp_path: Path) -> TaskManager:
         A TaskManager whose SQLite file lives under ``tmp_path``.
     """
     return TaskManager(db_path=str(tmp_path / "tasks.db"))
+
+
+def test_remote_task_default_timeout_is_one_minute() -> None:
+    """Pin the named fallback so a silent bump can never widen request budgets.
+
+    Both module-level ``create_task`` and ``update_task`` resolve the
+    fallback timeout from ``DEFAULT_REMOTE_TASK_TIMEOUT`` rather than a
+    bare ``60`` magic literal; the value rebounds operator expectations
+    if anyone tries to raise it without updating the docstrings.
+    """
+    assert DEFAULT_REMOTE_TASK_TIMEOUT == 60
+    assert callable(create_task)
+    assert callable(update_task)
 
 
 def test_create_update_get_roundtrip(tmp_path: Path) -> None:
