@@ -24,7 +24,10 @@ databases, local SQLite registries, or local virtual environments.
 Phytomni-Bot ships to trusted customers as a Docker image that consumes the
 operator's Huawei resources and LLM quota. The plaintext `.env` must never
 enter the image. Instead, each customer gets a per-customer encrypted
-envelope.
+envelope. (The plaintext-first resolution order in
+[configuration.md](configuration.md#resolution-order) is dev-side only;
+`.dockerignore` blocks plaintext `.env` from build contexts so customer
+images reach the encrypted fallback unconditionally.)
 
 Build-time operator step:
 
@@ -104,8 +107,8 @@ If no configuration source is found, startup raises a `RuntimeError` that
 enumerates the accepted provisioning paths:
 
 1. `PHYTOMNI_TESTING=1`: test suites inject dummy secrets.
-1. A license key plus `.env.encrypted`: customer-image path.
 1. A plaintext `config/.env`: local developer path.
+1. A license key plus `.env.encrypted`: customer-image fallback.
 
 A wrong `PHYTOMNI_LICENSE_KEY` or corrupted envelope raises
 `SecretEnvelopeError` and aborts startup rather than booting with empty

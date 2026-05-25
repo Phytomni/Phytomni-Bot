@@ -37,9 +37,23 @@ Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
 compatibility. New local configuration should use `ACCESS_KEY_ID` and
 `SECRET_ACCESS_KEY`.
 
+## Resolution order
+
+At startup `load_env_file()` tries sources in this order:
+
+1. `PHYTOMNI_TESTING=1` — test suites only.
+2. `src/mcp_server_phytomni/config/.env` — plaintext, local dev.
+3. `src/mcp_server_phytomni/config/.env.encrypted` plus
+   `PHYTOMNI_LICENSE_KEY` (env var) or `config/.license_key` (file) —
+   customer-image fallback.
+
+Customer images never contain a plaintext `.env` (blocked by
+`.dockerignore`), so they fall straight through to step 3 regardless
+of the new precedence.
+
 ## Encrypted Customer Envelope
 
-Trusted-customer images should contain `.env.encrypted`, not plaintext
+Trusted-customer images contain `.env.encrypted`, not plaintext
 `.env`. Operators create the envelope with:
 
 ```bash

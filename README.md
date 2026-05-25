@@ -115,11 +115,14 @@ configuration ownership, and cache policy, see
 
 ## Configuration
 
-Local development uses `src/mcp_server_phytomni/config/.env`.
-Trusted-customer images use an encrypted `.env.encrypted` envelope plus a
-runtime license key. The project never commits plaintext `.env` files, API
-keys, OBS credentials, generated cache databases, or local virtual
-environments.
+Local plaintext `src/mcp_server_phytomni/config/.env` takes precedence at
+startup; trusted-customer images fall through to an encrypted
+`.env.encrypted` envelope plus a runtime license key
+(`PHYTOMNI_LICENSE_KEY` env var or `config/.license_key` file). The
+project never commits plaintext `.env` files, API keys, OBS credentials,
+generated cache databases, or local virtual environments. `.dockerignore`
+keeps plaintext `.env` out of customer images so the encrypted envelope
+remains the only effective source inside images.
 
 See [Configuration](docs/configuration.md) for required variables,
 encrypted envelope behavior, HTTP API settings, cache paths, and e2e
