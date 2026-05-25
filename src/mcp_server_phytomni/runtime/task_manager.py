@@ -9,6 +9,7 @@ Functions: create_task (async), update_task (async),
     resolve_tasks_db_path.
 """
 
+import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
@@ -404,6 +405,58 @@ class TaskManager:
             "analysis_id": row[1],
             "output_dir": row[2],
         }
+
+    def set_task_log(self, task_id: str, log_dict: dict) -> bool:
+        """Serialize a dict to JSON and write to the task_log column.
+
+        The /v1/runs/{run_id}/logs endpoint caches remote step logs
+        locally to avoid polling the analysis platform on every refresh.
+        This helper provides a single atomic write to the task_log TEXT
+        column; get_task_log reads it back.
+
+        Args:
+            task_id: The task id to update.
+            log_dict: The log payload to serialize and persist.
+
+        Returns:
+            True if a row was updated, False if the task_id is unknown.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "UPDATE tasks SET task_log = ? WHERE task_id = ?",
+                (json.dumps(log_dict, ensure_ascii=False), task_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_task_log(self, task_id: str) -> Optional[dict]:
+        """Read the task_log column and deserialize from JSON.
+
+        Returns the cached log dict for a task, or None if the task
+        does not exist or the task_log column is NULL. A non-blocking
+        single SELECT — no polling or waiting.
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            The log dict if present, otherwise None.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT task_log FROM tasks WHERE task_id = ?",
+                (task_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if row is None or row[0] is None:
+            return None
+        return json.loads(row[0])
 
 
 def resolve_tasks_db_path() -> str:

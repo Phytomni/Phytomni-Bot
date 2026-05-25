@@ -122,6 +122,74 @@ def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
     assert row["analysis_id"] == "rem-9"
 
 
+def test_set_get_task_log_roundtrip(tmp_path: Path) -> None:
+    """Verify set_task_log persists and get_task_log retrieves the log.
+
+    The /v1/runs/{run_id}/logs endpoint caches remote analyst step logs
+    locally to avoid polling the analysis platform on every refresh.
+    set_task_log serializes a dict to JSON and writes the task_log TEXT
+    column; get_task_log reads it back as a dict.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the round-trip assertion passes.
+    """
+    mgr = _mgr(tmp_path)
+    task_id = mgr.create_task()
+    log_payload = {
+        "init_info": {"goal": "test"},
+        "steps": [{"round": 1, "logs": ["step 1 output"]}],
+    }
+
+    updated = mgr.set_task_log(task_id, log_payload)
+    assert updated is True
+
+    retrieved = mgr.get_task_log(task_id)
+    assert retrieved == log_payload
+
+
+def test_set_task_log_returns_false_for_unknown_id(tmp_path: Path) -> None:
+    """Verify set_task_log returns False when the task_id does not exist.
+
+    The UPDATE statement affects zero rows, so rowcount is 0. The helper
+    surfaces this as False rather than raising, so callers can decide
+    whether to log, ignore, or error on the missing id.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the False return assertion passes.
+    """
+    mgr = _mgr(tmp_path)
+    assert mgr.set_task_log("does-not-exist", {"key": "value"}) is False
+
+
+def test_get_task_log_returns_none_for_missing_or_null(
+    tmp_path: Path,
+) -> None:
+    """Verify get_task_log returns None for unknown ids and NULL columns.
+
+    A task row with task_log = NULL (the default for rows created before
+    the column existed) must not crash the JSON deserializer. An unknown
+    task_id also returns None so the reconcile bridge can detect cache
+    misses and fetch from the remote platform.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after both None-return assertions pass.
+    """
+    mgr = _mgr(tmp_path)
+    task_id = mgr.create_task()
+
+    assert mgr.get_task_log("unknown-id") is None
+    assert mgr.get_task_log(task_id) is None
+
+
 def test_init_db_adds_task_log_column_to_legacy_four_column_db(
     tmp_path: Path,
 ) -> None:
