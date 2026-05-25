@@ -203,6 +203,8 @@ def format_tool_result(
         result = _format_deep_genome_result(content, arguments)
     elif normalized_name == "GeneNetworkAgent":
         result = _format_task_result(_network_task_payload(content))
+    elif normalized_name == "InSilicoResearchAgent":
+        result = _format_in_silico_result(content)
     elif normalized_name == "DigitalDesignAgent":
         result = _format_design_result(content)
     elif normalized_name == "GetTaskStatus":
@@ -411,6 +413,51 @@ def _format_deep_genome_result(
             "species_code": _string_or_none(arguments.get("species_code")),
             "gene_id": _string_or_none(arguments.get("gene_id")),
             "status": "RUNNING",
+        },
+    )
+
+
+def _format_in_silico_result(
+    content: Mapping[str, Any],
+) -> FormattedToolResult:
+    """Format an InSilicoResearchAgent submit response.
+
+    The wrapper return places ``task_ids`` (goal-name → task-id dict),
+    ``goals`` (list of goal dicts with ``goal`` / ``context`` keys),
+    ``output_dir``, and ``error`` at the surface level. The formatter
+    flattens ``task_ids`` to an ordered tuple, extracts goal
+    descriptions, and exposes the shared ``output_dir`` so default-
+    mode clients can read what sub-tasks were spawned without
+    flipping ``debug=true``. The first task id mirrors the
+    ``metadata.task_id`` slot for single-task consumers.
+    """
+    task_ids_mapping = content.get("task_ids")
+    task_ids = (
+        tuple(
+            str(value)
+            for value in task_ids_mapping.values()
+            if isinstance(value, str) and value
+        )
+        if isinstance(task_ids_mapping, Mapping)
+        else ()
+    )
+    goals = tuple(
+        str(item.get("goal", ""))
+        for item in _mapping_sequence(content.get("goals"))
+    )
+    output_dir = _string_or_none(content.get("output_dir"))
+    error = _string_or_none(content.get("error"))
+    primary_task_id = task_ids[0] if task_ids else None
+    return FormattedToolResult(
+        answer=f"Tasks created successfully: {','.join(task_ids)}",
+        metadata={
+            "task_id": primary_task_id,
+            "task_ids": task_ids,
+            "output_dir": output_dir,
+            "goals": goals,
+            "error": error,
+            "status": "RUNNING",
+            "log_status": "sync_running",
         },
     )
 

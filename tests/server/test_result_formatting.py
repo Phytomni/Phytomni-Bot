@@ -424,3 +424,83 @@ def test_analyst_result_handles_missing_phytomni_state() -> None:
     assert result.metadata["plan_retries"] is None
     assert result.metadata["extracted_tools"] == ()
     assert result.metadata["method_context_keys"] == ()
+
+
+def test_in_silico_result_formats_goals_and_task_ids() -> None:
+    """InSilicoResearchAgent surfaces extracted goals and child task ids.
+
+    The wrapper return places ``task_ids`` (goal-name → task-id dict),
+    ``goals`` (list of goal dicts), and ``error`` at the surface
+    level; the remainder lives in ``phytomni_state``. The formatter
+    extracts goal descriptions, lists submitted task ids, and exposes
+    a shared output directory so default-mode clients can read what
+    sub-tasks were spawned without flipping ``debug=true``.
+    """
+    payload = {
+        "task_ids": {
+            "research_goal_0": "task-abc",
+            "research_goal_1": "task-def",
+        },
+        "goals": [
+            {
+                "goal": "Identify gene clusters with shared promoter motifs",
+                "context": "rice flowering",
+            },
+            {
+                "goal": "Compare ortholog expression in stress conditions",
+                "context": "drought",
+            },
+        ],
+        "output_dir": "/obs/phytomni/run/in-silico",
+        "error": None,
+        "phytomni_state": {
+            "paper_text": "Long paper text that should not be lifted.",
+        },
+    }
+
+    result = format_tool_result("InSilicoResearchAgent", payload)
+
+    assert result.answer.startswith("Tasks created successfully: ")
+    assert "task-abc" in result.answer
+    assert "task-def" in result.answer
+    assert result.metadata == {
+        "task_id": "task-abc",
+        "task_ids": ("task-abc", "task-def"),
+        "output_dir": "/obs/phytomni/run/in-silico",
+        "goals": (
+            "Identify gene clusters with shared promoter motifs",
+            "Compare ortholog expression in stress conditions",
+        ),
+        "error": None,
+        "status": "RUNNING",
+        "log_status": "sync_running",
+    }
+
+
+def test_in_silico_result_handles_empty_goals() -> None:
+    """Absent goals / task_ids preserves the stable metadata key set."""
+    payload: dict[str, object] = {
+        "task_ids": {},
+        "goals": [],
+        "error": None,
+    }
+
+    result = format_tool_result("InSilicoResearchAgent", payload)
+
+    assert result.metadata["task_ids"] == ()
+    assert result.metadata["goals"] == ()
+    assert result.metadata["error"] is None
+
+
+def test_in_silico_result_surfaces_extraction_error() -> None:
+    """A goal-extraction failure surfaces through the error metadata key."""
+    payload = {
+        "task_ids": {},
+        "goals": [],
+        "error": "LLM rate limited",
+    }
+
+    result = format_tool_result("InSilicoResearchAgent", payload)
+
+    assert result.metadata["error"] == "LLM rate limited"
+    assert result.answer == "Tasks created successfully: "

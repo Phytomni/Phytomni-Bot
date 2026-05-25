@@ -303,12 +303,30 @@ async def test_invoke_digital_design_agent_collects_subtasks(
     assert result.metadata["output_dir"] == "/obs/phytomni/prot"
 
 
-async def test_invoke_in_silico_research_agent_falls_back_to_json(
+async def test_invoke_in_silico_research_agent_formats_goals_and_task_ids(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tools without a dedicated formatter dump JSON into the answer."""
-    raw = {"plan": ["step-1", "step-2"], "summary": "ok"}
+    """InSilicoResearch exposes goals and child task ids in metadata.
+
+    The dedicated formatter replaces the old default-branch JSON
+    fallback: ``task_ids`` flattens to a tuple of submitted task ids,
+    ``goals`` extracts the goal descriptions, and the shared
+    ``output_dir`` mirrors the per-task-suite output path so default-
+    mode clients can read the fan-out without flipping debug mode.
+    """
+    raw = {
+        "task_ids": {
+            "research_goal_0": "task-abc",
+            "research_goal_1": "task-def",
+        },
+        "goals": [
+            {"goal": "Identify gene clusters", "context": "rice"},
+            {"goal": "Compare ortholog expression", "context": "drought"},
+        ],
+        "output_dir": "/obs/phytomni/run/in-silico",
+        "error": None,
+    }
     _patch_handler(
         monkeypatch, PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value, raw
     )
@@ -318,9 +336,15 @@ async def test_invoke_in_silico_research_agent_falls_back_to_json(
         _payload(demo_data_dir, "in_silico_research_agent.json"),
     )
 
-    assert json.loads(result.answer) == raw
-    assert result.metadata == {}
-    assert result.references == ()
+    assert "task-abc" in result.answer
+    assert "task-def" in result.answer
+    assert result.metadata["task_ids"] == ("task-abc", "task-def")
+    assert result.metadata["goals"] == (
+        "Identify gene clusters",
+        "Compare ortholog expression",
+    )
+    assert result.metadata["output_dir"] == "/obs/phytomni/run/in-silico"
+    assert result.metadata["error"] is None
 
 
 async def test_invoke_get_task_status_emits_artifacts_on_success(
