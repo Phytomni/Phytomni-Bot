@@ -60,17 +60,72 @@ async def test_upload_file_honors_purpose_form_field(
     issued_api_key: str,
     fake_obs_client: Any,
 ) -> None:
-    """A caller-supplied purpose round-trips into the response."""
+    """An allowed OpenAI-files purpose round-trips into the response."""
     del fake_obs_client
     response = await api_client.post(
         "/v1/files",
         headers={"Authorization": f"Bearer {issued_api_key}"},
         files={"file": ("x.bin", b"data", "application/octet-stream")},
-        data={"purpose": "supplementary"},
+        data={"purpose": "user_data"},
     )
 
     assert response.status_code == 201
-    assert response.json()["purpose"] == "supplementary"
+    assert response.json()["purpose"] == "user_data"
+
+
+@pytest.mark.parametrize(
+    "purpose",
+    [
+        "agent_context",
+        "assistants",
+        "batch",
+        "fine-tune",
+        "vision",
+        "user_data",
+    ],
+)
+async def test_upload_file_accepts_every_allowed_purpose(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake_obs_client: Any,
+    purpose: str,
+) -> None:
+    """All six UploadPurpose Literal values are accepted (AF-002)."""
+    del fake_obs_client
+    response = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("x.bin", b"data", "application/octet-stream")},
+        data={"purpose": purpose},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["purpose"] == purpose
+
+
+async def test_upload_file_rejects_unknown_purpose_with_422(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake_obs_client: Any,
+) -> None:
+    """A purpose outside the UploadPurpose Literal returns 422 + envelope.
+
+    Covers AF-002 (audit 2026-05-26): prior contract accepted any
+    string and echoed it back unfiltered. The Literal enum now drives
+    FastAPI's RequestValidationError, which the unified handler maps
+    to the 422 envelope.
+    """
+    response = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("x.bin", b"data", "application/octet-stream")},
+        data={"purpose": "hack"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == 422
+    assert "put_content" not in fake_obs_client.captured
 
 
 async def test_upload_file_rejects_unauthenticated_request(

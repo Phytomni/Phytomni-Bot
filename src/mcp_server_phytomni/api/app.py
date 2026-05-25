@@ -84,6 +84,7 @@ from .schemas import (
     ApiErrorResponse,
     ApiKeyCreateRequest,
     ChatCompletionRequest,
+    UploadPurpose,
 )
 
 __all__ = ["create_app"]
@@ -1029,7 +1030,7 @@ def create_app() -> FastAPI:
     async def upload_file(
         request: Request,
         file: UploadFile = File(...),
-        purpose: str = Form("agent_context"),
+        purpose: UploadPurpose = Form("agent_context"),
         principal: ApiPrincipal = Depends(authorized),
     ) -> JSONResponse:
         """Accept one multipart file upload and store it in OBS.

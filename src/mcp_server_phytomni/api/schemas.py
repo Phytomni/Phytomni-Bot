@@ -8,13 +8,29 @@ Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
     ChatCompletionRequest, AgentRunRequest, ApiKeyCreateRequest,
     ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
     ApiKeyDeleteResponse, FileUploadResponse.
+Public aliases: UploadPurpose.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Allowed values for the ``purpose`` field on ``POST /v1/files`` and
+# the response echo. Combines the OpenAI files API enum (assistants,
+# batch, fine-tune, vision, user_data) with the Phytomni-internal
+# ``agent_context`` default. AF-002 audit 2026-05-26: prior contract
+# accepted any str, which drifted from the docs claim of "OpenAI-files
+# compatible" and exposed an unbounded echo field.
+UploadPurpose = Literal[
+    "agent_context",
+    "assistants",
+    "batch",
+    "fine-tune",
+    "vision",
+    "user_data",
+]
 
 __all__ = [
     "AgentRunRequest",
@@ -28,6 +44,7 @@ __all__ = [
     "ChatCompletionRequest",
     "ChatMessage",
     "FileUploadResponse",
+    "UploadPurpose",
 ]
 
 
@@ -240,7 +257,7 @@ class FileUploadResponse(BaseModel):
     object: str = "file"
     bytes: int
     filename: str
-    purpose: str
+    purpose: UploadPurpose
     created_at: int
     obs_path: str
     path: str

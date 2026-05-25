@@ -23,7 +23,7 @@ from ..storage.uploads import (
     UploadTooLargeError,
     upload_user_file,
 )
-from .schemas import FileUploadResponse
+from .schemas import FileUploadResponse, UploadPurpose
 
 ErrorEnvelope = Callable[[int, str], JSONResponse]
 
@@ -70,7 +70,7 @@ async def read_with_byte_budget(
 async def handle_file_upload(
     request: Request,
     file: UploadFile,
-    purpose: str,
+    purpose: UploadPurpose,
     user_id: str,
     error_response: ErrorEnvelope,
 ) -> JSONResponse:
