@@ -112,9 +112,18 @@ agent_data/uploads/alice/20260524T010000Z-request-xxxx/20260524T010000Z-upload-y
 
 `path` 是 `obs_path` 的别名,兼容现有 `obs_file_list` 入参语义。`created_at` 是 Unix epoch 秒数(UTC),沿用 OpenAI files 约定。
 
-**413 双层防御**:route 先看 `Content-Length` header 拒大请求(避免 25 MiB 进内存),`upload_user_file` 在 read 后再 raise `UploadTooLargeError` 兜底 chunked transfer / 伪造 Content-Length 场景。
+**413 双层防御**(Phase 4.5.1 / AF-001 加固):route 先看 `Content-Length` header 拒大请求,然后 `api/file_upload.py:read_with_byte_budget`(64 KiB chunks)累计读 — `Transfer-Encoding: chunked` 无 `Content-Length` 时也能在突破 25 MiB 阈值的第一个 chunk 处 abort,peak memory 不超过 `max_bytes + chunk_size`。`storage/uploads.py:upload_user_file` 仍保留 `UploadTooLargeError` 的 raise 作为 defense-in-depth(给未来直接调用的代码)。
 
-**错误码**:400 empty body / empty filename / `.` / `..` 等非法 basename;413 oversize(两层);401 unauth;500 unexpected storage failure(走统一 envelope)。
+**`purpose` Literal 枚举**(Phase 4.5.2 / AF-002 加固):`purpose` 字段类型从 free-form `str` 收紧到 `UploadPurpose = Literal["agent_context", "assistants", "batch", "fine-tune", "vision", "user_data"]`,对齐 OpenAI files API 枚举(5 个)+ Phytomni 内部默认 `agent_context`。非允许值由 FastAPI 的 `RequestValidationError` 触发,经统一 envelope 返 `422`。
+
+**Filename sanitize-and-accept 政策**(Phase 4.5.3 / AF-003 对齐):path-traversal 不返 `400` 而是净化成 basename 返 `201`(与全仓 `storage/path_policy.safe_path_segment` 政策一致):
+
+- `../../etc/passwd` → 存为 `passwd` 返 201
+- `my report (final).pdf` → 存为 `my-report-final.pdf` 返 201
+
+只有 empty body / empty filename / `.` / `..` 这几种**完全无法 sanitize 出有效 basename**的情形返 `400`。
+
+**错误码总览**:400 empty body / empty / dot / dotdot filename;413 oversize(两层防御);422 unknown `purpose`(Literal 拒绝);401 unauth;500 unexpected storage failure。统一 envelope。
 
 **Web 侧影响**:Web Go 端**不需要**新写 file proxy。chat-ai 直接 POST 文件给 Bot,响应里的 `path` 字段可直接塞进后续 `obs_file_list` 数组,与现有 `nky_client_python` 桥的返回字段同名。
 

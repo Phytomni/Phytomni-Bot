@@ -111,23 +111,40 @@ from each task log; pass `debug=true` to include it. Returns `404` if
 the run is unknown or owned by another user.
 
 `POST /v1/files` accepts one `multipart/form-data` upload through the
-standard `file` field and an optional `purpose` field (defaults to
-`agent_context`). The response carries the OpenAI-files compatible
-shape — `id` / `object: "file"` / `bytes` / `filename` / `purpose` /
-`created_at` — plus `obs_path` (the public `/obs/<bucket>/<key>` path)
-and a `path` alias on `obs_path` so clients can replay it in any later
-`obs_file_list` argument without translation. Filenames are sanitized
-through `Path.name` (path-traversal segments collapse to the
-basename) and `safe_path_segment` (shell metacharacters and Unicode
-collapse to `-`); the suffix is preserved. The OBS object key
-follows `agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
-so uploads are isolated per authenticated principal and traceable back
-to the originating HTTP call through the `X-Request-Id` response
-header. Size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB default); the
-route pre-checks `Content-Length` before reading the body and the
-storage helper re-checks after read so missing or falsified headers
-(chunked transfer) still return `413`. Empty bodies, empty filenames,
-and `.` / `..` filenames return `400`. Example:
+standard `file` field and an optional `purpose` field. The `purpose`
+value MUST be one of the OpenAI-files compatible literals
+`agent_context` (default) / `assistants` / `batch` / `fine-tune` /
+`vision` / `user_data`; any other value returns `422` through the
+unified error envelope. The response carries the OpenAI-files
+compatible shape — `id` / `object: "file"` / `bytes` / `filename` /
+`purpose` / `created_at` — plus `obs_path` (the public
+`/obs/<bucket>/<key>` path) and a `path` alias on `obs_path` so
+clients can replay it in any later `obs_file_list` argument without
+translation.
+
+Filename sanitization is a deliberate **sanitize-and-accept** policy
+(not a 400 rejection): `Path.name` collapses any path-traversal
+segments to the basename and `safe_path_segment` rewrites shell
+metacharacters and Unicode into `-`, preserving the suffix.
+Examples:
+
+- `../../etc/passwd` → stored as `passwd`, response returns `201`.
+- `my report (final).pdf` → stored as `my-report-final.pdf`, `201`.
+
+Only empty bodies, empty filenames, and `.` / `..` filenames return
+`400` through the unified error envelope. The OBS object key follows
+`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
+so uploads are isolated per authenticated principal and traceable
+back to the originating HTTP call through the `X-Request-Id`
+response header.
+
+Size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB default). The route
+defends in two layers: a `Content-Length` pre-check rejects honest
+oversize requests before reading the body, and a chunked reader
+(`read_with_byte_budget`, 64 KiB chunks) caps cumulative reads when
+`Content-Length` is absent or falsified (`Transfer-Encoding: chunked`),
+aborting at the first chunk that pushes past the limit so peak
+memory stays bounded. Both paths return `413`. Example:
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/files \
