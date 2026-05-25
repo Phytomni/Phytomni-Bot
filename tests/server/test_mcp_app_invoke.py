@@ -173,11 +173,24 @@ async def test_invoke_analyst_agent_formats_task_submission(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AnalystAgent maps task fields onto FormattedToolResult.metadata."""
+    """AnalystAgent maps task fields onto FormattedToolResult.metadata.
+
+    The wrapper return places ``phytomni_state`` alongside the task
+    surface keys; the formatter lifts the planning subset (``plan`` /
+    ``extracted_tools`` / ``method_context_keys`` / ``plan_retries``)
+    into metadata so default-mode clients can read what the analyst
+    actually planned.
+    """
     raw = {
         "task_id": "task-1",
         "output_dir": "/obs/phytomni/run/out",
         "compute_resource": "small",
+        "phytomni_state": {
+            "plan": "1. retrieve\n2. analyze\n3. report",
+            "plan_retries": 0,
+            "extracted_tools": ["pyfasta"],
+            "method_context": {"upload": {}},
+        },
     }
     _patch_handler(monkeypatch, PhytomniAgents.ANALYST_AGENT.value, raw)
 
@@ -193,6 +206,10 @@ async def test_invoke_analyst_agent_formats_task_submission(
         "compute_resource": "analyst-agents-small",
         "status": "RUNNING",
         "log_status": "sync_running",
+        "plan": "1. retrieve\n2. analyze\n3. report",
+        "plan_retries": 0,
+        "extracted_tools": ("pyfasta",),
+        "method_context_keys": ("upload",),
     }
 
 

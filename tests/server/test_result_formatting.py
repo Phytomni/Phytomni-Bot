@@ -336,3 +336,91 @@ def test_data_result_handles_missing_phytomni_state() -> None:
         "rewrite_query": None,
         "is_rewrite": None,
     }
+
+
+def test_analyst_result_lifts_plan_metadata_from_phytomni_state() -> None:
+    """AnalystAgent submit metadata surfaces plan / tools / context keys.
+
+    The wrapper return places ``task_id`` / ``output_dir`` /
+    ``job_name`` / ``compute_resource`` at the top level (task-style
+    ``merge_intermediate_state`` surface) and pushes the rest of the
+    LangGraph state under ``phytomni_state``. The formatter lifts the
+    curated subset ``plan`` / ``extracted_tools`` /
+    ``method_context_keys`` / ``plan_retries`` so default-mode
+    clients can read what the analyst actually planned without
+    flipping ``debug=true``.
+    """
+    payload = {
+        "task_id": "task-1",
+        "output_dir": "/obs/phytomni/run/out",
+        "compute_resource": "medium",
+        "phytomni_state": {
+            "plan": "1. retrieve data\n2. analyze\n3. report",
+            "plan_feedback": None,
+            "plan_retries": 1,
+            "extracted_tools": ["pyfasta", "pandas"],
+            "tool_usages": "pyfasta -i ...",
+            "method_context": {
+                "upload": {"path": "sop.pdf"},
+                "literature": {"hits": []},
+            },
+        },
+    }
+
+    result = format_tool_result("AnalystAgent", payload)
+
+    assert result.answer == "Task created successfully:task-1"
+    assert result.metadata["task_id"] == "task-1"
+    assert result.metadata["output_dir"] == "/obs/phytomni/run/out"
+    assert result.metadata["compute_resource"] == "analyst-agents-medium"
+    assert result.metadata["status"] == "RUNNING"
+    assert result.metadata["log_status"] == "sync_running"
+    assert result.metadata["plan"] == "1. retrieve data\n2. analyze\n3. report"
+    assert result.metadata["plan_retries"] == 1
+    assert result.metadata["extracted_tools"] == ("pyfasta", "pandas")
+    assert result.metadata["method_context_keys"] == ("upload", "literature")
+
+
+def test_analyst_result_truncates_long_plan_with_marker() -> None:
+    """Plan text exceeding the cap is truncated with a pointer to raw.
+
+    Free-form plan markdown can run to many KB; the formatter caps
+    at ``_METADATA_TEXT_TRUNCATE_BYTES`` and appends a marker that
+    directs clients to ``raw.phytomni_state.plan`` (visible in debug
+    mode) for the full text.
+    """
+    long_plan = "x" * 5000
+    payload = {
+        "task_id": "task-2",
+        "output_dir": "/obs/out",
+        "compute_resource": "small",
+        "phytomni_state": {
+            "plan": long_plan,
+            "plan_retries": 0,
+            "extracted_tools": [],
+            "method_context": {},
+        },
+    }
+
+    result = format_tool_result("AnalystAgent", payload)
+
+    plan_field = result.metadata["plan"]
+    assert plan_field is not None
+    assert plan_field.endswith("…[truncated, see raw.phytomni_state.plan]")
+    assert len(plan_field.encode("utf-8")) <= 4096 + 64
+
+
+def test_analyst_result_handles_missing_phytomni_state() -> None:
+    """Absent intermediate state preserves the new metadata key set as None."""
+    payload = {
+        "task_id": "task-3",
+        "output_dir": "/obs/out",
+        "compute_resource": "small",
+    }
+
+    result = format_tool_result("AnalystAgent", payload)
+
+    assert result.metadata["plan"] is None
+    assert result.metadata["plan_retries"] is None
+    assert result.metadata["extracted_tools"] == ()
+    assert result.metadata["method_context_keys"] == ()

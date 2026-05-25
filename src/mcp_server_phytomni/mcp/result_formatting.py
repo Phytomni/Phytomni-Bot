@@ -24,6 +24,7 @@ from ..runtime.terminal_artifacts import collect_terminal_artifacts
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
 
 _PHYTOMNI_STATE_KEY = "phytomni_state"
+_METADATA_TEXT_TRUNCATE_BYTES = 4096
 
 
 @dataclass(frozen=True)
@@ -197,7 +198,7 @@ def format_tool_result(
     elif normalized_name == "DataAgent":
         result = _format_data_result(content)
     elif normalized_name == "AnalystAgent":
-        result = _format_task_result(content)
+        result = _format_analyst_task_result(content)
     elif normalized_name == "DeepGenomeAgent":
         result = _format_deep_genome_result(content, arguments)
     elif normalized_name == "GeneNetworkAgent":
@@ -324,6 +325,76 @@ def _format_task_result(content: Mapping[str, Any]) -> FormattedToolResult:
             "log_status": "sync_running",
         },
     )
+
+
+def _format_analyst_task_result(
+    content: Mapping[str, Any],
+) -> FormattedToolResult:
+    """Format an AnalystAgent submit response with planning metadata.
+
+    Wraps the generic ``_format_task_result`` and enriches the
+    resulting metadata with the curated planning subset lifted from
+    ``phytomni_state`` (``plan``, ``plan_retries``,
+    ``extracted_tools``, ``method_context_keys``). ``plan`` text is
+    capped at ``_METADATA_TEXT_TRUNCATE_BYTES`` with a marker pointing
+    to ``raw.phytomni_state.plan`` for the full document. Missing
+    intermediate state keeps the keys present with ``None`` or empty
+    tuples so the contract is stable.
+    """
+    base = _format_task_result(content)
+    state = _phytomni_state(content)
+    plan_text = state.get("plan")
+    truncated_plan = (
+        _truncate_text(
+            str(plan_text),
+            _METADATA_TEXT_TRUNCATE_BYTES,
+            "raw.phytomni_state.plan",
+        )
+        if isinstance(plan_text, str)
+        else None
+    )
+    extracted_tools = state.get("extracted_tools")
+    method_context = state.get("method_context")
+    enriched_metadata = {
+        **base.metadata,
+        "plan": truncated_plan,
+        "plan_retries": state.get("plan_retries"),
+        "extracted_tools": (
+            tuple(str(tool) for tool in extracted_tools)
+            if isinstance(extracted_tools, Sequence)
+            and not isinstance(extracted_tools, str)
+            else ()
+        ),
+        "method_context_keys": (
+            tuple(str(key) for key in method_context.keys())
+            if isinstance(method_context, Mapping)
+            else ()
+        ),
+    }
+    return FormattedToolResult(
+        answer=base.answer,
+        follow_up_questions=base.follow_up_questions,
+        metadata=enriched_metadata,
+        references=base.references,
+        tabular=base.tabular,
+        output_dirs=base.output_dirs,
+    )
+
+
+def _truncate_text(text: str, byte_limit: int, raw_pointer: str) -> str:
+    """Return ``text`` truncated to ``byte_limit`` UTF-8 bytes.
+
+    When the encoded length exceeds the cap, the trimmed text is
+    suffixed with a marker pointing the caller at the raw state
+    location for the full document. Returns the input unchanged when
+    it already fits.
+    """
+    encoded = text.encode("utf-8")
+    if len(encoded) <= byte_limit:
+        return text
+    marker = f"…[truncated, see {raw_pointer}]"
+    trimmed = encoded[:byte_limit].decode("utf-8", errors="ignore")
+    return f"{trimmed}{marker}"
 
 
 def _format_deep_genome_result(
