@@ -423,6 +423,16 @@ class ApiConfig(BaseSettings):
             cannot escalate to issuance scope. No ``PHYTOMNI_``-prefixed
             alias is exposed because this name is unique to the Bot HTTP
             service and carries no risk of colliding with sibling tools.
+        API_UPLOAD_MAX_BYTES (int): Per-file size ceiling for
+            ``POST /v1/files`` multipart uploads, in bytes. Defaults to
+            25 MiB so a single agent-context attachment cannot exhaust the
+            uvicorn worker's memory; oversize uploads return 413.
+        API_UPLOAD_PREFIX (str): OBS object-key prefix below the bucket
+            root for ``POST /v1/files`` outputs. Defaults to
+            ``agent_data/uploads`` so user-supplied attachments live in a
+            distinct namespace from per-run scratch
+            (``agent_data/user_data/...``) and never collide with task
+            output directories.
     """
 
     API_HOST: str = "127.0.0.1"
@@ -444,6 +454,8 @@ class ApiConfig(BaseSettings):
     API_RUN_TTL_OK_HOURS: int = 24
     API_RUN_TTL_FAIL_DAYS: int = 7
     API_SERVICE_TOKEN: Optional[SecretStr] = None
+    API_UPLOAD_MAX_BYTES: int = 26_214_400
+    API_UPLOAD_PREFIX: str = "agent_data/uploads"
 
 
 SpeciesEntryValue = Union[str, Dict[str, str]]
