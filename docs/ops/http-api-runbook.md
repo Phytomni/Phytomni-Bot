@@ -174,6 +174,7 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `GET`    | `/v1/runs/{run_id}`       | yes  | Owner-scoped run lookup.                         |
 | `GET`    | `/v1/runs/{run_id}/logs`  | yes  | Reconciled task logs for a run.                  |
 | `GET`    | `/v1/runs`                | yes  | Owner-scoped + service-token delegated listing.  |
+| `POST`   | `/v1/files`               | yes  | Per-user multipart upload (25 MiB ceiling).      |
 | `POST`   | `/v1/api-keys`            | svc  | Mint a per-user `ptm_...` API key (service tok). |
 | `GET`    | `/v1/api-keys`            | svc  | List per-user keys (metadata only).              |
 | `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revoke the key with the given public prefix.     |
@@ -195,6 +196,23 @@ The endpoint verifies ownership, then fetches or retrieves cached logs
 for each task in the run. Default mode strips the raw handler payload
 from each task log; pass `debug=true` to include it. Returns `404` if
 the run is unknown or owned by another user.
+
+`POST /v1/files` accepts one `multipart/form-data` upload through the
+standard `file` field with an optional `purpose` field (default
+`agent_context`). Stored under
+`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`;
+the response carries the OpenAI-files compatible shape plus
+`obs_path` (the public `/obs/<bucket>/<key>` form) and a `path` alias
+so clients can replay it in any later `obs_file_list` argument.
+Default size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB); the route
+pre-checks `Content-Length` before reading the body so oversize
+requests return `413` without buffering, and the storage helper
+re-checks after read so missing or falsified headers (e.g. chunked
+transfer encoding) still return `413`. Empty bodies and
+empty/dot/dot-dot filenames return `400`. Filename sanitization
+collapses path-traversal segments (`../../etc/passwd` → `passwd`)
+and unsafe stem characters (`my report (final).pdf` →
+`my-report-final.pdf`).
 
 ## Health Checks
 
@@ -384,6 +402,26 @@ includes `original_query`, `resolved_gene_id`, and `resolve_gene_id: true` so su
 The resolver adds one shared-cache LLM call per unique free-form query,
 so heavy unsupervised opt-in does add LLM cost; the `~90d` `phyto_chat`
 cache keeps the marginal cost near zero for repeated identical queries.
+
+### Upload Returned 413 Or 400
+
+`POST /v1/files` enforces two guard rails. Triage by code:
+
+- `413` — the upload exceeds `API_UPLOAD_MAX_BYTES` (default 25 MiB).
+  Check the request `Content-Length` and the env var. The route
+  rejects oversize at the header level so a sustained 413 stream
+  indicates either a misconfigured client or a deliberate ceiling
+  bump request. Raise the env var and restart to widen the limit.
+- `400` — the upload body is empty, the `file` form field is missing,
+  or the supplied filename is empty / `.` / `..`. The unified error
+  envelope carries the rejection reason in `error.message`. Filename
+  sanitization itself never returns `400`; traversal segments
+  collapse to the basename silently.
+
+Stored uploads live under
+`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
+in OBS. There is no GC; orphaned uploads stay forever until the bucket
+TTL or an out-of-band sweep removes them.
 
 ### Startup Failure
 

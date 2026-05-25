@@ -78,7 +78,7 @@ ______________________________________________________________________
 
 ## 5. OQ-5 File ingestion:Bot 接管 `POST /v1/files`
 
-**决策**:Bot 实现 `POST /v1/files` multipart upload endpoint。chat-ai 把附件 POST 给 Bot,Bot 落 OBS 并返 obs path,chat-ai 把 path 放入后续 `obs_file_list`。
+**决策已落地**:Bot 实现 `POST /v1/files` multipart upload endpoint。chat-ai 把附件 POST 给 Bot,Bot 落 OBS 并返 obs path,chat-ai 把 path 放入后续 `obs_file_list`。Route 位于 `api/app.py`,业务逻辑封装在 `api/file_upload.py:handle_file_upload`,OBS 写入由 `storage/uploads.py:upload_user_file` 集中处理。
 
 **关键参数**:
 
@@ -90,31 +90,33 @@ ______________________________________________________________________
 **OBS 对象 key 形状**:`{prefix}/{user_id}/{request_id}/{file_id}/{safe_filename}`,例如:
 
 ```text
-agent_data/uploads/test%40example.com/req_abc/file_xyz/research.pdf
+agent_data/uploads/alice/20260524T010000Z-request-xxxx/20260524T010000Z-upload-yyyy/research.pdf
 ```
 
-`user_id` 与 `safe_filename` 都经过 `storage/path_policy.safe_path_segment` 防 path traversal。
+`user_id`、`request_id`、`file_id`、`safe_filename` 都经过 `storage/path_policy.safe_path_segment` 防 path traversal;`file_id` 由 `IdFactory().new_id("upload")` 生成(时间戳-类型-token 三段),沿用项目运行时 ID 政策。
 
-**响应**:
+**响应**(`FileUploadResponse`):
 
 ```json
 {
-  "id": "file_xyz",
+  "id": "20260524T010000Z-upload-yyyy",
   "object": "file",
   "filename": "research.pdf",
   "bytes": 12345,
   "purpose": "agent_context",
-  "obs_path": "/obs/phytomni/agent_data/uploads/.../research.pdf",
-  "path": "/obs/phytomni/agent_data/uploads/.../research.pdf",
-  "created_at": "2026-05-24T01:00:00Z"
+  "created_at": 1748048400,
+  "obs_path": "/obs/phytomni/agent_data/uploads/alice/.../research.pdf",
+  "path": "/obs/phytomni/agent_data/uploads/alice/.../research.pdf"
 }
 ```
 
-`path` 是 `obs_path` 的别名,兼容现有 `obs_file_list` 入参语义。
+`path` 是 `obs_path` 的别名,兼容现有 `obs_file_list` 入参语义。`created_at` 是 Unix epoch 秒数(UTC),沿用 OpenAI files 约定。
 
-**错误码**:400 invalid filename / empty / path traversal;413 oversize;401 unauth;500 unexpected storage failure(走统一 envelope)。
+**413 双层防御**:route 先看 `Content-Length` header 拒大请求(避免 25 MiB 进内存),`upload_user_file` 在 read 后再 raise `UploadTooLargeError` 兜底 chunked transfer / 伪造 Content-Length 场景。
 
-**Web 侧影响**:Web Go 端**不需要**新写 file proxy。chat-ai 直接 POST 文件给 Bot。
+**错误码**:400 empty body / empty filename / `.` / `..` 等非法 basename;413 oversize(两层);401 unauth;500 unexpected storage failure(走统一 envelope)。
+
+**Web 侧影响**:Web Go 端**不需要**新写 file proxy。chat-ai 直接 POST 文件给 Bot,响应里的 `path` 字段可直接塞进后续 `obs_file_list` 数组,与现有 `nky_client_python` 桥的返回字段同名。
 
 ______________________________________________________________________
 

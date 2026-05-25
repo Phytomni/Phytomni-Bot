@@ -77,6 +77,7 @@ supported; `stream: true` returns `400`.
 | `GET`    | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
 | `GET`    | `/v1/runs/{run_id}/logs`  | yes  | Returns reconciled task logs for a run.                           |
 | `GET`    | `/v1/runs`                | yes  | Lists owner-scoped runs newest-first.                             |
+| `POST`   | `/v1/files`               | yes  | Stores one multipart upload in OBS and returns the public path.   |
 | `POST`   | `/v1/api-keys`            | svc  | Mints a per-user `ptm_...` API key.                               |
 | `GET`    | `/v1/api-keys`            | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter. |
 | `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revokes the key with the given public prefix.                     |
@@ -108,6 +109,32 @@ The endpoint verifies ownership, then fetches or retrieves cached logs
 for each task in the run. Default mode strips the raw handler payload
 from each task log; pass `debug=true` to include it. Returns `404` if
 the run is unknown or owned by another user.
+
+`POST /v1/files` accepts one `multipart/form-data` upload through the
+standard `file` field and an optional `purpose` field (defaults to
+`agent_context`). The response carries the OpenAI-files compatible
+shape — `id` / `object: "file"` / `bytes` / `filename` / `purpose` /
+`created_at` — plus `obs_path` (the public `/obs/<bucket>/<key>` path)
+and a `path` alias on `obs_path` so clients can replay it in any later
+`obs_file_list` argument without translation. Filenames are sanitized
+through `Path.name` (path-traversal segments collapse to the
+basename) and `safe_path_segment` (shell metacharacters and Unicode
+collapse to `-`); the suffix is preserved. The OBS object key
+follows `agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
+so uploads are isolated per authenticated principal and traceable back
+to the originating HTTP call through the `X-Request-Id` response
+header. Size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB default); the
+route pre-checks `Content-Length` before reading the body and the
+storage helper re-checks after read so missing or falsified headers
+(chunked transfer) still return `413`. Empty bodies, empty filenames,
+and `.` / `..` filenames return `400`. Example:
+
+```bash
+curl -s http://127.0.0.1:8080/v1/files \
+  -H "Authorization: Bearer ptm_..." \
+  -F file=@report.pdf \
+  -F purpose=agent_context
+```
 
 `POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
 an optional `dialogue_id` field that groups runs into one visible
