@@ -245,7 +245,7 @@ actually-executed query, plan, or goal list without toggling
 | DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                |
 | KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note)                                           |
 | AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields |
-| DeepGenomeAgent                               | `server_id`, `species_code`, `gene_id`                                                     |
+| DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields   |
 | InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields                               |
 | DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field          |
 | GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                              |
