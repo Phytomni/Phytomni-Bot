@@ -1,0 +1,482 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: lihu (lihu0628@qq.com)
+#         maoyc_0316 (maoyc_0316@163.com)
+#         xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""BriefGeneAgent LangGraph state and orchestration class.
+
+Holds the BriefGeneAgentState TypedDict and BriefGeneAgent class
+(graph construction, node methods, arun entry point). The public
+brief_gene_function wrapper and backward-compat re-exports live in
+agent.py; pipeline helpers live in pipeline.py.
+"""
+
+import asyncio
+from typing import Any, Dict, List, Optional, TypedDict
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+
+from ...common.prompts import get_prompt
+from ...config.defaults import BriefGeneConfig
+from ...config.settings import SensitiveConfig, get_sensitive_config
+from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ..chat.service import phyto_chat
+from ..knowledge.agent import KnowledgeAgent
+from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.sql import sql_literal
+from .pipeline import (
+    _attach_metadata,
+    _dedupe,
+    _first_row,
+    _format_docs,
+    _generate_follow_up,
+    _go_annotation_string,
+    _interpro_annotation_string,
+    _mapman_annotation_string,
+    _safe_rows,
+    _split_symbols,
+    gene_retrieve,
+    run_bi_api,
+)
+
+__all__ = [
+    "BRIEF_CONFIG",
+    "BriefGeneAgent",
+    "BriefGeneAgentState",
+]
+
+BRIEF_CONFIG = BriefGeneConfig()
+
+
+class BriefGeneAgentState(TypedDict):
+    """State schema for the brief gene LangGraph workflow.
+
+    Attributes:
+        user_query: Original gene identifier or free-text query.
+        gene_found: Whether the BI id table resolved the query.
+        gene_id: Canonical resolved gene id.
+        query_id_version: Identifier type for the original query.
+        gene_id_version: Identifier type for the canonical gene id.
+        species_code: Resolved species code.
+        species_latin_name: Resolved Latin species name.
+        species_english_name: Resolved English species name.
+        species_all_name: Combined display species string.
+        gene_name_symbol_list: Symbols from the BI id table.
+        gene_id_list: Deduplicated gene ids and symbols for retrieval.
+        gene_chr: Chromosome from structure annotation.
+        gene_start: Start coordinate from structure annotation.
+        gene_end: End coordinate from structure annotation.
+        gene_strand: Strand from structure annotation.
+        go_string: Formatted GO annotation summary.
+        kegg_string: Formatted MapMan/KEGG-like annotation summary.
+        interpro_string: Formatted InterPro annotation summary.
+        retrieved_docs: Documents retrieved from the knowledge agent.
+        retrieve_context: Prompt-ready retrieved document context.
+        follow_up_questions: Suggested follow-up questions.
+        final_response: Chat-completions-style final response payload.
+    """
+
+    user_query: str
+    gene_found: bool
+    gene_id: str
+    query_id_version: str
+    gene_id_version: str
+    species_code: str
+    species_latin_name: str
+    species_english_name: str
+    species_all_name: str
+    gene_name_symbol_list: List[str]
+    gene_id_list: List[str]
+    gene_chr: str
+    gene_start: str
+    gene_end: str
+    gene_strand: str
+    go_string: str
+    kegg_string: str
+    interpro_string: str
+    retrieved_docs: List[Dict[str, Any]]
+    retrieve_context: str
+    follow_up_questions: List[str]
+    final_response: Dict[str, Any]
+
+
+class BriefGeneAgent:
+    """LangGraph-based agent for brief gene function analysis.
+
+    Attributes:
+        brief_config: Public config for BI, retrieval, and chat defaults.
+        sensitive_config: Sensitive config with model and BI credentials.
+        ka: KnowledgeAgent used for literature retrieval.
+        checkpointer: LangGraph checkpointer used by the compiled graph.
+        app: Compiled LangGraph application.
+    """
+
+    def __init__(
+        self,
+        checkpointer: Optional[MemorySaver] = None,
+        brief_config: BriefGeneConfig = BRIEF_CONFIG,
+        sensitive_config: Optional[SensitiveConfig] = None,
+        knowledge_agent: Optional[KnowledgeAgent] = None,
+    ):
+        self.brief_config = brief_config
+        self.sensitive_config = sensitive_config or get_sensitive_config()
+        self.ka = knowledge_agent or KnowledgeAgent(
+            knowledge_config=brief_config,
+            sensitive_config=self.sensitive_config,
+        )
+        self.checkpointer = ensure_checkpointer(checkpointer)
+        self.app = self._build_graph()
+
+    def _build_graph(self):
+        workflow = StateGraph(BriefGeneAgentState)
+        workflow.add_node("query_judge_node", self.query_judge_node)
+        workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
+        workflow.add_node("retrieve_node", self.retrieve_node)
+        workflow.add_node("generate_node", self.generate_node)
+        workflow.add_node("follow_up_node", self.follow_up_node)
+
+        workflow.add_edge(START, "query_judge_node")
+        workflow.add_conditional_edges(
+            "query_judge_node", self.route_after_judge
+        )
+        workflow.add_edge("fetch_annotation_node", "retrieve_node")
+        workflow.add_edge("retrieve_node", "generate_node")
+        workflow.add_edge("generate_node", "follow_up_node")
+        workflow.add_edge("follow_up_node", END)
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def route_after_judge(self, state: BriefGeneAgentState) -> str:
+        """Route to annotation lookup only when BI found the gene.
+
+        Args:
+            state: Current workflow state after query judging.
+
+        Returns:
+            Next node name for annotation lookup or direct retrieval.
+        """
+        if state["gene_found"]:
+            return "fetch_annotation_node"
+        return "retrieve_node"
+
+    async def query_judge_node(self, state: BriefGeneAgentState):
+        """Check whether the query is known to the BI gene ID table.
+
+        Args:
+            state: Current workflow state containing the user query.
+
+        Returns:
+            State updates containing gene resolution and species metadata,
+            or ``gene_found=False`` when BI has no match.
+        """
+        user_query = state["user_query"]
+        query_response = await run_bi_api(
+            "SELECT * FROM id2multispecies "
+            f"WHERE query_id = {sql_literal(user_query)}",
+            bi_url=self.brief_config.BI_URL,
+            bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
+        )
+        row = _first_row(query_response)
+        if row is None:
+            return {"gene_found": False}
+
+        gene_id = str(row.get("gene_id", ""))
+        species_code = str(row.get("species_code", ""))
+        gene_id_info_response, species_response = await asyncio.gather(
+            run_bi_api(
+                "SELECT * FROM id2multispecies "
+                f"WHERE query_id = {sql_literal(gene_id)}",
+                bi_url=self.brief_config.BI_URL,
+                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                timeout=self.brief_config.TIMEOUT,
+                retriable_codes=self.brief_config.RETRIABLE_CODES,
+                max_retries=self.brief_config.MAX_RETRIES,
+            ),
+            run_bi_api(
+                "SELECT * FROM species "
+                f"WHERE species_code = {sql_literal(species_code)}",
+                bi_url=self.brief_config.BI_URL,
+                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                timeout=self.brief_config.TIMEOUT,
+                retriable_codes=self.brief_config.RETRIABLE_CODES,
+                max_retries=self.brief_config.MAX_RETRIES,
+            ),
+        )
+        gene_id_row = _first_row(gene_id_info_response) or {}
+        species_row = _first_row(species_response) or {}
+        species_latin_name = str(
+            species_row.get("species_scientific_name", "")
+        )
+        species_english_name = str(species_row.get("species_name_eng", ""))
+        species_all_name = (
+            f"{species_english_name} ({species_latin_name}, {species_code})"
+        )
+        return {
+            "gene_found": True,
+            "gene_id": gene_id,
+            "query_id_version": str(row.get("id_type", "")),
+            "gene_id_version": str(gene_id_row.get("id_type", "")),
+            "species_code": species_code,
+            "species_latin_name": species_latin_name,
+            "species_english_name": species_english_name,
+            "species_all_name": species_all_name,
+        }
+
+    async def fetch_annotation_node(self, state: BriefGeneAgentState):
+        """Fetch gene annotation from BI database tables.
+
+        Args:
+            state: Current workflow state containing the resolved gene id.
+
+        Returns:
+            State updates containing symbols, coordinates, and formatted
+            annotation strings.
+        """
+        gene_id_literal = sql_literal(state["gene_id"])
+        annotation_sqls = [
+            f"SELECT * FROM id_table WHERE gene_id = {gene_id_literal}",
+            "SELECT * FROM annotation_gene_structure_col "
+            f"WHERE gene_id = {gene_id_literal} AND sequence_type = 'gene'",
+            "SELECT * FROM annotation_gene_ontology "
+            f"WHERE gene_id = {gene_id_literal} LIMIT 50",
+            "SELECT * FROM annotation_gene_mapman "
+            f"WHERE gene_id = {gene_id_literal}",
+            "SELECT * FROM annotation_gene_interpro "
+            f"WHERE gene_id = {gene_id_literal}",
+        ]
+        annotation_responses = await asyncio.gather(
+            *[
+                run_bi_api(
+                    sql,
+                    bi_url=self.brief_config.BI_URL,
+                    bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
+                    timeout=self.brief_config.TIMEOUT,
+                    retriable_codes=self.brief_config.RETRIABLE_CODES,
+                    max_retries=self.brief_config.MAX_RETRIES,
+                )
+                for sql in annotation_sqls
+            ],
+            return_exceptions=True,
+        )
+
+        id_rows = _safe_rows(annotation_responses, 0)
+        gene_symbols = _split_symbols(
+            str(id_rows[0].get("symbol", "")) if id_rows else ""
+        )
+        gene_id_list = _dedupe(
+            [state["user_query"], state["gene_id"], *gene_symbols]
+        )
+
+        structure_rows = _safe_rows(annotation_responses, 1)
+        structure_row = structure_rows[0] if structure_rows else {}
+
+        go_string = _go_annotation_string(_safe_rows(annotation_responses, 2))
+        kegg_string = _mapman_annotation_string(
+            _safe_rows(annotation_responses, 3)
+        )
+        interpro_string = _interpro_annotation_string(
+            _safe_rows(annotation_responses, 4)
+        )
+
+        return {
+            "gene_name_symbol_list": gene_symbols,
+            "gene_id_list": gene_id_list,
+            "gene_chr": str(structure_row.get("chromosome", "")),
+            "gene_start": str(structure_row.get("start", "")),
+            "gene_end": str(structure_row.get("end", "")),
+            "gene_strand": str(structure_row.get("strand", "")),
+            "go_string": go_string,
+            "kegg_string": kegg_string,
+            "interpro_string": interpro_string,
+        }
+
+    async def retrieve_node(self, state: BriefGeneAgentState):
+        """Retrieve gene literature through the LangGraph KnowledgeAgent.
+
+        Args:
+            state: Current workflow state with gene resolution metadata.
+
+        Returns:
+            State updates containing retrieved documents and prompt context.
+        """
+        if state["gene_found"]:
+            result = await gene_retrieve(
+                species=state["species_all_name"],
+                gene_symbol_list=state["gene_id_list"],
+                knowledge_agent=self.ka,
+                top_n=self.brief_config.TOP_N,
+                semaphore=asyncio.Semaphore(self.brief_config.MAX_CONCURRENCY),
+            )
+            doc_list = result.get("doc_list", [])
+        else:
+            result = await self.ka.arun(
+                user_query=state["user_query"],
+                is_generate=False,
+                is_follow_up=False,
+            )
+            doc_list = result if isinstance(result, list) else []
+        return {
+            "retrieved_docs": doc_list,
+            "retrieve_context": _format_docs(
+                doc_list, self.brief_config.MAX_TOKENS
+            ),
+        }
+
+    async def generate_node(self, state: BriefGeneAgentState):
+        """Generate the brief gene function report.
+
+        Args:
+            state: Current workflow state with annotations and retrieval
+                text.
+
+        Returns:
+            State update containing the initial final response payload.
+        """
+        if state["gene_found"]:
+            prompt_vars = {
+                "user_query": state["user_query"],
+                "query_id_type": state["query_id_version"],
+                "gene_id": state["gene_id"],
+                "gene_id_type": state["gene_id_version"],
+                "species": state["species_code"],
+                "species_latin_name": state["species_latin_name"],
+                "species_english_name": state["species_english_name"],
+                "gene_string": "|".join(state["gene_id_list"]),
+                "chromosome": state["gene_chr"],
+                "start": state["gene_start"],
+                "end": state["gene_end"],
+                "strand": state["gene_strand"],
+                "go_terms": state["go_string"],
+                "kegg_annotation": state["kegg_string"],
+                "interpro_terms": state["interpro_string"],
+                "retrieve_results": state["retrieve_context"],
+            }
+            chat_query = get_prompt(
+                self.brief_config.PROMPT_FILE,
+                "user/brief_gene_function",
+                prompt_vars,
+            )
+        else:
+            chat_query = get_prompt(
+                self.brief_config.PROMPT_FILE,
+                "user/brief_gene_function_nogeneid",
+                {
+                    "user_query": state["user_query"],
+                    "retrieve_results": state["retrieve_context"],
+                },
+            )
+
+        phyto_response = await phyto_chat(
+            user_query=chat_query,
+            prompt_file=self.brief_config.PROMPT_FILE,
+            prompt_path=self.brief_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.brief_config.FREQUENCY_PENALTY,
+            n=self.brief_config.N,
+            presence_penalty=self.brief_config.PRESENCE_PENALTY,
+            reasoning_effort=self.brief_config.REASONING_EFFORT,
+            response_format=self.brief_config.RESPONSE_FORMAT,
+            stream=self.brief_config.STREAM,
+            temperature=self.brief_config.TEMPERATURE,
+            top_p=self.brief_config.TOP_P,
+            user=self.brief_config.USER,
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
+        )
+        if phyto_response is None:
+            phyto_response = {"choices": [{"message": {}}]}
+        return {
+            "final_response": _attach_metadata(
+                phyto_response, state["retrieved_docs"]
+            )
+        }
+
+    async def follow_up_node(self, state: BriefGeneAgentState):
+        """Generate follow-up questions for the final report.
+
+        Args:
+            state: Current workflow state with the generated response.
+
+        Returns:
+            State updates containing follow-up questions and enriched
+            final response metadata.
+        """
+        follow_up_questions = await _generate_follow_up(
+            user_query=state["user_query"],
+            phyto_response=state["final_response"],
+            prompt_file=self.brief_config.PROMPT_FILE,
+            prompt_path=self.brief_config.PROMPT_PATH,
+            api_key=self.sensitive_config.API_KEY.get_secret_value(),
+            base_url=self.sensitive_config.BASE_URL,
+            model=self.sensitive_config.MODEL_ID,
+            frequency_penalty=self.brief_config.FREQUENCY_PENALTY,
+            n=self.brief_config.N,
+            presence_penalty=self.brief_config.PRESENCE_PENALTY,
+            reasoning_effort=self.brief_config.REASONING_EFFORT,
+            response_format=self.brief_config.RESPONSE_FORMAT,
+            stream=self.brief_config.STREAM,
+            temperature=self.brief_config.TEMPERATURE,
+            top_p=self.brief_config.TOP_P,
+            user=self.brief_config.USER,
+            timeout=self.brief_config.TIMEOUT,
+            retriable_codes=self.brief_config.RETRIABLE_CODES,
+            max_retries=self.brief_config.MAX_RETRIES,
+        )
+        final_response = _attach_metadata(
+            state["final_response"],
+            state["retrieved_docs"],
+            follow_up_questions,
+        )
+        return {
+            "follow_up_questions": follow_up_questions,
+            "final_response": final_response,
+        }
+
+    async def arun(
+        self, user_query: str, thread_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Execute the BriefGeneAgent workflow.
+
+        Args:
+            user_query: Gene identifier, symbol, or free-text query.
+            thread_id: Optional LangGraph checkpoint thread id.
+
+        Returns:
+            Chat-completions-style final response payload with content,
+            references, and follow-up questions.
+        """
+        initial_state: BriefGeneAgentState = {
+            "user_query": user_query,
+            "gene_found": False,
+            "gene_id": "",
+            "query_id_version": "",
+            "gene_id_version": "",
+            "species_code": "",
+            "species_latin_name": "",
+            "species_english_name": "",
+            "species_all_name": "",
+            "gene_name_symbol_list": [],
+            "gene_id_list": [],
+            "gene_chr": "",
+            "gene_start": "",
+            "gene_end": "",
+            "gene_strand": "",
+            "go_string": "",
+            "kegg_string": "",
+            "interpro_string": "",
+            "retrieved_docs": [],
+            "retrieve_context": "",
+            "follow_up_questions": [],
+            "final_response": {},
+        }
+        final_state = await ainvoke_graph(
+            self.app, initial_state, thread_id=thread_id
+        )
+        return merge_intermediate_state(final_state)
