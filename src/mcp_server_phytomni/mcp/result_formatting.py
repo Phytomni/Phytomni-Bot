@@ -202,7 +202,7 @@ def format_tool_result(
     elif normalized_name == "DeepGenomeAgent":
         result = _format_deep_genome_result(content, arguments)
     elif normalized_name == "GeneNetworkAgent":
-        result = _format_task_result(_network_task_payload(content))
+        result = _format_network_task_result(content)
     elif normalized_name == "InSilicoResearchAgent":
         result = _format_in_silico_result(content)
     elif normalized_name == "DigitalDesignAgent":
@@ -399,6 +399,44 @@ def _truncate_text(text: str, byte_limit: int, raw_pointer: str) -> str:
     return f"{trimmed}{marker}"
 
 
+def _format_network_task_result(
+    content: Mapping[str, Any],
+) -> FormattedToolResult:
+    """Format a GeneNetworkAgent submit response with goal metadata.
+
+    Wraps the generic ``_format_task_result`` and enriches the
+    resulting metadata with ``goal_description`` lifted from
+    ``phytomni_state``. The goal text is capped at 256 bytes with a
+    marker pointing to ``raw.phytomni_state.goal_description`` for the
+    full document. Missing intermediate state keeps the key present
+    with ``None`` so the contract is stable.
+    """
+    base = _format_task_result(_network_task_payload(content))
+    state = _phytomni_state(content)
+    goal_text = state.get("goal_description")
+    truncated_goal = (
+        _truncate_text(
+            str(goal_text),
+            256,
+            "raw.phytomni_state.goal_description",
+        )
+        if isinstance(goal_text, str)
+        else None
+    )
+    enriched_metadata = {
+        **base.metadata,
+        "goal_description": truncated_goal,
+    }
+    return FormattedToolResult(
+        answer=base.answer,
+        follow_up_questions=base.follow_up_questions,
+        metadata=enriched_metadata,
+        references=base.references,
+        tabular=base.tabular,
+        output_dirs=base.output_dirs,
+    )
+
+
 def _format_deep_genome_result(
     content: Mapping[str, Any],
     arguments: Mapping[str, Any] | None,
@@ -463,14 +501,22 @@ def _format_in_silico_result(
 
 
 def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
-    """Format task output from DigitalDesignAgent."""
+    """Format task output from DigitalDesignAgent.
+
+    The agent returns ``design_task_result`` as a list of AnalystAgent
+    submission dicts (one per design kind: protein / promoter /
+    terminator), accumulated via LangGraph's ``operator.add`` reducer.
+    The formatter extracts task ids, output dirs, and compute
+    resources from the list items rather than reading per-kind
+    top-level keys.
+    """
+    design_results = content.get("design_task_result")
+    results_list = (
+        design_results if isinstance(design_results, list) else []
+    )
     tasks = [
         task
-        for task in (
-            content.get("protein_design_task"),
-            content.get("promoter_design_task"),
-            content.get("terminator_design_task"),
-        )
+        for task in results_list
         if isinstance(task, Mapping)
     ]
     if not tasks:
@@ -483,27 +529,35 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
         )
 
     primary_task = tasks[0]
-    task_ids = [
+    task_ids = tuple(
         str(task.get("task_id", ""))
         for task in tasks
         if task.get("task_id") is not None
-    ]
+    )
     output_dirs = tuple(
         str(task.get("output_dir"))
         for task in tasks
         if task.get("output_dir") is not None
     )
+    goal_description = _truncate_text(
+        str(_phytomni_state(content).get("goal_description") or ""),
+        256,
+        "raw.phytomni_state.goal_description",
+    )
+    metadata: dict[str, Any] = {
+        "task_id": _string_or_none(primary_task.get("task_id")),
+        "output_dir": output_dirs[0] if output_dirs else None,
+        "compute_resource": _string_or_none(
+            primary_task.get("compute_resource")
+        ),
+        "status": "RUNNING",
+        "log_status": "sync_running",
+        "task_ids": task_ids,
+        "goal_description": goal_description or None,
+    }
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",
-        metadata={
-            "task_id": _string_or_none(primary_task.get("task_id")),
-            "output_dir": output_dirs[0] if output_dirs else None,
-            "compute_resource": _string_or_none(
-                primary_task.get("compute_resource")
-            ),
-            "status": "RUNNING",
-            "log_status": "sync_running",
-        },
+        metadata=metadata,
         output_dirs=output_dirs,
     )
 

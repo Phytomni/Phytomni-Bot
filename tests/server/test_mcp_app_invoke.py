@@ -243,13 +243,23 @@ async def test_invoke_gene_network_agent_unwraps_nested_task(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GeneNetwork extracts the nested ``network_task`` payload."""
+    """GeneNetwork extracts the nested ``network_task`` payload.
+
+    The wrapper return places ``network_task`` at the top level and
+    pushes the rest of the LangGraph state under ``phytomni_state``.
+    The formatter lifts ``goal_description`` from intermediate state
+    so default-mode clients can read what the network analysis
+    targeted without flipping ``debug=true``.
+    """
     raw = {
         "network_task": {
             "task_id": "net-1",
             "output_dir": "/obs/phytomni/net/out",
             "compute_resource": "medium",
-        }
+        },
+        "phytomni_state": {
+            "goal_description": "Build co-expression network for Os01g0177400",
+        },
     }
     _patch_handler(monkeypatch, PhytomniAgents.GENE_NETWORK_AGENT.value, raw)
 
@@ -261,25 +271,40 @@ async def test_invoke_gene_network_agent_unwraps_nested_task(
     assert result.answer == "Task created successfully:net-1"
     assert result.metadata["task_id"] == "net-1"
     assert result.metadata["compute_resource"] == "analyst-agents-medium"
+    # B.5b metadata: goal_description from phytomni_state.
+    assert result.metadata["goal_description"] == (
+        "Build co-expression network for Os01g0177400"
+    )
 
 
 async def test_invoke_digital_design_agent_collects_subtasks(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DigitalDesign serialises every present design subtask id."""
+    """DigitalDesign extracts task ids from design_task_result list.
+
+    The agent returns ``design_task_result`` as a list of AnalystAgent
+    submission dicts (one per design kind: protein / promoter /
+    terminator), accumulated via LangGraph's ``operator.add`` reducer.
+    The formatter extracts task ids, output dirs, and the B.5 metadata
+    fields (``task_ids``, ``goal_description``) from the list items.
+    """
     raw = {
-        "protein_design_task": {
-            "task_id": "prot-1",
-            "output_dir": "/obs/phytomni/prot",
-            "compute_resource": "large",
+        "design_task_result": [
+            {
+                "task_id": "prot-1",
+                "output_dir": "/obs/phytomni/prot",
+                "compute_resource": "large",
+            },
+            {
+                "task_id": "prom-1",
+                "output_dir": "/obs/phytomni/prom",
+                "compute_resource": "large",
+            },
+        ],
+        "phytomni_state": {
+            "goal_description": "Design protein and promoter for Os01g0177400",
         },
-        "promoter_design_task": {
-            "task_id": "prom-1",
-            "output_dir": "/obs/phytomni/prom",
-            "compute_resource": "large",
-        },
-        "terminator_design_task": None,
     }
     _patch_handler(monkeypatch, PhytomniAgents.DIGITAL_DESIGN_AGENT.value, raw)
 
@@ -301,6 +326,11 @@ async def test_invoke_digital_design_agent_collects_subtasks(
         "/obs/phytomni/prom",
     )
     assert result.metadata["output_dir"] == "/obs/phytomni/prot"
+    # B.5 metadata: task_ids tuple and goal_description from phytomni_state.
+    assert result.metadata["task_ids"] == ("prot-1", "prom-1")
+    assert result.metadata["goal_description"] == (
+        "Design protein and promoter for Os01g0177400"
+    )
 
 
 async def test_invoke_in_silico_research_agent_formats_goals_and_task_ids(

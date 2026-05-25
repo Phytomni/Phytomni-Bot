@@ -99,9 +99,9 @@ def _extract_task_submissions(
       task ids; the top-level ``output_dir`` is shared across children.
     - ``network``: nested under ``network_task`` (``task_id`` +
       ``output_dir`` inside).
-    - ``design``: up to three nested submission objects keyed
-      ``protein_design_task`` / ``promoter_design_task`` /
-      ``terminator_design_task`` (each with its own ``output_dir``).
+    - ``design``: a ``design_task_result`` list of AnalystAgent
+      submission dicts (one per design kind: protein / promoter /
+      terminator), each with its own ``task_id`` and ``output_dir``.
 
     Args:
         result: Raw wrapper result dict (pre-formatter).
@@ -147,23 +147,20 @@ def _extract_task_submissions(
                     )
                 )
     elif agent == "design":
-        for key in (
-            "protein_design_task",
-            "promoter_design_task",
-            "terminator_design_task",
-        ):
-            nested = result.get(key)
-            if not isinstance(nested, Mapping):
-                continue
-            task_id = nested.get("task_id")
-            if isinstance(task_id, str) and task_id:
-                pairs.append(
-                    (
-                        task_id,
-                        str(nested.get("output_dir") or ""),
-                        None,
+        design_results = result.get("design_task_result")
+        if isinstance(design_results, list):
+            for nested in design_results:
+                if not isinstance(nested, Mapping):
+                    continue
+                task_id = nested.get("task_id")
+                if isinstance(task_id, str) and task_id:
+                    pairs.append(
+                        (
+                            task_id,
+                            str(nested.get("output_dir") or ""),
+                            None,
+                        )
                     )
-                )
     return tuple(pairs)
 
 

@@ -504,3 +504,160 @@ def test_in_silico_result_surfaces_extraction_error() -> None:
 
     assert result.metadata["error"] == "LLM rate limited"
     assert result.answer == "Tasks created successfully: "
+
+
+def test_digital_design_result_extracts_tasks_from_list() -> None:
+    """DigitalDesign reads design_task_result as a list of submission dicts.
+
+    The agent returns ``design_task_result`` as a list accumulated via
+    LangGraph's ``operator.add`` reducer (one item per design kind:
+    protein / promoter / terminator). The formatter extracts task ids,
+    output dirs, and the B.5 metadata fields (``task_ids`` tuple,
+    ``goal_description`` from ``phytomni_state``) from the list items.
+    """
+    payload = {
+        "design_task_result": [
+            {
+                "task_id": "prot-1",
+                "output_dir": "/obs/phytomni/prot",
+                "compute_resource": "large",
+            },
+            {
+                "task_id": "prom-1",
+                "output_dir": "/obs/phytomni/prom",
+                "compute_resource": "large",
+            },
+        ],
+        "phytomni_state": {
+            "goal_description": "Design protein and promoter for gene X",
+        },
+    }
+
+    result = format_tool_result("DigitalDesignAgent", payload)
+
+    assert result.answer == "Tasks created successfully: prot-1,prom-1"
+    assert result.metadata["task_id"] == "prot-1"
+    assert result.metadata["task_ids"] == ("prot-1", "prom-1")
+    assert result.metadata["goal_description"] == (
+        "Design protein and promoter for gene X"
+    )
+    assert result.output_dirs == ("/obs/phytomni/prot", "/obs/phytomni/prom")
+    assert result.metadata["output_dir"] == "/obs/phytomni/prot"
+
+
+def test_digital_design_result_handles_empty_list() -> None:
+    """An empty design_task_result list surfaces a FAILED status."""
+    payload: dict[str, object] = {
+        "design_task_result": [],
+    }
+
+    result = format_tool_result("DigitalDesignAgent", payload)
+
+    assert result.answer == "No tasks found"
+    assert result.metadata["status"] == "FAILED"
+
+
+def test_digital_design_result_handles_missing_goal_description() -> None:
+    """Absent goal_description keeps the metadata key with None value."""
+    payload = {
+        "design_task_result": [
+            {"task_id": "prot-1", "output_dir": "/obs/prot"},
+        ],
+    }
+
+    result = format_tool_result("DigitalDesignAgent", payload)
+
+    assert result.metadata["goal_description"] is None
+    assert result.metadata["task_ids"] == ("prot-1",)
+
+
+def test_digital_design_result_truncates_long_goal_description() -> None:
+    """Goal descriptions exceeding 256 bytes are truncated with a marker."""
+    long_goal = "x" * 500
+    payload = {
+        "design_task_result": [
+            {"task_id": "prot-1", "output_dir": "/obs/prot"},
+        ],
+        "phytomni_state": {
+            "goal_description": long_goal,
+        },
+    }
+
+    result = format_tool_result("DigitalDesignAgent", payload)
+
+    goal_field = result.metadata["goal_description"]
+    assert goal_field is not None
+    assert goal_field.endswith(
+        "…[truncated, see raw.phytomni_state.goal_description]"
+    )
+    assert len(goal_field.encode("utf-8")) <= 256 + 64
+
+
+def test_gene_network_result_lifts_goal_description() -> None:
+    """GeneNetwork metadata surfaces goal_description from phytomni_state.
+
+    The wrapper return places ``network_task`` at the top level and
+    pushes the rest of the LangGraph state under ``phytomni_state``.
+    The formatter lifts ``goal_description`` so default-mode clients
+    can read what the network analysis targeted without flipping
+    ``debug=true``.
+    """
+    payload = {
+        "network_task": {
+            "task_id": "net-1",
+            "output_dir": "/obs/phytomni/net/out",
+            "compute_resource": "medium",
+        },
+        "phytomni_state": {
+            "goal_description": "Build co-expression network for gene X",
+            "species": "oryza sativa",
+        },
+    }
+
+    result = format_tool_result("GeneNetworkAgent", payload)
+
+    assert result.answer == "Task created successfully:net-1"
+    assert result.metadata["task_id"] == "net-1"
+    assert result.metadata["compute_resource"] == "analyst-agents-medium"
+    assert result.metadata["goal_description"] == (
+        "Build co-expression network for gene X"
+    )
+
+
+def test_gene_network_result_handles_missing_goal_description() -> None:
+    """Absent goal_description keeps the metadata key with None value."""
+    payload = {
+        "network_task": {
+            "task_id": "net-2",
+            "output_dir": "/obs/net",
+            "compute_resource": "small",
+        },
+    }
+
+    result = format_tool_result("GeneNetworkAgent", payload)
+
+    assert result.metadata["goal_description"] is None
+
+
+def test_gene_network_result_truncates_long_goal_description() -> None:
+    """Goal descriptions exceeding 256 bytes are truncated with a marker."""
+    long_goal = "y" * 500
+    payload = {
+        "network_task": {
+            "task_id": "net-3",
+            "output_dir": "/obs/net",
+            "compute_resource": "small",
+        },
+        "phytomni_state": {
+            "goal_description": long_goal,
+        },
+    }
+
+    result = format_tool_result("GeneNetworkAgent", payload)
+
+    goal_field = result.metadata["goal_description"]
+    assert goal_field is not None
+    assert goal_field.endswith(
+        "…[truncated, see raw.phytomni_state.goal_description]"
+    )
+    assert len(goal_field.encode("utf-8")) <= 256 + 64

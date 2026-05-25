@@ -205,25 +205,28 @@ def test_record_handles_network_nested_task(tasks_db_path: str) -> None:
     assert runs[0].task_ids == ("T-NET",)
 
 
-def test_record_handles_design_three_nested_tasks(
+def test_record_handles_design_task_result_list(
     tasks_db_path: str,
 ) -> None:
-    """``design`` returns up to three nested task submissions.
+    """``design`` returns a ``design_task_result`` list of submissions.
 
-    Each ``*_design_task`` block carries its own ``task_id`` and
-    ``output_dir``, so the chokepoint writes one child row per
-    present block under a single shared run.
+    The agent accumulates one AnalystAgent submission dict per design
+    kind (protein / promoter / terminator) via LangGraph's
+    ``operator.add`` reducer. The chokepoint writes one child row per
+    present item under a single shared run.
     """
     _record_submitted_task(
         {
-            "protein_design_task": {
-                "task_id": "T-DP",
-                "output_dir": "/obs/protein",
-            },
-            "promoter_design_task": {
-                "task_id": "T-DM",
-                "output_dir": "/obs/promoter",
-            },
+            "design_task_result": [
+                {
+                    "task_id": "T-DP",
+                    "output_dir": "/obs/protein",
+                },
+                {
+                    "task_id": "T-DM",
+                    "output_dir": "/obs/promoter",
+                },
+            ],
         },
         agent="design",
     )
