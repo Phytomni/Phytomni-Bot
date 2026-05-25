@@ -401,10 +401,11 @@ async def test_brief_gene_resolve_gene_id_smoke(
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    metadata = body.get("metadata") or {}
+    formatted = body.get("formatted") or {}
+    metadata = formatted.get("metadata") or {}
     assert (
         metadata.get("resolve_gene_id") is True
-    ), f"resolver metadata missing; got: {metadata!r}"
+    ), f"resolver metadata missing; got body={body!r}"
     resolved_id = metadata.get("resolved_gene_id") or ""
     assert (
         resolved_id
@@ -414,4 +415,10 @@ async def test_brief_gene_resolve_gene_id_smoke(
     assert resolved_id.lower() in lowered or GENE_ID.lower() in lowered, (
         "BriefGene answer should mention the resolved or expected locus; "
         f"resolved={resolved_id!r} expected={GENE_ID!r} got={lowered!r}"
+    )
+    matched = [cue for cue in ANNOTATION_CUES if cue in lowered]
+    assert matched, (
+        "BriefGene answer lacked every annotation cue "
+        f"{ANNOTATION_CUES}; resolver likely degraded to the "
+        f"nogeneid fallback; got: {lowered!r}"
     )
