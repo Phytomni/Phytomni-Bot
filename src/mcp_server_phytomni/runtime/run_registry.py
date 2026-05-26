@@ -405,9 +405,10 @@ class RunRegistry:
             otherwise ``None``.
         """
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
-                SELECT user_id, agent, origin, status, result_json,
+                SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
                        dialogue_id, query, tool_name, model, request_json
                 FROM runs WHERE run_id = ? AND user_id = ?
@@ -421,7 +422,7 @@ class RunRegistry:
                 "ORDER BY task_id",
                 (run_id,),
             ).fetchall()
-        return _row_to_record(run_id, row, task_rows)
+        return _row_to_record(row, task_rows)
 
     def list_runs(
         self,
@@ -452,6 +453,7 @@ class RunRegistry:
         params.extend([limit, offset])
         records: List[RunRecord] = []
         with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
                 SELECT run_id, user_id, agent, origin, status,
@@ -468,11 +470,9 @@ class RunRegistry:
                 task_rows = conn.execute(
                     "SELECT task_id FROM tasks WHERE run_id = ? "
                     "ORDER BY task_id",
-                    (run_row[0],),
+                    (run_row["run_id"],),
                 ).fetchall()
-                records.append(
-                    _row_to_record(run_row[0], run_row[1:], task_rows)
-                )
+                records.append(_row_to_record(run_row, task_rows))
         return records
 
     async def reconcile(
@@ -665,49 +665,38 @@ def _terminal_payload(
 
 
 def _row_to_record(
-    run_id: str,
-    row: Any,
+    row: sqlite3.Row,
     task_rows: List[Any],
 ) -> RunRecord:
-    """Build a RunRecord from raw SELECT rows."""
-    (
-        user_id,
-        agent,
-        origin,
-        status,
-        result_json,
-        error,
-        created_at,
-        updated_at,
-        expires_at,
-        dialogue_id,
-        query,
-        tool_name,
-        model,
-        request_json,
-    ) = row
+    """Build a RunRecord from a ``sqlite3.Row`` of the ``runs`` table.
+
+    The row must include the 15 columns listed in get_run / list_runs
+    SELECTs; column-name access keeps this helper readable without
+    a 14-line unpacking block.
+    """
+    result_json = row["result_json"]
     return RunRecord(
         spec=RunSpec(
-            run_id=run_id,
-            user_id=user_id,
-            agent=agent,
-            origin=origin,
+            run_id=row["run_id"],
+            user_id=row["user_id"],
+            agent=row["agent"],
+            origin=row["origin"],
         ),
-        status=status,
+        status=row["status"],
         result=json.loads(result_json) if result_json else None,
-        error=error,
+        error=row["error"],
         timestamps=Timestamps(
-            created_at=created_at,
-            updated_at=updated_at,
-            expires_at=expires_at,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            expires_at=row["expires_at"],
         ),
         task_ids=tuple(t[0] for t in task_rows),
         request_info=RunRequestInfo(
-            dialogue_id=dialogue_id,
-            query=query,
-            tool_name=tool_name,
-            model=model,
-            request_json=request_json,
+            dialogue_id=row["dialogue_id"],
+            query=row["query"],
+            tool_name=row["tool_name"],
+            model=row["model"],
+            request_json=row["request_json"],
         ),
     )
 
