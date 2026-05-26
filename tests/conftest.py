@@ -21,29 +21,16 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
-import httpx
-import pytest
+# Test env vars MUST be installed BEFORE any ``mcp_server_phytomni``
+# import: several modules (``storage/uploads.py``,
+# ``storage/downloads.py``, ``agents/shared/analysis_storage.py``,
+# ``agents/deep_genome/{profile,agent,report}.py``,
+# ``agents/data/nl2sql.py``, ``agents/brief_gene/core.py``, ...) call
+# ``ServerConfig()`` (or a subclass) at module-import time, and
+# Phase 14.3.1 made the per-deployment endpoints required-via-env;
+# importing those modules before the env is populated would raise
+# ``ValidationError`` during pytest's collection phase.
 
-from mcp_server_phytomni.api.app import create_app
-from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.config.settings import get_sensitive_config
-from mcp_server_phytomni.func_cache.storage import Storage
-from mcp_server_phytomni.runtime.request_context import request_context
-from mcp_server_phytomni.storage import uploads as uploads_module
-
-# Captured at import time, before block_external_http monkeypatches
-# httpx.AsyncClient.request for offline runs, so the in-process ASGI
-# client below can dispatch without tripping the network guard.
-_REAL_ASYNC_REQUEST = httpx.AsyncClient.request
-
-TEST_ROOT = Path(__file__).resolve().parent
-DEMO_DATA_DIR = (TEST_ROOT.parent / "demo_data").resolve()
-TEST_LAYER_MARKERS = {
-    "unit": "unit",
-    "server": "server",
-    "agents": "agent",
-    "integration": "integration",
-}
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 _TEST_ENV = {
@@ -62,17 +49,68 @@ _TEST_ENV = {
     "EMBED_MODEL": "pytest-embed-model",
     "EMBED_API_KEY": "pytest-embed-api-key",
     "BI_TOKEN": "pytest-bi-token",
+    # Deployment-specific endpoints (Phase 14.3.1): empty defaults in
+    # config/defaults.py force operators to set these per-deployment.
+    # Tests use stable example.invalid hosts so a stray real network
+    # call would fail closed instead of leaking to a public endpoint.
+    "RETRIEVE_URL": "https://example.invalid/retrieve",
+    "RERANK_URL": "https://example.invalid/rerank",
+    "CREATE_TASK_URL": "https://example.invalid/create-task",
+    "UPDATE_TASK_URL": "https://example.invalid/update-task",
+    "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
 }
 
 
 def _install_test_environment() -> None:
-    """Verify install test environment."""
+    """Install pytest-only env vars before any project import.
+
+    Called at module scope (not as an autouse fixture) so the import
+    chain triggered by the ``mcp_server_phytomni`` imports below has
+    every required env var already in ``os.environ`` — modules that
+    construct ``ServerConfig()`` (or a subclass) during import need
+    the env populated first or pydantic raises ``ValidationError``.
+    """
     os.environ["PHYTOMNI_TESTING"] = "1"
     for name, value in _TEST_ENV.items():
         os.environ[name] = value
 
 
 _install_test_environment()
+
+# pylint: disable=wrong-import-position
+# Imports below the env install above are deliberately placed after
+# module-level setup; see ``_install_test_environment`` rationale.
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+
+from mcp_server_phytomni.api.app import create_app  # noqa: E402
+from mcp_server_phytomni.api.auth import ApiKeyStore  # noqa: E402
+from mcp_server_phytomni.config.settings import (  # noqa: E402
+    get_sensitive_config,
+)
+from mcp_server_phytomni.func_cache.storage import Storage  # noqa: E402
+from mcp_server_phytomni.runtime.request_context import (  # noqa: E402
+    request_context,
+)
+from mcp_server_phytomni.storage import (  # noqa: E402
+    uploads as uploads_module,
+)
+
+# pylint: enable=wrong-import-position
+
+# Captured at import time, before block_external_http monkeypatches
+# httpx.AsyncClient.request for offline runs, so the in-process ASGI
+# client below can dispatch without tripping the network guard.
+_REAL_ASYNC_REQUEST = httpx.AsyncClient.request
+
+TEST_ROOT = Path(__file__).resolve().parent
+DEMO_DATA_DIR = (TEST_ROOT.parent / "demo_data").resolve()
+TEST_LAYER_MARKERS = {
+    "unit": "unit",
+    "server": "server",
+    "agents": "agent",
+    "integration": "integration",
+}
 
 
 def _env_flag_enabled(name: str) -> bool:

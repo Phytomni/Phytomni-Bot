@@ -13,8 +13,47 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 from pathlib import Path
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
-from pydantic import AliasChoices, Field, RootModel, SecretStr
+from pydantic import (
+    AliasChoices,
+    Field,
+    RootModel,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+)
 from pydantic_settings import BaseSettings
+
+
+def _require_non_empty_endpoint(value: str, info: ValidationInfo) -> str:
+    """Reject an empty deployment endpoint with an env-name-aware message.
+
+    Production / customer images bake the per-deployment endpoint into
+    the encrypted ``.env`` envelope; every test path adds the value to
+    ``tests/conftest.py:_TEST_ENV``. An empty default would otherwise
+    let a misconfigured deployment silently fall through to a 404 /
+    DNS-resolve error at first agent call, which is much harder to
+    diagnose than a startup ``ValidationError`` naming the missing
+    env var.
+
+    Args:
+        value: Resolved field value from ``BaseSettings`` env resolution.
+        info: Pydantic validation context; ``info.field_name`` carries
+            the field label used in the error message so the operator
+            sees the env-var they need to set.
+
+    Returns:
+        The non-empty value unchanged.
+
+    Raises:
+        ValueError: When the value is empty after env resolution.
+    """
+    if not value:
+        raise ValueError(
+            f"{info.field_name} is required; set the {info.field_name} "
+            f"or PHYTOMNI_{info.field_name} environment variable."
+        )
+    return value
+
 
 _MAX_TOKENS = 65536
 PARENT_PATH = Path(__file__).parent.parent
@@ -72,10 +111,22 @@ class ServerConfig(BaseSettings):
     )
     REGION: str = "cn-southwest-2"
 
-    RETRIEVE_URL: str = (
-        "http://1.95.74.240:8000/v1/koosearch/experience/search"
-    )
-    RERANK_URL: str = "http://1.95.74.240:8000/app/search/v1/rerank"
+    RETRIEVE_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "RETRIEVE_URL", "PHYTOMNI_RETRIEVE_URL"
+            ),
+        ),
+    ] = ""
+    RERANK_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("RERANK_URL", "PHYTOMNI_RERANK_URL"),
+        ),
+    ] = ""
     DATABASE_URL: str = (
         "https://dataartsinsight.cn-southwest-2.myhuaweicloud.com/v1/"
         "6e939452a68f487f873c457f1953cf55/nl-query"
@@ -131,6 +182,16 @@ class ServerConfig(BaseSettings):
             validation_alias=AliasChoices("CA_BUNDLE", "PHYTOMNI_CA_BUNDLE"),
         ),
     ] = None
+
+    # Deployment-specific endpoints externalised in Phase 14.3.1: the
+    # default is empty so a misconfigured customer image fails fast
+    # with a ValidationError naming the missing env var, rather than
+    # baking a per-deployment IP into the wheel/Docker layer. The
+    # validator is shared with every subclass that inherits these
+    # fields (KnowledgeConfig, DataConfig, AnalystConfig, ...).
+    _validate_retrieve_endpoints = field_validator(
+        "RETRIEVE_URL", "RERANK_URL", mode="after"
+    )(_require_non_empty_endpoint)
 
 
 class ChatConfig(ServerConfig):
@@ -345,16 +406,43 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
     BI_URL: str = "https://phytomni.cn/api/data"
-    CREATE_TASK_URL: str = "http://1.95.48.200:8082/v1/nky/server/create_task"
-    UPDATE_TASK_URL: str = "http://1.95.48.200:8082/v1/nky/server/update_task"
+    CREATE_TASK_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "CREATE_TASK_URL", "PHYTOMNI_CREATE_TASK_URL"
+            ),
+        ),
+    ] = ""
+    UPDATE_TASK_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "UPDATE_TASK_URL", "PHYTOMNI_UPDATE_TASK_URL"
+            ),
+        ),
+    ] = ""
     BATCH: bool = True
     EPIC_TYPE: str = "6mA"
     PROTOCOL_REPO_ID: str = "44ad28b5-5c3b-4a02-8e8c-7fb4903424cb"
     PROTOCOL_PAGE_SIZE: int = 128
     SPA_REPO_ID: str = "4a533117-9416-4e8b-b7cc-27b448a90095"
-    SPA_FAQ_URL: str = (
-        "http://1.95.74.240:8000/v1/koosearch/repos/{repo_id}/faqs"
-    )
+    SPA_FAQ_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "SPA_FAQ_URL", "PHYTOMNI_SPA_FAQ_URL"
+            ),
+        ),
+    ] = ""
+
+    # Deployment-specific endpoints externalised in Phase 14.3.1.
+    _validate_dg_endpoints = field_validator(
+        "CREATE_TASK_URL", "UPDATE_TASK_URL", "SPA_FAQ_URL", mode="after"
+    )(_require_non_empty_endpoint)
 
 
 class DigitalDesignConfig(AnalystConfig):

@@ -34,6 +34,15 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "src/mcp_server_phytomni/runtime/langgraph_runner.py": {
         "broad-exception-caught",
     },
+    # conftest.py installs deployment env vars BEFORE importing any
+    # project module — several agents construct ``ServerConfig()`` at
+    # import time and Phase 14.3.1 made those endpoints env-required.
+    # The deliberate import-after-setup ordering trips C0413; the
+    # bracketed disable above + enable below scope the exemption to
+    # the install block only.
+    "tests/conftest.py": {
+        "wrong-import-position",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
