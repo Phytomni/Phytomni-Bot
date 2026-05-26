@@ -20,6 +20,7 @@ import pytest
 from mcp_server_phytomni.runtime import run_registry
 from mcp_server_phytomni.runtime.run_registry import (
     RunFilter,
+    RunOutcome,
     RunRecord,
     RunRegistry,
     RunRequestInfo,
@@ -104,7 +105,10 @@ def test_create_run_terminal_caches_result_and_sets_ttl(
     registry, _, _ = _make_registry(tmp_path)
     spec = RunSpec("run-sync-1", "alice", "chat", "local")
 
-    registry.create_run(spec, status="succeeded", result={"answer": "hello"})
+    registry.create_run(
+        spec,
+        outcome=RunOutcome(status="succeeded", result={"answer": "hello"}),
+    )
     record = registry.get_run("run-sync-1", owner="alice")
 
     assert record is not None
@@ -147,10 +151,12 @@ def test_list_runs_filters_and_pages(tmp_path: Path) -> None:
         ("t-b",),
     )
     registry.create_run(
-        RunSpec("run-c", "alice", "chat", "local"), status="succeeded"
+        RunSpec("run-c", "alice", "chat", "local"),
+        outcome=RunOutcome(status="succeeded"),
     )
     registry.create_run(
-        RunSpec("run-d", "bob", "chat", "local"), status="succeeded"
+        RunSpec("run-d", "bob", "chat", "local"),
+        outcome=RunOutcome(status="succeeded"),
     )
 
     listing = registry.list_runs(owner="alice")
@@ -175,8 +181,7 @@ async def test_reconcile_terminal_run_does_not_poll(
     registry, _, _ = _make_registry(tmp_path)
     registry.create_run(
         RunSpec("run-sync-2", "alice", "chat", "local"),
-        status="succeeded",
-        result={"answer": "ok"},
+        outcome=RunOutcome(status="succeeded", result={"answer": "ok"}),
     )
     calls = {"n": 0}
 
@@ -383,13 +388,16 @@ def test_list_runs_composes_date_range_with_other_filters(
     """created_after / created_before stack with status / agent / origin."""
     registry, _, db = _make_registry(tmp_path)
     registry.create_run(
-        RunSpec("run-a-old", "alice", "analyst", "remote"), status="failed"
+        RunSpec("run-a-old", "alice", "analyst", "remote"),
+        outcome=RunOutcome(status="failed"),
     )
     registry.create_run(
-        RunSpec("run-a-new", "alice", "analyst", "remote"), status="failed"
+        RunSpec("run-a-new", "alice", "analyst", "remote"),
+        outcome=RunOutcome(status="failed"),
     )
     registry.create_run(
-        RunSpec("run-c-new", "alice", "chat", "local"), status="failed"
+        RunSpec("run-c-new", "alice", "chat", "local"),
+        outcome=RunOutcome(status="failed"),
     )
     with sqlite3.connect(db) as conn:
         conn.executemany(
@@ -427,7 +435,9 @@ def test_create_run_persists_request_info(tmp_path: Path) -> None:
     )
 
     registry.create_run(
-        spec, status="succeeded", result={"answer": "x"}, request_info=info
+        spec,
+        outcome=RunOutcome(status="succeeded", result={"answer": "x"}),
+        request_info=info,
     )
     record = registry.get_run("run-ri-1", owner="alice")
 
@@ -442,7 +452,10 @@ def test_create_run_without_request_info_defaults_to_null(
     registry, _, _ = _make_registry(tmp_path)
     spec = RunSpec("run-noreq", "alice", "chat", "local")
 
-    registry.create_run(spec, status="succeeded", result={"answer": "x"})
+    registry.create_run(
+        spec,
+        outcome=RunOutcome(status="succeeded", result={"answer": "x"}),
+    )
     record = registry.get_run("run-noreq", owner="alice")
 
     assert record is not None
@@ -453,7 +466,7 @@ def test_update_request_info_overwrites_existing(tmp_path: Path) -> None:
     """update_request_info replaces every column on an owned run."""
     registry, _, _ = _make_registry(tmp_path)
     spec = RunSpec("run-up", "alice", "chat", "local")
-    registry.create_run(spec, status="running")
+    registry.create_run(spec, outcome=RunOutcome(status="running"))
 
     new_info = RunRequestInfo(
         dialogue_id="dlg-7",
@@ -491,7 +504,7 @@ def test_update_request_info_enforces_owner_isolation(
     """A foreign owner cannot retro-stamp another user's run."""
     registry, _, _ = _make_registry(tmp_path)
     spec = RunSpec("run-iso", "alice", "chat", "local")
-    registry.create_run(spec, status="running")
+    registry.create_run(spec, outcome=RunOutcome(status="running"))
 
     updated = registry.update_request_info(
         "run-iso",

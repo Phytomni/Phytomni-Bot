@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
     RunRegistry,
     RunSpec,
 )
@@ -46,7 +47,7 @@ async def test_get_run_logs_returns_reconciled_task_logs(
             agent="analyst",
             origin="remote",
         ),
-        status="running",
+        outcome=RunOutcome(status="running"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(
@@ -110,7 +111,7 @@ async def test_get_run_logs_empty_tasks(
             agent="chat",
             origin="local",
         ),
-        status="succeeded",
+        outcome=RunOutcome(status="succeeded"),
     )
 
     response = await api_client.get(
@@ -139,7 +140,7 @@ async def test_get_run_logs_debug_includes_raw(
             agent="analyst",
             origin="remote",
         ),
-        status="running",
+        outcome=RunOutcome(status="running"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(
@@ -200,7 +201,7 @@ async def test_get_run_logs_foreign_owner_is_404(
             agent="analyst",
             origin="remote",
         ),
-        status="running",
+        outcome=RunOutcome(status="running"),
     )
 
     response = await api_client.get(
@@ -225,7 +226,7 @@ async def test_get_run_logs_cache_reuse(
             agent="analyst",
             origin="remote",
         ),
-        status="running",
+        outcome=RunOutcome(status="running"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(

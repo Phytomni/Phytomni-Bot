@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from ..storage.path_policy import IdFactory
 from .request_context import bind_run_id, current_request_user
-from .run_registry import RunRegistry, RunSpec
+from .run_registry import RunOutcome, RunRegistry, RunSpec
 from .task_manager import (
     RunContext,
     Submission,
@@ -192,7 +192,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                 agent=agent,
                 origin="remote",
             ),
-            result=initial_result,
+            outcome=RunOutcome(result=initial_result),
         )
         manager = TaskManager(db_path)
         for task_id, output_dir, input_fingerprint in submissions:

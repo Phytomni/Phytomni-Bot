@@ -59,6 +59,7 @@ from ..runtime.request_context import (
 )
 from ..runtime.run_registry import (
     RunFilter,
+    RunOutcome,
     RunRegistry,
     RunRequestInfo,
     RunSpec,
@@ -554,8 +555,7 @@ def _record_sync_run(
                 agent=agent,
                 origin="local",
             ),
-            status="succeeded",
-            result=result,
+            outcome=RunOutcome(status="succeeded", result=result),
             request_info=request_info,
         )
     except (sqlite3.Error, OSError):

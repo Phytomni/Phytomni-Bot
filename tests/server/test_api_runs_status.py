@@ -19,6 +19,7 @@ import pytest
 
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
     RunRegistry,
     RunSpec,
 )
@@ -46,8 +47,7 @@ async def test_get_run_returns_terminal_record(
             agent="chat",
             origin="local",
         ),
-        status="succeeded",
-        result={"answer": "hello"},
+        outcome=RunOutcome(status="succeeded", result={"answer": "hello"}),
     )
     calls = {"n": 0}
 
@@ -103,8 +103,7 @@ async def test_get_run_foreign_owner_is_404(
             agent="chat",
             origin="local",
         ),
-        status="succeeded",
-        result={"answer": "secret"},
+        outcome=RunOutcome(status="succeeded", result={"answer": "secret"}),
     )
 
     response = await api_client.get(

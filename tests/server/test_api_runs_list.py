@@ -21,6 +21,7 @@ import pytest
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
     RunRegistry,
     RunSpec,
 )
@@ -36,7 +37,10 @@ def _seed(registry: RunRegistry, **kwargs: str) -> str:
         agent=kwargs["agent"],
         origin=kwargs["origin"],
     )
-    registry.create_run(spec, status="succeeded", result={"ok": True})
+    registry.create_run(
+        spec,
+        outcome=RunOutcome(status="succeeded", result={"ok": True}),
+    )
     return spec.run_id
 
 

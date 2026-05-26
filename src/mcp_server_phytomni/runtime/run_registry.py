@@ -117,6 +117,24 @@ class RunSpec:
 
 
 @dataclass(frozen=True)
+class RunOutcome:
+    """Initial outcome state of a newly-created run row.
+
+    Attributes:
+        status: Run status string; ``"running"`` for in-flight,
+            ``"succeeded"``/``"failed"`` for terminal-on-creation
+            sync runs.
+        result: Terminal result payload (sync runs only); JSON-encoded
+            into the ``result_json`` column.
+        error: Terminal error message (failed sync runs only).
+    """
+
+    status: str = "running"
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class RunRequestInfo:
     """Per-request metadata persisted alongside the run row.
 
@@ -265,9 +283,7 @@ class RunRegistry:
         self,
         spec: RunSpec,
         *,
-        status: str = "running",
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        outcome: Optional[RunOutcome] = None,
         request_info: Optional[RunRequestInfo] = None,
     ) -> None:
         """Insert a new run row.
@@ -279,14 +295,20 @@ class RunRegistry:
 
         Args:
             spec: Identity bundle (run_id, user_id, agent, origin).
-            status: Initial run status; defaults to ``"running"``.
-            result: Terminal result payload for sync runs.
-            error: Terminal error message for failed sync runs.
+            outcome: Initial status + terminal result/error bundle;
+                defaults to a fresh ``RunOutcome()`` (status="running",
+                no result, no error). Sync agents that finish on
+                creation pass an explicit ``RunOutcome(status=...,
+                result=...)`` or ``RunOutcome(status=..., error=...)``.
             request_info: Per-request metadata captured at the HTTP
                 boundary; ``None`` (default) leaves every column NULL
                 so MCP-path runs that never see request context
                 continue to write the same five fields as before.
         """
+        outcome = outcome or RunOutcome()
+        status = outcome.status
+        result = outcome.result
+        error = outcome.error
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
         info = request_info or RunRequestInfo()

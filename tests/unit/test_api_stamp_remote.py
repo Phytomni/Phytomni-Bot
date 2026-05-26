@@ -20,6 +20,7 @@ import pytest
 
 from mcp_server_phytomni.api.app import _stamp_remote_request_info
 from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
     RunRegistry,
     RunRequestInfo,
     RunSpec,
@@ -79,7 +80,7 @@ def test_stamp_remote_request_info_writes_five_columns_on_owned_row(
     )
     registry = RunRegistry(db_path)
     spec = RunSpec("run-stamp-1", "alice", "analyst", "remote")
-    registry.create_run(spec, status="running")
+    registry.create_run(spec, outcome=RunOutcome(status="running"))
     info = RunRequestInfo(
         dialogue_id="dlg-stamp",
         query="goal-text",
