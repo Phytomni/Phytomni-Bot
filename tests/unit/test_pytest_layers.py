@@ -86,7 +86,7 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
         "source": ["mcp_server_phytomni", "mcp_client_phytomni"],
     }
     assert coverage_config["report"] == {
-        "fail_under": 76,
+        "fail_under": 80,
         "show_missing": True,
         "skip_covered": False,
     }

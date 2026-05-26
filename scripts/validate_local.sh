@@ -120,4 +120,7 @@ if ! git diff --quiet -- demo_data/; then
     exit 1
 fi
 
-run uv run pytest
+run uv run pytest \
+    --cov=mcp_server_phytomni \
+    --cov=mcp_client_phytomni \
+    --cov-report=term-missing

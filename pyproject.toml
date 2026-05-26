@@ -119,10 +119,6 @@ exclude = [
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
-    # typings/ holds type stubs (camelCase external SDK signatures);
-    # mypy and pyright are the canonical stub checkers, so ruff's
-    # PEP 8 naming/style rules do not apply here.
-    "typings",
 ]
 
 [tool.ruff.lint]
@@ -178,11 +174,7 @@ relative_files = true
 source = ["mcp_server_phytomni", "mcp_client_phytomni"]
 
 [tool.coverage.report]
-# Coverage floor. Set to 76 in Phase 7.1 — the actual baseline at the
-# end of Phase 7 was ~77%. Ratchet up as Phases 9-11 split the heavy
-# agent files (review/agent.py, analyst/graph.py, deep_genome/report.py)
-# and add tests alongside the splits.
-fail_under = 76
+fail_under = 80
 show_missing = true
 skip_covered = false
 
@@ -191,74 +183,15 @@ output = "coverage.xml"
 
 [tool.pylint.main]
 py-version = "3.12"
-# typings/ holds type stubs that mirror external SDKs' camelCase APIs and
-# have no method bodies; mypy and pyright are the canonical stub checkers
-# (no rule conflicts there), so the stubs sit outside pylint's scope.
-ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
+ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint."messages control"]
-# W0135 contextmanager-generator-missing-cleanup is a documented false
-# positive on the canonical `@asynccontextmanager` + `async with X() as y:
-# yield y` pattern when the inner context manager is referenced through a
-# closure variable instead of an inline external class (production
-# common.httpx_client.get_async_client passes; tests.conftest's
-# scripted-client factory cannot). The decorator already converts a thrown
-# GeneratorExit into the proper `__aexit__` call, so the warning never
-# matches real cleanup bugs in this codebase.
-disable = ["contextmanager-generator-missing-cleanup"]
 
 [tool.pylint.design]
-# Cache-key primitives (e.g. agents/knowledge/retrieval.py
-# _retrieve_scope_docs, _rerank_batch, agents/chat/service.py
-# run_phyto_chat_cached) deliberately expose every semantic input
-# as a top-level scalar parameter so the @func_cache key_params list
-# hashes only the real query inputs — wrapping them back into an
-# options object would re-introduce the infra-leaks-into-key bug the
-# rework removed. The default R0913 / R0914 / R0917 thresholds are
-# too tight for that pattern, so bump them project-wide.
-max-args = 15
-max-locals = 20
-max-module-lines = 1200
-max-positional-arguments = 15
-# `api/app.py:create_app` is a FastAPI factory that registers every
-# HTTP route + exception handler in one closure. The default R0915 (50)
-# threshold is comfortable for typical helpers but too tight for the
-# factory pattern: each new endpoint adds a decorator + a route body
-# and the consolidation work pushes the count past 60. Bumping
-# project-wide keeps the rule meaningful for general code while
-# accommodating the factory.
-max-statements = 80
-# Test fakes (camelCase SDK proxies, protocol-only stubs, NamedTuple
-# helpers) routinely have a single public surface — usually just an
-# `__init__` plus `__getattr__` — and tripping R0903 there pushes
-# authors toward inline disables. Lowering the floor by one keeps the
-# fakes terse without weakening the rule for production code.
-min-public-methods = 1
 
 [tool.pylint.similarities]
-# Compatibility wrappers around AnalystAgent.arun (analyst.submission.submit,
-# analyst.agent.retrieve_plan_submit) and the analyst task-platform helpers
-# (analyst.task_ops.task_status / task_log / task_delete) share short
-# 5-7 line kwarg/HTTP-header blocks by design — they fan out to one
-# backend with parallel signatures. The pylint default of 4 lines flags
-# every such wrapper pair as R0801 duplicate-code; raising the threshold
-# to 8 keeps the rule meaningful for genuine logic duplication (the
-# kind that should be extracted to a helper) without forcing kwargs
-# spreads to be hand-compressed into unreadable single-line calls.
-min-similarity-lines = 8
 
 [tool.pymarkdown]
-# Markdown gate config (consumed via `pymarkdown --config pyproject.toml`).
-# MD013 (line-length): mdformat runs with `--wrap keep` and never reflows
-# prose/tables, so a fixed-width line rule is structurally unsatisfiable —
-# mdformat is the sole authority on Markdown line shape, mirroring how
-# [tool.ruff]/[tool.black] own Python line shape here.
-plugins.md013.enabled = false
-# MD024 (duplicate headings): README intentionally reuses section names
-# under different parents (e.g. install-troubleshooting "Configuration" vs
-# the top-level "Configuration" section); siblings_only keeps the rule on
-# for genuine same-parent duplicates without forcing degraded headings.
-plugins.md024.siblings_only = true
 
 [tool.tomlsort]
 # TOML gate config (consumed by `toml-sort --check` and the in-place
