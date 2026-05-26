@@ -6,11 +6,15 @@
 """Minimal type stubs for the OBS SDK surface used by Phytomni.
 
 mypy and pyright are the canonical stub checkers and validate these
-declarations; pylint and ruff are configured at project level to skip
-`typings/` (`[tool.pylint.main].ignore` and `[tool.ruff].exclude` in
-`pyproject.toml`) because their style and design rules target
-executable-code semantics that body-less stubs mirroring an external
-camelCase SDK cannot satisfy.
+declarations. The mixedCase identifiers (e.g. ``getObject``,
+``bucketName``, ``requestId``) mirror the upstream OBS SDK API exactly
+so the type-check correspondence holds. Ruff silences the PEP 8 naming
+rules that target executable-code semantics (N802 / N803 / N815) on
+``typings/**/*.pyi`` via ``[tool.ruff.lint.per-file-ignores]``;
+structural ruff checks (import sort, dead code) still run on this
+file. Pylint cannot express the same per-file rule mask without inline
+disables, so ``typings`` is excluded wholesale through
+``[tool.pylint.main].ignore`` in ``pyproject.toml``.
 """
 
 from typing import Any

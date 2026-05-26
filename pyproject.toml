@@ -124,6 +124,15 @@ exclude = [
 [tool.ruff.lint]
 extend-select = ["I", "N"]
 
+[tool.ruff.lint.per-file-ignores]
+# typings/*.pyi files mirror external SDKs (e.g. esdk-obs-python) whose
+# public API is camelCase. Renaming would break the type-check
+# correspondence, so the PEP 8 naming rules N802 (function names),
+# N803 (argument names), and N815 (mixedCase class attributes) do not
+# apply to stubs. Keep these stubs in ruff's scope for I-import-sort
+# and other structural checks.
+"typings/**/*.pyi" = ["N802", "N803", "N815"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["mcp_client_phytomni", "mcp_server_phytomni"]
 
@@ -183,7 +192,15 @@ output = "coverage.xml"
 
 [tool.pylint.main]
 py-version = "3.12"
-ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
+# typings/ holds .pyi stubs that mirror external SDKs (e.g.
+# esdk-obs-python). The stubs have no bodies, so W0613
+# (unused-argument), C0116 (missing-function-docstring), and R0903
+# (too-few-public-methods) fire spuriously; and C0103 (invalid-name)
+# / R0913 / R0917 trip on the camelCase signatures that must mirror
+# upstream exactly. mypy and pyright are the canonical stub checkers
+# (validated by ``stubPath = "typings"`` in [tool.pyright]) so
+# pylint walks past the directory entirely.
+ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 
 [tool.pylint."messages control"]
 
