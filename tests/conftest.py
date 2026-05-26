@@ -72,6 +72,14 @@ _TEST_ENV = {
     "TOOL_REPO_ID": "pytest-tool-repo-id",
     "PROTOCOL_REPO_ID": "pytest-protocol-repo-id",
     "SPA_REPO_ID": "pytest-spa-repo-id",
+    # Embedded-UUID URLs + public BI host (Phase 14.3.3): empty
+    # defaults in config/defaults.py mean these env vars are required
+    # in every deployment, including the public ``phytomni.cn`` BI
+    # host — operators stamp them per environment rather than baking
+    # them into the wheel.
+    "DATABASE_URL": "https://example.invalid/database",
+    "ANALYSIS_URL": "https://example.invalid/analysis",
+    "BI_URL": "https://example.invalid/bi",
 }
 
 

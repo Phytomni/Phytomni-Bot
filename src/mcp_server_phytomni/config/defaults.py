@@ -130,15 +130,24 @@ class ServerConfig(BaseSettings):
             validation_alias=AliasChoices("RERANK_URL", "PHYTOMNI_RERANK_URL"),
         ),
     ] = ""
-    DATABASE_URL: str = (
-        "https://dataartsinsight.cn-southwest-2.myhuaweicloud.com/v1/"
-        "6e939452a68f487f873c457f1953cf55/nl-query"
-    )
-    ANALYSIS_URL: str = (
-        "https://eihealth.cn-east-3.myhuaweicloud.com/v1/"
-        "f9afc0650aec4f9cbc7af24e9e199e77/eihealth-projects/"
-        "6d50805e-8546-4c8b-a3c0-f7aa8b82bb74/jobs"
-    )
+    DATABASE_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "DATABASE_URL", "PHYTOMNI_DATABASE_URL"
+            ),
+        ),
+    ] = ""
+    ANALYSIS_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "ANALYSIS_URL", "PHYTOMNI_ANALYSIS_URL"
+            ),
+        ),
+    ] = ""
     ANALYSIS_REGION: str = "cn-east-3"
 
     REPO_ID: Annotated[
@@ -217,6 +226,8 @@ class ServerConfig(BaseSettings):
     _validate_server_endpoints = field_validator(
         "RETRIEVE_URL",
         "RERANK_URL",
+        "DATABASE_URL",
+        "ANALYSIS_URL",
         "REPO_ID",
         "REPO_ID_DICT",
         "WORKSPACE_ID",
@@ -434,8 +445,21 @@ class BriefGeneConfig(KnowledgeConfig):
         TOP_N: Maximum number of literature retrieval results to keep.
     """
 
-    BI_URL: str = "https://phytomni.cn/api/data"
+    BI_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("BI_URL", "PHYTOMNI_BI_URL"),
+        ),
+    ] = ""
     TOP_N: int = int(_MAX_TOKENS / 2048)
+
+    # Public BI host externalised in Phase 14.3.3 (per the
+    # ``brief_gene-decision`` we made: every customer image gets the
+    # endpoint from env, not from a hardcoded ``phytomni.cn`` default).
+    _validate_bi_url = field_validator("BI_URL", mode="after")(
+        _require_non_empty_endpoint
+    )
 
 
 class GeneNetworkConfig(AnalystConfig):
@@ -462,7 +486,13 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
-    BI_URL: str = "https://phytomni.cn/api/data"
+    BI_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("BI_URL", "PHYTOMNI_BI_URL"),
+        ),
+    ] = ""
     CREATE_TASK_URL: Annotated[
         str,
         Field(
@@ -513,13 +543,14 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     ] = ""
 
     # Deployment-specific endpoints / UUIDs externalised in
-    # Phase 14.3.1 (URLs) and 14.3.2 (UUIDs).
+    # Phase 14.3.1 (URLs), 14.3.2 (UUIDs), 14.3.3 (BI_URL).
     _validate_dg_endpoints = field_validator(
         "CREATE_TASK_URL",
         "UPDATE_TASK_URL",
         "SPA_FAQ_URL",
         "PROTOCOL_REPO_ID",
         "SPA_REPO_ID",
+        "BI_URL",
         mode="after",
     )(_require_non_empty_endpoint)
 
