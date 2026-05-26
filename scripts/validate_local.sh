@@ -123,4 +123,6 @@ fi
 run uv run pytest \
     --cov=mcp_server_phytomni \
     --cov=mcp_client_phytomni \
-    --cov-report=term-missing
+    --cov-report=term-missing \
+    --cov-report=json:coverage.json
+run uv run python scripts/check_module_coverage.py
