@@ -157,15 +157,18 @@ class ServerConfig(BaseSettings):
             validation_alias=AliasChoices("REPO_ID", "PHYTOMNI_REPO_ID"),
         ),
     ] = ""
+    # ``default={}`` rather than ``default_factory=dict`` so mypy
+    # (without the pydantic plugin) sees the field as defaulted;
+    # Pydantic v2 deep-copies dict literals per instance.
     REPO_ID_DICT: Annotated[
         Dict[str, int],
         Field(
-            default_factory=dict,
+            default={},
             validation_alias=AliasChoices(
                 "REPO_ID_DICT", "PHYTOMNI_REPO_ID_DICT"
             ),
         ),
-    ]
+    ] = {}
 
     WORKSPACE_ID: Annotated[
         str,
