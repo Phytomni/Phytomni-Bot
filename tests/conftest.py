@@ -58,6 +58,20 @@ _TEST_ENV = {
     "CREATE_TASK_URL": "https://example.invalid/create-task",
     "UPDATE_TASK_URL": "https://example.invalid/update-task",
     "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
+    # Deployment-specific UUIDs (Phase 14.3.2): empty defaults in
+    # config/defaults.py force operators to set per-deployment. Tests
+    # use opaque ``pytest-<name>-id`` strings so any accidental
+    # cross-tenant id leak shows up clearly in logs / assertions.
+    # REPO_ID_DICT ships as a JSON string env value; pydantic-settings
+    # parses it into Dict[str, int] automatically.
+    "REPO_ID": "pytest-repo-id",
+    "REPO_ID_DICT": '{"pytest-repo-id": 128}',
+    "WORKSPACE_ID": "pytest-workspace-id",
+    "SUBJECT_ID": "pytest-subject-id",
+    "DATA_REPO_ID": "pytest-data-repo-id",
+    "TOOL_REPO_ID": "pytest-tool-repo-id",
+    "PROTOCOL_REPO_ID": "pytest-protocol-repo-id",
+    "SPA_REPO_ID": "pytest-spa-repo-id",
 }
 
 

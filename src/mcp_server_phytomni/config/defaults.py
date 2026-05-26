@@ -24,19 +24,22 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 
 
-def _require_non_empty_endpoint(value: str, info: ValidationInfo) -> str:
-    """Reject an empty deployment endpoint with an env-name-aware message.
+def _require_non_empty_endpoint(value, info: ValidationInfo):
+    """Reject an empty deployment field with an env-name-aware message.
 
-    Production / customer images bake the per-deployment endpoint into
+    Production / customer images bake the per-deployment value into
     the encrypted ``.env`` envelope; every test path adds the value to
     ``tests/conftest.py:_TEST_ENV``. An empty default would otherwise
     let a misconfigured deployment silently fall through to a 404 /
-    DNS-resolve error at first agent call, which is much harder to
-    diagnose than a startup ``ValidationError`` naming the missing
-    env var.
+    DNS-resolve error (string endpoints) or a KeyError (dict tokens
+    map) at first agent call, which is much harder to diagnose than a
+    startup ``ValidationError`` naming the missing env var.
 
     Args:
-        value: Resolved field value from ``BaseSettings`` env resolution.
+        value: Resolved field value from ``BaseSettings`` env
+            resolution. ``str`` for URLs / repo ids; ``dict`` for the
+            REPO_ID_DICT-style tokens map; both share the same
+            falsy-on-empty contract.
         info: Pydantic validation context; ``info.field_name`` carries
             the field label used in the error message so the operator
             sees the env-var they need to set.
@@ -138,21 +141,39 @@ class ServerConfig(BaseSettings):
     )
     ANALYSIS_REGION: str = "cn-east-3"
 
-    REPO_ID: str = "a34b2477-a4b1-4a30-8726-77bbf66ca048"
-    REPO_ID_DICT: Dict[str, int] = {
-        "a34b2477-a4b1-4a30-8726-77bbf66ca048": int(_MAX_TOKENS / 512),
-        "ec3be998-43a8-483e-a2d8-029c9161431b": int(_MAX_TOKENS / 1024),
-        "d38a792f-58a3-4aff-b521-f04dc6bd06b3": int(_MAX_TOKENS / 1024),
-        "c6aa6922-15ec-44bb-bfaa-3bc85ed4d1a2": int(_MAX_TOKENS / 512),
-        "708b0cf8-fa4d-4ad0-885f-ca3bf4565cda": int(_MAX_TOKENS / 512),
-        "7f747eb7-223c-42fa-9cae-431a0bb1a999": int(_MAX_TOKENS / 1024),
-        "44ad28b5-5c3b-4a02-8e8c-7fb4903424cb": int(_MAX_TOKENS / 1024),
-        "8d7ff2ab-91dd-4d8a-a07d-93729e8c05aa": int(_MAX_TOKENS / 1024),
-        "7ee75b57-bf09-4124-9e3a-ddb2070ccb2c": int(_MAX_TOKENS / 512),
-    }
+    REPO_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("REPO_ID", "PHYTOMNI_REPO_ID"),
+        ),
+    ] = ""
+    REPO_ID_DICT: Annotated[
+        Dict[str, int],
+        Field(
+            default_factory=dict,
+            validation_alias=AliasChoices(
+                "REPO_ID_DICT", "PHYTOMNI_REPO_ID_DICT"
+            ),
+        ),
+    ]
 
-    WORKSPACE_ID: str = "6e939452a68f487f873c457f1953cf55"
-    SUBJECT_ID: str = "f6798956-2ce3-45a3-8dd1-cac242287531"
+    WORKSPACE_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "WORKSPACE_ID", "PHYTOMNI_WORKSPACE_ID"
+            ),
+        ),
+    ] = ""
+    SUBJECT_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("SUBJECT_ID", "PHYTOMNI_SUBJECT_ID"),
+        ),
+    ] = ""
 
     OBS_SERVER: str = "https://obs.cn-east-3.myhuaweicloud.com"
     BUCKET_NAME: str = "phytomni"
@@ -183,14 +204,24 @@ class ServerConfig(BaseSettings):
         ),
     ] = None
 
-    # Deployment-specific endpoints externalised in Phase 14.3.1: the
-    # default is empty so a misconfigured customer image fails fast
-    # with a ValidationError naming the missing env var, rather than
-    # baking a per-deployment IP into the wheel/Docker layer. The
-    # validator is shared with every subclass that inherits these
-    # fields (KnowledgeConfig, DataConfig, AnalystConfig, ...).
-    _validate_retrieve_endpoints = field_validator(
-        "RETRIEVE_URL", "RERANK_URL", mode="after"
+    # Deployment-specific endpoints + UUIDs externalised in Phase
+    # 14.3.1 (URLs) and 14.3.2 (UUIDs): the defaults are empty so a
+    # misconfigured customer image fails fast with a ValidationError
+    # naming the missing env var, rather than baking a per-deployment
+    # IP / customer UUID into the wheel/Docker layer. The validator
+    # is shared with every subclass that inherits these fields
+    # (KnowledgeConfig, DataConfig, AnalystConfig, ...). REPO_ID_DICT
+    # accepts a JSON-string env value (e.g.
+    # ``PHYTOMNI_REPO_ID_DICT='{"uuid":N,...}'``) which
+    # pydantic-settings parses into ``Dict[str, int]`` automatically.
+    _validate_server_endpoints = field_validator(
+        "RETRIEVE_URL",
+        "RERANK_URL",
+        "REPO_ID",
+        "REPO_ID_DICT",
+        "WORKSPACE_ID",
+        "SUBJECT_ID",
+        mode="after",
     )(_require_non_empty_endpoint)
 
 
@@ -292,8 +323,21 @@ class DataConfig(KnowledgeConfig):
     NEED_INSIGHT: bool = False
     SIMPLIFY_RESPONSE: bool = True
     DIALOG_ID: str = ""
-    DATA_REPO_ID: str = "a1ea209d-1a00-4d10-9cc5-d1fd8cd490cc"
+    DATA_REPO_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "DATA_REPO_ID", "PHYTOMNI_DATA_REPO_ID"
+            ),
+        ),
+    ] = ""
     DATA_PAGE_SIZE: int = 3
+
+    # Deployment-specific UUID externalised in Phase 14.3.2.
+    _validate_data_repo_id = field_validator("DATA_REPO_ID", mode="after")(
+        _require_non_empty_endpoint
+    )
 
 
 class AnalystConfig(KnowledgeConfig):
@@ -322,9 +366,22 @@ class AnalystConfig(KnowledgeConfig):
             InSilicoResearchConfig.
     """
 
-    TOOL_REPO_ID: str = "381d8f6c-89d9-468d-9531-a0ced46c7d02"
+    TOOL_REPO_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "TOOL_REPO_ID", "PHYTOMNI_TOOL_REPO_ID"
+            ),
+        ),
+    ] = ""
     TOOL_PAGE_NUM: int = 1
     TOOL_PAGE_SIZE: int = 2
+
+    # Deployment-specific UUID externalised in Phase 14.3.2.
+    _validate_tool_repo_id = field_validator("TOOL_REPO_ID", mode="after")(
+        _require_non_empty_endpoint
+    )
     OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/"
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
     TASK_NAME: str = "analyst-agents-task"
@@ -426,9 +483,25 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     ] = ""
     BATCH: bool = True
     EPIC_TYPE: str = "6mA"
-    PROTOCOL_REPO_ID: str = "44ad28b5-5c3b-4a02-8e8c-7fb4903424cb"
+    PROTOCOL_REPO_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "PROTOCOL_REPO_ID", "PHYTOMNI_PROTOCOL_REPO_ID"
+            ),
+        ),
+    ] = ""
     PROTOCOL_PAGE_SIZE: int = 128
-    SPA_REPO_ID: str = "4a533117-9416-4e8b-b7cc-27b448a90095"
+    SPA_REPO_ID: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices(
+                "SPA_REPO_ID", "PHYTOMNI_SPA_REPO_ID"
+            ),
+        ),
+    ] = ""
     SPA_FAQ_URL: Annotated[
         str,
         Field(
@@ -439,9 +512,15 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
         ),
     ] = ""
 
-    # Deployment-specific endpoints externalised in Phase 14.3.1.
+    # Deployment-specific endpoints / UUIDs externalised in
+    # Phase 14.3.1 (URLs) and 14.3.2 (UUIDs).
     _validate_dg_endpoints = field_validator(
-        "CREATE_TASK_URL", "UPDATE_TASK_URL", "SPA_FAQ_URL", mode="after"
+        "CREATE_TASK_URL",
+        "UPDATE_TASK_URL",
+        "SPA_FAQ_URL",
+        "PROTOCOL_REPO_ID",
+        "SPA_REPO_ID",
+        mode="after",
     )(_require_non_empty_endpoint)
 
 
