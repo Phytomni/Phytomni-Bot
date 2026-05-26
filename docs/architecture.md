@@ -14,6 +14,7 @@ src/mcp_server_phytomni/
     app.py                   MCP server registration, dispatch, and serving
     schemas.py               Public tool names and request schemas
     handlers.py              Runtime handlers and config expansion
+    handler_support.py       Reusable handler assembly helpers (kwargs builders)
     result_formatting.py     Tool-response formatter at the dispatch boundary
   agents/
     chat/                    Chat service workflow
@@ -40,15 +41,21 @@ src/mcp_server_phytomni/
     agent_registry.py        Reusable agent registry keyed by safe config
     request_context.py       Per-request user and run contextvars
     run_registry.py          HTTP API parent-run registry
+    submit_recorder.py       Submit-handler chokepoint: persists run + task rows
     task_manager.py          Task lifecycle helper
     task_reconcile.py        Per-task status reconciliation against backend
+    terminal_artifacts.py    Terminal-payload artifact persistence helpers
     workflow_mixins.py       Reusable workflow mixin helpers for nodes
   common/
-    http.py                  JSON POST retry helpers
-    prompts.py               Prompt template and JSON file loading
-    responses.py             LLM response parsing helpers
+    cli.py                   Shared CLI entry-point helpers
     docs.py                  Retrieved document formatting helpers
+    http.py                  JSON POST retry helpers
+    httpx_client.py          Lifecycle-managed shared AsyncClient factory
     lists.py                 Small list helpers
+    logging_config.py        Package-level logging setup with PHYTOMNI_DEBUG
+    prompts.py               Prompt template and JSON file loading
+    reasoning_content.py     Helpers for OpenAI reasoning_content shaping
+    responses.py             LLM response parsing helpers
   auth/
     iam.py                   IAM token loading helper
   storage/
@@ -56,6 +63,7 @@ src/mcp_server_phytomni/
     path_policy.py           Runtime path and ID policy
     downloads.py             OBS and obsfs download/conversion helpers
     scratch.py               Obsfs-first per-run scratch directory resolver
+    uploads.py               HTTP /v1/files multipart upload OBS bridge
   config/
     defaults.py              Non-secret defaults, agent config classes,
                              and Pydantic schemas for static datasets
