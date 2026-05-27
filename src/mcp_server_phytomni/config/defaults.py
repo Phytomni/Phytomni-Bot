@@ -348,7 +348,7 @@ class DataConfig(KnowledgeConfig):
     ] = ""
     DATA_PAGE_SIZE: int = 3
 
-    # Deployment-specific UUID externalised in Phase 14.3.2.
+    # Deployment-specific UUID; required as an env var (no default).
     _validate_data_repo_id = field_validator("DATA_REPO_ID", mode="after")(
         _require_non_empty_endpoint
     )
@@ -392,7 +392,7 @@ class AnalystConfig(KnowledgeConfig):
     TOOL_PAGE_NUM: int = 1
     TOOL_PAGE_SIZE: int = 2
 
-    # Deployment-specific UUID externalised in Phase 14.3.2.
+    # Deployment-specific UUID; required as an env var (no default).
     _validate_tool_repo_id = field_validator("TOOL_REPO_ID", mode="after")(
         _require_non_empty_endpoint
     )
@@ -457,9 +457,9 @@ class BriefGeneConfig(KnowledgeConfig):
     ] = ""
     TOP_N: int = int(_MAX_TOKENS / 2048)
 
-    # Public BI host externalised in Phase 14.3.3 (per the
-    # ``brief_gene-decision`` we made: every customer image gets the
-    # endpoint from env, not from a hardcoded ``phytomni.cn`` default).
+    # Public BI host required as an env var so every customer image
+    # gets the endpoint from env, not from a hardcoded ``phytomni.cn``
+    # default that would leak across deployments.
     _validate_bi_url = field_validator("BI_URL", mode="after")(
         _require_non_empty_endpoint
     )
@@ -545,8 +545,9 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
         ),
     ] = ""
 
-    # Deployment-specific endpoints / UUIDs externalised in
-    # Phase 14.3.1 (URLs), 14.3.2 (UUIDs), 14.3.3 (BI_URL).
+    # Deployment-specific endpoints / UUIDs / BI host; all required
+    # as env vars so a customer image never ships with another
+    # tenant's URL or repo id baked in as a default.
     _validate_dg_endpoints = field_validator(
         "CREATE_TASK_URL",
         "UPDATE_TASK_URL",

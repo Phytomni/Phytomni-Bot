@@ -68,9 +68,8 @@ from .schemas import (
 # up returning the wrapper's dict envelope. ``Optional`` honours the
 # upstream chat/service.py signature (``phyto_chat_with_follow`` is
 # typed ``Optional[Dict[str, Any]]`` because its retry helpers carry a
-# stale dead-code ``return None`` path — same pattern Phase 13.2
-# tightened on ``request_response_with_retries`` and that deserves its
-# own follow-up audit step for ``agents/chat/service.py``).
+# stale dead-code ``return None`` path that ``agents/chat/service.py``
+# should tighten in a follow-up).
 HandlerResult = Optional[Dict[str, Any]]
 
 

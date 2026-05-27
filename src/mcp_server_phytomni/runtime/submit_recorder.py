@@ -9,7 +9,7 @@ into one ``runs`` row plus N child ``tasks`` rows in the local SQLite
 registry, then binds the freshly-minted ``run_id`` to the request
 contextvar so the HTTP layer can echo it back. Extracted from
 ``mcp/handlers.py`` so the dispatcher stays a thin schema-validation
-shell (Phase 14 finally hits the original Phase 4 < 550 target).
+shell rather than carrying registry-write logic alongside it.
 """
 
 import functools

@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the non-blocking GetTaskStatus handler.
 
-Pin the Phase 9.3 contract: an unrecorded id reads back as
+Pin the GetTaskStatus contract: an unrecorded id reads back as
 ``"unknown"``; a recorded task merges exactly one live platform
 ``task_status`` result; and a failed live check degrades to the
 locally recorded status rather than raising.

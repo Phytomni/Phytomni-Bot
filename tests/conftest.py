@@ -424,12 +424,12 @@ def _build_async_factory(
 def fake_async_factory() -> Callable[[list[Any], dict[str, int]], Any]:
     """Build a ``get_async_client`` substitute around the scripted client.
 
-    The HTTP client factory introduced by the Phase 2 TLS audit yields
-    an open client from an ``@asynccontextmanager``; tests that
-    previously monkey-patched ``AsyncClient`` now monkey-patch
-    ``get_async_client`` instead. This fixture wraps the scripted
-    client class so callers do not have to redeclare the
-    context-manager boilerplate per migration step.
+    The shared ``get_async_client`` factory yields an open client from
+    an ``@asynccontextmanager``; tests that previously monkey-patched
+    ``AsyncClient`` now monkey-patch ``get_async_client`` instead.
+    This fixture wraps the scripted client class so callers do not
+    have to redeclare the context-manager boilerplate at every call
+    site.
 
     Returns:
         ``make(behaviors, calls) -> async-context-manager factory``.

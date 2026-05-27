@@ -68,7 +68,8 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     },
     # conftest.py installs deployment env vars BEFORE importing any
     # project module — several agents construct ``ServerConfig()`` at
-    # import time and Phase 14.3.1 made those endpoints env-required.
+    # import time and the per-deployment endpoints are required-via-
+    # env, so importing before the install raises ``ValidationError``.
     # The deliberate import-after-setup ordering trips C0413; the
     # bracketed disable above + enable below scope the exemption to
     # the install block only.

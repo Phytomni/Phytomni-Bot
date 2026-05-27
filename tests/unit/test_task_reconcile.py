@@ -4,10 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for reconcile_task_log (runtime/task_reconcile.py).
 
-Pin the three reconcile paths that the 2026-05-25 Phase 3 design
-locks: cache hit (immediate return), cache miss + remote success
-(fetch + write + return), and cache miss + remote failure (return
-None, do not propagate the analyst-platform 5xx).
+Pin the three reconcile paths: cache hit (immediate return), cache
+miss + remote success (fetch + write + return), and cache miss +
+remote failure (return None, do not propagate the analyst-platform
+5xx).
 """
 
 from __future__ import annotations

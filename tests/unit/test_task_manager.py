@@ -4,9 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the local TaskManager registry.
 
-Pin the Phase 9 registry contract: update_task writes the columns it
-names (the prior param-order bug bound ``WHERE task_id = output_dir``
-and updated zero rows), get_task is a single non-blocking read, and
+Pin the registry contract: update_task writes the columns it names
+(the prior param-order bug bound ``WHERE task_id = output_dir`` and
+updated zero rows), get_task is a single non-blocking read, and
 record_submission upserts a caller-known task_id.
 """
 
@@ -211,8 +211,8 @@ def test_init_db_adds_task_log_column_to_legacy_four_column_db(
 ) -> None:
     """A pre-existing legacy tasks DB gets task_log added in place.
 
-    A fresh image carries task_log via _CREATE_TASKS_DDL, but customer
-    databases that pre-date Phase 3 only have the original four columns.
+    A fresh image carries task_log via _CREATE_TASKS_DDL, but pre-
+    existing customer databases only have the original four columns.
     _init_db must widen them via guarded ALTER TABLE so /v1/runs/logs
     has a column to read from instead of crashing on a missing column.
     """

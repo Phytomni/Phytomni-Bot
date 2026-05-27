@@ -112,11 +112,11 @@ agent_data/uploads/alice/20260524T010000Z-request-xxxx/20260524T010000Z-upload-y
 
 `path` 是 `obs_path` 的别名,兼容现有 `obs_file_list` 入参语义。`created_at` 是 Unix epoch 秒数(UTC),沿用 OpenAI files 约定。
 
-**413 双层防御**(Phase 4.5.1 / AF-001 加固):route 先看 `Content-Length` header 拒大请求,然后 `api/file_upload.py:read_with_byte_budget`(64 KiB chunks)累计读 — `Transfer-Encoding: chunked` 无 `Content-Length` 时也能在突破 25 MiB 阈值的第一个 chunk 处 abort,peak memory 不超过 `max_bytes + chunk_size`。`storage/uploads.py:upload_user_file` 仍保留 `UploadTooLargeError` 的 raise 作为 defense-in-depth(给未来直接调用的代码)。
+**413 双层防御**(AF-001 加固):route 先看 `Content-Length` header 拒大请求,然后 `api/file_upload.py:read_with_byte_budget`(64 KiB chunks)累计读 — `Transfer-Encoding: chunked` 无 `Content-Length` 时也能在突破 25 MiB 阈值的第一个 chunk 处 abort,peak memory 不超过 `max_bytes + chunk_size`。`storage/uploads.py:upload_user_file` 仍保留 `UploadTooLargeError` 的 raise 作为 defense-in-depth(给未来直接调用的代码)。
 
-**`purpose` Literal 枚举**(Phase 4.5.2 / AF-002 加固):`purpose` 字段类型从 free-form `str` 收紧到 `UploadPurpose = Literal["agent_context", "assistants", "batch", "fine-tune", "vision", "user_data"]`,对齐 OpenAI files API 枚举(5 个)+ Phytomni 内部默认 `agent_context`。非允许值由 FastAPI 的 `RequestValidationError` 触发,经统一 envelope 返 `422`。
+**`purpose` Literal 枚举**(AF-002 加固):`purpose` 字段类型从 free-form `str` 收紧到 `UploadPurpose = Literal["agent_context", "assistants", "batch", "fine-tune", "vision", "user_data"]`,对齐 OpenAI files API 枚举(5 个)+ Phytomni 内部默认 `agent_context`。非允许值由 FastAPI 的 `RequestValidationError` 触发,经统一 envelope 返 `422`。
 
-**Filename sanitize-and-accept 政策**(Phase 4.5.3 / AF-003 对齐):path-traversal 不返 `400` 而是净化成 basename 返 `201`(与全仓 `storage/path_policy.safe_path_segment` 政策一致):
+**Filename sanitize-and-accept 政策**(AF-003 对齐):path-traversal 不返 `400` 而是净化成 basename 返 `201`(与全仓 `storage/path_policy.safe_path_segment` 政策一致):
 
 - `../../etc/passwd` → 存为 `passwd` 返 201
 - `my report (final).pdf` → 存为 `my-report-final.pdf` 返 201
