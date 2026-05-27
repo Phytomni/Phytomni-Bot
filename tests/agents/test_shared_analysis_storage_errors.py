@@ -73,19 +73,17 @@ def test_ensure_run_output_dir_reuses_preset_dir() -> None:
     """
     preset = "/obs/phytomni/agent_data/preset/run-X"
 
-    class _SentinelSensitive:
-        """Sensitive-config stand-in that fails if credentials are read."""
+    def _credentials_tripwire(*_args: Any, **_kwargs: Any) -> Any:
+        """Should never be called on the preset path."""
+        raise AssertionError(
+            "ensure_run_output_dir reached obs_credentials on the "
+            "preset path; the short-circuit at output_dir is broken."
+        )
 
-        def obs_credentials(self) -> Any:
-            """Tripwire: should never be called on the preset path."""
-            raise AssertionError(
-                "ensure_run_output_dir reached obs_credentials on the "
-                "preset path; the short-circuit at output_dir is broken."
-            )
-
+    sensitive_stub = SimpleNamespace(obs_credentials=_credentials_tripwire)
     result = ensure_run_output_dir(
         config=SimpleNamespace(OBS_SERVER="ignored", BUCKET_NAME="ignored"),
-        sensitive_config=_SentinelSensitive(),
+        sensitive_config=sensitive_stub,
         task="evolution",
         run_identity=RunIdentity(
             user_id="alice",

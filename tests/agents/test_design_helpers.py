@@ -19,6 +19,7 @@ unknown analysis type before any prompt lookup.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -33,20 +34,18 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 pytestmark = pytest.mark.agent
 
 
-class _StubAnalyst:
-    """No-op AnalystAgent stand-in for the design-agent constructor."""
-
-    def identifier(self) -> str:
-        """Return a stable stub label."""
-        return "stub-analyst"
-
-
 def _build_agent() -> DigitalDesignAgents:
-    """Construct a design agent wired to a stub analyst."""
+    """Construct a design agent wired to a stub analyst.
+
+    Uses ``SimpleNamespace`` for the analyst stand-in (same pattern as
+    ``_analyst_fakes.py``) so pylint's R0903 too-few-public-methods
+    rule does not trip on a single-method stub class.
+    """
+    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
     return DigitalDesignAgents(
         digital_design_config=DigitalDesignConfig(),
         sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, _StubAnalyst()),
+        analyst_agent=cast(AnalystAgent, analyst_stub),
     )
 
 
