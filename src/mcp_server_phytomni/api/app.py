@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -34,7 +34,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -47,7 +47,7 @@ from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
-from ..mcp.app import invoke_tool_enveloped
+from ..mcp.app import invoke_tool_enveloped, invoke_tool_streamed
 from ..mcp.result_formatting import (
     resolve_debug,
     strip_agent_result,
@@ -79,8 +79,10 @@ from .openai_mapping import (
     MODEL_TO_TOOL,
     flatten_messages,
     to_chat_completion,
+    to_chat_completion_chunks,
     tool_accepts_obs,
     tool_accepts_resolve_gene_id,
+    tool_accepts_stream,
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
@@ -217,6 +219,63 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
         "model": info.model,
         "answer": _extract_answer(record.result),
     }
+
+
+def _stream_chat_completion(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    payload: ChatCompletionRequest,
+    user_query: str,
+) -> StreamingResponse:
+    """Wrap ``invoke_tool_streamed`` + SSE shaper + run-record finalize.
+
+    The wrapper is an async generator: each emitted SSE line forwards
+    immediately to the client (no buffering), and once the upstream
+    stream drains (or aborts) the run record is written exactly once
+    from the ``finally`` block. The recorded ``result`` carries
+    stream-mode markers rather than the aggregated response content
+    — buffering the entire stream just to populate the record would
+    defeat the primitive's per-chunk design and ties recorded volume
+    to LLM output size for no caller benefit. The ``completed`` flag
+    distinguishes a normal drain from a client-disconnect / mid-stream
+    error so the run-history view can surface partial calls.
+
+    Auth, rate-limit, request-id, and OBS argument prep all happen
+    before this helper is called, mirroring the non-stream branch.
+    """
+    raw_chunks = invoke_tool_streamed(tool_name, arguments)
+    sse_lines = to_chat_completion_chunks(raw_chunks, payload.model)
+    agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
+    owner = current_request_user() or "anonymous"
+
+    async def _wrapped() -> AsyncIterator[str]:
+        completed = False
+        try:
+            async for line in sse_lines:
+                yield line
+            completed = True
+        finally:
+            if agent_slug is not None:
+                _record_sync_run(
+                    agent=agent_slug,
+                    owner=owner,
+                    result={
+                        "formatted": {"answer": "[streamed]"},
+                        "raw": None,
+                        "stream": True,
+                        "completed": completed,
+                    },
+                    request_info=RunRequestInfo(
+                        dialogue_id=payload.dialogue_id,
+                        query=user_query,
+                        tool_name=tool_name,
+                        model=payload.model,
+                        request_json=payload.model_dump_json(),
+                    ),
+                )
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 async def _maybe_resolve_brief_gene_query(
@@ -942,14 +1001,15 @@ def create_app() -> FastAPI:
     async def chat_completions(
         payload: ChatCompletionRequest,
         principal: ApiPrincipal = Depends(authorized),
-    ) -> JSONResponse:
-        """Run a chat-like agent in an OpenAI-compatible shape."""
+    ) -> Response:
+        """Run a chat-like agent in an OpenAI-compatible shape.
+
+        With ``stream=true`` and a streaming-capable model, returns a
+        ``text/event-stream`` carrying ``data: {...}\\n\\n`` chunks
+        plus a terminating ``data: [DONE]\\n\\n``; the non-stream
+        path returns a JSON ``chat.completion`` envelope unchanged.
+        """
         del principal  # Auth side-effect; identity flows via contextvar.
-        if payload.stream:
-            raise HTTPException(
-                status_code=400,
-                detail="streaming is not supported",
-            )
         tool_name = tool_for_model(payload.model)
         if tool_name is None:
             raise HTTPException(
@@ -976,6 +1036,21 @@ def create_app() -> FastAPI:
         arguments: dict[str, object] = {"user_query": user_query}
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
+        if payload.stream:
+            if not tool_accepts_stream(tool_name):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"streaming is not supported for model "
+                        f"{payload.model}"
+                    ),
+                )
+            return _stream_chat_completion(
+                tool_name=tool_name,
+                arguments=arguments,
+                payload=payload,
+                user_query=user_query,
+            )
         envelope = await invoke_tool_enveloped(tool_name, arguments)
         formatted_dict = asdict(envelope.formatted)
         if resolve_meta:

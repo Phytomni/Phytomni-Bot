@@ -95,15 +95,31 @@ async def test_chat_completions_requires_auth(
     assert response.json()["error"]["code"] == 401
 
 
-async def test_chat_completions_rejects_stream(
+@pytest.mark.parametrize(
+    "model",
+    ["phyto-knowledge", "phyto-review", "phyto-brief-gene"],
+)
+async def test_chat_completions_rejects_stream_on_non_chat_models(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
+    model: str,
 ) -> None:
-    """Verify stream=true is refused with 400."""
-    response = await chat_completion(api_client, issued_api_key, stream=True)
+    """Non-chat models with ``stream=true`` must surface a per-model 400.
+
+    Per-model gate (Phase 5 Step 5.4): only ``phyto-chat`` is wired
+    to ``invoke_tool_streamed`` in v1 — the streaming-capable model
+    set lives in ``openai_mapping._STREAM_CAPABLE_TOOLS``. Other
+    chat-like models keep the historical 400 but the message now
+    carries the offending model id so clients know which model they
+    asked to stream.
+    """
+    response = await chat_completion(
+        api_client, issued_api_key, model=model, stream=True
+    )
 
     assert response.status_code == 400
+    assert model in response.json()["error"]["message"]
 
 
 async def test_chat_completions_unknown_model(

@@ -95,7 +95,11 @@ class ChatCompletionRequest(BaseModel):
     Attributes:
         model: Selects the backing chat-like agent.
         messages: Ordered conversation messages.
-        stream: Streaming flag; only False is supported.
+        stream: Streaming flag. ``True`` is only supported by
+            streaming-capable models (``phyto-chat`` in v1) and
+            returns ``text/event-stream`` with ``data: {...}\\n\\n``
+            chunks plus a terminating ``data: [DONE]\\n\\n``. Any
+            other model with ``stream=True`` returns HTTP 400.
         obs_file_list: Optional OBS document paths for the agent.
         resolve_gene_id: When true and the model is BriefGene-shaped,
             resolve the free-form user message into a canonical gene

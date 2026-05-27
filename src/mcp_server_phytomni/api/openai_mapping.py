@@ -30,6 +30,7 @@ __all__ = [
     "tool_for_model",
     "tool_accepts_obs",
     "tool_accepts_resolve_gene_id",
+    "tool_accepts_stream",
     "flatten_messages",
     "to_chat_completion",
     "to_chat_completion_chunks",
@@ -52,6 +53,16 @@ _OBS_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 # the agent advertised standalone to external clients.
 _RESOLVE_GENE_ID_CAPABLE_TOOLS = {"BriefGeneAgent"}
 
+# Tools that support SSE streaming via ``invoke_tool_streamed``. v1
+# wires only ChatAgent — the other chat-like models (knowledge /
+# review / brief-gene) either need full-document retrieval state or
+# return a structured single answer, both of which would surface as
+# a single trailing chunk rather than a token stream. Adding a model
+# here without also implementing its streaming primitive in
+# ``invoke_tool_streamed`` would surface as a 500
+# (``NotImplementedError``) at request time; keep this set narrow.
+_STREAM_CAPABLE_TOOLS = {"ChatAgent"}
+
 
 def tool_for_model(model: str) -> Optional[str]:
     """Return the MCP tool name for an OpenAI-style model id."""
@@ -66,6 +77,17 @@ def tool_accepts_obs(tool_name: str) -> bool:
 def tool_accepts_resolve_gene_id(tool_name: str) -> bool:
     """Return True when the tool supports resolve_gene_id preprocessing."""
     return tool_name in _RESOLVE_GENE_ID_CAPABLE_TOOLS
+
+
+def tool_accepts_stream(tool_name: str) -> bool:
+    """Return True when the tool supports SSE streaming.
+
+    Used by the ``/v1/chat/completions`` route to gate ``stream=true``
+    before calling :func:`invoke_tool_streamed`; a False return yields
+    a clean per-model 400 instead of relying on the seam's
+    ``NotImplementedError`` to surface deep in the stack.
+    """
+    return tool_name in _STREAM_CAPABLE_TOOLS
 
 
 def flatten_messages(
