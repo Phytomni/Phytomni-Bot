@@ -209,6 +209,13 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
 [tool.pylint.similarities]
 
 [tool.pymarkdown]
+# MD013 (line-length): mdformat runs with ``--wrap keep`` and never
+# reflows prose or tables, so a fixed-width line rule is structurally
+# unsatisfiable — the two markdown tools would disagree on the same
+# line. mdformat is the sole authority on markdown line shape here,
+# mirroring how [tool.black] / [tool.ruff] own Python line shape.
+# See docs/lint-exemptions.md for the full rationale.
+plugins.md013.enabled = false
 
 [tool.tomlsort]
 # TOML gate config (consumed by `toml-sort --check` and the in-place

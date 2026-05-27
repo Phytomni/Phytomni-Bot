@@ -165,6 +165,55 @@ entirely.
 
 ______________________________________________________________________
 
+## PyMarkdown exemptions
+
+### MD013 line-length — disabled project-wide
+
+**Rule(s)**: MD013 line-length (`plugins.md013`). 200+ occurrences
+across `README.md`, `docs/**.md`, and the long-form integration
+decision records when enabled with the default 80-char threshold.
+
+**Mechanism**: `pyproject.toml` `[tool.pymarkdown]` sets
+`plugins.md013.enabled = false` so pymarkdown skips line-length
+enforcement entirely.
+
+**Original error sample**:
+
+```text
+MD013: Line length [Expected: 80, Actual: 159] (line-length)
+MD013: Line length [Expected: 80, Actual: 168] (line-length)
+```
+
+**Why refactor is net-negative**: the repository's other markdown
+gate, mdformat, is invoked with `--wrap keep` and never reflows prose
+or tables. Re-enabling MD013 would put pymarkdown in conflict with
+mdformat: pymarkdown demanding ≤ 80 chars, mdformat declining to
+break the line. The two tools would never agree on the same markdown
+file. mdformat is the sole authority on markdown line shape, the same
+way `[tool.black]` / `[tool.ruff]` own Python line shape.
+
+**Refactor path (if you disagree)**:
+
+1. Switch mdformat to `--wrap=80` (reflows prose).
+1. Re-enable `plugins.md013.enabled = true`.
+1. Re-run mdformat to reflow every existing long line.
+1. Verify tables stay readable after `--wrap=80` reflow (mdformat
+   wraps table cells too, which sometimes breaks alignment).
+1. Add an mdformat test that pins the wrap setting so a future
+   `--wrap keep` revert does not silently reopen the conflict.
+
+**Refactor cost**: every existing long line in the repo gets
+rewrapped, including code blocks and tables. The diff would touch
+every markdown file. Table-heavy docs may need manual fix-ups for
+broken alignment. ~3-5 commits and a careful review pass.
+
+**Sunset condition**: the project switches mdformat to a reflowing
+wrap mode (e.g. `--wrap=80`), or pymarkdown adds a "trust
+mdformat's wrap policy" flag that disables MD013 only when an
+external formatter owns the line shape.
+
+______________________________________________________________________
+
 ## Pylint exemptions
 
 ### `typings/` directory — wholesale ignore
