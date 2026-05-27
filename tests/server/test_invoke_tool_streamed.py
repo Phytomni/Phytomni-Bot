@@ -4,15 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the ``invoke_tool_streamed`` MCP streaming seam.
 
-Pins four behaviors the SSE Phase relies on:
-``invoke_tool_streamed`` wraps each chunk produced by
-``stream_phyto_chat_chunks`` in a frozen :class:`FormattedToolChunk`
-without mutating the provider payload, returns the
-``Unknown tool`` McpError before yielding for unknown tool names,
-returns a sanitized validation McpError before yielding for malformed
-ChatAgent arguments, and raises ``NotImplementedError`` (on first
-iteration) for every other registered tool so callers see a clear
-"streaming not supported" signal instead of a silent fallback.
+Pins chunk wrapping without provider-payload mutation, early McpError
+responses for unknown tools and malformed ChatAgent arguments, and
+``NotImplementedError`` for registered tools that do not support
+streaming.
 """
 
 from __future__ import annotations

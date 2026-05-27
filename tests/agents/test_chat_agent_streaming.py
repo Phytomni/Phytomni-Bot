@@ -4,13 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Offline tests for ``stream_phyto_chat_chunks`` streaming primitive.
 
-Pins three behaviors the SSE Phase relies on:
-``stream_phyto_chat_chunks`` yields provider chunks unchanged (so
-unknown fields survive on the wire), prepends OBS upload context when
-``obs_file_list`` is non-empty, and follows retry policy (B) — the
-open-stream call retries once on transient transport errors but any
-mid-stream failure propagates immediately, since a silent retry would
-lose chunks already delivered to the SSE client.
+Pins three behaviors: streaming yields provider chunks unchanged
+(unknown fields survive), prepends OBS upload context when
+``obs_file_list`` is non-empty, and retries open-stream once on
+transient transport errors. Any mid-stream failure propagates
+immediately since silent retry would lose delivered chunks.
 """
 
 from __future__ import annotations

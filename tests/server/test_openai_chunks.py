@@ -4,13 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for ``to_chat_completion_chunks`` SSE shaper.
 
-Pins four behaviors the ``/v1/chat/completions`` SSE route relies on:
-each upstream :class:`FormattedToolChunk` becomes one
-``data: {...}\\n\\n`` line, unknown vendor fields survive intact, the
-``model`` field is overridden with the requested model id (parity with
-``to_chat_completion``), and the stream always ends with the canonical
-``data: [DONE]\\n\\n`` terminator regardless of the upstream chunk
-count (zero, one, many).
+Pins event framing, unknown vendor-field preservation, requested-model
+override, and terminal ``[DONE]`` behavior for zero, one, or many
+upstream chunks.
 """
 
 from __future__ import annotations

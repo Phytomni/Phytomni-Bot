@@ -2,16 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""End-to-end tests for ``POST /v1/chat/completions`` with ``stream=true``.
+"""Tests for ``POST /v1/chat/completions`` with ``stream=true``.
 
-Pins the SSE wire shape, per-model gating, ``resolve_gene_id``
-incompatibility, and run-record finalize-on-completion: a streaming
-``phyto-chat`` call returns ``text/event-stream`` with ``data:`` lines
-terminated by ``data: [DONE]\\n\\n``; a non-streaming model with
-``stream=True`` returns a per-model 400; ``resolve_gene_id=true`` with
-``stream=true`` returns 400 since ``resolve_gene_id`` is BriefGene-only
-and BriefGene does not stream; the run-record is written exactly once
-after the SSE stream drains.
+Pins SSE framing, per-model gating, ``resolve_gene_id`` rejection, and
+run-record finalization after the response stream drains. The route
+emits ``text/event-stream`` data lines ending with ``[DONE]`` for
+``phyto-chat`` and returns 400 for unsupported stream combinations.
 """
 
 from __future__ import annotations

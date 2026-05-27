@@ -2,17 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Pure mapping helpers for the OpenAI-compatible chat surface.
+"""OpenAI-compatible chat mapping helpers.
 
-Functions: tool_for_model, flatten_messages, to_chat_completion,
-to_chat_completion_chunks. ``to_chat_completion`` keeps provider
-fields (``reasoning_content``, ``tool_calls``, ``usage``,
-``finish_reason``, ``system_fingerprint``, unknown extensions) at
-OpenAI canonical positions and attaches top-level ``formatted`` and
-``raw`` envelope blocks. ``to_chat_completion_chunks`` is the SSE
-sibling that shapes a ``FormattedToolChunk`` async-iterator into
-``data: {...}\\n\\n`` event lines and a terminal
-``data: [DONE]\\n\\n``.
+Defines model lookup, message flattening, completion envelope shaping,
+and SSE chunk shaping. The shapers keep OpenAI canonical fields in
+place while attaching Phytomni formatted and raw payloads where the API
+contract expects them.
 """
 
 from __future__ import annotations
