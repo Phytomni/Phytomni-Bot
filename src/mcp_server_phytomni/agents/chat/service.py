@@ -9,7 +9,8 @@ prompt, with support for various model parameters and retry mechanisms.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
@@ -33,7 +34,16 @@ from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.downloads import download_list_convert
 
+logger = logging.getLogger(__name__)
+
 CHAT_CONFIG = ChatConfig()
+
+# Retry budget for opening one streaming chat-completion connection.
+# Once ``client.chat.completions.create(stream=True, ...)`` returns
+# the iterator, any mid-stream failure propagates immediately — a
+# silent retry would lose already-emitted chunks and corrupt the SSE
+# timeline from the client's point of view.
+MAX_OPEN_STREAM_RETRIES = 1
 
 
 async def phyto_chat_with_follow(
@@ -489,6 +499,142 @@ async def _run_phyto_chat(
             ):
                 continue
     return None
+
+
+async def stream_phyto_chat_chunks(
+    user_query: str,
+    obs_file_list: Optional[List[str]] = None,
+    **kwargs: Any,
+) -> AsyncIterator[Dict[str, Any]]:
+    """Yield raw provider chunks for one streaming chat completion.
+
+    Mirrors :func:`phyto_chat` for prompt construction and OBS upload
+    context but deliberately bypasses :func:`run_phyto_chat_cached`:
+    that primitive accepts ``stream: bool`` and buffers the full
+    response into ``func_cache`` once collected, which is incompatible
+    with a real token stream. This function calls
+    ``AsyncOpenAI(...).chat.completions.create(stream=True, ...)``
+    directly and yields each chunk via ``model_dump()`` so unknown
+    provider fields survive intact for the SSE shaper downstream.
+
+    Retry policy: the open-stream call is retried up to
+    ``MAX_OPEN_STREAM_RETRIES`` times on ``ConnectError`` /
+    ``TimeoutException`` (the same transient class
+    :func:`_run_phyto_chat` treats as retriable). Once the iterator is
+    returned, any mid-stream failure propagates immediately; retrying
+    after partial delivery would silently lose chunks the client has
+    already received, so the caller owns the resume decision.
+
+    Args:
+        user_query: The user's natural language query.
+        obs_file_list: Optional list of OBS object keys to prepend as
+            upload context (matches :func:`phyto_chat`).
+        **kwargs: Same chat / OBS keyword options as :func:`phyto_chat`.
+
+    Yields:
+        OpenAI ``chat.completion.chunk`` payloads as plain ``dict``.
+
+    Raises:
+        McpError: When the open-stream call exhausts its retries on
+            transient transport errors.
+    """
+    if obs_file_list is None:
+        obs_file_list = []
+    else:
+        obs_file_list = list(obs_file_list)
+    options = _chat_options(kwargs)
+    if obs_file_list:
+        user_query = await _query_with_upload_context(
+            user_query, obs_file_list, options
+        )
+    messages = [
+        {
+            "role": "system",
+            "content": get_prompt(
+                options["prompt_file"], options["prompt_path"]
+            ),
+        },
+        {"role": "user", "content": user_query},
+    ]
+    params = _build_stream_params(messages, options)
+    client = AsyncOpenAI(
+        api_key=options["api_key"], base_url=options["base_url"]
+    )
+    stream_completions = await _open_chat_stream(client, params)
+    async for chunk in stream_completions:
+        yield chunk.model_dump()
+
+
+def _build_stream_params(
+    messages: List[Dict[str, str]], options: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Build the OpenAI ``chat.completions.create`` kwargs for streaming.
+
+    Mirrors the parameter shape used by :func:`run_phyto_chat_cached`
+    so streaming and non-streaming paths send identical sampling
+    inputs to the provider; the only forced difference is
+    ``stream=True``.
+    """
+    params: Dict[str, Any] = {
+        "messages": messages,
+        "model": options["model"],
+        "frequency_penalty": options["frequency_penalty"],
+        "n": options["n"],
+        "presence_penalty": options["presence_penalty"],
+        "response_format": options["response_format"],
+        "stream": True,
+        "temperature": options["temperature"],
+        "top_p": options["top_p"],
+        "user": options["user"],
+        "timeout": options["timeout"],
+    }
+    if options["max_tokens"] is not None:
+        params["max_tokens"] = options["max_tokens"]
+    if (
+        "reasoner" in options["model"]
+        and options["reasoning_effort"] is not None
+    ):
+        params["reasoning_effort"] = options["reasoning_effort"]
+    return params
+
+
+async def _open_chat_stream(
+    client: AsyncOpenAI, params: Dict[str, Any]
+) -> Any:
+    """Open one streaming chat completion with bounded transport retries.
+
+    Retries up to ``MAX_OPEN_STREAM_RETRIES`` times on the transient
+    transport class ``_run_phyto_chat`` already treats as retriable
+    (``ConnectError`` / ``TimeoutException``). Non-transient failures
+    (HTTPStatusError, malformed requests, etc.) propagate immediately
+    so the API layer can map them to the correct HTTP status.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):
+        try:
+            return await client.chat.completions.create(**params)
+        except (ConnectError, TimeoutException) as exc:
+            last_exc = exc
+            if attempt < MAX_OPEN_STREAM_RETRIES:
+                await asyncio.sleep(1.5**attempt)
+                continue
+            logger.exception(
+                "stream_phyto_chat_chunks: open-stream transport "
+                "failure after %s retries",
+                attempt,
+            )
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Failed to open chat completion stream",
+                )
+            ) from exc
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to open chat completion stream",
+        )
+    ) from last_exc
 
 
 async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
