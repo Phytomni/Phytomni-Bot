@@ -49,7 +49,6 @@ MODULE_FLOORS: Dict[str, int] = {
     "src/mcp_server_phytomni/agents/analyst/task_ops.py": 70,
     "src/mcp_server_phytomni/agents/design/agent.py": 74,
     "src/mcp_server_phytomni/agents/shared/analysis_storage.py": 76,
-    "src/mcp_server_phytomni/agents/research/agent.py": 78,
 }
 TARGET = 80
 
