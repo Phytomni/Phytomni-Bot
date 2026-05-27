@@ -405,11 +405,15 @@ ______________________________________________________________________
 - `tests/unit/test_deep_genome_dispatch.py:226`
 - `tests/unit/test_storage_error_sanitization.py:31`
 
-**Mechanism**: L2 baseline ratchet (see `scripts/check_pylint_baseline.py`).
-Pylint reports the violations; the ratchet asserts the count stays at
-or below the pinned baseline of 9. No function-level disable, because
-the rule fires once per fake class and the class is the smallest unit
-where the disable could attach — using L1 disable would mean editing
+**Mechanism**: L2 baseline ratchet via
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 9`).
+The main pylint invocation in `scripts/validate_local.sh` and
+`scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
+gate-level pylint exits 0 on this rule; the baseline script runs its
+own pylint without the disable and counts violations against the
+pinned baseline. No function-level disable, because the rule fires
+once per fake class and the class is the smallest unit where the
+disable could attach — using L1 disable would mean editing
 the allowlist for every fake.
 
 **Why refactor is net-negative**: each fake class exists to mock
@@ -455,10 +459,16 @@ codebase, in three clusters:
    payload assembly is repeated across
    `tests/server/test_result_formatting*.py`.
 
-**Mechanism**: L2 baseline ratchet. Project-wide
-`[tool.pylint.similarities].min-similarity-lines = 8`
-(loosens the default from 4 to 8 so genuinely-short repetitions are
-not flagged), plus the ratchet pins the residual count at 20.
+**Mechanism**: L2 baseline ratchet via
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 20`).
+The main pylint invocation in `scripts/validate_local.sh` and
+`scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
+gate-level pylint exits 0 on this rule; the baseline script runs its
+own pylint without the disable and counts the violations against
+the pinned baseline. A new R0801 violation pushes the count to 21,
+the baseline script exits 1, and the gate fails until the author
+either resolves the duplicate or explicitly bumps the baseline in
+the same diff.
 
 **Why refactor is net-negative for cluster 1**: the analyst fan-out
 wrappers' parallel signatures are by design — they map onto one

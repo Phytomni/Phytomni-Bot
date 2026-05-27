@@ -216,7 +216,10 @@ else
     run uv run pyright "$@"
 
     # NOTE: validate_local.sh does NOT set PYTHONPATH for pylint; mirror that.
-    run uv run pylint --persistent=no "$@"
+    # --disable=R0801,R0903 mirrors validate_local.sh: those rules are
+    # tracked by scripts/check_pylint_baseline.py on the full gate, not
+    # at the scoped gate (subset runs would emit fragmentary counts).
+    run uv run pylint --persistent=no --disable=R0801,R0903 "$@"
 fi
 
 # ---------------------------------------------------------------------------
