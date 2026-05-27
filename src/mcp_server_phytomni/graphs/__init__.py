@@ -11,7 +11,22 @@ the spec object describing each subgraph's identity, factory, and
 public input/output contract.
 """
 
+from .adapters import adapter_node
+from .manifest import (
+    GraphEdgeManifest,
+    GraphManifest,
+    GraphNodeManifest,
+    export_manifest,
+)
 from .registry import SubgraphRegistry
 from .spec import SubgraphSpec
 
-__all__ = ["SubgraphRegistry", "SubgraphSpec"]
+__all__ = [
+    "GraphEdgeManifest",
+    "GraphManifest",
+    "GraphNodeManifest",
+    "SubgraphRegistry",
+    "SubgraphSpec",
+    "adapter_node",
+    "export_manifest",
+]
