@@ -338,18 +338,22 @@ re-import-everywhere problem.
 
 ______________________________________________________________________
 
-### `tests/conftest.py:fake_async_factory` and
-
-### `tests/agents/test_cache_candidates.py` — contextmanager cleanup false positive
+### W0135 contextmanager false positive in test fixtures
 
 **Rule(s)**: W0135 contextmanager-generator-missing-cleanup. 6
 occurrences across 2 files.
 
-**Mechanism**: function-level
-`# pylint: disable=contextmanager-generator-missing-cleanup` on each
-`@asynccontextmanager`-decorated factory and on the test functions
-that build a scripted fake client. Allowlist entries under
-`tests/conftest.py` and `tests/agents/test_cache_candidates.py`.
+**Mechanism**: file-level
+`# pylint: disable=contextmanager-generator-missing-cleanup` placed
+near the top of each file (after the imports, before any function
+definition). Allowlist entries under `tests/conftest.py` and
+`tests/agents/test_cache_candidates.py`. Function-level scoping was
+rejected because the trailing-comment form exceeded the 79-char line
+limit and the `disable-next=` form is not detected by the
+`test_local_pylint_disables_are_langgraph_boundary_only` marker
+scanner (which substring-matches `pylint: disable=`). File-level
+scope is acceptable here because both files host nothing but test
+fixtures that use the same `@asynccontextmanager` idiom.
 
 **Original error sample**:
 

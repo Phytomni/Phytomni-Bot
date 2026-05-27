@@ -33,6 +33,16 @@ from typing import Any
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
+# pylint: disable=contextmanager-generator-missing-cleanup
+# W0135 is a documented false positive on the canonical
+# ``@asynccontextmanager`` + ``async with X() as y: yield y`` pattern
+# when the inner context manager is referenced through a closure
+# variable (as in ``_build_async_factory`` below). The decorator
+# already converts a thrown ``GeneratorExit`` into the proper
+# ``__aexit__`` call, so the warning never matches a real cleanup bug
+# in this fixture file. See ``docs/lint-exemptions.md`` for the full
+# refactor cost / sunset analysis.
+
 _TEST_ENV = {
     "DOMAIN_NAME": "pytest-domain",
     "USER_NAME": "pytest-user",

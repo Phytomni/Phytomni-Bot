@@ -408,6 +408,9 @@ class RerankOptions:
     ],
     ttl=LONG_TTL_SECONDS,
 )
+# pylint: disable=too-many-arguments
+# Cache primitive: every named parameter is part of the @func_cache
+# key, so semantic inputs must stay flat. See docs/lint-exemptions.md.
 async def _retrieve_cached(
     user_query: str,
     *,
@@ -464,6 +467,9 @@ async def _retrieve_cached(
         ),
         "total": 10000,
     }
+
+
+# pylint: enable=too-many-arguments
 
 
 async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
@@ -542,6 +548,8 @@ async def _retrieve_raw_docs(
     ],
     ttl=LONG_TTL_SECONDS,
 )
+# pylint: disable=too-many-arguments
+# Cache primitive: see docs/lint-exemptions.md.
 async def _retrieve_scope_docs(
     client: AsyncClient,
     *,
@@ -596,6 +604,9 @@ async def _retrieve_scope_docs(
         ),
     )
     return result.get("doc_list", []) if isinstance(result, dict) else []
+
+
+# pylint: enable=too-many-arguments
 
 
 async def _retrieve_both_scopes(
@@ -794,6 +805,8 @@ async def _rank_docs(
     )
 
 
+# pylint: disable=too-many-arguments
+# Cache primitive: see docs/lint-exemptions.md.
 async def _rerank_batch(
     client: AsyncClient,
     *,
@@ -834,6 +847,9 @@ async def _rerank_batch(
         ),
     )
     return result.get("rank_result", []) if isinstance(result, dict) else []
+
+
+# pylint: enable=too-many-arguments
 
 
 def _collect_rank_results(

@@ -282,6 +282,10 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     ],
     ttl=LONG_TTL_SECONDS,
 )
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+# Cache primitive: every named parameter contributes to the
+# @func_cache key; the request object carries infra-only fields that
+# must NOT enter the key. See docs/lint-exemptions.md.
 async def _execute_nl2sql_cached(
     message_content: str,
     subject_id: str,
@@ -307,6 +311,9 @@ async def _execute_nl2sql_cached(
     del message_content, subject_id, workspace_id
     del database_url, need_insight, simplify_response
     return await _execute_nl2sql_uncached(request)
+
+
+# pylint: enable=too-many-arguments,too-many-positional-arguments
 
 
 async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:

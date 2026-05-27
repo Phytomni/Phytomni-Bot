@@ -31,6 +31,16 @@ from mcp_server_phytomni.config.defaults import KnowledgeConfig
 
 pytestmark = pytest.mark.agent
 
+# pylint: disable=contextmanager-generator-missing-cleanup
+# W0135 is a documented false positive on the canonical
+# ``@asynccontextmanager`` + ``async with X() as y: yield y`` pattern.
+# Several tests in this file build a scripted ``get_async_client``
+# substitute inside the test function body (the fake's class is
+# constructed per-test from a scripted behaviour list); the closure
+# reference confuses pylint's static analysis even though the
+# decorator's ``GeneratorExit`` -> ``__aexit__`` conversion is
+# correct. See ``docs/lint-exemptions.md`` for the full analysis.
+
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):
     """Verify get_data_list tracks config file changes.

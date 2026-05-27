@@ -102,6 +102,10 @@ def safe_upload_filename(original_filename: str) -> str:
     return f"{safe_stem}{suffix}" if suffix else safe_stem
 
 
+# pylint: disable=too-many-arguments,too-many-locals
+# Conceptually-atomic OBS upload (validate -> resolve target ->
+# write). Splitting the args into dataclasses adds caller boilerplate
+# without splitting the responsibility. See docs/lint-exemptions.md.
 def upload_user_file(
     file_bytes: bytes,
     original_filename: str,

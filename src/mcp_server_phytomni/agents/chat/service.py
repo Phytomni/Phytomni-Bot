@@ -374,6 +374,11 @@ async def _query_with_upload_context(
     ],
     ttl=LONG_TTL_SECONDS,
 )
+# pylint: disable=too-many-arguments,too-many-locals
+# run_phyto_chat_cached is a @func_cache chokepoint: every named
+# parameter goes into the cache key, so semantic LLM inputs must
+# stay flat (no options-object wrapping) or rotating an API key would
+# silently invalidate the cache. See docs/lint-exemptions.md.
 async def run_phyto_chat_cached(
     *,
     messages: List[Dict[str, str]],
@@ -430,6 +435,9 @@ async def run_phyto_chat_cached(
     else:
         payload = chat_completions.model_dump()
     return normalize_chat_completion_dict(payload)
+
+
+# pylint: enable=too-many-arguments,too-many-locals
 
 
 async def _run_phyto_chat(
