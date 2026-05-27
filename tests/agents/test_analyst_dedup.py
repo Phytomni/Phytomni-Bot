@@ -33,27 +33,8 @@ from mcp_server_phytomni.runtime.task_manager import (
 pytestmark = pytest.mark.agent
 
 
-def _seed_task(
-    db_path: str,
-    *,
-    task_id: str,
-    status: str,
-    output_dir: str,
-    input_fingerprint: str,
-    analysis_id: str = "",
-) -> None:
-    """Write one task row directly through TaskManager.record."""
-    # Construct via the dataclass's positional/kw mix so the field
-    # ordering does not line up with the four-line ``Submission(...)``
-    # block inside ``record_submission`` (pylint R0801 fires when 4
-    # consecutive ``kw=kw,`` lines collide).
-    submission = Submission(
-        task_id,
-        status,
-        output_dir,
-        analysis_id=analysis_id,
-        input_fingerprint=input_fingerprint,
-    )
+def _seed_task(db_path: str, submission: Submission) -> None:
+    """Persist one ``Submission`` row via ``TaskManager.record``."""
     TaskManager(db_path).record(submission)
 
 
@@ -179,10 +160,12 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
     )
     _seed_task(
         db,
-        task_id="prior-running",
-        status="submitted",
-        output_dir="/out/prior",
-        input_fingerprint=fingerprint,
+        Submission(
+            task_id="prior-running",
+            status="submitted",
+            output_dir="/out/prior",
+            input_fingerprint=fingerprint,
+        ),
     )
 
     result = await retrieve_plan_submit(
@@ -224,11 +207,13 @@ async def test_retrieve_plan_submit_reuses_succeeded_prior(
     )
     _seed_task(
         db,
-        task_id="prior-done",
-        status="succeeded",
-        output_dir="/out/done",
-        analysis_id="analysis-42",
-        input_fingerprint=fingerprint,
+        Submission(
+            task_id="prior-done",
+            status="succeeded",
+            output_dir="/out/done",
+            analysis_id="analysis-42",
+            input_fingerprint=fingerprint,
+        ),
     )
 
     result = await retrieve_plan_submit(
@@ -270,10 +255,12 @@ async def test_retrieve_plan_submit_resubmits_when_only_prior_failed(
     )
     _seed_task(
         db,
-        task_id="prior-failed",
-        status="failed",
-        output_dir="/out/dead",
-        input_fingerprint=fingerprint,
+        Submission(
+            task_id="prior-failed",
+            status="failed",
+            output_dir="/out/dead",
+            input_fingerprint=fingerprint,
+        ),
     )
 
     result = await retrieve_plan_submit(
@@ -311,10 +298,12 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     )
     _seed_task(
         db,
-        task_id="prior-other",
-        status="submitted",
-        output_dir="/out/other",
-        input_fingerprint=other_fingerprint,
+        Submission(
+            task_id="prior-other",
+            status="submitted",
+            output_dir="/out/other",
+            input_fingerprint=other_fingerprint,
+        ),
     )
 
     result = await retrieve_plan_submit(
