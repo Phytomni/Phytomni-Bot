@@ -175,6 +175,13 @@ For faster feedback on the active change region:
 make scoped
 ```
 
+Render registered LangGraph agents as Mermaid for visualization:
+
+```bash
+python scripts/visualize_agent_graphs.py --list
+python scripts/visualize_agent_graphs.py --agent brief_gene
+```
+
 The gate covers secret scanning, compile checks, whitespace, Python
 format/lint/type checks, shell/YAML/JSON/Markdown/TOML checks,
 `demo_data/` idempotency, and offline pytest. See
@@ -185,6 +192,8 @@ dependency policy, config normalization, and common troubleshooting.
 
 - [Architecture](docs/architecture.md): package layout, MCP dispatch,
   LangGraph wrappers, configuration ownership, and cache policy.
+- [Agent Graphs](docs/agent-graphs.md): subgraph registry, schema-mismatch
+  adapter, graph manifest export, and the visualization command.
 - [MCP Tool Reference](docs/mcp-tools.md): public tool arguments,
   sync/async behavior, status polling, and demo payload links.
 - [HTTP API](docs/http-api.md): service startup, per-user keys,
