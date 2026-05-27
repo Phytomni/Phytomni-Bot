@@ -441,6 +441,50 @@ require re-engineering the per-test behaviour script API).
 
 ______________________________________________________________________
 
+### W0212 protected-access in test helpers
+
+**Rule(s)**: W0212 protected-access. Per-file count varies; this
+section currently covers `tests/agents/test_design_helpers.py` and
+will likely grow as further Phase C lifts add tests that target
+internal helpers directly.
+
+**Mechanism**: file-level
+`# pylint: disable=protected-access` placed near the top of each
+test file that reaches into a non-public helper. Allowlist entry
+under the file path in `ALLOWED_LOCAL_PYLINT_DISABLES`.
+
+**Original error sample**:
+
+```text
+W0212: Access to a protected member _analysis_prompt_parts of a
+client class (protected-access)
+```
+
+**Why refactor is net-negative**: pytest's "test the smallest unit
+the bug can hide in" convention often requires reaching into
+underscore-prefixed helpers — they ARE the unit under test. The
+alternatives (promote the helper to public, or test it only through
+its public caller) either widen the API surface or weaken the
+coverage. Both are worse than annotating tests as a legitimate
+private-method consumer.
+
+**Refactor path (if you disagree)**: promote the helper to a public
+name (drop the leading underscore) and move the convention into the
+module docstring. Useful only when the helper IS the public contract
+in disguise; for genuine internal helpers, the refactor degrades the
+API.
+
+**Refactor cost**: per helper, one rename in source + every caller
+
+- a fresh round of code review on whether the helper deserves
+  public-API status. Adds up across the codebase.
+
+**Sunset condition**: pylint adds a configuration knob like
+`acceptable-protected-access-paths = ["tests/**/test_*.py"]` so the
+exemption is project-wide-conditional instead of per-file.
+
+______________________________________________________________________
+
 ### Test fakes — too-few-public-methods (9 occurrences)
 
 **Rule(s)**: R0903 too-few-public-methods (1/2). 9 occurrences across:

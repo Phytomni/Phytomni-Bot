@@ -85,6 +85,13 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_cache_candidates.py": {
         "contextmanager-generator-missing-cleanup",
     },
+    # Test exercises design-agent internal helpers
+    # (``_get_compute_resource``, ``_analysis_prompt_parts``); see
+    # ``docs/lint-exemptions.md`` "W0212 protected-access in test
+    # helpers" entry.
+    "tests/agents/test_design_helpers.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
