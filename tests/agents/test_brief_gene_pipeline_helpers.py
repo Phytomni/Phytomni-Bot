@@ -136,5 +136,11 @@ async def test_generate_follow_up_constructs_prompt_and_parses_questions() -> (
 async def test_gene_retrieve_request_is_frozen_dataclass() -> None:
     """GeneRetrieveRequest is immutable (frozen=True)."""
     request = GeneRetrieveRequest(species="Rice", symbols=("LOC1",), top_n=10)
+    # ``setattr`` routes through the dataclass's ``__setattr__`` exactly
+    # the same way as an attribute write, so it still raises
+    # ``FrozenInstanceError`` (an ``AttributeError`` subclass) at
+    # runtime — the dynamic call merely bypasses the static type
+    # checkers that would otherwise reject the direct write because the
+    # field is frozen, without the need for an inline ``type: ignore``.
     with pytest.raises(AttributeError):
-        request.species = "Wheat"  # type: ignore[misc]
+        setattr(request, "species", "Wheat")
