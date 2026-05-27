@@ -89,9 +89,7 @@ def _build_fake_async_openai(
         captured["api_key"] = api_key
         captured["base_url"] = base_url
         return SimpleNamespace(
-            chat=SimpleNamespace(
-                completions=SimpleNamespace(create=create_fn)
-            )
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create_fn))
         )
 
     return _factory
