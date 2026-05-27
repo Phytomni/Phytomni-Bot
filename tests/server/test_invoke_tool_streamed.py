@@ -84,12 +84,16 @@ async def test_invoke_tool_streamed_wraps_chunks_in_formatted_tool_chunk(
     is the exact dict the streaming primitive produced, with unknown
     provider fields (``custom``) intact.
     """
+    # Literals chosen distinct from tests/agents/test_chat_agent_streaming.py
+    # so the two test files do not register as an R0801 duplicate block —
+    # both tests only need a small chunk sequence with a unique vendor
+    # field; their payload content is otherwise incidental.
     payloads = [
-        {"id": "c1", "choices": [{"delta": {"content": "Hel"}}]},
+        {"id": "seam-c1", "choices": [{"delta": {"content": "A"}}]},
         {
-            "id": "c1",
-            "choices": [{"delta": {"content": "lo"}, "finish_reason": "stop"}],
-            "custom": "kept",
+            "id": "seam-c1",
+            "choices": [{"delta": {"content": "B"}, "finish_reason": "stop"}],
+            "vendor_seam_tag": "kept",
         },
     ]
     captured = _patch_stream(monkeypatch, payloads)

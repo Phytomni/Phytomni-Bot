@@ -4,19 +4,25 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Pure mapping helpers for the OpenAI-compatible chat surface.
 
-Functions: tool_for_model, flatten_messages, to_chat_completion.
-``to_chat_completion`` keeps provider fields (``reasoning_content``,
-``tool_calls``, ``usage``, ``finish_reason``, ``system_fingerprint``,
-unknown extensions) at OpenAI canonical positions and attaches
-top-level ``formatted`` and ``raw`` envelope blocks so clients can
-pick the display view or the full sanitized payload.
+Functions: tool_for_model, flatten_messages, to_chat_completion,
+to_chat_completion_chunks. ``to_chat_completion`` keeps provider
+fields (``reasoning_content``, ``tool_calls``, ``usage``,
+``finish_reason``, ``system_fingerprint``, unknown extensions) at
+OpenAI canonical positions and attaches top-level ``formatted`` and
+``raw`` envelope blocks. ``to_chat_completion_chunks`` is the SSE
+sibling that shapes a ``FormattedToolChunk`` async-iterator into
+``data: {...}\\n\\n`` event lines and a terminal
+``data: [DONE]\\n\\n``.
 """
 
 from __future__ import annotations
 
+import json
 import time
+from collections.abc import AsyncIterator
 from typing import Any, Mapping, Optional, Sequence
 
+from ..mcp.result_formatting import FormattedToolChunk
 from ..storage.path_policy import IdFactory
 
 __all__ = [
@@ -26,6 +32,7 @@ __all__ = [
     "tool_accepts_resolve_gene_id",
     "flatten_messages",
     "to_chat_completion",
+    "to_chat_completion_chunks",
 ]
 
 # Chat-like agents exposed through /v1/chat/completions.
@@ -142,3 +149,47 @@ def to_chat_completion(
     )
     completion["raw"] = raw
     return completion
+
+
+async def to_chat_completion_chunks(
+    stream: AsyncIterator[FormattedToolChunk], model: str
+) -> AsyncIterator[str]:
+    """Shape a ``FormattedToolChunk`` stream into OpenAI SSE event lines.
+
+    Each upstream chunk becomes one ``data: {...}\\n\\n`` line carrying
+    the canonical OpenAI ``chat.completion.chunk`` JSON. After the
+    upstream iterator drains, a final ``data: [DONE]\\n\\n`` signals
+    stream end so clients close their EventSource without timing out.
+
+    The shaper makes two minimal projections on each payload:
+
+    1. ``object`` is filled with ``"chat.completion.chunk"`` when the
+       provider omitted it, so OpenAI-compatible clients see the
+       canonical event type on every line.
+    1. ``model`` is overridden with the requested model id, mirroring
+       :func:`to_chat_completion`'s consistency rule — the request
+       model name surfaces to the client even if the upstream
+       provider returned a different routing slug.
+
+    Unknown vendor fields (``reasoning_content``, ``tool_calls``,
+    extensions) survive untouched on every line. The shaper is a
+    pure projection — it does not mutate the input
+    :class:`FormattedToolChunk` (the chunk is frozen anyway) and
+    does not buffer; emits each line as it pulls one chunk.
+
+    Args:
+        stream: Async iterator of ``FormattedToolChunk`` produced by
+            ``invoke_tool_streamed``.
+        model: The requested model id, echoed into each line's
+            ``model`` field.
+
+    Yields:
+        One ``data: {...}\\n\\n`` line per upstream chunk, then a
+        terminal ``data: [DONE]\\n\\n``.
+    """
+    async for chunk in stream:
+        payload = dict(chunk.payload)
+        payload.setdefault("object", "chat.completion.chunk")
+        payload["model"] = model
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"
