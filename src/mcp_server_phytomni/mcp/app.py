@@ -9,9 +9,10 @@ to the domain-specific tool handler layer while keeping public tool names
 stable for existing clients.
 """
 
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 from json import dumps
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, cast
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -19,8 +20,11 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
+from ..agents.chat.service import stream_phyto_chat_chunks
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
+from ..config.defaults import ChatConfig
+from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
 from .handlers import (
     handle_analyst_agent,
     handle_brief_gene_agent,
@@ -33,11 +37,14 @@ from .handlers import (
     handle_in_silico_research_agent,
     handle_knowledge_agent,
     handle_review_agent,
+    scratch_server_dir,
 )
 from .result_formatting import (
+    FormattedToolChunk,
     FormattedToolResult,
     ToolResultEnvelope,
     build_tool_result_envelope,
+    format_tool_chunk,
     resolve_debug,
 )
 from .schemas import (
@@ -204,6 +211,86 @@ async def invoke_tool_enveloped(
     return build_tool_result_envelope(
         _tool_name(name), raw, arguments=arguments
     )
+
+
+async def invoke_tool_streamed(
+    name: Any, arguments: Dict[str, Any]
+) -> AsyncIterator[FormattedToolChunk]:
+    """Stream a tool's response chunk-by-chunk through a typed seam.
+
+    Fourth invocation seam, parallel to :func:`invoke_tool_raw` /
+    :func:`invoke_tool_formatted` / :func:`invoke_tool_enveloped`.
+    v1 wires only :class:`ChatAgent` to
+    :func:`stream_phyto_chat_chunks`; every other registered tool
+    raises :class:`NotImplementedError` so callers receive a clear
+    "streaming not supported for X" signal instead of a silent
+    fallback to non-streaming aggregation.
+
+    The function is an async generator — argument validation,
+    unknown-tool detection, and the not-implemented branch all raise
+    on the first ``__anext__`` call, not when the generator object is
+    constructed. Callers must iterate (or call ``__anext__`` once) to
+    surface those errors.
+
+    Args:
+        name: Raw tool name supplied by the caller.
+        arguments: JSON object passed to the selected tool.
+
+    Yields:
+        :class:`FormattedToolChunk` per provider chunk; the chunk's
+        ``payload`` is one OpenAI ``chat.completion.chunk`` dict with
+        unknown provider fields intact for downstream SSE shaping.
+
+    Raises:
+        McpError: When the tool name is unknown or schema validation
+            fails (mirrors :func:`invoke_tool_raw`).
+        NotImplementedError: When the tool is registered but lacks a
+            streaming primitive (every tool except ChatAgent in v1).
+    """
+    tool_name = _tool_name(name)
+    model = TOOL_ARGUMENT_MODELS.get(tool_name)
+    if model is None:
+        raise _invalid_params(f"Unknown tool: {tool_name}")
+    try:
+        args = model(**arguments)
+    except ValidationError as exc:
+        raise _invalid_params(
+            _format_validation_error(tool_name, exc)
+        ) from exc
+    if tool_name == PhytomniAgents.CHAT_AGENT.value:
+        async for chunk in _stream_chat_agent(cast(ChatAgent, args)):
+            yield format_tool_chunk(chunk)
+        return
+    raise NotImplementedError(f"streaming not supported for tool {tool_name}")
+
+
+async def _stream_chat_agent(
+    args: ChatAgent,
+) -> AsyncIterator[Dict[str, Any]]:
+    """Stream phyto-chat chunks using the chat handler's standard kwargs.
+
+    Mirrors :func:`handle_chat_agent` by composing the same
+    ``chat_kwargs`` + ``obs_kwargs`` + scratch ``server_dir`` so the
+    streaming path sends identical config / sensitive / OBS wiring to
+    the provider. Yields each chunk dict produced by
+    :func:`stream_phyto_chat_chunks` for the outer seam to wrap.
+
+    Args:
+        args: Validated :class:`ChatAgent` request schema.
+
+    Yields:
+        One OpenAI ``chat.completion.chunk`` dict per upstream chunk.
+    """
+    chat_config = ChatConfig()
+    runtime = load_handler_runtime()
+    async for chunk in stream_phyto_chat_chunks(
+        user_query=args.user_query,
+        obs_file_list=args.obs_file_list,
+        server_dir=scratch_server_dir(chat_config, "chat"),
+        **chat_kwargs(chat_config, runtime.sensitive),
+        **obs_kwargs(chat_config, runtime.obs_credentials),
+    ):
+        yield chunk
 
 
 async def dispatch_tool(

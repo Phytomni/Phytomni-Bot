@@ -75,6 +75,41 @@ class ToolResultEnvelope:
     raw: Any
 
 
+@dataclass(frozen=True)
+class FormattedToolChunk:
+    """One streamed chunk emitted by ``invoke_tool_streamed``.
+
+    Wraps a single provider chunk so the streaming seam returns a
+    typed object parallel to :class:`FormattedToolResult`, while
+    preserving the full chunk dict (including unknown vendor
+    extensions) for downstream SSE shaping in
+    ``api/openai_mapping.py``. Unlike :class:`ToolResultEnvelope`
+    there is no ``raw`` split because a streamed chunk carries no
+    handler-side aggregate — each chunk is already the raw provider
+    shape the client needs.
+
+    Attributes:
+        payload: One OpenAI ``chat.completion.chunk`` dict.
+    """
+
+    payload: Mapping[str, Any]
+
+
+def format_tool_chunk(payload: Mapping[str, Any]) -> FormattedToolChunk:
+    """Wrap one streamed chunk payload in a :class:`FormattedToolChunk`.
+
+    Args:
+        payload: One OpenAI ``chat.completion.chunk`` dict produced by
+            ``stream_phyto_chat_chunks``.
+
+    Returns:
+        The chunk wrapped in a frozen :class:`FormattedToolChunk` so
+        callers cannot mutate the streaming timeline by editing fields
+        in-place.
+    """
+    return FormattedToolChunk(payload=payload)
+
+
 _SECRET_KEY_PATTERNS: frozenset[str] = frozenset(
     {
         "api_key",

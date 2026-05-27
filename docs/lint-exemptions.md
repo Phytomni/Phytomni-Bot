@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 9; the
 10th fake pushes the count to 10, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 21st R0801 duplicate-code violation appears.** Default pylint
+**A 23rd R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 20; the
-21st duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 22; the
+23rd duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -535,10 +535,10 @@ should be planned independently).
 
 ______________________________________________________________________
 
-### R0801 duplicate-code (20 occurrences)
+### R0801 duplicate-code (22 occurrences)
 
-**Rule(s)**: R0801 similar-lines-in-files. 20 violations across the
-codebase, in three clusters:
+**Rule(s)**: R0801 similar-lines-in-files. 22 violations across the
+codebase, in five clusters:
 
 1. **Analyst module fan-out wrappers** (~6 occurrences). The
    `analyst/__init__.py`, `analyst/agent.py`, and `analyst/defaults.py`
@@ -551,14 +551,30 @@ codebase, in three clusters:
 1. **MCP result formatting test fixtures** (~4 occurrences). Helper
    payload assembly is repeated across
    `tests/server/test_result_formatting*.py`.
+1. **LangGraph wrapper `arun` body, environment vs evolution**
+   (1 occurrence). `agents/environment/agent.py` and
+   `agents/evolution/agent.py` share the same
+   `initial_state → ainvoke_graph → return final_state["result"]`
+   sequence introduced when both agents grew graph wrappers in
+   parallel. The two callers want their own per-agent state typing
+   and result post-processing, so a generic wrapper helper would
+   force a shape-erased state dict that loses each agent's typed
+   keys.
+1. **Chat-agent kwargs spread, stream vs non-stream** (1 occurrence,
+   added 2026-05-28). `mcp/app.py::_stream_chat_agent` and
+   `mcp/handlers.py::handle_chat_agent` build the same 5-line
+   `user_query / obs_file_list / server_dir / chat_kwargs / obs_kwargs` block. The duplicate is intentional per the streaming
+   plan: the stream primitive is a sister of the cached path
+   (`run_phyto_chat_cached`), not a wrapper, so the two call sites
+   must hand the provider identical config / sensitive / OBS wiring.
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 20`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 22`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
 own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 21,
+the pinned baseline. A new R0801 violation pushes the count to 23,
 the baseline script exits 1, and the gate fails until the author
 either resolves the duplicate or explicitly bumps the baseline in
 the same diff.
@@ -567,6 +583,18 @@ the same diff.
 wrappers' parallel signatures are by design — they map onto one
 backend with one canonical signature. Collapsing them into a generic
 helper would obscure the per-wrapper public contract.
+
+**Why refactor is net-negative for cluster 4**: the chat-agent
+stream and non-stream call sites land in two modules
+(`mcp/app.py::_stream_chat_agent` and
+`mcp/handlers.py::handle_chat_agent`). The natural extraction
+target — a shared kwargs builder in `mcp/handler_support.py` —
+would cross-cut the in-flight chat-agent refactor a parallel agent
+is staging (new `agents/chat/agent.py`, untracked at commit time);
+landing the extraction now would either collide with that work or
+ship a single-use helper that is itself an antipattern. A
+follow-up commit can lower the baseline back to 20 once the
+parallel refactor consolidates the chat call sites.
 
 **Why refactor is mixed for clusters 2 and 3**: the test boilerplate
 could plausibly be extracted into pytest fixtures. The reason it has
