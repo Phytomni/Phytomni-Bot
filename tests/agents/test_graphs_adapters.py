@@ -13,6 +13,7 @@ contract without compiling a real LangGraph.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,24 +21,30 @@ import pytest
 from mcp_server_phytomni.graphs.adapters import adapter_node
 
 
-class _FakeSubgraph:
-    """Tiny stand-in for ``CompiledStateGraph`` with recorded inputs."""
+def _make_fake_subgraph(output: Mapping[str, Any]) -> SimpleNamespace:
+    """Return a ``SimpleNamespace`` that mimics a compiled LangGraph app.
 
-    def __init__(self, output: Mapping[str, Any]) -> None:
-        """Initialize with the fixed output ``ainvoke`` should return."""
-        self.output = output
-        self.last_input: Mapping[str, Any] | None = None
+    The namespace exposes an ``ainvoke`` coroutine returning the preset
+    output and a ``last_input`` slot updated on each call so tests can
+    assert what reached the subgraph boundary. SimpleNamespace mirrors
+    the test-fake pattern set by ``tests/agents/_analyst_fakes.py`` and
+    avoids the R0903 too-few-public-methods ratchet that plain stub
+    classes would trip.
+    """
+    namespace = SimpleNamespace(output=output, last_input=None)
 
-    async def ainvoke(self, sub_input: Mapping[str, Any]) -> dict[str, Any]:
-        """Record the input and return the preset output."""
-        self.last_input = sub_input
-        return dict(self.output)
+    async def ainvoke(sub_input: Mapping[str, Any]) -> dict[str, Any]:
+        namespace.last_input = sub_input
+        return dict(namespace.output)
+
+    namespace.ainvoke = ainvoke
+    return namespace
 
 
 @pytest.mark.asyncio
 async def test_map_in_output_reaches_subgraph_ainvoke() -> None:
     """``map_in`` result is forwarded to ``compiled_subgraph.ainvoke``."""
-    subgraph = _FakeSubgraph(output={"sub_out": "value"})
+    subgraph = _make_fake_subgraph(output={"sub_out": "value"})
 
     def map_in(state: Mapping[str, Any]) -> Mapping[str, Any]:
         return {"sub_in": state["parent_field"]}
@@ -55,7 +62,7 @@ async def test_map_in_output_reaches_subgraph_ainvoke() -> None:
 @pytest.mark.asyncio
 async def test_map_out_only_returns_declared_parent_fields() -> None:
     """The adapter returns exactly what ``map_out`` produced."""
-    subgraph = _FakeSubgraph(
+    subgraph = _make_fake_subgraph(
         output={
             "internal_field_a": 1,
             "internal_field_b": 2,
@@ -79,7 +86,7 @@ async def test_map_out_only_returns_declared_parent_fields() -> None:
 @pytest.mark.asyncio
 async def test_map_in_exception_propagates_unchanged() -> None:
     """Exceptions raised inside ``map_in`` are not swallowed."""
-    subgraph = _FakeSubgraph(output={})
+    subgraph = _make_fake_subgraph(output={})
 
     def map_in(_state: Mapping[str, Any]) -> Mapping[str, Any]:
         raise ValueError("map_in failed")
@@ -97,12 +104,10 @@ async def test_map_in_exception_propagates_unchanged() -> None:
 async def test_subgraph_exception_propagates_unchanged() -> None:
     """Exceptions raised by the subgraph propagate to the parent."""
 
-    class _RaisingSubgraph:
-        """Subgraph stand-in whose ainvoke always raises."""
+    async def raising_ainvoke(_sub_input: Mapping[str, Any]) -> None:
+        raise RuntimeError("subgraph failed")
 
-        async def ainvoke(self, _sub_input: Mapping[str, Any]) -> None:
-            """Raise ``RuntimeError`` to simulate a failing subgraph."""
-            raise RuntimeError("subgraph failed")
+    raising_subgraph = SimpleNamespace(ainvoke=raising_ainvoke)
 
     def map_in(_state: Mapping[str, Any]) -> Mapping[str, Any]:
         return {}
@@ -110,7 +115,7 @@ async def test_subgraph_exception_propagates_unchanged() -> None:
     def map_out(_sub_output: Mapping[str, Any]) -> dict[str, Any]:
         return {}
 
-    node = adapter_node(map_in, _RaisingSubgraph(), map_out)
+    node = adapter_node(map_in, raising_subgraph, map_out)
     with pytest.raises(RuntimeError, match="subgraph failed"):
         await node({})
 
@@ -118,7 +123,7 @@ async def test_subgraph_exception_propagates_unchanged() -> None:
 @pytest.mark.asyncio
 async def test_map_out_exception_propagates_unchanged() -> None:
     """Exceptions raised inside ``map_out`` are not swallowed."""
-    subgraph = _FakeSubgraph(output={"x": 1})
+    subgraph = _make_fake_subgraph(output={"x": 1})
 
     def map_in(_state: Mapping[str, Any]) -> Mapping[str, Any]:
         return {}
@@ -135,7 +140,7 @@ async def test_map_out_exception_propagates_unchanged() -> None:
 @pytest.mark.asyncio
 async def test_adapter_is_pure_per_call() -> None:
     """Each invocation runs the full map_in/ainvoke/map_out chain afresh."""
-    subgraph = _FakeSubgraph(output={"out": "v"})
+    subgraph = _make_fake_subgraph(output={"out": "v"})
     seen_states: list[Mapping[str, Any]] = []
 
     def map_in(state: Mapping[str, Any]) -> Mapping[str, Any]:
