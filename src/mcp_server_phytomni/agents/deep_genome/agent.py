@@ -483,12 +483,18 @@ class DeepGenomeAgents(
         initial_state["task_id"] = umbrella_id
         initial_state["output_dir"] = umbrella_output_dir
 
-        asyncio.create_task(
-            self._run_workflow_background(
+        workflow_task = asyncio.create_task(
+            ainvoke_graph(
+                self.app,
+                initial_state,
+                thread_id=kwargs.get("thread_id"),
+            )
+        )
+        workflow_task.add_done_callback(
+            lambda task: self._finalize_workflow(
+                task,
                 umbrella_id=umbrella_id,
                 output_dir=umbrella_output_dir,
-                initial_state=initial_state,
-                thread_id=kwargs.get("thread_id"),
             )
         )
 
@@ -498,57 +504,56 @@ class DeepGenomeAgents(
             "compute_resource": "deep-genome",
         }
 
-    async def _run_workflow_background(
+    def _finalize_workflow(
         self,
+        task: "asyncio.Task[Any]",
+        *,
         umbrella_id: str,
         output_dir: str,
-        initial_state: Dict[str, Any],
-        thread_id: Optional[str],
     ) -> None:
-        """Run the LangGraph workflow off the submit response path.
+        """Stamp the terminal task status after the background workflow ends.
 
-        Fire-and-forget coroutine: the workflow status is recorded
-        regardless of outcome so a polling client never hangs on a
-        dead background. The success/failure decision is made before
-        the terminal write so a SQLite hiccup on the success row
-        cannot flip a succeeded run to ``"failed"`` (which the prior
-        nested-except shape would do — the outer except caught the
-        SQLite exception from the success-side ``update_task`` and
-        then wrote the misleading ``"failed"`` status).
+        Runs as the ``add_done_callback`` for the LangGraph workflow
+        task spawned from ``arun``. Reading the exception through
+        ``task.exception()`` (which returns the exception object instead
+        of raising) is what lets us record *any* failure category
+        without writing ``except Exception`` — LangGraph, LLM, storage,
+        and state-shape errors all flow through the same single
+        ``Task.exception()`` accessor, so the previous broad-except sink
+        becomes a typed exception handle here.
 
-        The terminal write is wrapped in ``contextlib.suppress`` for
-        the realistic registry-side error types (``sqlite3.Error``
-        for WAL / lock failures, ``OSError`` for full-disk / FS
-        unavailable). Any wider exception escapes the suppress and
-        is recorded by the asyncio "Task exception was never
-        retrieved" warning — no recovery exists at that point.
+        The success/failure decision is made *before* the terminal
+        registry write so a SQLite hiccup on the success path cannot
+        flip a succeeded run to ``"failed"`` (the prior nested-except
+        shape would do this — the outer except caught the SQLite
+        exception from the success-side ``update_task`` and then wrote
+        a misleading ``"failed"``). ``contextlib.suppress`` wraps the
+        terminal write for the realistic registry error types
+        (``sqlite3.Error`` for WAL / lock failures, ``OSError`` for
+        full-disk / FS unavailable). Cancellation surfaces as
+        ``asyncio.CancelledError`` on the task and is recorded as
+        ``"failed"`` so a polling client never hangs.
 
         Args:
+            task: Completed LangGraph workflow task whose
+                ``exception()`` decides the terminal row status.
             umbrella_id: Synthetic task id stamped by ``arun``.
-            output_dir: Placeholder path returned to the caller; the
-                background does not yet write artifacts there, but the
-                terminal update keeps the column in sync.
-            initial_state: LangGraph initial state mapping.
-            thread_id: Optional checkpointer thread id.
+            output_dir: Placeholder path the terminal update keeps in
+                sync with the caller-visible response.
         """
-        # Fire-and-forget: any escape from this catch would only
-        # trigger asyncio's "Task exception was never retrieved"
-        # warning and leave the umbrella row pinned at the initial
-        # "failed" status with no recovery. broad-except is
-        # load-bearing here (LangGraph + LLM + storage + state-shape
-        # errors all surface through this single seam).
-        status = "failed"
-        try:
-            await ainvoke_graph(
-                self.app,
-                initial_state,
-                thread_id=thread_id,
+        if task.cancelled():
+            status = "failed"
+            logger.warning(
+                "DeepGenome background workflow cancelled for %s",
+                umbrella_id,
             )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.exception(
+        elif (exc := task.exception()) is not None:
+            status = "failed"
+            logger.error(
                 "DeepGenome background workflow failed for %s: %s",
                 umbrella_id,
                 exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
             )
         else:
             status = "succeeded"
