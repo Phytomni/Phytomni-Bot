@@ -12,6 +12,7 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -22,6 +23,17 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
+
+
+@dataclass(frozen=True)
+class _RemoteCase:
+    """One parametrize row for the remote-agent chokepoint contract."""
+
+    slug: str
+    tool_name: str
+    stub_return: dict[str, Any]
+    arguments: dict[str, Any]
+    expected_task_ids: set[str]
 
 
 async def test_list_agents_returns_all_ten(
@@ -162,57 +174,56 @@ async def test_agent_run_sync_persists_request_info(
 
 _REMOTE_CASES = [
     pytest.param(
-        "analyst",
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        {"task_id": "T-A", "output_dir": "/obs/a"},
-        {
-            "goal_description": "test",
-            "data_list": {},
-            "obs_file_list": [],
-        },
-        {"T-A"},
+        _RemoteCase(
+            slug="analyst",
+            tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
+            stub_return={"task_id": "T-A", "output_dir": "/obs/a"},
+            arguments={
+                "goal_description": "test",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+            expected_task_ids={"T-A"},
+        ),
         id="analyst-top-level-task_id",
     ),
     pytest.param(
-        "deep_genome",
-        server.PhytomniAgents.DEEP_GENOME_AGENT.value,
-        {"task_id": "T-D", "output_dir": "/obs/d"},
-        {"species_code": "ATH", "gene_id": "AT1G01010"},
-        {"T-D"},
+        _RemoteCase(
+            slug="deep_genome",
+            tool_name=server.PhytomniAgents.DEEP_GENOME_AGENT.value,
+            stub_return={"task_id": "T-D", "output_dir": "/obs/d"},
+            arguments={"species_code": "ATH", "gene_id": "AT1G01010"},
+            expected_task_ids={"T-D"},
+        ),
         id="deep_genome-top-level-task_id",
     ),
     pytest.param(
-        "research",
-        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
-        {
-            "task_ids": {"g1": "T-R1", "g2": "T-R2"},
-            "output_dir": "/obs/r",
-        },
-        {
-            "user_query": "test",
-            "data_list": {},
-            "obs_file_list": [],
-        },
-        {"T-R1", "T-R2"},
+        _RemoteCase(
+            slug="research",
+            tool_name=server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
+            stub_return={
+                "task_ids": {"g1": "T-R1", "g2": "T-R2"},
+                "output_dir": "/obs/r",
+            },
+            arguments={
+                "user_query": "test",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+            expected_task_ids={"T-R1", "T-R2"},
+        ),
         id="research-task_ids-map",
     ),
 ]
 
 
-@pytest.mark.parametrize(
-    "slug,tool_name,stub_return,arguments,expected_task_ids",
-    _REMOTE_CASES,
-)
+@pytest.mark.parametrize("case", _REMOTE_CASES)
 async def test_agent_run_remote_returns_chokepoint_run_id(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
-    slug: str,
-    tool_name: str,
-    stub_return: dict[str, Any],
-    arguments: dict[str, Any],
-    expected_task_ids: set[str],
+    case: _RemoteCase,
 ) -> None:
     """Remote agents return 202 + run_id + task_ids regardless of shape.
 
@@ -227,31 +238,31 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     async def fake(args: Any) -> dict[str, Any]:
         """Return the parametrised stub wrapper payload."""
         _ = args
-        return stub_return
+        return case.stub_return
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
-        tool_name,
-        records_submission(slug)(fake),
+        case.tool_name,
+        records_submission(case.slug)(fake),
     )
 
     response = await api_client.post(
-        f"/v1/agents/{slug}/runs",
+        f"/v1/agents/{case.slug}/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={"arguments": arguments},
+        json={"arguments": case.arguments},
     )
     assert response.status_code == 202
     body = response.json()
     assert body["object"] == "agent.run"
-    assert body["agent"] == slug
+    assert body["agent"] == case.slug
     assert body["status"] == "running"
     assert body["id"]
-    assert set(body["task_ids"]) == expected_task_ids
+    assert set(body["task_ids"]) == case.expected_task_ids
 
     listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert len(listing) == 1
     record = listing[0]
     assert record.spec.run_id == body["id"]
-    assert record.spec.agent == slug
+    assert record.spec.agent == case.slug
     assert record.spec.origin == "remote"
-    assert set(record.task_ids) == expected_task_ids
+    assert set(record.task_ids) == case.expected_task_ids
