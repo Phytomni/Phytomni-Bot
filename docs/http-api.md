@@ -61,8 +61,10 @@ Every response carries an `X-Request-Id`. Errors on native routes use:
 {"error": {"type": "...", "code": "...", "message": "...", "request_id": "..."}}
 ```
 
-Over-budget callers get `429` with `Retry-After`. Streaming is not
-supported; `stream: true` returns `400`.
+Over-budget callers get `429` with `Retry-After`. SSE streaming is
+supported only on streaming-capable chat models — `phyto-chat` in
+v1; every other chat-like model with `stream: true` returns `400`
+with a per-model message (`streaming is not supported for model phyto-knowledge`, etc.). See the SSE Streaming section below.
 
 ## Endpoints
 
@@ -205,6 +207,54 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"phyto-chat","messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
 ```
+
+### SSE Streaming
+
+`POST /v1/chat/completions` accepts an optional boolean `stream`.
+Default is `false`. When `true`, the response switches from a single
+JSON `chat.completion` envelope to an OpenAI-compatible
+`text/event-stream` carrying one
+`data: {chat.completion.chunk JSON}\n\n` line per provider chunk and
+a terminating `data: [DONE]\n\n` so the client closes its
+`EventSource` on the first match instead of waiting for the read
+timeout.
+
+v1 wires streaming only on `phyto-chat`. Every other chat-like model
+(`phyto-knowledge`, `phyto-review`, `phyto-brief-gene`) returns `400`
+with `streaming is not supported for model <name>` so clients see a
+clear per-model signal instead of a silent fallback. The
+streaming-capable set is maintained in
+`src/mcp_server_phytomni/api/openai_mapping.py:_STREAM_CAPABLE_TOOLS`.
+
+`resolve_gene_id=true` + `stream=true` is unreachable by
+construction: `resolve_gene_id` is BriefGene-only (the resolver
+preprocessor rejects other models with `400`) and BriefGene is not
+streaming-capable. The combination therefore always `400`s — against
+`phyto-chat` via the BriefGene-only gate, against `phyto-brief-gene`
+via the streaming-capable gate.
+
+```bash
+curl -N -s http://127.0.0.1:8080/v1/chat/completions \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"phyto-chat","stream":true,"messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
+```
+
+Auth, rate-limit, request-id, OBS-file processing, and message
+flattening all complete *before* the stream starts, so a
+`stream=true` request that fails any precondition surfaces as a
+normal JSON error envelope (`401` / `429` / `400`) instead of an
+empty `text/event-stream`. After the stream drains, the run-record
+is written once with `result = {"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true, "completed": bool}`;
+the `completed` flag distinguishes a normal drain from a client
+disconnect or mid-stream provider error so `/v1/runs` callers can
+surface partial calls.
+
+Open-stream transport failures (`ConnectError` / `TimeoutException`)
+are retried once before raising; once the iterator returns, any
+mid-stream failure propagates immediately (a silent retry would
+re-emit chunks the client already received and corrupt the SSE
+timeline). See `agents/chat/service.py:MAX_OPEN_STREAM_RETRIES`.
 
 ### BriefGene `resolve_gene_id`
 
