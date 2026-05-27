@@ -17,13 +17,13 @@ from types import SimpleNamespace
 from typing import Any, Dict, cast
 
 import pytest
-from _analyst_fakes import fake_analyst_sensitive_config
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst import graph as analyst_graph
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgentsState
 from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.config.defaults import AnalystConfig
+from tests.agents._analyst_fakes import fake_analyst_sensitive_config
 
 pytestmark = pytest.mark.agent
 

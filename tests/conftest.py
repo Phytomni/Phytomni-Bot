@@ -21,17 +21,27 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
-# Test env vars MUST be installed BEFORE any ``mcp_server_phytomni``
-# import: several modules (``storage/uploads.py``,
-# ``storage/downloads.py``, ``agents/shared/analysis_storage.py``,
-# ``agents/deep_genome/{profile,agent,report}.py``,
-# ``agents/data/nl2sql.py``, ``agents/brief_gene/core.py``, ...) call
-# ``ServerConfig()`` (or a subclass) at module-import time, and
-# Phase 14.3.1 made the per-deployment endpoints required-via-env;
-# importing those modules before the env is populated would raise
-# ``ValidationError`` during pytest's collection phase.
+import httpx
+import pytest
 
-TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.config.settings import (
+    get_sensitive_config,
+)
+from mcp_server_phytomni.func_cache.storage import Storage
+from mcp_server_phytomni.runtime.request_context import (
+    request_context,
+)
+from mcp_server_phytomni.storage import (
+    uploads as uploads_module,
+)
+
+# The repo-root ``conftest.py`` installs the offline test env before
+# pytest reaches this module, so the imports above can stay at the
+# top of the file (no E402 / C0413 / noqa needed). See that file's
+# module docstring for why the install must precede every
+# ``mcp_server_phytomni`` import.
 
 # pylint: disable=contextmanager-generator-missing-cleanup
 # W0135 is a documented false positive on the canonical
@@ -43,92 +53,7 @@ TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 # in this fixture file. See ``docs/lint-exemptions.md`` for the full
 # refactor cost / sunset analysis.
 
-_TEST_ENV = {
-    "DOMAIN_NAME": "pytest-domain",
-    "USER_NAME": "pytest-user",
-    "USER_PASSWORD": "pytest-password",
-    "ACCESS_KEY_ID": "pytest-access-key-id",
-    "SECRET_ACCESS_KEY": "pytest-secret-access-key",
-    "BASE_URL": "https://example.invalid/llm",
-    "MODEL_ID": "pytest-model",
-    "API_KEY": "pytest-api-key",
-    "CODER_URL": "https://example.invalid/coder",
-    "CODER_MODEL": "pytest-coder-model",
-    "CODER_API_KEY": "pytest-coder-api-key",
-    "EMBED_URL": "https://example.invalid/embed",
-    "EMBED_MODEL": "pytest-embed-model",
-    "EMBED_API_KEY": "pytest-embed-api-key",
-    "BI_TOKEN": "pytest-bi-token",
-    # Deployment-specific endpoints (Phase 14.3.1): empty defaults in
-    # config/defaults.py force operators to set these per-deployment.
-    # Tests use stable example.invalid hosts so a stray real network
-    # call would fail closed instead of leaking to a public endpoint.
-    "RETRIEVE_URL": "https://example.invalid/retrieve",
-    "RERANK_URL": "https://example.invalid/rerank",
-    "CREATE_TASK_URL": "https://example.invalid/create-task",
-    "UPDATE_TASK_URL": "https://example.invalid/update-task",
-    "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
-    # Deployment-specific UUIDs (Phase 14.3.2): empty defaults in
-    # config/defaults.py force operators to set per-deployment. Tests
-    # use opaque ``pytest-<name>-id`` strings so any accidental
-    # cross-tenant id leak shows up clearly in logs / assertions.
-    # REPO_ID_DICT ships as a JSON string env value; pydantic-settings
-    # parses it into Dict[str, int] automatically.
-    "REPO_ID": "pytest-repo-id",
-    "REPO_ID_DICT": '{"pytest-repo-id": 128}',
-    "WORKSPACE_ID": "pytest-workspace-id",
-    "SUBJECT_ID": "pytest-subject-id",
-    "DATA_REPO_ID": "pytest-data-repo-id",
-    "TOOL_REPO_ID": "pytest-tool-repo-id",
-    "PROTOCOL_REPO_ID": "pytest-protocol-repo-id",
-    "SPA_REPO_ID": "pytest-spa-repo-id",
-    # Embedded-UUID URLs + public BI host (Phase 14.3.3): empty
-    # defaults in config/defaults.py mean these env vars are required
-    # in every deployment, including the public ``phytomni.cn`` BI
-    # host — operators stamp them per environment rather than baking
-    # them into the wheel.
-    "DATABASE_URL": "https://example.invalid/database",
-    "ANALYSIS_URL": "https://example.invalid/analysis",
-    "BI_URL": "https://example.invalid/bi",
-}
-
-
-def _install_test_environment() -> None:
-    """Install pytest-only env vars before any project import.
-
-    Called at module scope (not as an autouse fixture) so the import
-    chain triggered by the ``mcp_server_phytomni`` imports below has
-    every required env var already in ``os.environ`` — modules that
-    construct ``ServerConfig()`` (or a subclass) during import need
-    the env populated first or pydantic raises ``ValidationError``.
-    """
-    os.environ["PHYTOMNI_TESTING"] = "1"
-    for name, value in _TEST_ENV.items():
-        os.environ[name] = value
-
-
-_install_test_environment()
-
-# pylint: disable=wrong-import-position
-# Imports below the env install above are deliberately placed after
-# module-level setup; see ``_install_test_environment`` rationale.
-import httpx  # noqa: E402
-import pytest  # noqa: E402
-
-from mcp_server_phytomni.api.app import create_app  # noqa: E402
-from mcp_server_phytomni.api.auth import ApiKeyStore  # noqa: E402
-from mcp_server_phytomni.config.settings import (  # noqa: E402
-    get_sensitive_config,
-)
-from mcp_server_phytomni.func_cache.storage import Storage  # noqa: E402
-from mcp_server_phytomni.runtime.request_context import (  # noqa: E402
-    request_context,
-)
-from mcp_server_phytomni.storage import (  # noqa: E402
-    uploads as uploads_module,
-)
-
-# pylint: enable=wrong-import-position
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 # Captured at import time, before block_external_http monkeypatches
 # httpx.AsyncClient.request for offline runs, so the in-process ASGI
