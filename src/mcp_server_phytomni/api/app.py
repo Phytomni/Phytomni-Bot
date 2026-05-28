@@ -14,6 +14,7 @@ Public functions: create_app.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
@@ -167,6 +168,9 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 }
 
 
+_PURGE_LOGGER = logging.getLogger(__name__)
+
+
 def _purge_expired_runs_best_effort() -> None:
     """Run a single ``RunRegistry.purge_expired`` pass, swallowing errors.
 
@@ -174,12 +178,18 @@ def _purge_expired_runs_best_effort() -> None:
     and the registry listing) drives the lazy GC by calling this
     helper so an expired row never outlives its TTL. A SQLite / OS
     failure must never propagate — the user-facing write already
-    succeeded and the next request can re-trigger the purge.
+    succeeded and the next request can re-trigger the purge — but
+    the failure does emit a sanitized ``warning`` log so ops can
+    notice a stuck GC. Only the exception class name is logged;
+    the message is dropped to avoid leaking on-disk paths or SQL
+    fragments that might appear in pysqlite error strings.
     """
     try:
         RunRegistry(resolve_tasks_db_path()).purge_expired()
-    except (sqlite3.Error, OSError):
-        pass
+    except (sqlite3.Error, OSError) as exc:
+        _PURGE_LOGGER.warning(
+            "run TTL purge failed: %s", exc.__class__.__name__
+        )
 
 
 def _extract_answer(result: Any) -> Optional[str]:
