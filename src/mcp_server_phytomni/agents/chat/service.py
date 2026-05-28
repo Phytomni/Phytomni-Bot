@@ -10,6 +10,7 @@ prompt, with support for various model parameters and retry mechanisms.
 
 import asyncio
 import logging
+from functools import lru_cache
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
@@ -32,6 +33,7 @@ from ...common.responses import (
 from ...config.defaults import ChatConfig
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.downloads import download_list_convert
 
 logger = logging.getLogger(__name__)
@@ -252,34 +254,34 @@ async def phyto_chat(
             ...     obs_file_list=files
             ... )
     """
-    if obs_file_list is None:
-        obs_file_list = []
-    else:
-        obs_file_list = list(obs_file_list)
-    options = _chat_options(kwargs)
-    if obs_file_list:
-        user_query = await _query_with_upload_context(
-            user_query,
-            obs_file_list,
-            options,
-        )
-    messages = [
-        {
-            "role": "system",
-            "content": get_prompt(
-                options["prompt_file"], options["prompt_path"]
-            ),
-        },
-        {
-            "role": "user",
-            "content": user_query,
-        },
-    ]
-
+    chat_kwargs: Dict[str, Any] = {**kwargs, "with_follow_up": False}
     if semaphore is not None:
-        async with semaphore:
-            return await _run_phyto_chat(messages, options)
-    return await _run_phyto_chat(messages, options)
+        chat_kwargs["semaphore"] = semaphore
+    initial_state: Dict[str, Any] = {
+        "user_query": user_query,
+        "obs_file_list": list(obs_file_list) if obs_file_list else [],
+        "chat_kwargs": chat_kwargs,
+    }
+    final_state = await ainvoke_graph(_cached_chat_app(), initial_state)
+    return final_state.get("response")
+
+
+@lru_cache(maxsize=1)
+def _cached_chat_app() -> Any:
+    """Lazy singleton of the compiled chat subgraph.
+
+    Lives in a function rather than at module load to break the
+    service → builder → graph → service import cycle: ``graph.py``
+    imports ``phyto_chat`` from this module at parse time, so this
+    module cannot import ``_build_chat_graph`` at the top. The
+    ``lru_cache`` makes the compilation happen at most once per
+    process and gives test suites a hook (``cache_clear()``) when
+    they need a fresh graph after monkeypatching node bodies.
+    """
+    # pylint: disable=import-outside-toplevel
+    from .builder import _build_chat_graph  # noqa: PLC0415
+
+    return _build_chat_graph()
 
 
 def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:

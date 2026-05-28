@@ -16,18 +16,17 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal
 
-from ...common.prompts import get_prompt
 from ...common.responses import (
     first_message,
     message_content,
     parse_follow_up_questions,
 )
+from . import service
 from .service import (
     CHAT_CONFIG,
     _chat_options,
     _query_with_upload_context,
     _run_phyto_chat,
-    phyto_chat,
 )
 from .state import ChatState
 
@@ -71,7 +70,7 @@ async def generate_node(state: ChatState) -> Dict[str, Any]:
     messages = [
         {
             "role": "system",
-            "content": get_prompt(
+            "content": service.get_prompt(
                 options["prompt_file"], options["prompt_path"]
             ),
         },
@@ -101,7 +100,7 @@ async def follow_up_node(state: ChatState) -> Dict[str, Any]:
         return {}
     chat_kwargs = dict(state.get("chat_kwargs") or {})
     prompt_file = chat_kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
-    follow_query = get_prompt(
+    follow_query = service.get_prompt(
         prompt_file,
         "system/follow_up_questions",
         {
@@ -110,7 +109,7 @@ async def follow_up_node(state: ChatState) -> Dict[str, Any]:
         },
     )
     follow_kwargs = {**chat_kwargs, "prompt_file": prompt_file}
-    follow_response = await phyto_chat(follow_query, **follow_kwargs)
+    follow_response = await service.phyto_chat(follow_query, **follow_kwargs)
     follow_list = parse_follow_up_questions(message_content(follow_response))
     message = first_message(response)
     if message is not None:
