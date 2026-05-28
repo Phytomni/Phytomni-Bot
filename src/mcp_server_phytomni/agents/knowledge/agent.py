@@ -139,13 +139,30 @@ class KnowledgeAgent:
         workflow.add_node("generate_node", self.generate_node)
         workflow.add_node("follow_up_node", self.follow_up_node)
 
-        workflow.add_conditional_edges(START, self.route_start)
+        workflow.add_conditional_edges(
+            START,
+            self.route_start,
+            {
+                "process_files_node": "process_files_node",
+                "retrieve_node": "retrieve_node",
+            },
+        )
         workflow.add_edge("process_files_node", "retrieve_node")
         workflow.add_conditional_edges(
-            "retrieve_node", self.route_after_retrieve
+            "retrieve_node",
+            self.route_after_retrieve,
+            {
+                "generate_node": "generate_node",
+                "__end__": END,
+            },
         )
         workflow.add_conditional_edges(
-            "generate_node", self.route_after_generate
+            "generate_node",
+            self.route_after_generate,
+            {
+                "follow_up_node": "follow_up_node",
+                "__end__": END,
+            },
         )
         workflow.add_edge("follow_up_node", END)
 

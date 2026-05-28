@@ -17,7 +17,7 @@ import asyncio
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -149,19 +149,49 @@ class AnalystAgent(AnalystGraphMixin):
         workflow.add_node("pooling_node", self.pooling_node)
         workflow.add_edge(START, "parse_query_node")
         workflow.add_conditional_edges(
-            "parse_query_node", self.route_after_extract
+            "parse_query_node",
+            self.route_after_extract,
+            {
+                "data_select_node": "data_select_node",
+                "method_retrieve_node": "method_retrieve_node",
+                "tool_extract_node": "tool_extract_node",
+            },
         )
         workflow.add_conditional_edges(
-            "data_select_node", self.route_after_data_select
+            "data_select_node",
+            self.route_after_data_select,
+            {
+                "method_retrieve_node": "method_retrieve_node",
+                "tool_extract_node": "tool_extract_node",
+            },
         )
         workflow.add_edge("method_retrieve_node", "plan_node")
         workflow.add_edge("plan_node", "check_node")
-        workflow.add_conditional_edges("check_node", self.route_after_check)
+        workflow.add_conditional_edges(
+            "check_node",
+            self.route_after_check,
+            {
+                "plan_node": "plan_node",
+                "tool_extract_node": "tool_extract_node",
+            },
+        )
         workflow.add_edge("tool_extract_node", "tool_retrieve_node")
         workflow.add_edge("tool_retrieve_node", "submit_node")
-        workflow.add_conditional_edges("submit_node", self.route_after_submit)
         workflow.add_conditional_edges(
-            "pooling_node", self.route_after_pooling
+            "submit_node",
+            self.route_after_submit,
+            {
+                "pooling_node": "pooling_node",
+                "__end__": END,
+            },
+        )
+        workflow.add_conditional_edges(
+            "pooling_node",
+            self.route_after_pooling,
+            {
+                "__end__": END,
+                "pooling_node": "pooling_node",
+            },
         )
 
         return workflow.compile(checkpointer=self.checkpointer)

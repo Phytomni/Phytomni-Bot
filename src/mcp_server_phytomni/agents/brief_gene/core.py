@@ -139,7 +139,12 @@ class BriefGeneAgent:
 
         workflow.add_edge(START, "query_judge_node")
         workflow.add_conditional_edges(
-            "query_judge_node", self.route_after_judge
+            "query_judge_node",
+            self.route_after_judge,
+            {
+                "fetch_annotation_node": "fetch_annotation_node",
+                "retrieve_node": "retrieve_node",
+            },
         )
         workflow.add_edge("fetch_annotation_node", "retrieve_node")
         workflow.add_edge("retrieve_node", "generate_node")
