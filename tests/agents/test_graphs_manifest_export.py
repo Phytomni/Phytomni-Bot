@@ -18,6 +18,8 @@ from langgraph.graph import END, START, StateGraph
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
+from mcp_server_phytomni.agents.data.agent import DataAgent
+from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
     GraphNodeManifest,
@@ -182,5 +184,38 @@ def test_export_real_chat_subgraph_node_set() -> None:
         "prepare_context_node",
         "generate_node",
         "follow_up_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_knowledge_subgraph_node_set() -> None:
+    """Real KnowledgeAgent export matches the documented four-node graph.
+
+    Pins the knowledge subgraph's manifest shape so the docs section
+    in ``docs/agent-graphs.md`` and the compiled graph stay in sync.
+    """
+    manifest = export_manifest(KnowledgeAgent().app)
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "process_files_node",
+        "retrieve_node",
+        "generate_node",
+        "follow_up_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_data_subgraph_node_set() -> None:
+    """Real DataAgent export matches the documented three-node graph.
+
+    Pins the data subgraph's manifest shape so the docs section in
+    ``docs/agent-graphs.md`` and the compiled graph stay in sync.
+    """
+    manifest = export_manifest(DataAgent().app)
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "retrieve_node",
+        "rewrite_node",
+        "search_node",
     }
     assert documented <= names

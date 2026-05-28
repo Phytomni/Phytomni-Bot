@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "name": "__start__",
+      "kind": "boundary"
+    },
+    {
+      "name": "retrieve_node",
+      "kind": "node"
+    },
+    {
+      "name": "rewrite_node",
+      "kind": "node"
+    },
+    {
+      "name": "search_node",
+      "kind": "node"
+    },
+    {
+      "name": "__end__",
+      "kind": "boundary"
+    }
+  ],
+  "edges": [
+    {
+      "source": "__start__",
+      "target": "retrieve_node",
+      "conditional": true
+    },
+    {
+      "source": "__start__",
+      "target": "search_node",
+      "conditional": true
+    },
+    {
+      "source": "retrieve_node",
+      "target": "rewrite_node",
+      "conditional": false
+    },
+    {
+      "source": "rewrite_node",
+      "target": "search_node",
+      "conditional": false
+    },
+    {
+      "source": "search_node",
+      "target": "__end__",
+      "conditional": false
+    }
+  ]
+}

@@ -84,6 +84,67 @@ into `follow_up_node` or short-circuits to `END`. One compiled graph
 therefore serves both the legacy no-follow `phyto_chat` shape and
 the with-follow `phyto_chat_with_follow` shape via a single switch.
 
+## Knowledge Subgraph
+
+The knowledge workflow is registered as `knowledge` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/knowledge/state.py`](../src/mcp_server_phytomni/agents/knowledge/state.py),
+and the legacy `KnowledgeAgentState` symbol stays a back-compat
+alias for `KnowledgeState` so internal node annotations remain
+valid.
+
+| TypedDict         | Required keys                      | Optional keys                                                  |
+| ----------------- | ---------------------------------- | -------------------------------------------------------------- |
+| `KnowledgeInput`  | `user_query`                       | `obs_file_list`, `repo_id_dict`, `is_generate`, `is_follow_up` |
+| `KnowledgeOutput` | `retrieved_docs`, `final_response` | —                                                              |
+| `KnowledgeState`  | every legacy field                 | (binary-compatible with `KnowledgeAgentState`)                 |
+
+The graph compiles into four nodes:
+
+| Node                 | Role                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| `process_files_node` | Downloads attached OBS files and converts them into a bounded `upload_context` string.     |
+| `retrieve_node`      | Issues `retrieve` + `rerank` against the knowledge repos, populates `retrieved_docs`.      |
+| `generate_node`      | Calls `phyto_chat` with the retrieval context and stores the answer in `final_response`.   |
+| `follow_up_node`     | Runs a second LLM call for follow-up questions and merges them into the assistant message. |
+
+## Data Subgraph
+
+The NL2SQL workflow is registered as `data` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/data/state.py`](../src/mcp_server_phytomni/agents/data/state.py),
+and the legacy `DataAgentState` symbol stays a back-compat alias
+for `DataState`.
+
+| TypedDict    | Required keys      | Optional keys                             |
+| ------------ | ------------------ | ----------------------------------------- |
+| `DataInput`  | `user_query`       | `is_rewrite`                              |
+| `DataOutput` | `final_response`   | —                                         |
+| `DataState`  | every legacy field | (binary-compatible with `DataAgentState`) |
+
+The graph compiles into three nodes:
+
+| Node            | Role                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `retrieve_node` | Pulls scenario fragments from the data repo and stores a SQL-rewrite prompt.                      |
+| `rewrite_node`  | Calls `phyto_chat` to convert the scenario prompt + user query into a rewritten NL question.      |
+| `search_node`   | Executes the NL2SQL request through `nl2sql.execute_nl2sql_request` and stores the response dict. |
+
+## Manifest Snapshots
+
+[`graphs/manifests/`](../src/mcp_server_phytomni/graphs/manifests/)
+contains JSON snapshots produced by
+`export_manifest(compiled_app).model_dump_json(indent=2)` for the
+chat / knowledge / data subgraphs. Snapshots act as a visible
+contract for parent-graph authors and as regression bait — any
+node-set or edge-set drift surfaces as a diff in the same PR that
+causes it. Future agents land their own `*.graph.json` next to
+these. A CI re-export-and-diff guard remains pending.
+
 ## Adding a New Subgraph
 
 1. Define `Input` / `Output` / `State` TypedDicts in
