@@ -4,12 +4,13 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """NL2SQL agent for natural language database queries.
 
-Classes: DataAgentState.
+Classes: DataAgent. ``DataAgentState`` is defined in :mod:`.state`
+and re-exported here for back compatibility.
 Functions: rewrite_nl2sql, retrieve_and_generate.
 """
 
 import logging
-from typing import Any, Dict, Literal, Optional, TypedDict
+from typing import Any, Dict, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -40,6 +41,7 @@ from .nl2sql import (
     _default_dialog_id,
     execute_nl2sql_request,
 )
+from .state import DataAgentState, DataInput, DataOutput, DataState
 
 logger = logging.getLogger(__name__)
 
@@ -112,28 +114,6 @@ async def rewrite_nl2sql(
     )
 
 
-class DataAgentState(TypedDict):
-    """State schema for the DataAgent LangGraph workflow.
-
-    This TypedDict defines the shared state that flows through each node
-    in the DataAgent graph. Each node reads from and writes to this state
-    as the graph processes a natural language query for database retrieval.
-
-    Attributes:
-        user_query: The user's natural language query.
-        is_rewrite: Is rewrite query or not.
-        retrieve_prompt: Prompt containing retrieved scenarios.
-        rewrite_query: The rewritten query optimized for SQL generation.
-        final_response: The final response from the database query execution.
-    """
-
-    user_query: str
-    is_rewrite: bool
-    retrieve_prompt: str
-    rewrite_query: str
-    final_response: dict
-
-
 class DataAgent:
     """A LangGraph-based agent for database querying via natural language.
 
@@ -185,7 +165,11 @@ class DataAgent:
         Returns:
             A compiled StateGraph with checkpointer support.
         """
-        workflow = StateGraph(DataAgentState)
+        workflow = StateGraph(
+            state_schema=DataState,
+            input_schema=DataInput,
+            output_schema=DataOutput,
+        )
         workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("rewrite_node", self.rewrite_node)
         workflow.add_node("search_node", self.search_node)

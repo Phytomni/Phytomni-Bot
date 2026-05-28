@@ -34,6 +34,11 @@ def _build_chat_app() -> Any:
     return _build_chat_graph()
 
 
+def _build_data_app() -> Any:
+    """Return a compiled DataAgent workflow app."""
+    return DataAgent().app
+
+
 def _build_deep_genome_app() -> Any:
     """Return a compiled DeepGenome workflow app with default deps."""
     return DeepGenomeAgents(
@@ -51,17 +56,18 @@ def _build_knowledge_app() -> Any:
 def build_default_registry() -> SubgraphRegistry:
     """Return a SubgraphRegistry seeded with every built-in subgraph.
 
-    The set grows as later phases land additional agents (data /
-    review / analyst / design / network / research / environment /
-    evolution). Currently covers brief_gene / chat / deep_genome /
-    knowledge — every agent that constructs cleanly with the narrow
-    subgraph IO contract its module ships.
+    The set grows as later phases land additional agents (review /
+    analyst / design / network / research / environment /
+    evolution). Currently covers brief_gene / chat / data /
+    deep_genome / knowledge — every agent that constructs cleanly
+    with the narrow subgraph IO contract its module ships.
     """
     registry = SubgraphRegistry()
     registry.register(
         SubgraphSpec(id="brief_gene", factory=_build_brief_gene_app)
     )
     registry.register(SubgraphSpec(id="chat", factory=_build_chat_app))
+    registry.register(SubgraphSpec(id="data", factory=_build_data_app))
     registry.register(
         SubgraphSpec(id="deep_genome", factory=_build_deep_genome_app)
     )

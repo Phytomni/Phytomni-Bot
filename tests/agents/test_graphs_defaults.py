@@ -5,8 +5,8 @@
 """Tests for ``mcp_server_phytomni.graphs.defaults``.
 
 Pins the central registration site for the project's built-in
-subgraphs: ``build_default_registry`` ships at least brief_gene /
-chat / deep_genome / knowledge, the names are returned in a
+subgraphs: ``build_default_registry`` ships brief_gene / chat /
+data / deep_genome / knowledge, the names are returned in a
 deterministic order, and each registered id resolves to a callable
 factory the registry can compile through ``get_or_compile``.
 """
@@ -34,18 +34,19 @@ def test_build_default_registry_returns_subgraph_registry() -> None:
 
 
 def test_default_registry_ships_baseline_subgraphs() -> None:
-    """The default set covers brief_gene / chat / deep_genome / knowledge.
+    """The default set covers every built-in subgraph id.
 
     Pins the always-growing baseline that downstream callers (the
     visualization script, future loaders, integration tests) expect.
     If a future refactor drops any registered id from defaults, this
-    test fails first so the rebalance is explicit. Knowledge entered
-    the floor alongside its IO schema split.
+    test fails first so the rebalance is explicit. Data and
+    knowledge enter the floor alongside their IO schema splits.
     """
     registry = build_default_registry()
     assert {
         "brief_gene",
         "chat",
+        "data",
         "deep_genome",
         "knowledge",
     } <= set(registry.names())
