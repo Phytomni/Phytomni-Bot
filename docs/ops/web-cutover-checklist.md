@@ -169,8 +169,18 @@ explicitly out of scope for this cutover.
   ```bash
   curl http://bot.internal:8080/v1/runs/run_.../logs \
     -H "Authorization: Bearer $PTM_WEB_KEY"
-  # → {"object":"run.logs","run_id","task_ids","init_info","steps","tasks"}
+  # → {"run_id":"run_...","task_ids":[...],"task_logs":[...]}
   ```
+
+- Contract: the response is locked to exactly three keys —
+  `run_id`, `task_ids`, and `task_logs`. The contract does **not**
+  include `object`, `init_info`, `steps`, or a `tasks` top-level
+  lift; each reconciled per-task log lives inside the `task_logs`
+  array verbatim. Under the candidate-A architecture every log
+  belongs to the single `web` user, so the route does not accept a
+  delegated `?user_id=` query — a future multi-Web SaaS rollout
+  would revisit that symmetry at the same time as the candidate-B
+  owner-key model is reconsidered.
 
 - Notes: `?debug=true` unstrips remote `live_status` debug fields.
   Local cache (`tasks.task_log` column) short-circuits the remote

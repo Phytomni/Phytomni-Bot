@@ -193,9 +193,16 @@ row carries `dialogue_id` / `query` / `tool_name` / `model` /
 
 `GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
 The endpoint verifies ownership, then fetches or retrieves cached logs
-for each task in the run. Default mode strips the raw handler payload
-from each task log; pass `debug=true` to include it. Returns `404` if
-the run is unknown or owned by another user.
+for each task in the run. The response is locked to exactly three
+top-level keys — `run_id`, `task_ids`, and `task_logs` (a list of the
+reconciled per-task log payloads); no `object` discriminator, no
+top-level `init_info` / `steps` / `tasks` lifts. Default mode strips
+the raw handler payload from each task log; pass `debug=true` to
+include it. Returns `404` if the run is unknown or owned by another
+user. The route does not accept a delegated `?user_id=` query: under
+the candidate-A architecture every log already belongs to the single
+`web` user, and broadening to multi-tenant delegation would land
+alongside the candidate-B owner-key revival.
 
 `POST /v1/files` accepts one `multipart/form-data` upload through the
 standard `file` field with an optional `purpose` field. The

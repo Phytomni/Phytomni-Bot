@@ -125,6 +125,79 @@ async def test_get_run_logs_empty_tasks(
     assert body["task_logs"] == []
 
 
+async def test_get_run_logs_response_keys_locked(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """The /logs response is locked to exactly three top-level keys.
+
+    Earlier plan iterations promised an OpenAI-style ``object``
+    discriminator and top-level lifts (``init_info`` / ``steps`` /
+    ``tasks``); the shipped contract instead carries reconciled
+    per-task logs verbatim inside ``task_logs``. This test catches
+    any future drift toward the previously-documented shape or any
+    silent new top-level key that would surprise chat-ai / Web Go.
+    """
+    registry = RunRegistry(tasks_db_path)
+    registry.create_run(
+        RunSpec(
+            run_id="run-shape-1",
+            user_id="u1",
+            agent="chat",
+            origin="local",
+        ),
+        outcome=RunOutcome(status="succeeded"),
+    )
+
+    response = await api_client.get(
+        "/v1/runs/run-shape-1/logs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"run_id", "task_ids", "task_logs"}, (
+        f"/v1/runs/{{id}}/logs response shape drifted; got keys "
+        f"{sorted(body)}"
+    )
+    assert isinstance(body["task_ids"], list)
+    assert isinstance(body["task_logs"], list)
+
+
+async def test_get_run_logs_ignores_delegated_user_id_query(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Passing ``?user_id=`` does not promote the call to delegated.
+
+    Under the candidate-A architecture every log belongs to the
+    single ``web`` user so the route intentionally does not honour
+    a delegated query. The route ignores the extra query parameter
+    rather than 400-ing on it (FastAPI strict-mode would refuse the
+    request); the response is still owner-scoped, so the caller can
+    only ever see their own runs.
+    """
+    registry = RunRegistry(tasks_db_path)
+    registry.create_run(
+        RunSpec(
+            run_id="run-deleg-1",
+            user_id="u1",
+            agent="chat",
+            origin="local",
+        ),
+        outcome=RunOutcome(status="succeeded"),
+    )
+
+    response = await api_client.get(
+        "/v1/runs/run-deleg-1/logs?user_id=someone-else",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == "run-deleg-1"
+
+
 async def test_get_run_logs_debug_includes_raw(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
