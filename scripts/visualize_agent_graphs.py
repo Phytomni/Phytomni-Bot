@@ -36,49 +36,8 @@ from typing import Any
 # ``spec.loader.exec_module``.
 import _visualize_bootstrap  # noqa: F401  pylint: disable=unused-import
 
-from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
-from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
-from mcp_server_phytomni.agents.data.agent import DataAgent
-from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
-from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
-from mcp_server_phytomni.graphs import (
-    SubgraphRegistry,
-    SubgraphSpec,
-    export_manifest,
-)
-
-
-def _brief_gene_factory() -> Any:
-    """Factory returning a compiled BriefGeneAgent app."""
-    return BriefGeneAgent().app
-
-
-def _deep_genome_factory() -> Any:
-    """Factory returning a compiled DeepGenomeAgents app with default deps."""
-    return DeepGenomeAgents(
-        data_agent=DataAgent(),
-        knowledge_agent=KnowledgeAgent(),
-        analyst_agent=AnalystAgent(),
-    ).app
-
-
-def build_default_registry() -> SubgraphRegistry:
-    """Return the Phase-0 registry: only agents already compileable today.
-
-    Additional agents (chat / knowledge / data / review / analyst /
-    research / design / network / environment / evolution) are
-    registered by their respective Phase as those Phases land. This
-    Phase-0 baseline ships brief_gene and deep_genome only because
-    those two already construct cleanly without subgraph composition.
-    """
-    registry = SubgraphRegistry()
-    registry.register(
-        SubgraphSpec(id="brief_gene", factory=_brief_gene_factory)
-    )
-    registry.register(
-        SubgraphSpec(id="deep_genome", factory=_deep_genome_factory)
-    )
-    return registry
+from mcp_server_phytomni.graphs import SubgraphRegistry, export_manifest
+from mcp_server_phytomni.graphs.defaults import build_default_registry
 
 
 def _print_mermaid(name: str, graph_app: Any, xray: int) -> None:
