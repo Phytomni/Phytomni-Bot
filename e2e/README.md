@@ -136,23 +136,45 @@ PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS=1200 \
 `test_api_http_e2e.py` is the one file that does NOT go through the
 stdio MCP client. It boots `phytomni-api` as a real uvicorn subprocess
 on an ephemeral port, mints a per-user key in a throwaway SQLite store
-via `ApiKeyStore`, then drives `POST /v1/chat/completions` over real
-HTTP for all four OpenAI-compatible models. Review and BriefGene each
-block the synchronous endpoint ~10 min, so the file runs ~20 min and
-all four model calls run by default (no opt-in flag):
+via `ApiKeyStore`, then drives every cutover-relevant HTTP route over
+real HTTP. Review and BriefGene each block the synchronous endpoint
+~10 min, so the file runs ~20 min and all four model calls run by
+default (no opt-in flag):
 
 ```bash
 PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
     uv run pytest e2e/test_api_http_e2e.py -v
 ```
 
+The Web cutover smoke set covers, beyond the four chat completions:
+
+- `test_api_keys_service_token_lifecycle` — POST mint user key → GET
+  list → DELETE revoke under the service-token principal (mirrors
+  the Web ops 90-day rotation workflow).
+- `test_chat_stream_sse_returns_data_lines_and_done` — `stream=true`
+  on `phyto-chat` returns `text/event-stream` with `data: {...}\n\n`
+  frames and a terminal `data: [DONE]`.
+- `test_stream_true_rejected_for_non_chat_models` — per-model matrix
+  pinning the post-Phase-5 policy (chat 200 SSE, other 3 → 400).
+- `test_runs_history_self_query_by_dialogue_id` — chat with
+  `dialogue_id` persists into `runs` and surfaces via
+  `GET /v1/runs?dialogue_id=`.
+- `test_runs_history_delegated_user_id_via_service_token` — service
+  token can read another user's runs (ops-debug surface).
+- `test_files_upload_returns_obs_path` — `POST /v1/files` multipart
+  returns an `agent_data/uploads/…` OBS path.
+
+The boot helper sets `PHYTOMNI_API_SERVICE_TOKEN` to a fixture-known
+value so admin routes are exercisable without a second uvicorn boot.
+
 To validate just the subprocess/key/HTTP harness without paying the
-~20 min, restrict to the cheap smoke/negative cases:
+~20 min agent calls, restrict to the cheap smoke/negative cases:
 
 ```bash
 PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
     uv run pytest e2e/test_api_http_e2e.py -v \
-    -k "healthz or models or auth or unknown or stream or obs"
+    -k "healthz or models or auth or unknown or stream or obs \
+        or api_keys or runs_history or files_upload"
 ```
 
 Tunables: `PHYTOMNI_E2E_API_STARTUP_SECONDS` (health-gate budget,

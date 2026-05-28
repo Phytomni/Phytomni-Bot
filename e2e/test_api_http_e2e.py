@@ -25,6 +25,7 @@ from .helpers.api_server import (
     ApiServer,
     boot_phytomni_api,
     make_async_client,
+    service_auth_header,
 )
 from .helpers.assertions import (
     ANNOTATION_CUES,
@@ -83,6 +84,11 @@ async def api_client_fixture(
 def _auth(server: ApiServer) -> dict[str, str]:
     """Return the Bearer auth header for the issued key."""
     return {"Authorization": f"Bearer {server.api_key}"}
+
+
+def _service_auth(server: ApiServer) -> dict[str, str]:
+    """Return the ``X-Service-Token`` header for admin-scope calls."""
+    return service_auth_header(server)
 
 
 def _read_user_query(demo_data_dir: Path, name: str) -> str:
@@ -214,25 +220,95 @@ async def test_unknown_model_404(
     assert resp.json()["error"]["type"] == "not_found"
 
 
-async def test_stream_true_rejected(
-    api_client: httpx.AsyncClient, api_server: ApiServer
+@pytest.mark.parametrize(
+    "non_streaming_model",
+    ["phyto-knowledge", "phyto-review", "phyto-brief-gene"],
+)
+async def test_stream_true_rejected_for_non_chat_models(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+    non_streaming_model: str,
 ) -> None:
-    """``stream=true`` is refused with a 400 envelope.
+    """``stream=true`` is refused with a 400 envelope on non-chat models.
+
+    Phase 5 wired SSE streaming behind ``_STREAM_CAPABLE_TOOLS =
+    {"ChatAgent"}``; the three non-chat OpenAI-mapped models still
+    return a 400 so this parametrized matrix pins the per-model policy
+    instead of asserting a blanket "all models reject" that no longer
+    matches HEAD.
 
     Args:
         api_client: Bound async HTTP client.
         api_server: Running API details.
+        non_streaming_model: One of the non-chat model ids.
     """
     resp = await _chat(
         api_client,
         api_server,
-        model="phyto-chat",
+        model=non_streaming_model,
         query="hi",
         stream=True,
     )
 
-    assert resp.status_code == 400
+    assert resp.status_code == 400, resp.text
     assert resp.json()["error"]["type"] == "bad_request"
+
+
+async def test_chat_stream_sse_returns_data_lines_and_done(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+    demo_data_dir: Path,
+) -> None:
+    """``phyto-chat`` with ``stream=true`` produces an SSE event stream.
+
+    The shape contract: ``text/event-stream`` content type, one or more
+    ``data: {...}`` JSON chunks framed by ``\\n\\n``, and a terminal
+    ``data: [DONE]`` sentinel. Each non-terminal chunk parses as a JSON
+    object so chat-ai can render incremental deltas.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+        demo_data_dir: Resolved demo_data root.
+    """
+    query = _read_user_query(demo_data_dir, "chat_agent.json")
+
+    payload = {
+        "model": "phyto-chat",
+        "messages": [{"role": "user", "content": query}],
+        "stream": True,
+    }
+    data_chunks: list[str] = []
+    saw_done = False
+    content_type = ""
+    async with api_client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json=payload,
+        headers=_auth(api_server),
+    ) as resp:
+        assert (
+            resp.status_code == 200
+        ), f"SSE handshake failed; got {resp.status_code}"
+        content_type = resp.headers.get("Content-Type", "")
+        async for line in resp.aiter_lines():
+            if not line.startswith("data: "):
+                continue
+            payload_str = line.removeprefix("data: ")
+            if payload_str == "[DONE]":
+                saw_done = True
+                break
+            data_chunks.append(payload_str)
+
+    assert (
+        "text/event-stream" in content_type
+    ), f"SSE content-type missing; got {content_type!r}"
+    assert data_chunks, "SSE stream produced no data frames"
+    parsed_first = json.loads(data_chunks[0])
+    assert isinstance(
+        parsed_first, dict
+    ), f"SSE frame should parse as dict; got {parsed_first!r}"
+    assert saw_done, "SSE stream did not terminate with data: [DONE]"
 
 
 async def test_brief_gene_rejects_obs_list(
@@ -422,3 +498,199 @@ async def test_brief_gene_resolve_gene_id_smoke(
         f"{ANNOTATION_CUES}; resolver likely degraded to the "
         f"nogeneid fallback; got: {lowered!r}"
     )
+
+
+async def test_api_keys_service_token_lifecycle(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+) -> None:
+    """Service token can POST a user key, GET the list, and DELETE it.
+
+    Mirrors the Web ops 90-day rotation workflow under the candidate-A
+    consumer model: ops mints a fresh ``ptm_<web>`` user key, the
+    listing reflects the new prefix, then revoking it drops the prefix
+    from the list. The single-shot ``api_key`` value only appears in
+    the POST response (per the irreversible-hash contract) so the
+    assertions verify shape, not the literal value across calls.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+    """
+    user_id = "web-cutover-e2e"
+    create_resp = await api_client.post(
+        "/v1/api-keys",
+        json={"user_id": user_id, "name": "e2e-rotation"},
+        headers=_service_auth(api_server),
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()
+    prefix = created["prefix"]
+    assert created["api_key"].startswith(
+        "ptm_"
+    ), f"minted key should carry ptm_ prefix; got: {created['api_key']!r}"
+    assert created["user_id"] == user_id
+
+    list_resp = await api_client.get(
+        f"/v1/api-keys?user_id={user_id}",
+        headers=_service_auth(api_server),
+    )
+    assert list_resp.status_code == 200, list_resp.text
+    listed_prefixes = {row["prefix"] for row in list_resp.json()["data"]}
+    assert prefix in listed_prefixes, (
+        f"freshly-minted prefix {prefix!r} missing from listing; "
+        f"got: {listed_prefixes!r}"
+    )
+
+    revoke_resp = await api_client.delete(
+        f"/v1/api-keys/{prefix}",
+        headers=_service_auth(api_server),
+    )
+    assert revoke_resp.status_code == 200, revoke_resp.text
+    assert revoke_resp.json()["deleted"] is True
+
+    post_revoke = await api_client.get(
+        f"/v1/api-keys?user_id={user_id}",
+        headers=_service_auth(api_server),
+    )
+    assert post_revoke.status_code == 200, post_revoke.text
+    remaining = {row["prefix"] for row in post_revoke.json()["data"]}
+    assert prefix not in remaining, (
+        f"prefix {prefix!r} should be gone after DELETE; "
+        f"got: {remaining!r}"
+    )
+
+
+async def test_runs_history_self_query_by_dialogue_id(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+    demo_data_dir: Path,
+) -> None:
+    """A chat with ``dialogue_id`` shows up in owner-scope history.
+
+    Under the candidate-A model Web Go owns the real-user filter, so
+    the owner-scope ``GET /v1/runs?dialogue_id=`` is the production
+    read path for chat-ai history; this asserts the persistence chain
+    (chat-completion writes ``dialogue_id`` into the runs row) and the
+    listing filter both hold end-to-end.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+        demo_data_dir: Resolved demo_data root.
+    """
+    dialogue_id = "e2e-dlg-self-query"
+    query = _read_user_query(demo_data_dir, "chat_agent.json")
+    chat_resp = await _chat(
+        api_client,
+        api_server,
+        model="phyto-chat",
+        query=query,
+        dialogue_id=dialogue_id,
+    )
+    assert chat_resp.status_code == 200, chat_resp.text
+
+    runs_resp = await api_client.get(
+        f"/v1/runs?dialogue_id={dialogue_id}",
+        headers=_auth(api_server),
+    )
+    assert runs_resp.status_code == 200, runs_resp.text
+    rows = runs_resp.json()["data"]
+    matching = [row for row in rows if row.get("dialogue_id") == dialogue_id]
+    assert matching, (
+        f"runs listing should include dialogue_id={dialogue_id!r}; "
+        f"got {len(rows)} rows: {[r.get('dialogue_id') for r in rows]!r}"
+    )
+    row = matching[0]
+    assert (
+        row.get("query") == query
+    ), f"row.query should mirror the chat prompt; got: {row.get('query')!r}"
+    assert row.get("model") == "phyto-chat"
+
+
+async def test_runs_history_delegated_user_id_via_service_token(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+    demo_data_dir: Path,
+) -> None:
+    """Service token can look up another user's runs via ``?user_id=``.
+
+    Candidate-A relegates this delegated read path to ops debugging and
+    multi-Web-instance SaaS predecessor work (Web Go itself does
+    ``WHERE real_user_id=?`` in its own database), but the route
+    contract still needs to hold: a service-token request can query
+    runs owned by the fixture's user even though that user is not the
+    service principal.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+        demo_data_dir: Resolved demo_data root.
+    """
+    dialogue_id = "e2e-dlg-delegated"
+    query = _read_user_query(demo_data_dir, "chat_agent.json")
+    chat_resp = await _chat(
+        api_client,
+        api_server,
+        model="phyto-chat",
+        query=query,
+        dialogue_id=dialogue_id,
+    )
+    assert chat_resp.status_code == 200, chat_resp.text
+
+    delegated_resp = await api_client.get(
+        f"/v1/runs?user_id={api_server.user_id}" f"&dialogue_id={dialogue_id}",
+        headers=_service_auth(api_server),
+    )
+    assert delegated_resp.status_code == 200, delegated_resp.text
+    rows = delegated_resp.json()["data"]
+    matching = [row for row in rows if row.get("dialogue_id") == dialogue_id]
+    assert matching, (
+        f"delegated lookup should surface dialogue_id={dialogue_id!r} "
+        f"for user_id={api_server.user_id!r}; got {len(rows)} rows"
+    )
+    assert matching[0].get("user_id") == api_server.user_id
+
+
+async def test_files_upload_returns_obs_path(
+    api_client: httpx.AsyncClient,
+    api_server: ApiServer,
+    tmp_path: Path,
+) -> None:
+    """POST ``/v1/files`` returns a 201 envelope with an OBS path.
+
+    Validates the Bot-owned ingestion contract: a small text upload
+    succeeds, the response carries the OBS path under
+    ``agent_data/uploads/``, and ``purpose`` round-trips one of the
+    OpenAI-compatible Literal values.
+
+    Args:
+        api_client: Bound async HTTP client.
+        api_server: Running API details.
+        tmp_path: Per-test tmpdir for the upload payload.
+    """
+    upload_file = tmp_path / "hello.txt"
+    upload_file.write_text("hello e2e cutover\n", encoding="utf-8")
+
+    with upload_file.open("rb") as fh:
+        files = {"file": ("hello.txt", fh, "text/plain")}
+        data = {"purpose": "agent_context"}
+        resp = await api_client.post(
+            "/v1/files",
+            files=files,
+            data=data,
+            headers=_auth(api_server),
+        )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["object"] == "file"
+    assert body["filename"] == "hello.txt"
+    assert body["purpose"] == "agent_context"
+    obs_path = body["obs_path"]
+    assert obs_path.startswith(
+        "/obs/"
+    ), f"obs_path should start with /obs/; got: {obs_path!r}"
+    assert (
+        "/agent_data/uploads/" in obs_path
+    ), f"obs_path should live under agent_data/uploads/; got: {obs_path!r}"

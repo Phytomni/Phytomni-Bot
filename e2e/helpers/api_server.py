@@ -41,6 +41,7 @@ from mcp_server_phytomni.api.auth import ApiKeyStore
 _STARTUP_DEADLINE_DEFAULT = 120.0
 _READ_TIMEOUT_DEFAULT = 1200.0
 _LOG_TAIL = 500
+_E2E_SERVICE_TOKEN = "e2e-service-token"
 
 
 class ApiServer(NamedTuple):
@@ -50,11 +51,17 @@ class ApiServer(NamedTuple):
         base_url: Root URL the uvicorn process is bound to.
         api_key: One-time plaintext key minted for this session.
         user_id: The user the key authenticates.
+        service_token: Service-principal token wired into the subprocess
+            env via ``PHYTOMNI_API_SERVICE_TOKEN`` so admin routes
+            (``/v1/api-keys/*``) and delegated lookups
+            (``GET /v1/runs?user_id=``) are exercisable from the same
+            fixture without a second boot.
     """
 
     base_url: str
     api_key: str
     user_id: str
+    service_token: str
 
 
 def auth_header(server: ApiServer) -> dict[str, str]:
@@ -68,6 +75,23 @@ def auth_header(server: ApiServer) -> dict[str, str]:
         ``httpx`` requests.
     """
     return {"Authorization": f"Bearer {server.api_key}"}
+
+
+def service_auth_header(server: ApiServer) -> dict[str, str]:
+    """Return the ``X-Service-Token`` header for admin-scope calls.
+
+    Using the dedicated header lets a request carry both the user key
+    (Authorization) and the service token at the same time, matching
+    how the admin routes are accessed in production (Web ops keeps a
+    user key for normal traffic but elevates per-call via the header).
+
+    Args:
+        server: Running API details.
+
+    Returns:
+        Mapping with a single ``X-Service-Token`` entry.
+    """
+    return {"X-Service-Token": server.service_token}
 
 
 def _free_port() -> int:
@@ -189,6 +213,7 @@ def boot_phytomni_api(
     env["API_PORT"] = str(port)
     env["PHYTOMNI_API_KEYS_DB"] = keys_db
     env["PHYTOMNI_API_RUNS_DB"] = runs_db
+    env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
     cmd = [sys.executable, "-m", "mcp_server_phytomni.api.server"]
     logs: "deque[str]" = deque(maxlen=_LOG_TAIL)
@@ -206,7 +231,9 @@ def boot_phytomni_api(
         drain.start()
         try:
             _await_healthy(proc, base_url, logs)
-            yield ApiServer(base_url, created.api_key, user_id)
+            yield ApiServer(
+                base_url, created.api_key, user_id, _E2E_SERVICE_TOKEN
+            )
         finally:
             proc.terminate()
             try:
