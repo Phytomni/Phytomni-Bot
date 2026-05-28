@@ -79,6 +79,64 @@ async def test_list_agents_requires_auth(
     assert response.status_code == 401
 
 
+async def test_list_agents_includes_legacy_aliases_for_web_tools(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> None:
+    """Every /v1/agents row exposes a ``legacy_aliases`` list.
+
+    The route itself never accepts the listed aliases as routing
+    slugs; chat-ai and Phytomni-Web Go consume the metadata to build
+    their own alias→slug translation table. Bot-added agents that
+    have no Web counterpart return an empty list so the response
+    shape stays uniform across every row.
+    """
+    response = await api_client.get(
+        "/v1/agents",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert response.status_code == 200
+    rows_by_slug = {row["slug"]: row for row in response.json()["data"]}
+
+    for slug, row in rows_by_slug.items():
+        assert "legacy_aliases" in row, f"{slug!r} missing legacy_aliases"
+        assert isinstance(row["legacy_aliases"], list)
+
+    # Bot-added agents have no historical Web tool name.
+    for slug in ("brief_gene", "design", "network"):
+        assert rows_by_slug[slug]["legacy_aliases"] == []
+
+    # Spot-check the two pluralised-typo aliases Web sometimes emits.
+    assert rows_by_slug["knowledge"]["legacy_aliases"] == [
+        "KnowledgeAgent",
+        "KnowledgeAgents",
+    ]
+    assert rows_by_slug["data"]["legacy_aliases"] == [
+        "DataAgent",
+        "DatabaseAgents",
+    ]
+
+    # Every historical Web tool name appears in exactly one row.
+    flat_aliases: set[str] = set()
+    for row in rows_by_slug.values():
+        flat_aliases.update(row["legacy_aliases"])
+    expected_web_aliases = {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "KnowledgeAgents",
+        "DataAgent",
+        "DatabaseAgents",
+        "ReviewAgent",
+        "ReviewAgents",
+        "AnalystAgent",
+        "AnalysisAgents",
+        "DeepGenomeAgent",
+        "InSilicoResearchAgent",
+    }
+    missing = expected_web_aliases - flat_aliases
+    assert not missing, f"missing legacy aliases: {sorted(missing)}"
+
+
 async def test_agent_run_unknown_slug_returns_404(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

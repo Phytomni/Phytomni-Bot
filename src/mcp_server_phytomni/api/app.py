@@ -146,6 +146,26 @@ _REMOTE_AGENT_SLUGS = frozenset(
     {"analyst", "deep_genome", "research", "design", "network"}
 )
 
+# Historical Web ``tool_name`` aliases preserved on ``/v1/agents`` rows
+# as ``legacy_aliases`` metadata. The route itself never accepts these
+# as routing slugs; chat-ai and Phytomni-Web Go consume the list to
+# build their own alias→slug translation table without out-of-band
+# negotiation. Bot-added agents (brief_gene / design / network) ship
+# an empty list so the shape stays uniform and a future agent must
+# make an explicit declaration rather than silently inherit ``[]``.
+_LEGACY_ALIASES: dict[str, list[str]] = {
+    "ChatAgent": ["ChatAgent"],
+    "KnowledgeAgent": ["KnowledgeAgent", "KnowledgeAgents"],
+    "DataAgent": ["DataAgent", "DatabaseAgents"],
+    "ReviewAgent": ["ReviewAgent", "ReviewAgents"],
+    "BriefGeneAgent": [],
+    "AnalystAgent": ["AnalystAgent", "AnalysisAgents"],
+    "DeepGenomeAgent": ["DeepGenomeAgent"],
+    "InSilicoResearchAgent": ["InSilicoResearchAgent"],
+    "DigitalDesignAgent": [],
+    "GeneNetworkAgent": [],
+}
+
 
 def _purge_expired_runs_best_effort() -> None:
     """Run a single ``RunRegistry.purge_expired`` pass, swallowing errors.
@@ -1116,6 +1136,7 @@ def create_app() -> FastAPI:
                             if slug in _REMOTE_AGENT_SLUGS
                             else "local"
                         ),
+                        "legacy_aliases": _LEGACY_ALIASES.get(tool, []),
                     }
                     for slug, tool in _AGENT_SLUG_TO_TOOL.items()
                 ],
