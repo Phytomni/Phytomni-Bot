@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 9; the
 10th fake pushes the count to 10, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 24th R0801 duplicate-code violation appears.** Default pylint
+**A 25th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 23; the
-24th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 24; the
+25th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -535,10 +535,10 @@ should be planned independently).
 
 ______________________________________________________________________
 
-### R0801 duplicate-code (23 occurrences)
+### R0801 duplicate-code (24 occurrences)
 
-**Rule(s)**: R0801 similar-lines-in-files. 23 violations across the
-codebase, in five clusters:
+**Rule(s)**: R0801 similar-lines-in-files. 24 violations across the
+codebase, in seven clusters:
 
 1. **Analyst module fan-out wrappers** (~6 occurrences). The
    `analyst/__init__.py`, `analyst/agent.py`, and `analyst/defaults.py`
@@ -567,14 +567,36 @@ codebase, in five clusters:
    plan: the stream primitive is a sister of the cached path
    (`run_phyto_chat_cached`), not a wrapper, so the two call sites
    must hand the provider identical config / sensitive / OBS wiring.
+1. **Frozen Pydantic manifest classes** (1 occurrence, added
+   2026-05-28 with `f59b7a2`). `graphs/manifest.py`'s
+   `GraphNodeManifest` / `GraphEdgeManifest` / `GraphManifest` and
+   `graphs/spec.py`'s `SubgraphSpec` share the same
+   `model_config = ConfigDict(frozen=True)` + `Field(min_length=1)`
+   shape with several existing config classes (e.g.
+   `agents/*/defaults.py`). The shape is the public contract for
+   "immutable manifest with non-empty validated identifiers" — every
+   class instantiates it because that is the right idiom, not
+   because the classes should share a base. The role split between
+   `SubgraphRegistry` and `runtime.langgraph_runner.GraphRegistry`
+   is independently documented in `docs/agent-graphs.md`.
+1. **Bootstrap env install dict, viz vs root conftest** (1
+   occurrence, added 2026-05-28 with `a81ce97`).
+   `scripts/_visualize_bootstrap.py` mirrors the env-var key list
+   in the root `conftest.py` because both bootstrap a "fake
+   deployment env" before any `mcp_server_phytomni` import runs;
+   only the placeholder VALUE prefixes differ (`viz-*` vs
+   `pytest-*`). Sharing a key list module would force
+   `scripts/_visualize_bootstrap.py` to import from `tests/` or
+   `src/` (layer violation in both directions), so the duplication
+   is the lesser evil.
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 23`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 24`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
 own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 24,
+the pinned baseline. A new R0801 violation pushes the count to 25,
 the baseline script exits 1, and the gate fails until the author
 either resolves the duplicate or explicitly bumps the baseline in
 the same diff.
@@ -595,6 +617,28 @@ landing the extraction now would either collide with that work or
 ship a single-use helper that is itself an antipattern. A
 follow-up commit can lower the baseline back to 20 once the
 parallel refactor consolidates the chat call sites.
+
+**Why refactor is net-negative for cluster 6**: the frozen
+Pydantic manifest shape is a contract surface, not a structural
+duplicate. Extracting a `FrozenManifestBase(ConfigDict(frozen=True), name = Field(min_length=1))` and inheriting from it would: (a) push
+every manifest class onto the same base for the sake of two lines,
+(b) couple `graphs/` to a shared base another module is free to
+mutate, and (c) hide the per-class `Field` validators that DO
+differ. The classes are siblings that happen to follow the same
+pattern, not children of a common abstraction; pylint cannot tell
+them apart but a human reader can.
+
+**Why refactor is net-negative for cluster 7**: the bootstrap env
+key list is shared by design — pytest tests and the visualization
+script both need the same `mcp_server_phytomni` modules to import
+cleanly, which requires the same env var keys populated. The
+shared module that would carry the key list cannot live in `src/`
+(production package should not ship dev-only env data), cannot
+live in `tests/` (the visualization script is not a test), and
+cannot live in `scripts/` (the root `conftest.py` should not
+import from `scripts/`). Each candidate path is a layer
+violation; duplicating the 32-entry key list is the lesser evil
+until a dedicated `dev_tooling/` or similar top-level dir exists.
 
 **Why refactor is mixed for clusters 2 and 3**: the test boilerplate
 could plausibly be extracted into pytest fixtures. The reason it has
