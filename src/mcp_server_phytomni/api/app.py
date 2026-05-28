@@ -57,6 +57,7 @@ from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
     bind_run_id,
+    current_recorder_degraded,
     current_request_id,
     current_request_user,
     current_run_id,
@@ -432,7 +433,7 @@ async def _invoke_agent_run(
             run_id=run_id, owner=owner, request_info=request_info
         )
         _purge_expired_runs_best_effort()
-        body = {
+        body: dict[str, Any] = {
             "id": run_id,
             "object": "agent.run",
             "agent": agent,
@@ -440,6 +441,18 @@ async def _invoke_agent_run(
             "task_ids": task_ids,
             "result": response_result,
         }
+        # Surface the silent-failure case: the submit chokepoint hit
+        # an ``sqlite3.Error`` / ``OSError`` during the local registry
+        # write, so the remote tasks are live (the network call
+        # already succeeded) but the local ``runs`` / ``tasks`` rows
+        # were not persisted and ``GET /v1/runs/{run_id}`` will 404
+        # until a manual reconcile is run. Without this flag a client
+        # cannot tell the failure case apart from a legitimate
+        # analyst dedup-hit, which also returns ``id=None`` /
+        # ``task_ids=[]`` but for a benign reason and routes the
+        # caller to ``result["task_id"]`` instead.
+        if current_recorder_degraded():
+            body["degraded_tracking"] = True
         return body, 202
     run_id = _record_sync_run(
         agent=agent,
@@ -479,15 +492,15 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
         ``task_ids`` is empty when the chokepoint did not bind a
         run id — either because the registry write failed midway
         (see ``runtime.submit_recorder.record_submitted_task``) or
-        because the wrapper
-        returned an analyst dedup-hit passthrough that
-        intentionally skipped the write to preserve the prior
-        caller's run id. Callers that need to distinguish the
-        two should inspect ``result["dedup_hit"]`` on the
-        surrounding ``agent.run`` body: ``True`` means a
+        because the wrapper returned an analyst dedup-hit
+        passthrough that intentionally skipped the write to preserve
+        the prior caller's run id. Callers distinguish the two via
+        ``current_recorder_degraded()``: ``True`` is the silent
+        persistence-failure case and the surrounding
+        ``_invoke_agent_run`` body adds ``degraded_tracking: True``;
+        ``False`` plus ``result["dedup_hit"] is True`` is the
         transparent passthrough whose prior ``task_id`` is in
-        ``result["task_id"]``; absent or ``False`` means the
-        recorder failed silently.
+        ``result["task_id"]``.
     """
     run_id = current_run_id()
     if run_id is None:

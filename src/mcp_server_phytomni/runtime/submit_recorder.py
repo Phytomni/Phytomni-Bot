@@ -13,13 +13,18 @@ shell rather than carrying registry-write logic alongside it.
 """
 
 import functools
+import logging
 import sqlite3
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from ..storage.path_policy import IdFactory
-from .request_context import bind_run_id, current_request_user
+from .request_context import (
+    bind_recorder_degraded,
+    bind_run_id,
+    current_request_user,
+)
 from .run_registry import RunOutcome, RunRegistry, RunSpec
 from .task_manager import (
     RunContext,
@@ -27,6 +32,8 @@ from .task_manager import (
     TaskManager,
     resolve_tasks_db_path,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "extract_task_submissions",
@@ -125,13 +132,21 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     extracted task id — all sharing the same ``run_id`` so
     ``RunRegistry.reconcile`` can join them by ``tasks.run_id``.
     Best-effort: a registry / SQLite / OS error must never break an
-    already-successful submission, so failures are swallowed.
+    already-successful remote submission. On such a failure the
+    chokepoint (1) records the full traceback via
+    ``logger.exception`` so operators can diagnose the persistence
+    issue from logs, and (2) sets the ``recorder_degraded`` request
+    contextvar so the HTTP layer can surface the degraded-tracking
+    state to the client rather than letting it look like a legitimate
+    dedup-hit ``id=None`` / ``task_ids=[]`` passthrough.
 
     The chokepoint binds the freshly-minted ``run_id`` to the request
     contextvar **only after** every child task row has been written,
     so a half-failed record never surfaces a run id without its task
     ids — the HTTP layer then sees ``current_run_id() is None`` and
-    returns ``(None, [])`` as a clean silent failure.
+    returns ``(None, [])``. The companion ``current_recorder_degraded``
+    flag disambiguates this case from the legitimate dedup-hit
+    passthrough described below.
 
     A wrapper return carrying ``dedup_hit=True`` is a transparent
     passthrough for a duplicate submission: the prior caller already
@@ -214,6 +229,15 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
             )
         bind_run_id(run_id)
     except (sqlite3.Error, OSError):
+        logger.exception(
+            "Failed to persist remote submission to local registry "
+            "(agent=%s, task_count=%d); the remote tasks are live but "
+            "GET /v1/runs/{run_id} will return 404 until the registry "
+            "write succeeds on a later attempt.",
+            agent,
+            len(submissions),
+        )
+        bind_recorder_degraded(True)
         return
 
 

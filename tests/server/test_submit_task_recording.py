@@ -14,6 +14,7 @@ are decorated with their canonical agent slug.
 from __future__ import annotations
 
 import sqlite3
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,7 +26,13 @@ from mcp_server_phytomni.mcp.handlers import (
     handle_gene_network_agent,
     handle_in_silico_research_agent,
 )
-from mcp_server_phytomni.runtime.request_context import current_run_id
+from mcp_server_phytomni.runtime import (
+    submit_recorder as submit_recorder_module,
+)
+from mcp_server_phytomni.runtime.request_context import (
+    current_recorder_degraded,
+    current_run_id,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
@@ -325,6 +332,75 @@ def test_record_short_circuits_on_dedup_hit_passthrough(
     # The chokepoint never minted a new id on the short-circuit, so the
     # contextvar still points at the prior caller's run.
     assert current_run_id() == first_run
+
+
+def test_record_logs_and_flags_degraded_on_persistence_failure(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry-write failure logs the traceback and flags the request.
+
+    The chokepoint catches ``sqlite3.Error`` / ``OSError`` to honour
+    the "do not break an already-successful remote submission"
+    contract, but the bare ``return`` would leave the failure
+    invisible to operators and indistinguishable from the legitimate
+    analyst dedup-hit passthrough (both return ``(None, [])`` to the
+    HTTP layer). The fix surfaces the failure on two channels:
+    ``logger.exception`` writes the full traceback for log readers,
+    and ``bind_recorder_degraded(True)`` flips the request
+    contextvar so the HTTP body assembler can attach
+    ``degraded_tracking: True`` alongside ``id=None`` /
+    ``task_ids=[]``.
+
+    Spies the module logger directly rather than relying on
+    ``caplog`` because ``common.logging_config.configure_logging``
+    sets ``propagate=False`` on the package logger (so external
+    libraries' loggers stay off the root handler), which means
+    records emitted by submit_recorder never reach the caplog
+    handler attached to root.
+    """
+    _ = tasks_db_path
+
+    def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
+        """Simulate the persistence failure the contract handles."""
+        raise sqlite3.OperationalError("disk I/O error")
+
+    def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
+        """Stand in for ``RunRegistry(db_path)`` so create_run raises."""
+        return SimpleNamespace(create_run=_raising_create_run)
+
+    monkeypatch.setattr(
+        submit_recorder_module, "RunRegistry", _exploding_registry_factory
+    )
+
+    exception_calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def fake_exception(msg: str, *args: Any) -> None:
+        """Capture the ``logger.exception(msg, *args)`` payload."""
+        exception_calls.append((msg, args))
+
+    monkeypatch.setattr(
+        submit_recorder_module.logger, "exception", fake_exception
+    )
+    # Reset the contextvar manually because the test runs outside an
+    # HTTP request_context() block — without this, a flag flipped
+    # by an earlier test in the same process leaks into this assert.
+    submit_recorder_module.bind_recorder_degraded(False)
+    assert current_run_id() is None
+    assert current_recorder_degraded() is False
+
+    record_submitted_task(
+        {"task_id": "T-fail", "output_dir": "/obs/run"},
+        agent="analyst",
+    )
+
+    assert current_run_id() is None
+    assert current_recorder_degraded() is True
+    assert len(exception_calls) == 1
+    rendered_msg, rendered_args = exception_calls[0]
+    assert "Failed to persist remote submission" in rendered_msg
+    assert "analyst" in rendered_args
+    assert 1 in rendered_args  # task_count payload arg
 
 
 def test_record_dedup_hit_without_prior_does_not_bind_or_write(

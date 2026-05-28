@@ -2,14 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Per-request user, request-id, and run-id context for the HTTP API.
+"""Per-request user, request-id, run-id, and recorder-state context.
 
-Functions: current_request_user, current_request_id, current_run_id,
-    bind_request_user, bind_request_id, bind_run_id, reset_request_var,
-    request_context. MCP stdio binds none of these (getters return
-    None and the agent layer stays anonymous); the run-id slot carries
-    the submit chokepoint's freshly-minted run_id forward to the HTTP
-    response builder, replacing formatter-metadata reverse lookups.
+Functions enumerated in ``__all__``. MCP stdio binds none of these
+(getters return their defaults); the run-id slot carries the submit
+chokepoint's freshly-minted run_id forward to the HTTP response
+builder, and the recorder-degraded slot signals a silent local-
+registry persistence failure so the HTTP body distinguishes it from
+the legitimate analyst dedup-hit ``id=None`` / ``task_ids=[]``.
 """
 
 from __future__ import annotations
@@ -17,12 +17,14 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Optional
+from typing import Any, Optional
 
 __all__ = [
+    "bind_recorder_degraded",
     "bind_request_id",
     "bind_request_user",
     "bind_run_id",
+    "current_recorder_degraded",
     "current_request_id",
     "current_request_user",
     "current_run_id",
@@ -38,6 +40,9 @@ _request_id: ContextVar[Optional[str]] = ContextVar(
 )
 _request_run_id: ContextVar[Optional[str]] = ContextVar(
     "phytomni_request_run_id", default=None
+)
+_recorder_degraded: ContextVar[bool] = ContextVar(
+    "phytomni_recorder_degraded", default=False
 )
 
 
@@ -82,12 +87,40 @@ def bind_run_id(run_id: Optional[str]) -> Token[Optional[str]]:
     return _request_run_id.set(run_id)
 
 
-def reset_request_var(token: Token[Optional[str]]) -> None:
+def current_recorder_degraded() -> bool:
+    """Return whether the submit chokepoint hit a persistence failure.
+
+    The submit chokepoint in ``runtime/submit_recorder`` writes its
+    runs / tasks rows best-effort: a ``sqlite3.Error`` / ``OSError``
+    during the registry write must not break an already-successful
+    remote submission, but it leaves the run un-tracked locally
+    (``current_run_id() is None``, ``RunRegistry.get_run`` returns
+    ``None``) so a client polling ``GET /v1/runs/{id}`` would see a
+    permanent ``404``. Setting this flag lets the HTTP layer signal
+    the degraded-tracking case explicitly, distinguishing it from
+    the analyst dedup-hit passthrough that also returns
+    ``id=None`` / ``task_ids=[]`` but for a legitimate reason.
+    """
+    return _recorder_degraded.get()
+
+
+def bind_recorder_degraded(degraded: bool) -> Token[bool]:
+    """Mark the request's recorder state and return a reset token.
+
+    The HTTP path's ``request_context()`` brackets this contextvar
+    with ``False`` at the start of every request, so a value set by
+    one handler never leaks into the next request.
+    """
+    return _recorder_degraded.set(degraded)
+
+
+def reset_request_var(token: Token[Any]) -> None:
     """Reset a request contextvar to its prior value.
 
     Args:
         token: A token returned by ``bind_request_user``,
-            ``bind_request_id``, or ``bind_run_id``.
+            ``bind_request_id``, ``bind_run_id``, or
+            ``bind_recorder_degraded``.
     """
     token.var.reset(token)
 
@@ -109,14 +142,19 @@ def request_context(
             by the chokepoint inside the block.
 
     Yields:
-        None while all three contextvars are bound.
+        None while all four contextvars are bound. The
+        recorder-degraded flag is always seeded to ``False`` at entry
+        so a chokepoint failure can only flag the current request,
+        never inherit a stale ``True`` from an earlier one.
     """
     user_token = bind_request_user(user_id)
     id_token = bind_request_id(request_id)
     run_token = bind_run_id(run_id)
+    degraded_token = bind_recorder_degraded(False)
     try:
         yield
     finally:
+        reset_request_var(degraded_token)
         reset_request_var(run_token)
         reset_request_var(id_token)
         reset_request_var(user_token)

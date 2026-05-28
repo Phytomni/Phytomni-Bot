@@ -12,13 +12,18 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.runtime import (
+    submit_recorder as submit_recorder_module,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
@@ -266,3 +271,72 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     assert record.spec.agent == case.slug
     assert record.spec.origin == "remote"
     assert set(record.task_ids) == case.expected_task_ids
+    # No degraded_tracking flag on a healthy submission — pin the
+    # absence so a future regression that always-sets the flag does
+    # not silently degrade every 202 response.
+    assert "degraded_tracking" not in body
+
+
+async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A recorder persistence failure surfaces ``degraded_tracking`` on 202.
+
+    Pins the silent-failure mitigation: when ``RunRegistry.create_run``
+    raises during the submit chokepoint, the remote tasks have already
+    been accepted by the upstream platform (the wrapper return is the
+    proof) but the local ``runs`` / ``tasks`` rows were not written.
+    Without the flag a client cannot distinguish this case from a
+    legitimate analyst dedup-hit (both produce ``id=None`` /
+    ``task_ids=[]``). The body must carry ``degraded_tracking: True``
+    alongside the empty identity fields so operators see a routable
+    signal and ``GET /v1/runs/{id}`` 404s are explained.
+    """
+
+    def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
+        """Simulate the persistence failure the contract handles."""
+        raise sqlite3.OperationalError("disk I/O error")
+
+    def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
+        """Stand in for ``RunRegistry(db_path)`` so create_run raises."""
+        return SimpleNamespace(create_run=_raising_create_run)
+
+    monkeypatch.setattr(
+        submit_recorder_module, "RunRegistry", _exploding_registry_factory
+    )
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return a canonical analyst submission payload."""
+        _ = args
+        return {"task_id": "T-degraded", "output_dir": "/obs/run"}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        records_submission("analyst")(fake),
+    )
+
+    response = await api_client.post(
+        "/v1/agents/analyst/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "goal_description": "test",
+                "data_list": {},
+                "obs_file_list": [],
+            }
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["id"] is None
+    assert body["task_ids"] == []
+    assert body["degraded_tracking"] is True
+    # And the registry stayed empty since create_run was the failure
+    # point — proves the flag was driven by the live failure, not by
+    # stale state left over from a previous test.
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
