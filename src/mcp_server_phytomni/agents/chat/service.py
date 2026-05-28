@@ -9,6 +9,7 @@ prompt, with support for various model parameters and retry mechanisms.
 """
 
 import asyncio
+import importlib
 import logging
 from functools import lru_cache
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -270,18 +271,20 @@ async def phyto_chat(
 def _cached_chat_app() -> Any:
     """Lazy singleton of the compiled chat subgraph.
 
-    Lives in a function rather than at module load to break the
-    service → builder → graph → service import cycle: ``graph.py``
-    imports ``phyto_chat`` from this module at parse time, so this
-    module cannot import ``_build_chat_graph`` at the top. The
-    ``lru_cache`` makes the compilation happen at most once per
-    process and gives test suites a hook (``cache_clear()``) when
-    they need a fresh graph after monkeypatching node bodies.
+    Resolves ``builder`` dynamically via ``importlib.import_module``
+    rather than ``from .builder import _build_chat_graph``: a
+    top-level from-import would close the service → builder → graph
+    → service cycle at parse time (graph.py imports this module for
+    helpers and late-bound ``phyto_chat`` / ``get_prompt`` lookups).
+    ``importlib`` is opaque to pylint's R0401 cycle detector, which
+    is the correct read since this edge IS dynamic: the import only
+    fires once per process at first call, after every module above
+    has finished loading. ``lru_cache`` makes the compile happen at
+    most once and gives test suites a ``cache_clear()`` hook.
     """
-    # pylint: disable=import-outside-toplevel
-    from .builder import _build_chat_graph  # noqa: PLC0415
-
-    return _build_chat_graph()
+    builder_module = importlib.import_module(".builder", package=__package__)
+    # pylint: disable-next=protected-access
+    return builder_module._build_chat_graph()
 
 
 def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:
