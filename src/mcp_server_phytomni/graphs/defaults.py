@@ -4,14 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Central registration of the project's built-in subgraphs.
 
-``build_default_registry()`` is the single source of truth for which
-agent workflows are wired into the project-level
-:class:`SubgraphRegistry`. The visualization script, future loaders,
-and tests all read the same set from here so a new agent ships in
-one place rather than three. Each entry is a tiny factory closing
-over the agent's constructor — the registry calls the factory once
-per ``(id, fingerprint)`` key and reuses the compiled app on every
-subsequent lookup.
+``build_default_registry()`` is the single source of truth for the
+agent workflows the project-level :class:`SubgraphRegistry` exposes
+to the visualization script, future loaders, and tests. Each entry
+is a tiny factory closing over the agent's constructor so the
+registry caches the compiled app per ``(id, fingerprint)`` key.
 """
 
 from __future__ import annotations

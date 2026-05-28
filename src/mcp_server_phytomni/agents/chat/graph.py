@@ -4,14 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Node functions and conditional router for the chat LangGraph.
 
-Three nodes mirror the existing ``phyto_chat`` / ``phyto_chat_with_follow``
-sequence: ``prepare_context_node`` materialises OBS upload context,
+Three nodes mirror ``phyto_chat`` / ``phyto_chat_with_follow``:
+``prepare_context_node`` materialises OBS upload context,
 ``generate_node`` issues the primary LLM completion, and
-``follow_up_node`` generates the embedded follow-up questions. The
-nodes deliberately delegate to the same helpers ``service.py`` uses
-internally so the graph path and the legacy function path stay
-behaviorally equivalent (and so ``run_phyto_chat_cached`` cache hits
-do not regress when callers move onto the graph).
+``follow_up_node`` generates embedded follow-up questions. Nodes
+delegate to ``service.py`` helpers so graph and legacy paths stay
+behaviorally equivalent and ``run_phyto_chat_cached`` keys match.
 """
 
 from __future__ import annotations

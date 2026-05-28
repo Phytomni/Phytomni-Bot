@@ -4,19 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Typed state and IO contracts for the chat LangGraph workflow.
 
-Three TypedDicts split the contract: ``ChatInput`` is what parent
-graphs hand in, ``ChatOutput`` is what they read back, and
-``ChatState`` is the union plus the intermediate field that the
-``prepare_context`` node writes between them.
-
-This module deliberately omits ``from __future__ import annotations``:
-``TypedDict.__required_keys__`` is computed at class-definition time
-and does not look through ``ForwardRef`` strings, so lazy annotations
-would silently drop the ``Required[]`` markers and make every key
-optional on introspection — defeating the entire point of the IO
-contract. Other TypedDicts in this package use ``total=True`` as a
-workaround; this one uses native ``Required`` because it pins
-exactly one mandatory key against many defaulted ones.
+``ChatInput`` / ``ChatOutput`` / ``ChatState`` split parent-input,
+parent-output, and internal-state shapes for the chat subgraph.
+The module omits ``from __future__ import annotations`` because
+``TypedDict.__required_keys__`` is computed at class-definition
+time; lazy annotations would erase the ``Required[]`` markers and
+collapse every ``Required`` field into a ``total=False`` key.
 """
 
 from typing import Any, Optional, Required, TypedDict
