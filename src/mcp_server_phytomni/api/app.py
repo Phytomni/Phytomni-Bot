@@ -554,6 +554,7 @@ def _list_owner_runs(
     status: Optional[str],
     agent: Optional[str],
     origin: Optional[str],
+    dialogue_id: Optional[str],
     created_after: Optional[str],
     created_before: Optional[str],
     limit: int,
@@ -574,6 +575,9 @@ def _list_owner_runs(
         status: Optional exact-match status filter.
         agent: Optional exact-match agent slug filter.
         origin: Optional exact-match origin filter.
+        dialogue_id: Optional exact-match dialogue id filter. Runs
+            before ``limit`` so a chat-ai history query for one
+            dialogue always retrieves every matching row.
         created_after: Optional ISO-8601 lower bound (inclusive).
         created_before: Optional ISO-8601 upper bound (inclusive).
         limit: Max rows to return.
@@ -589,6 +593,7 @@ def _list_owner_runs(
             status=status,
             agent=agent,
             origin=origin,
+            dialogue_id=dialogue_id,
             created_after=created_after,
             created_before=created_before,
         ),
@@ -1231,6 +1236,7 @@ def create_app() -> FastAPI:
         agent: Optional[str] = None,
         origin: Optional[str] = None,
         user_id: Optional[str] = None,
+        dialogue_id: Optional[str] = None,
         created_after: Optional[str] = None,
         created_before: Optional[str] = None,
         limit: int = 10,
@@ -1249,6 +1255,11 @@ def create_app() -> FastAPI:
         user instead of the caller — the path Phytomni-Web Go uses to
         render history pages for any tenant. Acts as the lazy GC
         trigger via ``_purge_expired_runs_best_effort``.
+
+        ``dialogue_id`` runs as a server-side ``WHERE`` predicate
+        before ``limit`` / ``offset`` so a chat-ai history query for
+        one dialogue always retrieves every matching row regardless
+        of the caller's total run count.
 
         Default mode strips the raw handler payload from each result;
         pass ``debug=true`` to include it.
@@ -1270,6 +1281,7 @@ def create_app() -> FastAPI:
             status=status,
             agent=agent,
             origin=origin,
+            dialogue_id=dialogue_id,
             created_after=created_after,
             created_before=created_before,
             limit=limit,

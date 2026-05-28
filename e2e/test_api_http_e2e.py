@@ -596,12 +596,20 @@ async def test_runs_history_self_query_by_dialogue_id(
     )
     assert runs_resp.status_code == 200, runs_resp.text
     rows = runs_resp.json()["data"]
-    matching = [row for row in rows if row.get("dialogue_id") == dialogue_id]
-    assert matching, (
-        f"runs listing should include dialogue_id={dialogue_id!r}; "
-        f"got {len(rows)} rows: {[r.get('dialogue_id') for r in rows]!r}"
+    # The route runs the dialogue_id predicate server-side before
+    # ``limit``, so every returned row must match the requested
+    # dialogue id; a client-side post-filter would mask AF-004
+    # regressions.
+    assert rows, (
+        f"runs listing should include at least one row with "
+        f"dialogue_id={dialogue_id!r}; got an empty payload"
     )
-    row = matching[0]
+    for row in rows:
+        assert row.get("dialogue_id") == dialogue_id, (
+            "every row in a dialogue_id filtered listing must match; "
+            f"got dialogue_id={row.get('dialogue_id')!r}"
+        )
+    row = rows[0]
     assert (
         row.get("query") == query
     ), f"row.query should mirror the chat prompt; got: {row.get('query')!r}"

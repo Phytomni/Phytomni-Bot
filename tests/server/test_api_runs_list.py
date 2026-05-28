@@ -23,6 +23,7 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
 
@@ -30,16 +31,28 @@ pytestmark = pytest.mark.server
 
 
 def _seed(registry: RunRegistry, **kwargs: str) -> str:
-    """Create one terminal run with the given spec fields."""
+    """Create one terminal run with the given spec fields.
+
+    Pass ``dialogue_id`` in ``**kwargs`` to populate the runs row's
+    ``dialogue_id`` column via ``RunRequestInfo``; omitted callers
+    keep the legacy NULL behaviour.
+    """
     spec = RunSpec(
         run_id=kwargs["run_id"],
         user_id=kwargs["user_id"],
         agent=kwargs["agent"],
         origin=kwargs["origin"],
     )
+    dialogue_id = kwargs.get("dialogue_id")
+    request_info = (
+        RunRequestInfo(dialogue_id=dialogue_id)
+        if dialogue_id is not None
+        else None
+    )
     registry.create_run(
         spec,
         outcome=RunOutcome(status="succeeded", result={"ok": True}),
+        request_info=request_info,
     )
     return spec.run_id
 
@@ -371,6 +384,54 @@ async def test_list_runs_created_after_filter(
     assert response.status_code == 200
     ids = [row["run_id"] for row in response.json()["data"]]
     assert ids == ["run-new"]
+
+
+async def test_list_runs_dialogue_id_server_side_filter(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """``dialogue_id`` filter runs server-side before ``limit``.
+
+    Seeds 15 owner rows — 10 non-matching dialogues and 5 with the
+    target dialogue id — then queries with ``?dialogue_id=&limit=10``.
+    A correct server-side ``WHERE`` predicate trims to exactly the
+    five matches; a missing predicate would return the first 10
+    owner rows regardless of dialogue id, masking AF-004 regressions.
+    """
+    registry = RunRegistry(tasks_db_path)
+    for index in range(10):
+        _seed(
+            registry,
+            run_id=f"run-noise-{index}",
+            user_id="u1",
+            agent="chat",
+            origin="local",
+            dialogue_id=f"dlg-noise-{index}",
+        )
+    for index in range(5):
+        _seed(
+            registry,
+            run_id=f"run-target-{index}",
+            user_id="u1",
+            agent="chat",
+            origin="local",
+            dialogue_id="dlg-target",
+        )
+
+    response = await api_client.get(
+        "/v1/runs?dialogue_id=dlg-target&limit=10",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    assert len(rows) == 5
+    assert {row["run_id"] for row in rows} == {
+        f"run-target-{index}" for index in range(5)
+    }
+    for row in rows:
+        assert row["dialogue_id"] == "dlg-target"
 
 
 async def test_list_runs_response_row_shape(

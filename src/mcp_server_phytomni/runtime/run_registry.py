@@ -170,6 +170,11 @@ class RunFilter:
         status: Exact-match run status filter.
         agent: Exact-match agent alias filter.
         origin: Exact-match origin filter (``"local"``/``"remote"``).
+        dialogue_id: Exact-match dialogue id filter. Chat-ai groups
+            its history page by ``dialogue_id``; the server-side
+            predicate runs before ``limit`` / ``offset`` so an owner
+            with more than ``limit`` rows still finds their target
+            dialogue regardless of ordering.
         created_after: ISO-8601 lower bound (inclusive); rows with
             ``created_at >= created_after`` are kept. Both bounds are
             compared as TEXT directly: ISO-8601 timestamps are
@@ -182,6 +187,7 @@ class RunFilter:
     status: Optional[str] = None
     agent: Optional[str] = None
     origin: Optional[str] = None
+    dialogue_id: Optional[str] = None
     created_after: Optional[str] = None
     created_before: Optional[str] = None
 
@@ -614,6 +620,7 @@ def _build_list_where(
         ("status", run_filter.status),
         ("agent", run_filter.agent),
         ("origin", run_filter.origin),
+        ("dialogue_id", run_filter.dialogue_id),
     ):
         if value is not None:
             clauses.append(f"{column} = ?")
