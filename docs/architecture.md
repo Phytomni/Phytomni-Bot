@@ -39,9 +39,9 @@ src/mcp_server_phytomni/
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
-    request_context.py       Per-request user and run contextvars
+    request_context.py       Per-request user, run, and recorder-degraded contextvars
     run_registry.py          HTTP API parent-run registry
-    submit_recorder.py       Submit-handler chokepoint: persists run + task rows
+    submit_recorder.py       Submit-handler chokepoint: persists run + task rows; logs and flags degraded_tracking on SQLite write failure
     task_manager.py          Task lifecycle helper
     task_reconcile.py        Per-task status reconciliation against backend
     terminal_artifacts.py    Terminal-payload artifact persistence helpers

@@ -352,6 +352,28 @@ respond `202` with `status: "running"` and `task_ids` listing every child
 task registered by the submit path. Poll `/v1/runs/{run_id}` for live
 status.
 
+### Remote agent edge cases: `id: null` / `task_ids: []`
+
+A `202` body can legitimately return `id: null` with `task_ids: []` for
+two reasons. Both produce the same identity-empty shape, so clients
+distinguish them through the extra signals described here:
+
+| Cause                       | `id`   | `task_ids` | Body extras                                     | `result` extras                                                 | Client follow-up                                                                                                |
+| --------------------------- | ------ | ---------- | ----------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Healthy submission          | `str`  | `[…]`      | —                                               | per-agent payload                                               | Poll `/v1/runs/{id}` for status.                                                                                |
+| Analyst dedup-hit           | `null` | `[]`       | —                                               | `result.task_id` (prior caller's id) + `result.dedup_hit: true` | Poll the prior task id directly (it is reachable through `/v1/runs` listings or the prior caller's run id).     |
+| Local registry write failed | `null` | `[]`       | `degraded_tracking: true` at the body top level | per-agent payload (the remote submission did succeed)           | Treat the remote run as in-flight but not locally tracked; operators should reconcile from the upstream system. |
+
+The `degraded_tracking: true` body field is added only when the local
+SQLite chokepoint (`runtime.submit_recorder.record_submitted_task`) hit
+a `sqlite3.Error` / `OSError` while writing the `runs` and `tasks`
+rows after the remote platform already accepted the submission. The
+remote task is alive upstream, but `GET /v1/runs/{run_id}` will return
+`404` until the registry write succeeds (a manual reconcile from the
+upstream platform is the recovery path). The chokepoint also writes
+the full traceback through `logger.exception` so operators see the
+underlying SQLite or OS error in logs.
+
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   -H "Authorization: Bearer ptm_..." \
@@ -407,7 +429,9 @@ Kept: `id`, `object`, `created`, `model`, `choices` (with `role`,
 Removed: `raw` from `result`.
 
 Kept: `formatted` (all fields including `answer`), `id`, `object`,
-`agent`, `status`, `task_ids`.
+`agent`, `status`, `task_ids`, and `degraded_tracking` when the
+submit chokepoint hit a local registry write failure (see "Remote
+agent edge cases" above).
 
 ## Polling
 
