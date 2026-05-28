@@ -21,23 +21,20 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-# Side-effect import: installs offline fake env BEFORE the
-# ``mcp_server_phytomni`` imports below. Lives in a dedicated
-# bootstrap module so the rest of this file can keep every
-# ``from mcp_server_phytomni...`` import at the top of the file
-# (no ``E402`` / ``wrong-import-position`` exception needed). The
-# ``W0611`` / ``F401`` suppression pair marks the import as
-# intentionally side-effect-only — the equivalent pattern is the
-# repo-root ``conftest.py`` which is loaded by pytest before any
-# test module parses its imports. ``scripts/`` is on ``sys.path[0]``
-# when the script runs via ``python scripts/visualize_agent_graphs.py``;
-# the CLI test in ``tests/agents/test_visualize_agent_graphs_cli.py``
-# adds the directory itself before calling
-# ``spec.loader.exec_module``.
-import _visualize_bootstrap  # noqa: F401  pylint: disable=unused-import
-
-from mcp_server_phytomni.graphs import SubgraphRegistry, export_manifest
-from mcp_server_phytomni.graphs.defaults import build_default_registry
+# The ``_visualize_bootstrap`` module installs the offline fake
+# deployment env on its own import and then re-exports the three
+# mcp subgraph symbols this script needs. Routing both through the
+# bootstrap module keeps every import in this file a real ``from``
+# import — no side-effect-only import block, no suppression of the
+# unused-import warning that pattern requires. ``scripts/`` lives on
+# ``sys.path[0]`` for direct invocation; the CLI test inserts the
+# same path before ``spec.loader.exec_module`` so the bootstrap is
+# resolvable in both modes.
+from _visualize_bootstrap import (
+    SubgraphRegistry,
+    build_default_registry,
+    export_manifest,
+)
 
 
 def _print_mermaid(name: str, graph_app: Any, xray: int) -> None:

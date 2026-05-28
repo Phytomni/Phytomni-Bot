@@ -2,15 +2,16 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Install offline fake env for ``visualize_agent_graphs.py`` imports.
+"""Install offline fake env and re-export mcp visualize symbols.
 
 Mirrors the repo-root ``conftest.py`` bootstrap pattern: several
 ``mcp_server_phytomni`` modules construct ``ServerConfig()`` at
 import time and would raise ``ValidationError`` if the deployment
-endpoints / UUIDs are missing. Loading this module BEFORE the
-``from mcp_server_phytomni...`` imports in
-``visualize_agent_graphs.py`` lets those imports sit at the top of
-the file (no ``E402`` / ``wrong-import-position`` exceptions).
+endpoints / UUIDs are missing. This module installs the offline
+fake env on import, then re-exports the three subgraph symbols the
+``visualize_agent_graphs`` script needs. Consumers therefore
+import everything from this module and never need a side-effect
+import + suppression in their own top-of-file block.
 
 The script invocation ``python scripts/visualize_agent_graphs.py``
 puts ``scripts/`` on ``sys.path[0]`` automatically; the CLI test
@@ -72,3 +73,26 @@ def _install_fake_env() -> None:
 
 
 _install_fake_env()
+
+# Imports below intentionally sit AFTER _install_fake_env() so the
+# offline placeholder values are in place before pydantic-settings
+# instantiates ServerConfig() during the import chain. The E402 /
+# wrong-import-position suppressions mark the ordering as a
+# deliberate bootstrap constraint rather than a style violation;
+# the consumer script never has to carry a side-effect-only import.
+# pylint: disable=wrong-import-position
+from mcp_server_phytomni.graphs import (  # noqa: E402
+    SubgraphRegistry,
+    export_manifest,
+)
+from mcp_server_phytomni.graphs.defaults import (  # noqa: E402
+    build_default_registry,
+)
+
+# pylint: enable=wrong-import-position
+
+__all__ = [
+    "SubgraphRegistry",
+    "build_default_registry",
+    "export_manifest",
+]
