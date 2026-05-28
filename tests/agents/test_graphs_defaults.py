@@ -6,9 +6,9 @@
 
 Pins the central registration site for the project's built-in
 subgraphs: ``build_default_registry`` ships at least brief_gene /
-chat / deep_genome, the names are returned in a deterministic order,
-and each registered id resolves to a callable factory the registry
-can compile through ``get_or_compile``.
+chat / deep_genome / knowledge, the names are returned in a
+deterministic order, and each registered id resolves to a callable
+factory the registry can compile through ``get_or_compile``.
 """
 
 from __future__ import annotations
@@ -33,16 +33,22 @@ def test_build_default_registry_returns_subgraph_registry() -> None:
     assert isinstance(registry, SubgraphRegistry)
 
 
-def test_default_registry_ships_phase_one_baseline() -> None:
-    """The default set covers brief_gene / chat / deep_genome.
+def test_default_registry_ships_baseline_subgraphs() -> None:
+    """The default set covers brief_gene / chat / deep_genome / knowledge.
 
-    Pins the Phase-1 baseline that downstream callers (the
+    Pins the always-growing baseline that downstream callers (the
     visualization script, future loaders, integration tests) expect.
-    If a future refactor drops one of the three from defaults, this
-    test fails first so the rebalance is explicit.
+    If a future refactor drops any registered id from defaults, this
+    test fails first so the rebalance is explicit. Knowledge entered
+    the floor alongside its IO schema split.
     """
     registry = build_default_registry()
-    assert {"brief_gene", "chat", "deep_genome"} <= set(registry.names())
+    assert {
+        "brief_gene",
+        "chat",
+        "deep_genome",
+        "knowledge",
+    } <= set(registry.names())
 
 
 def test_default_registry_names_are_deterministic_alphabetical() -> None:

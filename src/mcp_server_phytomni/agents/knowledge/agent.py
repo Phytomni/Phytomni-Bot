@@ -4,12 +4,13 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Knowledge agent with retrieval and RAG-based synthesis.
 
-Classes: KnowledgeAgentState, KnowledgeAgent.
+Classes: KnowledgeAgent. The ``KnowledgeAgentState`` symbol is now
+defined in :mod:`.state` and re-exported here for back compatibility.
 Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
     retrieve_generate.
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -39,6 +40,12 @@ from ...storage.downloads import download_list_convert
 from ..chat.service import phyto_chat
 from ..shared.intermediate_state import merge_intermediate_state
 from .retrieval import multi_retrieve, rerank, retrieve
+from .state import (
+    KnowledgeAgentState,
+    KnowledgeInput,
+    KnowledgeOutput,
+    KnowledgeState,
+)
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
 RETRIEVE_CACHE_TTL = 300
@@ -68,40 +75,6 @@ __all__ = [
     "retrieve",
     "retrieve_generate",
 ]
-
-
-class KnowledgeAgentState(TypedDict):
-    """State schema for the KnowledgeAgent LangGraph workflow.
-
-    This TypedDict defines the shared state that flows through each node
-    in the KnowledgeAgent graph. Each node reads from and writes to this
-    state as the graph processes a user's query.
-
-    Attributes:
-        user_query: The user's natural language query.
-        obs_file_list: A list of OBS file paths uploaded by the user.
-        repo_id_dict: A dictionary mapping repository names to their IDs.
-        upload_context: The parsed content from user-uploaded files.
-        retrieved_docs: Documents retrieved from the knowledge base.
-        retrieve_context: The formatted retrieval context for the LLM.
-        main_response: The initial response from the LLM (contains choices).
-        is_generate: Whether to generate a response after retrieval.
-        is_follow_up: Whether to generate follow-up questions.
-        follow_up_questions: A list of suggested follow-up questions.
-        final_response: The final merged response returned to the user.
-    """
-
-    user_query: str
-    obs_file_list: Optional[List[str]]
-    repo_id_dict: Optional[Dict[str, int]]
-    upload_context: str
-    retrieved_docs: List[Dict[str, Any]]
-    retrieve_context: str
-    main_response: Dict[str, Any]
-    is_generate: bool
-    is_follow_up: bool
-    follow_up_questions: List[dict]
-    final_response: Dict[str, Any]
 
 
 class KnowledgeAgent:
@@ -156,7 +129,11 @@ class KnowledgeAgent:
         Returns:
             A compiled StateGraph with checkpointer support.
         """
-        workflow = StateGraph(KnowledgeAgentState)
+        workflow = StateGraph(
+            state_schema=KnowledgeState,
+            input_schema=KnowledgeInput,
+            output_schema=KnowledgeOutput,
+        )
         workflow.add_node("process_files_node", self.process_files_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("generate_node", self.generate_node)
