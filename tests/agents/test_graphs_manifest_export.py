@@ -131,10 +131,19 @@ def test_subgraph_node_names_property_lists_only_subgraphs() -> None:
 
 
 def test_manifest_is_frozen() -> None:
-    """``GraphManifest`` rejects mutation by construction."""
+    """``GraphManifest`` rejects mutation by construction.
+
+    ``setattr`` reaches the same ``__setattr__`` path as a literal
+    ``manifest.nodes = ()`` assignment (Pydantic raises
+    ``ValidationError`` for frozen models there); the dynamic form
+    lets static checkers see an API call instead of a forbidden
+    field write, removing the need for ``# type: ignore[misc]``.
+    Same refactor as the GeneRetrieveRequest frozen test at
+    ``9072103``.
+    """
     manifest = export_manifest(_build_linear_app())
     with __import__("pytest").raises(Exception):
-        manifest.nodes = ()  # type: ignore[misc]
+        setattr(manifest, "nodes", ())
 
 
 def test_node_manifest_validates_non_empty_name() -> None:
