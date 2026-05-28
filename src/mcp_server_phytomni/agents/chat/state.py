@@ -1,0 +1,76 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Typed state and IO contracts for the chat LangGraph workflow.
+
+Three TypedDicts split the contract: ``ChatInput`` is what parent
+graphs hand in, ``ChatOutput`` is what they read back, and
+``ChatState`` is the union plus the intermediate field that the
+``prepare_context`` node writes between them.
+
+This module deliberately omits ``from __future__ import annotations``:
+``TypedDict.__required_keys__`` is computed at class-definition time
+and does not look through ``ForwardRef`` strings, so lazy annotations
+would silently drop the ``Required[]`` markers and make every key
+optional on introspection — defeating the entire point of the IO
+contract. Other TypedDicts in this package use ``total=True`` as a
+workaround; this one uses native ``Required`` because it pins
+exactly one mandatory key against many defaulted ones.
+"""
+
+from typing import Any, Optional, Required, TypedDict
+
+
+class ChatInput(TypedDict, total=False):
+    """Public input contract for the chat subgraph.
+
+    Mirrors the kwargs ``mcp/handlers.py:handle_chat_agent`` forwards
+    to ``phyto_chat_with_follow``: a required natural-language query,
+    an optional OBS file list converted to upload context, and a
+    type-erased service bag that carries the LLM / OBS / timeout
+    settings flat through to ``run_phyto_chat_cached``. The service
+    bag stays a single dict so a parent graph never has to track
+    individual provider kwargs as the LLM client surface evolves.
+
+    Attributes:
+        user_query: Natural-language question or instruction.
+        obs_file_list: OBS object keys to download and inline as
+            upload context. Empty list when no files are attached.
+        chat_kwargs: Flat dict of provider / OBS / timeout settings
+            forwarded to the chat service (model id, api key, base
+            url, server_dir, retry policy, etc.).
+    """
+
+    user_query: Required[str]
+    obs_file_list: list[str]
+    chat_kwargs: dict[str, Any]
+
+
+class ChatOutput(TypedDict):
+    """Public output contract for the chat subgraph.
+
+    ``response`` is the raw upstream chat-completion dict (with the
+    follow-up questions list embedded on the assistant message under
+    ``choices[0].message.follow_up_questions``). It may be ``None``
+    when the upstream provider returns no completion; the key itself
+    is always present in the final state.
+    """
+
+    response: Optional[dict[str, Any]]
+
+
+class ChatState(TypedDict, total=False):
+    """Internal state spanning every chat workflow node.
+
+    Carries every :class:`ChatInput` field plus the intermediate
+    ``upload_context`` that ``prepare_context`` materialises (the
+    converted markdown stitched into ``user_query`` before the LLM
+    call) and the final ``response`` matching :class:`ChatOutput`.
+    """
+
+    user_query: Required[str]
+    obs_file_list: list[str]
+    chat_kwargs: dict[str, Any]
+    upload_context: Optional[str]
+    response: Optional[dict[str, Any]]
