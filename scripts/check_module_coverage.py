@@ -38,6 +38,7 @@ AGENT_PATH_PREFIX = "src/mcp_server_phytomni/agents/"
 # entry toward ``TARGET`` alongside the new tests that support the bump.
 MODULE_FLOORS: Dict[str, int] = {
     "src/mcp_server_phytomni/agents/deep_genome/report.py": 23,
+    "src/mcp_server_phytomni/agents/chat/graph.py": 30,
     "src/mcp_server_phytomni/agents/analyst/graph.py": 42,
     "src/mcp_server_phytomni/agents/review/report.py": 42,
     "src/mcp_server_phytomni/agents/knowledge/agent.py": 44,
