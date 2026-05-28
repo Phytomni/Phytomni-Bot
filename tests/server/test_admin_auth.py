@@ -6,7 +6,10 @@
 
 Covers the four states require_service_principal must distinguish:
 no token configured (503), no token presented (401), wrong token (401),
-and correct token via Bearer or X-Service-Token headers (200).
+and correct token via Bearer or X-Service-Token headers (200). Also
+covers ``ApiConfig.API_SERVICE_TOKEN`` env-name acceptance so the
+unprefixed ``API_SERVICE_TOKEN`` and the ``PHYTOMNI_API_SERVICE_TOKEN``
+alias both resolve to the same configured token.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import pytest
 from fastapi import HTTPException
 
 from mcp_server_phytomni.api.admin_auth import require_service_principal
+from mcp_server_phytomni.config.defaults import ApiConfig
 
 pytestmark = pytest.mark.server
 
@@ -98,3 +102,39 @@ async def test_rejects_non_bearer_authorization_scheme(
         )
 
     assert exc_info.value.status_code == 401
+
+
+def test_service_token_picked_up_from_unprefixed_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``API_SERVICE_TOKEN`` (unprefixed) resolves into ``ApiConfig``.
+
+    Locks the canonical env-name pickup so existing deployments using
+    the unprefixed spelling keep working after the alias landed.
+    """
+    monkeypatch.delenv("PHYTOMNI_API_SERVICE_TOKEN", raising=False)
+    monkeypatch.setenv("API_SERVICE_TOKEN", "svc-unprefixed")
+
+    config = ApiConfig()
+
+    assert config.API_SERVICE_TOKEN is not None
+    assert config.API_SERVICE_TOKEN.get_secret_value() == "svc-unprefixed"
+
+
+def test_service_token_picked_up_from_prefixed_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``PHYTOMNI_API_SERVICE_TOKEN`` alias resolves into ``ApiConfig``.
+
+    Regression guard for the AF-001 finding: docs / e2e helpers /
+    runbook all use the ``PHYTOMNI_``-prefixed name, so the alias is
+    required for them to actually unlock ``/v1/api-keys/*`` rather
+    than silently leaving the routes at 503.
+    """
+    monkeypatch.delenv("API_SERVICE_TOKEN", raising=False)
+    monkeypatch.setenv("PHYTOMNI_API_SERVICE_TOKEN", "svc-prefixed")
+
+    config = ApiConfig()
+
+    assert config.API_SERVICE_TOKEN is not None
+    assert config.API_SERVICE_TOKEN.get_secret_value() == "svc-prefixed"

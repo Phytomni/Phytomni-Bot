@@ -649,17 +649,18 @@ class ApiConfig(BaseSettings):
         API_RUN_TTL_FAIL_DAYS (int): Retention for failed or cancelled runs.
         API_SERVICE_TOKEN (Optional[SecretStr]): Privileged service-to-service
             credential read from the ``API_SERVICE_TOKEN`` environment
-            variable. When set, it authorises the upstream Web Go service
-            (or any operator caller) to mint, list, and revoke per-user
-            ``ptm_...`` keys via ``POST/GET/DELETE /v1/api-keys``. Treat as a
-            root credential: the holder can issue keys for any ``user_id``.
-            When unset, the ``/v1/api-keys/*`` routes return 503 so a
-            development deployment that forgets to configure ops never
-            silently exposes the path. The token is intentionally separate
-            from ``ApiKeyStore`` so a leaked or compromised per-user key
-            cannot escalate to issuance scope. No ``PHYTOMNI_``-prefixed
-            alias is exposed because this name is unique to the Bot HTTP
-            service and carries no risk of colliding with sibling tools.
+            variable or its ``PHYTOMNI_API_SERVICE_TOKEN`` alias (both
+            names are accepted so docs, runbooks, and e2e helpers using
+            either spelling keep working). When set, it authorises the
+            upstream Web Go service (or any operator caller) to mint,
+            list, and revoke per-user ``ptm_...`` keys via
+            ``POST/GET/DELETE /v1/api-keys``. Treat as a root credential:
+            the holder can issue keys for any ``user_id``. When unset,
+            the ``/v1/api-keys/*`` routes return 503 so a development
+            deployment that forgets to configure ops never silently
+            exposes the path. The token is intentionally separate from
+            ``ApiKeyStore`` so a leaked or compromised per-user key
+            cannot escalate to issuance scope.
         API_UPLOAD_MAX_BYTES (int): Per-file size ceiling for
             ``POST /v1/files`` multipart uploads, in bytes. Defaults to
             25 MiB so a single agent-context attachment cannot exhaust the
@@ -690,7 +691,14 @@ class ApiConfig(BaseSettings):
     API_RATE_LIMIT_PER_MIN: int = 120
     API_RUN_TTL_OK_HOURS: int = 24
     API_RUN_TTL_FAIL_DAYS: int = 7
-    API_SERVICE_TOKEN: Optional[SecretStr] = None
+    API_SERVICE_TOKEN: Annotated[
+        Optional[SecretStr],
+        Field(
+            validation_alias=AliasChoices(
+                "API_SERVICE_TOKEN", "PHYTOMNI_API_SERVICE_TOKEN"
+            ),
+        ),
+    ] = None
     API_UPLOAD_MAX_BYTES: int = 26_214_400
     API_UPLOAD_PREFIX: str = "agent_data/uploads"
 
