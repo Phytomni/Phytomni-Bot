@@ -78,6 +78,19 @@ _TEST_ENV = {
     "DATABASE_URL": "https://example.invalid/database",
     "ANALYSIS_URL": "https://example.invalid/analysis",
     "BI_URL": "https://example.invalid/bi",
+    # Cloud-platform endpoints + compute-tier app-id map: empty
+    # defaults in config/defaults.py mean these env vars are required
+    # in every deployment, so a customer image never bakes Huawei
+    # IAM / OBS regional hosts or shared compute-tier UUIDs into
+    # the wheel. APP_ID ships as a JSON string so a single env var
+    # carries the full small/medium/large map.
+    "TOKEN_URL": "https://example.invalid/iam/v3/auth/tokens",
+    "OBS_SERVER": "https://example.invalid/obs",
+    "APP_ID": (
+        '{"small": "00000000-0000-0000-0000-000000000001",'
+        ' "medium": "00000000-0000-0000-0000-000000000002",'
+        ' "large": "00000000-0000-0000-0000-000000000003"}'
+    ),
 }
 
 

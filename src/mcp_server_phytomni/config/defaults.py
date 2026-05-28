@@ -58,6 +58,23 @@ def _require_non_empty_endpoint(value, info: ValidationInfo):
     return value
 
 
+# Single source of truth for the ``ServerConfig`` env-required field
+# set; the field_validator below and ``tests/unit/config/test_defaults``
+# both consume this tuple so adding a new required field updates the
+# validator and the negative-test parametrize in one place.
+SERVER_REQUIRED_ENDPOINT_FIELDS = (
+    "TOKEN_URL",
+    "RETRIEVE_URL",
+    "RERANK_URL",
+    "DATABASE_URL",
+    "ANALYSIS_URL",
+    "REPO_ID",
+    "REPO_ID_DICT",
+    "WORKSPACE_ID",
+    "SUBJECT_ID",
+    "OBS_SERVER",
+)
+
 _MAX_TOKENS = 65536
 PARENT_PATH = Path(__file__).parent.parent
 PROMPT_PATH = PARENT_PATH / "config/.prompts.yaml"
@@ -109,9 +126,13 @@ class ServerConfig(BaseSettings):
     MAX_CONCURRENCY: int = 4
     MAX_WORKERS: int = 4
 
-    TOKEN_URL: str = (
-        "https://iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens"
-    )
+    TOKEN_URL: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("TOKEN_URL", "PHYTOMNI_TOKEN_URL"),
+        ),
+    ] = ""
     REGION: str = "cn-southwest-2"
 
     RETRIEVE_URL: Annotated[
@@ -187,7 +208,13 @@ class ServerConfig(BaseSettings):
         ),
     ] = ""
 
-    OBS_SERVER: str = "https://obs.cn-east-3.myhuaweicloud.com"
+    OBS_SERVER: Annotated[
+        str,
+        Field(
+            default="",
+            validation_alias=AliasChoices("OBS_SERVER", "PHYTOMNI_OBS_SERVER"),
+        ),
+    ] = ""
     BUCKET_NAME: str = "phytomni"
     PART_SIZE: int = 16777216
     TASK_NUM: int = 8
@@ -216,25 +243,19 @@ class ServerConfig(BaseSettings):
         ),
     ] = None
 
-    # Deployment-specific endpoints + UUIDs externalised in Phase
-    # 14.3.1 (URLs) and 14.3.2 (UUIDs): the defaults are empty so a
-    # misconfigured customer image fails fast with a ValidationError
-    # naming the missing env var, rather than baking a per-deployment
-    # IP / customer UUID into the wheel/Docker layer. The validator
-    # is shared with every subclass that inherits these fields
-    # (KnowledgeConfig, DataConfig, AnalystConfig, ...). REPO_ID_DICT
-    # accepts a JSON-string env value (e.g.
-    # ``PHYTOMNI_REPO_ID_DICT='{"uuid":N,...}'``) which
-    # pydantic-settings parses into ``Dict[str, int]`` automatically.
+    # Deployment-specific endpoints + UUIDs are externalised with
+    # empty defaults so a misconfigured customer image fails fast
+    # with a ``ValidationError`` naming the missing env var, rather
+    # than baking a per-deployment IP / customer UUID into the wheel
+    # or Docker layer. The validator is shared with every subclass
+    # that inherits these fields (``KnowledgeConfig``, ``DataConfig``,
+    # ``AnalystConfig``, ...). ``REPO_ID_DICT`` accepts a JSON-string
+    # env value (e.g. ``PHYTOMNI_REPO_ID_DICT='{"uuid":N,...}'``)
+    # which pydantic-settings parses into ``Dict[str, int]``
+    # automatically; the same pattern covers ``APP_ID`` on
+    # ``AnalystConfig`` (``Dict[str, str]``).
     _validate_server_endpoints = field_validator(
-        "RETRIEVE_URL",
-        "RERANK_URL",
-        "DATABASE_URL",
-        "ANALYSIS_URL",
-        "REPO_ID",
-        "REPO_ID_DICT",
-        "WORKSPACE_ID",
-        "SUBJECT_ID",
+        *SERVER_REQUIRED_ENDPOINT_FIELDS,
         mode="after",
     )(_require_non_empty_endpoint)
 
@@ -404,11 +425,25 @@ class AnalystConfig(KnowledgeConfig):
         "medium": {"cpu": 8, "memory": 16},
         "large": {"cpu": 16, "memory": 48},
     }
-    APP_ID: Dict[str, str] = {
-        "small": "e71c5415-4c67-11f1-bbb4-fa163e7f72d1",
-        "medium": "2f0a0495-4c68-11f1-bbb4-fa163e7f72d1",
-        "large": "624753c3-4c68-11f1-bbb4-fa163e7f72d1",
-    }
+    # Deployment-specific compute-tier app ids; ship as a JSON string
+    # env value (e.g. ``PHYTOMNI_APP_ID='{"small":"<uuid>",...}'``)
+    # that pydantic-settings parses into ``Dict[str, str]``. Mirrors the
+    # REPO_ID_DICT pattern: ``default={}`` (not ``default_factory``) so
+    # mypy without the pydantic plugin sees the field as defaulted,
+    # while Pydantic v2 deep-copies the literal per instance.
+    APP_ID: Annotated[
+        Dict[str, str],
+        Field(
+            default={},
+            validation_alias=AliasChoices("APP_ID", "PHYTOMNI_APP_ID"),
+        ),
+    ] = {}
+
+    # Deployment-specific UUID map; required as an env var (no default).
+    _validate_app_id = field_validator("APP_ID", mode="after")(
+        _require_non_empty_endpoint
+    )
+
     EXECUTE_CODE: bool = True
     USER_ID: str = ""
     CREATE_DIR: bool = True
