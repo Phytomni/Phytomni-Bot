@@ -57,6 +57,33 @@ renderer. Node names and graph structure leave the host; no business
 data or state values are transmitted. Skip `--png` if even node
 names are sensitive.
 
+## Chat Subgraph
+
+The chat workflow is the first agent compiled as an atomic-Layer
+subgraph. Its compiled app is registered as `chat` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py) so the visualization command renders it
+alongside `brief_gene` and `deep_genome`.
+
+| TypedDict    | Required keys | Optional keys                               | Where                                                              |
+| ------------ | ------------- | ------------------------------------------- | ------------------------------------------------------------------ |
+| `ChatInput`  | `user_query`  | `obs_file_list`, `chat_kwargs`              | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
+| `ChatOutput` | `response`    | —                                           | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
+| `ChatState`  | `user_query`  | every `ChatInput` key plus `upload_context` | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
+
+The graph compiles into three nodes plus a conditional edge:
+
+| Node                   | Role                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `prepare_context_node` | Downloads attached OBS files and prepends the converted markdown to `user_query`.            |
+| `generate_node`        | Issues the primary LLM completion via `_run_phyto_chat` so cache keys match the legacy path. |
+| `follow_up_node`       | Runs a second LLM call for follow-up questions and embeds them on the assistant message.     |
+
+After `generate_node`, `route_after_generate` inspects
+`chat_kwargs["with_follow_up"]` (default `True`) and either flows
+into `follow_up_node` or short-circuits to `END`. One compiled graph
+therefore serves both the legacy no-follow `phyto_chat` shape and
+the with-follow `phyto_chat_with_follow` shape via a single switch.
+
 ## Adding a New Subgraph
 
 1. Define `Input` / `Output` / `State` TypedDicts in

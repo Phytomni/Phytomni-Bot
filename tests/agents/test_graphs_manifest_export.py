@@ -17,6 +17,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
+from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
     GraphNodeManifest,
@@ -160,6 +161,25 @@ def test_export_real_brief_gene_agent_node_set() -> None:
         "query_judge_node",
         "fetch_annotation_node",
         "retrieve_node",
+        "generate_node",
+        "follow_up_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_chat_subgraph_node_set() -> None:
+    """Real chat subgraph export matches the documented three-node graph.
+
+    Pins the chat subgraph's manifest shape so the docs section in
+    ``docs/agent-graphs.md`` and the compiled graph stay in sync. If
+    a future refactor renames a node or collapses the prepare /
+    generate split, the assertion fails first and the docs update
+    rides in the same diff.
+    """
+    manifest = export_manifest(_build_chat_graph())
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "prepare_context_node",
         "generate_node",
         "follow_up_node",
     }
