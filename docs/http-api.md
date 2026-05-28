@@ -74,7 +74,7 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `GET`    | `/readyz`                 | no   | Readiness, checks local store directories without creating files. |
 | `GET`    | `/v1/models`              | yes  | Lists OpenAI-compatible model ids.                                |
 | `POST`   | `/v1/chat/completions`    | yes  | OpenAI-compatible chat endpoint.                                  |
-| `GET`    | `/v1/agents`              | yes  | Lists native agent-run slugs.                                     |
+| `GET`    | `/v1/agents`              | yes  | Lists native agent-run slugs; each row carries `legacy_aliases`.  |
 | `POST`   | `/v1/agents/{agent}/runs` | yes  | Invokes one agent by slug.                                        |
 | `GET`    | `/v1/runs/{run_id}`       | yes  | Returns one owner-isolated run state.                             |
 | `GET`    | `/v1/runs/{run_id}/logs`  | yes  | Returns reconciled task logs for a run.                           |
@@ -84,12 +84,26 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `GET`    | `/v1/api-keys`            | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter. |
 | `DELETE` | `/v1/api-keys/{prefix}`   | svc  | Revokes the key with the given public prefix.                     |
 
+`GET /v1/agents` returns one row per registered native slug; each
+row carries a `legacy_aliases: list[str]` carrying the historical
+Web `tool_name` strings that map onto the slug. The route itself
+accepts only canonical slugs; the alias list is metadata so
+chat-ai and Phytomni-Web Go can build their own alias→slug
+translation table without out-of-band negotiation. Bot-added
+agents (`brief_gene`, `design`, `network`) ship an empty list
+rather than dropping the key so the shape stays uniform and any
+future agent must declare its alias inventory explicitly rather
+than silently inherit `[]`.
+
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
-`offset`, `created_after`, `created_before`, `user_id`, and `debug`
-query parameters. `created_after` / `created_before` take ISO-8601
-strings and are compared inclusively against the row's `created_at`;
-ISO-8601 UTC strings sort lexicographically so the SQL predicate
-matches chronological intent without conversion. Filters compose
+`offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,
+and `debug` query parameters. `dialogue_id` is an exact-match
+server-side `WHERE` predicate so callers can paginate one chat-ai
+conversation thread without loading the full owner history.
+`created_after` / `created_before` take ISO-8601 strings and are
+compared inclusively against the row's `created_at`; ISO-8601 UTC
+strings sort lexicographically so the SQL predicate matches
+chronological intent without conversion. Filters compose
 conjunctively. Each response row carries `dialogue_id`, `query`,
 `tool_name`, `model`, and `answer` alongside the standard run
 fields; `answer` is sourced from `result.formatted.answer`. The

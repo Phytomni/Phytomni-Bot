@@ -110,18 +110,20 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 
 ## HTTP API Variables
 
-| Variable                 | Default                           | Sensitive? | Purpose                                             |
-| ------------------------ | --------------------------------- | ---------- | --------------------------------------------------- |
-| `API_HOST`               | `127.0.0.1`                       | no         | Uvicorn bind address.                               |
-| `API_PORT`               | `8080`                            | no         | Uvicorn bind port.                                  |
-| `API_KEYS_DB_PATH`       | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                      |
-| `PHYTOMNI_API_KEYS_DB`   | unset                             | no         | Backward-compatible API key store alias.            |
-| `API_TASKS_DB_PATH`      | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                        |
-| `PHYTOMNI_TASKS_DB`      | unset                             | no         | Backward-compatible runs/tasks store alias.         |
-| `API_REQUEST_TIMEOUT`    | `600.0`                           | no         | Per-request timeout in seconds.                     |
-| `API_RATE_LIMIT_PER_MIN` | `120`                             | no         | Per-key request budget per minute; `<= 0` disables. |
-| `API_RUN_TTL_OK_HOURS`   | `24`                              | no         | Retention for succeeded runs.                       |
-| `API_RUN_TTL_FAIL_DAYS`  | `7`                               | no         | Retention for failed runs.                          |
+| Variable                     | Default                           | Sensitive? | Purpose                                                                                                             |
+| ---------------------------- | --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| `API_HOST`                   | `127.0.0.1`                       | no         | Uvicorn bind address.                                                                                               |
+| `API_PORT`                   | `8080`                            | no         | Uvicorn bind port.                                                                                                  |
+| `API_KEYS_DB_PATH`           | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                                                                                      |
+| `PHYTOMNI_API_KEYS_DB`       | unset                             | no         | Backward-compatible API key store alias.                                                                            |
+| `API_TASKS_DB_PATH`          | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                                                                                        |
+| `PHYTOMNI_TASKS_DB`          | unset                             | no         | Backward-compatible runs/tasks store alias.                                                                         |
+| `API_SERVICE_TOKEN`          | unset                             | yes        | Service-to-service token gating `/v1/api-keys` admin routes; unset disables them with `503 admin path not enabled`. |
+| `PHYTOMNI_API_SERVICE_TOKEN` | unset                             | yes        | Backward-compatible service token alias.                                                                            |
+| `API_REQUEST_TIMEOUT`        | `600.0`                           | no         | Per-request timeout in seconds.                                                                                     |
+| `API_RATE_LIMIT_PER_MIN`     | `120`                             | no         | Per-key request budget per minute; `<= 0` disables.                                                                 |
+| `API_RUN_TTL_OK_HOURS`       | `24`                              | no         | Retention for succeeded runs.                                                                                       |
+| `API_RUN_TTL_FAIL_DAYS`      | `7`                               | no         | Retention for failed runs.                                                                                          |
 
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
