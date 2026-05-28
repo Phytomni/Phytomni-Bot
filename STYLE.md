@@ -130,9 +130,11 @@ README-style prose may wrap the same copyright text across lines.
   needs a documented upper bound or exact pin for compatibility.
 - CI resolves dependencies from `pyproject.toml` and the configured official
   PyPI index.
-- When upgrading dependencies, update all affected `project.dependencies`,
-  `[project.optional-dependencies].dev`, and `[dependency-groups].dev` entries.
-- The two dev dependency lists must stay version-aligned.
+- When upgrading dependencies, update all affected `project.dependencies`
+  and `[project.optional-dependencies].dev` or `.demo` entries.
+- `[project.optional-dependencies]` is the single source of truth for the
+  `dev` and `demo` extras; `[dependency-groups]` is intentionally absent
+  so contributors have one list to maintain.
 - After dependency changes, run the full quality gates and
   `uv pip check --python .venv/bin/python` before committing.
 
