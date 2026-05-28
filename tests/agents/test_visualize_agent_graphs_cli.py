@@ -25,9 +25,15 @@ import pytest
 
 def _load_script() -> Any:
     """Import the visualization script as a module without packaging it."""
-    script_path = Path(__file__).resolve().parents[2] / (
-        "scripts/visualize_agent_graphs.py"
-    )
+    scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
+    # The script does ``import _visualize_bootstrap`` (side-effect: env
+    # install) before importing mcp_server_phytomni. When run as
+    # ``python scripts/visualize_agent_graphs.py`` that resolves via
+    # ``sys.path[0] = scripts/``, but ``spec_from_file_location`` does
+    # not auto-inject the file's parent dir, so add it here once.
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    script_path = scripts_dir / "visualize_agent_graphs.py"
     spec = importlib.util.spec_from_file_location(
         "_viz_agent_graphs", script_path
     )

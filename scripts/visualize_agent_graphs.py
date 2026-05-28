@@ -16,76 +16,36 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-# Env install must precede any mcp_server_phytomni import. Mirrors the
-# pattern in the repo-root ``conftest.py``; see that file's docstring
-# for why this lives at module scope rather than in a function called
-# from ``main()``. E402 below is accepted for the same reason.
-_FAKE_ENV = {
-    "PHYTOMNI_TESTING": "1",
-    "DOMAIN_NAME": "viz-domain",
-    "USER_NAME": "viz-user",
-    "USER_PASSWORD": "viz-password",
-    "ACCESS_KEY_ID": "viz-access-key-id",
-    "SECRET_ACCESS_KEY": "viz-secret-access-key",
-    "BASE_URL": "https://example.invalid/llm",
-    "MODEL_ID": "viz-model",
-    "API_KEY": "viz-api-key",
-    "CODER_URL": "https://example.invalid/coder",
-    "CODER_MODEL": "viz-coder-model",
-    "CODER_API_KEY": "viz-coder-api-key",
-    "EMBED_URL": "https://example.invalid/embed",
-    "EMBED_MODEL": "viz-embed-model",
-    "EMBED_API_KEY": "viz-embed-api-key",
-    "BI_TOKEN": "viz-bi-token",
-    "RETRIEVE_URL": "https://example.invalid/retrieve",
-    "RERANK_URL": "https://example.invalid/rerank",
-    "CREATE_TASK_URL": "https://example.invalid/create-task",
-    "UPDATE_TASK_URL": "https://example.invalid/update-task",
-    "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
-    "REPO_ID": "viz-repo-id",
-    "REPO_ID_DICT": '{"viz-repo-id": 128}',
-    "WORKSPACE_ID": "viz-workspace-id",
-    "SUBJECT_ID": "viz-subject-id",
-    "DATA_REPO_ID": "viz-data-repo-id",
-    "TOOL_REPO_ID": "viz-tool-repo-id",
-    "PROTOCOL_REPO_ID": "viz-protocol-repo-id",
-    "SPA_REPO_ID": "viz-spa-repo-id",
-    "DATABASE_URL": "https://example.invalid/database",
-    "ANALYSIS_URL": "https://example.invalid/analysis",
-    "BI_URL": "https://example.invalid/bi",
-}
-for _name, _value in _FAKE_ENV.items():
-    os.environ.setdefault(_name, _value)
+# Side-effect import: installs offline fake env BEFORE the
+# ``mcp_server_phytomni`` imports below. Lives in a dedicated
+# bootstrap module so the rest of this file can keep every
+# ``from mcp_server_phytomni...`` import at the top of the file
+# (no ``E402`` / ``wrong-import-position`` exception needed). The
+# ``W0611`` / ``F401`` suppression pair marks the import as
+# intentionally side-effect-only — the equivalent pattern is the
+# repo-root ``conftest.py`` which is loaded by pytest before any
+# test module parses its imports. ``scripts/`` is on ``sys.path[0]``
+# when the script runs via ``python scripts/visualize_agent_graphs.py``;
+# the CLI test in ``tests/agents/test_visualize_agent_graphs_cli.py``
+# adds the directory itself before calling
+# ``spec.loader.exec_module``.
+import _visualize_bootstrap  # noqa: F401  pylint: disable=unused-import
 
-# pylint: disable=wrong-import-position
-from mcp_server_phytomni.agents.analyst.agent import (  # noqa: E402
-    AnalystAgent,
-)
-from mcp_server_phytomni.agents.brief_gene.core import (  # noqa: E402
-    BriefGeneAgent,
-)
-from mcp_server_phytomni.agents.data.agent import (  # noqa: E402
-    DataAgent,
-)
-from mcp_server_phytomni.agents.deep_genome.agent import (  # noqa: E402
-    DeepGenomeAgents,
-)
-from mcp_server_phytomni.agents.knowledge.agent import (  # noqa: E402
-    KnowledgeAgent,
-)
-from mcp_server_phytomni.graphs import (  # noqa: E402
+from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
+from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
+from mcp_server_phytomni.agents.data.agent import DataAgent
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.graphs import (
     SubgraphRegistry,
     SubgraphSpec,
     export_manifest,
 )
-
-# pylint: enable=wrong-import-position
 
 
 def _brief_gene_factory() -> Any:
