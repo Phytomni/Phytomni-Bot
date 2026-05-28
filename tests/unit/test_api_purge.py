@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from types import SimpleNamespace
+from typing import Callable
 
 import pytest
 
@@ -25,25 +27,54 @@ from mcp_server_phytomni.api.app import _purge_expired_runs_best_effort
 pytestmark = pytest.mark.unit
 
 
+def _registry_factory_raising(
+    exc: Exception,
+) -> Callable[..., SimpleNamespace]:
+    """Return a fake ``RunRegistry`` callable whose purge raises ``exc``.
+
+    The production helper calls ``RunRegistry(path).purge_expired()``;
+    the factory returned here matches that two-step shape while
+    delegating to a ``SimpleNamespace`` so the test fakes carry no
+    classes for the R0903 too-few-public-methods ratchet to trip on.
+    """
+
+    def _raise() -> None:
+        raise exc
+
+    def _factory(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=_raise)
+
+    return _factory
+
+
+def _enable_propagation_for_caplog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-enable ``mcp_server_phytomni`` propagation so caplog can capture.
+
+    ``common/logging_config.py:configure_logging`` sets
+    ``propagate=False`` on the ``mcp_server_phytomni`` package logger to
+    avoid polluting the MCP stdio JSON-RPC channel. When an earlier
+    test in the session has already triggered that path, ``caplog``
+    (which attaches its handler to the root logger) no longer sees
+    WARNING records emitted from inside the package, so each test here
+    re-enables propagation through ``monkeypatch`` so the restore is
+    automatic at teardown.
+    """
+    package_logger = logging.getLogger("mcp_server_phytomni")
+    monkeypatch.setattr(package_logger, "propagate", True)
+
+
 def test_purge_expired_logs_sanitized_class_on_sqlite_error(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """``sqlite3.Error`` is swallowed but logged with the class name only."""
-
-    class _StubRegistry:
-        """Drop-in replacement that raises on ``purge_expired``."""
-
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            """Accept the production constructor signature without using it."""
-
-        def purge_expired(self) -> int:
-            """Emit a leaky exception message to prove sanitization."""
-            raise sqlite3.OperationalError(
-                "database is locked at /var/run/leaky-path/server_tasks.db"
-            )
-
-    monkeypatch.setattr(api_app, "RunRegistry", _StubRegistry)
+    _enable_propagation_for_caplog(monkeypatch)
+    leaky_exc = sqlite3.OperationalError(
+        "database is locked at /var/run/leaky-path/server_tasks.db"
+    )
+    monkeypatch.setattr(
+        api_app, "RunRegistry", _registry_factory_raising(leaky_exc)
+    )
 
     caplog.set_level(logging.WARNING, logger=api_app.__name__)
 
@@ -73,18 +104,12 @@ def test_purge_expired_logs_sanitized_class_on_os_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """``OSError`` follows the same swallow-and-log contract."""
-
-    class _StubRegistry:
-        """Constructor stub that raises ``OSError`` on purge."""
-
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            """Match the production constructor signature."""
-
-        def purge_expired(self) -> int:
-            """Surface an OS-level failure during the purge."""
-            raise OSError("disk full")
-
-    monkeypatch.setattr(api_app, "RunRegistry", _StubRegistry)
+    _enable_propagation_for_caplog(monkeypatch)
+    monkeypatch.setattr(
+        api_app,
+        "RunRegistry",
+        _registry_factory_raising(OSError("disk full")),
+    )
     caplog.set_level(logging.WARNING, logger=api_app.__name__)
 
     _purge_expired_runs_best_effort()
