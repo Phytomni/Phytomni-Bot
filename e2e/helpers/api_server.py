@@ -212,7 +212,12 @@ def boot_phytomni_api(
     env["API_HOST"] = "127.0.0.1"
     env["API_PORT"] = str(port)
     env["PHYTOMNI_API_KEYS_DB"] = keys_db
-    env["PHYTOMNI_API_RUNS_DB"] = runs_db
+    # ``ApiConfig.API_TASKS_DB_PATH`` accepts ``API_TASKS_DB_PATH`` or
+    # ``PHYTOMNI_TASKS_DB``; ``PHYTOMNI_API_RUNS_DB`` is *not* recognised
+    # and was being silently dropped, falling back to the default
+    # ``server_tasks.db`` in the repo root and polluting the working tree
+    # across runs.
+    env["PHYTOMNI_TASKS_DB"] = runs_db
     env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
     cmd = [sys.executable, "-m", "mcp_server_phytomni.api.server"]
