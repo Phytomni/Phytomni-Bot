@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 9; the
 10th fake pushes the count to 10, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 23rd R0801 duplicate-code violation appears.** Default pylint
+**A 24th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 22; the
-23rd duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 23; the
+24th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -535,9 +535,9 @@ should be planned independently).
 
 ______________________________________________________________________
 
-### R0801 duplicate-code (22 occurrences)
+### R0801 duplicate-code (23 occurrences)
 
-**Rule(s)**: R0801 similar-lines-in-files. 22 violations across the
+**Rule(s)**: R0801 similar-lines-in-files. 23 violations across the
 codebase, in five clusters:
 
 1. **Analyst module fan-out wrappers** (~6 occurrences). The
@@ -569,12 +569,12 @@ codebase, in five clusters:
    must hand the provider identical config / sensitive / OBS wiring.
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 22`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 23`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
 own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 23,
+the pinned baseline. A new R0801 violation pushes the count to 24,
 the baseline script exits 1, and the gate fails until the author
 either resolves the duplicate or explicitly bumps the baseline in
 the same diff.
