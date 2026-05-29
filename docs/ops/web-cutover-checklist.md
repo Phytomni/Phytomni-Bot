@@ -8,6 +8,13 @@ Bot is now operated. Endpoint contracts live in
 [HTTP API Operations Runbook](http-api-runbook.md); decision rationale
 lives in `.codex/integration/web-consolidation-decisions.md`.
 
+> Note: the `.codex/integration/*` paths cited as "Evidence" below are
+> local-only working ADRs — they are gitignored and do NOT ship in the
+> tracked repository tree, so they are unresolvable from a fresh clone
+> or the GitHub UI. The authoritative tracked references are
+> [HTTP API](../http-api.md) for every endpoint contract and the
+> runtime `/v1/agents.legacy_aliases` field for the tool-name mapping.
+
 ## Scope
 
 Audience: Phytomni-Bot operators preparing for cutover; Phytomni-Web
@@ -146,9 +153,12 @@ explicitly out of scope for this cutover.
   curl "http://bot.internal:8080/v1/runs?dialogue_id=d-1" \
     -H "Authorization: Bearer $PTM_WEB_KEY"
 
-  # Service-token delegated lookup (ops debug)
+  # Service-token delegated lookup (ops debug). Needs BOTH a valid
+  # user key (passes the per-request principal check) AND the service
+  # token in X-Service-Token (authorizes the cross-user ?user_id=).
   curl "http://bot.internal:8080/v1/runs?user_id=web&created_after=2026-05-01T00:00:00Z" \
-    -H "Authorization: Bearer $PHYTOMNI_API_SERVICE_TOKEN"
+    -H "Authorization: Bearer $PTM_WEB_KEY" \
+    -H "X-Service-Token: $PHYTOMNI_API_SERVICE_TOKEN"
   ```
 
 - Response row fields: `id`, `user_id`, `agent`, `status`,
