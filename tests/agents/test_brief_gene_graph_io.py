@@ -17,8 +17,8 @@ from typing import get_type_hints
 
 import pytest
 
-from mcp_server_phytomni.agents.brief_gene import (
-    BriefGeneAgent,
+from mcp_server_phytomni.agents.brief_gene import BriefGeneAgent
+from mcp_server_phytomni.agents.brief_gene.state import (
     BriefGeneInput,
     BriefGeneOutput,
     BriefGeneState,

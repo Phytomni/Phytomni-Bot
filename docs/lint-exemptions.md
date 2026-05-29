@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 9; the
 10th fake pushes the count to 10, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 24th R0801 duplicate-code violation appears.** Default pylint
+**A 25th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 23; the
-24th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 24; the
+25th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -535,10 +535,10 @@ should be planned independently).
 
 ______________________________________________________________________
 
-### R0801 duplicate-code (23 occurrences)
+### R0801 duplicate-code (24 occurrences)
 
-**Rule(s)**: R0801 similar-lines-in-files. 23 violations across the
-codebase, in seven clusters:
+**Rule(s)**: R0801 similar-lines-in-files. 24 violations across the
+codebase, in eight clusters:
 
 1. **Analyst module fan-out wrappers** (~6 occurrences). The
    `analyst/__init__.py`, `analyst/agent.py`, and `analyst/defaults.py`
@@ -589,14 +589,23 @@ codebase, in seven clusters:
    `scripts/_visualize_bootstrap.py` to import from `tests/` or
    `src/` (layer violation in both directions), so the duplication
    is the lesser evil.
+1. **Cited-agent generate→follow_up routing topology** (1
+   occurrence, added 2026-05-29). `agents/brief_gene/core.py`
+   and `agents/knowledge/agent.py` share the same
+   `add_conditional_edges("generate_node", route_after_generate, {"follow_up_node": "follow_up_node", "__end__": END}) + add_edge("follow_up_node", END) + workflow.compile(...)`
+   block followed by the next-method docstring. The shape is the
+   intentional symmetry between cited-style agents (both expose
+   an `is_follow_up` state-field toggle so parent graphs may skip
+   the trailing follow-up LLM hop); a shared helper would erase
+   each agent's domain-specific node and state typing.
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 23`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 24`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
 own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 25,
+the pinned baseline. A new R0801 violation pushes the count to 26,
 the baseline script exits 1, and the gate fails until the author
 either resolves the duplicate or explicitly bumps the baseline in
 the same diff.

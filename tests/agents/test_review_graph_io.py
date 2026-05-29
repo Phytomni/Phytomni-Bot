@@ -18,9 +18,11 @@ import pytest
 
 from mcp_server_phytomni.agents.review import (
     DeepResearchAgent,
+    DeepResearchState,
+)
+from mcp_server_phytomni.agents.review.state import (
     DeepResearchInput,
     DeepResearchOutput,
-    DeepResearchState,
 )
 
 pytestmark = pytest.mark.agent

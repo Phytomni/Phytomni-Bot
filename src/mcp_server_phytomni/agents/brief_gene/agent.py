@@ -31,9 +31,6 @@ from .core import (
     BRIEF_CONFIG,
     BriefGeneAgent,
     BriefGeneAgentState,
-    BriefGeneInput,
-    BriefGeneOutput,
-    BriefGeneState,
 )
 from .pipeline import (
     GeneRetrieveRequest,
@@ -60,9 +57,6 @@ __all__ = [
     "BRIEF_GENE_SENSITIVE_FIELD_MAP",
     "BriefGeneAgent",
     "BriefGeneAgentState",
-    "BriefGeneInput",
-    "BriefGeneOutput",
-    "BriefGeneState",
     "GeneRetrieveRequest",
     "_attach_metadata",
     "_dedupe",
