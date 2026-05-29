@@ -54,7 +54,7 @@ async def phyto_chat_with_follow(
     obs_file_list: Optional[List[str]] = None,
     semaphore: Optional[asyncio.Semaphore] = None,
     **kwargs: Any,
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
@@ -175,7 +175,7 @@ async def phyto_chat(
     obs_file_list: Optional[List[str]] = None,
     semaphore: Optional[asyncio.Semaphore] = None,
     **kwargs: Any,
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
@@ -458,15 +458,17 @@ async def run_phyto_chat_cached(
 async def _run_phyto_chat(
     messages: List[Dict[str, str]],
     options: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Call the Phyto chat endpoint with retry handling.
 
     Thin dispatcher around ``run_phyto_chat_cached`` that owns the
-    retry loop and preserves the historical ``Optional[Dict]``
-    contract (None on retry exhaustion) for callers like
-    evolution_agent.evo_test_analysis that short-circuit on a None
-    return. The cached inner handles a single attempt and raises on
-    any exception so the cache never stores a failure.
+    retry loop. The cached inner handles a single attempt and raises
+    on any exception so the cache never stores a failure. Both retry
+    helpers (``retry_http_status_or_raise`` /
+    ``retry_network_or_raise``) either return True (sleep + retry) or
+    raise ``McpError`` when retries are exhausted or the failure is
+    non-retriable, so this function either returns a Dict from a
+    successful attempt or propagates the helper's McpError.
     """
     for attempt in range(options["max_retries"] + 1):
         try:
@@ -503,7 +505,16 @@ async def _run_phyto_chat(
                 max_retries=options["max_retries"],
             ):
                 continue
-    return None
+    # Unreachable: every loop iteration either returns from the try
+    # block or raises through a retry helper on the final attempt. A
+    # bare RuntimeError keeps the type checker honest and converts a
+    # future regression (e.g. a retry helper that gains a False return
+    # path) into a loud crash instead of a silent None propagating
+    # through downstream agents.
+    raise RuntimeError(
+        "_run_phyto_chat fell through the retry loop; "
+        "retry helpers must raise on the last attempt"
+    )
 
 
 async def stream_phyto_chat_chunks(

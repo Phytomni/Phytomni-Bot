@@ -12,7 +12,7 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -65,12 +65,12 @@ from .schemas import (
 )
 
 # Public alias for handler return shape: every ``handle_*_agent`` ends
-# up returning the wrapper's dict envelope. ``Optional`` honours the
-# upstream chat/service.py signature (``phyto_chat_with_follow`` is
-# typed ``Optional[Dict[str, Any]]`` because its retry helpers carry a
-# stale dead-code ``return None`` path that ``agents/chat/service.py``
-# should tighten in a follow-up).
-HandlerResult = Optional[Dict[str, Any]]
+# up returning the wrapper's dict envelope. The chat-side retry chain
+# (``phyto_chat_with_follow`` → ``phyto_chat`` → ``_run_phyto_chat``)
+# either returns a Dict or raises McpError on retry exhaustion, so the
+# handler surface is unconditionally ``Dict[str, Any]``; no handler
+# branches return None.
+HandlerResult = Dict[str, Any]
 
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:
