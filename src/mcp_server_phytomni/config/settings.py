@@ -268,6 +268,14 @@ def get_sensitive_config() -> SensitiveConfig:
     # the decrypted values are already in os.environ via setdefault;
     # binding _env_file=None keeps a stray plaintext (which does
     # not exist here) from ever shadowing them.
+    #
+    # Passing _env_file=ENV_PATH explicitly is load-bearing on dev
+    # hosts where .env carries the full production shape (RETRIEVE_URL,
+    # REPO_ID_DICT, APP_ID, and the rest of the 19 externalised
+    # endpoints). The bare settings_cls() form lets pydantic-settings
+    # treat those ServerConfig-domain keys as extra_forbidden against
+    # SensitiveConfig; pinning _env_file= routes the same keys through
+    # the env_file branch where unknown fields are ignored.
     if ENV_PATH.exists():
         return settings_cls(_env_file=ENV_PATH)
     return settings_cls(_env_file=None)
