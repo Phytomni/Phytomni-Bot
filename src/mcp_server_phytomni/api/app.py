@@ -168,7 +168,7 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 }
 
 
-_PURGE_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 def _purge_expired_runs_best_effort() -> None:
@@ -187,9 +187,7 @@ def _purge_expired_runs_best_effort() -> None:
     try:
         RunRegistry(resolve_tasks_db_path()).purge_expired()
     except (sqlite3.Error, OSError) as exc:
-        _PURGE_LOGGER.warning(
-            "run TTL purge failed: %s", exc.__class__.__name__
-        )
+        _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
 
 
 def _extract_answer(result: Any) -> Optional[str]:
@@ -683,7 +681,12 @@ def _record_sync_run(
             outcome=RunOutcome(status="succeeded", result=result),
             request_info=request_info,
         )
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "sync run bookkeeping write failed for agent %s: %s",
+            agent,
+            exc.__class__.__name__,
+        )
         return None
     _purge_expired_runs_best_effort()
     return run_id
@@ -717,7 +720,12 @@ def _stamp_remote_request_info(
         RunRegistry(resolve_tasks_db_path()).update_request_info(
             run_id, owner=owner, request_info=request_info
         )
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "remote run request-info back-fill failed for run %s: %s",
+            run_id,
+            exc.__class__.__name__,
+        )
         return
 
 
