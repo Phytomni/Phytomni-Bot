@@ -14,7 +14,7 @@ prior late-import workaround in ``agent.py`` papered over.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -31,60 +31,13 @@ from ...runtime.langgraph_runner import (
 from ..shared.intermediate_state import merge_intermediate_state
 from .defaults import ANALYST_CONFIG, ANALYST_CONFIG_FIELD_MAP
 from .graph import AnalystGraphMixin
+from .state import (
+    AnalystAgentsState,
+    AnalystInput,
+    AnalystOutput,
+    AnalystState,
+)
 from .task_ops import task_status
-
-
-class AnalystAgentsState(TypedDict):
-    """State schema for the AnalystAgent LangGraph workflow.
-
-    This TypedDict defines the shared state that flows through each node
-    in the AnalystAgent graph. Each node reads from and writes to this
-    state as the graph processes a bioinformatics analysis request.
-
-    Attributes:
-        query: The original user input query.
-        goal_description: The decomposed research goal/objective.
-        obs_file_list: List of OBS files uploaded by the user.
-        data_list: Dictionary mapping data file paths to their descriptions.
-        output_dir: The output directory path for analysis results.
-        compute_resource: The compute resource level (small, medium, large).
-        job_name: The name of the compute job.
-        method_context: Context retrieved from literature/SOPs for plan
-            generation.
-        preset_plan: Optional caller-supplied analysis plan that bypasses
-            retrieval and validation when ``is_preset_plan`` is True.
-        plan: The analysis plan/workflow (may be empty initially).
-        plan_feedback: Feedback from the critic node for plan revision.
-        plan_retries: Number of plan generation retries.
-        extracted_tools: List of tools extracted from the plan.
-        tool_usages: Retrieved usage instructions for the extracted tools.
-        task_id: The unique identifier of the submitted task.
-        task_status: The current task status.
-        is_polling: Whether to poll for task status updates.
-        is_auto_select: Whether to automatically select relevant data files.
-        is_preset_plan: Whether to skip retrieval and validation and use
-            ``preset_plan`` directly.
-    """
-
-    query: str
-    goal_description: str
-    obs_file_list: List
-    data_list: Dict[str, str]
-    output_dir: str
-    compute_resource: str
-    job_name: str
-    method_context: Dict[str, str]
-    preset_plan: str
-    plan: str
-    plan_feedback: Optional[str]
-    plan_retries: int
-    extracted_tools: List
-    tool_usages: str
-    task_id: str
-    task_status: str
-    is_polling: bool
-    is_auto_select: bool
-    is_preset_plan: bool
 
 
 class AnalystAgent(AnalystGraphMixin):
@@ -136,8 +89,19 @@ class AnalystAgent(AnalystGraphMixin):
         self.app = self._build_graph()
 
     def _build_graph(self):
-        """Build and compile the LangGraph StateGraph workflow."""
-        workflow = StateGraph(AnalystAgentsState)
+        """Build and compile the LangGraph StateGraph workflow.
+
+        Wires the nine-node analyst pipeline against a three-schema
+        ``StateGraph``: ``AnalystState`` for internal node access,
+        ``AnalystInput`` as the public contract a parent graph
+        supplies, and ``AnalystOutput`` as the surface ``arun`` and
+        downstream adapters consume after compile.
+        """
+        workflow = StateGraph(
+            AnalystState,
+            input_schema=AnalystInput,
+            output_schema=AnalystOutput,
+        )
         workflow.add_node("parse_query_node", self.parse_query_node)
         workflow.add_node("data_select_node", self.data_select_node)
         workflow.add_node("method_retrieve_node", self.method_retrieve_node)
