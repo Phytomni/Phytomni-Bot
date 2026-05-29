@@ -648,7 +648,7 @@ async def test_runs_history_delegated_user_id_via_service_token(
 
     delegated_resp = await api_client.get(
         f"/v1/runs?user_id={api_server.user_id}" f"&dialogue_id={dialogue_id}",
-        headers=_service_auth(api_server),
+        headers={**_auth(api_server), **_service_auth(api_server)},
     )
     assert delegated_resp.status_code == 200, delegated_resp.text
     rows = delegated_resp.json()["data"]
