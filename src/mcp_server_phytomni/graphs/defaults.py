@@ -17,6 +17,11 @@ from typing import Any
 
 from ..agents.analyst.agent import AnalystAgent
 from ..agents.brief_gene.core import BriefGeneAgent
+from ..agents.brief_gene.state import (
+    BriefGeneInput,
+    BriefGeneOutput,
+    BriefGeneState,
+)
 from ..agents.chat.builder import _build_chat_graph
 from ..agents.data.agent import DataAgent
 from ..agents.deep_genome.agent import DeepGenomeAgents
@@ -64,7 +69,13 @@ def build_default_registry() -> SubgraphRegistry:
     """
     registry = SubgraphRegistry()
     registry.register(
-        SubgraphSpec(id="brief_gene", factory=_build_brief_gene_app)
+        SubgraphSpec(
+            id="brief_gene",
+            factory=_build_brief_gene_app,
+            state_schema=BriefGeneState,
+            input_schema=BriefGeneInput,
+            output_schema=BriefGeneOutput,
+        )
     )
     registry.register(SubgraphSpec(id="chat", factory=_build_chat_app))
     registry.register(SubgraphSpec(id="data", factory=_build_data_app))

@@ -12,6 +12,9 @@ clearing) used by MCP handlers and tests.
 from .agent import (
     BriefGeneAgent,
     BriefGeneAgentState,
+    BriefGeneInput,
+    BriefGeneOutput,
+    BriefGeneState,
     brief_gene_function,
 )
 from .pipeline import (
@@ -24,6 +27,9 @@ from .pipeline import (
 __all__ = [
     "BriefGeneAgent",
     "BriefGeneAgentState",
+    "BriefGeneInput",
+    "BriefGeneOutput",
+    "BriefGeneState",
     "GeneRetrieveRequest",
     "brief_gene_function",
     "clear_gene_retrieve_cache",

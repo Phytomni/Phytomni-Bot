@@ -4,16 +4,16 @@
 #         maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""BriefGeneAgent LangGraph state and orchestration class.
+"""BriefGeneAgent LangGraph orchestration class.
 
-Holds the BriefGeneAgentState TypedDict and BriefGeneAgent class
-(graph construction, node methods, arun entry point). The public
+Hosts the BriefGeneAgent class (graph construction, node methods,
+arun entry point). Public IO schemas live in state.py; the public
 brief_gene_function wrapper and backward-compat re-exports live in
 agent.py; pipeline helpers live in pipeline.py.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -40,66 +40,23 @@ from .pipeline import (
     gene_retrieve,
     run_bi_api,
 )
+from .state import (
+    BriefGeneAgentState,
+    BriefGeneInput,
+    BriefGeneOutput,
+    BriefGeneState,
+)
 
 __all__ = [
     "BRIEF_CONFIG",
     "BriefGeneAgent",
     "BriefGeneAgentState",
+    "BriefGeneInput",
+    "BriefGeneOutput",
+    "BriefGeneState",
 ]
 
 BRIEF_CONFIG = BriefGeneConfig()
-
-
-class BriefGeneAgentState(TypedDict):
-    """State schema for the brief gene LangGraph workflow.
-
-    Attributes:
-        user_query: Original gene identifier or free-text query.
-        gene_found: Whether the BI id table resolved the query.
-        gene_id: Canonical resolved gene id.
-        query_id_version: Identifier type for the original query.
-        gene_id_version: Identifier type for the canonical gene id.
-        species_code: Resolved species code.
-        species_latin_name: Resolved Latin species name.
-        species_english_name: Resolved English species name.
-        species_all_name: Combined display species string.
-        gene_name_symbol_list: Symbols from the BI id table.
-        gene_id_list: Deduplicated gene ids and symbols for retrieval.
-        gene_chr: Chromosome from structure annotation.
-        gene_start: Start coordinate from structure annotation.
-        gene_end: End coordinate from structure annotation.
-        gene_strand: Strand from structure annotation.
-        go_string: Formatted GO annotation summary.
-        kegg_string: Formatted MapMan/KEGG-like annotation summary.
-        interpro_string: Formatted InterPro annotation summary.
-        retrieved_docs: Documents retrieved from the knowledge agent.
-        retrieve_context: Prompt-ready retrieved document context.
-        follow_up_questions: Suggested follow-up questions.
-        final_response: Chat-completions-style final response payload.
-    """
-
-    user_query: str
-    gene_found: bool
-    gene_id: str
-    query_id_version: str
-    gene_id_version: str
-    species_code: str
-    species_latin_name: str
-    species_english_name: str
-    species_all_name: str
-    gene_name_symbol_list: List[str]
-    gene_id_list: List[str]
-    gene_chr: str
-    gene_start: str
-    gene_end: str
-    gene_strand: str
-    go_string: str
-    kegg_string: str
-    interpro_string: str
-    retrieved_docs: List[Dict[str, Any]]
-    retrieve_context: str
-    follow_up_questions: List[str]
-    final_response: Dict[str, Any]
 
 
 class BriefGeneAgent:
@@ -130,7 +87,11 @@ class BriefGeneAgent:
         self.app = self._build_graph()
 
     def _build_graph(self):
-        workflow = StateGraph(BriefGeneAgentState)
+        workflow = StateGraph(
+            state_schema=BriefGeneState,
+            input_schema=BriefGeneInput,
+            output_schema=BriefGeneOutput,
+        )
         workflow.add_node("query_judge_node", self.query_judge_node)
         workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
@@ -148,7 +109,14 @@ class BriefGeneAgent:
         )
         workflow.add_edge("fetch_annotation_node", "retrieve_node")
         workflow.add_edge("retrieve_node", "generate_node")
-        workflow.add_edge("generate_node", "follow_up_node")
+        workflow.add_conditional_edges(
+            "generate_node",
+            self.route_after_generate,
+            {
+                "follow_up_node": "follow_up_node",
+                "__end__": END,
+            },
+        )
         workflow.add_edge("follow_up_node", END)
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -164,6 +132,24 @@ class BriefGeneAgent:
         if state["gene_found"]:
             return "fetch_annotation_node"
         return "retrieve_node"
+
+    def route_after_generate(
+        self, state: BriefGeneState
+    ) -> Literal["follow_up_node", "__end__"]:
+        """Route after generate based on the is_follow_up flag.
+
+        Mirrors KnowledgeAgent's ``route_after_generate``: parent
+        graphs may set ``is_follow_up=False`` via ``BriefGeneInput``
+        to skip the trailing follow-up-question LLM hop; direct
+        callers leave the field unset and see legacy True default.
+
+        Returns:
+            "follow_up_node" if the state flag is True (default),
+            otherwise "__end__".
+        """
+        if state.get("is_follow_up", True):
+            return "follow_up_node"
+        return "__end__"
 
     async def query_judge_node(self, state: BriefGeneAgentState):
         """Check whether the query is known to the BI gene ID table.
@@ -459,6 +445,7 @@ class BriefGeneAgent:
         """
         initial_state: BriefGeneAgentState = {
             "user_query": user_query,
+            "is_follow_up": True,
             "gene_found": False,
             "gene_id": "",
             "query_id_version": "",
