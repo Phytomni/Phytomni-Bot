@@ -202,6 +202,12 @@ class SensitiveConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
+        # The shared .env also carries the ServerConfig deployment
+        # endpoints (RETRIEVE_URL, TOKEN_URL, APP_ID, ...). pydantic
+        # forbids unknown keys read from a dotenv file by default, so
+        # ignore the ones that belong to ServerConfig instead of
+        # failing validation on this secrets-only model.
+        extra="ignore",
     )
 
     @classmethod
@@ -263,5 +269,5 @@ def get_sensitive_config() -> SensitiveConfig:
     # binding _env_file=None keeps a stray plaintext (which does
     # not exist here) from ever shadowing them.
     if ENV_PATH.exists():
-        return settings_cls()
+        return settings_cls(_env_file=ENV_PATH)
     return settings_cls(_env_file=None)

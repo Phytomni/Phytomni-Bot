@@ -8,6 +8,8 @@ Covers environment-only loading, secret repr masking, uppercase OBS variables,
 and legacy OBS environment variable fallback.
 """
 
+from typing import Any, cast
+
 import pytest
 
 from mcp_server_phytomni.config import settings
@@ -38,6 +40,37 @@ def test_sensitive_config_load_uses_environment_without_real_env_file(
         config.SECRET_ACCESS_KEY.get_secret_value()
         == "pytest-secret-access-key"
     )
+
+
+def test_sensitive_config_ignores_server_config_dotenv_keys(tmp_path):
+    """Verify SensitiveConfig ignores ServerConfig keys in the .env file.
+
+    The deployment endpoints (RETRIEVE_URL, APP_ID, ...) live in the same
+    shared .env that SensitiveConfig parses directly via ``env_file``.
+    pydantic forbids unknown dotenv keys by default, so without
+    ``extra="ignore"`` these ServerConfig-owned keys raise
+    ``extra_forbidden``. The secret fields themselves are still supplied
+    by the test environment (os.environ wins over the dotenv source).
+
+    Args:
+        tmp_path: Temporary directory used for the shared-style .env file.
+    """
+    shared_env = tmp_path / "shared.env"
+    shared_env.write_text(
+        "RETRIEVE_URL=http://example.invalid/search\n"
+        'APP_ID={"small":"x"}\n',
+        encoding="utf-8",
+    )
+
+    # Mirror get_sensitive_config: pydantic-settings accepts the
+    # special _env_file init arg at runtime, but the synthesized
+    # __init__ that type checkers see does not, so call through Any.
+    settings_cls = cast(Any, settings.SensitiveConfig)
+    config = settings_cls(_env_file=str(shared_env))
+
+    assert config.USER_NAME == "pytest-user"
+    assert not hasattr(config, "RETRIEVE_URL")
+    assert not hasattr(config, "APP_ID")
 
 
 def test_sensitive_config_masks_secret_repr():
