@@ -133,6 +133,18 @@ the candidate-A architecture every log already belongs to the single
 `web` user, and broadening to multi-tenant delegation would happen
 alongside the candidate-B owner-key revival.
 
+Consumer impact: this `{run_id, task_ids, task_logs}` shape is NOT a
+drop-in replacement for the legacy Web `/query/analyst/update_log`
+contract — the old top-level `init_info` / `steps` payload is never
+emitted, so Web Go must adapt its reader to walk `task_logs[]` rather
+than expecting the lifted fields. Reconcile-on-read is best-effort per
+task: when the upstream log service (EIHealth) is unreachable, that
+task's reconcile yields no fresh payload (the cached value if one
+exists, otherwise the entry is absent) and the request still returns
+`200`. A sparse `task_logs` can therefore mask an upstream log-service
+outage rather than surfacing it as an error; pass `debug=true` to
+inspect the raw per-task payloads when a log looks unexpectedly thin.
+
 `POST /v1/files` accepts one `multipart/form-data` upload through the
 standard `file` field and an optional `purpose` field. The `purpose`
 value MUST be one of the OpenAI-files compatible literals
