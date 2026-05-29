@@ -26,6 +26,12 @@ from ..agents.chat.builder import _build_chat_graph
 from ..agents.data.agent import DataAgent
 from ..agents.deep_genome.agent import DeepGenomeAgents
 from ..agents.knowledge.agent import KnowledgeAgent
+from ..agents.review.agent import DeepResearchAgent
+from ..agents.review.state import (
+    DeepResearchInput,
+    DeepResearchOutput,
+    DeepResearchState,
+)
 from . import SubgraphRegistry, SubgraphSpec
 
 
@@ -58,13 +64,18 @@ def _build_knowledge_app() -> Any:
     return KnowledgeAgent().app
 
 
+def _build_review_app() -> Any:
+    """Return a compiled DeepResearchAgent (review) workflow app."""
+    return DeepResearchAgent().app
+
+
 def build_default_registry() -> SubgraphRegistry:
     """Return a SubgraphRegistry seeded with every built-in subgraph.
 
-    The set grows as later phases land additional agents (review /
-    analyst / design / network / research / environment /
-    evolution). Currently covers brief_gene / chat / data /
-    deep_genome / knowledge — every agent that constructs cleanly
+    The set grows as later phases land additional agents (analyst
+    / design / network / research / environment / evolution).
+    Currently covers brief_gene / chat / data / deep_genome /
+    knowledge / review — every agent that constructs cleanly
     with the narrow subgraph IO contract its module ships.
     """
     registry = SubgraphRegistry()
@@ -84,5 +95,14 @@ def build_default_registry() -> SubgraphRegistry:
     )
     registry.register(
         SubgraphSpec(id="knowledge", factory=_build_knowledge_app)
+    )
+    registry.register(
+        SubgraphSpec(
+            id="review",
+            factory=_build_review_app,
+            state_schema=DeepResearchState,
+            input_schema=DeepResearchInput,
+            output_schema=DeepResearchOutput,
+        )
     )
     return registry

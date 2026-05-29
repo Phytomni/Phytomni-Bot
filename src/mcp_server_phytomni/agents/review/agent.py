@@ -6,13 +6,15 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """LangGraph-based deep research and literature review generation.
 
-Exports DeepResearchAgent, its workflow state, citation/retrieval formatting
-models, and the review_agent_function compatibility wrapper used for
-literature review generation with optional uploaded-file context.
+Hosts DeepResearchAgent (graph construction, node methods, arun
+entry point) plus the review_agent_function compatibility wrapper.
+Public IO schemas live in state.py; planning / report / summary
+mixins live in their own modules; pipeline helpers live in
+pipeline.py-style siblings.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -39,6 +41,11 @@ from ..knowledge.agent import KnowledgeAgent
 from ..shared.intermediate_state import merge_intermediate_state
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
+from .state import (
+    DeepResearchInput,
+    DeepResearchOutput,
+    DeepResearchState,
+)
 from .summary import ReviewSummaryMixin
 
 REVIEW_CONFIG = ReviewConfig()
@@ -58,42 +65,6 @@ REVIEW_SECRET_FIELD_MAP = {
     "access_key_id": "ACCESS_KEY_ID",
     "secret_access_key": "SECRET_ACCESS_KEY",
 }
-
-
-class DeepResearchState(TypedDict):
-    """State schema for the deep research LangGraph workflow.
-
-    Attributes:
-        original_user_query: Initial user research question.
-        user_query: Prompt-expanded research question after file handling.
-        obs_file_list: Uploaded OBS files used as input context.
-        upload_context: Text extracted from uploaded files.
-        total_length: Current accumulated prompt context length.
-        research_dimensions: Planned research dimensions.
-        all_raw_doc_list: Retrieved documents with base citation ids.
-        dimension_params: Prompt params for per-dimension drafting.
-        draft_contents: Draft subsection text for each dimension.
-        review_contents: Critique JSON/text for each draft.
-        revised_reports: Revised subsection payloads.
-        add_doc_list: Supplementary documents added during revision.
-        summary_content: Combined review text before post-processing.
-        final_response: Chat-completions-style final response payload.
-    """
-
-    original_user_query: str
-    user_query: str
-    obs_file_list: List[str]
-    upload_context: str
-    total_length: int
-    research_dimensions: List[str]
-    all_raw_doc_list: List[Dict[str, Any]]
-    dimension_params: List[Dict[str, str]]
-    draft_contents: List[str]
-    review_contents: List[str]
-    revised_reports: List[Dict[str, str]]
-    add_doc_list: List[Dict[str, Any]]
-    summary_content: str
-    final_response: Dict[str, Any]
 
 
 class DeepResearchAgent(
@@ -126,7 +97,11 @@ class DeepResearchAgent(
         self.app = self._build_graph()
 
     def _build_graph(self):
-        workflow = StateGraph(DeepResearchState)
+        workflow = StateGraph(
+            state_schema=DeepResearchState,
+            input_schema=DeepResearchInput,
+            output_schema=DeepResearchOutput,
+        )
         workflow.add_node("plan_node", self.plan_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("draft_node", self.draft_node)
