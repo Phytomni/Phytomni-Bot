@@ -5,10 +5,11 @@
 """Tests for ``mcp_server_phytomni.graphs.defaults``.
 
 Pins the central registration site for the project's built-in
-subgraphs: ``build_default_registry`` ships brief_gene / chat /
-data / deep_genome / knowledge, the names are returned in a
-deterministic order, and each registered id resolves to a callable
-factory the registry can compile through ``get_or_compile``.
+subgraphs: ``build_default_registry`` ships analyst / brief_gene /
+chat / data / deep_genome / knowledge / review, the names are
+returned in a deterministic order, and each registered id resolves
+to a callable factory the registry can compile through
+``get_or_compile``.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ def test_default_registry_ships_baseline_subgraphs() -> None:
     """
     registry = build_default_registry()
     assert {
+        "analyst",
         "brief_gene",
         "chat",
         "data",

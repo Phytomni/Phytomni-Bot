@@ -16,6 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from ..agents.analyst.agent import AnalystAgent
+from ..agents.analyst.state import (
+    AnalystInput,
+    AnalystOutput,
+    AnalystState,
+)
 from ..agents.brief_gene.core import BriefGeneAgent
 from ..agents.brief_gene.state import (
     BriefGeneInput,
@@ -33,6 +38,11 @@ from ..agents.review.state import (
     DeepResearchState,
 )
 from . import SubgraphRegistry, SubgraphSpec
+
+
+def _build_analyst_app() -> Any:
+    """Return a compiled AnalystAgent workflow app."""
+    return AnalystAgent().app
 
 
 def _build_brief_gene_app() -> Any:
@@ -72,13 +82,22 @@ def _build_review_app() -> Any:
 def build_default_registry() -> SubgraphRegistry:
     """Return a SubgraphRegistry seeded with every built-in subgraph.
 
-    The set grows as later phases land additional agents (analyst
-    / design / network / research / environment / evolution).
-    Currently covers brief_gene / chat / data / deep_genome /
-    knowledge / review — every agent that constructs cleanly
-    with the narrow subgraph IO contract its module ships.
+    The set grows as later phases land additional agents (design /
+    network / research / environment / evolution). Currently covers
+    analyst / brief_gene / chat / data / deep_genome / knowledge /
+    review — every agent that constructs cleanly with the narrow
+    subgraph IO contract its module ships.
     """
     registry = SubgraphRegistry()
+    registry.register(
+        SubgraphSpec(
+            id="analyst",
+            factory=_build_analyst_app,
+            state_schema=AnalystState,
+            input_schema=AnalystInput,
+            output_schema=AnalystOutput,
+        )
+    )
     registry.register(
         SubgraphSpec(
             id="brief_gene",

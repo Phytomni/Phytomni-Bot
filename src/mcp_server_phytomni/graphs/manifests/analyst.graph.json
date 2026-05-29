@@ -1,0 +1,130 @@
+{
+  "nodes": [
+    {
+      "name": "__start__",
+      "kind": "boundary"
+    },
+    {
+      "name": "parse_query_node",
+      "kind": "node"
+    },
+    {
+      "name": "data_select_node",
+      "kind": "node"
+    },
+    {
+      "name": "method_retrieve_node",
+      "kind": "node"
+    },
+    {
+      "name": "plan_node",
+      "kind": "node"
+    },
+    {
+      "name": "check_node",
+      "kind": "node"
+    },
+    {
+      "name": "tool_extract_node",
+      "kind": "node"
+    },
+    {
+      "name": "tool_retrieve_node",
+      "kind": "node"
+    },
+    {
+      "name": "submit_node",
+      "kind": "node"
+    },
+    {
+      "name": "pooling_node",
+      "kind": "node"
+    },
+    {
+      "name": "__end__",
+      "kind": "boundary"
+    }
+  ],
+  "edges": [
+    {
+      "source": "__start__",
+      "target": "parse_query_node",
+      "conditional": false
+    },
+    {
+      "source": "check_node",
+      "target": "plan_node",
+      "conditional": true
+    },
+    {
+      "source": "check_node",
+      "target": "tool_extract_node",
+      "conditional": true
+    },
+    {
+      "source": "data_select_node",
+      "target": "method_retrieve_node",
+      "conditional": true
+    },
+    {
+      "source": "data_select_node",
+      "target": "tool_extract_node",
+      "conditional": true
+    },
+    {
+      "source": "method_retrieve_node",
+      "target": "plan_node",
+      "conditional": false
+    },
+    {
+      "source": "parse_query_node",
+      "target": "data_select_node",
+      "conditional": true
+    },
+    {
+      "source": "parse_query_node",
+      "target": "method_retrieve_node",
+      "conditional": true
+    },
+    {
+      "source": "parse_query_node",
+      "target": "tool_extract_node",
+      "conditional": true
+    },
+    {
+      "source": "plan_node",
+      "target": "check_node",
+      "conditional": false
+    },
+    {
+      "source": "pooling_node",
+      "target": "__end__",
+      "conditional": true
+    },
+    {
+      "source": "pooling_node",
+      "target": "pooling_node",
+      "conditional": true
+    },
+    {
+      "source": "submit_node",
+      "target": "__end__",
+      "conditional": true
+    },
+    {
+      "source": "submit_node",
+      "target": "pooling_node",
+      "conditional": true
+    },
+    {
+      "source": "tool_extract_node",
+      "target": "tool_retrieve_node",
+      "conditional": false
+    },
+    {
+      "source": "tool_retrieve_node",
+      "target": "submit_node",
+      "conditional": false
+    }
+  ]
+}

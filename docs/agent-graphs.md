@@ -134,16 +134,79 @@ The graph compiles into three nodes:
 | `rewrite_node`  | Calls `phyto_chat` to convert the scenario prompt + user query into a rewritten NL question.      |
 | `search_node`   | Executes the NL2SQL request through `nl2sql.execute_nl2sql_request` and stores the response dict. |
 
+## Analyst Subgraph
+
+The bioinformatics analysis workflow is registered as `analyst` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/analyst/state.py`](../src/mcp_server_phytomni/agents/analyst/state.py),
+and the legacy `AnalystAgentsState` symbol stays a back-compat
+alias for `AnalystState`.
+
+| TypedDict       | Required keys      | Optional keys                                                                                                                                       |
+| --------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AnalystInput`  | `query`            | `goal_description`, `preset_plan`, `data_list`, `obs_file_list`, `compute_resource`, `output_dir`, `is_polling`, `is_auto_select`, `is_preset_plan` |
+| `AnalystOutput` | every output field | `surface_keys` + plan / tool / status + observability intermediates + `error_detail`                                                                |
+| `AnalystState`  | every legacy field | (binary-compatible with `AnalystAgentsState`)                                                                                                       |
+
+The graph compiles into nine nodes plus five conditional routers
+(`parse_query` / `data_select` / `check` / `submit` / `pooling`):
+
+| Node                   | Role                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `parse_query_node`     | Decomposes the user query into goal, data list, and plan slots.                              |
+| `data_select_node`     | Auto-selects data files from the available database when `is_auto_select=True`.              |
+| `method_retrieve_node` | Retrieves methods, SOPs, and literature to build the plan context.                           |
+| `plan_node`            | Generates or revises the analysis plan via `phyto_chat`.                                     |
+| `check_node`           | Critic loop that validates the plan and routes back to `plan_node` until approved or capped. |
+| `tool_extract_node`    | Extracts the required tools from the approved plan.                                          |
+| `tool_retrieve_node`   | Looks up tool usages for the extracted tools.                                                |
+| `submit_node`          | Submits the task to the computation platform and stores `task_id`.                           |
+| `pooling_node`         | Polls task status until terminal when `is_polling=True`; short-circuits to END otherwise.    |
+
+`graphs/analyst_dispatch_adapters.py` ships
+`map_send_payload_to_analyst_input` and
+`map_analyst_output_to_dispatch_state` for parent graphs (design /
+network / research / deep_genome) that want to compose analyst via
+`adapter_node` rather than mounting it directly.
+
+## Nested Checkpoints
+
+LangGraph's `parent.add_node("name", child_compiled_app)` pattern
+shares the parent's `thread_id` through the `configurable` dict to
+the embedded child. The spike in
+[`tests/agents/test_nested_checkpoint_spike.py`](../tests/agents/test_nested_checkpoint_spike.py)
+confirms three properties of the nested-persistence shape:
+
+1. State keys shared between parent and child schemas project
+   across the boundary automatically — the child's writes appear in
+   the parent's final state without explicit merging.
+1. The parent's `MemorySaver` records a checkpoint after the child
+   completes, keyed by the parent's `thread_id`. The child's own
+   checkpointer (if any) does not need to coordinate with the
+   parent's saver — the parent owns resumability.
+1. `app.aget_state(config)` on the parent under the same
+   `thread_id` reads back the final aggregate state without
+   re-invoking the graph, so the standard resumption seam works
+   transparently when subgraphs are mounted.
+
+Operational guidance: pass a single `thread_id` into the parent
+graph and let LangGraph propagate it. Adapter-wrapped subgraphs
+(`adapter_node`) inherit this shape because the adapter calls
+`compiled_subgraph.ainvoke(state)` without overriding the
+configurable layer.
+
 ## Manifest Snapshots
 
 [`graphs/manifests/`](../src/mcp_server_phytomni/graphs/manifests/)
 contains JSON snapshots produced by
 `export_manifest(compiled_app).model_dump_json(indent=2)` for the
-chat / knowledge / data subgraphs. Snapshots act as a visible
-contract for parent-graph authors and as regression bait — any
-node-set or edge-set drift surfaces as a diff in the same PR that
-causes it. Future agents land their own `*.graph.json` next to
-these. A CI re-export-and-diff guard remains pending.
+analyst / chat / knowledge / data subgraphs. Snapshots act as a
+visible contract for parent-graph authors and as regression bait
+— any node-set or edge-set drift surfaces as a diff in the same
+PR that causes it. Future agents land their own `*.graph.json`
+next to these. A CI re-export-and-diff guard remains pending.
 
 ## Adding a New Subgraph
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst.state import AnalystInput
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
     map_analyst_output_to_dispatch_state,
     map_send_payload_to_analyst_input,
@@ -37,26 +38,20 @@ def _sample_payload() -> dict:
 
 
 def test_map_send_payload_returns_analyst_input_field_set() -> None:
-    """All nine ``AnalystInput`` non-Required keys are populated.
+    """Adapter populates the AnalystInput contract minus ``obs_file_list``.
 
-    Pins the adapter's contract: every optional ``AnalystInput`` key
-    receives a deterministic value, so a future ``AnalystInput`` field
-    that goes unhandled surfaces here instead of silently passing
-    ``None`` through to ``ainvoke``.
+    Derives the expected key set directly from
+    ``AnalystInput.__optional_keys__`` plus the required ``query``,
+    minus ``obs_file_list`` which ``submit_analyst_analysis`` never
+    threads into the request. A future contract change to
+    ``AnalystInput`` propagates here without re-typing the literal
+    field list.
     """
     payload = _sample_payload()
     result = dict(map_send_payload_to_analyst_input(payload))
-    assert set(result.keys()) == {
-        "query",
-        "goal_description",
-        "preset_plan",
-        "data_list",
-        "compute_resource",
-        "output_dir",
-        "is_polling",
-        "is_auto_select",
-        "is_preset_plan",
-    }
+    optional_keys = set(getattr(AnalystInput, "__optional_keys__", set()))
+    expected_optionals = optional_keys - {"obs_file_list"}
+    assert set(result.keys()) == expected_optionals | {"query"}
 
 
 def test_map_send_payload_unpacks_prompt_parts() -> None:

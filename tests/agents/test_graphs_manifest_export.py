@@ -16,6 +16,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
 from mcp_server_phytomni.agents.data.agent import DataAgent
@@ -217,5 +218,29 @@ def test_export_real_data_subgraph_node_set() -> None:
         "retrieve_node",
         "rewrite_node",
         "search_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_analyst_subgraph_node_set() -> None:
+    """Real AnalystAgent export matches the documented nine-node graph.
+
+    Pins the analyst subgraph's manifest shape so the docs section
+    in ``docs/agent-graphs.md`` and the compiled graph stay in
+    sync. A future refactor that collapses one of the routing
+    nodes surfaces here before the manifest JSON snapshot diverges.
+    """
+    manifest = export_manifest(AnalystAgent().app)
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "parse_query_node",
+        "data_select_node",
+        "method_retrieve_node",
+        "plan_node",
+        "check_node",
+        "tool_extract_node",
+        "tool_retrieve_node",
+        "submit_node",
+        "pooling_node",
     }
     assert documented <= names
