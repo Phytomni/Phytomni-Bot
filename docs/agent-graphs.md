@@ -171,6 +171,76 @@ The graph compiles into nine nodes plus five conditional routers
 network / research / deep_genome) that want to compose analyst via
 `adapter_node` rather than mounting it directly.
 
+## BriefGene Subgraph
+
+The single-gene annotation + literature workflow is registered as
+`brief_gene` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/brief_gene/state.py`](../src/mcp_server_phytomni/agents/brief_gene/state.py),
+and the legacy `BriefGeneAgentState` symbol stays a back-compat
+alias for `BriefGeneState`.
+
+| TypedDict         | Required keys      | Optional keys                                                                                                                       |
+| ----------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `BriefGeneInput`  | `user_query`       | `is_follow_up`                                                                                                                      |
+| `BriefGeneOutput` | every output field | `gene_id`, `species_code`, `go_string`, `kegg_string`, `interpro_string`, `retrieved_docs`, `final_response`, `follow_up_questions` |
+| `BriefGeneState`  | every legacy field | (binary-compatible with `BriefGeneAgentState`)                                                                                      |
+
+The graph compiles into five nodes plus two conditional routers
+(`query_judge` / `generate`):
+
+| Node                    | Role                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `query_judge_node`      | Decides whether the user query is a known gene ID; on hit routes to annotation fetch, else direct retrieval. |
+| `fetch_annotation_node` | Pulls GO / KEGG / InterPro annotation strings from the BI endpoint for the resolved gene.                    |
+| `retrieve_node`         | Issues `retrieve` + `rerank` over the literature repos and stores `retrieved_docs`.                          |
+| `generate_node`         | Calls `phyto_chat` with the annotation + retrieval context and stores the answer in `final_response`.        |
+| `follow_up_node`        | Runs a second LLM call for follow-up questions and merges them into the assistant message.                   |
+
+After `generate_node`, `route_after_generate` inspects
+`state["is_follow_up"]` (default `True` inside `arun`) and either
+flows into `follow_up_node` or short-circuits to `END`. Direct
+callers via `BriefGeneAgent.arun` see the legacy follow-up
+behavior; parent graphs mounting brief_gene as a subgraph may set
+`is_follow_up=False` to skip the second LLM hop when they only
+need the annotation + retrieval surface.
+
+## Review Subgraph
+
+The literature-deep-research workflow is registered as `review`
+in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/review/state.py`](../src/mcp_server_phytomni/agents/review/state.py).
+The legacy inline TypedDict is replaced by the same `DeepResearchState` symbol the file exports.
+
+| TypedDict            | Required keys                       | Optional keys                                        |
+| -------------------- | ----------------------------------- | ---------------------------------------------------- |
+| `DeepResearchInput`  | `original_user_query`               | `obs_file_list`                                      |
+| `DeepResearchOutput` | `final_response`, `summary_content` | —                                                    |
+| `DeepResearchState`  | every legacy field                  | (binary-compatible with the legacy inline TypedDict) |
+
+The graph compiles into seven nodes wired as a linear pipeline:
+
+| Node                | Role                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `plan_node`         | Decomposes the user query into per-dimension research parameters and stores them in `dimension_params`. |
+| `retrieve_node`     | Issues `retrieve` + `rerank` per dimension and merges the raw docs into `all_raw_doc_list`.             |
+| `draft_node`        | Generates per-dimension draft reviews from the retrieved docs via `phyto_chat`.                         |
+| `review_node`       | Reviews each draft for accuracy / completeness and stores the critic notes in `review_contents`.        |
+| `revise_node`       | Revises drafts using the critic notes and may pull additional supporting docs into `add_doc_list`.      |
+| `summary_node`      | Synthesizes the revised reports into the `summary_content` markdown body.                               |
+| `post_process_node` | Wraps `summary_content` into a chat-completions-style `final_response` envelope for the HTTP API.       |
+
+Unlike chat / brief_gene, the review subgraph carries no
+conditional routers — every node runs in fixed order. Parent
+graphs that want to short-circuit the trailing summarisation
+should mount review via `adapter_node` with an output mapper that
+ignores `summary_content` rather than pinning a routing flag.
+
 ## Nested Checkpoints
 
 LangGraph's `parent.add_node("name", child_compiled_app)` pattern
