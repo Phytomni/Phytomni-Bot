@@ -98,6 +98,16 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_design_analyst_subgraph.py": {
         "protected-access",
     },
+    # Flag-branch test for ``GeneNetworkAgents._dispatch_and_wait_analysis``
+    # — same protected-helper coverage seam as the design sibling.
+    "tests/agents/test_network_analyst_subgraph.py": {
+        "protected-access",
+    },
+    # Flag-branch test for ``InSilicoResearchAgents._submit_research_task``
+    # — same protected-helper coverage seam as the design sibling.
+    "tests/agents/test_research_analyst_subgraph.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",

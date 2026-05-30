@@ -24,6 +24,7 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -282,17 +283,35 @@ class InSilicoResearchAgents:
             "Submitting research task via AnalystAgent: %s", task.task_name
         )
 
-        result = await self.analyst_agent.arun(
-            query=None,
-            goal_description=task.goal_description,
-            preset_data_list=task.data_list,
-            preset_plan=task.context,  # Pass context as predefined plan
-            output_dir=task.output_dir,
-            compute_resource="medium",
-            is_auto_select=False,
-            is_polling=False,
-            thread_id=task.thread_id,
-        )
+        if self.in_silico_config.USE_ANALYST_SUBGRAPH:
+            result = await submit_analyst_via_subgraph(
+                self.analyst_agent,
+                self.in_silico_config,
+                self.sensitive_config,
+                {
+                    "analysis_type": task.task_name,
+                    "target_id": task.task_name,
+                    "output_dir": task.output_dir,
+                    "prompt_parts": (
+                        task.goal_description,
+                        task.context,
+                        task.data_list,
+                    ),
+                    "compute_resource": "medium",
+                },
+            )
+        else:
+            result = await self.analyst_agent.arun(
+                query=None,
+                goal_description=task.goal_description,
+                preset_data_list=task.data_list,
+                preset_plan=task.context,  # Pass context as predefined plan
+                output_dir=task.output_dir,
+                compute_resource="medium",
+                is_auto_select=False,
+                is_polling=False,
+                thread_id=task.thread_id,
+            )
 
         if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
             raise RuntimeError(
