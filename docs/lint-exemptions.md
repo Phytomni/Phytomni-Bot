@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 9; the
 10th fake pushes the count to 10, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 25th R0801 duplicate-code violation appears.** Default pylint
+**A 26th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 24; the
-25th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 25; the
+26th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -535,10 +535,10 @@ should be planned independently).
 
 ______________________________________________________________________
 
-### R0801 duplicate-code (24 occurrences)
+### R0801 duplicate-code (25 occurrences)
 
-**Rule(s)**: R0801 similar-lines-in-files. 24 violations across the
-codebase, in eight clusters:
+**Rule(s)**: R0801 similar-lines-in-files. 25 violations across the
+codebase, in nine clusters:
 
 1. **Analyst module fan-out wrappers** (~6 occurrences). The
    `analyst/__init__.py`, `analyst/agent.py`, and `analyst/defaults.py`
@@ -598,14 +598,29 @@ codebase, in eight clusters:
    an `is_follow_up` state-field toggle so parent graphs may skip
    the trailing follow-up LLM hop); a shared helper would erase
    each agent's domain-specific node and state typing.
+1. **Analyst submit kwargs, shared.analysis vs deep_genome dispatch**
+   (1 occurrence, added 2026-05-31). `agents/shared/analysis.py`'s
+   `submit_analyst_analysis` and `agents/deep_genome/dispatch.py`'s
+   `_run_analyst_node` both build the same
+   `analyst_agent.arun(query=None, goal_description=..., preset_data_list=..., preset_plan=..., output_dir=..., compute_resource=...)`
+   call. The clusters became line-aligned (and therefore visible
+   to pylint's `min-similar-lines=4` detector) when the
+   `prepare_analyst_dispatch_context` extraction in
+   `submit_analyst_analysis` pulled the run-identity / output-dir
+   prep out of the function body, leaving the bare arun-kwargs
+   block exposed. **Sunset condition**: when Phase 6c (DeepGenome
+   composition) lands and routes `_run_analyst_node` through the
+   shared `submit_analyst_via_subgraph` helper, both call sites
+   collapse to a one-line helper invocation and this cluster
+   retires (baseline can ratchet back to 24).
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 24`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 25`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
 own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 26,
+the pinned baseline. A new R0801 violation pushes the count to 27,
 the baseline script exits 1, and the gate fails until the author
 either resolves the duplicate or explicitly bumps the baseline in
 the same diff.

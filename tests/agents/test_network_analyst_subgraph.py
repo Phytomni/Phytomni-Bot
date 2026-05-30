@@ -18,37 +18,34 @@ pins the network dispatcher's flag-routing decision.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
-from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.network.agent import (
     GeneNetworkAgents,
     GeneNetworkConfig,
 )
-from mcp_server_phytomni.config.settings import SensitiveConfig
+
+from ._subgraph_branch_fakes import (
+    assert_branch_taken,
+    build_branch_agent,
+    install_branch_mocks,
+    stub_prompt_parts,
+)
 
 pytestmark = pytest.mark.agent
 
+_NETWORK_MODULE = "mcp_server_phytomni.agents.network.agent"
+
 
 def _build_agent(use_subgraph: bool) -> GeneNetworkAgents:
-    """Build a network agent with USE_ANALYST_SUBGRAPH set per the arg.
-
-    Uses ``SimpleNamespace`` for the analyst stand-in so the test
-    never constructs a real AnalystAgent; both helper imports are
-    monkeypatched in each test, so the stub is never invoked.
-    """
-    config = GeneNetworkConfig().model_copy(
-        update={"USE_ANALYST_SUBGRAPH": use_subgraph}
-    )
-    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
-    return GeneNetworkAgents(
-        gene_network_config=config,
-        sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, analyst_stub),
+    """Construct a network dispatcher with the flag set per the arg."""
+    return build_branch_agent(
+        GeneNetworkConfig,
+        GeneNetworkAgents,
+        "gene_network_config",
+        use_subgraph,
     )
 
 
@@ -63,22 +60,10 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
     user-visible behavior.
     """
     agent = _build_agent(use_subgraph=False)
-    legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent.submit_analyst_analysis",
-        legacy_mock,
+    legacy_mock, subgraph_mock = install_branch_mocks(
+        monkeypatch, _NETWORK_MODULE
     )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
-    )
-    monkeypatch.setattr(
-        agent,
-        "_analysis_prompt_parts",
-        lambda *_a, **_kw: ("goal", "meta", {}),
-    )
+    stub_prompt_parts(monkeypatch, agent)
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="gene_network_analysis",
@@ -87,9 +72,7 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
         output_dir="/tmp/network-out",
     )
 
-    assert result == {"task_id": "legacy-task"}
-    legacy_mock.assert_awaited_once()
-    subgraph_mock.assert_not_awaited()
+    assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=False)
 
 
 async def test_dispatch_uses_subgraph_submit_when_flag_on(
@@ -104,22 +87,10 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
     dispatcher's routing semantics.
     """
     agent = _build_agent(use_subgraph=True)
-    legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent.submit_analyst_analysis",
-        legacy_mock,
+    legacy_mock, subgraph_mock = install_branch_mocks(
+        monkeypatch, _NETWORK_MODULE
     )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
-    )
-    monkeypatch.setattr(
-        agent,
-        "_analysis_prompt_parts",
-        lambda *_a, **_kw: ("goal", "meta", {}),
-    )
+    stub_prompt_parts(monkeypatch, agent)
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="gene_network_analysis",
@@ -128,9 +99,7 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
         output_dir="/tmp/network-out",
     )
 
-    assert result == {"task_id": "subgraph-task"}
-    subgraph_mock.assert_awaited_once()
-    legacy_mock.assert_not_awaited()
+    assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=True)
 
 
 async def test_dispatch_request_carries_to_id_as_target(
@@ -145,15 +114,12 @@ async def test_dispatch_request_carries_to_id_as_target(
     up the target identifier downstream.
     """
     agent = _build_agent(use_subgraph=True)
+    monkeypatch.setattr(
+        f"{_NETWORK_MODULE}.submit_analyst_analysis", AsyncMock()
+    )
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent.submit_analyst_analysis",
-        AsyncMock(),
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.network.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
+        f"{_NETWORK_MODULE}.submit_analyst_via_subgraph", subgraph_mock
     )
     monkeypatch.setattr(
         agent,

@@ -25,35 +25,35 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
+    map_analyst_output_to_dispatch_state,
     submit_analyst_via_subgraph,
+)
+
+from ._subgraph_branch_fakes import (
+    assert_branch_taken,
+    build_branch_agent,
+    install_branch_mocks,
+    stub_prompt_parts,
 )
 
 pytestmark = pytest.mark.agent
 
+_DESIGN_MODULE = "mcp_server_phytomni.agents.design.agent"
+
 
 def _build_agent(use_subgraph: bool) -> DigitalDesignAgents:
-    """Build a design agent with USE_ANALYST_SUBGRAPH set per the arg.
-
-    Uses ``SimpleNamespace`` for the analyst stand-in (same pattern
-    as ``test_design_helpers.py``) so the subgraph helper's
-    ``analyst_agent.app.ainvoke`` and the legacy ``arun`` path both
-    see a typed stub instead of constructing a real ``AnalystAgent``.
-    """
-    config = DigitalDesignConfig().model_copy(
-        update={"USE_ANALYST_SUBGRAPH": use_subgraph}
-    )
-    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
-    return DigitalDesignAgents(
-        digital_design_config=config,
-        sensitive_config=SensitiveConfig.load(),
-        analyst_agent=cast(AnalystAgent, analyst_stub),
+    """Construct a design dispatcher with the flag set per the arg."""
+    return build_branch_agent(
+        DigitalDesignConfig,
+        DigitalDesignAgents,
+        "digital_design_config",
+        use_subgraph,
     )
 
 
@@ -67,22 +67,10 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
     namespace and asserts only the legacy one was awaited.
     """
     agent = _build_agent(use_subgraph=False)
-    legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.design.agent.submit_analyst_analysis",
-        legacy_mock,
+    legacy_mock, subgraph_mock = install_branch_mocks(
+        monkeypatch, _DESIGN_MODULE
     )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.design.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
-    )
-    monkeypatch.setattr(
-        agent,
-        "_analysis_prompt_parts",
-        lambda *_a, **_kw: ("goal", "meta", {}),
-    )
+    stub_prompt_parts(monkeypatch, agent)
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="protein_design_analysis",
@@ -91,9 +79,7 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
         output_dir="/tmp/design-out",
     )
 
-    assert result == {"task_id": "legacy-task"}
-    legacy_mock.assert_awaited_once()
-    subgraph_mock.assert_not_awaited()
+    assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=False)
 
 
 async def test_dispatch_uses_subgraph_submit_when_flag_on(
@@ -107,22 +93,10 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
     (no double-dispatch, no fallback).
     """
     agent = _build_agent(use_subgraph=True)
-    legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.design.agent.submit_analyst_analysis",
-        legacy_mock,
+    legacy_mock, subgraph_mock = install_branch_mocks(
+        monkeypatch, _DESIGN_MODULE
     )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.design.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
-    )
-    monkeypatch.setattr(
-        agent,
-        "_analysis_prompt_parts",
-        lambda *_a, **_kw: ("goal", "meta", {}),
-    )
+    stub_prompt_parts(monkeypatch, agent)
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="protein_design_analysis",
@@ -131,9 +105,7 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
         output_dir="/tmp/design-out",
     )
 
-    assert result == {"task_id": "subgraph-task"}
-    subgraph_mock.assert_awaited_once()
-    legacy_mock.assert_not_awaited()
+    assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=True)
 
 
 async def test_via_subgraph_invokes_app_ainvoke_with_input() -> None:
@@ -229,14 +201,15 @@ async def test_via_subgraph_threads_thread_id_through_config() -> None:
 
 
 async def test_via_subgraph_returns_mapped_dispatch_state() -> None:
-    """The helper returns the five dispatch-consumed keys verbatim.
+    """The helper returns exactly the dispatch-state-update key set.
 
     ``capture_analysis_result`` (the downstream dispatch consumer)
     reads ``task_id`` and surfaces ``output_dir`` / ``plan`` /
-    ``tool_usages`` / ``task_status`` to the design parent graph;
-    the helper must project exactly these five keys so the flag-on
-    path is observably indistinguishable from the legacy path at
-    the dispatch-state-update boundary.
+    ``tool_usages`` / ``task_status`` to the design parent graph.
+    The expected key set is derived from
+    ``map_analyst_output_to_dispatch_state({})`` so a future
+    mapper-shape change propagates here without re-typing the
+    literal field list.
     """
     final_state = {
         "task_id": "task-roundtrip",
@@ -264,13 +237,8 @@ async def test_via_subgraph_returns_mapped_dispatch_state() -> None:
         request,
     )
 
-    assert set(result.keys()) == {
-        "task_id",
-        "output_dir",
-        "plan",
-        "tool_usages",
-        "task_status",
-    }
+    expected_keys = set(map_analyst_output_to_dispatch_state({}).keys())
+    assert set(result.keys()) == expected_keys
     assert result["task_id"] == "task-roundtrip"
     assert result["task_status"] == "SUCCEEDED"
     assert "internal_scratch" not in result

@@ -248,22 +248,18 @@ def test_export_real_analyst_subgraph_node_set() -> None:
 
 
 def test_export_real_review_subgraph_node_set() -> None:
-    """Real DeepResearchAgent export matches the documented seven-node graph.
+    """Real DeepResearchAgent export covers every compiled-graph node.
 
-    Pins the review subgraph's manifest shape so the docs section
-    in ``docs/agent-graphs.md`` and the compiled graph stay in
-    sync. A future refactor that drops one of the pipeline stages
-    surfaces here before the manifest JSON snapshot diverges.
+    Cross-checks ``export_manifest`` against the agent's own
+    ``app.get_graph().nodes`` so a future export-helper bug that
+    silently drops one of the seven pipeline stages
+    (``plan_node`` -> ... -> ``post_process_node``) surfaces here.
+    The documented node-name set is pinned canonically by
+    ``test_review_graph_io.test_review_subgraph_node_set``; this
+    test only confirms the export reflects what compile produced.
     """
-    manifest = export_manifest(DeepResearchAgent().app)
+    agent = DeepResearchAgent()
+    manifest = export_manifest(agent.app)
     names = {node.name for node in manifest.nodes}
-    documented = {
-        "plan_node",
-        "retrieve_node",
-        "draft_node",
-        "review_node",
-        "revise_node",
-        "summary_node",
-        "post_process_node",
-    }
-    assert documented <= names
+    compiled = {n.id for n in agent.app.get_graph().nodes.values()}
+    assert compiled <= names
