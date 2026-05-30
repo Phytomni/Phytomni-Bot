@@ -272,11 +272,13 @@ configurable layer.
 [`graphs/manifests/`](../src/mcp_server_phytomni/graphs/manifests/)
 contains JSON snapshots produced by
 `export_manifest(compiled_app).model_dump_json(indent=2)` for the
-analyst / chat / knowledge / data subgraphs. Snapshots act as a
-visible contract for parent-graph authors and as regression bait
-— any node-set or edge-set drift surfaces as a diff in the same
-PR that causes it. Future agents land their own `*.graph.json`
-next to these. A CI re-export-and-diff guard remains pending.
+analyst / brief_gene / chat / data / knowledge / review subgraphs.
+Snapshots act as a visible contract for parent-graph authors and
+as regression bait — any node-set or edge-set drift surfaces as a
+diff in the same PR that causes it. The `deep_genome` snapshot is
+deferred until the upcoming DeepGenome composition work lands its
+nested-subgraph topology. A CI re-export-and-diff guard remains
+pending.
 
 ## Adding a New Subgraph
 

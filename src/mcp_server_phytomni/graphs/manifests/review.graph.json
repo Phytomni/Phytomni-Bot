@@ -1,0 +1,82 @@
+{
+  "nodes": [
+    {
+      "name": "__start__",
+      "kind": "boundary"
+    },
+    {
+      "name": "plan_node",
+      "kind": "node"
+    },
+    {
+      "name": "retrieve_node",
+      "kind": "node"
+    },
+    {
+      "name": "draft_node",
+      "kind": "node"
+    },
+    {
+      "name": "review_node",
+      "kind": "node"
+    },
+    {
+      "name": "revise_node",
+      "kind": "node"
+    },
+    {
+      "name": "summary_node",
+      "kind": "node"
+    },
+    {
+      "name": "post_process_node",
+      "kind": "node"
+    },
+    {
+      "name": "__end__",
+      "kind": "boundary"
+    }
+  ],
+  "edges": [
+    {
+      "source": "__start__",
+      "target": "plan_node",
+      "conditional": false
+    },
+    {
+      "source": "draft_node",
+      "target": "review_node",
+      "conditional": false
+    },
+    {
+      "source": "plan_node",
+      "target": "retrieve_node",
+      "conditional": false
+    },
+    {
+      "source": "retrieve_node",
+      "target": "draft_node",
+      "conditional": false
+    },
+    {
+      "source": "review_node",
+      "target": "revise_node",
+      "conditional": false
+    },
+    {
+      "source": "revise_node",
+      "target": "summary_node",
+      "conditional": false
+    },
+    {
+      "source": "summary_node",
+      "target": "post_process_node",
+      "conditional": false
+    },
+    {
+      "source": "post_process_node",
+      "target": "__end__",
+      "conditional": false
+    }
+  ]
+}

@@ -21,6 +21,7 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
 from mcp_server_phytomni.agents.data.agent import DataAgent
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
     GraphNodeManifest,
@@ -242,5 +243,27 @@ def test_export_real_analyst_subgraph_node_set() -> None:
         "tool_retrieve_node",
         "submit_node",
         "pooling_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_review_subgraph_node_set() -> None:
+    """Real DeepResearchAgent export matches the documented seven-node graph.
+
+    Pins the review subgraph's manifest shape so the docs section
+    in ``docs/agent-graphs.md`` and the compiled graph stay in
+    sync. A future refactor that drops one of the pipeline stages
+    surfaces here before the manifest JSON snapshot diverges.
+    """
+    manifest = export_manifest(DeepResearchAgent().app)
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "plan_node",
+        "retrieve_node",
+        "draft_node",
+        "review_node",
+        "revise_node",
+        "summary_node",
+        "post_process_node",
     }
     assert documented <= names
