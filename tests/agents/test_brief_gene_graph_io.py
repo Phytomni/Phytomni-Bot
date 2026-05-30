@@ -13,7 +13,7 @@ False states without touching node-body LLM calls.
 
 from __future__ import annotations
 
-from typing import get_type_hints
+from typing import cast, get_type_hints
 
 import pytest
 
@@ -110,9 +110,12 @@ def test_route_after_generate_defaults_to_follow_up() -> None:
     a parent graph explicitly opts out.
     """
     agent = BriefGeneAgent()
-    state: BriefGeneState = {  # type: ignore[typeddict-item]
-        "user_query": "AT1G01010",
-    }
+    state = cast(
+        BriefGeneState,
+        {
+            "user_query": "AT1G01010",
+        },
+    )
     assert agent.route_after_generate(state) == "follow_up_node"
 
 
@@ -124,10 +127,13 @@ def test_route_after_generate_skips_when_disabled() -> None:
     the annotation + retrieval surface.
     """
     agent = BriefGeneAgent()
-    state: BriefGeneState = {  # type: ignore[typeddict-item]
-        "user_query": "AT1G01010",
-        "is_follow_up": False,
-    }
+    state = cast(
+        BriefGeneState,
+        {
+            "user_query": "AT1G01010",
+            "is_follow_up": False,
+        },
+    )
     assert agent.route_after_generate(state) == "__end__"
 
 
