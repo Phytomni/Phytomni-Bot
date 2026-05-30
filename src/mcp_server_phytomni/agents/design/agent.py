@@ -26,6 +26,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -196,18 +197,25 @@ class DigitalDesignAgents:
             species,
             gene_id,
         )
-
+        request = {
+            "analysis_type": analysis_type,
+            "target_id": gene_id,
+            "output_dir": output_dir,
+            "prompt_parts": (goal_description, meta, data_list),
+            "compute_resource": self._get_compute_resource(analysis_type),
+        }
+        if self.digital_design_config.USE_ANALYST_SUBGRAPH:
+            return await submit_analyst_via_subgraph(
+                self.analyst_agent,
+                self.digital_design_config,
+                self.sensitive_config,
+                request,
+            )
         return await submit_analyst_analysis(
             self.analyst_agent,
             self.digital_design_config,
             self.sensitive_config,
-            {
-                "analysis_type": analysis_type,
-                "target_id": gene_id,
-                "output_dir": output_dir,
-                "prompt_parts": (goal_description, meta, data_list),
-                "compute_resource": self._get_compute_resource(analysis_type),
-            },
+            request,
         )
 
     def _analysis_prompt_parts(

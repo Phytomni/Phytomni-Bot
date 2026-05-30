@@ -11,7 +11,7 @@ workflow agents that submit tasks through AnalystAgent.
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from langgraph.types import Send
 
@@ -51,8 +51,84 @@ __all__ = [
     "invoke_analysis_agent",
     "route_analysis_tasks",
     "run_analysis_graph",
+    "AnalystDispatchContext",
+    "prepare_analyst_dispatch_context",
     "submit_analyst_analysis",
 ]
+
+
+class AnalystDispatchContext(NamedTuple):
+    """Resolved dispatch parameters shared by every analyst-bound caller.
+
+    ``submit_analyst_analysis`` (the legacy direct-``arun`` path) and
+    ``submit_analyst_via_subgraph`` (the opt-in subgraph entry point)
+    both need the same ``output_dir`` and ``thread_id`` derived from
+    the dispatch ``request``. Bundling them in a NamedTuple keeps the
+    prep logic in one place and prevents the four-line preamble from
+    drifting between the two dispatch helpers.
+
+    Attributes:
+        analysis_type: ``request["analysis_type"]`` cast to ``str`` for
+            downstream logging and label use.
+        target_id: The dispatch target identifier from
+            ``request["target_id"]``, cast to ``str``.
+        output_dir: The resolved OBS / local output directory.
+        thread_id: The per-task LangGraph thread id derived from the
+            run identity and the target / analysis-type pair.
+    """
+
+    analysis_type: str
+    target_id: str
+    output_dir: str
+    thread_id: str
+
+
+def prepare_analyst_dispatch_context(
+    config: Any,
+    sensitive_config: Any,
+    request: Mapping[str, Any],
+) -> AnalystDispatchContext:
+    """Resolve the dispatch context shared by both analyst entry points.
+
+    Mints a ``RunIdentity`` from the caller's ``USER_ID``, ensures the
+    output directory exists (creating an OBS prefix when configured),
+    and derives a LangGraph ``thread_id`` scoped to the dispatched
+    target. The same context flows into ``submit_analyst_analysis``
+    (legacy ``arun``) and ``submit_analyst_via_subgraph`` (compiled
+    subgraph entry) so both paths share identical OBS layout and
+    checkpoint behaviour.
+
+    Args:
+        config: Public config object with at least ``USER_ID``.
+        sensitive_config: Sensitive config used by
+            ``ensure_analysis_output_dir`` for OBS credentials.
+        request: Prepared request mapping with ``analysis_type`` /
+            ``target_id`` / optional ``output_dir``.
+
+    Returns:
+        An ``AnalystDispatchContext`` capturing the resolved labels,
+        output directory, and thread id.
+    """
+    analysis_type = str(request["analysis_type"])
+    target_id = str(request["target_id"])
+    run_identity = RunIdentity.create(
+        user_id=config.USER_ID,
+        scope=analysis_type,
+    )
+    output_dir = ensure_analysis_output_dir(
+        config,
+        sensitive_config,
+        analysis_type,
+        request.get("output_dir"),
+        run_identity,
+    )
+    thread_id = run_identity.scoped_id("thread", target_id, analysis_type)
+    return AnalystDispatchContext(
+        analysis_type=analysis_type,
+        target_id=target_id,
+        output_dir=output_dir,
+        thread_id=thread_id,
+    )
 
 
 @dataclass(frozen=True)
@@ -176,40 +252,26 @@ async def submit_analyst_analysis(
         AnalystAgent result payload, including task id and output directory
         when task submission succeeds.
     """
-    analysis_type = str(request["analysis_type"])
-    target_id = str(request["target_id"])
-    run_identity = RunIdentity.create(
-        user_id=config.USER_ID,
-        scope=analysis_type,
-    )
-    output_dir = ensure_analysis_output_dir(
-        config,
-        sensitive_config,
-        analysis_type,
-        request.get("output_dir"),
-        run_identity,
+    context = prepare_analyst_dispatch_context(
+        config, sensitive_config, request
     )
     goal_description, meta, data_list = request["prompt_parts"]
-    logger.info("Submitting %s task via AnalystAgent", analysis_type)
+    logger.info("Submitting %s task via AnalystAgent", context.analysis_type)
     result = await analyst_agent.arun(
         query=None,
         goal_description=goal_description,
         preset_data_list=data_list,
         preset_plan=meta,
-        output_dir=output_dir,
+        output_dir=context.output_dir,
         compute_resource=request["compute_resource"],
         is_auto_select=False,
         is_polling=False,
         is_preset_plan=True,
-        thread_id=run_identity.scoped_id(
-            "thread",
-            target_id,
-            analysis_type,
-        ),
+        thread_id=context.thread_id,
     )
     logger.info(
         "%s task completed (task_id: %s)",
-        analysis_type,
+        context.analysis_type,
         result.get("task_id"),
     )
     return result

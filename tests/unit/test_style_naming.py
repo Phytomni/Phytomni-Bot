@@ -92,6 +92,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_design_helpers.py": {
         "protected-access",
     },
+    # Branch + invocation tests for analyst-subgraph dispatch flag:
+    # exercises ``DigitalDesignAgents._dispatch_and_wait_analysis``
+    # directly to assert the flag-on / flag-off routing decision.
+    "tests/agents/test_design_analyst_subgraph.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",

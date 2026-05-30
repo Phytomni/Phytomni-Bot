@@ -2,25 +2,33 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""IO mapping helpers bridging dispatch payloads to the analyst subgraph.
+"""IO mapping + dispatch helpers bridging payloads to the analyst subgraph.
 
-``map_send_payload_to_analyst_input`` projects the prepared request
-mapping ``submit_analyst_analysis`` consumes into ``AnalystInput``
-shape, and ``map_analyst_output_to_dispatch_state`` projects the
-analyst final state back into the dict ``capture_analysis_result``
-reads through ``task_result.get(...)``.
+``map_send_payload_to_analyst_input`` projects the dispatch request
+into ``AnalystInput`` shape; ``map_analyst_output_to_dispatch_state``
+projects the analyst final state into the dict
+``capture_analysis_result`` consumes; ``submit_analyst_via_subgraph``
+composes both around ``analyst_agent.app.ainvoke`` so dispatchers
+can opt into subgraph composition without bypassing OBS layout.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from ..agents.analyst.state import AnalystInput
+from ..agents.shared.analysis import prepare_analyst_dispatch_context
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "map_send_payload_to_analyst_input",
     "map_analyst_output_to_dispatch_state",
+    "submit_analyst_via_subgraph",
 ]
 
 
@@ -99,3 +107,67 @@ def map_analyst_output_to_dispatch_state(
         "tool_usages": final_state.get("tool_usages"),
         "task_status": final_state.get("task_status"),
     }
+
+
+async def submit_analyst_via_subgraph(
+    analyst_agent: Any,
+    config: Any,
+    sensitive_config: Any,
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Dispatch one analysis through the analyst's compiled subgraph.
+
+    Mirrors ``submit_analyst_analysis`` (same ``request`` shape, same
+    ``RunIdentity`` / output-dir / thread-id preparation via the
+    shared ``prepare_analyst_dispatch_context`` helper) but invokes
+    the analyst through ``analyst_agent.app.ainvoke(AnalystInput, ...)``
+    rather than ``analyst_agent.arun(...)``. The dispatcher still
+    owns the ``analyst_agent`` instance built with its own per-call
+    config, so USER_ID, APP_ID, retry, and storage behavior remain
+    consistent with the legacy path. The two helpers therefore form
+    the two routes the ``USE_ANALYST_SUBGRAPH`` flag selects between
+    on every dispatcher subclass of ``AnalystConfig``.
+
+    Args:
+        analyst_agent: ``AnalystAgent``-compatible instance owning a
+            compiled ``app`` exposing the three-schema ``ainvoke``
+            entry point.
+        config: Public dispatcher config object with at least
+            ``USER_ID`` and the OBS output-dir attributes that
+            ``ensure_analysis_output_dir`` requires.
+        sensitive_config: Sensitive config object used by
+            ``ensure_analysis_output_dir`` for OBS credentials.
+        request: Prepared request mapping with ``analysis_type`` /
+            ``target_id`` / ``prompt_parts`` (a 3-tuple of goal
+            description, preset plan meta string, and data list
+            dict) / ``compute_resource`` / optional ``output_dir``.
+
+    Returns:
+        Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
+        ``tool_usages`` / ``task_status`` projected by
+        ``map_analyst_output_to_dispatch_state`` from the analyst
+        subgraph's final state. Missing fields surface as ``None`` so
+        failure paths flow through to ``capture_analysis_result``
+        without raising.
+    """
+    context = prepare_analyst_dispatch_context(
+        config, sensitive_config, request
+    )
+    enriched_request = {**request, "output_dir": context.output_dir}
+    analyst_input = map_send_payload_to_analyst_input(enriched_request)
+    runnable_config: RunnableConfig = {
+        "configurable": {"thread_id": context.thread_id}
+    }
+    logger.info(
+        "Submitting %s task via analyst subgraph", context.analysis_type
+    )
+    final_state = await analyst_agent.app.ainvoke(
+        analyst_input, config=runnable_config
+    )
+    result = map_analyst_output_to_dispatch_state(final_state)
+    logger.info(
+        "%s task completed via subgraph (task_id: %s)",
+        context.analysis_type,
+        result.get("task_id"),
+    )
+    return result

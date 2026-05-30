@@ -139,6 +139,24 @@ working directory so restarts use the same stores.
 Function caches stay on local disk even when obsfs is available because
 SQLite over a network filesystem can deadlock under WAL locking.
 
+## Agent Composition Variables
+
+| Variable                                                 | Default | Purpose                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PHYTOMNI_USE_ANALYST_SUBGRAPH` / `USE_ANALYST_SUBGRAPH` | `false` | Per-deployment opt-in for dispatchers that submit work through `AnalystAgent`. When `true`, the design / network / research / environment / deep_genome dispatchers invoke the analyst via its compiled subgraph entry point (`analyst_agent.app.ainvoke(AnalystInput, …)`) instead of the legacy `analyst_agent.arun(…)` direct call. |
+
+The flag lives on `AnalystConfig` and is therefore inherited by every
+dispatcher subclass (`DigitalDesignConfig`, `GeneNetworkConfig`,
+`InSilicoResearchConfig`, `EnvironmentConfig`, `DeepGenomeConfig`). Both
+dispatch paths share the same `RunIdentity`, OBS output directory, and
+LangGraph `thread_id` because both call
+`prepare_analyst_dispatch_context` before invoking the analyst, so the
+flag only changes the analyst entry point — not the IO contract the
+downstream `capture_analysis_result` consumer reads. Production
+deployments should leave the flag `false` until they have validated the
+subgraph composition end to end; the legacy direct-`arun` path remains
+the default and is unaffected when the flag is unset.
+
 ## Network and TLS Variables
 
 | Variable              | Default | Sensitive? | Purpose                                                                                               |
