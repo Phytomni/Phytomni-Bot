@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 
-_FAKE_ENV: dict[str, str] = {
+FAKE_ENV: dict[str, str] = {
     "PHYTOMNI_TESTING": "1",
     "DOMAIN_NAME": "viz-domain",
     "USER_NAME": "viz-user",
@@ -56,11 +56,18 @@ _FAKE_ENV: dict[str, str] = {
     "DATABASE_URL": "https://example.invalid/database",
     "ANALYSIS_URL": "https://example.invalid/analysis",
     "BI_URL": "https://example.invalid/bi",
+    "TOKEN_URL": "https://example.invalid/token",
+    "OBS_SERVER": "obs.example.invalid",
+    "APP_ID": (
+        '{"small": "viz-small-app",'
+        ' "medium": "viz-medium-app",'
+        ' "large": "viz-large-app"}'
+    ),
 }
 
 
 def _install_fake_env() -> None:
-    """Set every entry of :data:`_FAKE_ENV` via ``setdefault``.
+    """Set every entry of :data:`FAKE_ENV` via ``setdefault``.
 
     Uses ``setdefault`` so an operator running the script with real
     deployment env vars exported keeps those values; only missing
@@ -68,7 +75,7 @@ def _install_fake_env() -> None:
     uses unconditional assignment instead because tests must always
     see the pytest fake env regardless of operator environment.
     """
-    for name, value in _FAKE_ENV.items():
+    for name, value in FAKE_ENV.items():
         os.environ.setdefault(name, value)
 
 
