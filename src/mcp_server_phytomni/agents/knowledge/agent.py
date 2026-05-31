@@ -392,33 +392,45 @@ class KnowledgeAgent:
         phyto_response = state["main_response"]
         system_response_text = message_content(phyto_response)
 
-        follow_up_response = await phyto_chat(
-            user_query=get_prompt(
-                self.knowledge_config.PROMPT_FILE,
-                "system/follow_up_questions",
-                {
-                    "user_query": user_query,
-                    "system_response": system_response_text,
-                },
-            ),
-            prompt_file=self.knowledge_config.PROMPT_FILE,
-            prompt_path=self.knowledge_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
-            n=self.knowledge_config.N,
-            presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
-            reasoning_effort=self.knowledge_config.REASONING_EFFORT,
-            response_format=self.knowledge_config.RESPONSE_FORMAT,
-            stream=self.knowledge_config.STREAM,
-            temperature=self.knowledge_config.TEMPERATURE,
-            top_p=self.knowledge_config.TOP_P,
-            user=self.knowledge_config.USER,
-            timeout=self.knowledge_config.TIMEOUT,
-            retriable_codes=self.knowledge_config.RETRIABLE_CODES,
-            max_retries=self.knowledge_config.MAX_RETRIES,
+        follow_up_query = get_prompt(
+            self.knowledge_config.PROMPT_FILE,
+            "system/follow_up_questions",
+            {
+                "user_query": user_query,
+                "system_response": system_response_text,
+            },
         )
+
+        if self.knowledge_config.USE_CHAT_SUBGRAPH:
+            chat_kwargs = build_knowledge_chat_kwargs(
+                self.knowledge_config, self.sensitive_config
+            )
+            chat_input = build_knowledge_chat_input(
+                user_query=follow_up_query, chat_kwargs=chat_kwargs
+            )
+            chat_output = await _cached_chat_app().ainvoke(chat_input)
+            follow_up_response = extract_chat_response(chat_output)
+        else:
+            follow_up_response = await phyto_chat(
+                user_query=follow_up_query,
+                prompt_file=self.knowledge_config.PROMPT_FILE,
+                prompt_path=self.knowledge_config.PROMPT_PATH,
+                api_key=self.sensitive_config.API_KEY.get_secret_value(),
+                base_url=self.sensitive_config.BASE_URL,
+                model=self.sensitive_config.MODEL_ID,
+                frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
+                n=self.knowledge_config.N,
+                presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
+                reasoning_effort=self.knowledge_config.REASONING_EFFORT,
+                response_format=self.knowledge_config.RESPONSE_FORMAT,
+                stream=self.knowledge_config.STREAM,
+                temperature=self.knowledge_config.TEMPERATURE,
+                top_p=self.knowledge_config.TOP_P,
+                user=self.knowledge_config.USER,
+                timeout=self.knowledge_config.TIMEOUT,
+                retriable_codes=self.knowledge_config.RETRIABLE_CODES,
+                max_retries=self.knowledge_config.MAX_RETRIES,
+            )
 
         follow_up_list = parse_follow_up_questions(
             message_content(follow_up_response)
