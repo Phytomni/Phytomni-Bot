@@ -31,13 +31,18 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
+from ...graphs.knowledge_to_chat_adapters import (
+    build_knowledge_chat_input,
+    build_knowledge_chat_kwargs,
+    extract_chat_response,
+)
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...storage.downloads import download_list_convert
-from ..chat.service import phyto_chat
+from ..chat.service import _cached_chat_app, phyto_chat
 from ..shared.intermediate_state import merge_intermediate_state
 from .retrieval import multi_retrieve, rerank, retrieve
 from .state import (
@@ -304,26 +309,36 @@ class KnowledgeAgent:
                 },
             )
 
-        phyto_response = await phyto_chat(
-            user_query=chat_query,
-            prompt_file=self.knowledge_config.PROMPT_FILE,
-            prompt_path=self.knowledge_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
-            n=self.knowledge_config.N,
-            presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
-            reasoning_effort=self.knowledge_config.REASONING_EFFORT,
-            response_format=self.knowledge_config.RESPONSE_FORMAT,
-            stream=self.knowledge_config.STREAM,
-            temperature=self.knowledge_config.TEMPERATURE,
-            top_p=self.knowledge_config.TOP_P,
-            user=self.knowledge_config.USER,
-            timeout=self.knowledge_config.TIMEOUT,
-            retriable_codes=self.knowledge_config.RETRIABLE_CODES,
-            max_retries=self.knowledge_config.MAX_RETRIES,
-        )
+        if self.knowledge_config.USE_CHAT_SUBGRAPH:
+            chat_kwargs = build_knowledge_chat_kwargs(
+                self.knowledge_config, self.sensitive_config
+            )
+            chat_input = build_knowledge_chat_input(
+                user_query=chat_query, chat_kwargs=chat_kwargs
+            )
+            chat_output = await _cached_chat_app().ainvoke(chat_input)
+            phyto_response = extract_chat_response(chat_output)
+        else:
+            phyto_response = await phyto_chat(
+                user_query=chat_query,
+                prompt_file=self.knowledge_config.PROMPT_FILE,
+                prompt_path=self.knowledge_config.PROMPT_PATH,
+                api_key=self.sensitive_config.API_KEY.get_secret_value(),
+                base_url=self.sensitive_config.BASE_URL,
+                model=self.sensitive_config.MODEL_ID,
+                frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
+                n=self.knowledge_config.N,
+                presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
+                reasoning_effort=self.knowledge_config.REASONING_EFFORT,
+                response_format=self.knowledge_config.RESPONSE_FORMAT,
+                stream=self.knowledge_config.STREAM,
+                temperature=self.knowledge_config.TEMPERATURE,
+                top_p=self.knowledge_config.TOP_P,
+                user=self.knowledge_config.USER,
+                timeout=self.knowledge_config.TIMEOUT,
+                retriable_codes=self.knowledge_config.RETRIABLE_CODES,
+                max_retries=self.knowledge_config.MAX_RETRIES,
+            )
 
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],
