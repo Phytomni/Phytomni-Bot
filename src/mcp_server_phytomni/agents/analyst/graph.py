@@ -728,13 +728,22 @@ class AnalystGraphMixin(WorkflowMixinBase):
         output_dir: str,
     ) -> str:
         """Build the metadata payload consumed by the compute task."""
-        return (
-            f"goal_description: '{state.get('goal_description')}'\n"
-            f"meta: |\n{self._submit_meta(state).replace('\n', '\n  ')}\n"
-            f"data_list: {self._processed_data_list(state)}\n"
-            f"output_dir: '{output_dir}'\n"
-            f"working_dir: '/obs'"
+        json_format = get_prompt(
+            self.analyst_config.PROMPT_FILE,
+            "user/analytsis_output_format"
         )
+        task_config = textwrap.dedent(f"""\
+            json_output_format: |
+              {json_format}
+            goal_description: |
+              {state.get('goal_description')}
+            meta: |
+              {self._submit_meta(state).replace('\n', '\n  ')}
+            data_list: {self._processed_data_list(state)}
+            output_dir: '{output_dir}'
+            working_dir: '/obs'
+        """).strip()
+        return task_config
 
     def _submit_coder_payload(self: Any) -> str:
         """Build the coder/embed model YAML payload for the compute task."""
@@ -745,7 +754,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
               model_name: {self.sensitive_config.CODER_MODEL}
               api_base: {self.sensitive_config.CODER_URL}
               api_key: {coder_key}
-              max_tokens: 8192
+              max_tokens: 32768
               url_header_user_agent: ""
               inference_endpoint: completions
               chat_api_endpoint: chat/completions
