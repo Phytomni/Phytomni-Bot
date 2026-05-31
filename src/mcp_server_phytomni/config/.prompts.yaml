@@ -1097,7 +1097,8 @@ user:
     * Start with `{` and end with `}`.
     * Be directly parseable by `json.loads()`.
     * Use double quotes for all keys and string values.
-    * Use only valid JSON values: string, number, object, array, true, false, null.
+    * Use only valid JSON values: string, number, object, array, true,
+    false, null.
 
     The final answer MUST NOT:
 
@@ -1116,7 +1117,8 @@ user:
     {"thoughts":"your thinking process here.","answer":"yes"}
     ```
 
-    If you are going to output JSON inside Markdown, STOP and output the raw JSON string directly.
+    If you are going to output JSON inside Markdown, STOP and output the raw
+    JSON string directly.
   brief_gene_function: |-
     You are an expert plant geneticist and bioinformatician. Generate a
     professional, accurate, readable report for a specific gene using the
@@ -2445,7 +2447,8 @@ user:
     matched sequences file;
     step6, Multiple sequence alignment using clustalw2;
     step7, Constructing the phylogenetic tree using fasttree;
-    step8, Plot the phylogenetic tree using plot_tree.py(conda activate af3);
+    step8, Plot the phylogenetic tree using plot_tree.py(conda activate
+    af3);
     step9, Summary the tree result using summary_all.py(conda activate af3);
     step12, Searching for conserved domains of protein using hmmscan;
     step13, Change domain results to markdown format using
@@ -4217,7 +4220,7 @@ user:
     Note1: You need activate af3 environment;
     step1, Construct  gene regulatory network using the script
     construct_gene_network.py(conda activate af3);
-    step2, plot gene_network using network_plot.R script(conda 
+    step2, plot gene_network using network_plot.R script(conda
     activate Renv).
     <construct usage>
           Tool Usage:
@@ -4568,7 +4571,8 @@ user:
     step6, Analysis the conserved motif in the gene promoter sequences using
     meme;
     step7, Plot the motif logo figure using plot_motif.py;
-    step8, Summary the motif result using summary_all.py(conda activate af3).
+    step8, Summary the motif result using summary_all.py(conda activate
+    af3).
     <plot example>
         Tool_Usage:
             usage: plot_motif.py [-h] [--meme_file MEME_FILE] [--output_dir
@@ -4786,76 +4790,114 @@ user:
 
         Run predictions with Protenix using various input formats.
 
-        Args:     input (str): Input JSON file or directory.     out_dir (str):
-        Output directory for results.     seeds (str): Comma-separated seeds.
-        cycle (int): Number of cycles.     step (int): Number of diffusion steps.
-        sample (int): Number of samples.     dtype (str): Data type.     model_name
-        (str): Model name.     use_msa (bool): Use MSA.     use_default_params
-        (bool): Use default parameters for the model.     trimul_kernel (str):
-        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel for
-        triangle attention.     enable_cache (bool): Enable shared variables cache.
-        enable_fusion (bool): Enable efficient fusion.     enable_tf32 (bool):
-        Enable TF32.     msa_server_mode (str): MSA server mode.     use_template
+        Args:     input (str): Input JSON file or directory.     out_dir
+        (str):
+        Output directory for results.     seeds (str): Comma-separated
+        seeds.
+        cycle (int): Number of cycles.     step (int): Number of diffusion
+        steps.
+        sample (int): Number of samples.     dtype (str): Data type.
+        model_name
+        (str): Model name.     use_msa (bool): Use MSA.
+        use_default_params
+        (bool): Use default parameters for the model.     trimul_kernel
+        (str):
+        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel
+        for
+        triangle attention.     enable_cache (bool): Enable shared variables
+        cache.
+        enable_fusion (bool): Enable efficient fusion.     enable_tf32
+        (bool):
+        Enable TF32.     msa_server_mode (str): MSA server mode.
+        use_template
         (bool): Use templates.     use_rna_msa (bool): Use RNA MSA.
-        use_seeds_in_json (bool): Use seeds from JSON.     need_atom_confidence
+        use_seeds_in_json (bool): Use seeds from JSON.
+        need_atom_confidence
         (bool): Compute atom-level confidence scores.     kalign_binary_path
-        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool): Use TFG
-        guidance.     hmmsearch_binary_path (Optional[str]): Path to hmmsearch
-        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild binary.
+        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool):
+        Use TFG
+        guidance.     hmmsearch_binary_path (Optional[str]): Path to
+        hmmsearch
+        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild
+        binary.
         seqres_database_path (Optional[str]): Path to sequence database.
         nhmmer_binary_path (Optional[str]): Path to nhmmer binary.
         hmmalign_binary_path (Optional[str]): Path to hmmalign binary.
-        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild binary.
+        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild
+        binary.
         ntrna_database_path (Optional[str]): NT-RNA database path.
         rfam_database_path (Optional[str]): Rfam database path.
         rna_central_database_path (Optional[str]): RNAcentral database path.
         nhmmer_n_cpu (Optional[int]): Number of CPUs for nhmmer.
 
       Options:
-        -i, --input TEXT                Input JSON file or directory.  [required]
-        -o, --out_dir TEXT              Output directory.  [default: ./output]
-        -s, --seeds TEXT                Seeds (comma-separated).  [default: 101]
-        -c, --cycle INTEGER             Pairformer cycle number.  [default: 10]
+        -i, --input TEXT                Input JSON file or directory.
+        [required]
+        -o, --out_dir TEXT              Output directory.  [default:
+        ./output]
+        -s, --seeds TEXT                Seeds (comma-separated).  [default:
+        101]
+        -c, --cycle INTEGER             Pairformer cycle number.  [default:
+        10]
         -p, --step INTEGER              Diffusion steps.  [default: 200]
         -e, --sample INTEGER            Number of samples.  [default: 5]
         -d, --dtype TEXT                Inference dtype.  [default: bf16]
         -n, --model_name TEXT           Model checkpoint name.  [default:
                                         protenix_base_default_v1.0.0]
-        --use_msa BOOLEAN               Whether to use MSA for inference.  [default:
+        --use_msa BOOLEAN               Whether to use MSA for inference.
+        [default:
                                         True]
-        --use_default_params BOOLEAN    Use recommended default parameters for the
+        --use_default_params BOOLEAN    Use recommended default parameters
+        for the
                                         selected model.  [default: False]
-        --trimul_kernel TEXT            Triangle multiplicative update kernel
-                                        ('cuequivariance' or 'torch').  [default:
+        --trimul_kernel TEXT            Triangle multiplicative update
+        kernel
+                                        ('cuequivariance' or 'torch').
+                                        [default:
                                         cuequivariance]
-        --triatt_kernel TEXT            Triangle attention kernel ('triattention',
-                                        'cuequivariance', 'deepspeed', or 'torch').
+        --triatt_kernel TEXT            Triangle attention kernel
+        ('triattention',
+                                        'cuequivariance', 'deepspeed', or
+                                        'torch').
                                         [default: cuequivariance]
-        --enable_cache BOOLEAN          Cache shareable variables in the diffusion
+        --enable_cache BOOLEAN          Cache shareable variables in the
+        diffusion
                                         module.  [default: True]
-        --enable_fusion BOOLEAN         Enable efficient kernel fusion in the
-                                        diffusion transformer.  [default: True]
-        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix multiplications.
+        --enable_fusion BOOLEAN         Enable efficient kernel fusion in
+        the
+                                        diffusion transformer.  [default:
+                                        True]
+        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix
+        multiplications.
                                         [default: True]
-        --msa_server_mode TEXT          MSA search mode ('protenix' or 'colabfold').
+        --msa_server_mode TEXT          MSA search mode ('protenix' or
+        'colabfold').
                                         [default: protenix]
-        --use_template BOOLEAN          Use templates (requires templatesPath in
+        --use_template BOOLEAN          Use templates (requires
+        templatesPath in
                                         input JSON).  [default: False]
-        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path in input
+        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path
+        in input
                                         JSON).  [default: False]
-        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input JSON.
+        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input
+        JSON.
                                         [default: False]
-        --need_atom_confidence BOOLEAN  Whether to compute atom-level confidence
+        --need_atom_confidence BOOLEAN  Whether to compute atom-level
+        confidence
                                         scores.  [default: False]
-        --kalign_binary_path TEXT       Path to kalign (searches in PATH if not
+        --kalign_binary_path TEXT       Path to kalign (searches in PATH if
+        not
                                         provided).
         --use_tfg_guidance BOOLEAN      Use Training-Free Guidance (TFG) for
                                         inference.  [default: False]
-        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH if not
+        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH
+        if not
                                         provided).
-        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH if not
+        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH
+        if not
                                         provided).
-        --seqres_database_path TEXT     Path to the sequence database for template
+        --seqres_database_path TEXT     Path to the sequence database for
+        template
                                         search.
         --nhmmer_binary_path TEXT       Path to nhmmer for RNA MSA search.
         --hmmalign_binary_path TEXT     Path to hmmalign for RNA MSA search.
@@ -4867,7 +4909,7 @@ user:
                                         Path to the RNAcentral database.
         --nhmmer_n_cpu INTEGER          Number of CPUs for nhmmer.
         -h, --help                      Show this message and exit.
-      
+
       Tool Usage example:
         protenix pred --input $input_json --out_dir $output_dir
           --use_msa_server True
@@ -5348,7 +5390,7 @@ user:
   single_cell_analysis: 'Please plot the expression of the gene {{gene_id}}
     in different cells.'
   single_cell_analysis_meta: |-
-    step1, plot the gene expression in different tissues using 
+    step1, plot the gene expression in different tissues using
     plot_single_cell_gene.py;(conda activate af3);
     step2, summary the results using summary_all.py(conda activate af3);
     Tool Usage method:
@@ -5407,15 +5449,18 @@ user:
     Note2: You'll need to strictly adhere to Meta and generate a two-step
     plan;
     step1, Find Gene's prompter Sequence using grep;
-    step2, Prediction of modifications in promoters using SMEP(conda activate epic);
+    step2, Prediction of modifications in promoters using SMEP(conda
+    activate epic);
     step3, plot smep results figure using plot_smep.py script(conda activate
     af3);
-    step4, summary the smep results using summary_all.py.(conda activate af3)
+    step4, summary the smep results using summary_all.py.(conda activate
+    af3)
     <smep usage>
         usage: run_smep_main.py [-h] -I INFILE -O OUTFILE -T
                           {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}
 
-        SMEP Prediction Tool: Preprocesses FASTA files, runs prediction, and formats
+        SMEP Prediction Tool: Preprocesses FASTA files, runs prediction, and
+        formats
         output.
 
         optional arguments:
@@ -5424,8 +5469,10 @@ user:
                                 Sequence file in FASTA format.
           -O OUTFILE, --outfile OUTFILE
                                 Output file for the prediction results.
-          -T {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}, --tarclass {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}
-                                Modification type (5mC, 6mA, m6A, H3K27me3, H3K4me3 or
+          -T {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}, --tarclass
+          {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}
+                                Modification type (5mC, 6mA, m6A, H3K27me3,
+                                H3K4me3 or
                                 H3K9ac).
         python /opt/workspace/models/epic/SMEP/run_smep_main.py -I
         $fasta_file -O /$output_dir/$out_file -T
@@ -5441,8 +5488,8 @@ user:
     <smep example>
         question: please help me to predict the 5mC modification of A gene
         prompter
-        commond_line: conda activate epic && python 
-        /opt/workspace/models/epic/SMEP/run_smep_main.py 
+        commond_line: conda activate epic && python
+        /opt/workspace/models/epic/SMEP/run_smep_main.py
         -I A_gene_prompter.fa -O
         /$output_dir/A_gene_prompter_5mC.out -T 5mC
     <smep example>
@@ -5521,7 +5568,8 @@ user:
     SMOC(conda activate epic);
     step3, plot smoc results figure using plot_smoc.py script(conda activate
     af3);
-    step4, summary the smoc results using summary_all.py.(conda activate af3)
+    step4, summary the smoc results using summary_all.py.(conda activate
+    af3)
     <smoc usage>
         python /opt/workspace/models/epic/SMOC/run_smoc_main.py
         --input $input_fasta --model
@@ -5543,7 +5591,8 @@ user:
         commond_line: conda activate epic && python
         /opt/workspace/models/epic/SMOC/run_smoc_main.py --input
         $input_fasta --model
-        /opt/workspace/models/epic/SMOC/data/Best_model_9311CK.h5 --output ./
+        /opt/workspace/models/epic/SMOC/data/Best_model_9311CK.h5 --output
+        ./
         Note: you will generate a *.csv file in output_dir, and you need to
         use this file to plot the figuer and summary the result.
     <smoc example>
@@ -5718,76 +5767,114 @@ user:
 
         Run predictions with Protenix using various input formats.
 
-        Args:     input (str): Input JSON file or directory.     out_dir (str):
-        Output directory for results.     seeds (str): Comma-separated seeds.
-        cycle (int): Number of cycles.     step (int): Number of diffusion steps.
-        sample (int): Number of samples.     dtype (str): Data type.     model_name
-        (str): Model name.     use_msa (bool): Use MSA.     use_default_params
-        (bool): Use default parameters for the model.     trimul_kernel (str):
-        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel for
-        triangle attention.     enable_cache (bool): Enable shared variables cache.
-        enable_fusion (bool): Enable efficient fusion.     enable_tf32 (bool):
-        Enable TF32.     msa_server_mode (str): MSA server mode.     use_template
+        Args:     input (str): Input JSON file or directory.     out_dir
+        (str):
+        Output directory for results.     seeds (str): Comma-separated
+        seeds.
+        cycle (int): Number of cycles.     step (int): Number of diffusion
+        steps.
+        sample (int): Number of samples.     dtype (str): Data type.
+        model_name
+        (str): Model name.     use_msa (bool): Use MSA.
+        use_default_params
+        (bool): Use default parameters for the model.     trimul_kernel
+        (str):
+        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel
+        for
+        triangle attention.     enable_cache (bool): Enable shared variables
+        cache.
+        enable_fusion (bool): Enable efficient fusion.     enable_tf32
+        (bool):
+        Enable TF32.     msa_server_mode (str): MSA server mode.
+        use_template
         (bool): Use templates.     use_rna_msa (bool): Use RNA MSA.
-        use_seeds_in_json (bool): Use seeds from JSON.     need_atom_confidence
+        use_seeds_in_json (bool): Use seeds from JSON.
+        need_atom_confidence
         (bool): Compute atom-level confidence scores.     kalign_binary_path
-        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool): Use TFG
-        guidance.     hmmsearch_binary_path (Optional[str]): Path to hmmsearch
-        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild binary.
+        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool):
+        Use TFG
+        guidance.     hmmsearch_binary_path (Optional[str]): Path to
+        hmmsearch
+        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild
+        binary.
         seqres_database_path (Optional[str]): Path to sequence database.
         nhmmer_binary_path (Optional[str]): Path to nhmmer binary.
         hmmalign_binary_path (Optional[str]): Path to hmmalign binary.
-        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild binary.
+        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild
+        binary.
         ntrna_database_path (Optional[str]): NT-RNA database path.
         rfam_database_path (Optional[str]): Rfam database path.
         rna_central_database_path (Optional[str]): RNAcentral database path.
         nhmmer_n_cpu (Optional[int]): Number of CPUs for nhmmer.
 
       Options:
-        -i, --input TEXT                Input JSON file or directory.  [required]
-        -o, --out_dir TEXT              Output directory.  [default: ./output]
-        -s, --seeds TEXT                Seeds (comma-separated).  [default: 101]
-        -c, --cycle INTEGER             Pairformer cycle number.  [default: 10]
+        -i, --input TEXT                Input JSON file or directory.
+        [required]
+        -o, --out_dir TEXT              Output directory.  [default:
+        ./output]
+        -s, --seeds TEXT                Seeds (comma-separated).  [default:
+        101]
+        -c, --cycle INTEGER             Pairformer cycle number.  [default:
+        10]
         -p, --step INTEGER              Diffusion steps.  [default: 200]
         -e, --sample INTEGER            Number of samples.  [default: 5]
         -d, --dtype TEXT                Inference dtype.  [default: bf16]
         -n, --model_name TEXT           Model checkpoint name.  [default:
                                         protenix_base_default_v1.0.0]
-        --use_msa BOOLEAN               Whether to use MSA for inference.  [default:
+        --use_msa BOOLEAN               Whether to use MSA for inference.
+        [default:
                                         True]
-        --use_default_params BOOLEAN    Use recommended default parameters for the
+        --use_default_params BOOLEAN    Use recommended default parameters
+        for the
                                         selected model.  [default: False]
-        --trimul_kernel TEXT            Triangle multiplicative update kernel
-                                        ('cuequivariance' or 'torch').  [default:
+        --trimul_kernel TEXT            Triangle multiplicative update
+        kernel
+                                        ('cuequivariance' or 'torch').
+                                        [default:
                                         cuequivariance]
-        --triatt_kernel TEXT            Triangle attention kernel ('triattention',
-                                        'cuequivariance', 'deepspeed', or 'torch').
+        --triatt_kernel TEXT            Triangle attention kernel
+        ('triattention',
+                                        'cuequivariance', 'deepspeed', or
+                                        'torch').
                                         [default: cuequivariance]
-        --enable_cache BOOLEAN          Cache shareable variables in the diffusion
+        --enable_cache BOOLEAN          Cache shareable variables in the
+        diffusion
                                         module.  [default: True]
-        --enable_fusion BOOLEAN         Enable efficient kernel fusion in the
-                                        diffusion transformer.  [default: True]
-        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix multiplications.
+        --enable_fusion BOOLEAN         Enable efficient kernel fusion in
+        the
+                                        diffusion transformer.  [default:
+                                        True]
+        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix
+        multiplications.
                                         [default: True]
-        --msa_server_mode TEXT          MSA search mode ('protenix' or 'colabfold').
+        --msa_server_mode TEXT          MSA search mode ('protenix' or
+        'colabfold').
                                         [default: protenix]
-        --use_template BOOLEAN          Use templates (requires templatesPath in
+        --use_template BOOLEAN          Use templates (requires
+        templatesPath in
                                         input JSON).  [default: False]
-        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path in input
+        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path
+        in input
                                         JSON).  [default: False]
-        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input JSON.
+        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input
+        JSON.
                                         [default: False]
-        --need_atom_confidence BOOLEAN  Whether to compute atom-level confidence
+        --need_atom_confidence BOOLEAN  Whether to compute atom-level
+        confidence
                                         scores.  [default: False]
-        --kalign_binary_path TEXT       Path to kalign (searches in PATH if not
+        --kalign_binary_path TEXT       Path to kalign (searches in PATH if
+        not
                                         provided).
         --use_tfg_guidance BOOLEAN      Use Training-Free Guidance (TFG) for
                                         inference.  [default: False]
-        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH if not
+        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH
+        if not
                                         provided).
-        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH if not
+        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH
+        if not
                                         provided).
-        --seqres_database_path TEXT     Path to the sequence database for template
+        --seqres_database_path TEXT     Path to the sequence database for
+        template
                                         search.
         --nhmmer_binary_path TEXT       Path to nhmmer for RNA MSA search.
         --hmmalign_binary_path TEXT     Path to hmmalign for RNA MSA search.
