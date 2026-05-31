@@ -417,12 +417,12 @@ class AnalystConfig(KnowledgeConfig):
     _validate_tool_repo_id = field_validator("TOOL_REPO_ID", mode="after")(
         _require_non_empty_endpoint
     )
-    OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/"
+    OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/output"
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
     TASK_NAME: str = "analyst-agents-task"
     RESOURCE: Dict[str, Dict[str, int]] = {
-        "small": {"cpu": 4, "memory": 8},
-        "medium": {"cpu": 8, "memory": 16},
+        "small": {"cpu": 1, "memory": 4},
+        "medium": {"cpu": 4, "memory": 8},
         "large": {"cpu": 16, "memory": 48},
     }
     # Deployment-specific compute-tier app ids; ship as a JSON string
