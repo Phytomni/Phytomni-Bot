@@ -102,6 +102,9 @@ def build_chat_kwargs(
         "reasoning_effort": kwargs.get(
             "reasoning_effort", config.REASONING_EFFORT
         ),
+        "response_format": kwargs.get(
+            "response_format", config.RESPONSE_FORMAT
+        ),
         "stream": kwargs.get("stream", config.STREAM),
         "temperature": kwargs.get("temperature", config.TEMPERATURE),
         "top_p": kwargs.get("top_p", config.TOP_P),

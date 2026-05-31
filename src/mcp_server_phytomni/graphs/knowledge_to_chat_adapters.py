@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.chat.state import ChatInput
+from ..agents.shared.options import build_chat_kwargs
 
 
 def build_knowledge_chat_kwargs(
@@ -26,21 +27,22 @@ def build_knowledge_chat_kwargs(
 ) -> dict[str, Any]:
     """Pack the 17-key ``phyto_chat`` bag the knowledge nodes pass.
 
-    Mirrors the kwargs spread inside
-    :meth:`agents.knowledge.agent.KnowledgeAgent.generate_node` and
-    :meth:`agents.knowledge.agent.KnowledgeAgent.follow_up_node`,
-    excluding only ``user_query`` (which differs per call site).
-    The bag is flat by design so it slots directly into
-    ``ChatInput.chat_kwargs``.
+    Delegates to the canonical
+    :func:`agents.shared.options.build_chat_kwargs` helper that the
+    cross-agent chat-bag construction convention lives on (environment,
+    evolution, brief_gene, and the MCP handler_support builders all
+    consume it). Adapter call sites do not accept per-call override
+    kwargs the way public wrappers do, so the empty ``{}`` is passed
+    as ``kwargs``; every value resolves from the config defaults.
 
     Args:
         knowledge_config: ``KnowledgeAgentConfig`` instance exposing
-            the prompt / sampling / retry attributes the agent reads
-            (``PROMPT_FILE``, ``PROMPT_PATH``, ``FREQUENCY_PENALTY``,
-            ``N``, ``PRESENCE_PENALTY``, ``REASONING_EFFORT``,
-            ``RESPONSE_FORMAT``, ``STREAM``, ``TEMPERATURE``,
-            ``TOP_P``, ``USER``, ``TIMEOUT``, ``RETRIABLE_CODES``,
-            ``MAX_RETRIES``).
+            the prompt / sampling / retry attributes the shared
+            helper reads (``PROMPT_FILE``, ``PROMPT_PATH``,
+            ``FREQUENCY_PENALTY``, ``N``, ``PRESENCE_PENALTY``,
+            ``REASONING_EFFORT``, ``RESPONSE_FORMAT``, ``STREAM``,
+            ``TEMPERATURE``, ``TOP_P``, ``USER``, ``TIMEOUT``,
+            ``RETRIABLE_CODES``, ``MAX_RETRIES``).
         sensitive_config: ``SensitiveConfig`` instance exposing
             ``API_KEY`` (a ``SecretStr``), ``BASE_URL``, and
             ``MODEL_ID``.
@@ -48,25 +50,7 @@ def build_knowledge_chat_kwargs(
     Returns:
         Flat ``dict`` ready to attach to ``ChatInput.chat_kwargs``.
     """
-    return {
-        "prompt_file": knowledge_config.PROMPT_FILE,
-        "prompt_path": knowledge_config.PROMPT_PATH,
-        "api_key": sensitive_config.API_KEY.get_secret_value(),
-        "base_url": sensitive_config.BASE_URL,
-        "model": sensitive_config.MODEL_ID,
-        "frequency_penalty": knowledge_config.FREQUENCY_PENALTY,
-        "n": knowledge_config.N,
-        "presence_penalty": knowledge_config.PRESENCE_PENALTY,
-        "reasoning_effort": knowledge_config.REASONING_EFFORT,
-        "response_format": knowledge_config.RESPONSE_FORMAT,
-        "stream": knowledge_config.STREAM,
-        "temperature": knowledge_config.TEMPERATURE,
-        "top_p": knowledge_config.TOP_P,
-        "user": knowledge_config.USER,
-        "timeout": knowledge_config.TIMEOUT,
-        "retriable_codes": knowledge_config.RETRIABLE_CODES,
-        "max_retries": knowledge_config.MAX_RETRIES,
-    }
+    return build_chat_kwargs({}, knowledge_config, sensitive_config)
 
 
 def build_knowledge_chat_input(
