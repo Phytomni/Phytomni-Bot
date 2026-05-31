@@ -51,6 +51,7 @@ def test_default_registry_ships_baseline_subgraphs() -> None:
         "data",
         "deep_genome",
         "environment",
+        "evolution",
         "knowledge",
         "review",
     } <= set(registry.names())

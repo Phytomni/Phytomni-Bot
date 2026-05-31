@@ -217,7 +217,7 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
         gene_id="AtPHYB",
     )
 
-    assert result == {"evolution_task": None}
+    assert result == {"evolution_agents_task": None}
 
 
 async def test_find_spa_taxids_uses_async_httpx_factory(
@@ -269,8 +269,7 @@ async def test_find_spa_taxids_uses_async_httpx_factory(
 
     monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
 
-    find_spa_taxids = getattr(evolution_agent, "_find_spa_taxids")
-    taxids = await find_spa_taxids("Arabidopsis", timeout=12.0)
+    taxids = await evolution_agent.find_spa_taxids("Arabidopsis", timeout=12.0)
 
     assert taxids == ["9606", "10090"]
     assert captured["factory_kwargs"]["timeout"] == 12.0
@@ -314,7 +313,6 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
 
     monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
 
-    find_spa_taxids = getattr(evolution_agent, "_find_spa_taxids")
-    taxids = await find_spa_taxids("oryza", timeout=1.0)
+    taxids = await evolution_agent.find_spa_taxids("oryza", timeout=1.0)
 
     assert taxids == []

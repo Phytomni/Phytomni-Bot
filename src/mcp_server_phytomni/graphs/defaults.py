@@ -36,6 +36,12 @@ from ..agents.environment.state import (
     EnvironmentOutput,
     EnvironmentState,
 )
+from ..agents.evolution.builder import build_evolution_graph
+from ..agents.evolution.state import (
+    EvolutionInput,
+    EvolutionOutput,
+    EvolutionState,
+)
 from ..agents.knowledge.agent import KnowledgeAgent
 from ..agents.review.agent import DeepResearchAgent
 from ..agents.review.state import (
@@ -80,6 +86,11 @@ def _build_environment_app() -> Any:
     return build_environment_graph()
 
 
+def _build_evolution_app() -> Any:
+    """Return a compiled evolution workflow app."""
+    return build_evolution_graph()
+
+
 def _build_knowledge_app() -> Any:
     """Return a compiled KnowledgeAgent workflow app."""
     return KnowledgeAgent().app
@@ -94,8 +105,8 @@ def build_default_registry() -> SubgraphRegistry:
     """Return a SubgraphRegistry seeded with every built-in subgraph.
 
     The set grows as later phases land additional agents (design /
-    network / evolution). Currently covers analyst / brief_gene /
-    chat / data / deep_genome / environment / knowledge / review —
+    network). Currently covers analyst / brief_gene / chat / data /
+    deep_genome / environment / evolution / knowledge / review —
     every agent that constructs cleanly with the narrow subgraph IO
     contract its module ships.
     """
@@ -130,6 +141,15 @@ def build_default_registry() -> SubgraphRegistry:
             state_schema=EnvironmentState,
             input_schema=EnvironmentInput,
             output_schema=EnvironmentOutput,
+        )
+    )
+    registry.register(
+        SubgraphSpec(
+            id="evolution",
+            factory=_build_evolution_app,
+            state_schema=EvolutionState,
+            input_schema=EvolutionInput,
+            output_schema=EvolutionOutput,
         )
     )
     registry.register(

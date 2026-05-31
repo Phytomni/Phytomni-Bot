@@ -5,10 +5,16 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Evolution analysis helpers built on Phytomni analyst workflows.
 
-This module exposes `evo_test_analysis` and private helpers for taxonomy
-lookup, target extraction, output directory creation, and task submission.
+This module exposes ``evo_test_analysis`` plus the public helpers
+(``target_taxids`` / ``find_spa_taxids`` / ``evolution_output_dir``
+/ ``evolution_submit_kwargs`` / ``evolution_chat_kwargs``) the
+LangGraph nodes in :mod:`.graph` call into. ``evo_test_analysis``
+itself is a thin wrapper that delegates to the compiled evolution
+subgraph via :func:`ainvoke_graph`.
 """
 
+import importlib
+from functools import lru_cache
 from json import loads
 from typing import Any, Dict, List
 
@@ -17,6 +23,7 @@ from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...config.defaults import DeepGenomeConfig
 from ...config.settings import get_sensitive_config
+from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import phyto_chat
@@ -30,15 +37,32 @@ from ..shared.options import (
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 _manager_cache: Dict[str, Any] = {}
 
+__all__ = [
+    "DEEP_GENOME_CONFIG",
+    "create_output_dir",
+    "evo_test_analysis",
+    "evolution_chat_kwargs",
+    "evolution_output_dir",
+    "evolution_submit_kwargs",
+    "find_spa_taxids",
+    "get_async_client",
+    "get_data_list",
+    "get_prompt",
+    "get_token",
+    "phyto_chat",
+    "submit",
+    "target_taxids",
+]
 
-def _evolution_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+
+def evolution_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return chat kwargs for evolution target-species extraction."""
     return build_chat_kwargs(
         kwargs, DEEP_GENOME_CONFIG, get_sensitive_config()
     )
 
 
-def _evolution_submit_kwargs(
+def evolution_submit_kwargs(
     kwargs: dict[str, Any],
     enable_auto_select: bool,
 ) -> dict[str, Any]:
@@ -58,7 +82,7 @@ def _evolution_submit_kwargs(
     )
 
 
-async def _find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
+async def find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
     """Return taxonomy ids for a target species name."""
     url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
         repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
@@ -92,7 +116,7 @@ async def _find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
     ]
 
 
-async def _target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
+async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     """Extract target taxonomy ids for an evolution query."""
     prompt_file = kwargs.get("prompt_file", DEEP_GENOME_CONFIG.PROMPT_FILE)
     prompt = get_prompt(
@@ -102,7 +126,7 @@ async def _target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     )
     phyto_response = await phyto_chat(
         user_query=prompt,
-        **_evolution_chat_kwargs(kwargs),
+        **evolution_chat_kwargs(kwargs),
     )
     if phyto_response is None:
         return None
@@ -112,7 +136,7 @@ async def _target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     if targets[0] == "All":
         return "All"
     taxid_lists = [
-        await _find_spa_taxids(
+        await find_spa_taxids(
             spa,
             kwargs.get("timeout", DEEP_GENOME_CONFIG.TIMEOUT),
         )
@@ -121,7 +145,7 @@ async def _target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
     return ",".join(taxid for taxids in taxid_lists for taxid in taxids)
 
 
-def _evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
+def evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
     """Create the output directory for a non-batch evolution task."""
     run_identity = RunIdentity.create(
         user_id=user_id,
@@ -143,6 +167,22 @@ def _evolution_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
     )
 
 
+@lru_cache(maxsize=1)
+def _cached_evolution_app() -> Any:
+    """Lazy singleton of the compiled evolution subgraph.
+
+    Resolves ``builder`` dynamically via ``importlib.import_module``
+    rather than a top-level ``from .builder import build_evolution_graph``
+    because the builder pulls ``graph.py`` which in turn re-imports
+    this module for the helper namespace; deferring the resolve to
+    first call lets every module finish loading before the compile
+    runs. ``lru_cache`` makes the compile happen at most once and
+    gives test suites a ``cache_clear()`` hook.
+    """
+    builder_module = importlib.import_module(".builder", package=__package__)
+    return builder_module.build_evolution_graph()
+
+
 async def evo_test_analysis(
     query: str,
     species: str,
@@ -153,42 +193,37 @@ async def evo_test_analysis(
 ) -> dict:
     """Run an evolution analysis workflow for a target gene.
 
+    Delegates to the compiled evolution subgraph: the
+    ``resolve_target_taxids_node`` runs the chat-based taxonomy
+    extraction and ``submit_evolution_task_node`` issues the
+    analyst submission, with the conditional edge short-circuiting
+    to END when taxonomy resolution yields no parseable result.
+
     Args:
         query: Natural-language evolution analysis request.
         species: Source species used to select prepared data.
         gene_id: Target gene identifier for the analysis prompt.
         batch: Whether to reuse the provided output directory.
-        enable_auto_select: Whether AnalystAgent may auto-select tools.
+        enable_auto_select: Whether AnalystAgent may auto-select
+            tools.
         **kwargs: Keyword-compatible chat, OBS, and submit overrides.
 
     Returns:
-        Dictionary containing the submitted evolution task, or None when
-        taxonomy extraction fails.
+        Dictionary containing the submitted evolution task, or
+        ``{"evolution_agents_task": None}`` when taxonomy
+        extraction fails. The failure path now returns the same
+        key as the happy path; previously the wrapper inconsistently
+        returned ``{"evolution_task": None}`` on failure.
     """
-    user_id = kwargs.get("user_id", DEEP_GENOME_CONFIG.USER_ID)
-    prompt_file = kwargs.get("prompt_file", DEEP_GENOME_CONFIG.PROMPT_FILE)
-    deepgenome_data = kwargs.get(
-        "deepgenome_data", DEEP_GENOME_CONFIG.DEEPGENOME_DATA
-    )
-    output_dir = kwargs.get("output_dir", DEEP_GENOME_CONFIG.OUTPUT_DIR)
-    target_spa_taxids = await _target_taxids(query, kwargs)
-    if target_spa_taxids is None:
-        return {"evolution_task": None}
-    goal_description = get_prompt(
-        prompt_file,
-        "user/evolution_agents_analysis",
-        {"gene_id": gene_id, "target_taxid": target_spa_taxids},
-    )
-    data_list = get_data_list(deepgenome_data, "evolution_analysis", species)
-    if not batch:
-        output_dir = _evolution_output_dir(user_id, kwargs)
-    meta = get_prompt(prompt_file, "user/evolution_agents_meta")
-    evo_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        output_dir=output_dir,
-        meta=meta,
-        **_evolution_submit_kwargs(kwargs, enable_auto_select),
-    )
-    return {"evolution_agents_task": evo_task}
+    initial_state: dict[str, Any] = {
+        "query": query,
+        "species": species,
+        "gene_id": gene_id,
+        "batch": batch,
+        "enable_auto_select": enable_auto_select,
+        "kwargs": kwargs,
+    }
+    final_state = await ainvoke_graph(_cached_evolution_app(), initial_state)
+    return {
+        "evolution_agents_task": final_state.get("evolution_agents_task"),
+    }
