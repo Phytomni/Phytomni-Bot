@@ -252,3 +252,113 @@ def assert_chat_branch_taken(
         assert result == expected_payload
         legacy_mock.assert_awaited_once()
         subgraph_app_mock.ainvoke.assert_not_awaited()
+
+
+def install_chat_subgraph_mocks(
+    monkeypatch: pytest.MonkeyPatch,
+    module_path: str,
+    *,
+    legacy_response: dict[str, Any] | None,
+    subgraph_response: dict[str, Any] | None,
+) -> tuple[AsyncMock, SimpleNamespace]:
+    """Install legacy ``phyto_chat`` + shared ``CHAT_APP`` async mocks.
+
+    Sibling of :func:`install_chat_branch_mocks` for the structural
+    chat-subgraph mount pattern: consumer agents register a chat node
+    via ``add_node(make_chat_node_wrapper(...))``, and the wrapper
+    closes over the module-level ``CHAT_APP`` constant on
+    :mod:`mcp_server_phytomni.agents.shared.chat_subgraph`. To exercise
+    the flag-on path in consumer tests we must patch ``CHAT_APP`` at
+    the shared module (where the wrapper reads it) rather than at the
+    consumer module (which never references it once the registration
+    runs at graph-build time).
+
+    Contract for the consumer module wiring:
+
+    * The consumer module still imports ``phyto_chat`` into its own
+      namespace so the flag-off path stays patchable via
+      ``monkeypatch.setattr(f"{module_path}.phyto_chat", ...)``.
+    * The consumer module does NOT need to expose ``CHAT_APP`` itself;
+      the structural wrapper resolves it from the shared module's
+      globals at every ``ainvoke`` call.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        module_path: Dotted import path of the consumer module whose
+            ``phyto_chat`` name should be replaced for the flag-off
+            path (e.g.
+            ``"mcp_server_phytomni.agents.knowledge.agent"``).
+        legacy_response: Payload returned by the patched
+            ``phyto_chat`` mock. Pass ``None`` to install a deterministic
+            ``{"answer": "legacy-chat"}`` default.
+        subgraph_response: Value placed under the ``response`` key of
+            the ``ChatOutput`` dict the patched ``CHAT_APP.ainvoke``
+            returns. Pass ``None`` for the null-response edge case
+            (``ChatOutput`` declares ``response: Optional[...]``); the
+            ainvoke return is ``{"response": None}`` in that case, not
+            an empty dict, so consumers that lift ``out["response"]``
+            still observe the documented contract.
+
+    Returns:
+        A ``(phyto_chat_mock, fake_chat_app)`` tuple. ``phyto_chat_mock``
+        replaces the consumer module's ``phyto_chat`` binding;
+        ``fake_chat_app`` replaces
+        ``agents.shared.chat_subgraph.CHAT_APP`` and exposes an
+        ``ainvoke`` ``AsyncMock`` pre-loaded with the configured
+        ``ChatOutput`` payload. Tests assert
+        ``phyto_chat_mock.assert_awaited_once()`` versus
+        ``fake_chat_app.ainvoke.assert_awaited_once()`` to verify
+        which branch the consumer took.
+    """
+    phyto_chat_mock = AsyncMock(
+        return_value=legacy_response or {"answer": "legacy-chat"}
+    )
+    fake_chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(return_value={"response": subgraph_response})
+    )
+    monkeypatch.setattr(f"{module_path}.phyto_chat", phyto_chat_mock)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.chat_subgraph.CHAT_APP",
+        fake_chat_app,
+    )
+    return phyto_chat_mock, fake_chat_app
+
+
+def assert_chat_subgraph_branch_taken(
+    result: Any,
+    legacy_mock: AsyncMock,
+    fake_chat_app: SimpleNamespace,
+    *,
+    subgraph: bool,
+    expected: dict[str, Any] | None = None,
+) -> None:
+    """Assert exactly one structural chat branch ran.
+
+    Sibling of :func:`assert_chat_branch_taken` for the structural
+    mount pattern: branch selection is observed via the consumer's
+    local ``phyto_chat`` mock (flag-off) versus the shared
+    ``CHAT_APP.ainvoke`` mock (flag-on).
+
+    Args:
+        result: Return value of the consumer node or wrapper under
+            test.
+        legacy_mock: Mock that replaced the consumer module's
+            ``phyto_chat``.
+        fake_chat_app: ``SimpleNamespace`` returned by
+            :func:`install_chat_subgraph_mocks` — its ``ainvoke``
+            attribute is the ``AsyncMock`` to assert against.
+        subgraph: ``True`` if the flag-on structural path was expected
+            to run, ``False`` for the legacy direct-call path.
+        expected: Optional payload to match against ``result``. When
+            omitted, only the await-counts are checked; the result
+            value is not compared. Pass the consumer's expected
+            downstream payload to pin its exact shape.
+    """
+    if subgraph:
+        fake_chat_app.ainvoke.assert_awaited_once()
+        legacy_mock.assert_not_awaited()
+    else:
+        legacy_mock.assert_awaited_once()
+        fake_chat_app.ainvoke.assert_not_awaited()
+    if expected is not None:
+        assert result == expected
