@@ -50,6 +50,7 @@ def test_default_registry_ships_baseline_subgraphs() -> None:
         "chat",
         "data",
         "deep_genome",
+        "environment",
         "knowledge",
         "review",
     } <= set(registry.names())

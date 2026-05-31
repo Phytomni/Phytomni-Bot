@@ -30,6 +30,12 @@ from ..agents.brief_gene.state import (
 from ..agents.chat.builder import _build_chat_graph
 from ..agents.data.agent import DataAgent
 from ..agents.deep_genome.agent import DeepGenomeAgents
+from ..agents.environment.builder import build_environment_graph
+from ..agents.environment.state import (
+    EnvironmentInput,
+    EnvironmentOutput,
+    EnvironmentState,
+)
 from ..agents.knowledge.agent import KnowledgeAgent
 from ..agents.review.agent import DeepResearchAgent
 from ..agents.review.state import (
@@ -69,6 +75,11 @@ def _build_deep_genome_app() -> Any:
     ).app
 
 
+def _build_environment_app() -> Any:
+    """Return a compiled environment VCI workflow app."""
+    return build_environment_graph()
+
+
 def _build_knowledge_app() -> Any:
     """Return a compiled KnowledgeAgent workflow app."""
     return KnowledgeAgent().app
@@ -83,10 +94,10 @@ def build_default_registry() -> SubgraphRegistry:
     """Return a SubgraphRegistry seeded with every built-in subgraph.
 
     The set grows as later phases land additional agents (design /
-    network / research / environment / evolution). Currently covers
-    analyst / brief_gene / chat / data / deep_genome / knowledge /
-    review — every agent that constructs cleanly with the narrow
-    subgraph IO contract its module ships.
+    network / evolution). Currently covers analyst / brief_gene /
+    chat / data / deep_genome / environment / knowledge / review —
+    every agent that constructs cleanly with the narrow subgraph IO
+    contract its module ships.
     """
     registry = SubgraphRegistry()
     registry.register(
@@ -111,6 +122,15 @@ def build_default_registry() -> SubgraphRegistry:
     registry.register(SubgraphSpec(id="data", factory=_build_data_app))
     registry.register(
         SubgraphSpec(id="deep_genome", factory=_build_deep_genome_app)
+    )
+    registry.register(
+        SubgraphSpec(
+            id="environment",
+            factory=_build_environment_app,
+            state_schema=EnvironmentState,
+            input_schema=EnvironmentInput,
+            output_schema=EnvironmentOutput,
+        )
     )
     registry.register(
         SubgraphSpec(id="knowledge", factory=_build_knowledge_app)

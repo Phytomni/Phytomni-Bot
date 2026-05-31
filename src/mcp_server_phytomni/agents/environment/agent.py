@@ -5,16 +5,23 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Environment agents for regional vegetation index analysis workflows.
 
-This module exposes `region_vci_analysis` and private helpers for extracting
-region codes, building prompts, and submitting VCI tasks.
+This module exposes `region_vci_analysis` plus the public helpers
+(``environment_region_codes`` / ``environment_output_dir`` /
+``environment_submit_kwargs`` / ``environment_chat_kwargs``) the
+LangGraph nodes in :mod:`.graph` call into. ``region_vci_analysis``
+itself is now a thin wrapper that delegates to the compiled
+environment subgraph via :func:`ainvoke_graph`.
 """
 
+import importlib
 import re
+from functools import lru_cache
 from typing import Any
 
 from ...common.prompts import get_prompt, load_text_file
 from ...config.defaults import EnvironmentConfig
 from ...config.settings import get_sensitive_config
+from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import phyto_chat
@@ -27,15 +34,30 @@ from ..shared.options import (
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()
 
+__all__ = [
+    "ENVIRONMENT_CONFIG",
+    "create_output_dir",
+    "environment_chat_kwargs",
+    "environment_output_dir",
+    "environment_region_codes",
+    "environment_submit_kwargs",
+    "get_data_list",
+    "get_prompt",
+    "load_text_file",
+    "phyto_chat",
+    "region_vci_analysis",
+    "submit",
+]
 
-def _environment_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+
+def environment_chat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return chat kwargs for environment code extraction."""
     return build_chat_kwargs(
         kwargs, ENVIRONMENT_CONFIG, get_sensitive_config()
     )
 
 
-def _environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+def environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Return Analyst submit kwargs for the environment workflow."""
     sensitive = get_sensitive_config()
     return build_submit_kwargs(
@@ -50,7 +72,7 @@ def _environment_submit_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-async def _environment_region_codes(
+async def environment_region_codes(
     query: str,
     kwargs: dict[str, Any],
 ) -> tuple[str | None, str | None, str | None] | None:
@@ -66,7 +88,7 @@ async def _environment_region_codes(
     )
     phyto_response = await phyto_chat(
         user_query=prompt,
-        **_environment_chat_kwargs(kwargs),
+        **environment_chat_kwargs(kwargs),
     )
     if phyto_response is None:
         return None
@@ -78,9 +100,7 @@ async def _environment_region_codes(
     return tuple((code_info.split("|") + [None] * 3)[:3])
 
 
-def _environment_output_dir(
-    user_id: str | None, kwargs: dict[str, Any]
-) -> str:
+def environment_output_dir(user_id: str | None, kwargs: dict[str, Any]) -> str:
     """Create the output directory for a non-batch VCI task."""
     run_identity = RunIdentity.create(
         user_id=user_id,
@@ -102,6 +122,22 @@ def _environment_output_dir(
     )
 
 
+@lru_cache(maxsize=1)
+def _cached_environment_app() -> Any:
+    """Lazy singleton of the compiled environment subgraph.
+
+    Resolves ``builder`` dynamically via ``importlib.import_module``
+    rather than a top-level ``from .builder import build_environment_graph``
+    because the builder pulls ``graph.py`` which in turn re-imports
+    this module for the helper namespace; deferring the resolve to
+    first call lets every module finish loading before the compile
+    runs. ``lru_cache`` makes the compile happen at most once and
+    gives test suites a ``cache_clear()`` hook.
+    """
+    builder_module = importlib.import_module(".builder", package=__package__)
+    return builder_module.build_environment_graph()
+
+
 async def region_vci_analysis(
     query: str,
     batch: bool = False,
@@ -109,45 +145,26 @@ async def region_vci_analysis(
 ) -> dict:
     """Run a regional VCI analysis workflow and return task results.
 
+    Delegates to the compiled environment subgraph: the
+    ``extract_region_codes_node`` runs the chat extraction and
+    ``submit_vci_task_node`` issues the analyst submission, with
+    the conditional edge short-circuiting to END when region-code
+    extraction yields no parseable result.
+
     Args:
         query: Natural-language region analysis request.
         batch: Whether to reuse the provided output directory.
         **kwargs: Keyword-compatible chat, OBS, and submit overrides.
 
     Returns:
-        Dictionary containing the submitted VCI analysis task, or None when
-        region code extraction fails.
+        Dictionary containing the submitted VCI analysis task, or
+        ``{"vci_analysis_task": None}`` when region code extraction
+        fails.
     """
-    user_id = kwargs.get("user_id", ENVIRONMENT_CONFIG.USER_ID)
-    prompt_file = kwargs.get("prompt_file", ENVIRONMENT_CONFIG.PROMPT_FILE)
-    environment_data = kwargs.get(
-        "environment_data", ENVIRONMENT_CONFIG.ENVIRONMENT_DATA
-    )
-    output_dir = kwargs.get("output_dir", ENVIRONMENT_CONFIG.OUTPUT_DIR)
-    region_codes = await _environment_region_codes(query, kwargs)
-    if region_codes is None:
-        return {"vci_analysis_task": None}
-    province_code, city_code, county_code = region_codes
-    goal_description = get_prompt(
-        prompt_file,
-        "user/environment/vci_analysis",
-        {
-            "province_code": province_code,
-            "city_code": city_code,
-            "county_code": county_code,
-        },
-    )
-    data_list = get_data_list(
-        environment_data, "environment_analysis", "vci_analysis"
-    )
-    if not batch:
-        output_dir = _environment_output_dir(user_id, kwargs)
-    meta = get_prompt(prompt_file, "user/environment/vci_analysis_meta")
-    vci_task = await submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        output_dir=output_dir,
-        meta=meta,
-        **_environment_submit_kwargs(kwargs),
-    )
-    return {"vci_analysis_task": vci_task}
+    initial_state: dict[str, Any] = {
+        "query": query,
+        "batch": batch,
+        "kwargs": kwargs,
+    }
+    final_state = await ainvoke_graph(_cached_environment_app(), initial_state)
+    return {"vci_analysis_task": final_state.get("vci_analysis_task")}
