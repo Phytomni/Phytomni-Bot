@@ -20,6 +20,12 @@ from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
 from mcp_server_phytomni.agents.data.agent import DataAgent
+from mcp_server_phytomni.agents.environment.builder import (
+    build_environment_graph,
+)
+from mcp_server_phytomni.agents.evolution.builder import (
+    build_evolution_graph,
+)
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.graphs.manifest import (
@@ -263,3 +269,37 @@ def test_export_real_review_subgraph_node_set() -> None:
     names = {node.name for node in manifest.nodes}
     compiled = {n.id for n in agent.app.get_graph().nodes.values()}
     assert compiled <= names
+
+
+def test_export_real_environment_subgraph_node_set() -> None:
+    """Real environment subgraph export matches the two-node graph.
+
+    Pins the environment subgraph's manifest shape so the docs
+    section in ``docs/agent-graphs.md`` and the compiled graph
+    stay in sync. The documented node-name set is canonically
+    pinned by ``test_environment_graph`` two-node assertion.
+    """
+    manifest = export_manifest(build_environment_graph())
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "extract_region_codes_node",
+        "submit_vci_task_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_evolution_subgraph_node_set() -> None:
+    """Real evolution subgraph export matches the two-node graph.
+
+    Pins the evolution subgraph's manifest shape so the docs
+    section in ``docs/agent-graphs.md`` and the compiled graph
+    stay in sync. The documented node-name set is canonically
+    pinned by ``test_evolution_graph`` two-node assertion.
+    """
+    manifest = export_manifest(build_evolution_graph())
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "resolve_target_taxids_node",
+        "submit_evolution_task_node",
+    }
+    assert documented <= names

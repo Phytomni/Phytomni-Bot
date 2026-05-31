@@ -1,0 +1,42 @@
+{
+  "nodes": [
+    {
+      "name": "__start__",
+      "kind": "boundary"
+    },
+    {
+      "name": "extract_region_codes_node",
+      "kind": "node"
+    },
+    {
+      "name": "submit_vci_task_node",
+      "kind": "node"
+    },
+    {
+      "name": "__end__",
+      "kind": "boundary"
+    }
+  ],
+  "edges": [
+    {
+      "source": "__start__",
+      "target": "extract_region_codes_node",
+      "conditional": false
+    },
+    {
+      "source": "extract_region_codes_node",
+      "target": "__end__",
+      "conditional": true
+    },
+    {
+      "source": "extract_region_codes_node",
+      "target": "submit_vci_task_node",
+      "conditional": true
+    },
+    {
+      "source": "submit_vci_task_node",
+      "target": "__end__",
+      "conditional": false
+    }
+  ]
+}

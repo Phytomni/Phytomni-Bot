@@ -27,8 +27,8 @@ src/mcp_server_phytomni/
     research/                In-silico research decomposition workflow
     design/                  Digital design workflow
     network/                 Gene network workflow
-    environment/             Environment workflow, not MCP-bridged
-    evolution/               Evolution workflow, not MCP-bridged
+    environment/             Environment LangGraph subgraph (region VCI), not MCP-bridged
+    evolution/               Evolution LangGraph subgraph (taxonomy-driven), not MCP-bridged
     shared/
       analysis.py            Cross-agent Analyst-backed analysis helpers
       analysis_storage.py    Cross-agent storage and OBS path helpers

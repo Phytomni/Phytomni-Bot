@@ -241,6 +241,67 @@ graphs that want to short-circuit the trailing summarisation
 should mount review via `adapter_node` with an output mapper that
 ignores `summary_content` rather than pinning a routing flag.
 
+## Environment Subgraph
+
+The regional VCI workflow is registered as `environment` in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/environment/state.py`](../src/mcp_server_phytomni/agents/environment/state.py).
+`region_vci_analysis` is now a thin wrapper that delegates to the
+compiled subgraph via `ainvoke_graph`.
+
+| TypedDict           | Required keys | Optional keys                                          |
+| ------------------- | ------------- | ------------------------------------------------------ |
+| `EnvironmentInput`  | `query`       | `batch`, `kwargs`                                      |
+| `EnvironmentOutput` | —             | `vci_analysis_task`                                    |
+| `EnvironmentState`  | `query`       | `batch`, `kwargs`, `region_codes`, `vci_analysis_task` |
+
+The graph compiles into two nodes wired with one conditional edge:
+
+| Node                        | Role                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `extract_region_codes_node` | Issues the chat extraction that parses `<result>province\|city\|county</result>` out of the user query.                         |
+| `submit_vci_task_node`      | Builds the goal prompt + data list, materialises the run-scoped output directory, and submits the VCI task to the AnalystAgent. |
+
+`route_after_extract` reads `state["region_codes"]`: a populated
+list flows to `submit_vci_task_node`, a `None` value short-circuits
+to `__end__`. Mirrors the legacy wrapper's early-return on
+extraction failure so the wrapper still returns
+`{"vci_analysis_task": None}` without invoking the analyst submit.
+
+## Evolution Subgraph
+
+The taxonomy-driven evolution workflow is registered as `evolution`
+in
+[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+The compiled app exposes a narrow IO contract through three
+TypedDicts in
+[`agents/evolution/state.py`](../src/mcp_server_phytomni/agents/evolution/state.py).
+`evo_test_analysis` is now a thin wrapper that delegates to the
+compiled subgraph via `ainvoke_graph`.
+
+| TypedDict         | Required keys                 | Optional keys                                                                     |
+| ----------------- | ----------------------------- | --------------------------------------------------------------------------------- |
+| `EvolutionInput`  | `query`, `species`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`                                           |
+| `EvolutionOutput` | —                             | `evolution_agents_task`                                                           |
+| `EvolutionState`  | `query`, `species`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`, `target_taxids`, `evolution_agents_task` |
+
+The graph compiles into two nodes wired with one conditional edge:
+
+| Node                         | Role                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve_target_taxids_node` | Issues the chat extraction that parses target species names, then fans out per-species HTTP lookups to materialise the taxonomy ids.  |
+| `submit_evolution_task_node` | Builds the goal prompt + data list, materialises the run-scoped output directory, and submits the evolution task to the AnalystAgent. |
+
+`route_after_resolve` reads `state["target_taxids"]`: a populated
+string (or the `"All"` sentinel) flows to
+`submit_evolution_task_node`, a `None` value short-circuits to
+`__end__`. The wrapper now returns the same
+`{"evolution_agents_task": None}` key shape on both failure and
+happy paths (previously the failure path returned the inconsistent
+`{"evolution_task": None}` key).
+
 ## Nested Checkpoints
 
 LangGraph's `parent.add_node("name", child_compiled_app)` pattern
@@ -272,13 +333,13 @@ configurable layer.
 [`graphs/manifests/`](../src/mcp_server_phytomni/graphs/manifests/)
 contains JSON snapshots produced by
 `export_manifest(compiled_app).model_dump_json(indent=2)` for the
-analyst / brief_gene / chat / data / knowledge / review subgraphs.
-Snapshots act as a visible contract for parent-graph authors and
-as regression bait — any node-set or edge-set drift surfaces as a
-diff in the same PR that causes it. The `deep_genome` snapshot is
-deferred until the upcoming DeepGenome composition work lands its
-nested-subgraph topology. A CI re-export-and-diff guard remains
-pending.
+analyst / brief_gene / chat / data / environment / evolution /
+knowledge / review subgraphs. Snapshots act as a visible contract
+for parent-graph authors and as regression bait — any node-set or
+edge-set drift surfaces as a diff in the same PR that causes it.
+The `deep_genome` snapshot is deferred until the upcoming
+DeepGenome composition work lands its nested-subgraph topology. A
+CI re-export-and-diff guard remains pending.
 
 ## Adding a New Subgraph
 
