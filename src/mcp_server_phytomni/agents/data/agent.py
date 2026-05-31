@@ -40,6 +40,7 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import _cached_chat_app, phyto_chat
 from ..knowledge.retrieval import retrieve
+from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
 from .nl2sql import (
     Nl2SqlRequest,
@@ -163,12 +164,13 @@ class DataAgent:
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        This method constructs the workflow graph by adding nodes and
-        defining the sequential edges between them. The resulting graph
-        orchestrates the retrieve -> rewrite -> search pipeline.
-
-        Returns:
-            A compiled StateGraph with checkpointer support.
+        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
+        flag-off keeps the legacy three-node sequential form where
+        ``rewrite_node`` awaits ``phyto_chat`` directly; flag-on
+        splits rewrite into prep + post around a single shared chat
+        node registered via ``add_node``, so xray expansion surfaces
+        the chat subgraph as a nested block in the consumer's
+        mermaid render.
         """
         workflow = StateGraph(
             state_schema=DataState,
@@ -176,15 +178,41 @@ class DataAgent:
             output_schema=DataOutput,
         )
         workflow.add_node("retrieve_node", self.retrieve_node)
-        workflow.add_node("rewrite_node", self.rewrite_node)
         workflow.add_node("search_node", self.search_node)
 
-        workflow.add_conditional_edges(
-            START, self.route_start, ["retrieve_node", "search_node"]
-        )
-        workflow.add_edge("retrieve_node", "rewrite_node")
-        workflow.add_edge("rewrite_node", "search_node")
-        workflow.add_edge("search_node", END)
+        if self.data_config.USE_CHAT_SUBGRAPH:
+            workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
+            workflow.add_node("rewrite_post_node", self.rewrite_post_node)
+            workflow.add_node(
+                "chat",
+                make_chat_node_wrapper(
+                    build_input_fn=lambda state: state["chat_payload"],
+                    extract_output_fn=lambda chat_output: (
+                        chat_output.get("response") or {}
+                    ),
+                    response_key="chat_response",
+                ),
+            )
+            workflow.add_conditional_edges(
+                START,
+                self.route_start,
+                ["retrieve_node", "search_node"],
+            )
+            workflow.add_edge("retrieve_node", "rewrite_prep_node")
+            workflow.add_edge("rewrite_prep_node", "chat")
+            workflow.add_edge("chat", "rewrite_post_node")
+            workflow.add_edge("rewrite_post_node", "search_node")
+            workflow.add_edge("search_node", END)
+        else:
+            workflow.add_node("rewrite_node", self.rewrite_node)
+            workflow.add_conditional_edges(
+                START,
+                self.route_start,
+                ["retrieve_node", "search_node"],
+            )
+            workflow.add_edge("retrieve_node", "rewrite_node")
+            workflow.add_edge("rewrite_node", "search_node")
+            workflow.add_edge("search_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -315,6 +343,66 @@ class DataAgent:
                 )
             )
 
+        rewrite_query = phyto_response["choices"][0]["message"]["content"]
+        return {"rewrite_query": rewrite_query}
+
+    async def rewrite_prep_node(self, state: DataAgentState) -> Dict[str, Any]:
+        """Build the chat payload for the rewrite call.
+
+        Mirrors the prompt + payload-building half of
+        :meth:`rewrite_node`; the actual chat dispatch runs in the
+        shared chat node, and :meth:`rewrite_post_node` converts the
+        response into ``rewrite_query``. No ``pending_post`` sentinel
+        is needed because DataAgent's single chat call site routes
+        the after-chat edge unconditionally to ``rewrite_post_node``.
+
+        Args:
+            state: The current workflow state. Reads ``retrieve_prompt``.
+
+        Returns:
+            A state delta with the ``ChatInput`` dict under
+            ``chat_payload``.
+        """
+        chat_kwargs = build_data_chat_kwargs(
+            self.data_config, self.sensitive_config
+        )
+        chat_payload = build_data_chat_input(
+            user_query=state["retrieve_prompt"],
+            chat_kwargs=chat_kwargs,
+        )
+        return {"chat_payload": chat_payload}
+
+    async def rewrite_post_node(self, state: DataAgentState) -> Dict[str, Any]:
+        """Convert the chat response into the ``rewrite_query`` delta.
+
+        Mirrors the response-validation + content-extraction half of
+        :meth:`rewrite_node`, raising the same :class:`McpError` when
+        the upstream response is missing the choices payload so the
+        failure mode stays observable across both graph shapes.
+
+        Args:
+            state: The current workflow state. Reads the upstream
+                ``chat_response`` written by the shared chat node.
+
+        Returns:
+            A state delta with the ``rewrite_query`` key extracted
+            from ``chat_response['choices'][0]['message']['content']``.
+
+        Raises:
+            McpError: If the chat response is missing or has no choices.
+        """
+        phyto_response = state.get("chat_response") or {}
+        if (
+            not phyto_response
+            or "choices" not in phyto_response
+            or not phyto_response["choices"]
+        ):
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message=("Failed to get response from phyto_chat service"),
+                )
+            )
         rewrite_query = phyto_response["choices"][0]["message"]["content"]
         return {"rewrite_query": rewrite_query}
 

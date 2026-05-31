@@ -4,12 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Dual-path tests for ``DataAgent`` chat invocations.
 
-Pins the ``USE_CHAT_SUBGRAPH`` flag branch on the data
-``rewrite_node``: flag-off keeps the legacy direct
-``phyto_chat(...)`` call, flag-on routes through
-``_cached_chat_app().ainvoke(ChatInput)`` via the
-``data_to_chat_adapters`` projection helpers. Both branches emit
-the same ``rewrite_query`` downstream value.
+Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy single-node
+form where ``rewrite_node`` calls ``phyto_chat`` directly; flag-on
+routes through a prep + post pair surrounding a single shared chat
+node registered via ``add_node`` from the
+``agents/shared/chat_subgraph`` factory.
 """
 
 from __future__ import annotations
@@ -17,13 +16,20 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.data.agent import DataAgent
-from mcp_server_phytomni.agents.data.state import DataAgentState
+from mcp_server_phytomni.agents.data.state import (
+    DataAgentState,
+    DataInput,
+)
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
-from ._subgraph_branch_fakes import install_chat_branch_mocks
+from ._subgraph_branch_fakes import (
+    install_chat_branch_mocks,
+    install_chat_subgraph_mocks,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -65,21 +71,16 @@ def _minimal_rewrite_state() -> DataAgentState:
     )
 
 
-@pytest.mark.parametrize("use_subgraph", [False, True])
-async def test_rewrite_node_respects_chat_subgraph_flag(
-    use_subgraph: bool,
+async def test_rewrite_node_flag_off_awaits_phyto_chat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-off awaits ``phyto_chat``; flag-on awaits the chat subgraph.
+    """Flag-off retains the legacy single-node ``phyto_chat`` call.
 
-    Both branches are exercised against the same minimal state with
-    the same canned chat-completion response so the downstream
-    ``rewrite_query`` value extracted from ``choices[0].message
-    .content`` is identical regardless of which branch ran. The
-    chat-subgraph branch returns its response under the ``response``
-    key (the ``ChatOutput`` contract) which ``extract_chat_response``
-    unwraps; the legacy branch returns the raw chat-completion dict
-    directly.
+    The flag-off path stays unchanged from the pre-subgraph shape:
+    ``rewrite_node`` calls ``phyto_chat`` directly and extracts the
+    rewritten query from the returned chat-completion dict. This
+    test pins that contract so a future rollout of the flag-on
+    default does not silently delete the legacy branch.
     """
     legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
         monkeypatch,
@@ -88,45 +89,190 @@ async def test_rewrite_node_respects_chat_subgraph_flag(
         subgraph_response={"response": _CHAT_COMPLETION_RESPONSE},
     )
 
-    agent = _build_agent(use_subgraph=use_subgraph)
+    agent = _build_agent(use_subgraph=False)
     result = await agent.rewrite_node(_minimal_rewrite_state())
 
-    if use_subgraph:
-        subgraph_app_mock.ainvoke.assert_awaited_once()
-        legacy_mock.assert_not_awaited()
-    else:
-        legacy_mock.assert_awaited_once()
-        subgraph_app_mock.ainvoke.assert_not_awaited()
-
+    legacy_mock.assert_awaited_once()
+    subgraph_app_mock.ainvoke.assert_not_awaited()
     assert result == {"rewrite_query": "rewritten sql-friendly query"}
 
 
-async def test_rewrite_node_subgraph_branch_projects_chat_input(
+async def test_rewrite_node_flag_on_direct_call_still_invokes_chat_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on branch forwards a ``ChatInput`` carrying the retrieve prompt.
+    """Direct ``rewrite_node`` calls with the flag on use the cached chat app.
 
-    Pins the projection contract: the adapter must hand the subgraph
-    a ``ChatInput`` whose ``user_query`` is the ``retrieve_prompt``
-    that ``retrieve_node`` already stitched, and whose
-    ``chat_kwargs`` is the 17-key provider bag. The data node does
-    not pass uploads, so ``obs_file_list`` must stay absent and the
-    chat subgraph's ``prepare_context`` reads "no uploads" instead
-    of iterating an empty list down to OBS.
+    Pins the vestigial in-method flag-on branch: when the chat flag
+    is on, ``_build_graph`` routes through the prep + chat + post
+    split rather than ``rewrite_node`` itself, so the in-method
+    flag-on branch is unreachable through the compiled graph. The
+    branch stays in place behind the flag so a direct call (e.g. a
+    consumer that bypasses the compiled graph) keeps producing the
+    same ``rewrite_query`` shape regardless of which path runs.
     """
-    _, subgraph_app_mock = install_chat_branch_mocks(
+    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
         monkeypatch,
         module_path=_DATA_MODULE,
+        legacy_response=_CHAT_COMPLETION_RESPONSE,
         subgraph_response={"response": _CHAT_COMPLETION_RESPONSE},
     )
 
     agent = _build_agent(use_subgraph=True)
-    await agent.rewrite_node(_minimal_rewrite_state())
+    result = await agent.rewrite_node(_minimal_rewrite_state())
 
-    call_args = subgraph_app_mock.ainvoke.await_args
-    assert call_args is not None
-    chat_input = call_args.args[0]
-    assert chat_input["user_query"] == "stitched scenarios + user question"
+    subgraph_app_mock.ainvoke.assert_awaited_once()
+    legacy_mock.assert_not_awaited()
+    assert result == {"rewrite_query": "rewritten sql-friendly query"}
+
+
+async def test_rewrite_prep_node_builds_chat_payload() -> None:
+    """Prep node stages the ``chat_payload`` for the shared chat node.
+
+    The prep node owns the prompt-passing half of the legacy
+    ``rewrite_node`` and emits a single state-delta key: the
+    ``ChatInput`` payload destined for the shared chat node. No
+    chat call happens here, and DataAgent's single chat call site
+    needs no ``pending_post`` sentinel because the after-chat edge
+    is unconditional.
+    """
+    agent = _build_agent(use_subgraph=True)
+    result = await agent.rewrite_prep_node(_minimal_rewrite_state())
+
+    chat_payload = result["chat_payload"]
+    assert chat_payload["user_query"] == ("stitched scenarios + user question")
+    assert isinstance(chat_payload["chat_kwargs"], dict)
+    assert len(chat_payload["chat_kwargs"]) == 17
+    assert "obs_file_list" not in chat_payload
+
+
+async def test_rewrite_post_node_extracts_rewrite_query() -> None:
+    """Post node extracts ``rewrite_query`` from the chat response.
+
+    The post node mirrors the response-validation + content-extraction
+    half of the legacy ``rewrite_node`` but reads the chat response
+    from ``state['chat_response']`` (written by the shared chat node)
+    instead of awaiting a fresh ``phyto_chat`` call.
+    """
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        DataAgentState,
+        {
+            "chat_response": {
+                "choices": [{"message": {"content": "rewritten Q"}}]
+            }
+        },
+    )
+    result = await agent.rewrite_post_node(state)
+
+    assert result == {"rewrite_query": "rewritten Q"}
+
+
+async def test_rewrite_post_node_raises_on_empty_chat_response() -> None:
+    """Post node raises ``McpError`` when the chat response is missing.
+
+    Pins the upstream-failure contract: when the shared chat node
+    returns an empty or choices-less dict, the post node raises the
+    same ``McpError`` the legacy ``rewrite_node`` raised so the
+    failure mode stays observable across both graph shapes.
+    """
+    agent = _build_agent(use_subgraph=True)
+    empty_state = cast(DataAgentState, {})
+    with pytest.raises(McpError):
+        await agent.rewrite_post_node(empty_state)
+
+    no_choices_state = cast(DataAgentState, {"chat_response": {"choices": []}})
+    with pytest.raises(McpError):
+        await agent.rewrite_post_node(no_choices_state)
+
+
+async def test_compiled_graph_flag_on_routes_through_shared_chat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compiled flag-on graph awaits the shared chat subgraph.
+
+    End-to-end exercise of the prep + chat + post split: the
+    compiled graph routes the rewrite chat call through the single
+    registered ``chat`` node so the patched shared ``CHAT_APP.ainvoke``
+    mock is awaited once with the prep-built ``ChatInput``, and the
+    final ``final_response`` propagates through ``search_node`` to
+    the graph output.
+    """
+    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_DATA_MODULE,
+        legacy_response=None,
+        subgraph_response=_CHAT_COMPLETION_RESPONSE,
+    )
+
+    async def fake_retrieve_node(
+        _self: DataAgent, _state: DataAgentState
+    ) -> dict:
+        """Stub ``retrieve_node`` so the test never hits the live backend.
+
+        Returns the same fixed ``retrieve_prompt`` the unit tests
+        above use so the prep node observes a deterministic input.
+        """
+        return {
+            "retrieve_prompt": "stitched scenarios + user question",
+        }
+
+    async def fake_search_node(
+        _self: DataAgent, state: DataAgentState
+    ) -> dict:
+        """Stub ``search_node`` so the test never hits the NL2SQL service.
+
+        Captures the post-node-produced ``rewrite_query`` and echoes
+        it back inside ``final_response`` so the test can assert the
+        prep+chat+post pipeline assembled the expected query.
+        """
+        return {
+            "final_response": {"echoed_query": state["rewrite_query"]},
+        }
+
+    # Patch the class methods BEFORE constructing the agent so the
+    # original ``_build_graph`` call captures the stubs instead of
+    # the real backend-hitting bound methods.
+    monkeypatch.setattr(DataAgent, "retrieve_node", fake_retrieve_node)
+    monkeypatch.setattr(DataAgent, "search_node", fake_search_node)
+    agent = _build_agent(use_subgraph=True)
+    initial_input = cast(
+        DataInput,
+        {
+            "user_query": "How many genes were sequenced last year?",
+            "is_rewrite": True,
+        },
+    )
+    final_state = await agent.app.ainvoke(
+        initial_input,
+        config={"configurable": {"thread_id": "test-thread"}},
+    )
+
+    legacy_mock.assert_not_awaited()
+    fake_chat_app.ainvoke.assert_awaited_once()
+    chat_input = fake_chat_app.ainvoke.await_args.args[0]
+    assert chat_input["user_query"] == ("stitched scenarios + user question")
     assert isinstance(chat_input["chat_kwargs"], dict)
     assert len(chat_input["chat_kwargs"]) == 17
     assert "obs_file_list" not in chat_input
+    assert final_state["final_response"] == {
+        "echoed_query": "rewritten sql-friendly query"
+    }
+
+
+def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
+    """Flag-on graph exposes the shared chat subgraph to ``xray``.
+
+    Structural check: ``StateGraph.get_graph(xray=True)`` walks the
+    compiled graph and inlines any node whose body closes over a
+    ``CompiledStateGraph``. Mounting chat via
+    ``make_chat_node_wrapper(...)`` keeps the compiled subgraph at
+    the wrapper's module-level globals, so ``find_subgraph_pregel``
+    discovers it and the xray render carries node keys prefixed with
+    ``chat:`` (the parent node name plus the subgraph node names).
+    A flat ``chat`` key with no child prefix would mean the wrapper
+    hid the subgraph behind another closure and the render reverted
+    to an opaque box.
+    """
+    agent = _build_agent(use_subgraph=True)
+    node_keys = agent.app.get_graph(xray=True).nodes.keys()
+    assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)

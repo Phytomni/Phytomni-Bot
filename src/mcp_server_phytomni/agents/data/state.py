@@ -17,7 +17,7 @@ in tests remain valid without an unrelated migration.
 # class-definition time, so future annotations would silently drop
 # every ``Required[]`` marker on ``DataInput`` and ``DataState``.
 
-from typing import Any, Dict, Required, TypedDict
+from typing import Any, Dict, Optional, Required, TypedDict
 
 
 class DataInput(TypedDict, total=False):
@@ -47,11 +47,13 @@ class DataOutput(TypedDict):
 class DataState(TypedDict):
     """Full working state spanning input, intermediate, and output.
 
-    Field set is identical to the legacy ``DataAgentState`` so
-    existing node annotations and the test-only ``cast`` sites in
-    ``test_data_agent*.py`` remain valid; the only material change
-    is the move into a dedicated module to keep the IO contract
-    decoupled from the agent class file.
+    Field set mirrors the legacy ``DataAgentState`` plus two
+    optional keys (``chat_payload`` / ``chat_response``) that the
+    rewrite prep+post split needs when the chat flag is on: the prep
+    node stages the ``ChatInput`` dict on ``chat_payload`` and the
+    shared chat node writes its return to ``chat_response`` for the
+    post node to consume. Both default to absence and are ignored on
+    the legacy single-node path.
     """
 
     user_query: str
@@ -59,6 +61,8 @@ class DataState(TypedDict):
     retrieve_prompt: str
     rewrite_query: str
     final_response: dict
+    chat_payload: Optional[Dict[str, Any]]
+    chat_response: Optional[Dict[str, Any]]
 
 
 DataAgentState = DataState
