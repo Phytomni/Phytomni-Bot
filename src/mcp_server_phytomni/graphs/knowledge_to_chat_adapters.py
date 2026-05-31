@@ -5,13 +5,11 @@
 """Pure mapping helpers from KnowledgeAgent state to chat subgraph IO.
 
 KnowledgeAgent's ``generate_node`` and ``follow_up_node`` both call
-``phyto_chat`` with the same 17-key LLM / retry / provider bag and
-differ only by the ``user_query`` they build. Upcoming consumer wiring
-will replace those direct function calls with ``adapter_node`` hops
-into the compiled chat subgraph so the chat boundary becomes visible
-in LangGraph xray rendering. The helpers below project the knowledge
-configs into ``ChatInput`` and unwrap ``ChatOutput.response`` back
-into the dict shape the knowledge nodes already pass downstream.
+``phyto_chat`` with the same 17-key provider bag and differ only by
+``user_query``. Upcoming consumer wiring will replace those calls
+with ``adapter_node`` hops into the compiled chat subgraph; this
+module supplies the ``ChatInput`` projection and the
+``ChatOutput.response`` unwrap the wiring will use.
 """
 
 from __future__ import annotations

@@ -4,12 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the KnowledgeAgent-to-chat subgraph IO mappers.
 
-Pins the kwarg bag that ``knowledge/agent.py`` currently passes to
+Pins the 17-key bag that ``knowledge/agent.py`` passes to
 ``phyto_chat`` at both the generate and follow-up call sites so the
-upcoming wiring through ``adapter_node`` projects the same arguments
-without behaviour drift. The two sites pass an identical 17-key
-LLM/retry/provider bag and differ only by ``user_query``; the
-mappers below cover that bag, the ``ChatInput`` wrapper, and the
+upcoming ``adapter_node`` wiring projects the same arguments without
+drift. Covers the kwargs builder, the ``ChatInput`` wrapper, and the
 ``ChatOutput.response`` unwrap.
 """
 
