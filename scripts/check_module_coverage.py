@@ -41,6 +41,7 @@ MODULE_FLOORS: Dict[str, int] = {
     "src/mcp_server_phytomni/agents/chat/graph.py": 30,
     "src/mcp_server_phytomni/agents/analyst/graph.py": 42,
     "src/mcp_server_phytomni/agents/review/report.py": 42,
+    "src/mcp_server_phytomni/agents/data/agent.py": 96,
     "src/mcp_server_phytomni/agents/knowledge/agent.py": 41,
     "src/mcp_server_phytomni/agents/deep_genome/profile.py": 47,
     "src/mcp_server_phytomni/agents/brief_gene/core.py": 48,
