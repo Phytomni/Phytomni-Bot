@@ -729,8 +729,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
     ) -> str:
         """Build the metadata payload consumed by the compute task."""
         json_format = get_prompt(
-            self.analyst_config.PROMPT_FILE,
-            "user/analytsis_output_format"
+            self.analyst_config.PROMPT_FILE, "user/analytsis_output_format"
         )
         task_config = textwrap.dedent(f"""\
             json_output_format: |
