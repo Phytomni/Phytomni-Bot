@@ -243,6 +243,19 @@ class ServerConfig(BaseSettings):
         ),
     ] = None
 
+    # Consumer-side opt-in: when True, every agent that invokes chat
+    # (knowledge / data / analyst / review / brief_gene / design /
+    # network / research / environment / evolution / deep_genome)
+    # routes its chat call through the chat agent's compiled subgraph
+    # via ``adapter_node(chat_subgraph)`` instead of the legacy direct
+    # ``phyto_chat`` function call. Default ``False`` preserves
+    # pre-Phase-6 behavior; flip to ``True`` per deployment once
+    # parent-graph composition has been validated end-to-end.
+    # Inherited by every consumer agent config that subclasses
+    # ``ServerConfig`` (every ``*Config`` except ``ApiConfig``, which
+    # is an independent ``BaseSettings`` subclass).
+    USE_CHAT_SUBGRAPH: bool = False
+
     # Deployment-specific endpoints + UUIDs are externalised with
     # empty defaults so a misconfigured customer image fails fast
     # with a ``ValidationError`` naming the missing env var, rather
