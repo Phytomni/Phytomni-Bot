@@ -43,6 +43,10 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...storage.downloads import download_list_convert
 from ..chat.service import _cached_chat_app, phyto_chat
+from ..shared.chat_subgraph import (
+    make_chat_after_router,
+    make_chat_node_wrapper,
+)
 from ..shared.intermediate_state import merge_intermediate_state
 from .retrieval import multi_retrieve, rerank, retrieve
 from .state import (
@@ -90,11 +94,16 @@ class KnowledgeAgent:
     responses using an LLM. It supports optional file uploads via OBS
     and can generate follow-up questions based on the initial response.
 
-    The workflow graph consists of four main nodes:
-        1. process_files_node: Downloads and parses user-uploaded OBS files.
-        2. retrieve_node: Retrieves and reranks documents from knowledge bases.
-        3. generate_node: Generates a response using the retrieved context.
+    The workflow graph has two shapes selected by
+    ``USE_CHAT_SUBGRAPH``. Flag-off keeps the four-node form:
+        1. process_files_node: Downloads and parses uploaded OBS files.
+        2. retrieve_node: Retrieves and reranks documents.
+        3. generate_node: Generates a response using retrieved context.
         4. follow_up_node: Generates suggested follow-up questions.
+
+    Flag-on splits the chat calls into prep + post pairs surrounding
+    a single shared ``chat`` node so LangGraph's xray rendering can
+    inline the chat subgraph in the consumer's graph.
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
@@ -127,12 +136,14 @@ class KnowledgeAgent:
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        This method constructs the workflow graph by adding nodes,
-        defining edges, and setting up conditional routing. The resulting
-        graph orchestrates the retrieval and generation pipeline.
-
-        Returns:
-            A compiled StateGraph with checkpointer support.
+        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
+        flag-off keeps the legacy four-node form where
+        ``generate_node`` and ``follow_up_node`` each await
+        ``phyto_chat`` directly; flag-on splits both into prep + post
+        pairs surrounding a single shared chat node registered via
+        ``add_node`` with a conditional router that reads
+        ``pending_post`` to direct the chat output back to the
+        correct post node.
         """
         workflow = StateGraph(
             state_schema=KnowledgeState,
@@ -141,35 +152,87 @@ class KnowledgeAgent:
         )
         workflow.add_node("process_files_node", self.process_files_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
-        workflow.add_node("generate_node", self.generate_node)
-        workflow.add_node("follow_up_node", self.follow_up_node)
 
-        workflow.add_conditional_edges(
-            START,
-            self.route_start,
-            {
-                "process_files_node": "process_files_node",
-                "retrieve_node": "retrieve_node",
-            },
-        )
-        workflow.add_edge("process_files_node", "retrieve_node")
-        workflow.add_conditional_edges(
-            "retrieve_node",
-            self.route_after_retrieve,
-            {
-                "generate_node": "generate_node",
-                "__end__": END,
-            },
-        )
-        workflow.add_conditional_edges(
-            "generate_node",
-            self.route_after_generate,
-            {
-                "follow_up_node": "follow_up_node",
-                "__end__": END,
-            },
-        )
-        workflow.add_edge("follow_up_node", END)
+        if self.knowledge_config.USE_CHAT_SUBGRAPH:
+            workflow.add_node("generate_prep_node", self.generate_prep_node)
+            workflow.add_node("generate_post_node", self.generate_post_node)
+            workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
+            workflow.add_node("follow_up_post_node", self.follow_up_post_node)
+            workflow.add_node(
+                "chat",
+                make_chat_node_wrapper(
+                    build_input_fn=lambda state: state["chat_payload"],
+                    extract_output_fn=lambda chat_output: (
+                        chat_output.get("response") or {}
+                    ),
+                    response_key="chat_response",
+                ),
+            )
+            workflow.add_conditional_edges(
+                START,
+                self.route_start,
+                {
+                    "process_files_node": "process_files_node",
+                    "retrieve_node": "retrieve_node",
+                },
+            )
+            workflow.add_edge("process_files_node", "retrieve_node")
+            workflow.add_conditional_edges(
+                "retrieve_node",
+                self.route_after_retrieve,
+                {
+                    "generate_node": "generate_prep_node",
+                    "__end__": END,
+                },
+            )
+            workflow.add_edge("generate_prep_node", "chat")
+            workflow.add_conditional_edges(
+                "chat",
+                make_chat_after_router(),
+                {
+                    "generate_post_node": "generate_post_node",
+                    "follow_up_post_node": "follow_up_post_node",
+                },
+            )
+            workflow.add_conditional_edges(
+                "generate_post_node",
+                self.route_after_generate,
+                {
+                    "follow_up_node": "follow_up_prep_node",
+                    "__end__": END,
+                },
+            )
+            workflow.add_edge("follow_up_prep_node", "chat")
+            workflow.add_edge("follow_up_post_node", END)
+        else:
+            workflow.add_node("generate_node", self.generate_node)
+            workflow.add_node("follow_up_node", self.follow_up_node)
+            workflow.add_conditional_edges(
+                START,
+                self.route_start,
+                {
+                    "process_files_node": "process_files_node",
+                    "retrieve_node": "retrieve_node",
+                },
+            )
+            workflow.add_edge("process_files_node", "retrieve_node")
+            workflow.add_conditional_edges(
+                "retrieve_node",
+                self.route_after_retrieve,
+                {
+                    "generate_node": "generate_node",
+                    "__end__": END,
+                },
+            )
+            workflow.add_conditional_edges(
+                "generate_node",
+                self.route_after_generate,
+                {
+                    "follow_up_node": "follow_up_node",
+                    "__end__": END,
+                },
+            )
+            workflow.add_edge("follow_up_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -431,6 +494,191 @@ class KnowledgeAgent:
                 retriable_codes=self.knowledge_config.RETRIABLE_CODES,
                 max_retries=self.knowledge_config.MAX_RETRIES,
             )
+
+        follow_up_list = parse_follow_up_questions(
+            message_content(follow_up_response)
+        )
+
+        phyto_response["choices"][0]["message"].update(
+            {"follow_up_questions": follow_up_list}
+        )
+
+        return {
+            "follow_up_questions": follow_up_list,
+            "final_response": phyto_response,
+        }
+
+    async def generate_prep_node(
+        self, state: KnowledgeAgentState
+    ) -> Dict[str, Any]:
+        """Build the chat payload for the primary generate call.
+
+        Mirrors the prompt-building half of :meth:`generate_node` but
+        only emits the ``chat_payload`` plus the ``pending_post``
+        sentinel that the after-chat router reads to branch back to
+        ``generate_post_node`` once the shared chat subgraph returns.
+
+        Args:
+            state: The current workflow state. Reads ``user_query``,
+                ``retrieve_context``, and optional ``upload_context``.
+
+        Returns:
+            A state delta with the ``ChatInput`` dict under
+            ``chat_payload`` and ``"generate_post_node"`` under
+            ``pending_post``.
+        """
+        user_query = state["user_query"]
+        retrieve_context = state["retrieve_context"]
+        upload_context = state.get("upload_context", "")
+
+        if upload_context:
+            chat_query = get_prompt(
+                self.knowledge_config.PROMPT_FILE,
+                "user/retrieval_file",
+                {
+                    "retrieve_results": retrieve_context,
+                    "upload_context": upload_context,
+                    "user_query": user_query,
+                },
+            )
+        else:
+            chat_query = get_prompt(
+                self.knowledge_config.PROMPT_FILE,
+                "user/retrieval",
+                {
+                    "retrieve_results": retrieve_context,
+                    "user_query": user_query,
+                },
+            )
+
+        chat_kwargs = build_knowledge_chat_kwargs(
+            self.knowledge_config, self.sensitive_config
+        )
+        chat_payload = build_knowledge_chat_input(
+            user_query=chat_query, chat_kwargs=chat_kwargs
+        )
+        return {
+            "chat_payload": chat_payload,
+            "pending_post": "generate_post_node",
+        }
+
+    async def generate_post_node(
+        self, state: KnowledgeAgentState
+    ) -> Dict[str, Any]:
+        """Merge retrieved docs into the shared chat subgraph response.
+
+        Mirrors the doc-list-merge half of :meth:`generate_node` but
+        reads the chat response from ``state['chat_response']`` (set
+        by the shared chat node) instead of awaiting a fresh
+        ``phyto_chat`` call. Returns the same ``main_response`` /
+        ``final_response`` shape the legacy single-node path emitted.
+
+        Args:
+            state: The current workflow state. Reads
+                ``retrieved_docs`` and the upstream
+                ``chat_response`` written by the shared chat node.
+
+        Returns:
+            A state delta with ``main_response`` and
+            ``final_response`` carrying the merged doc list payload.
+        """
+        phyto_response = dict(state.get("chat_response") or {})
+        doc_list_payload = {
+            "doc_list": state["retrieved_docs"],
+            "total": 10000,
+        }
+
+        if (
+            phyto_response
+            and "choices" in phyto_response
+            and len(phyto_response["choices"]) > 0
+        ):
+            if (
+                "message" in phyto_response["choices"][0]
+                and phyto_response["choices"][0]["message"] is not None
+            ):
+                phyto_response["choices"][0]["message"].update(
+                    doc_list_payload
+                )
+            else:
+                phyto_response["choices"][0]["message"] = doc_list_payload
+        else:
+            if not phyto_response:
+                phyto_response = {"choices": [{"message": doc_list_payload}]}
+            elif "choices" not in phyto_response:
+                phyto_response["choices"] = [{"message": doc_list_payload}]
+            elif len(phyto_response["choices"]) == 0:
+                phyto_response["choices"].append({"message": doc_list_payload})
+
+        return {
+            "main_response": phyto_response,
+            "final_response": phyto_response,
+        }
+
+    async def follow_up_prep_node(
+        self, state: KnowledgeAgentState
+    ) -> Dict[str, Any]:
+        """Build the chat payload for the follow-up questions call.
+
+        Mirrors the prompt-building half of :meth:`follow_up_node`
+        and emits the ``pending_post`` sentinel that routes the
+        shared chat node's output to ``follow_up_post_node``.
+
+        Args:
+            state: The current workflow state. Reads ``user_query``
+                and the primary ``main_response`` whose message
+                content seeds the follow-up template.
+
+        Returns:
+            A state delta with the ``ChatInput`` dict under
+            ``chat_payload`` and ``"follow_up_post_node"`` under
+            ``pending_post``.
+        """
+        user_query = state["user_query"]
+        phyto_response = state["main_response"]
+        system_response_text = message_content(phyto_response)
+
+        follow_up_query = get_prompt(
+            self.knowledge_config.PROMPT_FILE,
+            "system/follow_up_questions",
+            {
+                "user_query": user_query,
+                "system_response": system_response_text,
+            },
+        )
+
+        chat_kwargs = build_knowledge_chat_kwargs(
+            self.knowledge_config, self.sensitive_config
+        )
+        chat_payload = build_knowledge_chat_input(
+            user_query=follow_up_query, chat_kwargs=chat_kwargs
+        )
+        return {
+            "chat_payload": chat_payload,
+            "pending_post": "follow_up_post_node",
+        }
+
+    async def follow_up_post_node(
+        self, state: KnowledgeAgentState
+    ) -> Dict[str, Any]:
+        """Parse follow-up questions and merge them into the primary turn.
+
+        Mirrors the parse + mutate half of :meth:`follow_up_node` and
+        reads the shared chat subgraph's return from
+        ``state['chat_response']`` instead of awaiting a fresh call.
+
+        Args:
+            state: The current workflow state. Reads ``main_response``
+                (the merged primary turn) and the upstream
+                ``chat_response`` written by the shared chat node.
+
+        Returns:
+            A state delta with the parsed ``follow_up_questions``
+            list and the ``final_response`` that now carries the
+            list embedded on the primary message.
+        """
+        follow_up_response = state.get("chat_response") or {}
+        phyto_response = state["main_response"]
 
         follow_up_list = parse_follow_up_questions(
             message_content(follow_up_response)

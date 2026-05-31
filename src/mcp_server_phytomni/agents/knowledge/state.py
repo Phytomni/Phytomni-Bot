@@ -55,11 +55,14 @@ class KnowledgeOutput(TypedDict):
 class KnowledgeState(TypedDict):
     """Full working state spanning input, intermediate, and output.
 
-    Field set is identical to the legacy ``KnowledgeAgentState``
-    so existing node annotations and ``arun`` initial-state dicts
-    remain valid; the only material change is the move into a
-    dedicated module to keep the IO contract decoupled from the
-    agent class file.
+    Field set mirrors the legacy ``KnowledgeAgentState`` plus three
+    optional keys (``pending_post`` / ``chat_payload`` /
+    ``chat_response``) that the prep+post split needs when the chat
+    flag is on: prep nodes stage the post-chat node name on
+    ``pending_post`` and the ``ChatInput`` dict on ``chat_payload``;
+    the shared chat node writes its return to ``chat_response`` for
+    the post node to consume. All three default to absence and are
+    ignored on the legacy single-node path.
     """
 
     user_query: str
@@ -73,6 +76,9 @@ class KnowledgeState(TypedDict):
     is_follow_up: bool
     follow_up_questions: List[dict]
     final_response: Dict[str, Any]
+    pending_post: Optional[str]
+    chat_payload: Optional[Dict[str, Any]]
+    chat_response: Optional[Dict[str, Any]]
 
 
 KnowledgeAgentState = KnowledgeState
