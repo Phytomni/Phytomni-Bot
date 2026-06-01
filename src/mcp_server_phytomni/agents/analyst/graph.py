@@ -733,11 +733,12 @@ class AnalystGraphMixin(WorkflowMixinBase):
         )
         task_config = textwrap.dedent(f"""\
             json_output_format: |
-              {json_format}
+              {json_format.strip().replace('\n', '\n  ')}
             goal_description: |
-              {state.get('goal_description')}
+              {state.get('goal_description').strip().replace(
+                  '\n', '\n  ')}
             meta: |
-              {self._submit_meta(state).replace('\n', '\n  ')}
+              {self._submit_meta(state).strip().replace('\n', '\n  ')}
             data_list: {self._processed_data_list(state)}
             output_dir: '{output_dir}'
             working_dir: '/obs'
