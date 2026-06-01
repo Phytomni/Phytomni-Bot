@@ -10,6 +10,7 @@ retention cleanup, and the no-plaintext-key-material invariant.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -169,11 +170,13 @@ def test_schema_has_no_plaintext_key_material(tmp_path: Path) -> None:
     """The audit schema stores only the public key prefix, no secrets."""
     store = _make_store(tmp_path)
 
-    with store._connect() as conn:
+    conn = sqlite3.connect(store.db_path)
+    try:
         columns = {
-            row["name"]
-            for row in conn.execute("PRAGMA table_info(relay_audit)")
+            row[1] for row in conn.execute("PRAGMA table_info(relay_audit)")
         }
+    finally:
+        conn.close()
 
     assert "key_prefix" in columns
     assert not columns & {
