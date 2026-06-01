@@ -253,8 +253,21 @@ class ServerConfig(BaseSettings):
     # parent-graph composition has been validated end-to-end.
     # Inherited by every consumer agent config that subclasses
     # ``ServerConfig`` (every ``*Config`` except ``ApiConfig``, which
-    # is an independent ``BaseSettings`` subclass).
-    USE_CHAT_SUBGRAPH: bool = False
+    # is an independent ``BaseSettings`` subclass). The ``AliasChoices``
+    # wrapper mirrors every endpoint field above so customer images
+    # that opt-in via ``PHYTOMNI_USE_CHAT_SUBGRAPH=true`` route to the
+    # same field as the unprefixed form (the env-prefix promise in
+    # ``docs/configuration.md`` + ``.env.example`` must hold for the
+    # Step 6.6 default-True rollback knob to work in production).
+    USE_CHAT_SUBGRAPH: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "USE_CHAT_SUBGRAPH", "PHYTOMNI_USE_CHAT_SUBGRAPH"
+            ),
+        ),
+    ] = False
 
     # Deployment-specific endpoints + UUIDs are externalised with
     # empty defaults so a misconfigured customer image fails fast
@@ -479,8 +492,18 @@ class AnalystConfig(KnowledgeConfig):
     # keeps the production behavior identical to today; flip to
     # ``True`` per deployment once parent-graph composition has been
     # validated end-to-end. Inherited by every dispatcher config that
-    # subclasses ``AnalystConfig``.
-    USE_ANALYST_SUBGRAPH: bool = False
+    # subclasses ``AnalystConfig``. ``AliasChoices`` mirrors the
+    # endpoint-field pattern so ``PHYTOMNI_USE_ANALYST_SUBGRAPH``
+    # routes to the same field as the unprefixed form.
+    USE_ANALYST_SUBGRAPH: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "USE_ANALYST_SUBGRAPH", "PHYTOMNI_USE_ANALYST_SUBGRAPH"
+            ),
+        ),
+    ] = False
 
 
 class ReviewConfig(KnowledgeConfig):

@@ -179,3 +179,45 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
         DeepGenomeConfig()
 
     assert field in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    ["USE_CHAT_SUBGRAPH", "PHYTOMNI_USE_CHAT_SUBGRAPH"],
+)
+def test_use_chat_subgraph_routes_both_env_aliases(env_name, monkeypatch):
+    """Both ``USE_CHAT_SUBGRAPH`` and ``PHYTOMNI_USE_CHAT_SUBGRAPH``
+    toggle the flag.
+
+    Pins the ``AliasChoices`` contract added in Step 6.1.5 (AF-NEW-5).
+    The documented rollback knob in ``docs/configuration.md`` and
+    ``.env.example`` promises both forms work; the prefixed form
+    silently no-op'd until ``Field(validation_alias=...)`` was added.
+    """
+    monkeypatch.delenv("USE_CHAT_SUBGRAPH", raising=False)
+    monkeypatch.delenv("PHYTOMNI_USE_CHAT_SUBGRAPH", raising=False)
+    monkeypatch.setenv(env_name, "true")
+
+    config = ServerConfig()
+
+    assert config.USE_CHAT_SUBGRAPH is True
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    ["USE_ANALYST_SUBGRAPH", "PHYTOMNI_USE_ANALYST_SUBGRAPH"],
+)
+def test_use_analyst_subgraph_routes_both_env_aliases(env_name, monkeypatch):
+    """Both env names toggle ``AnalystConfig.USE_ANALYST_SUBGRAPH``.
+
+    Mirrors ``test_use_chat_subgraph_routes_both_env_aliases`` so the
+    AliasChoices fix covers every existing subgraph flag, not just the
+    chat one. Step 6.6 default-True rollback relies on this.
+    """
+    monkeypatch.delenv("USE_ANALYST_SUBGRAPH", raising=False)
+    monkeypatch.delenv("PHYTOMNI_USE_ANALYST_SUBGRAPH", raising=False)
+    monkeypatch.setenv(env_name, "true")
+
+    config = AnalystConfig()
+
+    assert config.USE_ANALYST_SUBGRAPH is True
