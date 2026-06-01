@@ -23,9 +23,9 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.prompts import get_prompt
 from ...config.data_loaders import load_species_data
-from ...graphs.analyst_to_chat_adapters import (
-    build_analyst_chat_input,
-    build_analyst_chat_kwargs,
+from ...graphs.chat_adapters import (
+    build_chat_input,
+    build_chat_kwargs_for,
 )
 
 if TYPE_CHECKING:
@@ -75,12 +75,12 @@ class AnalystChatSubgraphMixin:
             "user/split_query",
             {"user_query": state["query"]},
         )
-        chat_kwargs = build_analyst_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_schema"},
         )
-        chat_payload = build_analyst_chat_input(parse_prompt, chat_kwargs)
+        chat_payload = build_chat_input(parse_prompt, chat_kwargs)
         return {
             "chat_payload": chat_payload,
             "pending_post": "parse_query_post_node",
@@ -188,12 +188,12 @@ class AnalystChatSubgraphMixin:
                 "available_data_list": json.dumps(species_data),
             },
         )
-        chat_kwargs = build_analyst_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_schema"},
         )
-        chat_payload = build_analyst_chat_input(selection_prompt, chat_kwargs)
+        chat_payload = build_chat_input(selection_prompt, chat_kwargs)
         return {
             "chat_payload": chat_payload,
             "pending_post": "data_select_post_node",
@@ -336,11 +336,11 @@ class AnalystChatSubgraphMixin:
                         "user_query": state["goal_description"],
                     },
                 )
-        chat_kwargs = build_analyst_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
         )
-        chat_payload = build_analyst_chat_input(user_query, chat_kwargs)
+        chat_payload = build_chat_input(user_query, chat_kwargs)
         return {
             "chat_payload": chat_payload,
             "pending_post": "plan_post_node",
@@ -434,12 +434,12 @@ class AnalystChatSubgraphMixin:
                 "current_plan": state["plan"],
             },
         )
-        chat_kwargs = build_analyst_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_object"},
         )
-        chat_payload = build_analyst_chat_input(check_prompt, chat_kwargs)
+        chat_payload = build_chat_input(check_prompt, chat_kwargs)
         return {
             "chat_payload": chat_payload,
             "pending_post": "check_post_node",
@@ -544,14 +544,12 @@ class AnalystChatSubgraphMixin:
             "user/tool_extract",
             {"plan": state["plan"]},
         )
-        chat_kwargs = build_analyst_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_object"},
         )
-        chat_payload = build_analyst_chat_input(
-            tool_extract_prompt, chat_kwargs
-        )
+        chat_payload = build_chat_input(tool_extract_prompt, chat_kwargs)
         return {
             "chat_payload": chat_payload,
             "pending_post": "tool_extract_post_node",

@@ -2,14 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Pure mapping helpers from KnowledgeAgent state to chat subgraph IO.
+"""Shared consumer-agent-to-chat subgraph IO mappers.
 
-KnowledgeAgent's ``generate_node`` and ``follow_up_node`` both call
-``phyto_chat`` with the same 17-key provider bag and differ only by
-``user_query``. Upcoming consumer wiring will replace those calls
-with ``adapter_node`` hops into the compiled chat subgraph; this
-module supplies the ``ChatInput`` projection and the
-``ChatOutput.response`` unwrap the wiring will use.
+Data / Knowledge / Analyst chat sites pass the same 17-key bag to
+``phyto_chat`` and unwrap the chat-completion dict the same way; the
+structural-mount wiring routes those calls through the shared chat
+subgraph behind ``USE_CHAT_SUBGRAPH``. Two optional kwargs encode
+divergence: ``response_format`` for analyst's per-site overrides,
+``obs_file_list`` for data / knowledge's upload-context forwarding.
 """
 
 from __future__ import annotations
@@ -21,24 +21,25 @@ from ..agents.chat.state import ChatInput
 from ..agents.shared.options import build_chat_kwargs
 
 
-def build_knowledge_chat_kwargs(
-    knowledge_config: Any,
+def build_chat_kwargs_for(
+    config: Any,
     sensitive_config: Any,
+    *,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pack the 17-key ``phyto_chat`` bag the knowledge nodes pass.
+    """Pack the 17-key ``phyto_chat`` bag a consumer chat node passes.
 
-    Delegates to the canonical
-    :func:`agents.shared.options.build_chat_kwargs` helper that the
-    cross-agent chat-bag construction convention lives on (environment,
-    evolution, brief_gene, and the MCP handler_support builders all
-    consume it). Adapter call sites do not accept per-call override
-    kwargs the way public wrappers do, so the empty ``{}`` is passed
-    as ``kwargs``; every value resolves from the config defaults.
+    Delegates to :func:`agents.shared.options.build_chat_kwargs`, the
+    canonical 17-key bag builder. The optional ``response_format``
+    kwarg shadows the config default when a caller (analyst) needs
+    per-site overrides; passing ``None`` (data / knowledge) inherits
+    ``config.RESPONSE_FORMAT``.
 
     Args:
-        knowledge_config: ``KnowledgeAgentConfig`` instance exposing
-            the prompt / sampling / retry attributes the shared
-            helper reads (``PROMPT_FILE``, ``PROMPT_PATH``,
+        config: Domain config instance (``DataConfig`` /
+            ``KnowledgeAgentConfig`` / ``AnalystConfig``) exposing the
+            prompt / sampling / retry attributes the shared builder
+            reads (``PROMPT_FILE``, ``PROMPT_PATH``,
             ``FREQUENCY_PENALTY``, ``N``, ``PRESENCE_PENALTY``,
             ``REASONING_EFFORT``, ``RESPONSE_FORMAT``, ``STREAM``,
             ``TEMPERATURE``, ``TOP_P``, ``USER``, ``TIMEOUT``,
@@ -46,35 +47,45 @@ def build_knowledge_chat_kwargs(
         sensitive_config: ``SensitiveConfig`` instance exposing
             ``API_KEY`` (a ``SecretStr``), ``BASE_URL``, and
             ``MODEL_ID``.
+        response_format: Optional per-site ``response_format`` dict
+            (e.g. ``{"type": "json_schema"}``) that overrides the
+            config default. ``None`` inherits ``config.RESPONSE_FORMAT``.
 
     Returns:
         Flat ``dict`` ready to attach to ``ChatInput.chat_kwargs``.
     """
-    return build_chat_kwargs({}, knowledge_config, sensitive_config)
+    overrides: dict[str, Any] = {}
+    if response_format is not None:
+        overrides["response_format"] = response_format
+    return build_chat_kwargs(overrides, config, sensitive_config)
 
 
-def build_knowledge_chat_input(
+def build_chat_input(
     user_query: str,
     chat_kwargs: Mapping[str, Any],
+    *,
     obs_file_list: list[str] | None = None,
 ) -> ChatInput:
-    """Wrap a knowledge call's inputs into a ``ChatInput`` dict.
+    """Wrap a consumer chat call's inputs into a ``ChatInput`` dict.
 
     The chat subgraph treats ``obs_file_list`` as a presence flag for
     its upload-context branch, so an empty list and a missing list
     should behave identically. To keep the no-uploads contract honest
     the helper omits the key when the caller passes ``None`` or an
     empty list, and copies a non-empty list so a later mutation in
-    the knowledge node never leaks into the subgraph's input.
+    the consumer node never leaks into the subgraph's input.
+
+    Analyst chat sites pass ``obs_file_list=None`` because the analyst
+    graph reads OBS at retrieval sites only; the chat sites do not
+    forward uploaded documents to the chat call.
 
     Args:
         user_query: The fully-built prompt the calling node assembled
-            (the retrieval-context-stitched query in
-            ``generate_node``, or the follow-up template in
-            ``follow_up_node``).
+            (the site-specific template-stitched query each consumer
+            chat node sends to ``phyto_chat``).
         chat_kwargs: The flat provider / retry bag from
-            :func:`build_knowledge_chat_kwargs`. Copied into the
-            return value so later mutations don't leak.
+            :func:`build_chat_kwargs_for`. Copied into the return
+            value so later mutations don't leak.
         obs_file_list: Optional OBS object keys to forward as upload
             context. ``None`` or ``[]`` both omit the key.
 
@@ -92,16 +103,16 @@ def build_knowledge_chat_input(
 
 
 def extract_chat_response(chat_output: Mapping[str, Any]) -> dict[str, Any]:
-    """Project ``ChatOutput.response`` into the dict knowledge nodes expect.
+    """Project ``ChatOutput.response`` into the dict consumer nodes expect.
 
-    KnowledgeAgent's nodes assign ``phyto_response`` from the
+    Consumer chat nodes assign ``phyto_response`` from the
     ``phyto_chat`` return value (the raw upstream chat-completion
     dict). The chat subgraph stores that dict under
     ``ChatOutput.response``; this helper unwraps it and substitutes
-    an empty dict when the upstream returned ``None`` so the
-    downstream ``doc_list_payload`` patcher in ``generate_node`` and
-    the message-content reader in ``follow_up_node`` still see a
-    dict rather than crashing on attribute access.
+    an empty dict when the upstream returned ``None`` so downstream
+    parsing (``choices`` access, ``json.loads`` of regex matches,
+    truthiness guards) still sees a dict rather than crashing on
+    attribute access.
 
     Args:
         chat_output: The chat subgraph's final state mapping

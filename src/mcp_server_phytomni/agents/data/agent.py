@@ -29,9 +29,9 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.data_to_chat_adapters import (
-    build_data_chat_input,
-    build_data_chat_kwargs,
+from ...graphs.chat_adapters import (
+    build_chat_input,
+    build_chat_kwargs_for,
     extract_chat_response,
 )
 from ...graphs.data_to_knowledge_adapters import (
@@ -471,10 +471,10 @@ class DataAgent:
             McpError: If the phyto_chat service fails to respond.
         """
         if self.data_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_data_chat_kwargs(
+            chat_kwargs = build_chat_kwargs_for(
                 self.data_config, self.sensitive_config
             )
-            chat_input = build_data_chat_input(
+            chat_input = build_chat_input(
                 user_query=state["retrieve_prompt"],
                 chat_kwargs=chat_kwargs,
             )
@@ -534,10 +534,10 @@ class DataAgent:
             A state delta with the ``ChatInput`` dict under
             ``chat_payload``.
         """
-        chat_kwargs = build_data_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.data_config, self.sensitive_config
         )
-        chat_payload = build_data_chat_input(
+        chat_payload = build_chat_input(
             user_query=state["retrieve_prompt"],
             chat_kwargs=chat_kwargs,
         )

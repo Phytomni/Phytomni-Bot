@@ -31,9 +31,9 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.knowledge_to_chat_adapters import (
-    build_knowledge_chat_input,
-    build_knowledge_chat_kwargs,
+from ...graphs.chat_adapters import (
+    build_chat_input,
+    build_chat_kwargs_for,
     extract_chat_response,
 )
 from ...runtime.agent_registry import (
@@ -373,10 +373,10 @@ class KnowledgeAgent:
             )
 
         if self.knowledge_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_knowledge_chat_kwargs(
+            chat_kwargs = build_chat_kwargs_for(
                 self.knowledge_config, self.sensitive_config
             )
-            chat_input = build_knowledge_chat_input(
+            chat_input = build_chat_input(
                 user_query=chat_query, chat_kwargs=chat_kwargs
             )
             chat_output = await _cached_chat_app().ainvoke(chat_input)
@@ -465,10 +465,10 @@ class KnowledgeAgent:
         )
 
         if self.knowledge_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_knowledge_chat_kwargs(
+            chat_kwargs = build_chat_kwargs_for(
                 self.knowledge_config, self.sensitive_config
             )
-            chat_input = build_knowledge_chat_input(
+            chat_input = build_chat_input(
                 user_query=follow_up_query, chat_kwargs=chat_kwargs
             )
             chat_output = await _cached_chat_app().ainvoke(chat_input)
@@ -551,10 +551,10 @@ class KnowledgeAgent:
                 },
             )
 
-        chat_kwargs = build_knowledge_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.knowledge_config, self.sensitive_config
         )
-        chat_payload = build_knowledge_chat_input(
+        chat_payload = build_chat_input(
             user_query=chat_query, chat_kwargs=chat_kwargs
         )
         return {
@@ -647,10 +647,10 @@ class KnowledgeAgent:
             },
         )
 
-        chat_kwargs = build_knowledge_chat_kwargs(
+        chat_kwargs = build_chat_kwargs_for(
             self.knowledge_config, self.sensitive_config
         )
-        chat_payload = build_knowledge_chat_input(
+        chat_payload = build_chat_input(
             user_query=follow_up_query, chat_kwargs=chat_kwargs
         )
         return {

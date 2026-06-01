@@ -2,13 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for the KnowledgeAgent-to-chat subgraph IO mappers.
+"""Tests for the shared consumer-agent-to-chat subgraph IO mappers.
 
-Pins the 17-key bag that ``knowledge/agent.py`` passes to
-``phyto_chat`` at both the generate and follow-up call sites so the
-upcoming ``adapter_node`` wiring projects the same arguments without
-drift. Covers the kwargs builder, the ``ChatInput`` wrapper, and the
-``ChatOutput.response`` unwrap.
+Pins the 17-key bag the data / knowledge / analyst chat sites pass
+to ``phyto_chat`` / ``CHAT_APP`` so the structural-mount wiring
+projects the same arguments without drift. Covers the kwargs builder
+(with and without the analyst-only ``response_format`` override), the
+``ChatInput`` wrapper (with and without the data / knowledge
+``obs_file_list``), and the ``ChatOutput.response`` unwrap.
 """
 
 from __future__ import annotations
@@ -18,21 +19,25 @@ from types import SimpleNamespace
 import pytest
 
 from mcp_server_phytomni.agents.chat.state import ChatInput
-from mcp_server_phytomni.graphs.knowledge_to_chat_adapters import (
-    build_knowledge_chat_input,
-    build_knowledge_chat_kwargs,
+from mcp_server_phytomni.graphs.chat_adapters import (
+    build_chat_input,
+    build_chat_kwargs_for,
     extract_chat_response,
 )
 
 pytestmark = pytest.mark.agent
 
 
-def _fake_knowledge_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for ``KnowledgeAgentConfig``.
+def _fake_config() -> SimpleNamespace:
+    """Build a SimpleNamespace stand-in for a consumer-agent config.
 
     Only the fields the kwargs builder reads are populated; using
     SimpleNamespace keeps the test independent from Pydantic
-    validation rules on the real config.
+    validation rules on the real ``DataConfig`` / ``KnowledgeConfig`` /
+    ``AnalystConfig`` instances. All three share the same 17-key
+    shape because the canonical
+    :func:`agents.shared.options.build_chat_kwargs` helper reads the
+    same attribute set across consumers.
     """
     return SimpleNamespace(
         PROMPT_FILE="prompt.yaml",
@@ -45,7 +50,7 @@ def _fake_knowledge_config() -> SimpleNamespace:
         STREAM=False,
         TEMPERATURE=0.2,
         TOP_P=0.9,
-        USER="kg-user",
+        USER="consumer-user",
         TIMEOUT=120.0,
         RETRIABLE_CODES=[429, 500, 502, 503, 504],
         MAX_RETRIES=3,
@@ -56,7 +61,7 @@ def _fake_sensitive_config() -> SimpleNamespace:
     """Build a SimpleNamespace stand-in for ``SensitiveConfig``.
 
     ``API_KEY`` exposes ``get_secret_value`` to mirror the real
-    Pydantic ``SecretStr`` surface used inside the knowledge agent.
+    Pydantic ``SecretStr`` surface every consumer agent reads.
     """
     return SimpleNamespace(
         API_KEY=SimpleNamespace(get_secret_value=lambda: "sk-test"),
@@ -65,16 +70,15 @@ def _fake_sensitive_config() -> SimpleNamespace:
     )
 
 
-def test_build_knowledge_chat_kwargs_packs_all_17_fields() -> None:
+def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
     """The returned dict has all 17 keys with the expected values.
 
-    Pins the 17-key bag both ``generate_node`` and ``follow_up_node``
-    pass to ``phyto_chat``. If the dispatch site ever adds or drops a
-    kwarg, this test fails first so the adapter and the call sites
-    stay aligned.
+    Pins the shared 17-key bag the data / knowledge / analyst chat
+    sites pass. If the dispatch site ever adds or drops a kwarg, this
+    test fails first so the adapter and the call sites stay aligned.
     """
-    kwargs = build_knowledge_chat_kwargs(
-        knowledge_config=_fake_knowledge_config(),
+    kwargs = build_chat_kwargs_for(
+        config=_fake_config(),
         sensitive_config=_fake_sensitive_config(),
     )
 
@@ -92,7 +96,7 @@ def test_build_knowledge_chat_kwargs_packs_all_17_fields() -> None:
         "stream": False,
         "temperature": 0.2,
         "top_p": 0.9,
-        "user": "kg-user",
+        "user": "consumer-user",
         "timeout": 120.0,
         "retriable_codes": [429, 500, 502, 503, 504],
         "max_retries": 3,
@@ -100,16 +104,52 @@ def test_build_knowledge_chat_kwargs_packs_all_17_fields() -> None:
     assert len(kwargs) == 17
 
 
-def test_build_knowledge_chat_input_minimum() -> None:
+def test_build_chat_kwargs_for_response_format_override() -> None:
+    """The optional ``response_format`` kwarg shadows the config default.
+
+    Pins the analyst-only override path: the five analyst chat sites
+    pass per-site ``response_format`` dicts (``json_schema`` /
+    ``json_object``) that must shadow ``config.RESPONSE_FORMAT`` in
+    the returned bag; other keys stay at the config defaults.
+    """
+    schema_format = {"type": "json_schema", "json_schema": {"name": "x"}}
+    kwargs = build_chat_kwargs_for(
+        config=_fake_config(),
+        sensitive_config=_fake_sensitive_config(),
+        response_format=schema_format,
+    )
+
+    assert kwargs["response_format"] == schema_format
+    assert kwargs["model"] == "phyto-llm-v1"
+    assert kwargs["temperature"] == 0.2
+
+
+def test_build_chat_kwargs_for_default_inherits_config() -> None:
+    """``response_format=None`` (the default) inherits ``RESPONSE_FORMAT``.
+
+    Pins the data / knowledge path: those call sites never pass the
+    override, so the bag must surface ``config.RESPONSE_FORMAT`` and
+    never crash on a missing override key.
+    """
+    kwargs = build_chat_kwargs_for(
+        config=_fake_config(),
+        sensitive_config=_fake_sensitive_config(),
+        response_format=None,
+    )
+
+    assert kwargs["response_format"] == {"type": "text"}
+
+
+def test_build_chat_input_minimum() -> None:
     """Without an OBS file list, ``ChatInput`` carries only the two keys.
 
     Pins that omitting ``obs_file_list`` keeps the key absent so the
     chat subgraph's ``prepare_context`` node skips the upload branch
     instead of materialising an empty list that would still trigger
-    OBS lookups.
+    OBS lookups. This is the analyst path.
     """
     bag = {"model": "phyto-llm-v1", "api_key": "sk-test"}
-    result = build_knowledge_chat_input(
+    result = build_chat_input(
         user_query="What is photosynthesis?",
         chat_kwargs=bag,
     )
@@ -121,17 +161,18 @@ def test_build_knowledge_chat_input_minimum() -> None:
     assert "obs_file_list" not in result
 
 
-def test_build_knowledge_chat_input_with_obs_files() -> None:
+def test_build_chat_input_with_obs_files() -> None:
     """A non-empty OBS list flows through as a copied list of strings.
 
     Pins the upload-context wiring: the chat subgraph reads
     ``obs_file_list`` to materialise upload context, so the adapter
     must forward the caller's list verbatim. The copy keeps a later
-    knowledge-node mutation from leaking into the subgraph's input.
+    consumer-node mutation from leaking into the subgraph's input.
+    This is the data / knowledge path.
     """
     bag = {"model": "phyto-llm-v1"}
     obs_files = ["/obs/phytomni/doc1.pdf", "/obs/phytomni/doc2.pdf"]
-    result = build_knowledge_chat_input(
+    result = build_chat_input(
         user_query="Summarise these papers",
         chat_kwargs=bag,
         obs_file_list=obs_files,
@@ -143,7 +184,7 @@ def test_build_knowledge_chat_input_with_obs_files() -> None:
     assert result.get("obs_file_list") is not obs_files
 
 
-def test_build_knowledge_chat_input_drops_empty_obs_list() -> None:
+def test_build_chat_input_drops_empty_obs_list() -> None:
     """Empty list and ``None`` both omit the ``obs_file_list`` key.
 
     Pins the no-files branch: both the explicit empty list and the
@@ -153,12 +194,12 @@ def test_build_knowledge_chat_input_drops_empty_obs_list() -> None:
     """
     bag = {"model": "phyto-llm-v1"}
 
-    none_result = build_knowledge_chat_input(
+    none_result = build_chat_input(
         user_query="Q1",
         chat_kwargs=bag,
         obs_file_list=None,
     )
-    empty_result = build_knowledge_chat_input(
+    empty_result = build_chat_input(
         user_query="Q2",
         chat_kwargs=bag,
         obs_file_list=[],
@@ -168,14 +209,14 @@ def test_build_knowledge_chat_input_drops_empty_obs_list() -> None:
     assert "obs_file_list" not in empty_result
 
 
-def test_build_knowledge_chat_input_satisfies_chat_input_schema() -> None:
+def test_build_chat_input_satisfies_chat_input_schema() -> None:
     """The returned dict's key set is a subset of ``ChatInput`` fields.
 
     Pins that the wrapper never leaks an extra key into the chat
     subgraph's input schema; if it did, the parent graph wiring
     would fail validation when ``input_schema=ChatInput`` is enforced.
     """
-    result = build_knowledge_chat_input(
+    result = build_chat_input(
         user_query="Q",
         chat_kwargs={"model": "phyto-llm-v1"},
         obs_file_list=["/obs/phytomni/doc.pdf"],
@@ -189,10 +230,9 @@ def test_build_knowledge_chat_input_satisfies_chat_input_schema() -> None:
 def test_extract_chat_response_extracts_response_dict() -> None:
     """A populated ``response`` field is returned verbatim.
 
-    Pins the unwrap so the knowledge node receives the same raw
-    upstream chat-completion dict it gets today from
-    ``phyto_chat(...)`` before it patches ``doc_list_payload`` onto
-    ``choices[0].message``.
+    Pins the unwrap so consumer nodes receive the same raw upstream
+    chat-completion dict they get today from ``phyto_chat(...)``
+    before they patch downstream state onto ``choices[0].message``.
     """
     upstream = {
         "choices": [{"message": {"content": "Hello"}}],
@@ -206,10 +246,10 @@ def test_extract_chat_response_extracts_response_dict() -> None:
 def test_extract_chat_response_handles_none_gracefully() -> None:
     """``response=None`` collapses to ``{}`` instead of propagating None.
 
-    Pins the safe-default: the knowledge node's downstream code
-    indexes ``phyto_response.get("choices", ...)`` and the fallback
-    branches expect a dict, so returning ``None`` here would crash
-    the patcher. The empty dict keeps the patcher's
-    "no choices yet" branches intact.
+    Pins the safe-default: consumer nodes' downstream code indexes
+    ``phyto_response.get("choices", ...)`` and the fallback branches
+    expect a dict, so returning ``None`` here would crash the
+    patcher. The empty dict keeps the patcher's "no choices yet"
+    branches intact.
     """
     assert extract_chat_response({"response": None}) == {}
