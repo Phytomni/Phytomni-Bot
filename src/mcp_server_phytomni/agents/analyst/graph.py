@@ -51,14 +51,23 @@ logger = logging.getLogger(__name__)
 
 
 class LiteralString(str):
-    pass
+    """``str`` subclass marker used to render YAML scalars in literal
+    block style (``|``) instead of single-line quoted form."""
 
 
 class CustomDumper(yaml.SafeDumper):
-    pass
+    """Project YAML dumper that registers the :class:`LiteralString`
+    representer below so analyst task config emits multi-line fields
+    (``goal_description`` / ``meta`` / ``json_output_format``) in
+    block-scalar style for analyst-backend readability."""
 
 
 def literal_str_representer(dumper, data):
+    """Render a :class:`LiteralString` as a YAML block scalar (``|``).
+
+    Used by :class:`CustomDumper`; surfacing it as a free function
+    keeps the representer registration line a one-liner.
+    """
     return dumper.represent_scalar(
         "tag:yaml.org,2002:str", str(data), style="|"
     )
