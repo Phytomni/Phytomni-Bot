@@ -49,19 +49,23 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
 class LiteralString(str):
     pass
+
 
 class CustomDumper(yaml.SafeDumper):
     pass
 
+
 def literal_str_representer(dumper, data):
     return dumper.represent_scalar(
-        "tag:yaml.org,2002:str",
-        str(data),
-        style="|"
+        "tag:yaml.org,2002:str", str(data), style="|"
     )
+
+
 CustomDumper.add_representer(LiteralString, literal_str_representer)
+
 
 class AnalystGraphMixin(WorkflowMixinBase):
     """Planning, retrieval, and submit nodes for AnalystAgent."""
@@ -750,9 +754,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             "goal_description": LiteralString(
                 state.get("goal_description", "").strip()
             ),
-            "meta": LiteralString(
-                self._submit_meta(state).strip()
-            ),
+            "meta": LiteralString(self._submit_meta(state).strip()),
             "data_list": self._processed_data_list(state),
             "output_dir": str(output_dir),
             "working_dir": "/obs",
