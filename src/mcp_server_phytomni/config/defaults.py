@@ -269,6 +269,29 @@ class ServerConfig(BaseSettings):
         ),
     ] = False
 
+    # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
+    # (analyst / review / data retrieve_node) invoke a KnowledgeAgent
+    # subgraph through ``adapter_node`` instead of calling the
+    # ``multi_retrieve`` / ``retrieve`` helpers inline. Default
+    # ``False`` preserves pre-Phase-6 behavior; flip to ``True`` per
+    # deployment after parent-graph composition is validated.
+    # Inherited by every consumer-side config that subclasses
+    # ``ServerConfig``. ``AliasChoices`` mirrors the endpoint-field
+    # pattern from inception so the ``PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH``
+    # env form routes to the same field as the unprefixed form (the
+    # AF-NEW-5 fix lesson — Steps 6.2-6.5 flag introductions all use
+    # this shape).
+    USE_KNOWLEDGE_SUBGRAPH: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "USE_KNOWLEDGE_SUBGRAPH",
+                "PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH",
+            ),
+        ),
+    ] = False
+
     # Deployment-specific endpoints + UUIDs are externalised with
     # empty defaults so a misconfigured customer image fails fast
     # with a ``ValidationError`` naming the missing env var, rather
