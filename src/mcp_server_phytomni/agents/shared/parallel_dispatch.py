@@ -11,16 +11,42 @@ Functions: build_parallel_dispatch_graph.
 import operator
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 __all__ = [
+    "FailureRecord",
     "ParallelDispatchSpec",
     "ParallelDispatchState",
     "build_parallel_dispatch_graph",
     "keep_last_error",
 ]
+
+
+class FailureRecord(TypedDict):
+    """One failed-task record contributed by a parallel-dispatch worker.
+
+    Carries (task_label, message, kind, traceback_digest) so reduce_node
+    and metadata projection can show per-task failure context without
+    relying on the lossy keep_last_error reducer.
+
+    Fields:
+        task_label: Caller-chosen identifier for the failed task.
+            design/network/research workers use the task's domain key
+            (analysis_type / goal_name); review workers use
+            "<fan_out>:<task_index>" form e.g. "draft:2".
+        message: ``str(exc)`` from the captured exception.
+        kind: Where in the worker lifecycle the failure occurred.
+        traceback_digest: SHA256-truncated-16 of the traceback string,
+            or None if the worker did not compute one. Lives in
+            raw.phytomni_state only; never surfaced to client metadata.
+    """
+
+    task_label: str
+    message: str
+    kind: Literal["dispatch", "execute", "render"]
+    traceback_digest: Optional[str]
 
 
 def keep_last_error(
@@ -59,6 +85,8 @@ class ParallelDispatchState(TypedDict):
         task_ids: Mapping of task names to their dispatched task IDs.
         completed_count: Counter of completed parallel tasks.
         error: Most recent non-empty per-task error message.
+        failures: Per-task failure records accumulated across concurrent
+            worker branches via operator.add (list concatenation).
     """
 
     analysis_type: str
@@ -68,6 +96,9 @@ class ParallelDispatchState(TypedDict):
     ]  # Mapping of task names to task IDs
     completed_count: Annotated[int, operator.add]  # Completed task counter
     error: Annotated[Optional[str], keep_last_error]  # Last task error
+    failures: Annotated[
+        List[FailureRecord], operator.add
+    ]  # Per-task failure records (concurrent-safe accumulator)
 
 
 @dataclass(frozen=True)
