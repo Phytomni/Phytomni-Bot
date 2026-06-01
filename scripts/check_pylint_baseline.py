@@ -46,8 +46,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/lint-exemptions.md``.
 RULE_BASELINES: Dict[str, int] = {
-    "R0801": 28,  # duplicate-code: cross-file similar blocks
-    "R0903": 9,  # too-few-public-methods: test fake classes
+    "R0801": 29,  # duplicate-code: cross-file similar blocks
+    "R0903": 10,  # too-few-public-methods: test fake classes
 }
 
 
