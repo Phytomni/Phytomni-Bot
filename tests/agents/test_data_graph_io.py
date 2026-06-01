@@ -76,7 +76,12 @@ def test_data_state_covers_input_and_output_keys() -> None:
     input dict) and every ``DataOutput`` key (so the final state
     projects back without re-keying), plus the two intermediate
     slots ``retrieve_prompt`` and ``rewrite_query`` written by
-    ``retrieve_node`` and ``rewrite_node``.
+    ``retrieve_node`` and ``rewrite_node``, plus the chat-subgraph
+    prep/post relay keys (``chat_payload`` / ``chat_response``) and
+    the knowledge-subgraph prep/post relay keys
+    (``pending_post_knowledge`` / ``knowledge_payload`` /
+    ``knowledge_response``) that the flag-on graph shapes thread
+    between split nodes.
     """
     state_keys = _required(DataState) | _optional(DataState)
     input_keys = _required(DataInput) | _optional(DataInput)
@@ -84,6 +89,12 @@ def test_data_state_covers_input_and_output_keys() -> None:
     assert input_keys <= state_keys
     assert output_keys <= state_keys
     assert {"retrieve_prompt", "rewrite_query"} <= state_keys
+    assert {"chat_payload", "chat_response"} <= state_keys
+    assert {
+        "pending_post_knowledge",
+        "knowledge_payload",
+        "knowledge_response",
+    } <= state_keys
 
 
 def test_data_agent_state_alias_matches_data_state() -> None:

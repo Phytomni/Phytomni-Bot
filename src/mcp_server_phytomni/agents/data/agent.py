@@ -14,6 +14,7 @@ from typing import Any, Dict, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -33,6 +34,10 @@ from ...graphs.data_to_chat_adapters import (
     build_data_chat_kwargs,
     extract_chat_response,
 )
+from ...graphs.data_to_knowledge_adapters import (
+    build_data_knowledge_input,
+    extract_data_knowledge_response,
+)
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -42,6 +47,11 @@ from ..chat.service import _cached_chat_app, phyto_chat
 from ..knowledge.retrieval import retrieve
 from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.knowledge_subgraph import (
+    build_knowledge_app,
+    make_knowledge_after_router,
+    make_knowledge_node_wrapper,
+)
 from .nl2sql import (
     Nl2SqlRequest,
     _default_dialog_id,
@@ -159,26 +169,44 @@ class DataAgent:
         self.data_config = data_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
+        self._knowledge_app: Optional[CompiledStateGraph]
+        if self.data_config.USE_KNOWLEDGE_SUBGRAPH:
+            self._knowledge_app = build_knowledge_app(
+                knowledge_config=self.data_config,
+                sensitive_config=self.sensitive_config,
+            )
+        else:
+            self._knowledge_app = None
         self.app = self._build_graph()
 
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
-        flag-off keeps the legacy three-node sequential form where
-        ``rewrite_node`` awaits ``phyto_chat`` directly; flag-on
-        splits rewrite into prep + post around a single shared chat
-        node registered via ``add_node``, so xray expansion surfaces
-        the chat subgraph as a nested block in the consumer's
-        mermaid render.
+        Two flag axes drive the wire shape independently:
+        ``USE_CHAT_SUBGRAPH`` splits the single rewrite site into
+        ``rewrite_prep_node`` + ``rewrite_post_node`` around a single
+        shared ``chat`` node registered via
+        ``make_chat_node_wrapper`` so xray expansion surfaces the chat
+        subgraph in the data render; ``USE_KNOWLEDGE_SUBGRAPH`` splits
+        the single retrieve site into ``retrieve_prep_node`` +
+        ``retrieve_post_node`` around a per-instance compiled
+        ``knowledge`` node registered via
+        ``make_knowledge_node_wrapper`` so xray expansion surfaces the
+        knowledge subgraph in the data render. The chat post node
+        reads ``chat_response``; the knowledge post node reads
+        ``knowledge_response`` selected by a router on
+        ``pending_post_knowledge``. Distinct state keys mean the
+        cross-product wire (both flags on) keeps the branches
+        independent.
         """
         workflow = StateGraph(
             state_schema=DataState,
             input_schema=DataInput,
             output_schema=DataOutput,
         )
-        workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("search_node", self.search_node)
+        self._register_retrieve_nodes(workflow)
+        retrieve_in, retrieve_out = self._retrieve_targets()
 
         if self.data_config.USE_CHAT_SUBGRAPH:
             workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
@@ -196,9 +224,9 @@ class DataAgent:
             workflow.add_conditional_edges(
                 START,
                 self.route_start,
-                ["retrieve_node", "search_node"],
+                [retrieve_in, "search_node"],
             )
-            workflow.add_edge("retrieve_node", "rewrite_prep_node")
+            workflow.add_edge(retrieve_out, "rewrite_prep_node")
             workflow.add_edge("rewrite_prep_node", "chat")
             workflow.add_edge("chat", "rewrite_post_node")
             workflow.add_edge("rewrite_post_node", "search_node")
@@ -208,13 +236,73 @@ class DataAgent:
             workflow.add_conditional_edges(
                 START,
                 self.route_start,
-                ["retrieve_node", "search_node"],
+                [retrieve_in, "search_node"],
             )
-            workflow.add_edge("retrieve_node", "rewrite_node")
+            workflow.add_edge(retrieve_out, "rewrite_node")
             workflow.add_edge("rewrite_node", "search_node")
             workflow.add_edge("search_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
+
+    def _retrieve_targets(self) -> tuple[str, str]:
+        """Return (incoming, outgoing) node names for the retrieve site.
+
+        The legacy single-node form keeps ``retrieve_node`` as both
+        the incoming target (``START`` routing into retrieval) and
+        the outgoing source (edge into the rewrite stage). The
+        knowledge-subgraph form splits the site into
+        ``retrieve_prep_node`` (incoming) and ``retrieve_post_node``
+        (outgoing), with the shared ``knowledge`` node mounted
+        between them. Returning the pair from one helper lets
+        ``_build_graph`` substitute names without duplicating the
+        conditional.
+        """
+        if self.data_config.USE_KNOWLEDGE_SUBGRAPH:
+            return "retrieve_prep_node", "retrieve_post_node"
+        return "retrieve_node", "retrieve_node"
+
+    def _register_retrieve_nodes(self, workflow: StateGraph) -> None:
+        """Register the retrieve node(s) on ``workflow``.
+
+        Under ``USE_KNOWLEDGE_SUBGRAPH=False`` registers the legacy
+        single ``retrieve_node``. Under ``=True`` registers the prep
+        + post pair plus a shared ``knowledge`` node whose wrapper
+        closes over the per-instance compiled ``self._knowledge_app``
+        so ``find_subgraph_pregel`` discovers it at parent compile
+        time and xray expands the knowledge block in the data
+        render. The after-knowledge router is wired here as a
+        one-branch ``conditional_edges`` for symmetry with the chat
+        after-router; adding more knowledge sites later only needs
+        another branch in the mapping dict.
+        """
+        if not self.data_config.USE_KNOWLEDGE_SUBGRAPH:
+            workflow.add_node("retrieve_node", self.retrieve_node)
+            return
+        knowledge_app = self._knowledge_app
+        if knowledge_app is None:
+            raise RuntimeError(
+                "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
+                "_knowledge_app was not built in __init__"
+            )
+        workflow.add_node("retrieve_prep_node", self.retrieve_prep_node)
+        workflow.add_node("retrieve_post_node", self.retrieve_post_node)
+        workflow.add_node(
+            "knowledge",
+            make_knowledge_node_wrapper(
+                knowledge_app=knowledge_app,
+                build_input_fn=lambda state: state["knowledge_payload"],
+                extract_output_fn=lambda ko: ko,
+                response_key="knowledge_response",
+            ),
+        )
+        workflow.add_edge("retrieve_prep_node", "knowledge")
+        workflow.add_conditional_edges(
+            "knowledge",
+            make_knowledge_after_router(),
+            {
+                "retrieve_post_node": "retrieve_post_node",
+            },
+        )
 
     def route_start(
         self, state: DataAgentState
@@ -266,6 +354,89 @@ class DataAgent:
         retrieve_results = []
         total_length = 0
         for i, doc in enumerate(retrieve_response.get("doc_list", [])):
+            fragment = format_retrieved_doc_fragment(doc, i, label="scenario")
+            if total_length + len(fragment) <= DATA_CONFIG.MAX_TOKENS:
+                retrieve_results.append(fragment)
+                total_length += len(fragment)
+            else:
+                break
+
+        retrieve_context = "\n\n".join(retrieve_results)
+        retrieve_prompt = get_prompt(
+            DATA_CONFIG.PROMPT_FILE,
+            "user/database",
+            {"scenario_prompts": retrieve_context, "user_query": user_query},
+        )
+
+        return {"retrieve_prompt": retrieve_prompt}
+
+    async def retrieve_prep_node(
+        self, state: DataAgentState
+    ) -> Dict[str, Any]:
+        """Stage the knowledge input + post-knowledge sentinel.
+
+        Mirrors the user-query-extraction half of the legacy
+        ``retrieve_node`` but only emits the ``knowledge_payload``
+        plus the ``pending_post_knowledge`` sentinel that routes the
+        knowledge output back to ``retrieve_post_node``. No retrieve
+        call happens here; the shared knowledge node runs between
+        this prep and the post, then ``ainvoke`` of the compiled KA
+        subgraph writes its return into ``knowledge_response`` for
+        the post node to consume.
+
+        Args:
+            state: The current workflow state. Reads ``user_query``
+                so the KnowledgeInput payload mirrors the legacy
+                ``user_query=state['user_query']`` argument to
+                ``retrieve``.
+
+        Returns:
+            A state delta with the ``KnowledgeInput`` dict under
+            ``knowledge_payload`` and ``"retrieve_post_node"`` under
+            ``pending_post_knowledge``.
+        """
+        return {
+            "knowledge_payload": build_data_knowledge_input(
+                state["user_query"],
+                self.data_config.DATA_REPO_ID,
+                self.data_config.DATA_PAGE_SIZE,
+            ),
+            "pending_post_knowledge": "retrieve_post_node",
+        }
+
+    async def retrieve_post_node(
+        self, state: DataAgentState
+    ) -> Dict[str, Any]:
+        """Format retrieved docs into the ``retrieve_prompt`` delta.
+
+        Mirrors the post-processing half of the legacy
+        ``retrieve_node``: reads the doc list from
+        ``state['knowledge_response']`` (the KA subgraph's final
+        state) instead of awaiting a fresh ``retrieve`` call, then
+        runs the same fragment-formatting + token-budget truncation
+        + prompt-template stitch the legacy node ran so the
+        ``retrieve_prompt`` shape is bit-equivalent between the two
+        graph forms.
+
+        Args:
+            state: The current workflow state. Reads ``user_query``
+                (re-stitched into the prompt template) and
+                ``knowledge_response`` (written by the shared
+                knowledge node).
+
+        Returns:
+            A state delta with the ``retrieve_prompt`` key carrying
+            the stitched user/database prompt the downstream rewrite
+            stage consumes.
+        """
+        user_query = state["user_query"]
+        docs = extract_data_knowledge_response(
+            state.get("knowledge_response") or {}
+        )
+
+        retrieve_results = []
+        total_length = 0
+        for i, doc in enumerate(docs):
             fragment = format_retrieved_doc_fragment(doc, i, label="scenario")
             if total_length + len(fragment) <= DATA_CONFIG.MAX_TOKENS:
                 retrieve_results.append(fragment)

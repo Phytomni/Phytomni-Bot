@@ -49,11 +49,18 @@ class DataState(TypedDict):
 
     Field set mirrors the legacy ``DataAgentState`` plus two
     optional keys (``chat_payload`` / ``chat_response``) that the
-    rewrite prep+post split needs when the chat flag is on: the prep
+    rewrite prep+post split needs when the chat flag is on (the prep
     node stages the ``ChatInput`` dict on ``chat_payload`` and the
     shared chat node writes its return to ``chat_response`` for the
-    post node to consume. Both default to absence and are ignored on
-    the legacy single-node path.
+    post node to consume) and three optional keys
+    (``pending_post_knowledge`` / ``knowledge_payload`` /
+    ``knowledge_response``) that the retrieve prep+post split needs
+    when the knowledge flag is on (the prep node stages the
+    ``KnowledgeInput`` dict on ``knowledge_payload`` plus the
+    post-knowledge node name on ``pending_post_knowledge`` and the
+    shared knowledge node writes its return to ``knowledge_response``
+    for the post node to consume). All five default to absence and
+    are ignored on the legacy single-node paths.
     """
 
     user_query: str
@@ -63,6 +70,9 @@ class DataState(TypedDict):
     final_response: dict
     chat_payload: Optional[Dict[str, Any]]
     chat_response: Optional[Dict[str, Any]]
+    pending_post_knowledge: Optional[str]
+    knowledge_payload: Optional[Dict[str, Any]]
+    knowledge_response: Optional[Dict[str, Any]]
 
 
 DataAgentState = DataState
