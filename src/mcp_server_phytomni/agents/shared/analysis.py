@@ -8,10 +8,12 @@ helpers, config-copy utilities, and graph invocation wrappers used by
 workflow agents that submit tasks through AnalystAgent.
 """
 
+import hashlib
 import logging
+import traceback
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Optional
 
 from langgraph.types import Send
 
@@ -34,8 +36,30 @@ from ..analyst.agent import (
 )
 from .analysis_storage import create_output_dir
 from .intermediate_state import merge_intermediate_state
+from .parallel_dispatch import FailureRecord
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_traceback_digest(exc: BaseException) -> Optional[str]:
+    """Compute a stable 16-char SHA256 digest of the exception traceback.
+
+    Used to populate FailureRecord.traceback_digest. The digest stays in
+    raw.phytomni_state only — never reaches formatted.metadata — so it
+    cannot leak credentials or internal file paths to clients while
+    still letting ops correlate identical failure stacks across runs.
+
+    Returns None when traceback formatting itself raises (defensive — a
+    digest is best-effort metadata, not load-bearing).
+    """
+    try:
+        tb_str = "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        )
+        return hashlib.sha256(tb_str.encode("utf-8")).hexdigest()[:16]
+    except (TypeError, AttributeError, ValueError, RecursionError):
+        return None
+
 
 __all__ = [
     "AnalysisAgentCacheSpec",
@@ -336,11 +360,24 @@ async def capture_analysis_result(
 
         Returns:
             State updates that record the error and completed dispatch count.
+            Writes both the legacy ``error`` field and the new ``failures``
+            list so existing readers and new FailureRecord readers both see
+            consistent information.
         """
+        msg = str(exc)
+        task_label = analysis_type or f"task:{state.get('task_index', '?')}"
         return {
             "task_ids": state.get("task_ids", {}),
             "completed_count": 1,
-            "error": str(exc),
+            "error": msg,
+            "failures": [
+                FailureRecord(
+                    task_label=task_label,
+                    message=msg,
+                    kind="execute",
+                    traceback_digest=_compute_traceback_digest(exc),
+                )
+            ],
         }
 
     return await capture_workflow_boundary(run_task, failure_state)
