@@ -88,6 +88,7 @@ from .openai_mapping import (
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
+from .relay import RelayAuditQuery, get_audit_store
 from .schemas import (
     AgentRunRequest,
     ApiErrorDetail,
@@ -1050,6 +1051,63 @@ def create_app() -> FastAPI:
                 "object": "api_key.deleted",
                 "prefix": prefix,
                 "deleted": deleted,
+            }
+        )
+
+    @app.get("/v1/relay/audit")
+    async def list_relay_audit(
+        _admin: None = Depends(require_service_principal),
+        *,
+        user_id: Optional[str] = None,
+        key_prefix: Optional[str] = None,
+        service: Optional[str] = None,
+        status_code: Optional[int] = None,
+        created_after: Optional[str] = None,
+        created_before: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> JSONResponse:
+        """List relay audit records, gated by the service token.
+
+        Only the service token may read the audit trail; a per-user
+        ``ptm_...`` key alone cannot. The returned records carry no key
+        hash, salt, or plaintext key, only the public ``key_prefix``.
+        """
+        del _admin  # Auth side-effect only.
+        store = get_audit_store(ApiConfig().RELAY_AUDIT_DB_PATH)
+        records = store.query(
+            RelayAuditQuery(
+                user_id=user_id,
+                key_prefix=key_prefix,
+                service=service,
+                status_code=status_code,
+                created_after=created_after,
+                created_before=created_before,
+                limit=limit,
+                offset=offset,
+            )
+        )
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [record.model_dump() for record in records],
+            }
+        )
+
+    @app.get("/v1/relay/audit/{request_id}")
+    async def get_relay_audit(
+        request_id: str,
+        _admin: None = Depends(require_service_principal),
+    ) -> JSONResponse:
+        """Fetch relay audit records by request id, service-token gated."""
+        del _admin  # Auth side-effect only.
+        store = get_audit_store(ApiConfig().RELAY_AUDIT_DB_PATH)
+        records = store.get_by_request_id(request_id)
+        return JSONResponse(
+            {
+                "object": "list",
+                "request_id": request_id,
+                "data": [record.model_dump() for record in records],
             }
         )
 
