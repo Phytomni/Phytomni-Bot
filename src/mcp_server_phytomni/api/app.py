@@ -17,7 +17,13 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+)
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -75,7 +81,12 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from .admin_auth import is_service_token_valid, require_service_principal
-from .auth import ApiPrincipal, get_key_store, require_principal
+from .auth import (
+    ApiPrincipal,
+    get_key_store,
+    require_principal,
+    scopes_satisfy,
+)
 from .file_upload import handle_file_upload
 from .openai_mapping import (
     MODEL_TO_TOOL,
@@ -933,6 +944,28 @@ def create_app() -> FastAPI:
             )
         return principal
 
+    def require_scope(
+        *needed: str,
+    ) -> Callable[..., Awaitable[ApiPrincipal]]:
+        """Build a dependency requiring the caller to hold scopes.
+
+        Runs after ``authorized`` (authentication + rate limit), then
+        checks the granted scopes, raising 403 (distinct from the
+        auth-layer 401) when a required scope is missing. An all-access
+        key (an empty scope set) satisfies every requirement.
+        """
+
+        async def _scoped(
+            caller: ApiPrincipal = Depends(authorized),
+        ) -> ApiPrincipal:
+            if not scopes_satisfy(caller.scopes, needed):
+                raise HTTPException(
+                    status_code=403, detail="insufficient scope"
+                )
+            return caller
+
+        return _scoped
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         """Return a dependency-free liveness signal."""
@@ -957,7 +990,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/models")
     async def list_models(
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
     ) -> JSONResponse:
         """List the chat-like model ids (OpenAI convention)."""
         del principal  # Auth side-effect only.
@@ -1031,6 +1064,7 @@ def create_app() -> FastAPI:
                         "last_used_at": record.last_used_at,
                         "expires_at": record.expires_at,
                         "active": record.active,
+                        "scopes": sorted(record.scopes),
                     }
                     for record in records
                 ],
@@ -1114,7 +1148,7 @@ def create_app() -> FastAPI:
     @app.post("/v1/chat/completions")
     async def chat_completions(
         payload: ChatCompletionRequest,
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
     ) -> Response:
         """Run a chat-like agent in an OpenAI-compatible shape.
 
@@ -1201,7 +1235,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/agents")
     async def list_agents(
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
     ) -> JSONResponse:
         """List the agents reachable via ``/v1/agents/{slug}/runs``."""
         del principal
@@ -1228,7 +1262,7 @@ def create_app() -> FastAPI:
     async def create_agent_run(
         agent: str,
         payload: AgentRunRequest,
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
     ) -> JSONResponse:
         """Invoke one agent by slug and return its agent.run envelope."""
         del principal
@@ -1246,7 +1280,7 @@ def create_app() -> FastAPI:
         request: Request,
         file: UploadFile = File(...),
         purpose: UploadPurpose = Form("agent_context"),
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
     ) -> JSONResponse:
         """Accept one multipart file upload and store it in OBS.
 
@@ -1270,7 +1304,7 @@ def create_app() -> FastAPI:
     @app.get("/v1/runs/{run_id}/logs")
     async def get_run_logs(
         run_id: str,
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
         debug: bool = False,
     ) -> JSONResponse:
         """Return reconciled task logs for a run.
@@ -1287,7 +1321,7 @@ def create_app() -> FastAPI:
     @app.get("/v1/runs/{run_id}")
     async def get_run(
         run_id: str,
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
         debug: bool = False,
     ) -> JSONResponse:
         """Return one owner-scoped run record by id.
@@ -1306,7 +1340,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/runs")
     async def list_runs(
-        principal: ApiPrincipal = Depends(authorized),
+        principal: ApiPrincipal = Depends(require_scope("agents")),
         *,
         status: Optional[str] = None,
         agent: Optional[str] = None,

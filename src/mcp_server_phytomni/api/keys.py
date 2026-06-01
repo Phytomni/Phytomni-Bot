@@ -36,7 +36,10 @@ def _cmd_create(args: argparse.Namespace) -> int:
             days=args.expires_days
         )
     created = _store().create(
-        user_id=args.user_id, name=args.name, expires_at=expires_at
+        user_id=args.user_id,
+        name=args.name,
+        expires_at=expires_at,
+        scopes=args.scope,
     )
     print(
         "API key created. Store it now; it is shown only once and "
@@ -47,6 +50,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
     print(f"  user:   {created.user_id}")
     if args.name:
         print(f"  name:   {args.name}")
+    print(f"  scopes: {','.join(args.scope) if args.scope else '*'}")
     return 0
 
 
@@ -58,14 +62,15 @@ def _cmd_list(args: argparse.Namespace) -> int:
         return 0
     header = (
         "PREFIX        USER            ACTIVE  CREATED_AT"
-        "                        NAME"
+        "                        NAME            SCOPES"
     )
     print(header)
     for record in records:
+        scopes = ",".join(sorted(record.scopes)) or "*"
         print(
             f"{record.prefix:<13} {record.user_id:<15} "
             f"{str(record.active):<7} {record.created_at:<25} "
-            f"{record.name or '-'}"
+            f"{(record.name or '-'):<15} {scopes}"
         )
     return 0
 
@@ -89,6 +94,15 @@ def _build_parser() -> argparse.ArgumentParser:
     create.add_argument("--user-id", required=True)
     create.add_argument("--name", default=None)
     create.add_argument("--expires-days", type=int, default=None)
+    create.add_argument(
+        "--scope",
+        action="append",
+        default=None,
+        help=(
+            "Grant a scope (repeatable), e.g. --scope relay:llm "
+            "--scope agents. Omit to mint an all-access key."
+        ),
+    )
     create.set_defaults(func=_cmd_create)
 
     listing = sub.add_parser("list", help="List keys (no secrets).")

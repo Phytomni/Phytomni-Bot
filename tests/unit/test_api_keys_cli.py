@@ -100,3 +100,66 @@ def test_unknown_command_returns_nonzero() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["frobnicate"])
     assert exc.value.code != 0
+
+
+def test_create_with_scopes_binds_them_to_the_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify --scope mints a key resolving with exactly those scopes."""
+    db = _use_db(tmp_path, monkeypatch)
+
+    code = main(
+        [
+            "create",
+            "--user-id",
+            "dave",
+            "--scope",
+            "relay:llm",
+            "--scope",
+            "agents",
+        ]
+    )
+
+    assert code == 0
+    full_key = _full_key(capsys.readouterr().out)
+    principal = resolve_principal(
+        ApiKeyStore(str(db)), f"Bearer {full_key}", None
+    )
+    assert principal.scopes == frozenset({"relay:llm", "agents"})
+
+
+def test_create_without_scopes_is_all_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify a scope-less key resolves to the empty all-access set."""
+    db = _use_db(tmp_path, monkeypatch)
+
+    main(["create", "--user-id", "erin"])
+    full_key = _full_key(capsys.readouterr().out)
+
+    principal = resolve_principal(
+        ApiKeyStore(str(db)), f"Bearer {full_key}", None
+    )
+    assert principal.scopes == frozenset()
+
+
+def test_list_shows_scopes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify list renders a key's granted scopes."""
+    _use_db(tmp_path, monkeypatch)
+
+    main(["create", "--user-id", "frank", "--scope", "relay:bi"])
+    capsys.readouterr()
+
+    code = main(["list", "--user-id", "frank"])
+
+    assert code == 0
+    listed = capsys.readouterr().out
+    assert "relay:bi" in listed

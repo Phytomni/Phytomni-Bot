@@ -14,9 +14,10 @@ key is returned once at creation and never persisted or logged.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Header, HTTPException
+from pydantic import BaseModel, ConfigDict
 
 from ..config.defaults import ApiConfig
 from ..runtime.request_context import bind_request_user
@@ -37,6 +39,7 @@ __all__ = [
     "get_key_store",
     "resolve_principal",
     "require_principal",
+    "scopes_satisfy",
 ]
 
 _KEY_PREFIX = "ptm_"
@@ -73,6 +76,45 @@ def _pbkdf2(key: str, salt: str) -> str:
     ).hex()
 
 
+def _serialize_scopes(scopes: Optional[Sequence[str]]) -> Optional[str]:
+    """Serialize a scope set to JSON; None for an all-access key."""
+    if not scopes:
+        return None
+    return json.dumps(sorted(set(scopes)))
+
+
+def _parse_scopes(raw: Optional[str]) -> frozenset[str]:
+    """Parse a stored scope string; None or empty means all access."""
+    if not raw:
+        return frozenset()
+    return frozenset(json.loads(raw))
+
+
+def scopes_satisfy(granted: frozenset[str], needed: Sequence[str]) -> bool:
+    """Return True when granted scopes authorize every needed scope.
+
+    An empty granted set means all access (back-compat for keys minted
+    before scopes existed). A ``relay:*`` wildcard authorizes any
+    ``relay:<service>`` need.
+
+    Args:
+        granted: The principal's granted scopes (empty means all access).
+        needed: The scopes a route requires.
+
+    Returns:
+        True when access is allowed, False otherwise.
+    """
+    if not granted:
+        return True
+    for scope in needed:
+        if scope in granted:
+            continue
+        if scope.startswith("relay:") and "relay:*" in granted:
+            continue
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class ApiPrincipal:
     """The authenticated caller resolved from a valid API key.
@@ -80,10 +122,13 @@ class ApiPrincipal:
     Attributes:
         user_id: The user the key is bound to.
         key_prefix: The presented key's public prefix, for audit/logging.
+        scopes: The granted scopes; an empty set means all access
+            (back-compat for keys minted before scopes existed).
     """
 
     user_id: str
     key_prefix: str
+    scopes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -101,8 +146,7 @@ class CreatedApiKey:
     user_id: str
 
 
-@dataclass(frozen=True)
-class ApiKeyRecord:
+class ApiKeyRecord(BaseModel):
     """A non-secret view of a stored key for listing.
 
     Carries no hash or salt so listing can never leak key material.
@@ -115,8 +159,11 @@ class ApiKeyRecord:
         revoked_at: ISO-8601 revoke timestamp, or None.
         last_used_at: ISO-8601 last successful auth, or None.
         expires_at: ISO-8601 expiry, or None.
+        scopes: Granted scopes; an empty set means all access.
         active: Derived; True when neither revoked nor expired.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     user_id: str
     name: Optional[str]
@@ -125,6 +172,7 @@ class ApiKeyRecord:
     revoked_at: Optional[str]
     last_used_at: Optional[str]
     expires_at: Optional[str]
+    scopes: frozenset[str] = frozenset()
 
     @property
     def active(self) -> bool:
@@ -173,6 +221,11 @@ class ApiKeyStore:
                 "CREATE INDEX IF NOT EXISTS idx_api_keys_user "
                 "ON api_keys(user_id)"
             )
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(api_keys)")
+            }
+            if "scopes" not in columns:
+                conn.execute("ALTER TABLE api_keys ADD COLUMN scopes TEXT")
 
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -195,6 +248,7 @@ class ApiKeyStore:
         user_id: str,
         name: Optional[str] = None,
         expires_at: Optional[datetime] = None,
+        scopes: Optional[Sequence[str]] = None,
     ) -> CreatedApiKey:
         """Mint and persist a new key, returning the one-time plaintext.
 
@@ -202,6 +256,8 @@ class ApiKeyStore:
             user_id: The user the key authenticates.
             name: Optional human label.
             expires_at: Optional aware datetime after which the key fails.
+            scopes: Optional granted scopes; None or empty mints an
+                all-access key for backward compatibility.
 
         Returns:
             The created key; ``api_key`` is the only time the plaintext
@@ -215,8 +271,8 @@ class ApiKeyStore:
                 """
                 INSERT INTO api_keys (
                     user_id, name, key_prefix, salt, key_hash,
-                    created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    created_at, expires_at, scopes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -226,6 +282,7 @@ class ApiKeyStore:
                     _pbkdf2(api_key, salt),
                     _now_iso(),
                     expires_at.isoformat() if expires_at else None,
+                    _serialize_scopes(scopes),
                 ),
             )
         return CreatedApiKey(api_key=api_key, prefix=prefix, user_id=user_id)
@@ -247,13 +304,14 @@ class ApiKeyStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, user_id, salt, key_hash, revoked_at, expires_at
+                SELECT id, user_id, salt, key_hash, revoked_at,
+                       expires_at, scopes
                 FROM api_keys WHERE key_prefix = ?
                 """,
                 (prefix,),
             ).fetchall()
             for row in rows:
-                row_id, user_id, salt, key_hash, revoked, expires = row
+                row_id, user_id, salt, key_hash, revoked, expires, scopes = row
                 if not secrets.compare_digest(
                     _pbkdf2(presented_key, salt), key_hash
                 ):
@@ -264,7 +322,11 @@ class ApiKeyStore:
                     "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
                     (_now_iso(), row_id),
                 )
-                return ApiPrincipal(user_id=user_id, key_prefix=prefix)
+                return ApiPrincipal(
+                    user_id=user_id,
+                    key_prefix=prefix,
+                    scopes=_parse_scopes(scopes),
+                )
         raise _unauthorized()
 
     def list(self, user_id: Optional[str] = None) -> list[ApiKeyRecord]:
@@ -278,7 +340,7 @@ class ApiKeyStore:
         """
         query = (
             "SELECT user_id, name, key_prefix, created_at, revoked_at, "
-            "last_used_at, expires_at FROM api_keys"
+            "last_used_at, expires_at, scopes FROM api_keys"
         )
         params: tuple[str, ...] = ()
         if user_id is not None:
@@ -296,6 +358,7 @@ class ApiKeyStore:
                 revoked_at=row[4],
                 last_used_at=row[5],
                 expires_at=row[6],
+                scopes=_parse_scopes(row[7]),
             )
             for row in rows
         ]
