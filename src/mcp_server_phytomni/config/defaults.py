@@ -742,6 +742,19 @@ class ApiConfig(BaseSettings):
             distinct namespace from per-run scratch
             (``agent_data/user_data/...``) and never collide with task
             output directories.
+        RELAY_ENABLED (bool): When True, the server exposes the
+            credential-injecting relay surface and writes relay audit
+            records. Defaults to False so a stock deployment ships no
+            relay. Accepts the ``PHYTOMNI_RELAY_ENABLED`` alias.
+        RELAY_AUDIT_DB_PATH (str): Local SQLite path for the relay audit
+            store. Kept local like the other stores because SQLite WAL
+            deadlocks on network filesystems.
+        RELAY_AUDIT_RETENTION_DAYS (int): Age in days after which relay
+            audit records become eligible for retention cleanup.
+        RELAY_REQUEST_MAX_BYTES (int): Maximum relayed request body size
+            in bytes accepted before the relay rejects the call.
+        RELAY_TIMEOUT_SECONDS (float): Per-request upstream timeout in
+            seconds for relayed calls.
     """
 
     API_HOST: str = "127.0.0.1"
@@ -772,6 +785,37 @@ class ApiConfig(BaseSettings):
     ] = None
     API_UPLOAD_MAX_BYTES: int = 26_214_400
     API_UPLOAD_PREFIX: str = "agent_data/uploads"
+    RELAY_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "RELAY_ENABLED", "PHYTOMNI_RELAY_ENABLED"
+        ),
+    )
+    RELAY_AUDIT_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "relay_audit.sqlite"),
+        validation_alias=AliasChoices(
+            "RELAY_AUDIT_DB_PATH", "PHYTOMNI_RELAY_AUDIT_DB_PATH"
+        ),
+    )
+    RELAY_AUDIT_RETENTION_DAYS: int = Field(
+        default=90,
+        validation_alias=AliasChoices(
+            "RELAY_AUDIT_RETENTION_DAYS",
+            "PHYTOMNI_RELAY_AUDIT_RETENTION_DAYS",
+        ),
+    )
+    RELAY_REQUEST_MAX_BYTES: int = Field(
+        default=10_485_760,
+        validation_alias=AliasChoices(
+            "RELAY_REQUEST_MAX_BYTES", "PHYTOMNI_RELAY_REQUEST_MAX_BYTES"
+        ),
+    )
+    RELAY_TIMEOUT_SECONDS: float = Field(
+        default=600.0,
+        validation_alias=AliasChoices(
+            "RELAY_TIMEOUT_SECONDS", "PHYTOMNI_RELAY_TIMEOUT_SECONDS"
+        ),
+    )
 
 
 SpeciesEntryValue = Union[str, Dict[str, str]]

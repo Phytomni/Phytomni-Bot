@@ -37,6 +37,11 @@ def test_api_config_defaults() -> None:
     assert config.API_SERVICE_TOKEN is None
     assert config.API_UPLOAD_MAX_BYTES == 26_214_400
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
+    assert config.RELAY_ENABLED is False
+    assert config.RELAY_AUDIT_DB_PATH == str(_CACHE_DIR / "relay_audit.sqlite")
+    assert config.RELAY_AUDIT_RETENTION_DAYS == 90
+    assert config.RELAY_REQUEST_MAX_BYTES == 10_485_760
+    assert config.RELAY_TIMEOUT_SECONDS == 600.0
 
 
 def test_api_config_env_override(
@@ -78,3 +83,37 @@ def test_api_service_token_repr_redacted(
     dumped = str(config.model_dump())
     assert "do-not-print-this" not in rendered
     assert "do-not-print-this" not in dumped
+
+
+def test_relay_config_prefixed_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify PHYTOMNI_RELAY_-prefixed env vars override relay knobs."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
+    monkeypatch.setenv(
+        "PHYTOMNI_RELAY_AUDIT_DB_PATH", "/tmp/relay_audit.sqlite"
+    )
+    monkeypatch.setenv("PHYTOMNI_RELAY_AUDIT_RETENTION_DAYS", "30")
+    monkeypatch.setenv("PHYTOMNI_RELAY_REQUEST_MAX_BYTES", "2048")
+    monkeypatch.setenv("PHYTOMNI_RELAY_TIMEOUT_SECONDS", "12.5")
+
+    config = ApiConfig()
+
+    assert config.RELAY_ENABLED is True
+    assert config.RELAY_AUDIT_DB_PATH == "/tmp/relay_audit.sqlite"
+    assert config.RELAY_AUDIT_RETENTION_DAYS == 30
+    assert config.RELAY_REQUEST_MAX_BYTES == 2048
+    assert config.RELAY_TIMEOUT_SECONDS == 12.5
+
+
+def test_relay_config_unprefixed_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify the unprefixed RELAY_ aliases also override relay knobs."""
+    monkeypatch.setenv("RELAY_ENABLED", "true")
+    monkeypatch.setenv("RELAY_AUDIT_RETENTION_DAYS", "7")
+
+    config = ApiConfig()
+
+    assert config.RELAY_ENABLED is True
+    assert config.RELAY_AUDIT_RETENTION_DAYS == 7
