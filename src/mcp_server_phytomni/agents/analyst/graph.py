@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import textwrap
+import yaml
 from typing import TYPE_CHECKING, Any, Dict
 
 from httpx import Timeout
@@ -48,6 +49,19 @@ else:
 
 logger = logging.getLogger(__name__)
 
+class LiteralString(str):
+    pass
+
+class CustomDumper(yaml.SafeDumper):
+    pass
+
+def literal_str_representer(dumper, data):
+    return dumper.represent_scalar(
+        "tag:yaml.org,2002:str",
+        str(data),
+        style="|"
+    )
+CustomDumper.add_representer(LiteralString, literal_str_representer)
 
 class AnalystGraphMixin(WorkflowMixinBase):
     """Planning, retrieval, and submit nodes for AnalystAgent."""
@@ -731,18 +745,25 @@ class AnalystGraphMixin(WorkflowMixinBase):
         json_format = get_prompt(
             self.analyst_config.PROMPT_FILE, "user/analytsis_output_format"
         )
-        task_config = textwrap.dedent(f"""\
-            json_output_format: |
-              {json_format.strip().replace('\n', '\n  ')}
-            goal_description: |
-              {state.get('goal_description').strip().replace(
-                  '\n', '\n  ')}
-            meta: |
-              {self._submit_meta(state).strip().replace('\n', '\n  ')}
-            data_list: {self._processed_data_list(state)}
-            output_dir: '{output_dir}'
-            working_dir: '/obs'
-        """).strip()
+        task_config_dict = {
+            "json_output_format": LiteralString(json_format.strip()),
+            "goal_description": LiteralString(
+                state.get("goal_description", "").strip()
+            ),
+            "meta": LiteralString(
+                self._submit_meta(state).strip()
+            ),
+            "data_list": self._processed_data_list(state),
+            "output_dir": str(output_dir),
+            "working_dir": "/obs",
+        }
+        task_config = yaml.dump(
+            task_config_dict,
+            Dumper=CustomDumper,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
         return task_config
 
     def _submit_coder_payload(self: Any) -> str:
