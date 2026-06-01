@@ -141,10 +141,11 @@ SQLite over a network filesystem can deadlock under WAL locking.
 
 ## Agent Composition Variables
 
-| Variable                                                 | Default | Purpose                                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PHYTOMNI_USE_ANALYST_SUBGRAPH` / `USE_ANALYST_SUBGRAPH` | `false` | Per-deployment opt-in for dispatchers that submit work through `AnalystAgent`. When `true`, the design / network / research / environment / deep_genome dispatchers invoke the analyst via its compiled subgraph entry point (`analyst_agent.app.ainvoke(AnalystInput, …)`) instead of the legacy `analyst_agent.arun(…)` direct call.                                                      |
-| `PHYTOMNI_USE_CHAT_SUBGRAPH` / `USE_CHAT_SUBGRAPH`       | `false` | Per-deployment opt-in for consumer agents that invoke chat. When `true`, every consumer (knowledge / data / analyst / review / brief_gene / design / network / research / environment / evolution / deep_genome) calls the chat agent via its compiled subgraph entry point through `adapter_node` instead of the legacy `phyto_chat` function. Default `false` preserves current behavior. |
+| Variable                                                     | Default | Purpose                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PHYTOMNI_USE_ANALYST_SUBGRAPH` / `USE_ANALYST_SUBGRAPH`     | `false` | Per-deployment opt-in for dispatchers that submit work through `AnalystAgent`. When `true`, the design / network / research / environment / deep_genome dispatchers invoke the analyst via its compiled subgraph entry point (`analyst_agent.app.ainvoke(AnalystInput, …)`) instead of the legacy `analyst_agent.arun(…)` direct call.                                                      |
+| `PHYTOMNI_USE_CHAT_SUBGRAPH` / `USE_CHAT_SUBGRAPH`           | `false` | Per-deployment opt-in for consumer agents that invoke chat. When `true`, every consumer (knowledge / data / analyst / review / brief_gene / design / network / research / environment / evolution / deep_genome) calls the chat agent via its compiled subgraph entry point through `adapter_node` instead of the legacy `phyto_chat` function. Default `false` preserves current behavior. |
+| `PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH` / `USE_KNOWLEDGE_SUBGRAPH` | `false` | Per-deployment opt-in for consumer agents that invoke knowledge retrieval. When `true`, every consumer (analyst / data) routes its `retrieve_node` through `KnowledgeAgent`'s compiled subgraph entry point via `adapter_node` instead of the legacy inline `multi_retrieve` / `retrieve` helpers. Default `false` preserves current behavior.                                              |
 
 The flag lives on `AnalystConfig` and is therefore inherited by every
 dispatcher subclass (`DigitalDesignConfig`, `GeneNetworkConfig`,
@@ -165,6 +166,13 @@ analyst / review / brief_gene / design / network / research / environment
 production deployments should leave it unset until the chat-subgraph
 composition has been validated end to end against the legacy direct
 `phyto_chat` call path.
+
+`PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH` follows the same opt-in convention. It
+lives on `ServerConfig` so every consumer agent config (analyst / data)
+inherits the same default-`false` switch, and production deployments
+should leave it unset until the knowledge-subgraph composition has been
+validated end to end against the legacy inline `multi_retrieve` /
+`retrieve` call path.
 
 ## Network and TLS Variables
 

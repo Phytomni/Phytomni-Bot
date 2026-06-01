@@ -270,8 +270,8 @@ class ServerConfig(BaseSettings):
     ] = False
 
     # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
-    # (analyst / review / data retrieve_node) invoke a KnowledgeAgent
-    # subgraph through ``adapter_node`` instead of calling the
+    # (analyst / data retrieve_node) invoke a KnowledgeAgent subgraph
+    # through ``adapter_node`` instead of calling the
     # ``multi_retrieve`` / ``retrieve`` helpers inline. Default
     # ``False`` preserves pre-Phase-6 behavior; flip to ``True`` per
     # deployment after parent-graph composition is validated.
