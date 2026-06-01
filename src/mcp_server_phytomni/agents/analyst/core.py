@@ -28,9 +28,14 @@ from ...runtime.langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from ..shared.chat_subgraph import (
+    make_chat_after_router,
+    make_chat_node_wrapper,
+)
 from ..shared.intermediate_state import merge_intermediate_state
 from .defaults import ANALYST_CONFIG, ANALYST_CONFIG_FIELD_MAP
 from .graph import AnalystGraphMixin
+from .graph_chat_subgraph import AnalystChatSubgraphMixin
 from .state import (
     AnalystAgentsState,
     AnalystInput,
@@ -40,7 +45,7 @@ from .state import (
 from .task_ops import task_status
 
 
-class AnalystAgent(AnalystGraphMixin):
+class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
     """A LangGraph-based agent for bioinformatics workflows.
 
     This agent orchestrates a complex workflow that decomposes user queries,
@@ -91,7 +96,17 @@ class AnalystAgent(AnalystGraphMixin):
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Wires the nine-node analyst pipeline against a three-schema
+        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
+        flag-off keeps the legacy nine-node form where each chat node
+        (``parse_query`` / ``data_select`` / ``plan`` / ``check`` /
+        ``tool_extract``) awaits ``phyto_chat`` directly; flag-on
+        splits each chat node into a prep + post pair surrounding a
+        single shared ``chat`` node registered via
+        ``add_node(make_chat_node_wrapper(...))`` with a conditional
+        router that reads ``pending_post`` to direct the chat output
+        back to the correct post node.
+
+        Wires the analyst pipeline against a three-schema
         ``StateGraph``: ``AnalystState`` for internal node access,
         ``AnalystInput`` as the public contract a parent graph
         supplies, and ``AnalystOutput`` as the surface ``arun`` and
@@ -102,6 +117,19 @@ class AnalystAgent(AnalystGraphMixin):
             input_schema=AnalystInput,
             output_schema=AnalystOutput,
         )
+        if self.analyst_config.USE_CHAT_SUBGRAPH:
+            self._wire_chat_subgraph(workflow)
+        else:
+            self._wire_legacy(workflow)
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def _wire_legacy(self, workflow: StateGraph) -> None:
+        """Register the legacy nine-node form on ``workflow``.
+
+        Each chat node awaits ``phyto_chat`` inline; no shared chat
+        subgraph mount. Preserves the pre-``USE_CHAT_SUBGRAPH``
+        wiring untouched.
+        """
         workflow.add_node("parse_query_node", self.parse_query_node)
         workflow.add_node("data_select_node", self.data_select_node)
         workflow.add_node("method_retrieve_node", self.method_retrieve_node)
@@ -158,7 +186,145 @@ class AnalystAgent(AnalystGraphMixin):
             },
         )
 
-        return workflow.compile(checkpointer=self.checkpointer)
+    def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
+        """Register the prep + post + shared chat form on ``workflow``.
+
+        Replaces each of the five chat nodes with a prep + post pair
+        surrounding a single shared ``chat`` node. The chat node is
+        registered via ``make_chat_node_wrapper`` so LangGraph's
+        ``xray`` rendering can inline the compiled chat subgraph in
+        the analyst render. ``make_chat_after_router`` reads the
+        ``pending_post`` sentinel each prep node stages to branch
+        back to the correct post node after the chat call. A
+        per-prep conditional edge short-circuits to the post node
+        directly when the prep set ``chat_payload`` to ``None`` for
+        the early-return cases (``parse_query`` when
+        ``goal_description`` is already set; ``check`` when a preset
+        plan with no method context auto-approves).
+        """
+        workflow.add_node("parse_query_prep_node", self.parse_query_prep_node)
+        workflow.add_node("parse_query_post_node", self.parse_query_post_node)
+        workflow.add_node("data_select_prep_node", self.data_select_prep_node)
+        workflow.add_node("data_select_post_node", self.data_select_post_node)
+        workflow.add_node("plan_prep_node", self.plan_prep_node)
+        workflow.add_node("plan_post_node", self.plan_post_node)
+        workflow.add_node("check_prep_node", self.check_prep_node)
+        workflow.add_node("check_post_node", self.check_post_node)
+        workflow.add_node(
+            "tool_extract_prep_node", self.tool_extract_prep_node
+        )
+        workflow.add_node(
+            "tool_extract_post_node", self.tool_extract_post_node
+        )
+        workflow.add_node("method_retrieve_node", self.method_retrieve_node)
+        workflow.add_node("tool_retrieve_node", self.tool_retrieve_node)
+        workflow.add_node("submit_node", self.submit_node)
+        workflow.add_node("pooling_node", self.pooling_node)
+        workflow.add_node(
+            "chat",
+            make_chat_node_wrapper(
+                build_input_fn=lambda state: state["chat_payload"],
+                extract_output_fn=lambda chat_output: (
+                    chat_output.get("response") or {}
+                ),
+                response_key="chat_response",
+            ),
+        )
+        workflow.add_edge(START, "parse_query_prep_node")
+        workflow.add_conditional_edges(
+            "parse_query_prep_node",
+            self._route_prep_to_chat_or_post(
+                post_node="parse_query_post_node"
+            ),
+            {
+                "chat": "chat",
+                "parse_query_post_node": "parse_query_post_node",
+            },
+        )
+        workflow.add_conditional_edges(
+            "chat",
+            make_chat_after_router(),
+            {
+                "parse_query_post_node": "parse_query_post_node",
+                "data_select_post_node": "data_select_post_node",
+                "plan_post_node": "plan_post_node",
+                "check_post_node": "check_post_node",
+                "tool_extract_post_node": "tool_extract_post_node",
+            },
+        )
+        workflow.add_conditional_edges(
+            "parse_query_post_node",
+            self.route_after_extract,
+            {
+                "data_select_node": "data_select_prep_node",
+                "method_retrieve_node": "method_retrieve_node",
+                "tool_extract_node": "tool_extract_prep_node",
+            },
+        )
+        workflow.add_edge("data_select_prep_node", "chat")
+        workflow.add_conditional_edges(
+            "data_select_post_node",
+            self.route_after_data_select,
+            {
+                "method_retrieve_node": "method_retrieve_node",
+                "tool_extract_node": "tool_extract_prep_node",
+            },
+        )
+        workflow.add_edge("method_retrieve_node", "plan_prep_node")
+        workflow.add_edge("plan_prep_node", "chat")
+        workflow.add_edge("plan_post_node", "check_prep_node")
+        workflow.add_conditional_edges(
+            "check_prep_node",
+            self._route_prep_to_chat_or_post(post_node="check_post_node"),
+            {
+                "chat": "chat",
+                "check_post_node": "check_post_node",
+            },
+        )
+        workflow.add_conditional_edges(
+            "check_post_node",
+            self.route_after_check,
+            {
+                "plan_node": "plan_prep_node",
+                "tool_extract_node": "tool_extract_prep_node",
+            },
+        )
+        workflow.add_edge("tool_extract_prep_node", "chat")
+        workflow.add_edge("tool_extract_post_node", "tool_retrieve_node")
+        workflow.add_edge("tool_retrieve_node", "submit_node")
+        workflow.add_conditional_edges(
+            "submit_node",
+            self.route_after_submit,
+            {
+                "pooling_node": "pooling_node",
+                "__end__": END,
+            },
+        )
+        workflow.add_conditional_edges(
+            "pooling_node",
+            self.route_after_pooling,
+            {
+                "__end__": END,
+                "pooling_node": "pooling_node",
+            },
+        )
+
+    @staticmethod
+    def _route_prep_to_chat_or_post(post_node: str):
+        """Return a router callable that short-circuits prep early-exit.
+
+        Used by ``parse_query_prep_node`` and ``check_prep_node`` to
+        bypass the shared chat call when the prep already committed
+        the legacy early-return delta to state (signalled by
+        ``chat_payload is None``).
+        """
+
+        def _router(state: AnalystAgentsState) -> str:
+            if state.get("chat_payload") is not None:
+                return "chat"
+            return post_node
+
+        return _router
 
     async def pooling_node(self, state: AnalystAgentsState):
         """Poll task status until completion.

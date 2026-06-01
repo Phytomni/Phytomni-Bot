@@ -101,7 +101,10 @@ def test_analyst_state_carries_full_field_union() -> None:
     Binary compatibility for internal node annotations that still
     type-hint ``AnalystAgentsState`` (alias of ``AnalystState``).
     The ``error_detail`` field is additive and surfaces only on the
-    ``failure_state`` path.
+    ``failure_state`` path. The three ``chat_payload`` /
+    ``chat_response`` / ``pending_post`` keys are additive too and
+    used only when ``USE_CHAT_SUBGRAPH`` routes through the prep +
+    post split surrounding the shared chat node.
     """
     expected = {
         "query",
@@ -124,6 +127,9 @@ def test_analyst_state_carries_full_field_union() -> None:
         "is_auto_select",
         "is_preset_plan",
         "error_detail",
+        "pending_post",
+        "chat_payload",
+        "chat_response",
     }
     assert set(get_type_hints(AnalystState).keys()) == expected
 

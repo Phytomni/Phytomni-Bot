@@ -17,7 +17,7 @@ with the legacy ``AnalystAgentsState`` alias.
 # class-definition time, so future annotations would silently drop
 # every ``Required[]`` marker on ``AnalystInput``.
 
-from typing import Dict, List, Optional, Required, TypedDict
+from typing import Any, Dict, List, Optional, Required, TypedDict
 
 
 class AnalystInput(TypedDict, total=False):
@@ -77,13 +77,15 @@ class AnalystOutput(TypedDict):
 class AnalystState(TypedDict):
     """Full working state for the AnalystAgent LangGraph workflow.
 
-    Mirrors the legacy ``AnalystAgentsState`` field set plus the
-    additive ``error_detail`` key that ``failure_state`` writes when
-    the graph raises. Value types intentionally match the legacy
-    annotations so internal node bracket access
-    (``state["method_context"]["upload_context"]`` etc.) continues
-    to satisfy mypy without Optional widening — Step 4.1 ships the
-    IO split without retyping existing nodes.
+    Mirrors the legacy ``AnalystAgentsState`` field set plus three
+    optional keys (``pending_post`` / ``chat_payload`` /
+    ``chat_response``) that the prep+post split needs when
+    ``USE_CHAT_SUBGRAPH`` is on, along with the additive
+    ``error_detail`` key that ``failure_state`` writes when the graph
+    raises. Value types intentionally match the legacy annotations so
+    internal node bracket access
+    (``state["method_context"]["upload_context"]`` etc.) continues to
+    satisfy mypy without Optional widening.
     """
 
     query: str
@@ -106,6 +108,9 @@ class AnalystState(TypedDict):
     is_auto_select: bool
     is_preset_plan: bool
     error_detail: str
+    pending_post: Optional[str]
+    chat_payload: Optional[Dict[str, Any]]
+    chat_response: Optional[Dict[str, Any]]
 
 
 AnalystAgentsState = AnalystState
