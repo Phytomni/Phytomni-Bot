@@ -4,13 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """SQLite-backed audit store for the credential-injecting relay.
 
-Models: RelayAuditRecord, RelayAuditQuery.
-Class: RelayAuditStore. Function: get_audit_store.
+Models: RelayAuditRecord, RelayAuditQuery. Class: RelayAuditStore.
+Function: get_audit_store.
 
-Persists relay request/response metadata and verbatim bodies keyed by
-request id. No key hash, salt, or plaintext key is stored, only the
-public prefix; the database stays local because SQLite WAL deadlocks on
-network filesystems.
+Persists relay request/response metadata and verbatim bodies by request
+id. No key hash, salt, or plaintext key is stored, only the public
+prefix; the DB stays local because SQLite WAL deadlocks on network FS.
 """
 
 from __future__ import annotations
