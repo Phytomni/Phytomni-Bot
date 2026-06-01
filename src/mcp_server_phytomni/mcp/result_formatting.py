@@ -16,7 +16,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List, Literal
 
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
@@ -247,6 +247,71 @@ def format_tool_result(
     else:
         result = FormattedToolResult(answer=_json_dumps(payload))
     return result
+
+
+_UniversalStatus = Literal["SUCCESS", "PARTIAL", "FAILED", "PENDING"]
+
+
+def project_universal_failure_metadata(
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Project failures + task_ids into client-facing metadata keys.
+
+    Used by per-agent formatters (design / network / research / review)
+    to expose the same shape across the four parallel-dispatch agents.
+    The returned dict is intended to be merged into ``metadata`` by the
+    caller. ``traceback_digest`` is stripped here — it lives only in
+    ``raw.phytomni_state``, never in ``formatted.metadata``.
+
+    Status derivation:
+        SUCCESS: failures empty AND task_ids non-empty
+        PARTIAL: failures non-empty AND task_ids non-empty
+        FAILED:  failures non-empty AND task_ids empty
+        PENDING: both empty (no work dispatched yet)
+
+    Args:
+        state: The final LangGraph state dict. Reads ``failures``
+            (list[FailureRecord]) and ``task_ids`` (Dict[str, str]).
+
+    Returns:
+        A dict with these keys:
+            status: One of ``SUCCESS`` / ``PARTIAL`` / ``FAILED`` /
+                ``PENDING``.
+            succeeded_count: ``len(task_ids)``.
+            failed_count: ``len(failures)``.
+            failures: List of three-key dicts
+                ``{task_label, kind, message}``.
+                ``traceback_digest`` is explicitly stripped.
+    """
+    failures: List[Dict[str, Any]] = state.get("failures", []) or []
+    task_ids: Dict[str, str] = state.get("task_ids", {}) or {}
+
+    succeeded_count = len(task_ids)
+    failed_count = len(failures)
+
+    status: _UniversalStatus
+    if succeeded_count == 0 and failed_count == 0:
+        status = "PENDING"
+    elif failed_count == 0:
+        status = "SUCCESS"
+    elif succeeded_count == 0:
+        status = "FAILED"
+    else:
+        status = "PARTIAL"
+
+    return {
+        "status": status,
+        "succeeded_count": succeeded_count,
+        "failed_count": failed_count,
+        "failures": [
+            {
+                "task_label": f["task_label"],
+                "kind": f["kind"],
+                "message": f["message"],
+            }
+            for f in failures
+        ],
+    }
 
 
 def _normalize_tool_name(tool_name: str) -> str:
