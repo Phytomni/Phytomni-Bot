@@ -77,10 +77,13 @@ class AnalystOutput(TypedDict):
 class AnalystState(TypedDict):
     """Full working state for the AnalystAgent LangGraph workflow.
 
-    Mirrors the legacy ``AnalystAgentsState`` field set plus three
-    optional keys (``pending_post`` / ``chat_payload`` /
-    ``chat_response``) that the prep+post split needs when
-    ``USE_CHAT_SUBGRAPH`` is on, along with the additive
+    Mirrors the legacy ``AnalystAgentsState`` field set plus six
+    optional keys surrounding the prep+post subgraph splits — three
+    for the chat subgraph (``pending_post`` / ``chat_payload`` /
+    ``chat_response``) used when ``USE_CHAT_SUBGRAPH`` is on, and
+    three for the knowledge subgraph (``pending_post_knowledge`` /
+    ``knowledge_payload`` / ``knowledge_response``) used when
+    ``USE_KNOWLEDGE_SUBGRAPH`` is on — along with the additive
     ``error_detail`` key that ``failure_state`` writes when the graph
     raises. Value types intentionally match the legacy annotations so
     internal node bracket access
@@ -111,6 +114,9 @@ class AnalystState(TypedDict):
     pending_post: Optional[str]
     chat_payload: Optional[Dict[str, Any]]
     chat_response: Optional[Dict[str, Any]]
+    pending_post_knowledge: Optional[str]
+    knowledge_payload: Optional[Dict[str, Any]]
+    knowledge_response: Optional[Dict[str, Any]]
 
 
 AnalystAgentsState = AnalystState

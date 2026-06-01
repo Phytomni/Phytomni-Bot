@@ -18,6 +18,7 @@ from typing import Any, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -33,9 +34,15 @@ from ..shared.chat_subgraph import (
     make_chat_node_wrapper,
 )
 from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.knowledge_subgraph import (
+    build_knowledge_app,
+    make_knowledge_after_router,
+    make_knowledge_node_wrapper,
+)
 from .defaults import ANALYST_CONFIG, ANALYST_CONFIG_FIELD_MAP
 from .graph import AnalystGraphMixin
 from .graph_chat_subgraph import AnalystChatSubgraphMixin
+from .graph_knowledge_subgraph import AnalystKnowledgeSubgraphMixin
 from .state import (
     AnalystAgentsState,
     AnalystInput,
@@ -45,7 +52,11 @@ from .state import (
 from .task_ops import task_status
 
 
-class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
+class AnalystAgent(
+    AnalystChatSubgraphMixin,
+    AnalystKnowledgeSubgraphMixin,
+    AnalystGraphMixin,
+):
     """A LangGraph-based agent for bioinformatics workflows.
 
     This agent orchestrates a complex workflow that decomposes user queries,
@@ -91,20 +102,33 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_config = analyst_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
+        self._knowledge_app: Optional[CompiledStateGraph]
+        if self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
+            self._knowledge_app = build_knowledge_app(
+                knowledge_config=self.analyst_config,
+                sensitive_config=self.sensitive_config,
+            )
+        else:
+            self._knowledge_app = None
         self.app = self._build_graph()
 
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
-        flag-off keeps the legacy nine-node form where each chat node
+        Two flag axes drive the wire shape independently:
+        ``USE_CHAT_SUBGRAPH`` splits each of the five chat sites
         (``parse_query`` / ``data_select`` / ``plan`` / ``check`` /
-        ``tool_extract``) awaits ``phyto_chat`` directly; flag-on
-        splits each chat node into a prep + post pair surrounding a
-        single shared ``chat`` node registered via
-        ``add_node(make_chat_node_wrapper(...))`` with a conditional
-        router that reads ``pending_post`` to direct the chat output
-        back to the correct post node.
+        ``tool_extract``) into a prep + post pair surrounding a shared
+        ``chat`` node mounted via ``make_chat_node_wrapper``;
+        ``USE_KNOWLEDGE_SUBGRAPH`` splits the ``method_retrieve`` site
+        into a prep + post pair surrounding a per-instance compiled
+        ``knowledge`` node mounted via ``make_knowledge_node_wrapper``.
+        Each chat post node reads ``chat_response`` set by a router on
+        ``pending_post``; each knowledge post node reads
+        ``knowledge_response`` set by a router on
+        ``pending_post_knowledge``. The two routers use distinct state
+        keys so the cross-product wire (both flags on) keeps the
+        branches independent.
 
         Wires the analyst pipeline against a three-schema
         ``StateGraph``: ``AnalystState`` for internal node access,
@@ -123,16 +147,87 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
             self._wire_legacy(workflow)
         return workflow.compile(checkpointer=self.checkpointer)
 
+    def _method_retrieve_targets(self) -> tuple[str, str]:
+        """Return (incoming, outgoing) node names for the method_retrieve site.
+
+        The legacy single-node form keeps ``method_retrieve_node`` as
+        both the incoming target (callers routing into retrieval) and
+        the outgoing source (edges fanning out after retrieval). The
+        knowledge-subgraph form splits the site into
+        ``method_retrieve_prep_node`` (incoming) and
+        ``method_retrieve_post_node`` (outgoing), with the shared
+        ``knowledge`` node mounted between them. Returning the pair
+        from one helper lets ``_wire_legacy`` and ``_wire_chat_subgraph``
+        substitute names without duplicating the conditional.
+        """
+        if self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
+            return "method_retrieve_prep_node", "method_retrieve_post_node"
+        return "method_retrieve_node", "method_retrieve_node"
+
+    def _register_method_retrieve_nodes(self, workflow: StateGraph) -> None:
+        """Register the method_retrieve node(s) on ``workflow``.
+
+        Under ``USE_KNOWLEDGE_SUBGRAPH=False`` registers the legacy
+        single ``method_retrieve_node``. Under ``=True`` registers the
+        prep + post pair plus a shared ``knowledge`` node whose
+        wrapper closes over the per-instance compiled
+        ``self._knowledge_app`` so ``find_subgraph_pregel`` discovers
+        it at parent compile time and xray expands the knowledge block
+        in the analyst render. The after-knowledge router is wired
+        here as a one-branch ``conditional_edges`` for symmetry with
+        the chat after-router; adding more knowledge sites later only
+        needs another branch in the mapping dict.
+        """
+        if not self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
+            workflow.add_node(
+                "method_retrieve_node", self.method_retrieve_node
+            )
+            return
+        knowledge_app = self._knowledge_app
+        if knowledge_app is None:
+            raise RuntimeError(
+                "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
+                "_knowledge_app was not built in __init__"
+            )
+        workflow.add_node(
+            "method_retrieve_prep_node", self.method_retrieve_prep_node
+        )
+        workflow.add_node(
+            "method_retrieve_post_node", self.method_retrieve_post_node
+        )
+        workflow.add_node(
+            "knowledge",
+            make_knowledge_node_wrapper(
+                knowledge_app=knowledge_app,
+                build_input_fn=lambda state: state["knowledge_payload"],
+                extract_output_fn=lambda ko: ko,
+                response_key="knowledge_response",
+            ),
+        )
+        workflow.add_edge("method_retrieve_prep_node", "knowledge")
+        workflow.add_conditional_edges(
+            "knowledge",
+            make_knowledge_after_router(),
+            {
+                "method_retrieve_post_node": "method_retrieve_post_node",
+            },
+        )
+
     def _wire_legacy(self, workflow: StateGraph) -> None:
-        """Register the legacy nine-node form on ``workflow``.
+        """Register the legacy form on ``workflow``.
 
         Each chat node awaits ``phyto_chat`` inline; no shared chat
-        subgraph mount. Preserves the pre-``USE_CHAT_SUBGRAPH``
-        wiring untouched.
+        subgraph mount. ``method_retrieve`` site honors
+        ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
+        ``method_retrieve_node``; flag-on substitutes the
+        prep/knowledge/post triple via
+        ``_register_method_retrieve_nodes`` and routes the surrounding
+        edges through ``_method_retrieve_targets``.
         """
+        method_in, method_out = self._method_retrieve_targets()
         workflow.add_node("parse_query_node", self.parse_query_node)
         workflow.add_node("data_select_node", self.data_select_node)
-        workflow.add_node("method_retrieve_node", self.method_retrieve_node)
+        self._register_method_retrieve_nodes(workflow)
         workflow.add_node("plan_node", self.plan_node)
         workflow.add_node("check_node", self.check_node)
         workflow.add_node("tool_extract_node", self.tool_extract_node)
@@ -145,7 +240,7 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
             self.route_after_extract,
             {
                 "data_select_node": "data_select_node",
-                "method_retrieve_node": "method_retrieve_node",
+                "method_retrieve_node": method_in,
                 "tool_extract_node": "tool_extract_node",
             },
         )
@@ -153,11 +248,11 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
             "data_select_node",
             self.route_after_data_select,
             {
-                "method_retrieve_node": "method_retrieve_node",
+                "method_retrieve_node": method_in,
                 "tool_extract_node": "tool_extract_node",
             },
         )
-        workflow.add_edge("method_retrieve_node", "plan_node")
+        workflow.add_edge(method_out, "plan_node")
         workflow.add_edge("plan_node", "check_node")
         workflow.add_conditional_edges(
             "check_node",
@@ -200,8 +295,15 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
         directly when the prep set ``chat_payload`` to ``None`` for
         the early-return cases (``parse_query`` when
         ``goal_description`` is already set; ``check`` when a preset
-        plan with no method context auto-approves).
+        plan with no method context auto-approves). The
+        ``method_retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``
+        independently of the chat flag: flag-off keeps the legacy
+        ``method_retrieve_node``; flag-on substitutes the
+        prep/knowledge/post triple via
+        ``_register_method_retrieve_nodes`` and routes the surrounding
+        edges through ``_method_retrieve_targets``.
         """
+        method_in, method_out = self._method_retrieve_targets()
         workflow.add_node("parse_query_prep_node", self.parse_query_prep_node)
         workflow.add_node("parse_query_post_node", self.parse_query_post_node)
         workflow.add_node("data_select_prep_node", self.data_select_prep_node)
@@ -216,7 +318,7 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
         workflow.add_node(
             "tool_extract_post_node", self.tool_extract_post_node
         )
-        workflow.add_node("method_retrieve_node", self.method_retrieve_node)
+        self._register_method_retrieve_nodes(workflow)
         workflow.add_node("tool_retrieve_node", self.tool_retrieve_node)
         workflow.add_node("submit_node", self.submit_node)
         workflow.add_node("pooling_node", self.pooling_node)
@@ -257,7 +359,7 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
             self.route_after_extract,
             {
                 "data_select_node": "data_select_prep_node",
-                "method_retrieve_node": "method_retrieve_node",
+                "method_retrieve_node": method_in,
                 "tool_extract_node": "tool_extract_prep_node",
             },
         )
@@ -266,11 +368,11 @@ class AnalystAgent(AnalystChatSubgraphMixin, AnalystGraphMixin):
             "data_select_post_node",
             self.route_after_data_select,
             {
-                "method_retrieve_node": "method_retrieve_node",
+                "method_retrieve_node": method_in,
                 "tool_extract_node": "tool_extract_prep_node",
             },
         )
-        workflow.add_edge("method_retrieve_node", "plan_prep_node")
+        workflow.add_edge(method_out, "plan_prep_node")
         workflow.add_edge("plan_prep_node", "chat")
         workflow.add_edge("plan_post_node", "check_prep_node")
         workflow.add_conditional_edges(

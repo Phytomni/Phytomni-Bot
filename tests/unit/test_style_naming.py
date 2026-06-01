@@ -108,6 +108,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_research_analyst_subgraph.py": {
         "protected-access",
     },
+    # Flag-branch test for ``AnalystAgent._knowledge_app`` lifecycle —
+    # asserts the per-instance KA app is built only when the flag is
+    # on; same protected-helper coverage seam as the design sibling.
+    "tests/agents/test_analyst_knowledge_subgraph.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",

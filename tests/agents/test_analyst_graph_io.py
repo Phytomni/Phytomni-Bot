@@ -104,7 +104,11 @@ def test_analyst_state_carries_full_field_union() -> None:
     ``failure_state`` path. The three ``chat_payload`` /
     ``chat_response`` / ``pending_post`` keys are additive too and
     used only when ``USE_CHAT_SUBGRAPH`` routes through the prep +
-    post split surrounding the shared chat node.
+    post split surrounding the shared chat node. The three
+    ``knowledge_payload`` / ``knowledge_response`` /
+    ``pending_post_knowledge`` keys mirror that pair for the
+    ``USE_KNOWLEDGE_SUBGRAPH`` wire surrounding the shared knowledge
+    node.
     """
     expected = {
         "query",
@@ -130,6 +134,9 @@ def test_analyst_state_carries_full_field_union() -> None:
         "pending_post",
         "chat_payload",
         "chat_response",
+        "pending_post_knowledge",
+        "knowledge_payload",
+        "knowledge_response",
     }
     assert set(get_type_hints(AnalystState).keys()) == expected
 
