@@ -5,10 +5,11 @@
 """Format Phytomni MCP tool responses at the server boundary.
 
 Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
-``format_tool_result``, ``build_tool_result_envelope``, and
-response-projection helpers ``resolve_debug`` / ``strip_agent_result``
-(``PHYTOMNI_DEBUG=1`` forces full payloads). Private helpers normalize
-citations and ``_sanitize_raw`` strips credential-pattern keys.
+``format_tool_result``, ``build_tool_result_envelope``,
+``project_universal_failure_metadata``, and response-projection helpers
+``resolve_debug`` / ``strip_agent_result`` (``PHYTOMNI_DEBUG=1`` forces
+full payloads). Private helpers normalize citations and
+``_sanitize_raw`` strips credential-pattern keys.
 """
 
 import json
@@ -16,7 +17,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal
+from typing import Any, Literal
 
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
@@ -253,8 +254,8 @@ _UniversalStatus = Literal["SUCCESS", "PARTIAL", "FAILED", "PENDING"]
 
 
 def project_universal_failure_metadata(
-    state: Dict[str, Any],
-) -> Dict[str, Any]:
+    state: dict[str, Any],
+) -> dict[str, Any]:
     """Project failures + task_ids into client-facing metadata keys.
 
     Used by per-agent formatters (design / network / research / review)
@@ -271,7 +272,7 @@ def project_universal_failure_metadata(
 
     Args:
         state: The final LangGraph state dict. Reads ``failures``
-            (list[FailureRecord]) and ``task_ids`` (Dict[str, str]).
+            (list[FailureRecord]) and ``task_ids`` (dict[str, str]).
 
     Returns:
         A dict with these keys:
@@ -283,8 +284,8 @@ def project_universal_failure_metadata(
                 ``{task_label, kind, message}``.
                 ``traceback_digest`` is explicitly stripped.
     """
-    failures: List[Dict[str, Any]] = state.get("failures", []) or []
-    task_ids: Dict[str, str] = state.get("task_ids", {}) or {}
+    failures: list[dict[str, Any]] = state.get("failures", []) or []
+    task_ids: dict[str, str] = state.get("task_ids", {}) or {}
 
     succeeded_count = len(task_ids)
     failed_count = len(failures)
@@ -661,16 +662,20 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
         256,
         "raw.phytomni_state.goal_description",
     )
+    universal = project_universal_failure_metadata(dict(content))
     metadata: dict[str, Any] = {
         "task_id": _string_or_none(primary_task.get("task_id")),
         "output_dir": output_dirs[0] if output_dirs else None,
         "compute_resource": _string_or_none(
             primary_task.get("compute_resource")
         ),
-        "status": "RUNNING",
+        "status": universal["status"],
         "log_status": "sync_running",
         "task_ids": task_ids,
         "goal_description": goal_description or None,
+        "succeeded_count": universal["succeeded_count"],
+        "failed_count": universal["failed_count"],
+        "failures": tuple(universal["failures"]),
     }
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",

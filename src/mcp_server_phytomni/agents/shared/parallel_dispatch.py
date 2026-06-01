@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Builder for the parallel-dispatch StateGraph pattern.
 
-Classes: ParallelDispatchSpec.
+Classes: FailureRecord, ParallelDispatchSpec, ParallelDispatchState.
 Functions: build_parallel_dispatch_graph.
 """
 

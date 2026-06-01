@@ -92,6 +92,8 @@ def _digital_design_payload() -> dict[str, Any]:
                 "compute_resource": "large",
             },
         ],
+        "task_ids": {"protein_design": "prot-1"},
+        "failures": [],
         "phytomni_state": _KITCHEN_SINK_STATE,
     }
 
@@ -184,6 +186,9 @@ def _deep_genome_arguments() -> dict[str, Any]:
                     "log_status",
                     "task_ids",
                     "goal_description",
+                    "succeeded_count",
+                    "failed_count",
+                    "failures",
                 }
             ),
             None,

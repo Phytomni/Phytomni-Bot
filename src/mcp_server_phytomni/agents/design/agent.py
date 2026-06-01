@@ -72,8 +72,9 @@ class DigitalDesignState(ParallelDispatchState):
 
     Inherits the shared parallel-dispatch bookkeeping fields
     (``analysis_type``, ``task_index``, ``task_ids``,
-    ``completed_count``, ``error``) from ``ParallelDispatchState`` and
-    adds the protein/promoter design-specific fields below.
+    ``completed_count``, ``error``, ``failures``) from
+    ``ParallelDispatchState`` and adds the protein/promoter
+    design-specific fields below.
 
     Attributes:
         species: Latin species name in lowercase with spaces (e.g.,
@@ -320,7 +321,7 @@ class DigitalDesignAgents:
             self.app,
             {"species": species, "gene_id": gene_id},
             kwargs,
-            ("design_task_result", "error"),
+            ("design_task_result", "error", "failures"),
             AnalysisStateSpec(
                 tasks_key="design_tasks",
                 result_inits={"design_task_result": []},
