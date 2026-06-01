@@ -18,6 +18,7 @@ import json
 from typing import cast
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.analyst.state import AnalystState
@@ -542,3 +543,451 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     agent = _build_agent(use_subgraph=True)
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
+
+
+# ---------------------------------------------------------------------------
+# parse_query_post_node: json code-fence branch (lines 126-127)
+# ---------------------------------------------------------------------------
+
+
+async def test_parse_query_post_node_parses_json_code_fence() -> None:
+    """Post node extracts JSON from a ```json ... ``` fenced block."""
+    agent = _build_agent(use_subgraph=True)
+    body = json.dumps(
+        {
+            "goal_description": "study drought tolerance",
+            "data_list": json.dumps({"obs://sample.fa": "fasta"}),
+            "plan": "initial plan",
+        }
+    )
+    fenced_content = f"```json\n{body}\n```"
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "chat_response": {
+                "choices": [{"message": {"content": fenced_content}}]
+            },
+        },
+    )
+    result = await agent.parse_query_post_node(state)
+
+    assert result["goal_description"] == "study drought tolerance"
+    assert result["data_list"] == {"obs://sample.fa": "fasta"}
+    assert result["plan"] == "initial plan"
+
+
+# ---------------------------------------------------------------------------
+# data_select_prep_node: McpError on load_species_data failure (lines 170-171)
+# ---------------------------------------------------------------------------
+
+
+async def test_data_select_prep_node_raises_on_species_load_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prep node raises McpError when ``load_species_data`` fails."""
+
+    def _raise(_path: str) -> None:
+        raise FileNotFoundError("not found")
+
+    _module = "mcp_server_phytomni.agents.analyst.graph_chat_subgraph"
+    monkeypatch.setattr(f"{_module}.load_species_data", _raise)
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "goal_description": "assemble genome",
+            "data_list": {"obs://user.fa": "fasta"},
+        },
+    )
+    with pytest.raises(McpError, match="Failed to load species data list"):
+        await agent.data_select_prep_node(state)
+
+
+# ---------------------------------------------------------------------------
+# data_select_post_node: no selected_data key → use whole parsed object
+# (lines 245-248)
+# ---------------------------------------------------------------------------
+
+
+async def test_data_select_post_node_uses_whole_response_when_key_absent() -> (
+    None
+):
+    """Post node uses entire parsed JSON when ``selected_data`` absent."""
+    agent = _build_agent(use_subgraph=True)
+    # The LLM returns just the dict directly, not wrapped in "selected_data"
+    direct_payload = json.dumps({"obs://auto.fa": "fasta"})
+    state = cast(
+        AnalystState,
+        {
+            "data_list": {"obs://user.fa": "fasta"},
+            "chat_response": {
+                "choices": [{"message": {"content": direct_payload}}]
+            },
+        },
+    )
+    result = await agent.data_select_post_node(state)
+
+    assert result["data_list"] == {
+        "obs://user.fa": "fasta",
+        "obs://auto.fa": "fasta",
+    }
+
+
+async def test_data_select_post_node_raises_on_json_decode_error() -> None:
+    """Post node raises McpError when the LLM content is not parseable JSON."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "data_list": {"obs://user.fa": "fasta"},
+            "chat_response": {
+                "choices": [{"message": {"content": "not valid json {"}}]
+            },
+        },
+    )
+    with pytest.raises(
+        McpError, match="Failed to parse data selection response"
+    ):
+        await agent.data_select_post_node(state)
+
+
+# ---------------------------------------------------------------------------
+# data_select_post_node: empty/missing chat_response → empty selected_data
+# (line 227 branch arm when no choices)
+# ---------------------------------------------------------------------------
+
+
+async def test_data_select_post_node_returns_unchanged_on_empty_response() -> (
+    None
+):
+    """Post node returns data_list unchanged when chat response is empty."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "data_list": {"obs://user.fa": "fasta"},
+            "chat_response": {},
+        },
+    )
+    result = await agent.data_select_post_node(state)
+
+    assert result["data_list"] == {"obs://user.fa": "fasta"}
+
+
+# ---------------------------------------------------------------------------
+# plan_prep_node: plan_feedback present + obs_file_list non-empty (284-301)
+# ---------------------------------------------------------------------------
+
+
+async def test_plan_prep_node_uses_retrieve_file_feedback_template() -> None:
+    """Prep picks ``analysis_retrieve_file_feedback``: feedback + files."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "goal_description": "assemble transcriptome",
+            "method_context": {
+                "retrieve_context": "retr-ctx",
+                "upload_context": "upload-ctx",
+            },
+            "plan_feedback": "needs improvement",
+            "obs_file_list": ["obs://some.fa"],
+            "plan": "draft plan",
+        },
+    )
+    result = await agent.plan_prep_node(state)
+
+    assert result["pending_post"] == "plan_post_node"
+    chat_payload = result["chat_payload"]
+    assert chat_payload is not None
+    # The feedback and upload context should be embedded in the prompt
+    assert "needs improvement" in chat_payload["user_query"]
+    assert "upload-ctx" in chat_payload["user_query"]
+
+
+# ---------------------------------------------------------------------------
+# plan_prep_node: no feedback + obs_file_list non-empty (line 315)
+# ---------------------------------------------------------------------------
+
+
+async def test_plan_prep_node_retrieve_file_template_no_feedback() -> None:
+    """Prep uses ``analysis_retrieve_file``: obs files present, no feedback."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "goal_description": "assemble transcriptome",
+            "method_context": {
+                "retrieve_context": "retr-ctx",
+                "upload_context": "upload-ctx",
+            },
+            "plan_feedback": None,
+            "obs_file_list": ["obs://some.fa"],
+            "plan": "",
+        },
+    )
+    result = await agent.plan_prep_node(state)
+
+    assert result["pending_post"] == "plan_post_node"
+    chat_payload = result["chat_payload"]
+    assert chat_payload is not None
+    assert "upload-ctx" in chat_payload["user_query"]
+
+
+# ---------------------------------------------------------------------------
+# plan_prep_node: feedback present + no obs_file_list (lines 301-312)
+# ---------------------------------------------------------------------------
+
+
+async def test_plan_prep_node_uses_retrieve_feedback_no_obs_files() -> None:
+    """Prep uses ``analysis_retrieve_feedback``: feedback present, no files."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "goal_description": "assemble transcriptome",
+            "method_context": {
+                "retrieve_context": "retr-ctx",
+                "upload_context": "",
+            },
+            "plan_feedback": "needs more detail",
+            "obs_file_list": [],
+            "plan": "draft plan",
+        },
+    )
+    result = await agent.plan_prep_node(state)
+
+    assert result["pending_post"] == "plan_post_node"
+    chat_payload = result["chat_payload"]
+    assert chat_payload is not None
+    assert "needs more detail" in chat_payload["user_query"]
+
+
+# ---------------------------------------------------------------------------
+# plan_post_node: no content → McpError (lines 382-389)
+# ---------------------------------------------------------------------------
+
+
+async def test_plan_post_node_raises_mcp_error_when_no_content() -> None:
+    """Post node raises McpError when LLM response has no usable content."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "plan_retries": 0,
+            "chat_response": {},
+        },
+    )
+    with pytest.raises(McpError, match="Failed to generate plan"):
+        await agent.plan_post_node(state)
+
+
+async def test_plan_post_node_raises_mcp_error_on_empty_content() -> None:
+    """Post node raises McpError when LLM message content is empty string."""
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "plan_retries": 0,
+            "chat_response": {"choices": [{"message": {"content": ""}}]},
+        },
+    )
+    with pytest.raises(McpError, match="Failed to generate plan"):
+        await agent.plan_post_node(state)
+
+
+# ---------------------------------------------------------------------------
+# check_post_node: json code-fence branch in response (lines 489-491)
+# ---------------------------------------------------------------------------
+
+
+async def test_check_post_node_parses_json_code_fence() -> None:
+    """Post node extracts JSON from a fenced critic response."""
+    agent = _build_agent(use_subgraph=True)
+    body = json.dumps(
+        {"decision": "APPROVED", "score": 8, "feedback": "looks great"}
+    )
+    fenced_content = f"```json\n{body}\n```"
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "plan_retries": 1,
+            "chat_response": {
+                "choices": [{"message": {"content": fenced_content}}]
+            },
+        },
+    )
+    result = await agent.check_post_node(state)
+
+    assert result == {"plan_feedback": "APPROVED"}
+
+
+# ---------------------------------------------------------------------------
+# check_post_node: JSON parse exception → score=0, REJECTED (lines 497-500)
+# ---------------------------------------------------------------------------
+
+
+async def test_check_post_node_handles_json_decode_error_gracefully() -> None:
+    """Post node sets score=0/REJECTED when JSON parse fails."""
+    agent = _build_agent(use_subgraph=True)
+    # Return invalid JSON so the except branch fires
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "plan_retries": 0,
+            "chat_response": {
+                "choices": [{"message": {"content": "not valid json {"}}]
+            },
+        },
+    )
+    # plan_retries=0 < max_retries=5, decision=REJECTED → returns feedback=""
+    result = await agent.check_post_node(state)
+
+    assert result == {"plan_feedback": ""}
+
+
+# ---------------------------------------------------------------------------
+# check_post_node: retries exhausted + min_score=0 → APPROVED (lines 511-513)
+# ---------------------------------------------------------------------------
+
+
+async def test_check_post_node_approves_exhausted_retries_zero_min_score() -> (
+    None
+):
+    """Post node returns APPROVED: retries exhausted, min_score=0."""
+    config = AnalystConfig().model_copy(
+        update={
+            "USE_CHAT_SUBGRAPH": True,
+            "MAX_RETRIES": 1,
+            "PLAN_MIN_SCORE": 0,
+        }
+    )
+    agent = AnalystAgent(
+        analyst_config=config,
+        sensitive_config=SensitiveConfig.load(),
+    )
+    critic_payload = json.dumps(
+        {"decision": "REJECTED", "score": 3, "feedback": "needs work"}
+    )
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "plan_retries": 1,  # == max_retries
+            "chat_response": {
+                "choices": [{"message": {"content": critic_payload}}]
+            },
+        },
+    )
+    result = await agent.check_post_node(state)
+
+    assert result == {"plan_feedback": "APPROVED"}
+
+
+# ---------------------------------------------------------------------------
+# check_post_node: retries exhausted + min_score>0 → McpError (lines 514-524)
+# ---------------------------------------------------------------------------
+
+
+async def test_check_post_node_raises_exhausted_retries_with_min_score() -> (
+    None
+):
+    """Post node raises McpError: retries exhausted, min_score > 0."""
+    config = AnalystConfig().model_copy(
+        update={
+            "USE_CHAT_SUBGRAPH": True,
+            "MAX_RETRIES": 1,
+            "PLAN_MIN_SCORE": 7,
+        }
+    )
+    agent = AnalystAgent(
+        analyst_config=config,
+        sensitive_config=SensitiveConfig.load(),
+    )
+    critic_payload = json.dumps(
+        {"decision": "REJECTED", "score": 3, "feedback": "not good enough"}
+    )
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "plan_retries": 1,  # == max_retries
+            "chat_response": {
+                "choices": [{"message": {"content": critic_payload}}]
+            },
+        },
+    )
+    with pytest.raises(McpError, match="Analysis plan rejected"):
+        await agent.check_post_node(state)
+
+
+# ---------------------------------------------------------------------------
+# check_post_node: not exhausted + REJECTED → return feedback (line 525)
+# ---------------------------------------------------------------------------
+
+
+async def test_check_post_node_returns_feedback_rejected_retries_remain() -> (
+    None
+):
+    """Post node returns plain feedback: rejected, retries remain."""
+    agent = _build_agent(use_subgraph=True)
+    critic_payload = json.dumps(
+        {"decision": "REJECTED", "score": 4, "feedback": "add more steps"}
+    )
+    state = cast(
+        AnalystState,
+        {
+            "chat_payload": {"user_query": "x", "chat_kwargs": {}},
+            "plan_retries": 0,
+            "chat_response": {
+                "choices": [{"message": {"content": critic_payload}}]
+            },
+        },
+    )
+    result = await agent.check_post_node(state)
+
+    assert result == {"plan_feedback": "add more steps"}
+
+
+# ---------------------------------------------------------------------------
+# tool_extract_post_node: json code-fence branch (lines 587-588)
+# ---------------------------------------------------------------------------
+
+
+async def test_tool_extract_post_node_parses_json_code_fence() -> None:
+    """Post node extracts tool list from a ```json ... ``` fenced response."""
+    agent = _build_agent(use_subgraph=True)
+    body = json.dumps({"tools": ["bwa", "samtools"]})
+    fenced_content = f"```json\n{body}\n```"
+    state = cast(
+        AnalystState,
+        {
+            "chat_response": {
+                "choices": [{"message": {"content": fenced_content}}]
+            },
+        },
+    )
+    result = await agent.tool_extract_post_node(state)
+
+    assert result == {"extracted_tools": ["bwa", "samtools"]}
+
+
+async def test_tool_extract_post_node_uses_default_on_empty_response() -> None:
+    """Post node parses ``{}`` default when response has no choices.
+
+    Covers the ``576->584`` branch: the ``if``-block is skipped so
+    ``content`` stays as ``"{}"``; ``result["tools"]`` then raises
+    ``KeyError`` — the expected behavior with no LLM output.
+    """
+    agent = _build_agent(use_subgraph=True)
+    state = cast(
+        AnalystState,
+        {
+            "chat_response": {},
+        },
+    )
+    with pytest.raises(KeyError):
+        await agent.tool_extract_post_node(state)
