@@ -265,6 +265,22 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             return "experiment_node"
         return "introduction_node"
 
+    def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
+        """Route back to synthesize_node while waiting for analysis tasks.
+
+        Args:
+            state: Current workflow state.
+
+        Returns:
+            "synthesize_node" to re-enter the barrier check,
+            or END/"experiment_node" when synthesis is complete.
+        """
+        if state.get("synthesis_waiting"):
+            return "synthesize_node"
+        if state.get("synthesize_report"):
+            return "experiment_node"
+        return END
+
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
         """Dispatch analysis tasks in parallel using Send API.
 
