@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
+import sqlite3
+import time
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -22,12 +25,21 @@ from collections.abc import (
     Iterable,
     Mapping,
 )
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+from fastapi import HTTPException
+from fastapi.responses import Response, StreamingResponse
+from starlette.requests import Request
 
-from .audit_filter import CREDENTIAL_HEADERS
+from ...common.httpx_client import get_async_client
+from ...config.defaults import ApiConfig
+from ...runtime.request_context import current_request_id
+from ..auth import ApiPrincipal
+from .audit import RelayAuditRecord, RelayAuditStore
+from .audit_filter import CREDENTIAL_HEADERS, decode_body
 
 __all__ = [
     "prepare_forward_headers",
@@ -36,7 +48,29 @@ __all__ = [
     "RelayFinishReason",
     "TeeOutcome",
     "tee_and_stream",
+    "RelayErrorMode",
+    "RelayInjectionStrategy",
+    "RelayUpstream",
+    "forward_relay_request",
 ]
+
+_LOGGER = logging.getLogger(__name__)
+
+RelayInjectionStrategy = Callable[[], Awaitable[dict[str, str]]]
+
+
+class RelayErrorMode(enum.Enum):
+    """How a relay route surfaces an upstream error to the caller.
+
+    TRANSPARENT (OpenAI-family) passes the upstream status and body
+    through so the caller's SDK parses them; ENVELOPE (platform-family)
+    maps an upstream error to the unified ApiErrorResponse envelope by
+    raising an HTTPException the app's handler renders.
+    """
+
+    TRANSPARENT = "transparent"
+    ENVELOPE = "envelope"
+
 
 _REDACTION = b"***redacted***"
 
@@ -211,3 +245,254 @@ async def tee_and_stream(
                 error_type=error_type,
             )
         )
+
+
+@dataclass(frozen=True)
+class RelayUpstream:
+    """A resolved upstream target and its error shaping for one route.
+
+    Attributes:
+        url: Upstream URL resolved from server config (never client
+            supplied, query included).
+        error_mode: TRANSPARENT (pass status/body through) or ENVELOPE
+            (map an upstream error to the unified envelope).
+        service: Relay service name recorded in the audit row.
+        inject_headers: Strategy minting the operator auth header(s).
+        operation: Optional sub-operation label for the audit row.
+    """
+
+    url: str
+    error_mode: RelayErrorMode
+    service: str
+    inject_headers: RelayInjectionStrategy
+    operation: Optional[str] = None
+
+
+async def _buffered_relay_response(
+    upstream: httpx.Response,
+    *,
+    error_mode: RelayErrorMode,
+    secrets: list[str],
+    cap: int,
+    record: Callable[..., None],
+) -> Response:
+    """Buffer, audit, and shape a non-streamed relay response.
+
+    TRANSPARENT passes the upstream status/body through with the injected
+    secret scrubbed from any echoed error body; ENVELOPE returns a 2xx
+    body and maps an upstream error to the unified envelope.
+    """
+    raw = await upstream.aread()
+    status = upstream.status_code
+    audit_body = decode_body(raw[:cap])
+    if len(raw) > cap:
+        audit_body += f"<truncated: {len(raw) - cap} bytes>"
+    record(status_code=status, response_body=audit_body, error_type=None)
+    if error_mode is RelayErrorMode.TRANSPARENT:
+        return Response(
+            content=scrub_secrets(raw, secrets),
+            status_code=status,
+            headers=filter_response_headers(upstream.headers),
+        )
+    if 200 <= status < 300:
+        return Response(
+            content=raw,
+            status_code=status,
+            media_type=upstream.headers.get("content-type"),
+        )
+    raise HTTPException(status_code=status, detail="relay upstream error")
+
+
+def _streaming_relay_response(
+    stack: AsyncExitStack,
+    upstream: httpx.Response,
+    *,
+    cap: int,
+    record: Callable[..., None],
+) -> StreamingResponse:
+    """Build a streamed 2xx relay response that tees + audits on end.
+
+    The upstream stream and the shared-client context are released in the
+    body generator's finally via ``stack.aclose()`` so they outlive this
+    function until the client has consumed the whole response.
+    """
+    status = upstream.status_code
+
+    async def _on_complete(outcome: TeeOutcome) -> None:
+        body_text = decode_body(outcome.body)
+        if outcome.truncated:
+            dropped = outcome.total_bytes - len(outcome.body)
+            body_text += f"<truncated: {dropped} bytes>"
+        record(
+            status_code=status,
+            response_body=body_text,
+            error_type=outcome.error_type,
+        )
+
+    async def _stream() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in tee_and_stream(
+                upstream.aiter_bytes(), audit_cap=cap, on_complete=_on_complete
+            ):
+                yield chunk
+        finally:
+            await stack.aclose()
+
+    return StreamingResponse(
+        _stream(),
+        status_code=status,
+        headers=filter_response_headers(upstream.headers),
+    )
+
+
+async def _open_relay_upstream(
+    *,
+    request: Request,
+    body: bytes,
+    upstream: RelayUpstream,
+    stack: AsyncExitStack,
+    record: Callable[..., None],
+) -> tuple[httpx.Response, list[str]]:
+    """Mint the operator credential and open the upstream stream.
+
+    Strips the caller credential, injects the operator one on the
+    per-request call, and sends with the upstream registered for cleanup
+    on ``stack``. A mint or transport failure fails closed with a 502 and
+    is audited; on success the open response and the injected secret
+    values (for non-2xx body scrubbing) are returned.
+
+    Raises:
+        HTTPException: 502 when the credential mint or the upstream
+            connection fails.
+    """
+    config = ApiConfig()
+    try:
+        injected = await upstream.inject_headers()
+    except Exception as exc:  # fail closed on any credential-mint failure
+        record(
+            status_code=None, response_body=None, error_type=type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=502, detail="relay upstream unavailable"
+        ) from exc
+
+    forward_headers = {**prepare_forward_headers(request.headers), **injected}
+    client = await stack.enter_async_context(
+        get_async_client(
+            timeout=httpx.Timeout(
+                config.RELAY_TIMEOUT_SECONDS,
+                connect=config.RELAY_TIMEOUT_SECONDS,
+            )
+        )
+    )
+    try:
+        upstream_resp = await client.send(
+            client.build_request(
+                request.method,
+                upstream.url,
+                headers=forward_headers,
+                content=body,
+            ),
+            stream=True,
+        )
+    except (httpx.HTTPError, OSError) as exc:
+        await stack.aclose()
+        record(
+            status_code=None, response_body=None, error_type=type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=502, detail="relay upstream unavailable"
+        ) from exc
+
+    stack.push_async_callback(upstream_resp.aclose)
+    return upstream_resp, list(injected.values())
+
+
+async def forward_relay_request(
+    *,
+    request: Request,
+    body: bytes,
+    upstream: RelayUpstream,
+    principal: ApiPrincipal,
+    audit_store: RelayAuditStore,
+) -> Response:
+    """Forward a relayed request upstream with injected operator creds.
+
+    Strips the caller credential, injects the operator one on the
+    per-request call, reads the upstream status BEFORE building the
+    streamed response (so an upstream error is never masked as a 200),
+    and audits every call best-effort. A 2xx TRANSPARENT response is
+    streamed through a tee; every other case is buffered and shaped per
+    the route's error mode. A credential-mint or transport failure fails
+    closed with a 502 (the unified envelope) and is audited.
+
+    Args:
+        request: The inbound caller request (method and headers used).
+        body: The already-read, size-gated inbound request body.
+        upstream: The resolved upstream target and error shaping.
+        principal: The authenticated caller (audited by id + key prefix).
+        audit_store: The relay audit store (written best-effort).
+
+    Returns:
+        The response to return to the caller.
+
+    Raises:
+        HTTPException: 502 on a mint/transport failure, or the upstream
+            status for an ENVELOPE-mode upstream error.
+    """
+    started = time.monotonic()
+    request_id = current_request_id() or ""
+    request_body = decode_body(body)
+
+    def record(
+        *,
+        status_code: Optional[int],
+        response_body: Optional[str],
+        error_type: Optional[str],
+    ) -> None:
+        entry = RelayAuditRecord(
+            request_id=request_id,
+            user_id=principal.user_id,
+            key_prefix=principal.key_prefix,
+            service=upstream.service,
+            operation=upstream.operation,
+            status_code=status_code,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            request_body=request_body,
+            response_body=response_body,
+            error_type=error_type,
+        )
+        try:
+            audit_store.record(entry)
+        except (sqlite3.Error, OSError):
+            _LOGGER.exception(
+                "relay audit write failed for request %s", request_id
+            )
+
+    stack = AsyncExitStack()
+    upstream_resp, secrets = await _open_relay_upstream(
+        request=request,
+        body=body,
+        upstream=upstream,
+        stack=stack,
+        record=record,
+    )
+    cap = ApiConfig().RELAY_RESPONSE_AUDIT_MAX_BYTES
+
+    if upstream.error_mode is RelayErrorMode.TRANSPARENT and (
+        200 <= upstream_resp.status_code < 300
+    ):
+        return _streaming_relay_response(
+            stack, upstream_resp, cap=cap, record=record
+        )
+
+    try:
+        return await _buffered_relay_response(
+            upstream_resp,
+            error_mode=upstream.error_mode,
+            secrets=secrets,
+            cap=cap,
+            record=record,
+        )
+    finally:
+        await stack.aclose()
