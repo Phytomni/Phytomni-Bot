@@ -12,7 +12,20 @@ credential leaks, and the non-2xx body secret scrub.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import asyncio
+import enum
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Mapping,
+)
+from dataclasses import dataclass
+from typing import Optional
+
+import httpx
 
 from .audit_filter import CREDENTIAL_HEADERS
 
@@ -20,6 +33,9 @@ __all__ = [
     "prepare_forward_headers",
     "filter_response_headers",
     "scrub_secrets",
+    "RelayFinishReason",
+    "TeeOutcome",
+    "tee_and_stream",
 ]
 
 _REDACTION = b"***redacted***"
@@ -115,3 +131,83 @@ def scrub_secrets(body: bytes, secrets: Iterable[str]) -> bytes:
         if secret:
             body = body.replace(secret.encode("utf-8"), _REDACTION)
     return body
+
+
+class RelayFinishReason(enum.Enum):
+    """How a relayed response stream ended, for the audit record."""
+
+    COMPLETE = "complete"
+    UPSTREAM_ABORTED = "upstream_aborted"
+    CLIENT_DISCONNECTED = "client_disconnected"
+
+
+@dataclass(frozen=True)
+class TeeOutcome:
+    """The audit-relevant result of teeing a relayed response stream.
+
+    Attributes:
+        body: The captured audit copy, capped at the audit budget.
+        finish_reason: How the stream ended.
+        truncated: True when the upstream sent more than the audit cap,
+            so ``body`` is shorter than ``total_bytes``.
+        total_bytes: Total upstream bytes streamed to the client.
+        error_type: The upstream exception type name on an abort, else
+            None.
+    """
+
+    body: bytes
+    finish_reason: RelayFinishReason
+    truncated: bool
+    total_bytes: int
+    error_type: Optional[str] = None
+
+
+async def tee_and_stream(
+    source: AsyncIterator[bytes],
+    *,
+    audit_cap: int,
+    on_complete: Callable[[TeeOutcome], Awaitable[None]],
+) -> AsyncGenerator[bytes, None]:
+    """Stream upstream chunks to the client while capturing an audit copy.
+
+    Every chunk is yielded to the client verbatim and untruncated; the
+    audit copy stops growing once it reaches ``audit_cap`` (the cap is
+    enforced during accumulation, never by buffering the whole body).
+    ``on_complete`` is invoked exactly once with the outcome, marking an
+    upstream mid-stream abort distinctly from a client disconnect so the
+    audit trail can tell a clean 200 from a truncated one.
+
+    Args:
+        source: The upstream response byte iterator.
+        audit_cap: Maximum bytes to retain for the audit copy.
+        on_complete: Coroutine called once with the :class:`TeeOutcome`.
+
+    Yields:
+        Each upstream chunk, unmodified.
+    """
+    copy = bytearray()
+    total = 0
+    reason = RelayFinishReason.COMPLETE
+    error_type: Optional[str] = None
+    try:
+        async for chunk in source:
+            total += len(chunk)
+            if len(copy) < audit_cap:
+                copy.extend(chunk[: audit_cap - len(copy)])
+            yield chunk
+    except (GeneratorExit, asyncio.CancelledError):
+        reason = RelayFinishReason.CLIENT_DISCONNECTED
+        raise
+    except (httpx.HTTPError, OSError) as exc:
+        reason = RelayFinishReason.UPSTREAM_ABORTED
+        error_type = type(exc).__name__
+    finally:
+        await on_complete(
+            TeeOutcome(
+                body=bytes(copy),
+                finish_reason=reason,
+                truncated=total > len(copy),
+                total_bytes=total,
+                error_type=error_type,
+            )
+        )

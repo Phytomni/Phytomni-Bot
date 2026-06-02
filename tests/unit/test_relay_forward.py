@@ -12,15 +12,31 @@ scrub.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
+import httpx
 import pytest
 
 from mcp_server_phytomni.api.relay.forward import (
+    RelayFinishReason,
+    TeeOutcome,
     filter_response_headers,
     prepare_forward_headers,
     scrub_secrets,
+    tee_and_stream,
 )
 
 pytestmark = pytest.mark.unit
+
+
+async def _source(
+    chunks: list[bytes], *, raise_after: bool = False
+) -> AsyncIterator[bytes]:
+    """Yield chunks, optionally raising an upstream read error at the end."""
+    for chunk in chunks:
+        yield chunk
+    if raise_after:
+        raise httpx.ReadError("upstream dropped")
 
 
 def test_prepare_forward_headers_strips_credentials() -> None:
@@ -108,3 +124,84 @@ def test_scrub_secrets_absent_secret_returns_body_unchanged() -> None:
     body = b'{"ok":true}'
 
     assert scrub_secrets(body, ["Bearer sk-operator-123"]) == body
+
+
+async def test_tee_streams_all_and_audits_full_under_cap() -> None:
+    """Under the cap the client and the audit copy both get everything."""
+    captured: list[TeeOutcome] = []
+
+    async def _capture(outcome: TeeOutcome) -> None:
+        captured.append(outcome)
+
+    streamed = [
+        chunk
+        async for chunk in tee_and_stream(
+            _source([b"ab", b"cd"]), audit_cap=100, on_complete=_capture
+        )
+    ]
+
+    assert b"".join(streamed) == b"abcd"
+    assert captured[0].body == b"abcd"
+    assert captured[0].finish_reason is RelayFinishReason.COMPLETE
+    assert captured[0].truncated is False
+    assert captured[0].total_bytes == 4
+
+
+async def test_tee_caps_audit_copy_but_streams_full_to_client() -> None:
+    """The audit copy stops at the cap while the client gets every byte."""
+    captured: list[TeeOutcome] = []
+
+    async def _capture(outcome: TeeOutcome) -> None:
+        captured.append(outcome)
+
+    streamed = [
+        chunk
+        async for chunk in tee_and_stream(
+            _source([b"aaaa", b"bbbb"]), audit_cap=5, on_complete=_capture
+        )
+    ]
+
+    assert b"".join(streamed) == b"aaaabbbb"
+    assert captured[0].body == b"aaaab"
+    assert captured[0].truncated is True
+    assert captured[0].total_bytes == 8
+
+
+async def test_tee_marks_upstream_abort_without_propagating() -> None:
+    """An upstream mid-stream error is audited, not raised to the client."""
+    captured: list[TeeOutcome] = []
+
+    async def _capture(outcome: TeeOutcome) -> None:
+        captured.append(outcome)
+
+    streamed = [
+        chunk
+        async for chunk in tee_and_stream(
+            _source([b"ab"], raise_after=True),
+            audit_cap=100,
+            on_complete=_capture,
+        )
+    ]
+
+    assert b"".join(streamed) == b"ab"
+    assert captured[0].finish_reason is RelayFinishReason.UPSTREAM_ABORTED
+    assert captured[0].body == b"ab"
+    assert captured[0].error_type == "ReadError"
+
+
+async def test_tee_marks_client_disconnect_on_aclose() -> None:
+    """Closing the stream early records a client disconnect, not an abort."""
+    captured: list[TeeOutcome] = []
+
+    async def _capture(outcome: TeeOutcome) -> None:
+        captured.append(outcome)
+
+    gen = tee_and_stream(
+        _source([b"ab", b"cd"]), audit_cap=100, on_complete=_capture
+    )
+    first = await gen.__anext__()
+    await gen.aclose()
+
+    assert first == b"ab"
+    assert captured[0].finish_reason is RelayFinishReason.CLIENT_DISCONNECTED
+    assert captured[0].body == b"ab"
