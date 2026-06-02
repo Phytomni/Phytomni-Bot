@@ -40,6 +40,7 @@ __all__ = [
     "resolve_principal",
     "require_principal",
     "scopes_satisfy",
+    "relay_scope_satisfied",
 ]
 
 _KEY_PREFIX = "ptm_"
@@ -113,6 +114,26 @@ def scopes_satisfy(granted: frozenset[str], needed: Sequence[str]) -> bool:
             continue
         return False
     return True
+
+
+def relay_scope_satisfied(granted: frozenset[str], service: str) -> bool:
+    """Return True only when granted explicitly authorizes a relay service.
+
+    Unlike ``scopes_satisfy``, an EMPTY granted set does NOT mean all
+    access here: relay routes inject the operator's real upstream
+    credentials, so a legacy scope-less key must be denied rather than
+    silently granted every upstream. A ``relay:*`` wildcard authorizes
+    any service; otherwise the exact ``relay:<service>`` scope is
+    required.
+
+    Args:
+        granted: The principal's granted scopes (empty means deny here).
+        service: The relay service the route fronts (e.g. ``llm``).
+
+    Returns:
+        True only when ``relay:<service>`` or ``relay:*`` is granted.
+    """
+    return f"relay:{service}" in granted or "relay:*" in granted
 
 
 @dataclass(frozen=True)

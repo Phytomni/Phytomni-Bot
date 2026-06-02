@@ -16,7 +16,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from mcp_server_phytomni.api.auth import ApiKeyStore, scopes_satisfy
+from mcp_server_phytomni.api.auth import (
+    ApiKeyStore,
+    relay_scope_satisfied,
+    scopes_satisfy,
+)
 
 pytestmark = pytest.mark.server
 
@@ -25,6 +29,33 @@ def test_empty_scopes_allow_everything() -> None:
     """An empty granted set means all access (back-compat)."""
     assert scopes_satisfy(frozenset(), ("agents",))
     assert scopes_satisfy(frozenset(), ("relay:llm", "agents"))
+
+
+def test_relay_scope_denies_empty_grant() -> None:
+    """Empty scopes are all-access for agents but DENY on relay.
+
+    Relay routes inject the operator's real upstream credentials, so a
+    legacy scope-less key must not silently reach every upstream.
+    """
+    assert not relay_scope_satisfied(frozenset(), "llm")
+    assert not relay_scope_satisfied(frozenset(), "retrieve")
+
+
+def test_relay_scope_exact_service_match() -> None:
+    """relay:<svc> authorizes exactly that relay service."""
+    assert relay_scope_satisfied(frozenset({"relay:llm"}), "llm")
+    assert not relay_scope_satisfied(frozenset({"relay:llm"}), "retrieve")
+
+
+def test_relay_scope_wildcard_covers_any_service() -> None:
+    """relay:* authorizes any relay service."""
+    assert relay_scope_satisfied(frozenset({"relay:*"}), "llm")
+    assert relay_scope_satisfied(frozenset({"relay:*"}), "database")
+
+
+def test_relay_scope_ignores_agents_scope() -> None:
+    """An agents-only key cannot reach a relay service."""
+    assert not relay_scope_satisfied(frozenset({"agents"}), "llm")
 
 
 def test_exact_scope_match() -> None:
