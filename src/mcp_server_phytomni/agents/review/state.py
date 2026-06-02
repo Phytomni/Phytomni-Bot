@@ -17,7 +17,19 @@ stays binary-compatible with the legacy inline TypedDict.
 # class-definition time, so future annotations would silently
 # drop every ``Required[]`` marker on ``DeepResearchInput``.
 
-from typing import Any, Dict, List, Required, TypedDict
+import operator
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Required,
+    Tuple,
+    TypedDict,
+)
+
+from ..shared.parallel_dispatch import ParallelDispatchState
 
 
 class DeepResearchInput(TypedDict, total=False):
@@ -46,8 +58,15 @@ class DeepResearchOutput(TypedDict):
     summary_content: str
 
 
-class DeepResearchState(TypedDict):
+class DeepResearchState(ParallelDispatchState, total=False):
     """Full working state for the DeepResearchAgent LangGraph workflow.
+
+    Inherits ParallelDispatchState so review participates in the
+    universal ``failures`` channel (operator.add concat across N
+    concurrent Send workers) alongside design / network / research.
+    Adds 16 review-specific fields organized into three groups:
+    8 Send-payload transient fields, 5 indexed_results accumulators,
+    and 3 final ordered output fields written by reduce_node.
 
     Carries every key both ``DeepResearchInput`` and
     ``DeepResearchOutput`` expose plus internal scratch (raw doc
@@ -71,3 +90,33 @@ class DeepResearchState(TypedDict):
     add_doc_list: List[Dict[str, Any]]
     summary_content: str
     final_response: Dict[str, Any]
+
+    # === Single-shot chat-mount fields (locked Step 6.0 pattern) ===
+    chat_payload: Optional[Dict[str, Any]]
+    chat_response: Optional[Dict[str, Any]]
+    pending_post: Optional[str]
+
+    # === Send-payload transient fields (set ONLY during Send invocation) ===
+    subtopic: Optional[str]
+    knowledge: Optional[str]
+    dimension: Optional[str]
+    review_draft: Optional[str]
+    original_draft: Optional[str]
+    review_feedback: Optional[str]
+    add_query_input: Optional[str]
+    knowledge_payload: Optional[Dict[str, Any]]
+
+    # === Fan-out parallel accumulators (5 fields x Annotated reducer) ===
+    retrieve_indexed_results: Annotated[
+        List[Tuple[int, List[Dict[str, Any]]]], operator.add
+    ]
+    draft_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
+    review_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
+    revised_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
+    add_query_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
+
+    # === Fan-out final ordered output (write-once by reduce_node) ===
+    # draft_contents and review_contents already declared above (kept as-is).
+    # all_raw_doc_list already declared above (kept as-is).
+    revised_contents: List[str]
+    add_query_contents: List[str]

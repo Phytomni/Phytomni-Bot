@@ -47,7 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # ``docs/lint-exemptions.md``.
 RULE_BASELINES: Dict[str, int] = {
     "R0801": 52,  # duplicate-code: cross-file similar blocks
-    "R0903": 10,  # too-few-public-methods: test fake classes
+    "R0903": 12,  # too-few-public-methods: test fake classes + Protocol stubs
 }
 
 

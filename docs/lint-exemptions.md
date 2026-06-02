@@ -485,9 +485,9 @@ exemption is project-wide-conditional instead of per-file.
 
 ______________________________________________________________________
 
-### Test fakes — too-few-public-methods (9 occurrences)
+### Test fakes and Protocol stubs — too-few-public-methods (12 occurrences)
 
-**Rule(s)**: R0903 too-few-public-methods (1/2). 9 occurrences across:
+**Rule(s)**: R0903 too-few-public-methods (1/2). 12 occurrences across:
 
 - `tests/conftest.py:550`
 - `tests/agents/test_chat_agent.py:427`
@@ -497,9 +497,11 @@ ______________________________________________________________________
 - `tests/unit/test_api_file_upload.py:24`
 - `tests/unit/test_deep_genome_dispatch.py:226`
 - `tests/unit/test_storage_error_sanitization.py:31`
+- `src/mcp_server_phytomni/agents/shared/fan_out.py:22` (`FanOutWorker` Protocol)
+- `src/mcp_server_phytomni/agents/shared/fan_out.py:43` (`TaskBuilder` Protocol)
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 9`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 12`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
@@ -524,7 +526,7 @@ an `AsyncMock(side_effect=...)`
 Update the corresponding test assertions to use `mock.call_args`
 instead of fake-captured-state assertions.
 
-**Refactor cost**: ~9 commits, one per file. Mechanical but each
+**Refactor cost**: ~10 commits, one per file. Mechanical but each
 diff is reviewable and small. The catch is that every test that
 asserts against the fake's captured state needs an assertion-style
 change.
