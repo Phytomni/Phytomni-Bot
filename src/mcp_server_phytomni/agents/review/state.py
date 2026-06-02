@@ -58,7 +58,7 @@ class DeepResearchOutput(TypedDict):
     summary_content: str
 
 
-class DeepResearchState(ParallelDispatchState, total=False):
+class DeepResearchState(ParallelDispatchState):
     """Full working state for the DeepResearchAgent LangGraph workflow.
 
     Inherits ParallelDispatchState so review participates in the

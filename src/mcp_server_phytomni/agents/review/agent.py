@@ -213,6 +213,35 @@ class DeepResearchAgent(
             "add_doc_list": [],
             "summary_content": "",
             "final_response": {},
+            # Inherited from ParallelDispatchState
+            "analysis_type": "",
+            "task_index": None,
+            "task_ids": {},
+            "completed_count": 0,
+            "error": None,
+            "failures": [],
+            # Single-shot chat-mount fields (Step 6.2 pattern)
+            "chat_payload": None,
+            "chat_response": None,
+            "pending_post": None,
+            # Send-payload transient fields
+            "subtopic": None,
+            "knowledge": None,
+            "dimension": None,
+            "review_draft": None,
+            "original_draft": None,
+            "review_feedback": None,
+            "add_query_input": None,
+            "knowledge_payload": None,
+            # Fan-out indexed_results accumulators
+            "retrieve_indexed_results": [],
+            "draft_indexed_results": [],
+            "review_indexed_results": [],
+            "revised_indexed_results": [],
+            "add_query_indexed_results": [],
+            # Fan-out final ordered outputs
+            "revised_contents": [],
+            "add_query_contents": [],
         }
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
