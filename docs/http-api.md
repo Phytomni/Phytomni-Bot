@@ -85,6 +85,7 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `DELETE` | `/v1/api-keys/{prefix}`        | svc  | Revokes the key with the given public prefix.                                                            |
 | `GET`    | `/v1/relay/audit`              | svc  | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range. |
 | `GET`    | `/v1/relay/audit/{request_id}` | svc  | Fetches relay audit records by request id (service token).                                               |
+| `GET`    | `/v1/relay/healthz`            | yes  | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                          |
 
 `GET /v1/agents` returns one row per registered native slug; each
 row carries a `legacy_aliases: list[str]` carrying the historical
