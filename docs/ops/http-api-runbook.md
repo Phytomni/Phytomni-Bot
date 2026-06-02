@@ -180,6 +180,7 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `DELETE` | `/v1/api-keys/{prefix}`        | svc  | Revoke the key with the given public prefix.                                                 |
 | `GET`    | `/v1/relay/audit`              | svc  | List relay audit records (service token); filter by user, key prefix, service, status, time. |
 | `GET`    | `/v1/relay/audit/{request_id}` | svc  | Fetch relay audit records by request id (service token).                                     |
+| `GET`    | `/v1/relay/healthz`            | yes  | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.              |
 
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
