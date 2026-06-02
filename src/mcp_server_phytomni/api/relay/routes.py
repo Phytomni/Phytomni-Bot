@@ -6,8 +6,9 @@
 
 The router is always mounted; a per-request guard re-reads RELAY_ENABLED
 so the surface is hidden by default and an operator can disable it
-mid-incident without restarting a worker. Forwarding routes land in
-later steps; this module currently exposes only the liveness probe.
+mid-incident without restarting a worker. It exposes a liveness probe
+plus the OpenAI-family (transparent) and platform-family (envelope)
+relay routes, each scope-gated and forwarding through the core.
 """
 
 from __future__ import annotations
