@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.requests import Request
 
 from ...config.defaults import ApiConfig
 from ..auth import ApiPrincipal, relay_scope_satisfied, require_principal
@@ -24,6 +25,7 @@ __all__ = [
     "create_relay_router",
     "relay_enabled_guard",
     "require_relay_access",
+    "read_relay_body",
 ]
 
 # One relay-specific limiter per worker, kept separate from the agent
@@ -47,6 +49,34 @@ def relay_enabled_guard() -> None:
     """
     if not ApiConfig().RELAY_ENABLED:
         raise HTTPException(status_code=404, detail="relay disabled")
+
+
+async def read_relay_body(request: Request, max_bytes: int) -> bytes:
+    """Drain the relay request body, rejecting an over-budget read.
+
+    Streams ``request.stream()`` so a chunked body with no (or a
+    falsified) Content-Length cannot exhaust worker memory: the buffer is
+    rejected the moment it exceeds ``max_bytes``, capping peak memory at
+    ``max_bytes`` plus one transport chunk rather than the whole body.
+
+    Args:
+        request: The inbound relay request.
+        max_bytes: Inclusive byte ceiling for the body.
+
+    Returns:
+        The accumulated request body within budget.
+
+    Raises:
+        HTTPException: 413 when the body exceeds ``max_bytes``.
+    """
+    buffer = bytearray()
+    async for chunk in request.stream():
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise HTTPException(
+                status_code=413, detail="relay request body too large"
+            )
+    return bytes(buffer)
 
 
 def require_relay_access(
