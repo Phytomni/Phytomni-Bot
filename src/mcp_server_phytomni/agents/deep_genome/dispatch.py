@@ -735,8 +735,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         meta = get_prompt(self.deep_genome_config.PROMPT_FILE, meta_path)
         data_json_path = ANALYSIS_DATA_LIST_MAP.get(analysis_type, "")
-        if '/' in data_json_path:
-            data_json_path, sub_title = data_json_path.split('/')
+        if "/" in data_json_path:
+            data_json_path, sub_title = data_json_path.split("/")
         else:
             sub_title = None
         data_list = get_data_list(
