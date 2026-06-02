@@ -102,6 +102,11 @@ _REQUEST_DROP: frozenset[str] = (
 # the caller's OpenAI SDK parses the body.
 _RESPONSE_ALLOW: frozenset[str] = frozenset({"content-type"})
 
+# Per-key count of relay forwards currently in flight (per worker, like
+# the rate limiter). A dict literal so the count is mutated in place
+# without a global statement, by _acquire_key_slot and its release.
+_INFLIGHT: dict[str, int] = {}
+
 
 def prepare_forward_headers(inbound: Mapping[str, str]) -> dict[str, str]:
     """Return the headers to forward upstream, with unsafe ones removed.
@@ -345,6 +350,36 @@ def _streaming_relay_response(
     )
 
 
+def _acquire_key_slot(
+    key_prefix: str, limit: int, stack: AsyncExitStack
+) -> None:
+    """Reserve a per-key in-flight relay slot or reject at capacity.
+
+    asyncio is single-threaded, so the check-then-increment is atomic.
+    The release is registered on ``stack`` so the slot is held until the
+    forward (including any streamed body) finishes, bounding how many
+    shared-pool connections one key can hold open. A ``limit`` <= 0
+    disables the cap.
+
+    Raises:
+        HTTPException: 503 when the key already holds ``limit`` forwards.
+    """
+    if 0 < limit <= _INFLIGHT.get(key_prefix, 0):
+        raise HTTPException(
+            status_code=503, detail="relay concurrency limit exceeded"
+        )
+    _INFLIGHT[key_prefix] = _INFLIGHT.get(key_prefix, 0) + 1
+
+    async def _release() -> None:
+        remaining = _INFLIGHT.get(key_prefix, 0) - 1
+        if remaining > 0:
+            _INFLIGHT[key_prefix] = remaining
+        else:
+            _INFLIGHT.pop(key_prefix, None)
+
+    stack.push_async_callback(_release)
+
+
 async def _open_relay_upstream(
     *,
     request: Request,
@@ -369,6 +404,7 @@ async def _open_relay_upstream(
     try:
         injected = await upstream.inject_headers()
     except Exception as exc:  # fail closed on any credential-mint failure
+        await stack.aclose()
         record(
             status_code=None, response_body=None, error_type=type(exc).__name__
         )
@@ -469,7 +505,11 @@ async def forward_relay_request(
                 "relay audit write failed for request %s", request_id
             )
 
+    config = ApiConfig()
     stack = AsyncExitStack()
+    _acquire_key_slot(
+        principal.key_prefix, config.RELAY_MAX_CONCURRENT_PER_KEY, stack
+    )
     upstream_resp, secrets = await _open_relay_upstream(
         request=request,
         body=body,
@@ -477,7 +517,7 @@ async def forward_relay_request(
         stack=stack,
         record=record,
     )
-    cap = ApiConfig().RELAY_RESPONSE_AUDIT_MAX_BYTES
+    cap = config.RELAY_RESPONSE_AUDIT_MAX_BYTES
 
     if upstream.error_mode is RelayErrorMode.TRANSPARENT and (
         200 <= upstream_resp.status_code < 300

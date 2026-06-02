@@ -114,6 +114,12 @@ def _store_fixture(tmp_path: Path) -> RelayAuditStore:
     return RelayAuditStore(str(tmp_path / "relay_audit.sqlite"))
 
 
+@pytest.fixture(autouse=True)
+def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate the per-key in-flight relay counter across tests."""
+    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
+
+
 async def test_transparent_2xx_streams_with_upstream_status(
     monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
 ) -> None:
@@ -337,3 +343,69 @@ async def test_audit_write_failure_does_not_fail_call(
 
     assert response.status_code == 200
     assert body == b"{}"
+
+
+async def test_concurrency_cap_rejects_at_limit(
+    monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
+) -> None:
+    """A second in-flight relay for one key is rejected with 503."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY", "1")
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "application/json"}, content=b"{}"
+        )
+
+    _patch_client(monkeypatch, handler)
+
+    held = await _forward(
+        store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
+    )
+    assert isinstance(held, StreamingResponse)  # body unconsumed: slot held
+
+    with pytest.raises(HTTPException) as excinfo:
+        await _forward(
+            store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
+        )
+    assert excinfo.value.status_code == 503
+
+    async for _ in held.body_iterator:  # consume -> release the slot
+        pass
+
+    freed = await _forward(
+        store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
+    )
+    assert isinstance(freed, StreamingResponse)
+    async for _ in freed.body_iterator:
+        pass
+
+
+async def test_mint_failure_releases_concurrency_slot(
+    monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
+) -> None:
+    """A failed relay frees its slot so the next call is not wedged."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY", "1")
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "application/json"}, content=b"{}"
+        )
+
+    _patch_client(monkeypatch, handler)
+
+    async def _failing_inject() -> dict[str, str]:
+        raise RuntimeError("mint down")
+
+    with pytest.raises(HTTPException):
+        await _forward(
+            store,
+            _make_request({}),
+            _upstream(RelayErrorMode.TRANSPARENT, inject=_failing_inject),
+        )
+
+    freed = await _forward(
+        store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
+    )
+    assert isinstance(freed, StreamingResponse)
+    async for _ in freed.body_iterator:
+        pass
