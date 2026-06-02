@@ -472,7 +472,10 @@ def test_in_silico_result_formats_goals_and_task_ids() -> None:
             "Compare ortholog expression in stress conditions",
         ),
         "error": None,
-        "status": "RUNNING",
+        "status": "SUCCESS",
+        "succeeded_count": 2,
+        "failed_count": 0,
+        "failures": [],
         "log_status": "sync_running",
     }
 

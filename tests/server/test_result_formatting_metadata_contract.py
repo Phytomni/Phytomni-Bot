@@ -78,6 +78,7 @@ def _in_silico_payload() -> dict[str, Any]:
         "goals": [{"goal": "Identify gene clusters", "context": "rice"}],
         "output_dir": "/obs/phytomni/run/in-silico",
         "error": None,
+        "failures": [],
         "phytomni_state": _KITCHEN_SINK_STATE,
     }
 
@@ -171,6 +172,9 @@ def _deep_genome_arguments() -> dict[str, Any]:
                     "goals",
                     "error",
                     "status",
+                    "succeeded_count",
+                    "failed_count",
+                    "failures",
                     "log_status",
                 }
             ),

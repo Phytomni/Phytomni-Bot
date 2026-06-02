@@ -613,8 +613,17 @@ def _format_in_silico_result(
         for item in _mapping_sequence(content.get("goals"))
     )
     output_dir = _string_or_none(content.get("output_dir"))
-    error = _string_or_none(content.get("error"))
     primary_task_id = task_ids[0] if task_ids else None
+    universal = project_universal_failure_metadata(content)
+    failures_list = content.get("failures") or []
+    # DEPRECATED — derived alias preserved for one-release backward compat.
+    # DF-2 removes this after the deprecation window. See TW-2 / TW-3 in
+    # .codex/plans/2026-06-02-review-wire-universal-failures.md.
+    legacy_error = (
+        failures_list[-1]["message"]
+        if failures_list
+        else _string_or_none(content.get("error"))
+    )
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",
         metadata={
@@ -622,8 +631,11 @@ def _format_in_silico_result(
             "task_ids": task_ids,
             "output_dir": output_dir,
             "goals": goals,
-            "error": error,
-            "status": "RUNNING",
+            "error": legacy_error,
+            "status": universal["status"],
+            "succeeded_count": universal["succeeded_count"],
+            "failed_count": universal["failed_count"],
+            "failures": universal["failures"],
             "log_status": "sync_running",
         },
     )

@@ -85,7 +85,8 @@ class InSilicoResearchState(ParallelDispatchState):
 
     Inherits the shared parallel-dispatch bookkeeping fields
     (``analysis_type``, ``task_index``, ``task_ids``,
-    ``completed_count``, ``error``) from ``ParallelDispatchState`` so
+    ``completed_count``, ``error``, ``failures``) from
+    ``ParallelDispatchState`` so
     multi-goal Send fan-out merges through reducers
     (``task_ids: operator.or_``, ``completed_count: operator.add``)
     instead of raising LangGraph's ``InvalidUpdateError`` on concurrent
@@ -480,7 +481,7 @@ class InSilicoResearchAgents:
                 "obs_file_list": kwargs.get("obs_file_list") or [],
             },
             kwargs,
-            ("task_ids", "goals", "error"),
+            ("task_ids", "goals", "error", "failures"),
             AnalysisStateSpec(
                 tasks_key="research_tasks",
                 result_inits={"goals": []},
