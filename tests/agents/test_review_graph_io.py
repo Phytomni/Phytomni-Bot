@@ -63,9 +63,13 @@ def test_review_state_carries_full_legacy_field_set() -> None:
     """``DeepResearchState`` retains every legacy inline TypedDict key.
 
     Pins binary compatibility: every node method still type-hints
-    ``DeepResearchState`` for its ``state`` parameter, and that
-    name is now sourced from state.py with the identical field
-    union.
+    ``DeepResearchState`` for its ``state`` parameter, and the legacy
+    field union sourced from state.py is fully preserved. New fields
+    (e.g. universal failure channel inherited from
+    ``ParallelDispatchState``, Send-payload transient fields, indexed
+    accumulators added for the fan-out wire) are additive — this test
+    enforces the superset relation so legacy callers never lose a
+    field while new fields can land without re-pinning the set.
     """
     expected = {
         "original_user_query",
@@ -83,7 +87,7 @@ def test_review_state_carries_full_legacy_field_set() -> None:
         "summary_content",
         "final_response",
     }
-    assert set(get_type_hints(DeepResearchState).keys()) == expected
+    assert set(get_type_hints(DeepResearchState).keys()) >= expected
 
 
 def test_review_subgraph_compiles_with_no_conditional_branches() -> None:
