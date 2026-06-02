@@ -362,8 +362,8 @@ class DeepGenomeAgents(
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
         workflow.add_conditional_edges(
             "synthesize_node",
-            self._route_after_synthesize,
-            ["experiment_node", "introduction_node"],
+            self._route_synthesize_barrier,
+            ["synthesize_node", "experiment_node", "introduction_node"],
         )
 
         workflow.add_conditional_edges(
