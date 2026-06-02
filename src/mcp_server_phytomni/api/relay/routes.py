@@ -15,11 +15,15 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from starlette.requests import Request
 
 from ...config.defaults import ApiConfig
+from ...config.settings import get_sensitive_config
 from ..auth import ApiPrincipal, relay_scope_satisfied, require_principal
 from ..ratelimit import make_rate_limiter
+from .audit import get_audit_store
+from .forward import RelayErrorMode, RelayUpstream, forward_relay_request
 
 __all__ = [
     "create_relay_router",
@@ -27,6 +31,16 @@ __all__ = [
     "require_relay_access",
     "read_relay_body",
 ]
+
+# OpenAI-family relay services: each fronts an upstream the operator
+# reaches with an Authorization: Bearer key, with the SDK path appended
+# to the configured base URL. The customer query string is never carried
+# onto the operator-credentialed call (the upstream URL is config-only).
+_OPENAI_RELAYS = (
+    ("llm", "chat/completions", "BASE_URL", "API_KEY"),
+    ("coder", "chat/completions", "CODER_URL", "CODER_API_KEY"),
+    ("embed", "embeddings", "EMBED_URL", "EMBED_API_KEY"),
+)
 
 # One relay-specific limiter per worker, kept separate from the agent
 # budget so relay calls (which spend the operator's metered upstream
@@ -116,12 +130,54 @@ def require_relay_access(
     return _gated
 
 
+def _openai_relay_handler(
+    name: str, path: str, url_field: str, key_field: str
+) -> Callable[..., Awaitable[Response]]:
+    """Build a TRANSPARENT relay handler for one OpenAI-family service.
+
+    The handler is scope-gated, reads the body under the byte budget,
+    injects the operator Bearer key, and forwards to the config base URL
+    with ``path`` appended (the client query is dropped — the upstream
+    URL is config-resolved only).
+    """
+
+    async def _handler(
+        request: Request,
+        principal: ApiPrincipal = Depends(require_relay_access(name)),
+    ) -> Response:
+        config = ApiConfig()
+        body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
+        sensitive = get_sensitive_config()
+        base = getattr(sensitive, url_field).rstrip("/")
+        key = getattr(sensitive, key_field).get_secret_value()
+
+        async def _inject() -> dict[str, str]:
+            return {"Authorization": f"Bearer {key}"}
+
+        upstream = RelayUpstream(
+            url=f"{base}/{path}",
+            error_mode=RelayErrorMode.TRANSPARENT,
+            service=name,
+            inject_headers=_inject,
+        )
+        return await forward_relay_request(
+            request=request,
+            body=body,
+            upstream=upstream,
+            principal=principal,
+            audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
+        )
+
+    return _handler
+
+
 def create_relay_router() -> APIRouter:
     """Build the ``/v1/relay`` router gated by the enable kill-switch.
 
     Returns:
         An ``APIRouter`` whose every route runs ``relay_enabled_guard``
-        first, exposing a liveness probe at ``/v1/relay/healthz``.
+        first, exposing a liveness probe and the OpenAI-family relay
+        routes (llm / coder / embed).
     """
     router = APIRouter(
         prefix="/v1/relay",
@@ -132,5 +188,12 @@ def create_relay_router() -> APIRouter:
     async def relay_healthz() -> dict[str, str]:
         """Return a relay liveness signal when the relay is enabled."""
         return {"status": "ok"}
+
+    for name, path, url_field, key_field in _OPENAI_RELAYS:
+        router.add_api_route(
+            f"/{name}/{path}",
+            _openai_relay_handler(name, path, url_field, key_field),
+            methods=["POST"],
+        )
 
     return router
