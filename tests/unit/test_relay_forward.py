@@ -12,6 +12,7 @@ scrub.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
@@ -187,6 +188,29 @@ async def test_tee_marks_upstream_abort_without_propagating() -> None:
     assert captured[0].finish_reason is RelayFinishReason.UPSTREAM_ABORTED
     assert captured[0].body == b"ab"
     assert captured[0].error_type == "ReadError"
+
+
+async def test_tee_deadline_aborts_slow_upstream() -> None:
+    """A drip-feeding upstream is torn down at the wall-clock deadline."""
+    captured: list[TeeOutcome] = []
+
+    async def _capture(outcome: TeeOutcome) -> None:
+        captured.append(outcome)
+
+    async def _slow() -> AsyncIterator[bytes]:
+        yield b"a"
+        await asyncio.sleep(0.2)
+        yield b"b"
+
+    streamed = [
+        chunk
+        async for chunk in tee_and_stream(
+            _slow(), audit_cap=100, on_complete=_capture, deadline=0.05
+        )
+    ]
+
+    assert b"".join(streamed) == b"a"
+    assert captured[0].finish_reason is RelayFinishReason.DEADLINE_EXCEEDED
 
 
 async def test_tee_marks_client_disconnect_on_aclose() -> None:

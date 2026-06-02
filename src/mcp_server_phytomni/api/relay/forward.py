@@ -178,6 +178,7 @@ class RelayFinishReason(enum.Enum):
     COMPLETE = "complete"
     UPSTREAM_ABORTED = "upstream_aborted"
     CLIENT_DISCONNECTED = "client_disconnected"
+    DEADLINE_EXCEEDED = "deadline_exceeded"
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,7 @@ async def tee_and_stream(
     *,
     audit_cap: int,
     on_complete: Callable[[TeeOutcome], Awaitable[None]],
+    deadline: Optional[float] = None,
 ) -> AsyncGenerator[bytes, None]:
     """Stream upstream chunks to the client while capturing an audit copy.
 
@@ -213,13 +215,18 @@ async def tee_and_stream(
     audit copy stops growing once it reaches ``audit_cap`` (the cap is
     enforced during accumulation, never by buffering the whole body).
     ``on_complete`` is invoked exactly once with the outcome, marking an
-    upstream mid-stream abort distinctly from a client disconnect so the
-    audit trail can tell a clean 200 from a truncated one.
+    upstream mid-stream abort, a client disconnect, and a wall-clock
+    deadline distinctly so the audit trail can tell a clean 200 from a
+    truncated one. When ``deadline`` is set it bounds the total
+    upstream-production time so a drip-feeding upstream cannot hold the
+    connection open indefinitely.
 
     Args:
         source: The upstream response byte iterator.
         audit_cap: Maximum bytes to retain for the audit copy.
         on_complete: Coroutine called once with the :class:`TeeOutcome`.
+        deadline: Optional total wall-clock budget in seconds for the
+            whole upstream stream.
 
     Yields:
         Each upstream chunk, unmodified.
@@ -228,8 +235,24 @@ async def tee_and_stream(
     total = 0
     reason = RelayFinishReason.COMPLETE
     error_type: Optional[str] = None
+    started = time.monotonic()
     try:
-        async for chunk in source:
+        while True:
+            timeout = None
+            if deadline is not None:
+                timeout = deadline - (time.monotonic() - started)
+                if timeout <= 0:
+                    reason = RelayFinishReason.DEADLINE_EXCEEDED
+                    error_type = "deadline_exceeded"
+                    break
+            try:
+                chunk = await asyncio.wait_for(anext(source), timeout)
+            except StopAsyncIteration:
+                break
+            except TimeoutError:
+                reason = RelayFinishReason.DEADLINE_EXCEEDED
+                error_type = "deadline_exceeded"
+                break
             total += len(chunk)
             if len(copy) < audit_cap:
                 copy.extend(chunk[: audit_cap - len(copy)])
@@ -314,6 +337,7 @@ def _streaming_relay_response(
     *,
     cap: int,
     record: Callable[..., None],
+    deadline: Optional[float] = None,
 ) -> StreamingResponse:
     """Build a streamed 2xx relay response that tees + audits on end.
 
@@ -337,7 +361,10 @@ def _streaming_relay_response(
     async def _stream() -> AsyncIterator[bytes]:
         try:
             async for chunk in tee_and_stream(
-                upstream.aiter_bytes(), audit_cap=cap, on_complete=_on_complete
+                upstream.aiter_bytes(),
+                audit_cap=cap,
+                on_complete=_on_complete,
+                deadline=deadline,
             ):
                 yield chunk
         finally:
@@ -523,7 +550,11 @@ async def forward_relay_request(
         200 <= upstream_resp.status_code < 300
     ):
         return _streaming_relay_response(
-            stack, upstream_resp, cap=cap, record=record
+            stack,
+            upstream_resp,
+            cap=cap,
+            record=record,
+            deadline=config.RELAY_TIMEOUT_SECONDS,
         )
 
     try:
