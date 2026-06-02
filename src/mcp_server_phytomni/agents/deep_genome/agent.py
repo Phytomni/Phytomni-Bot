@@ -173,7 +173,7 @@ class DeepGenomeState(TypedDict):
     part1_report: Optional[str]
     analysis_tasks: List[Dict[str, Any]]
     raw_analyst_data: Annotated[Dict[str, Any], update_dict]
-    analyst_summaries: Dict
+    analyst_summaries: Annotated[Dict, update_dict]
     synthesize_report: Optional[str]
     experiment_report: Optional[str]
     protocol_report: Optional[str]
