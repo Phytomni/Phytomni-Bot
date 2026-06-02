@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
+from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.downloads import download_upload_context
 from .helpers import _extract_json_object, _format_doc_fragment
@@ -110,6 +111,116 @@ class ReviewPlanningMixin(WorkflowMixinBase):
             "user_query": user_query,
             "upload_context": upload_context,
             "total_length": total_length,
+            "research_dimensions": [
+                str(dimension) for dimension in dimensions[:4]
+            ],
+        }
+
+    async def plan_query_prep_node(
+        self: Any, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Build the chat payload for the plan-query call.
+
+        Mirrors the prompt-building half of ``plan_node``, including
+        the file-upload context download. The actual chat dispatch runs
+        in the shared chat node; ``plan_query_post_node`` parses the
+        research dimensions from the response.
+
+        Args:
+            state: Current workflow state containing the original query and
+                optional uploaded OBS files.
+
+        Returns:
+            State delta with the upload context / length fields already
+            committed, a ``ChatInput`` payload under ``chat_payload``,
+            and the ``pending_post`` sentinel for the after-chat router.
+        """
+        user_query = state["original_user_query"]
+        total_length = 0
+        upload_context = ""
+
+        if state["obs_file_list"]:
+            upload_context, total_length = await download_upload_context(
+                state["obs_file_list"],
+                self.review_config,
+                self.sensitive_config,
+            )
+            user_query = get_prompt(
+                self.review_config.PROMPT_FILE,
+                "user/deep_research_query_file",
+                {
+                    "upload_context": upload_context,
+                    "user_query": user_query,
+                },
+            )
+        else:
+            user_query = get_prompt(
+                self.review_config.PROMPT_FILE,
+                "user/deep_research_query",
+                {"user_query": user_query},
+            )
+
+        chat_kwargs = build_chat_kwargs_for(
+            self.review_config,
+            self.sensitive_config,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "type": "object",
+                    "properties": {
+                        "Research_dimensions": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        }
+                    },
+                    "required": ["Research_dimensions"],
+                },
+            },
+        )
+        chat_payload = build_chat_input(user_query, chat_kwargs)
+        return {
+            "user_query": user_query,
+            "upload_context": upload_context,
+            "total_length": total_length,
+            "chat_payload": chat_payload,
+            "pending_post": "plan_query_post_node",
+        }
+
+    async def plan_query_post_node(
+        self: Any, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Parse the plan-query chat response into the legacy delta.
+
+        Mirrors the response-parsing half of ``plan_node`` but reads
+        the chat response from ``state['chat_response']`` instead of
+        awaiting a fresh ``_chat`` call. Raises ``ValueError`` when the
+        LLM returns no usable dimensions, matching ``plan_node``'s contract.
+
+        Args:
+            state: Current workflow state. Reads ``chat_response``
+                written by the shared chat node.
+
+        Returns:
+            State delta with ``research_dimensions``.
+
+        Raises:
+            ValueError: If the LLM returns no valid dimensions.
+        """
+        phyto_response = state.get("chat_response") or {}
+        content = "{}"
+        if (
+            phyto_response
+            and phyto_response.get("choices")
+            and len(phyto_response["choices"]) > 0
+            and phyto_response["choices"][0].get("message")
+            and phyto_response["choices"][0]["message"].get("content")
+        ):
+            content = phyto_response["choices"][0]["message"]["content"]
+        dimensions_json = _extract_json_object(content)
+        dimensions = dimensions_json.get("Research_dimensions", [])
+        if not isinstance(dimensions, list) or not dimensions:
+            raise ValueError("Invalid research dimensions from phyto_chat")
+        return {
             "research_dimensions": [
                 str(dimension) for dimension in dimensions[:4]
             ],

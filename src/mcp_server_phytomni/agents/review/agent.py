@@ -38,6 +38,10 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from ..shared.chat_subgraph import (
+    make_chat_after_router,
+    make_chat_node_wrapper,
+)
 from ..shared.intermediate_state import merge_intermediate_state
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -97,11 +101,54 @@ class DeepResearchAgent(
         self.app = self._build_graph()
 
     def _build_graph(self):
+        """Build and compile the LangGraph StateGraph workflow.
+
+        Two shapes based on ``USE_CHAT_SUBGRAPH``:
+
+        Flag-off (default): preserves the legacy seven-node linear
+        pipeline (``plan_node`` → ``retrieve_node`` → ``draft_node`` →
+        ``review_node`` → ``revise_node`` → ``summary_node`` →
+        ``post_process_node`` → END). Each node calls ``self._chat``
+        directly via the inherited ``_chat`` helper.
+
+        Flag-on: replaces the three single-shot chat sites
+        (``plan_query`` / ``summary`` / ``follow_up``) with prep + post
+        pairs surrounding a single shared ``chat`` node registered via
+        :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper`.
+        The four fan-out sites (``retrieve_node`` / ``draft_node`` /
+        ``review_node`` / ``revise_node``) retain their legacy
+        ``asyncio.gather`` bodies; F3.C3.3-C3.5 convert them to
+        ``Send``-dispatch workers in subsequent steps.
+
+        Returns:
+            Compiled LangGraph application bound to
+            ``self.checkpointer``.
+        """
         workflow = StateGraph(
             state_schema=DeepResearchState,
             input_schema=DeepResearchInput,
             output_schema=DeepResearchOutput,
         )
+
+        if self.review_config.USE_CHAT_SUBGRAPH:
+            self._wire_chat_subgraph(workflow)
+        else:
+            self._wire_legacy(workflow)
+
+        return workflow.compile(checkpointer=self.checkpointer)
+
+    def _wire_legacy(self, workflow: StateGraph) -> None:
+        """Register the legacy seven-node linear pipeline on ``workflow``.
+
+        Preserves the flag-off behavior exactly as it existed before
+        the ``USE_CHAT_SUBGRAPH`` dual-path split. Each single-shot
+        chat site calls ``self._chat`` directly through the inherited
+        helper.
+
+        Args:
+            workflow: Uncompiled ``StateGraph`` to register nodes and
+                edges on.
+        """
         workflow.add_node("plan_node", self.plan_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("draft_node", self.draft_node)
@@ -118,7 +165,78 @@ class DeepResearchAgent(
         workflow.add_edge("revise_node", "summary_node")
         workflow.add_edge("summary_node", "post_process_node")
         workflow.add_edge("post_process_node", END)
-        return workflow.compile(checkpointer=self.checkpointer)
+
+    def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
+        """Register the prep + post + shared chat form on ``workflow``.
+
+        Replaces the three single-shot chat sites (``plan_query`` /
+        ``summary`` / ``follow_up``) with prep + post pairs surrounding
+        a single shared ``chat`` node. The chat node is registered via
+        :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper` so
+        LangGraph's ``xray`` rendering can inline the compiled chat
+        subgraph in the review render.
+        :func:`~agents.shared.chat_subgraph.make_chat_after_router`
+        reads the ``pending_post`` sentinel each prep node stages to
+        branch back to the correct post node after the chat call.
+
+        The four fan-out sites (``retrieve_node`` / ``draft_node`` /
+        ``review_node`` / ``revise_node``) retain their legacy
+        ``asyncio.gather`` bodies and are wired identically to the
+        flag-off path. F3.C3.3-C3.5 will convert those sites to
+        ``Send``-dispatch workers in subsequent steps.
+
+        Args:
+            workflow: Uncompiled ``StateGraph`` to register nodes and
+                edges on.
+        """
+        # === 3 prep + 3 post + 1 shared chat mount ===
+        workflow.add_node("plan_query_prep_node", self.plan_query_prep_node)
+        workflow.add_node("plan_query_post_node", self.plan_query_post_node)
+        workflow.add_node("summary_prep_node", self.summary_prep_node)
+        workflow.add_node("summary_post_node", self.summary_post_node)
+        workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
+        workflow.add_node("follow_up_post_node", self.follow_up_post_node)
+        workflow.add_node(
+            "chat",
+            make_chat_node_wrapper(
+                build_input_fn=lambda state: state["chat_payload"],
+                extract_output_fn=lambda chat_output: (
+                    chat_output.get("response") or {}
+                ),
+                response_key="chat_response",
+            ),
+        )
+        # === Fan-out sites retain legacy gather bodies ===
+        workflow.add_node("retrieve_node", self.retrieve_node)
+        workflow.add_node("draft_node", self.draft_node)
+        workflow.add_node("review_node", self.review_node)
+        workflow.add_node("revise_node", self.revise_node)
+
+        # === Wire prep → chat (3 sites) ===
+        workflow.add_edge("plan_query_prep_node", "chat")
+        workflow.add_edge("summary_prep_node", "chat")
+        workflow.add_edge("follow_up_prep_node", "chat")
+
+        # === Shared chat → post (after-router) ===
+        workflow.add_conditional_edges(
+            "chat",
+            make_chat_after_router(),
+            {
+                "plan_query_post_node": "plan_query_post_node",
+                "summary_post_node": "summary_post_node",
+                "follow_up_post_node": "follow_up_post_node",
+            },
+        )
+
+        # === Linear pipeline edges ===
+        workflow.add_edge(START, "plan_query_prep_node")
+        workflow.add_edge("plan_query_post_node", "retrieve_node")
+        workflow.add_edge("retrieve_node", "draft_node")
+        workflow.add_edge("draft_node", "review_node")
+        workflow.add_edge("review_node", "revise_node")
+        workflow.add_edge("revise_node", "summary_prep_node")
+        workflow.add_edge("summary_post_node", "follow_up_prep_node")
+        workflow.add_edge("follow_up_post_node", END)
 
     async def _chat(
         self,
