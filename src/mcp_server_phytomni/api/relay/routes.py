@@ -12,11 +12,25 @@ later steps; this module currently exposes only the liveness probe.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...config.defaults import ApiConfig
+from ..auth import ApiPrincipal, relay_scope_satisfied, require_principal
+from ..ratelimit import make_rate_limiter
 
-__all__ = ["create_relay_router", "relay_enabled_guard"]
+__all__ = [
+    "create_relay_router",
+    "relay_enabled_guard",
+    "require_relay_access",
+]
+
+# One relay-specific limiter per worker, kept separate from the agent
+# budget so relay calls (which spend the operator's metered upstream
+# credentials) have their own cost ceiling. Per-worker in-memory state,
+# like the agent limiter; a shared store is needed before multi-worker.
+_relay_rate_limit = make_rate_limiter()
 
 
 def relay_enabled_guard() -> None:
@@ -33,6 +47,43 @@ def relay_enabled_guard() -> None:
     """
     if not ApiConfig().RELAY_ENABLED:
         raise HTTPException(status_code=404, detail="relay disabled")
+
+
+def require_relay_access(
+    service: str,
+) -> Callable[..., Awaitable[ApiPrincipal]]:
+    """Build the admission dependency for a relay ``service`` route.
+
+    Runs after authentication, then applies the relay-specific per-key
+    rate limit (429, distinct from the agent budget) and the strict
+    relay scope check (403; an empty-scope key is denied here, unlike on
+    agent routes). The ordering keeps 401 (auth) / 429 (budget) / 403
+    (scope) distinct.
+
+    Args:
+        service: The relay service the route fronts (e.g. ``llm``).
+
+    Returns:
+        A dependency yielding the authorized principal.
+    """
+
+    async def _gated(
+        principal: ApiPrincipal = Depends(require_principal),
+    ) -> ApiPrincipal:
+        retry_after = _relay_rate_limit(
+            principal.key_prefix, ApiConfig().RELAY_RATE_LIMIT_PER_MIN
+        )
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="relay rate limit exceeded",
+                headers={"Retry-After": str(retry_after)},
+            )
+        if not relay_scope_satisfied(principal.scopes, service):
+            raise HTTPException(status_code=403, detail="insufficient scope")
+        return principal
+
+    return _gated
 
 
 def create_relay_router() -> APIRouter:
