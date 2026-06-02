@@ -50,10 +50,10 @@ ANALYSIS_GOAL_TEMPLATE_MAP = {
     "enrichment_analysis": "user/enrichment_analysis",
     "protein_structure_analysis": "user/structure_analysis",
     "promoter_analysis": "user/promoter_analysis",
-    "gene_expression_tissues": "user/gene_expression_tissues",
-    "gene_expression_cultivars": "user/gene_expression_cultivars",
-    "gene_expression_genotypes": "user/gene_expression_genotypes",
-    "gene_expression_treatments": "user/gene_expression_treatments",
+    "gene_expression_tissues": "user/gene_expression_analysis/tissue",
+    "gene_expression_cultivars": "user/gene_expression_analysis/cultivar",
+    "gene_expression_genotypes": "user/gene_expression_analysis/genotype",
+    "gene_expression_treatments": "user/gene_expression_analysis/treatment",
     "single_cell_analysis": "user/single_cell_analysis",
     "smep_analysis": "user/smep_analysis",
     "smoc_analysis": "user/smoc_analysis",
@@ -77,6 +77,23 @@ ANALYSIS_META_TEMPLATE_MAP = {
     "smoc_analysis": "user/smoc_analysis_meta",
     "epic_analysis": "user/epic_analysis_meta",
     "gene_expression_analysis": "user/gene_expression_analysis_meta",
+}
+
+ANALYSIS_DATA_LIST_MAP = {
+    "evolution_analysis": "evolution_analysis",
+    "haplotypes_analysis": "haplotypes_analysis",
+    "fst_analysis": "fst_analysis",
+    "enrichment_analysis": "enrichment_analysis",
+    "protein_structure_analysis": "structure_analysis",
+    "promoter_analysis": "promoter_analysis",
+    "gene_expression_tissues": "gene_expression_analysis/tissues",
+    "gene_expression_cultivars": "gene_expression_analysis/cultivars",
+    "gene_expression_genotypes": "gene_expression_analysis/genotypes",
+    "gene_expression_treatments": "gene_expression_analysis/treatments",
+    "single_cell_analysis": "single_cell_analysis",
+    "smep_analysis": "promoter_analysis",
+    "smoc_analysis": "promoter_analysis",
+    "epic_analysis": "promoter_analysis",
 }
 
 ANALYSIS_TARGET_FILE_FEATURE_MAP = {
@@ -717,11 +734,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             {"gene_id": context.gene_id},
         )
         meta = get_prompt(self.deep_genome_config.PROMPT_FILE, meta_path)
+        data_json_path = ANALYSIS_DATA_LIST_MAP.get(analysis_type, "")
+        if '/' in data_json_path:
+            data_json_path, sub_title = data_json_path.split('/')
+        else:
+            sub_title = None
         data_list = get_data_list(
             self.deep_genome_config.DEEPGENOME_DATA,
-            analysis_type,
+            data_json_path,
             context.species,
         )
+        if sub_title:
+            data_list = data_list[sub_title]
         compute_resource = self._get_compute_resource(analysis_type)
         return goal_description, data_list, meta, compute_resource
 
@@ -758,6 +782,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             compute_resource=compute_resource,
             is_auto_select=False,
             is_polling=True,
+            is_preset_plan=True,
             thread_id=run_identity.scoped_id(
                 "thread",
                 context.gene_id,
