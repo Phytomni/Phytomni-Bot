@@ -99,7 +99,7 @@ from .openai_mapping import (
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
-from .relay import RelayAuditQuery, get_audit_store
+from .relay import RelayAuditQuery, create_relay_router, get_audit_store
 from .schemas import (
     AgentRunRequest,
     ApiErrorDetail,
@@ -1405,6 +1405,8 @@ def create_app() -> FastAPI:
                     "data": [_strip_run_result(r) for r in data],
                 }
         return JSONResponse(body)
+
+    app.include_router(create_relay_router())
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

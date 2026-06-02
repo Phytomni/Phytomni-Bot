@@ -5,7 +5,7 @@
 """Credential-injecting relay subpackage for the HTTP API service.
 
 Public API: RelayAuditRecord, RelayAuditQuery, RelayAuditStore,
-get_audit_store.
+get_audit_store, create_relay_router.
 """
 
 from __future__ import annotations
@@ -16,10 +16,12 @@ from .audit import (
     RelayAuditStore,
     get_audit_store,
 )
+from .routes import create_relay_router
 
 __all__ = [
     "RelayAuditRecord",
     "RelayAuditQuery",
     "RelayAuditStore",
     "get_audit_store",
+    "create_relay_router",
 ]
