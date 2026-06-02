@@ -27,6 +27,7 @@ _NONCE_LEN = 12
 _KEY_LEN = 32
 _VERSION_LEN = 1
 _HEADER_LEN = len(MAGIC) + _VERSION_LEN + _SALT_LEN + _NONCE_LEN
+_UTF8_BOM = b"\xef\xbb\xbf"
 
 
 class SecretEnvelopeError(Exception):
@@ -36,6 +37,11 @@ class SecretEnvelopeError(Exception):
     wrong license key or a corrupted file. AES-GCM authentication makes
     the two cryptographically indistinguishable, and not separating
     them avoids handing an attacker a decryption oracle.
+
+    That deliberate ambiguity applies only to the authentication-failure
+    message. A post-decryption failure (non-UTF-8 or BOM-prefixed sealed
+    plaintext) may carry a specific message because reaching it already
+    required a valid key, so it leaks no decryption oracle.
     """
 
 
@@ -58,6 +64,43 @@ def derive_key(license_key: str, salt: bytes) -> bytes:
     return kdf.derive(license_key.encode("utf-8"))
 
 
+def _decode_sealed_utf8(raw: bytes, *, context: str) -> str:
+    """Decode envelope plaintext as strict UTF-8, rejecting a BOM.
+
+    Both the encrypt seam (validating the source ``.env`` before
+    sealing) and the decrypt seam (decoding the sealed bytes) route
+    through here, so the two enforce one invariant with one message
+    vocabulary: the plaintext must be valid UTF-8 with no byte-order
+    mark. A leading BOM passes ``bytes.decode('utf-8')`` but silently
+    corrupts the first dotenv key, so it is rejected explicitly rather
+    than decoded.
+
+    Args:
+        raw: Candidate plaintext bytes.
+        context: Human-readable subject for the error message (the
+            source path on encrypt, ``"sealed .env"`` on decrypt).
+
+    Returns:
+        The decoded UTF-8 text.
+
+    Raises:
+        SecretEnvelopeError: If ``raw`` starts with a UTF-8 BOM or is
+            not valid UTF-8.
+    """
+    if raw.startswith(_UTF8_BOM):
+        raise SecretEnvelopeError(
+            f"{context} has a UTF-8 BOM; re-save as UTF-8 without a "
+            "BOM (Windows editors often add one)."
+        )
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SecretEnvelopeError(
+            f"{context} is not UTF-8 ({exc}); re-save as UTF-8 without "
+            "a BOM (Windows editors often default to GBK/ANSI)."
+        ) from exc
+
+
 def encrypt_env_file(
     plaintext_path: Path, license_key: str, dest: Path
 ) -> None:
@@ -72,6 +115,7 @@ def encrypt_env_file(
         dest: Path the envelope blob is written to.
     """
     plaintext = plaintext_path.read_bytes()
+    _decode_sealed_utf8(plaintext, context=str(plaintext_path))
     salt = os.urandom(_SALT_LEN)
     nonce = os.urandom(_NONCE_LEN)
     key = derive_key(license_key, salt)
@@ -119,5 +163,6 @@ def decrypt_env_blob(blob: bytes, license_key: str) -> dict[str, str]:
         raise SecretEnvelopeError(
             "wrong license key or corrupted file"
         ) from exc
-    parsed = dotenv_values(stream=io.StringIO(plaintext.decode("utf-8")))
+    text = _decode_sealed_utf8(plaintext, context="sealed .env")
+    parsed = dotenv_values(stream=io.StringIO(text))
     return {k: v for k, v in parsed.items() if v is not None}

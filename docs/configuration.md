@@ -63,6 +63,12 @@ python scripts/encrypt_env.py \
   --output src/mcp_server_phytomni/config/.env.encrypted
 ```
 
+The input `.env` must be valid UTF-8 **without** a byte-order mark
+(BOM). `encrypt_env.py` rejects GBK / ANSI / BOM-encoded input with a
+clear error and exit code `4`, so a mis-encoded source file cannot be
+sealed into an image — where it would otherwise surface as a cryptic
+`UnicodeDecodeError` at customer startup.
+
 At runtime the customer supplies the license key by either:
 
 - `PHYTOMNI_LICENSE_KEY`

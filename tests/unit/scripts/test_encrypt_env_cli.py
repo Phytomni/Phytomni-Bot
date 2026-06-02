@@ -5,8 +5,8 @@
 """Tests for the scripts/encrypt_env.py operator CLI.
 
 Drives the script through a subprocess (as an operator would) and
-asserts the produced blob round-trips, plus the input-missing and
-overwrite-guard exit codes.
+asserts the produced blob round-trips, plus the input-missing,
+overwrite-guard, and non-UTF-8 input exit codes.
 """
 
 import subprocess
@@ -135,3 +135,27 @@ def test_cli_force_overwrites(tmp_path):
     assert decrypt_env_blob(out.read_bytes(), LICENSE) == {
         "API_KEY": "sk-xyz",
     }
+
+
+def test_cli_rejects_non_utf8_input(tmp_path):
+    """Verify a non-UTF-8 input exits with code 4 and a clear message.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+    """
+    src = tmp_path / ".env"
+    src.write_bytes("BASE_URL=请\n".encode("gbk"))
+    out = tmp_path / ".env.encrypted"
+
+    result = _run(
+        "--input",
+        str(src),
+        "--license-key",
+        LICENSE,
+        "--output",
+        str(out),
+    )
+
+    assert result.returncode == 4
+    assert "not UTF-8" in result.stderr
+    assert not out.exists()

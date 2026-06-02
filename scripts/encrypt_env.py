@@ -22,7 +22,10 @@ import hashlib
 import sys
 from pathlib import Path
 
-from mcp_server_phytomni.config import encrypt_env_file
+from mcp_server_phytomni.config import (
+    SecretEnvelopeError,
+    encrypt_env_file,
+)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -81,7 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    encrypt_env_file(args.input, args.license_key, args.output)
+    try:
+        encrypt_env_file(args.input, args.license_key, args.output)
+    except SecretEnvelopeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
 
     blob = args.output.read_bytes()
     digest = hashlib.sha256(blob).hexdigest()
