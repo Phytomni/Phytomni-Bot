@@ -280,9 +280,8 @@ def project_universal_failure_metadata(
                 ``PENDING``.
             succeeded_count: ``len(task_ids)``.
             failed_count: ``len(failures)``.
-            failures: List of three-key dicts
-                ``{task_label, kind, message}``.
-                ``traceback_digest`` is explicitly stripped.
+            failures: list of ``{task_label, kind, message}`` dicts;
+                use directly — no tuple cast; ``traceback_digest`` stripped.
     """
     failures: list[dict[str, Any]] = state.get("failures", []) or []
     task_ids: dict[str, str] = state.get("task_ids", {}) or {}
@@ -679,20 +678,22 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
         256,
         "raw.phytomni_state.goal_description",
     )
-    universal = project_universal_failure_metadata(dict(content))
+    universal = project_universal_failure_metadata(content)
+    u_status = universal["status"]
+    log_status = "sync_failed" if u_status == "FAILED" else "sync_running"
     metadata: dict[str, Any] = {
         "task_id": _string_or_none(primary_task.get("task_id")),
         "output_dir": output_dirs[0] if output_dirs else None,
         "compute_resource": _string_or_none(
             primary_task.get("compute_resource")
         ),
-        "status": universal["status"],
-        "log_status": "sync_running",
+        "status": u_status,
+        "log_status": log_status,
         "task_ids": task_ids,
         "goal_description": goal_description or None,
         "succeeded_count": universal["succeeded_count"],
         "failed_count": universal["failed_count"],
-        "failures": tuple(universal["failures"]),
+        "failures": universal["failures"],
     }
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",

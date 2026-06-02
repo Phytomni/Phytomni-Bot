@@ -754,7 +754,19 @@ class ApiConfig(BaseSettings):
         RELAY_REQUEST_MAX_BYTES (int): Maximum relayed request body size
             in bytes accepted before the relay rejects the call.
         RELAY_TIMEOUT_SECONDS (float): Per-request upstream timeout in
-            seconds for relayed calls.
+            seconds for relayed calls. Also reused as the wall-clock
+            ceiling for a streamed forward so a drip-feeding upstream
+            cannot hold a pooled connection indefinitely.
+        RELAY_RESPONSE_AUDIT_MAX_BYTES (int): Maximum bytes of an upstream
+            response copied into the audit store. The client-facing
+            response is never truncated; only the audit copy is capped.
+        RELAY_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute
+            for relay routes, kept distinct from API_RATE_LIMIT_PER_MIN
+            because relay calls spend the operator's metered upstream
+            credentials.
+        RELAY_MAX_CONCURRENT_PER_KEY (int): Maximum in-flight relay
+            forwards per key, bounding how many shared-pool connections a
+            single tenant can hold open at once.
     """
 
     API_HOST: str = "127.0.0.1"
@@ -814,6 +826,26 @@ class ApiConfig(BaseSettings):
         default=600.0,
         validation_alias=AliasChoices(
             "RELAY_TIMEOUT_SECONDS", "PHYTOMNI_RELAY_TIMEOUT_SECONDS"
+        ),
+    )
+    RELAY_RESPONSE_AUDIT_MAX_BYTES: int = Field(
+        default=10_485_760,
+        validation_alias=AliasChoices(
+            "RELAY_RESPONSE_AUDIT_MAX_BYTES",
+            "PHYTOMNI_RELAY_RESPONSE_AUDIT_MAX_BYTES",
+        ),
+    )
+    RELAY_RATE_LIMIT_PER_MIN: int = Field(
+        default=60,
+        validation_alias=AliasChoices(
+            "RELAY_RATE_LIMIT_PER_MIN", "PHYTOMNI_RELAY_RATE_LIMIT_PER_MIN"
+        ),
+    )
+    RELAY_MAX_CONCURRENT_PER_KEY: int = Field(
+        default=8,
+        validation_alias=AliasChoices(
+            "RELAY_MAX_CONCURRENT_PER_KEY",
+            "PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY",
         ),
     )
 
