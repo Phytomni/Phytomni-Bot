@@ -254,7 +254,7 @@ _UniversalStatus = Literal["SUCCESS", "PARTIAL", "FAILED", "PENDING"]
 
 
 def project_universal_failure_metadata(
-    state: dict[str, Any],
+    state: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Project failures + task_ids into client-facing metadata keys.
 
@@ -271,7 +271,7 @@ def project_universal_failure_metadata(
         PENDING: both empty (no work dispatched yet)
 
     Args:
-        state: The final LangGraph state dict. Reads ``failures``
+        state: The final LangGraph state mapping. Reads ``failures``
             (list[FailureRecord]) and ``task_ids`` (dict[str, str]).
 
     Returns:
@@ -524,9 +524,14 @@ def _format_network_task_result(
         if isinstance(goal_text, str)
         else None
     )
+    universal = project_universal_failure_metadata(content)
     enriched_metadata = {
         **base.metadata,
         "goal_description": truncated_goal,
+        "status": universal["status"],
+        "succeeded_count": universal["succeeded_count"],
+        "failed_count": universal["failed_count"],
+        "failures": universal["failures"],
     }
     return FormattedToolResult(
         answer=base.answer,

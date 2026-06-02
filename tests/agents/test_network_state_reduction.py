@@ -237,3 +237,14 @@ async def test_network_state_reduction_handles_dual_failure(
     assert isinstance(final_state.get("error"), str)
     assert final_state["error"].startswith("boom ")
     assert final_state["task_ids"] == {}
+    # failures accumulates both records via operator.add reducer.
+    assert "failures" in final_state
+    assert len(final_state["failures"]) == 2
+    assert all(
+        f["message"].startswith("boom") for f in final_state["failures"]
+    )
+    assert all(f["kind"] == "execute" for f in final_state["failures"])
+    assert all(
+        "task_label" in f and "traceback_digest" in f
+        for f in final_state["failures"]
+    )

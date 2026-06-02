@@ -106,6 +106,8 @@ def _gene_network_payload() -> dict[str, Any]:
             "output_dir": "/obs/phytomni/net/out",
             "compute_resource": "medium",
         },
+        "task_ids": {"gene_network_analysis": "net-1"},
+        "failures": [],
         "phytomni_state": _KITCHEN_SINK_STATE,
     }
 
@@ -204,6 +206,9 @@ def _deep_genome_arguments() -> dict[str, Any]:
                     "status",
                     "log_status",
                     "goal_description",
+                    "succeeded_count",
+                    "failed_count",
+                    "failures",
                 }
             ),
             None,

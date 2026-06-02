@@ -66,7 +66,8 @@ class GeneNetworkState(ParallelDispatchState):
 
     Inherits the shared parallel-dispatch bookkeeping fields
     (``analysis_type``, ``task_index``, ``task_ids``,
-    ``completed_count``, ``error``) from ``ParallelDispatchState`` and
+    ``completed_count``, ``error``, ``failures``) from
+    ``ParallelDispatchState`` and
     adds the gene-network-specific fields below.
 
     Attributes:
@@ -313,7 +314,7 @@ class GeneNetworkAgents:
             self.app,
             {"species": species, "to_id": to_id},
             kwargs,
-            ("network_task", "error"),
+            ("network_task", "error", "failures"),
             AnalysisStateSpec(
                 tasks_key="network_tasks",
                 result_inits={"network_task": {}},
