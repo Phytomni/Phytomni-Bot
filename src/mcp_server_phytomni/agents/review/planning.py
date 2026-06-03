@@ -16,20 +16,42 @@ plugs into DeepResearchAgent via multiple inheritance and shares the
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List
+
+from langgraph.types import Send
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
+from ...graphs.review_to_knowledge_adapters import (
+    build_review_knowledge_input,
+    extract_review_knowledge_response,
+)
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.downloads import download_upload_context
+from ..shared.analysis import _compute_traceback_digest
+from ..shared.parallel_dispatch import FailureRecord
 from .helpers import _extract_json_object, _format_doc_fragment
 
 if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
     DeepResearchState = Dict[str, Any]
+
+logger = logging.getLogger(__name__)
+
+# Workers MUST NOT raise per the TW-1 sentinel-coexistence contract:
+# downstream ``retrieve_reduce_node`` iterates the indexed-results list
+# one entry per dimension and would short-circuit on a propagated
+# exception. The factory-closure worker therefore catches Exception
+# broadly and writes BOTH a legacy empty-list sentinel AND a
+# ``FailureRecord`` to the shared failures channel. Mirrors the
+# ``_WORKFLOW_CAPTURED_EXCEPTIONS`` tuple shape in
+# ``runtime/langgraph_runner.py`` which carries the same design
+# intent through static analysis (pylint ``W0718``).
+_RETRIEVE_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
 
 @dataclass
@@ -277,6 +299,141 @@ class ReviewPlanningMixin(WorkflowMixinBase):
             "dimension_params": dimension_params,
             "total_length": accumulator.current_length,
         }
+
+    async def retrieve_prepare_tasks_node(
+        self: Any, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Prepare for Send fan-out over research dimensions.
+
+        Acts as a graph 'split' node — returns an empty delta. The
+        actual per-dimension Send payloads are constructed by
+        ``route_retrieve_tasks`` (see ``add_conditional_edges`` in
+        ``_wire_chat_subgraph``).
+        """
+        del state
+        return {}
+
+    def make_retrieve_worker_node(self: Any, knowledge_app: Any) -> Any:
+        """Return a Send-invoked per-dimension worker.
+
+        Closes over ``knowledge_app`` so LangGraph's
+        ``find_subgraph_pregel`` walker can discover the compiled
+        KnowledgeAgent through the closure free-variable and expand
+        the subgraph in the xray render. Xray prefixes the inlined
+        subgraph's child node keys with the parent ``add_node``
+        name, i.e. ``retrieve_worker_node:<child>``.
+
+        On success writes a single ``(task_index, docs)`` tuple into
+        ``retrieve_indexed_results`` via ``operator.add``. On exception
+        writes BOTH a legacy empty-list sentinel AND a ``FailureRecord``
+        into the shared failures channel (TW-1 coexistence —
+        ``retrieve_reduce_node`` downstream still iterates a list per
+        dimension; per-task failure detail surfaces in
+        ``raw.phytomni_state``).
+
+        Args:
+            knowledge_app: Compiled KnowledgeAgent subgraph for this
+                consumer instance.  Must be a ``CompiledStateGraph`` so
+                xray expansion discovers the subgraph.
+
+        Returns:
+            Async callable suitable for ``StateGraph.add_node``.
+        """
+
+        async def _retrieve_worker(state: DeepResearchState) -> Dict[str, Any]:
+            task_index = state["task_index"]
+            try:
+                knowledge_output = await knowledge_app.ainvoke(
+                    state["knowledge_payload"]
+                )
+                docs = extract_review_knowledge_response(knowledge_output)
+                return {
+                    "retrieve_indexed_results": [(task_index, docs)],
+                }
+            except _RETRIEVE_WORKER_CAUGHT as exc:
+                logger.exception(
+                    "retrieve worker failed: task_index=%s dimension=%s",
+                    task_index,
+                    state.get("dimension"),
+                )
+                return {
+                    "retrieve_indexed_results": [(task_index, [])],
+                    "failures": [
+                        FailureRecord(
+                            task_label=f"retrieve:{task_index}",
+                            message=str(exc),
+                            kind="execute",
+                            traceback_digest=_compute_traceback_digest(exc),
+                        )
+                    ],
+                }
+
+        return _retrieve_worker
+
+    async def retrieve_reduce_node(
+        self: Any, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Reduce per-dimension docs into accumulator + dimension_params.
+
+        Mirrors the POST-gather logic in the legacy retrieve_node.
+        Reads state["retrieve_indexed_results"] (accumulated
+        (task_index, docs) tuples), state["research_dimensions"],
+        and state["total_length"]; writes all_raw_doc_list,
+        dimension_params, and total_length.
+        """
+        dimensions = state["research_dimensions"]
+        indexed = sorted(state["retrieve_indexed_results"], key=lambda t: t[0])
+        # Rebuild a results list ordered by task_index for the fragment loop.
+        results = [docs for _, docs in indexed]
+
+        accumulator = RetrievalAccumulator(
+            raw_docs=[],
+            current_length=state["total_length"],
+        )
+        dimension_params = []
+        dimension_length = (
+            self.review_config.MAX_TOKENS - state["total_length"]
+        ) / max(1, len(dimensions))
+
+        for index, result in enumerate(results):
+            fragments = self._dimension_fragments(
+                result,
+                accumulator,
+                state["total_length"] + dimension_length * (index + 1),
+            )
+            dimension_params.append(
+                {
+                    "subtopic": dimensions[index],
+                    "knowledge": "\n\n".join(fragments),
+                }
+            )
+
+        return {
+            "all_raw_doc_list": accumulator.raw_docs,
+            "dimension_params": dimension_params,
+            "total_length": accumulator.current_length,
+        }
+
+    def route_retrieve_tasks(
+        self: Any, state: DeepResearchState
+    ) -> List[Send]:
+        """Build N Send payloads, one per research dimension."""
+        dimensions = state["research_dimensions"]
+        repo_id_dict = self.review_config.REPO_ID_DICT
+        return [
+            Send(
+                "retrieve_worker_node",
+                {
+                    "task_index": i,
+                    "dimension": dim,
+                    "knowledge_payload": build_review_knowledge_input(
+                        dimension=dim,
+                        repo_id_dict=repo_id_dict,
+                    ),
+                },
+            )
+            for i, dim in enumerate(dimensions)
+        ]
 
     def _dimension_fragments(
         self: Any,

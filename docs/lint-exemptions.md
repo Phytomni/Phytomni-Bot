@@ -617,15 +617,22 @@ codebase, in nine clusters:
    retires (baseline can ratchet back to 24).
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0801"] = 25`).
-The main pylint invocation in `scripts/validate_local.sh` and
-`scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
-gate-level pylint exits 0 on this rule; the baseline script runs its
-own pylint without the disable and counts the violations against
-the pinned baseline. A new R0801 violation pushes the count to 27,
-the baseline script exits 1, and the gate fails until the author
-either resolves the duplicate or explicitly bumps the baseline in
-the same diff.
+`scripts/check_pylint_baseline.py` (currently
+`RULE_BASELINES["R0801"] = 63`). The catalog header count above (25)
+reflects an older snapshot; subsequent Phase-6 / F-series steps
+ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus AF-6
+coverage lift), and 63 (F3.C3.3 Send-triad worker mirroring
+analyst / data retrieve-fan-out templates). Each ratchet was
+disclosed in its own commit body; the original 25-cluster catalog
+remains accurate for the legacy clusters but is no longer the
+authoritative count. The main pylint invocation in
+`scripts/validate_local.sh` and `scripts/scoped_gate.sh` is run with
+`--disable=R0801,R0903` so the gate-level pylint exits 0 on this
+rule; the baseline script runs its own pylint without the disable
+and counts the violations against the pinned baseline. A new R0801
+violation pushes the count past the baseline, the baseline script
+exits 1, and the gate fails until the author either resolves the
+duplicate or explicitly bumps the baseline in the same diff.
 
 **Why refactor is net-negative for cluster 1**: the analyst fan-out
 wrappers' parallel signatures are by design — they map onto one

@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -43,6 +44,7 @@ from ..shared.chat_subgraph import (
     make_chat_node_wrapper,
 )
 from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.knowledge_subgraph import build_knowledge_app
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
 from .state import (
@@ -98,6 +100,14 @@ class DeepResearchAgent(
             knowledge_config=review_config,
             sensitive_config=self.sensitive_config,
         )
+        self._knowledge_app: Optional[CompiledStateGraph]
+        if self.review_config.USE_KNOWLEDGE_SUBGRAPH:
+            self._knowledge_app = build_knowledge_app(
+                knowledge_config=self.review_config,
+                sensitive_config=self.sensitive_config,
+            )
+        else:
+            self._knowledge_app = None
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -115,10 +125,13 @@ class DeepResearchAgent(
         (``plan_query`` / ``summary`` / ``follow_up``) with prep + post
         pairs surrounding a single shared ``chat`` node registered via
         :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper`.
-        The four fan-out sites (``retrieve_node`` / ``draft_node`` /
-        ``review_node`` / ``revise_node``) retain their legacy
-        ``asyncio.gather`` bodies; F3.C3.3-C3.5 convert them to
-        ``Send``-dispatch workers in subsequent steps.
+        When ``USE_KNOWLEDGE_SUBGRAPH`` is also True, the retrieve site
+        is additionally replaced by a Send-dispatch triad
+        (``retrieve_dispatch`` → N × ``retrieve_worker_node`` →
+        ``retrieve_reduce_node``). The remaining three fan-out sites
+        (``draft_node`` / ``review_node`` / ``revise_node``) retain
+        their legacy ``asyncio.gather`` bodies; F3.C3.4-C3.5 convert
+        them to ``Send``-dispatch workers in subsequent steps.
 
         Returns:
             Compiled LangGraph application bound to
@@ -182,8 +195,14 @@ class DeepResearchAgent(
         The four fan-out sites (``retrieve_node`` / ``draft_node`` /
         ``review_node`` / ``revise_node``) retain their legacy
         ``asyncio.gather`` bodies and are wired identically to the
-        flag-off path. F3.C3.3-C3.5 will convert those sites to
-        ``Send``-dispatch workers in subsequent steps.
+        flag-off path, EXCEPT when ``USE_KNOWLEDGE_SUBGRAPH`` is also
+        True: in that case the retrieve site is replaced by a
+        Send-dispatch triad (``retrieve_dispatch`` →
+        ``retrieve_worker_node`` × N → ``retrieve_reduce_node``) so
+        each research dimension fans out to a dedicated KnowledgeAgent
+        subgraph invocation and the results are merged before
+        ``draft_node``. F3.C3.4-C3.5 will convert the remaining fan-out
+        sites in subsequent steps.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -206,8 +225,40 @@ class DeepResearchAgent(
                 response_key="chat_response",
             ),
         )
-        # === Fan-out sites retain legacy gather bodies ===
-        workflow.add_node("retrieve_node", self.retrieve_node)
+
+        # === Retrieve site: Send fan-out (flag-on) or legacy gather (off) ===
+        if self.review_config.USE_KNOWLEDGE_SUBGRAPH:
+            knowledge_app = self._knowledge_app
+            if knowledge_app is None:
+                raise RuntimeError(
+                    "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
+                    "_knowledge_app was not built in __init__"
+                )
+            workflow.add_node(
+                "retrieve_dispatch", self.retrieve_prepare_tasks_node
+            )
+            workflow.add_node(
+                "retrieve_worker_node",
+                self.make_retrieve_worker_node(knowledge_app),
+            )
+            workflow.add_node(
+                "retrieve_reduce_node", self.retrieve_reduce_node
+            )
+            workflow.add_conditional_edges(
+                "retrieve_dispatch",
+                self.route_retrieve_tasks,
+                ["retrieve_worker_node"],
+            )
+            workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
+            retrieve_in, retrieve_out = (
+                "retrieve_dispatch",
+                "retrieve_reduce_node",
+            )
+        else:
+            workflow.add_node("retrieve_node", self.retrieve_node)
+            retrieve_in, retrieve_out = "retrieve_node", "retrieve_node"
+
+        # === Remaining fan-out sites retain legacy gather bodies ===
         workflow.add_node("draft_node", self.draft_node)
         workflow.add_node("review_node", self.review_node)
         workflow.add_node("revise_node", self.revise_node)
@@ -230,8 +281,8 @@ class DeepResearchAgent(
 
         # === Linear pipeline edges ===
         workflow.add_edge(START, "plan_query_prep_node")
-        workflow.add_edge("plan_query_post_node", "retrieve_node")
-        workflow.add_edge("retrieve_node", "draft_node")
+        workflow.add_edge("plan_query_post_node", retrieve_in)
+        workflow.add_edge(retrieve_out, "draft_node")
         workflow.add_edge("draft_node", "review_node")
         workflow.add_edge("review_node", "revise_node")
         workflow.add_edge("revise_node", "summary_prep_node")

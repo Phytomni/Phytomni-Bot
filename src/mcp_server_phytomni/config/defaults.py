@@ -270,11 +270,14 @@ class ServerConfig(BaseSettings):
     ] = False
 
     # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
-    # (analyst / data retrieve_node) invoke a KnowledgeAgent subgraph
-    # through ``adapter_node`` instead of calling the
-    # ``multi_retrieve`` / ``retrieve`` helpers inline. Default
-    # ``False`` preserves pre-Phase-6 behavior; flip to ``True`` per
-    # deployment after parent-graph composition is validated.
+    # (analyst / data / review retrieve_node) invoke a KnowledgeAgent
+    # subgraph through ``adapter_node`` instead of calling the
+    # ``multi_retrieve`` / ``retrieve`` helpers inline. Review
+    # additionally requires ``USE_CHAT_SUBGRAPH=True`` (the Send-
+    # dispatch retrieve triad lives only inside review's
+    # ``_wire_chat_subgraph`` branch). Default ``False`` preserves
+    # pre-Phase-6 behavior; flip to ``True`` per deployment after
+    # parent-graph composition is validated.
     # Inherited by every consumer-side config that subclasses
     # ``ServerConfig``. ``AliasChoices`` mirrors the endpoint-field
     # pattern from inception so the ``PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH``
