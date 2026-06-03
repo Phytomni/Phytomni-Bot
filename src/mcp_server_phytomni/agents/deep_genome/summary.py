@@ -81,6 +81,7 @@ class SubSummaryBuilder:
         """Initialize summary loading context."""
         self.gene_id = gene_id
         self.out_path = out_path
+        self.markdown_path = out_path.split('.out/')[-1]
         self.data = data
         self.figure_index = figure_index
         self.handlers: Dict[str, Callable[[], None]] = {
@@ -128,7 +129,7 @@ class SubSummaryBuilder:
         """
         try:
             image_name = self.first_match(spec.image_pattern)
-            self.data[spec.image_key] = f"{self.gene_id}/{image_name}"
+            self.data[spec.image_key] = f"../../{self.markdown_path}/{image_name}"
             summary_name = self.summary_name(spec)
             self.data[spec.summary_key] = self.read_text(
                 summary_name,
@@ -186,10 +187,10 @@ class SubSummaryBuilder:
         """Load single-cell UMAP, violin, summary, and legend outputs."""
         try:
             self.data["umap_path"] = (
-                f"{self.gene_id}/{self.first_match('*_umap.png')}"
+                f"../../{self.markdown_path}/{self.first_match('*_umap.png')}"
             )
             self.data["violin_path"] = (
-                f"{self.gene_id}/{self.first_match('*_violin_plot.png')}"
+                f"../../{self.markdown_path}/{self.first_match('*_violin_plot.png')}"
             )
             self.data["single_cell_summary"] = self.read_text(
                 f"{self.gene_id}_single_cell.summary",
@@ -232,7 +233,7 @@ class SubSummaryBuilder:
             Markdown block containing structure image/link text, legend, and
             summary content.
         """
-        structure_file = f"{self.gene_id}/{structure_path.name}"
+        structure_file = f"../../{self.markdown_path}/{structure_path.name}"
         structure_start = structure_path.name.split(".cif")[0]
         legend = self.read_text(
             f"{structure_start}.legend",
@@ -418,6 +419,7 @@ def build_sub_summary(
     out_path = Path(results_dir) if results_dir else Path(deepgenome_out)
     if results_dir is None:
         out_path = out_path / gene_id
+    print("out_path", out_path)
     builder = SubSummaryBuilder(
         gene_id=gene_id,
         out_path=out_path,
