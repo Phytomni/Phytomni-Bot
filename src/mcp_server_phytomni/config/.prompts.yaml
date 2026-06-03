@@ -5394,7 +5394,7 @@ user:
     the plot script I provided;(conda activate af3);
     step2, summary the results using summary_all.py(conda activate af3);
     Note:
-      if the species is rice or oryza sativa, the plot script is 
+      if the species is rice or oryza sativa, the plot script is
       plot_single_cell_rice.py;
       if the species is not rice, the plot script is plot_single_cell_gene.py
     Tool Usage method:
