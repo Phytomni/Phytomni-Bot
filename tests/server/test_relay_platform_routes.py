@@ -16,6 +16,7 @@ import contextlib
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import httpx
 import pytest
@@ -64,6 +65,7 @@ _PLATFORM_URLS = SimpleNamespace(
     BI_URL="https://bi.test/query",
     CREATE_TASK_URL="https://task.test/create",
     UPDATE_TASK_URL="https://task.test/update",
+    SPA_FAQ_URL="http://spa.test/{repo_id}/faq",
 )
 
 
@@ -358,3 +360,85 @@ async def test_analysis_lifecycle_rejects_path_injection(
     )
 
     assert response.status_code == 400
+
+
+async def test_spa_faq_route_builds_repo_url_with_iam_and_query(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spa-faq fills the repo id into SPA_FAQ_URL and allowlists the query."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return _ok(req)
+
+    _patch_platform(monkeypatch, handler)
+
+    response = await client.get(
+        "/v1/relay/spa-faq/repo-7"
+        "?question=rice&page_size=10&page_num=1&evil=hack",
+        headers={"Authorization": f"Bearer {relay_key('spa-faq')}"},
+    )
+
+    assert response.status_code == 200
+    assert str(seen[0].url) == (
+        "http://spa.test/repo-7/faq?question=rice&page_size=10&page_num=1"
+    )
+    assert seen[0].headers["x-auth-token"] == "iam-token:None"
+
+
+async def test_spa_faq_route_rejects_bad_repo_id(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repo id outside the safe charset is a 400 before any upstream call."""
+    _patch_platform(monkeypatch, _ok)
+
+    response = await client.get(
+        "/v1/relay/spa-faq/a@evil.test",
+        headers={"Authorization": f"Bearer {relay_key('spa-faq')}"},
+    )
+
+    assert response.status_code == 400
+
+
+async def test_spa_faq_route_uses_proxy_bypass_client(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spa-faq opts out of the host proxy env (bare-IP upstream)."""
+    recorded: dict[str, object] = {}
+
+    @contextlib.asynccontextmanager
+    async def _factory(
+        **kwargs: object,
+    ) -> AsyncGenerator[httpx.AsyncClient, None]:
+        recorded["kwargs"] = kwargs
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(_ok)
+        ) as upstream_client:
+            yield upstream_client
+
+    monkeypatch.setattr(forward_module, "get_async_client", _factory)
+    monkeypatch.setattr(
+        routes_module, "DeepGenomeConfig", lambda: _PLATFORM_URLS
+    )
+
+    async def _fake_token(region: object = None) -> str:
+        return f"iam-token:{region}"
+
+    monkeypatch.setattr(routes_module, "get_token", _fake_token)
+
+    response = await client.get(
+        "/v1/relay/spa-faq/repo-7",
+        headers={"Authorization": f"Bearer {relay_key('spa-faq')}"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        cast(dict[str, object], recorded["kwargs"]).get("trust_env") is False
+    )

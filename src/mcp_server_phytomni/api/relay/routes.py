@@ -318,6 +318,50 @@ def _analysis_lifecycle_handler(
     return _handler
 
 
+def _spa_faq_handler() -> Callable[..., Awaitable[Response]]:
+    """Build the spa-faq relay handler (IAM-injected, proxy-bypass).
+
+    Scope-gated on ``relay:spa-faq``, the handler validates the client repo
+    id, fills it into the configured SPA_FAQ_URL template, allowlists the
+    ``question`` / ``page_size`` / ``page_num`` query keys, and injects the
+    operator IAM token. ``trust_env=False`` forces an ephemeral,
+    proxy-bypassing client because the SPA FAQ upstream is a bare-IP host
+    the operator's HTTP(S)_PROXY cannot reach.
+    """
+
+    async def _handler(
+        repo_id: str,
+        request: Request,
+        principal: ApiPrincipal = Depends(require_relay_access("spa-faq")),
+    ) -> Response:
+        safe_repo = validate_relay_path_segment(repo_id, field="repo_id")
+        config = ApiConfig()
+        body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
+        platform = DeepGenomeConfig()
+        url = platform.SPA_FAQ_URL.format(repo_id=safe_repo)
+        query = build_relay_query(
+            request.url.query, ("question", "page_size", "page_num")
+        )
+        if query:
+            url = f"{url}?{query}"
+        upstream = RelayUpstream(
+            url=url,
+            error_mode=RelayErrorMode.ENVELOPE,
+            service="spa_faq",
+            inject_headers=_build_platform_inject("iam", None),
+            trust_env=False,
+        )
+        return await forward_relay_request(
+            request=request,
+            body=body,
+            upstream=upstream,
+            principal=principal,
+            audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
+        )
+
+    return _handler
+
+
 def create_relay_router() -> APIRouter:
     """Build the ``/v1/relay`` router gated by the enable kill-switch.
 
@@ -358,5 +402,11 @@ def create_relay_router() -> APIRouter:
             _analysis_lifecycle_handler(suffix, query_allow, operation),
             methods=[method],
         )
+
+    router.add_api_route(
+        "/spa-faq/{repo_id}",
+        _spa_faq_handler(),
+        methods=["GET"],
+    )
 
     return router
