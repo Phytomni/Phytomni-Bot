@@ -9,7 +9,7 @@ This module exposes `Nl2SqlRequest`, `nl2sql`, and
 """
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from random import uniform
 from typing import Any, Dict
 
@@ -24,7 +24,9 @@ from ...common.http import (
     post_json_with_retries,
 )
 from ...common.httpx_client import get_async_client
+from ...common.relay_client import current_relay_client
 from ...config.defaults import DataConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...storage.path_policy import IdFactory
 
@@ -236,6 +238,8 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
         McpError: Re-raised from the final attempt once all rotated
             conversations have been exhausted.
     """
+    if relay_mode_enabled():
+        return await _execute_nl2sql_via_relay(request)
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     token = await get_token()
     async with get_async_client(timeout=client_timeout) as client:
@@ -263,6 +267,58 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
                 await _rotation_backoff(attempt)
     # Reached only if max_retries is negative (empty attempt range);
     # never silently return None into the NL2SQL caller.
+    raise McpError(
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message="Failed to query SQL database: no attempts executed",
+        )
+    )
+
+
+async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
+    """Relay-mode NL2SQL: route through /v1/relay/database/nl2sql.
+
+    The child Bot holds no operator IAM token, so it does not call
+    ``get_token``; the relay injects the operator ``X-Auth-Token`` and
+    forwards the ``X-Workspace-Id`` the child sends. The fresh-dialog
+    rotation is preserved against the same upstream DataArts gateway, and
+    the inner relay post does not retry (``max_retries=0``) so each
+    rotation is a clean conversation, exactly as the operator path.
+
+    Args:
+        request: Resolved NL2SQL request settings.
+
+    Returns:
+        Raw JSON response from the first conversation that succeeds.
+
+    Raises:
+        McpError: Re-raised from the final rotated conversation.
+    """
+    relay = replace(
+        current_relay_client(),
+        timeout=request.timeout,
+        max_retries=0,
+        retriable_codes=tuple(request.retriable_codes),
+    )
+    extra_headers = {"X-Workspace-Id": request.workspace_id}
+    last_attempt = request.max_retries
+    for attempt in range(last_attempt + 1):
+        body = (
+            request.payload()
+            if attempt == 0
+            else request.payload_with_fresh_dialog()
+        )
+        try:
+            return await relay.post_json(
+                "database/nl2sql",
+                json_body=body,
+                message="Failed to query SQL database",
+                extra_headers=extra_headers,
+            )
+        except McpError:
+            if attempt == last_attempt:
+                raise
+            await _rotation_backoff(attempt)
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,

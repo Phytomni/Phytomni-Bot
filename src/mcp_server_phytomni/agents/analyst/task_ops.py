@@ -29,6 +29,8 @@ from ...common.http import (
     request_response_with_retries,
 )
 from ...common.httpx_client import get_async_client
+from ...common.relay_client import current_relay_client
+from ...config.relay_mode import relay_mode_enabled
 from .defaults import ANALYST_CONFIG
 
 
@@ -74,6 +76,11 @@ async def task_status(
     Raises:
         McpError: If checking the task status fails after all retries.
     """
+    if relay_mode_enabled():
+        return await current_relay_client().get_json(
+            f"analysis/{task_id}",
+            message=f"Check task {task_id} status failed",
+        )
     req = _common_request_kwargs(kwargs)
     client_timeout = Timeout(req["timeout"], connect=req["timeout"])
     async with get_async_client(timeout=client_timeout) as client:
@@ -125,10 +132,16 @@ async def task_log(
     Raises:
         McpError: If fetching the task log fails after all retries.
     """
-    req = _common_request_kwargs(kwargs)
     compute_resource = kwargs.get(
         "compute_resource", ANALYST_CONFIG.COMPUTE_RESOURCE
     )
+    if relay_mode_enabled():
+        return await current_relay_client().get_json(
+            f"analysis/{task_id}/logs",
+            query={"task_name": f"analyst-agents-{compute_resource}"},
+            message=f"Check task {task_id} log failed",
+        )
+    req = _common_request_kwargs(kwargs)
     client_timeout = Timeout(req["timeout"], connect=req["timeout"])
     async with get_async_client(timeout=client_timeout) as client:
         response = await request_response_with_retries(
@@ -181,6 +194,13 @@ async def task_delete(
     Raises:
         McpError: If the task deletion fails after all retries.
     """
+    if relay_mode_enabled():
+        await current_relay_client().post_json(
+            f"analysis/{task_id}/terminate",
+            json_body={"force": True},
+            message="Failed to delete task",
+        )
+        return f"Delete task {task_id} success."
     req = _common_request_kwargs(kwargs)
     client_timeout = Timeout(req["timeout"], connect=req["timeout"])
     async with get_async_client(timeout=client_timeout) as client:

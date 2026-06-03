@@ -69,9 +69,22 @@ class RelayClient:
             url = f"{url}?{urlencode(dict(query))}"
         return url
 
-    def _auth_headers(self) -> dict[str, str]:
-        """Return the bearer auth header carrying the relay key."""
-        return {"Authorization": f"Bearer {self.api_key.get_secret_value()}"}
+    def _auth_headers(
+        self, extra: Optional[Mapping[str, str]] = None
+    ) -> dict[str, str]:
+        """Return the bearer auth header, merged with any extra headers.
+
+        ``extra`` carries business request headers a caller needs the
+        relay to forward upstream (e.g. ``X-Workspace-Id`` for NL2SQL);
+        the relay strips the caller credential and injects the operator
+        one, but forwards other request headers.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key.get_secret_value()}"
+        }
+        if extra:
+            headers.update(extra)
+        return headers
 
     def _retry(self, message: str) -> JsonPostRetry:
         """Return the retry policy with a key-free error prefix."""
@@ -104,13 +117,17 @@ class RelayClient:
         *,
         json_body: Any,
         message: str,
-        query: Optional[Mapping[str, str]] = None,
+        extra_headers: Optional[Mapping[str, str]] = None,
     ) -> Any:
-        """POST ``json_body`` to a relay route and return parsed JSON."""
+        """POST ``json_body`` to a relay route and return parsed JSON.
+
+        ``extra_headers`` carries business request headers the relay
+        forwards upstream (e.g. ``X-Workspace-Id`` for NL2SQL).
+        """
         request = JsonPostRequest(
-            url=self.relay_url(relay_path, query),
+            url=self.relay_url(relay_path),
             method="POST",
-            headers=self._auth_headers(),
+            headers=self._auth_headers(extra_headers),
             json_body=json_body,
         )
         return await self._request_json(request, message)
@@ -122,7 +139,7 @@ class RelayClient:
         message: str,
         query: Optional[Mapping[str, str]] = None,
     ) -> Any:
-        """GET a relay route and return parsed JSON."""
+        """GET a relay route (optional allowlisted query) and parse JSON."""
         request = JsonPostRequest(
             url=self.relay_url(relay_path, query),
             method="GET",
