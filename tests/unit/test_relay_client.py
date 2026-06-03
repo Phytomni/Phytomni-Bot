@@ -22,7 +22,10 @@ from pydantic import SecretStr
 
 from mcp_server_phytomni.common import relay_client as rc
 from mcp_server_phytomni.config.defaults import ServerConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.config.settings import (
+    SensitiveConfig,
+    get_sensitive_config,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -191,3 +194,21 @@ def test_build_relay_client_reads_config_and_secret(monkeypatch):
     assert client.timeout == config.TIMEOUT
     assert client.max_retries == config.MAX_RETRIES
     assert tuple(client.retriable_codes) == tuple(config.RETRIABLE_CODES)
+
+
+def test_current_relay_client_reads_live_relay_config(monkeypatch):
+    """``current_relay_client`` reads RELAY_BASE_URL / key from the env.
+
+    It is the zero-arg seam S4 platform boundaries call (they have no
+    config object in scope); it builds from a fresh ``ServerConfig()`` so
+    a relay-mode child Bot's live ``RELAY_BASE_URL`` is reflected.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "live-key")
+    get_sensitive_config.cache_clear()
+
+    client = rc.current_relay_client()
+
+    assert client.base_url == "https://relay.test"
+    assert client.api_key.get_secret_value() == "live-key"

@@ -29,7 +29,9 @@ from ...common.http import (
 )
 from ...common.httpx_client import get_async_client
 from ...common.lists import split_list
+from ...common.relay_client import current_relay_client
 from ...config.defaults import KnowledgeConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
@@ -581,28 +583,35 @@ async def _retrieve_scope_docs(
     this primitive — keeping it in the key here was a dead bit that
     contradicted the documented "key is semantic input only" policy.
     """
-    result = await post_json_with_retries(
-        client,
-        JsonPostRequest(
-            url=retrieve_url,
-            headers={"Content-Type": "application/json"},
-            json_body={
-                "repo_id": repo_id,
-                "content": user_query,
-                "page_num": page_num,
-                "page_size": page_size,
-                "filter_string": filter_string,
-                "scope": scope,
-                "extra_repo_ids": list(extra_repo_ids),
-            },
-        ),
-        JsonPostRetry(
-            timeout=timeout,
-            max_retries=max_retries,
-            retriable_codes=retriable_codes,
-            message="Failed to retrieve knowledge base",
-        ),
-    )
+    body = {
+        "repo_id": repo_id,
+        "content": user_query,
+        "page_num": page_num,
+        "page_size": page_size,
+        "filter_string": filter_string,
+        "scope": scope,
+        "extra_repo_ids": list(extra_repo_ids),
+    }
+    message = "Failed to retrieve knowledge base"
+    if relay_mode_enabled():
+        result = await current_relay_client().post_json(
+            "retrieve/search", json_body=body, message=message
+        )
+    else:
+        result = await post_json_with_retries(
+            client,
+            JsonPostRequest(
+                url=retrieve_url,
+                headers={"Content-Type": "application/json"},
+                json_body=body,
+            ),
+            JsonPostRetry(
+                timeout=timeout,
+                max_retries=max_retries,
+                retriable_codes=retriable_codes,
+                message=message,
+            ),
+        )
     return result.get("doc_list", []) if isinstance(result, dict) else []
 
 
@@ -827,25 +836,31 @@ async def _rerank_batch(
     again. Keeping a per-batch cache here would only add SQLite
     maintenance load without measurable savings.
     """
-    result = await post_json_with_retries(
-        client,
-        JsonPostRequest(
-            url=rerank_url,
-            headers={"Content-Type": "application/json"},
-            json_body={
-                "query": user_query,
-                "ranking_order": ["title", "content"],
-                "docs": docs_batch,
-                "top_n": top_n,
-            },
-        ),
-        JsonPostRetry(
-            timeout=timeout,
-            max_retries=max_retries,
-            retriable_codes=retriable_codes,
-            message="Failed to rerank",
-        ),
-    )
+    body = {
+        "query": user_query,
+        "ranking_order": ["title", "content"],
+        "docs": docs_batch,
+        "top_n": top_n,
+    }
+    if relay_mode_enabled():
+        result = await current_relay_client().post_json(
+            "rerank/rank", json_body=body, message="Failed to rerank"
+        )
+    else:
+        result = await post_json_with_retries(
+            client,
+            JsonPostRequest(
+                url=rerank_url,
+                headers={"Content-Type": "application/json"},
+                json_body=body,
+            ),
+            JsonPostRetry(
+                timeout=timeout,
+                max_retries=max_retries,
+                retriable_codes=retriable_codes,
+                message="Failed to rerank",
+            ),
+        )
     return result.get("rank_result", []) if isinstance(result, dict) else []
 
 

@@ -21,11 +21,11 @@ from urllib.parse import urlencode
 from pydantic import SecretStr
 
 from ..config.defaults import ServerConfig
-from ..config.settings import SensitiveConfig
+from ..config.settings import SensitiveConfig, get_sensitive_config
 from .http import JsonPostRequest, JsonPostRetry, post_json_with_retries
 from .httpx_client import get_async_client
 
-__all__ = ["RelayClient", "build_relay_client"]
+__all__ = ["RelayClient", "build_relay_client", "current_relay_client"]
 
 _RELAY_PREFIX = "v1/relay"
 
@@ -151,3 +151,19 @@ def build_relay_client(
         max_retries=config.MAX_RETRIES,
         retriable_codes=tuple(config.RETRIABLE_CODES),
     )
+
+
+def current_relay_client() -> RelayClient:
+    """Build a ``RelayClient`` from the live relay config and secret.
+
+    The zero-arg seam for relay-mode HTTP boundaries that have no config
+    object in scope (knowledge / data / deep_genome / evolution /
+    task-manager adapters). Reads a fresh ``ServerConfig()`` so
+    ``RELAY_BASE_URL`` reflects the current environment, and the
+    process-cached ``SensitiveConfig`` for ``RELAY_API_KEY``.
+
+    Returns:
+        A ``RelayClient`` carrying the live relay base URL, key, and the
+        shared timeout / retry policy.
+    """
+    return build_relay_client(ServerConfig(), get_sensitive_config())
