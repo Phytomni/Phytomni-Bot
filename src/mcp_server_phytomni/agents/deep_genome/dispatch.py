@@ -13,6 +13,7 @@ downloads OBS results, and builds analyst sub-summaries.
 from __future__ import annotations
 
 import logging
+import asyncio
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
@@ -290,9 +291,17 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         Returns:
             List of Send objects for dynamic task dispatch.
         """
+        sleep_time = state.get("task_submit_sleep", 10)
         tasks = state.get("analysis_tasks", [])
         return [
-            Send("analyst_node", {"task_index": i, **task})
+            Send(
+                "analyst_node", 
+                {
+                    "task_index": i, 
+                    "task_submit_sleep": i * sleep_time,
+                    **task
+                }
+            )
             for i, task in enumerate(tasks)
         ]
 
@@ -335,7 +344,14 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         gene_id = state["target_gene"]
         species = state["species"]
         analysis_type = state["analysis_type"]
-
+        sleep_seconds = state.get("task_submit_sleep", 0)
+        if sleep_seconds > 0:
+            logger.info(
+                "[Analyst-%s] sleep %ss before execution",
+                task_index,
+                sleep_seconds
+            )
+            await asyncio.sleep(sleep_seconds)
         logger.info(
             "[Analyst-%s] Executing: %s for %s",
             task_index,
@@ -607,6 +623,23 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         """
         gene_id = state["gene_id"]
         species = state.get("species_code", "")
+        match species:
+            case "osa":
+                gene_id_reponse = await self._bi_json(
+                    f"SELECT * FROM id_table WHERE gene_id = '{gene_id}'"
+                    f" AND species_code = 'osa'"
+                )
+                gene_idv2 = gene_id_reponse['data'][0]['msu_gene_id']
+            case "zma":
+                gene_id_reponse = await self._bi_json(
+                    f"SELECT * FROM id_table WHERE gene_id = '{gene_id}'"
+                    f" AND species_code = 'zma'"
+                )
+                gene_idv2 = gene_id_reponse['data'][0]['v4_id']
+            case "gma":
+                gene_idv2 = gene_id.replace("_", "")
+            case _:
+                gene_idv2 = gene_id
         tasks = [
             {
                 "target_gene": gene_id,
@@ -616,28 +649,28 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "func_name": "evolution_analysis",
             },
             {
-                "target_gene": gene_id,
+                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
                 "species": species,
                 "analysis_type": "gene_expression_tissues",
                 "compute": "small",
                 "func_name": "gene_expression_tissues",
             },
             {
-                "target_gene": gene_id,
+                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
                 "species": species,
                 "analysis_type": "gene_expression_cultivars",
                 "compute": "small",
                 "func_name": "gene_expression_cultivars",
             },
             {
-                "target_gene": gene_id,
+                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
                 "species": species,
                 "analysis_type": "gene_expression_treatments",
                 "compute": "small",
                 "func_name": "gene_expression_treatments",
             },
             {
-                "target_gene": gene_id,
+                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
                 "species": species,
                 "analysis_type": "gene_expression_genotypes",
                 "compute": "small",
