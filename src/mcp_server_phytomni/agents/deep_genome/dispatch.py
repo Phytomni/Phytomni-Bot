@@ -12,8 +12,8 @@ downloads OBS results, and builds analyst sub-summaries.
 
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
@@ -295,12 +295,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         tasks = state.get("analysis_tasks", [])
         return [
             Send(
-                "analyst_node", 
-                {
-                    "task_index": i, 
-                    "task_submit_sleep": i * sleep_time,
-                    **task
-                }
+                "analyst_node",
+                {"task_index": i, "task_submit_sleep": i * sleep_time, **task},
             )
             for i, task in enumerate(tasks)
         ]
@@ -349,7 +345,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             logger.info(
                 "[Analyst-%s] sleep %ss before execution",
                 task_index,
-                sleep_seconds
+                sleep_seconds,
             )
             await asyncio.sleep(sleep_seconds)
         logger.info(
@@ -626,16 +622,16 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         match species:
             case "osa":
                 gene_id_reponse = await self._bi_json(
-                    f"SELECT * FROM id_table WHERE gene_id = '{gene_id}'"
-                    f" AND species_code = 'osa'"
+                    f"SELECT * FROM id_table WHERE gene_id = "
+                    f"{sql_literal(gene_id)} AND species_code = 'osa'"
                 )
-                gene_idv2 = gene_id_reponse['data'][0]['msu_gene_id']
+                gene_idv2 = gene_id_reponse["data"][0]["msu_gene_id"]
             case "zma":
                 gene_id_reponse = await self._bi_json(
-                    f"SELECT * FROM id_table WHERE gene_id = '{gene_id}'"
-                    f" AND species_code = 'zma'"
+                    f"SELECT * FROM id_table WHERE gene_id = "
+                    f"{sql_literal(gene_id)} AND species_code = 'zma'"
                 )
-                gene_idv2 = gene_id_reponse['data'][0]['v4_id']
+                gene_idv2 = gene_id_reponse["data"][0]["v4_id"]
             case "gma":
                 gene_idv2 = gene_id.replace("_", "")
             case _:
@@ -649,28 +645,36 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "func_name": "evolution_analysis",
             },
             {
-                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
+                "target_gene": (
+                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                ),
                 "species": species,
                 "analysis_type": "gene_expression_tissues",
                 "compute": "small",
                 "func_name": "gene_expression_tissues",
             },
             {
-                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
+                "target_gene": (
+                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                ),
                 "species": species,
                 "analysis_type": "gene_expression_cultivars",
                 "compute": "small",
                 "func_name": "gene_expression_cultivars",
             },
             {
-                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
+                "target_gene": (
+                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                ),
                 "species": species,
                 "analysis_type": "gene_expression_treatments",
                 "compute": "small",
                 "func_name": "gene_expression_treatments",
             },
             {
-                "target_gene": gene_idv2 if species in ["osa", "zma", "gma"] else gene_id,
+                "target_gene": (
+                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                ),
                 "species": species,
                 "analysis_type": "gene_expression_genotypes",
                 "compute": "small",

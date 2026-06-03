@@ -81,7 +81,11 @@ class SubSummaryBuilder:
         """Initialize summary loading context."""
         self.gene_id = gene_id
         self.out_path = out_path
-        self.markdown_path = out_path.split('.out/')[-1]
+        # Per-gene image directory the markdown report references via the
+        # ../../ prefix below. The prior out_path.split(".out/") recovered
+        # this only when out_path was literally under .out/, and produced a
+        # full absolute path for obsfs result dirs.
+        self.markdown_path = gene_id
         self.data = data
         self.figure_index = figure_index
         self.handlers: Dict[str, Callable[[], None]] = {
@@ -129,7 +133,9 @@ class SubSummaryBuilder:
         """
         try:
             image_name = self.first_match(spec.image_pattern)
-            self.data[spec.image_key] = f"../../{self.markdown_path}/{image_name}"
+            self.data[spec.image_key] = (
+                f"../../{self.markdown_path}/{image_name}"
+            )
             summary_name = self.summary_name(spec)
             self.data[spec.summary_key] = self.read_text(
                 summary_name,
@@ -190,7 +196,8 @@ class SubSummaryBuilder:
                 f"../../{self.markdown_path}/{self.first_match('*_umap.png')}"
             )
             self.data["violin_path"] = (
-                f"../../{self.markdown_path}/{self.first_match('*_violin_plot.png')}"
+                f"../../{self.markdown_path}/"
+                f"{self.first_match('*_violin_plot.png')}"
             )
             self.data["single_cell_summary"] = self.read_text(
                 f"{self.gene_id}_single_cell.summary",
@@ -419,7 +426,6 @@ def build_sub_summary(
     out_path = Path(results_dir) if results_dir else Path(deepgenome_out)
     if results_dir is None:
         out_path = out_path / gene_id
-    print("out_path", out_path)
     builder = SubSummaryBuilder(
         gene_id=gene_id,
         out_path=out_path,
