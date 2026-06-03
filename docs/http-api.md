@@ -459,6 +459,38 @@ actually-executed query, plan, or goal list without toggling
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.
 
+### ReviewAgent degraded-mode metadata
+
+Under `USE_CHAT_SUBGRAPH=true` and/or `USE_KNOWLEDGE_SUBGRAPH=true`,
+ReviewAgent's per-dimension fan-out workers may fail independently
+(transient backend errors, rate limits, etc.). On all-success runs,
+`formatted.metadata` is empty (`{}`) as it has been. On runs where
+one or more dimensions fail, `formatted.metadata` is populated with
+the universal failure keys:
+
+- `status`: `"SUCCESS"` / `"PARTIAL"` / `"FAILED"` / `"PENDING"`.
+  ReviewAgent does not write `phytomni_state.task_ids` (its fan-out
+  workers do not mint remote task ids), so the projection resolves
+  `succeeded_count` to `0` on every degraded review run and `status`
+  lands at `"FAILED"` even when only one fan-out call failed.
+- `succeeded_count` / `failed_count`: integers.
+- `failures`: list of `{"task_label", "kind", "message"}` dicts;
+  `task_label` is `"<fan_out>:<task_index>"` form (e.g. `"draft:2"`,
+  `"retrieve:0"`, `"revised:3"`) for outer-worker failures and
+  `"add_query:<dim_idx>:<query_idx>"` form for inner per-query
+  failures inside `_feedback_rag`. `traceback_digest` lives only in
+  `raw.phytomni_state.failures`, never in `formatted.metadata`.
+
+Clients should branch on `metadata.get("failed_count", 0) > 0` (rather
+than `status == "PARTIAL"`) to detect degraded responses today;
+`status` will shift to `"PARTIAL"` if a follow-up wires per-dim
+`task_ids` writes from review's fan-out workers. `formatted.answer`
+continues to contain the rendered review text in both cases — the
+sentinel-coexistence pattern (worker writes BOTH the legacy empty-
+string / `"{}"` placeholder AND the `FailureRecord`) lets the original-
+draft fallback in `revised_reduce_node` render a complete review
+answer even on partial failure.
+
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
 respond `202` with `status: "running"` and `task_ids` listing every child
 task registered by the submit path. Poll `/v1/runs/{run_id}` for live

@@ -17,10 +17,11 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
+from .universal_failures import project_universal_failure_metadata
 
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
 
@@ -250,70 +251,6 @@ def format_tool_result(
     return result
 
 
-_UniversalStatus = Literal["SUCCESS", "PARTIAL", "FAILED", "PENDING"]
-
-
-def project_universal_failure_metadata(
-    state: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Project failures + task_ids into client-facing metadata keys.
-
-    Used by per-agent formatters (design / network / research / review)
-    to expose the same shape across the four parallel-dispatch agents.
-    The returned dict is intended to be merged into ``metadata`` by the
-    caller. ``traceback_digest`` is stripped here — it lives only in
-    ``raw.phytomni_state``, never in ``formatted.metadata``.
-
-    Status derivation:
-        SUCCESS: failures empty AND task_ids non-empty
-        PARTIAL: failures non-empty AND task_ids non-empty
-        FAILED:  failures non-empty AND task_ids empty
-        PENDING: both empty (no work dispatched yet)
-
-    Args:
-        state: The final LangGraph state mapping. Reads ``failures``
-            (list[FailureRecord]) and ``task_ids`` (dict[str, str]).
-
-    Returns:
-        A dict with these keys:
-            status: One of ``SUCCESS`` / ``PARTIAL`` / ``FAILED`` /
-                ``PENDING``.
-            succeeded_count: ``len(task_ids)``.
-            failed_count: ``len(failures)``.
-            failures: list of ``{task_label, kind, message}`` dicts;
-                use directly — no tuple cast; ``traceback_digest`` stripped.
-    """
-    failures: list[dict[str, Any]] = state.get("failures", []) or []
-    task_ids: dict[str, str] = state.get("task_ids", {}) or {}
-
-    succeeded_count = len(task_ids)
-    failed_count = len(failures)
-
-    status: _UniversalStatus
-    if succeeded_count == 0 and failed_count == 0:
-        status = "PENDING"
-    elif failed_count == 0:
-        status = "SUCCESS"
-    elif succeeded_count == 0:
-        status = "FAILED"
-    else:
-        status = "PARTIAL"
-
-    return {
-        "status": status,
-        "succeeded_count": succeeded_count,
-        "failed_count": failed_count,
-        "failures": [
-            {
-                "task_label": f["task_label"],
-                "kind": f["kind"],
-                "message": f["message"],
-            }
-            for f in failures
-        ],
-    }
-
-
 def _normalize_tool_name(tool_name: str) -> str:
     """Return the canonical public MCP tool name."""
     aliases = {
@@ -352,20 +289,31 @@ def _format_cited_message_result(
     ``references`` field. The OpenAI HTTP surface and the MCP stdio
     surface both consume those two fields directly, so neither needs to
     ``json.loads`` a wrapped envelope out of ``message.content``.
+
+    ReviewAgent fan-out failures on ``phytomni_state.failures`` surface
+    as the universal failure keys; non-fan-out cited agents stay at
+    ``metadata={}`` because the empty-failures branch short-circuits.
     """
     message = _first_message(content)
     answer = str(message.get("content", ""))
+    state = _phytomni_state(content)
+    metadata: dict[str, Any] = (
+        project_universal_failure_metadata(state)
+        if state.get("failures")
+        else {}
+    )
     doc_list = _doc_list(message)
     if not doc_list:
         return FormattedToolResult(
             answer=answer,
             follow_up_questions=_follow_up_questions(message),
+            metadata=metadata,
         )
-
     normalized_answer, references = _normalize_citations(answer, doc_list)
     return FormattedToolResult(
         answer=normalized_answer,
         follow_up_questions=_follow_up_questions(message),
+        metadata=metadata,
         references=references,
     )
 

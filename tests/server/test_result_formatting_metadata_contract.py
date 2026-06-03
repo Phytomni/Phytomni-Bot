@@ -244,14 +244,16 @@ def test_metadata_key_set_is_exact(
         "BriefGeneAgent",
     ],
 )
-def test_cited_agents_emit_no_extra_metadata(agent: str) -> None:
+def test_cited_agents_metadata_all_success(agent: str) -> None:
     """Cited agents surface stability without extra metadata keys.
 
+    All-success runs MUST have empty metadata (back-compat invariant).
     KnowledgeAgent / ReviewAgent / BriefGeneAgent emit plain markdown
     with inline ``[N]`` citation markers as ``answer`` and ship
-    deduplicated citation documents through ``references``. The
-    ``metadata`` field stays empty so clients do not depend on
-    unstable intermediate state.
+    deduplicated citation documents through ``references``. With no
+    ``failures`` recorded on ``phytomni_state`` the formatter returns
+    ``metadata == {}`` so clients do not depend on unstable
+    intermediate state.
     """
     payload = {
         "choices": [
@@ -268,4 +270,66 @@ def test_cited_agents_emit_no_extra_metadata(agent: str) -> None:
     }
     result = format_tool_result(agent, payload)
     assert result.metadata == {}
+    assert result.answer == "Evidence [1]."
+
+
+def test_cited_agents_metadata_degraded_exposes_failures() -> None:
+    """ReviewAgent degraded runs expose universal failure keys.
+
+    When ReviewAgent's fan-out workers populate
+    ``phytomni_state.failures`` the formatter projects the universal
+    failure keys (``status`` / ``succeeded_count`` / ``failed_count`` /
+    ``failures``) into ``formatted.metadata``. The other two cited
+    agents (KnowledgeAgent / BriefGeneAgent) do not fan out and
+    therefore never carry failures — they are not parametrized here.
+
+    ReviewAgent does not populate ``phytomni_state.task_ids`` (its fan-
+    out workers do not mint remote task ids), so
+    ``project_universal_failure_metadata`` resolves ``succeeded_count``
+    to ``0`` on every degraded run; ``status`` therefore lands at
+    ``FAILED`` even when only one fan-out call fails. A future change
+    that wires per-dim ``task_ids`` writes from review's fan-out
+    workers would shift this to ``PARTIAL`` semantics; this test pins
+    the current shape so any such change is intentional.
+    """
+    degraded_state = {
+        **_KITCHEN_SINK_STATE,
+        "task_ids": {},
+        "failures": [
+            {
+                "task_label": "draft:2",
+                "kind": "execute",
+                "message": "boom",
+                "traceback_digest": "0123456789abcdef",
+            }
+        ],
+    }
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Evidence [1].",
+                    "doc_list": [
+                        {"file_id": "doc-a", "title": "Paper A.pdf"},
+                    ],
+                }
+            }
+        ],
+        "phytomni_state": degraded_state,
+    }
+    result = format_tool_result("ReviewAgent", payload)
+    metadata = dict(result.metadata)
+    assert set(metadata.keys()) == {
+        "status",
+        "succeeded_count",
+        "failed_count",
+        "failures",
+    }
+    assert metadata["status"] == "FAILED"
+    assert metadata["failed_count"] == 1
+    assert metadata["succeeded_count"] == 0
+    assert metadata["failures"][0]["task_label"].startswith(
+        ("draft:", "review_results:", "revised:", "retrieve:", "add_query:")
+    )
+    assert "traceback_digest" not in metadata["failures"][0]
     assert result.answer == "Evidence [1]."
