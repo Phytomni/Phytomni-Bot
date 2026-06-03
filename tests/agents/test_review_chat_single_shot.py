@@ -356,8 +356,17 @@ def test_review_results_send_triad_is_registered_flag_on() -> None:
     assert "review_node" not in node_keys
 
 
-def test_revise_node_is_registered_flag_on() -> None:
-    """Flag-on graph registers ``revise_node`` (legacy gather body)."""
+def test_revised_send_triad_is_registered_flag_on() -> None:
+    """Flag-on graph registers the revised Send triad.
+
+    The revised site fans out per dimension through
+    ``revised_dispatch`` → ``revised_worker_node`` × N →
+    ``revised_reduce_node``; the legacy ``revise_node`` is wired only
+    on the flag-off ``_wire_legacy`` path.
+    """
     agent = _build_agent(use_subgraph=True)
     node_keys = set(agent.app.get_graph().nodes.keys())
-    assert "revise_node" in node_keys
+    assert "revised_dispatch" in node_keys
+    assert "revised_worker_node" in node_keys
+    assert "revised_reduce_node" in node_keys
+    assert "revise_node" not in node_keys

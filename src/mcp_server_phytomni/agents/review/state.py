@@ -87,7 +87,7 @@ class DeepResearchState(ParallelDispatchState):
     draft_contents: List[str]
     review_contents: List[str]
     revised_reports: List[Dict[str, str]]
-    add_doc_list: List[Dict[str, Any]]
+    add_doc_list: Annotated[List[Dict[str, Any]], operator.add]
     summary_content: str
     final_response: Dict[str, Any]
 
@@ -105,6 +105,9 @@ class DeepResearchState(ParallelDispatchState):
     review_feedback: Optional[str]
     add_query_input: Optional[str]
     knowledge_payload: Optional[Dict[str, Any]]
+    draft_content: Optional[str]
+    review_content: Optional[str]
+    raw_doc_list: Optional[List[Dict[str, Any]]]
 
     # === Fan-out parallel accumulators (5 fields x Annotated reducer) ===
     retrieve_indexed_results: Annotated[

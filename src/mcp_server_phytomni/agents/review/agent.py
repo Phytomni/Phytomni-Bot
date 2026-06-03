@@ -84,6 +84,14 @@ _DRAFT_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 # the sentinel must remain ``"{}"`` (NOT ``""``) to preserve behaviour.
 _REVIEW_RESULTS_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
+# Mirror of ``_REVIEW_RESULTS_WORKER_CAUGHT`` for the revised fan-out
+# worker. Legacy ``revise_node`` substituted ``state["draft_contents"][idx]``
+# for failed workers (see ``report.py`` lines 159-165). The worker
+# writes an empty-string sentinel into ``revised_indexed_results`` and
+# ``revised_reduce_node`` substitutes the original draft so dimension
+# ordering and length stay aligned with ``research_dimensions``.
+_REVISED_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+
 REVIEW_CONFIG = ReviewConfig()
 
 REVIEW_CONFIG_FIELD_MAP = {
@@ -165,9 +173,12 @@ class DeepResearchAgent(
         also True the retrieve site is additionally replaced by an
         analogous Send-dispatch triad (``retrieve_dispatch`` → N ×
         ``retrieve_worker_node`` → ``retrieve_reduce_node``). The
-        remaining fan-out site (``revise_node``) retains its legacy
-        ``asyncio.gather`` body; subsequent steps convert it to a
-        ``Send``-dispatch worker.
+        revised fan-out site is likewise replaced by a Send triad
+        (``revised_dispatch`` → N × ``revised_worker_node`` →
+        ``revised_reduce_node``) whose workers call
+        ``self._feedback_rag``; the only legacy ``asyncio.gather`` body
+        that remains lives inside ``_feedback_rag`` for the per-query
+        supplementary retrieval fan-in.
 
         Returns:
             Compiled LangGraph application bound to
@@ -236,15 +247,20 @@ class DeepResearchAgent(
         ``review_results_worker_node`` × N →
         ``review_results_reduce_node``).  Each per-worker
         ``CHAT_APP.ainvoke`` lets xray expand the shared chat
-        subgraph under every worker key. The remaining fan-out site
-        (``revise_node``) retains its legacy ``asyncio.gather`` body.
+        subgraph under every worker key. The revised fan-out site is
+        likewise replaced by a Send triad (``revised_dispatch`` →
+        ``revised_worker_node`` × N → ``revised_reduce_node``) whose
+        workers call ``self._feedback_rag`` so the per-dimension
+        critique-driven supplementary retrieval and revision run
+        concurrently; the only legacy ``asyncio.gather`` body that
+        remains lives inside ``_feedback_rag`` itself for the
+        per-query supplementary retrieval fan-in.
         When ``USE_KNOWLEDGE_SUBGRAPH`` is also True, the retrieve
         site is additionally replaced by a Send-dispatch triad
         (``retrieve_dispatch`` → ``retrieve_worker_node`` × N →
         ``retrieve_reduce_node``) so each research dimension fans out
         to a dedicated KnowledgeAgent subgraph invocation before
-        ``draft_dispatch``. Subsequent steps will convert the
-        remaining fan-out site.
+        ``draft_dispatch``.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -333,8 +349,16 @@ class DeepResearchAgent(
             "review_results_worker_node", "review_results_reduce_node"
         )
 
-        # === Remaining fan-out site retains legacy gather body ===
-        workflow.add_node("revise_node", self.revise_node)
+        # === Revised site: Send fan-out (flag-on) ===
+        workflow.add_node("revised_dispatch", self.revised_prepare_tasks_node)
+        workflow.add_node("revised_worker_node", self.revised_worker_node)
+        workflow.add_node("revised_reduce_node", self.revised_reduce_node)
+        workflow.add_conditional_edges(
+            "revised_dispatch",
+            self.route_revised_tasks,
+            ["revised_worker_node"],
+        )
+        workflow.add_edge("revised_worker_node", "revised_reduce_node")
 
         # === Wire prep → chat (3 sites) ===
         workflow.add_edge("plan_query_prep_node", "chat")
@@ -357,8 +381,8 @@ class DeepResearchAgent(
         workflow.add_edge("plan_query_post_node", retrieve_in)
         workflow.add_edge(retrieve_out, "draft_dispatch")
         workflow.add_edge("draft_reduce_node", "review_results_dispatch")
-        workflow.add_edge("review_results_reduce_node", "revise_node")
-        workflow.add_edge("revise_node", "summary_prep_node")
+        workflow.add_edge("review_results_reduce_node", "revised_dispatch")
+        workflow.add_edge("revised_reduce_node", "summary_prep_node")
         workflow.add_edge("summary_post_node", "follow_up_prep_node")
         workflow.add_edge("follow_up_post_node", END)
 
@@ -642,6 +666,150 @@ class DeepResearchAgent(
             for i, draft_text in enumerate(draft_contents)
         ]
 
+    async def revised_prepare_tasks_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Prepare for Send fan-out over the per-dimension revision passes.
+
+        Acts as a graph 'split' node — returns an empty delta. The
+        actual per-dimension Send payloads are constructed by
+        ``route_revised_tasks`` (see ``add_conditional_edges`` in
+        ``_wire_chat_subgraph``). Mirrors
+        ``review_results_prepare_tasks_node`` above.
+        """
+        del state
+        return {}
+
+    async def revised_worker_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Per-dimension revision worker invoked via ``Send``.
+
+        Calls ``self._feedback_rag`` directly (its body in
+        ``report.py`` issues the supplementary retrieval gather and
+        the citation audit), mirroring how the legacy ``revise_node``
+        walked each dimension.  On success writes a single
+        ``(task_index, revised_content)`` tuple into
+        ``revised_indexed_results`` plus any supplementary documents
+        into ``add_doc_list`` via ``operator.add``.
+
+        On exception writes BOTH a legacy empty-string sentinel AND a
+        ``FailureRecord`` into the shared failures channel
+        (TW-1 coexistence — ``revised_reduce_node`` downstream still
+        iterates one entry per dimension and substitutes the original
+        draft when the sentinel is empty; per-task failure detail
+        surfaces in ``raw.phytomni_state``).
+        """
+        # The Send payload built by ``route_revised_tasks`` always
+        # populates these four fields with their concrete types; the
+        # state schema declares them Optional so they remain absent on
+        # the non-Send paths. Narrow with explicit assertions so a
+        # malformed Send crashes loud here rather than corrupting
+        # downstream ``_feedback_rag`` inputs silently.
+        task_index = state["task_index"]
+        draft_content = state["draft_content"]
+        review_content = state["review_content"]
+        raw_doc_list = state["raw_doc_list"]
+        assert task_index is not None, "Send payload missing task_index"
+        assert draft_content is not None, "Send payload missing draft_content"
+        assert (
+            review_content is not None
+        ), "Send payload missing review_content"
+        assert raw_doc_list is not None, "Send payload missing raw_doc_list"
+        try:
+            result = await self._feedback_rag(
+                subtopic_idx=task_index,
+                draft_content=draft_content,
+                review_content=review_content,
+                raw_doc_list=raw_doc_list,
+            )
+            return {
+                "revised_indexed_results": [
+                    (task_index, result.get("revised_content", ""))
+                ],
+                "add_doc_list": list(result.get("add_doc_list", [])),
+            }
+        except _REVISED_WORKER_CAUGHT as exc:
+            logger.exception(
+                "revised worker failed: task_index=%s subtopic=%s",
+                task_index,
+                state.get("subtopic"),
+            )
+            return {
+                "revised_indexed_results": [(task_index, "")],
+                "add_doc_list": [],
+                "failures": [
+                    FailureRecord(
+                        task_label=f"revised:{task_index}",
+                        message=str(exc),
+                        kind="execute",
+                        traceback_digest=_compute_traceback_digest(exc),
+                    )
+                ],
+            }
+
+    async def revised_reduce_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Project ``revised_indexed_results`` into the output channels.
+
+        Sorts the accumulated ``(task_index, content)`` tuples by
+        task_index so concurrent worker completion order does not
+        affect downstream dimension ordering. Empty-string sentinels
+        (written by the worker on exception) are replaced with the
+        original draft for that dimension, matching the legacy
+        ``revise_node`` substitution at ``report.py`` lines 159-165.
+
+        Writes BOTH the flat ``revised_contents`` list and the legacy
+        ``revised_reports`` list of ``{"subtopic", "revised_report"}``
+        dicts so existing readers in ``summary.py`` keep working
+        without migration.
+        """
+        indexed = sorted(state["revised_indexed_results"], key=lambda t: t[0])
+        drafts = state["draft_contents"]
+        dimensions = state["research_dimensions"]
+        revised_contents = [
+            (content if content else drafts[idx]) for idx, content in indexed
+        ]
+        revised_reports = [
+            {
+                "subtopic": dimensions[idx],
+                "revised_report": revised_contents[idx],
+            }
+            for idx in range(len(revised_contents))
+        ]
+        return {
+            "revised_contents": revised_contents,
+            "revised_reports": revised_reports,
+        }
+
+    def route_revised_tasks(self, state: DeepResearchState) -> List[Send]:
+        """Build N Send payloads, one per dimension under revision.
+
+        Each payload carries the per-worker ``task_index``, the
+        upstream ``subtopic`` (used by the worker's failure logging),
+        the prior ``draft_content`` and ``review_content`` strings,
+        and the shared ``raw_doc_list`` snapshot the worker forwards
+        to ``self._feedback_rag``.
+        """
+        dimensions = state["research_dimensions"]
+        drafts = state["draft_contents"]
+        reviews = state["review_contents"]
+        raw_doc_list = state["all_raw_doc_list"]
+        return [
+            Send(
+                "revised_worker_node",
+                {
+                    "task_index": i,
+                    "subtopic": dimensions[i],
+                    "draft_content": drafts[i],
+                    "review_content": reviews[i],
+                    "raw_doc_list": raw_doc_list,
+                },
+            )
+            for i in range(len(dimensions))
+        ]
+
     async def arun(
         self,
         user_query: str,
@@ -694,6 +862,9 @@ class DeepResearchAgent(
             "review_feedback": None,
             "add_query_input": None,
             "knowledge_payload": None,
+            "draft_content": None,
+            "review_content": None,
+            "raw_doc_list": None,
             # Fan-out indexed_results accumulators
             "retrieve_indexed_results": [],
             "draft_indexed_results": [],
