@@ -68,34 +68,37 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 
 ## Endpoints
 
-| Method   | Path                               | Auth  | Purpose                                                                                                  |
-| -------- | ---------------------------------- | ----- | -------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                         | no    | Liveness, no dependencies.                                                                               |
-| `GET`    | `/readyz`                          | no    | Readiness, checks local store directories without creating files.                                        |
-| `GET`    | `/v1/models`                       | yes   | Lists OpenAI-compatible model ids.                                                                       |
-| `POST`   | `/v1/chat/completions`             | yes   | OpenAI-compatible chat endpoint.                                                                         |
-| `GET`    | `/v1/agents`                       | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                         |
-| `POST`   | `/v1/agents/{agent}/runs`          | yes   | Invokes one agent by slug.                                                                               |
-| `GET`    | `/v1/runs/{run_id}`                | yes   | Returns one owner-isolated run state.                                                                    |
-| `GET`    | `/v1/runs/{run_id}/logs`           | yes   | Returns reconciled task logs for a run.                                                                  |
-| `GET`    | `/v1/runs`                         | yes   | Lists owner-scoped runs newest-first.                                                                    |
-| `POST`   | `/v1/files`                        | yes   | Stores one multipart upload in OBS and returns the public path.                                          |
-| `POST`   | `/v1/api-keys`                     | svc   | Mints a per-user `ptm_...` API key.                                                                      |
-| `GET`    | `/v1/api-keys`                     | svc   | Lists per-user keys (metadata only); optional `?user_id=` filter.                                        |
-| `DELETE` | `/v1/api-keys/{prefix}`            | svc   | Revokes the key with the given public prefix.                                                            |
-| `GET`    | `/v1/relay/audit`                  | svc   | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range. |
-| `GET`    | `/v1/relay/audit/{request_id}`     | svc   | Fetches relay audit records by request id (service token).                                               |
-| `GET`    | `/v1/relay/healthz`                | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                          |
-| `POST`   | `/v1/relay/llm/chat/completions`   | relay | Chat LLM relay (transparent); injects the operator `Authorization: Bearer` key.                          |
-| `POST`   | `/v1/relay/coder/chat/completions` | relay | Coder model relay (transparent); injects the operator coder Bearer key.                                  |
-| `POST`   | `/v1/relay/embed/embeddings`       | relay | Embedding relay (transparent); injects the operator embed Bearer key (OpenAI shape, OQ-001).             |
-| `POST`   | `/v1/relay/retrieve/search`        | relay | Knowledge retrieve relay (envelope); no operator credential injected.                                    |
-| `POST`   | `/v1/relay/rerank/rank`            | relay | Knowledge rerank relay (envelope); no operator credential injected.                                      |
-| `POST`   | `/v1/relay/database/nl2sql`        | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                        |
-| `POST`   | `/v1/relay/bi/query`               | relay | BI relay (envelope); injects the static operator `token` (BI token).                                     |
-| `POST`   | `/v1/relay/analysis/tasks`         | relay | Analysis-platform relay (envelope); injects the operator IAM `X-Auth-Token` for the analysis region.     |
-| `POST`   | `/v1/relay/task/create`            | relay | Remote task-create relay (envelope); no operator credential injected.                                    |
-| `POST`   | `/v1/relay/task/update`            | relay | Remote task-update relay (envelope); no operator credential injected.                                    |
+| Method   | Path                                     | Auth  | Purpose                                                                                                      |
+| -------- | ---------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
+| `GET`    | `/healthz`                               | no    | Liveness, no dependencies.                                                                                   |
+| `GET`    | `/readyz`                                | no    | Readiness, checks local store directories without creating files.                                            |
+| `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                           |
+| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                             |
+| `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                             |
+| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                   |
+| `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                        |
+| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                      |
+| `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                        |
+| `POST`   | `/v1/files`                              | yes   | Stores one multipart upload in OBS and returns the public path.                                              |
+| `POST`   | `/v1/api-keys`                           | svc   | Mints a per-user `ptm_...` API key.                                                                          |
+| `GET`    | `/v1/api-keys`                           | svc   | Lists per-user keys (metadata only); optional `?user_id=` filter.                                            |
+| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revokes the key with the given public prefix.                                                                |
+| `GET`    | `/v1/relay/audit`                        | svc   | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range.     |
+| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetches relay audit records by request id (service token).                                                   |
+| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                              |
+| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent); injects the operator `Authorization: Bearer` key.                              |
+| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent); injects the operator coder Bearer key.                                      |
+| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent); injects the operator embed Bearer key (OpenAI shape, OQ-001).                 |
+| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope); no operator credential injected.                                        |
+| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope); no operator credential injected.                                          |
+| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                            |
+| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); injects the static operator `token` (BI token).                                         |
+| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope); injects the operator IAM `X-Auth-Token` for the analysis region.  |
+| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.    |
+| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope); injects IAM `X-Auth-Token` and forwards only the `task_name` query key.  |
+| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`. |
+| `POST`   | `/v1/relay/task/create`                  | relay | Remote task-create relay (envelope); no operator credential injected.                                        |
+| `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope); no operator credential injected.                                        |
 
 `GET /v1/agents` returns one row per registered native slug; each
 row carries a `legacy_aliases: list[str]` carrying the historical

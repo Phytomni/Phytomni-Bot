@@ -264,3 +264,97 @@ async def test_platform_upstream_error_maps_to_status(
     )
 
     assert response.status_code == 503
+
+
+async def test_analysis_status_route_builds_task_url_with_iam(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET status appends the task id to ANALYSIS_URL and injects IAM."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return _ok(req)
+
+    _patch_platform(monkeypatch, handler)
+
+    response = await client.get(
+        "/v1/relay/analysis/task-abc123",
+        headers={"Authorization": f"Bearer {relay_key('analysis')}"},
+    )
+
+    assert response.status_code == 200
+    assert seen[0].method == "GET"
+    assert str(seen[0].url) == "https://analysis.test/tasks/task-abc123"
+    assert seen[0].headers["x-auth-token"] == "iam-token:cn-analysis"
+
+
+async def test_analysis_logs_route_appends_logs_and_allowlists_query(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET logs appends /logs and keeps only the task_name query key."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return _ok(req)
+
+    _patch_platform(monkeypatch, handler)
+
+    response = await client.get(
+        "/v1/relay/analysis/task-1/logs"
+        "?task_name=analyst-agents-medium&evil=hack",
+        headers={"Authorization": f"Bearer {relay_key('analysis')}"},
+    )
+
+    assert response.status_code == 200
+    assert str(seen[0].url) == (
+        "https://analysis.test/tasks/task-1/logs"
+        "?task_name=analyst-agents-medium"
+    )
+
+
+async def test_analysis_terminate_route_is_post_with_iam(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST terminate appends /terminate to the task URL and injects IAM."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return _ok(req)
+
+    _patch_platform(monkeypatch, handler)
+
+    response = await client.post(
+        "/v1/relay/analysis/task-1/terminate",
+        headers={"Authorization": f"Bearer {relay_key('analysis')}"},
+        content=b"{}",
+    )
+
+    assert response.status_code == 200
+    assert seen[0].method == "POST"
+    assert str(seen[0].url) == "https://analysis.test/tasks/task-1/terminate"
+    assert seen[0].headers["x-auth-token"] == "iam-token:cn-analysis"
+
+
+async def test_analysis_lifecycle_rejects_path_injection(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A task id outside the safe charset is a 400 before any upstream call."""
+    _patch_platform(monkeypatch, _ok)
+
+    response = await client.get(
+        "/v1/relay/analysis/a@evil.test",
+        headers={"Authorization": f"Bearer {relay_key('analysis')}"},
+    )
+
+    assert response.status_code == 400

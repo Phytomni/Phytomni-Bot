@@ -30,7 +30,9 @@ from .forward import (
     RelayErrorMode,
     RelayInjectionStrategy,
     RelayUpstream,
+    build_relay_query,
     forward_relay_request,
+    validate_relay_path_segment,
 )
 
 __all__ = [
@@ -260,6 +262,62 @@ def _platform_relay_handler(
     return _handler
 
 
+# Analysis-platform lifecycle ops. The client task id is validated and
+# appended to ANALYSIS_URL (the submit base); the op suffix follows, with
+# an IAM X-Auth-Token for the analysis region. ``logs`` opts its task_name
+# query key back in; status/terminate carry no client query.
+_ANALYSIS_LIFECYCLE = (
+    ("", "GET", (), "analysis_status"),
+    ("/logs", "GET", ("task_name",), "analysis_logs"),
+    ("/terminate", "POST", (), "analysis_terminate"),
+)
+
+
+def _analysis_lifecycle_handler(
+    suffix: str, query_allow: tuple[str, ...], operation: str
+) -> Callable[..., Awaitable[Response]]:
+    """Build an IAM-injected handler for one analysis-lifecycle op.
+
+    Scope-gated on ``relay:analysis``, the handler validates the client
+    task id, appends ``suffix`` (and the allowlisted query, if any) to the
+    config ANALYSIS_URL, and injects the operator IAM token for the
+    analysis region. The upstream URL is server-resolved: the only
+    client-derived part is the validated task id plus allowlisted keys.
+    """
+
+    async def _handler(
+        task_id: str,
+        request: Request,
+        principal: ApiPrincipal = Depends(require_relay_access("analysis")),
+    ) -> Response:
+        safe_id = validate_relay_path_segment(task_id, field="task_id")
+        config = ApiConfig()
+        body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
+        platform = DeepGenomeConfig()
+        url = f"{platform.ANALYSIS_URL}/{safe_id}{suffix}"
+        query = build_relay_query(request.url.query, query_allow)
+        if query:
+            url = f"{url}?{query}"
+        upstream = RelayUpstream(
+            url=url,
+            error_mode=RelayErrorMode.ENVELOPE,
+            service="analysis",
+            inject_headers=_build_platform_inject(
+                "iam", platform.ANALYSIS_REGION
+            ),
+            operation=operation,
+        )
+        return await forward_relay_request(
+            request=request,
+            body=body,
+            upstream=upstream,
+            principal=principal,
+            audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
+        )
+
+    return _handler
+
+
 def create_relay_router() -> APIRouter:
     """Build the ``/v1/relay`` router gated by the enable kill-switch.
 
@@ -290,6 +348,15 @@ def create_relay_router() -> APIRouter:
             f"/{name}/{path}",
             _platform_relay_handler(name, url_attr, inject_kind, region_attr),
             methods=["POST"],
+        )
+
+    # Registered after the literal /analysis/tasks submit route so a POST to
+    # it matches the submit, not the {task_id} param route.
+    for suffix, method, query_allow, operation in _ANALYSIS_LIFECYCLE:
+        router.add_api_route(
+            f"/analysis/{{task_id}}{suffix}",
+            _analysis_lifecycle_handler(suffix, query_allow, operation),
+            methods=[method],
         )
 
     return router
