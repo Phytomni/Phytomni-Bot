@@ -32,6 +32,7 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...config.defaults import ChatConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.langgraph_runner import ainvoke_graph
@@ -374,6 +375,33 @@ async def _query_with_upload_context(
     )
 
 
+def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
+    """Override the LLM endpoint with the relay route in relay mode.
+
+    In customer relay mode the child Bot holds no operator LLM
+    credentials, so regardless of the ``api_key`` / ``base_url`` a caller
+    passed (callers such as ``research/agent.py`` pass operator creds
+    explicitly), point AsyncOpenAI at the relay ``/v1/relay/llm`` route
+    authenticated by the relay key; the relay forwards to the operator
+    LLM with its real credentials. Outside relay mode the caller's values
+    pass through unchanged. ``RELAY_BASE_URL`` is read from a fresh
+    ``ChatConfig()`` so it reflects the current environment rather than
+    the import-time module default.
+
+    Args:
+        api_key: The operator API key the caller resolved.
+        base_url: The operator base URL the caller resolved.
+
+    Returns:
+        ``(api_key, base_url)`` — relay values in relay mode, otherwise
+        the inputs unchanged.
+    """
+    if not relay_mode_enabled():
+        return api_key, base_url
+    relay_key = get_sensitive_config().RELAY_API_KEY.get_secret_value()
+    return relay_key, f"{ChatConfig().RELAY_BASE_URL}/v1/relay/llm"
+
+
 @func_cache(
     key_params=[
         "messages",
@@ -426,6 +454,7 @@ async def run_phyto_chat_cached(
     the outer retry/dispatcher layer owns the retry-exhaustion path
     and the None contract callers depend on.
     """
+    api_key, base_url = _relay_llm_endpoint(api_key, base_url)
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     params: Dict[str, Any] = {
         "messages": messages,
@@ -573,9 +602,10 @@ async def stream_phyto_chat_chunks(
         {"role": "user", "content": user_query},
     ]
     params = _build_stream_params(messages, options)
-    client = AsyncOpenAI(
-        api_key=options["api_key"], base_url=options["base_url"]
+    api_key, base_url = _relay_llm_endpoint(
+        options["api_key"], options["base_url"]
     )
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     stream_completions = await _open_chat_stream(client, params)
     async for chunk in stream_completions:
         yield chunk.model_dump()

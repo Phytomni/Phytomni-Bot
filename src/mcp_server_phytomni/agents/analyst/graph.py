@@ -16,7 +16,6 @@ import datetime
 import json
 import logging
 import re
-import textwrap
 from typing import TYPE_CHECKING, Any, Dict
 
 import yaml
@@ -40,6 +39,7 @@ from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..chat.service import phyto_chat
 from ..knowledge.retrieval import multi_retrieve, retrieve
 from ..shared.analysis_storage import ensure_run_output_dir
+from .model_yaml import build_model_yaml
 from .storage import upload_analyst_agents_content
 
 if TYPE_CHECKING:
@@ -778,60 +778,12 @@ class AnalystGraphMixin(WorkflowMixinBase):
         return task_config
 
     def _submit_coder_payload(self: Any) -> str:
-        """Build the coder/embed model YAML payload for the compute task."""
-        coder_key = self.sensitive_config.CODER_API_KEY.get_secret_value()
-        embed_key = self.sensitive_config.EMBED_API_KEY.get_secret_value()
-        model_config = textwrap.dedent(f"""\
-            llm:
-              model_name: {self.sensitive_config.CODER_MODEL}
-              api_base: {self.sensitive_config.CODER_URL}
-              api_key: {coder_key}
-              max_tokens: 32768
-              url_header_user_agent: ""
-              inference_endpoint: completions
-              chat_api_endpoint: chat/completions
-              server: openai
-              proxy: ""
-              proxy_verify: false
-              header:
-                Content-Type: application/json
+        """Build the coder/embed model YAML payload for the compute task.
 
-            embed:
-              model_id: {self.sensitive_config.EMBED_MODEL}
-              api_token: {embed_key}
-              inference_url: {self.sensitive_config.EMBED_URL}
-              batch_size: 16
-              url_header_user_agent: ""
-              proxy: ""
-              proxy_verify: false
-
-            context_variables:
-              running_env: local
-              terminal_interactive: false
-              black_list:
-                - bioconductor-deseq2
-                - r-deseq2
-                - deseq2
-                - r-deseq2
-                - r
-                - r-base
-              conda_home: /opt/miniconda3
-              conda_bioenv: bioenv
-              conda_renv: bioenv
-              do_execute: true
-              debug: false
-              max_round: 300
-              max_times_per_round: 30
-              proxy: ''
-              proxy_verify: false
-
-            mcp:
-              biomcp:
-                type: stdio
-                command: uv
-                args: ["run", "--with", "biomcp-python", "biomcp", "run"]
-        """).strip()
-        return model_config
+        Delegates to :func:`build_model_yaml`, which rewrites the coder /
+        embed endpoints to the relay routes in customer relay mode.
+        """
+        return build_model_yaml(self.sensitive_config, self.analyst_config)
 
     @staticmethod
     def _processed_data_list(state: AnalystAgentsState) -> list[str]:
