@@ -66,7 +66,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                 completed,
                 total_expected,
             )
-            return {}
+            return {"synthesis_waiting": True}
 
         logger.info(
             "[Barrier] All analysis completed (%s/%s), starting synthesis",
