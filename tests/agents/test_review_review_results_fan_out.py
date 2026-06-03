@@ -121,6 +121,7 @@ def test_route_review_results_tasks_returns_n_sends() -> None:
         assert dim in chat_payload["user_query"]
         assert draft in chat_payload["user_query"]
         assert "chat_kwargs" in chat_payload
+        assert chat_payload["chat_kwargs"]["with_follow_up"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -170,7 +170,8 @@ async def test_plan_query_prep_node_stages_payload() -> None:
     assert chat_payload is not None
     assert "How does photosynthesis work?" in chat_payload["user_query"]
     assert isinstance(chat_payload["chat_kwargs"], dict)
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 18
+    assert chat_payload["chat_kwargs"]["with_follow_up"] is False
 
 
 async def test_summary_prep_node_stages_payload() -> None:
@@ -193,7 +194,8 @@ async def test_summary_prep_node_stages_payload() -> None:
     chat_payload = result["chat_payload"]
     assert chat_payload is not None
     assert "Photosynthesis" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 18
+    assert chat_payload["chat_kwargs"]["with_follow_up"] is False
 
 
 async def test_follow_up_prep_node_stages_payload() -> None:
@@ -214,7 +216,8 @@ async def test_follow_up_prep_node_stages_payload() -> None:
     chat_payload = result["chat_payload"]
     assert chat_payload is not None
     assert "Photosynthesis" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 18
+    assert chat_payload["chat_kwargs"]["with_follow_up"] is True
 
 
 # ---------------------------------------------------------------------------

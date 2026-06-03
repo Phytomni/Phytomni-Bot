@@ -77,14 +77,21 @@ def build_chat_kwargs(
     """Return common phyto_chat keyword arguments.
 
     Args:
-        kwargs: Public wrapper keyword arguments.
+        kwargs: Public wrapper keyword arguments. The optional
+            ``with_follow_up`` key opts the chat subgraph router into
+            its follow-up question branch (``follow_up_node``) after
+            ``generate_node``. Only included in the returned dict when
+            the caller explicitly passes it; absent keys leave the
+            router's existing ``True``-default behavior untouched for
+            consumer-agent sites that have not migrated to the
+            explicit pattern.
         config: Public config object with chat and retry defaults.
         sensitive_config: Sensitive config object with model credentials.
 
     Returns:
         Keyword arguments suitable for forwarding to ``phyto_chat``.
     """
-    return {
+    result: dict[str, Any] = {
         "prompt_file": kwargs.get("prompt_file", config.PROMPT_FILE),
         "prompt_path": kwargs.get("prompt_path", config.PROMPT_PATH),
         "api_key": kwargs.get(
@@ -113,6 +120,9 @@ def build_chat_kwargs(
         "retriable_codes": retry_codes_from_kwargs(kwargs, config),
         "max_retries": kwargs.get("max_retries", config.MAX_RETRIES),
     }
+    if "with_follow_up" in kwargs:
+        result["with_follow_up"] = kwargs["with_follow_up"]
+    return result
 
 
 def build_submit_kwargs(

@@ -198,6 +198,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
                     "required": ["Research_dimensions"],
                 },
             },
+            with_follow_up=False,
         )
         chat_payload = build_chat_input(user_query, chat_kwargs)
         return {

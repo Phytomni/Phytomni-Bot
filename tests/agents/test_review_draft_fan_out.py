@@ -145,6 +145,7 @@ def test_route_draft_tasks_returns_n_sends() -> None:
         assert param["subtopic"] in chat_payload["user_query"]
         assert param["knowledge"] in chat_payload["user_query"]
         assert "chat_kwargs" in chat_payload
+        assert chat_payload["chat_kwargs"]["with_follow_up"] is False
 
 
 # ---------------------------------------------------------------------------

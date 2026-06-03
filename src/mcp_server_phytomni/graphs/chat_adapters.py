@@ -26,30 +26,44 @@ def build_chat_kwargs_for(
     sensitive_config: Any,
     *,
     response_format: dict[str, Any] | None = None,
+    with_follow_up: bool | None = None,
 ) -> dict[str, Any]:
-    """Pack the 17-key ``phyto_chat`` bag a consumer chat node passes.
+    """Pack the ``phyto_chat`` keyword bag a consumer chat node passes.
 
     Delegates to :func:`agents.shared.options.build_chat_kwargs`, the
-    canonical 17-key bag builder. The optional ``response_format``
+    canonical chat-kwargs builder. The optional ``response_format``
     kwarg shadows the config default when a caller (analyst) needs
     per-site overrides; passing ``None`` (data / knowledge) inherits
-    ``config.RESPONSE_FORMAT``.
+    ``config.RESPONSE_FORMAT``. The optional ``with_follow_up`` flag
+    is tri-state to preserve back-compat: ``None`` (the default) omits
+    the key so the chat subgraph router falls back to its existing
+    ``True`` default, ``True`` explicitly opts the router into
+    ``follow_up_node`` after ``generate_node``, and ``False`` skips
+    the follow-up branch. Review's per-call-site migration to the
+    explicit pattern lives in ``agents/review/``; other consumer
+    agents stay on the ``None``-default until they migrate.
 
     Args:
         config: Domain config instance (``DataConfig`` /
-            ``KnowledgeAgentConfig`` / ``AnalystConfig``) exposing the
-            prompt / sampling / retry attributes the shared builder
-            reads (``PROMPT_FILE``, ``PROMPT_PATH``,
-            ``FREQUENCY_PENALTY``, ``N``, ``PRESENCE_PENALTY``,
-            ``REASONING_EFFORT``, ``RESPONSE_FORMAT``, ``STREAM``,
-            ``TEMPERATURE``, ``TOP_P``, ``USER``, ``TIMEOUT``,
-            ``RETRIABLE_CODES``, ``MAX_RETRIES``).
+            ``KnowledgeAgentConfig`` / ``AnalystConfig`` /
+            ``ReviewAgentConfig``) exposing the prompt / sampling /
+            retry attributes the shared builder reads (``PROMPT_FILE``,
+            ``PROMPT_PATH``, ``FREQUENCY_PENALTY``, ``N``,
+            ``PRESENCE_PENALTY``, ``REASONING_EFFORT``,
+            ``RESPONSE_FORMAT``, ``STREAM``, ``TEMPERATURE``, ``TOP_P``,
+            ``USER``, ``TIMEOUT``, ``RETRIABLE_CODES``,
+            ``MAX_RETRIES``).
         sensitive_config: ``SensitiveConfig`` instance exposing
             ``API_KEY`` (a ``SecretStr``), ``BASE_URL``, and
             ``MODEL_ID``.
         response_format: Optional per-site ``response_format`` dict
             (e.g. ``{"type": "json_schema"}``) that overrides the
             config default. ``None`` inherits ``config.RESPONSE_FORMAT``.
+        with_follow_up: Tri-state follow-up opt-in. ``None`` (default)
+            omits the key from the returned bag and inherits the chat
+            subgraph router's existing ``True`` default; ``True`` opts
+            the router into ``follow_up_node``; ``False`` skips the
+            follow-up branch.
 
     Returns:
         Flat ``dict`` ready to attach to ``ChatInput.chat_kwargs``.
@@ -57,6 +71,8 @@ def build_chat_kwargs_for(
     overrides: dict[str, Any] = {}
     if response_format is not None:
         overrides["response_format"] = response_format
+    if with_follow_up is not None:
+        overrides["with_follow_up"] = with_follow_up
     return build_chat_kwargs(overrides, config, sensitive_config)
 
 

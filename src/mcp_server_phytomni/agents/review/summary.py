@@ -110,6 +110,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
         chat_kwargs = build_chat_kwargs_for(
             self.review_config,
             self.sensitive_config,
+            with_follow_up=False,
         )
         chat_payload = build_chat_input(
             get_prompt(
@@ -188,6 +189,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
         chat_kwargs = build_chat_kwargs_for(
             self.review_config,
             self.sensitive_config,
+            with_follow_up=True,
         )
         chat_payload = build_chat_input(
             get_prompt(

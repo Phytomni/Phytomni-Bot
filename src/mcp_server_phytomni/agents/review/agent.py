@@ -527,7 +527,9 @@ class DeepResearchAgent(
         the per-worker ``CHAT_APP.ainvoke`` consumes.
         """
         chat_kwargs = build_chat_kwargs_for(
-            self.review_config, self.sensitive_config
+            self.review_config,
+            self.sensitive_config,
+            with_follow_up=False,
         )
         return [
             Send(
@@ -635,7 +637,9 @@ class DeepResearchAgent(
         legacy ``review_node`` prompt builder in ``report.py``.
         """
         chat_kwargs = build_chat_kwargs_for(
-            self.review_config, self.sensitive_config
+            self.review_config,
+            self.sensitive_config,
+            with_follow_up=False,
         )
         dimensions = state["research_dimensions"]
         draft_contents = state["draft_contents"]

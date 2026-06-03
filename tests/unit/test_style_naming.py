@@ -147,6 +147,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_review_add_query_failures.py": {
         "protected-access",
     },
+    # Per-call-site assertions on ``DeepResearchAgent`` chat-subgraph
+    # follow-up routing — same protected-helper coverage seam as the
+    # fan-out siblings; touches ``_build_agent`` / prep / route hooks.
+    "tests/agents/test_review_follow_up_routing.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
