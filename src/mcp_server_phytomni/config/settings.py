@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .relay_mode import relay_mode_enabled
 from .secret_envelope import decrypt_env_blob
 
 _current_dir = Path(__file__).parent
@@ -133,6 +134,29 @@ def load_env_file() -> bool:
     )
 
 
+# Operator secret fields that are normally required (no default) but
+# become optional when the child Bot runs in customer relay mode: it
+# authenticates to the upstream relay with ``RELAY_API_KEY`` and never
+# receives these credentials. Adding a new required secret means adding
+# it here so a relay-mode boot does not raise on its absence.
+_RELAY_OPTIONAL_SECRET_FIELDS = (
+    "DOMAIN_NAME",
+    "USER_NAME",
+    "USER_PASSWORD",
+    "ACCESS_KEY_ID",
+    "SECRET_ACCESS_KEY",
+    "BASE_URL",
+    "MODEL_ID",
+    "API_KEY",
+    "CODER_URL",
+    "CODER_MODEL",
+    "CODER_API_KEY",
+    "EMBED_URL",
+    "EMBED_MODEL",
+    "EMBED_API_KEY",
+)
+
+
 class SensitiveConfig(BaseSettings):
     """Configuration model for sensitive environment variables.
 
@@ -199,6 +223,19 @@ class SensitiveConfig(BaseSettings):
     EMBED_URL: str
     EMBED_MODEL: str
     EMBED_API_KEY: SecretStr
+    # Customer relay-mode bearer key. The child Bot authenticates to the
+    # upstream relay API with this key only; it never receives the
+    # operator credentials above. Optional (empty) outside relay mode.
+    # Dual-alias to match the ServerConfig RELAY_* env contract.
+    RELAY_API_KEY: Annotated[
+        SecretStr,
+        Field(
+            default=SecretStr(""),
+            validation_alias=AliasChoices(
+                "RELAY_API_KEY", "PHYTOMNI_RELAY_API_KEY"
+            ),
+        ),
+    ] = SecretStr("")
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
@@ -209,6 +246,34 @@ class SensitiveConfig(BaseSettings):
         # failing validation on this secrets-only model.
         extra="ignore",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _relax_required_secrets_in_relay_mode(cls, data: Any) -> Any:
+        """Make operator secrets optional when relay mode is active.
+
+        The 14 operator credentials are normally truly-required fields
+        (no default), so an absent one raises ``field required`` before
+        any field validator runs. A relay-mode child Bot has none of
+        them, so inject empty defaults for the missing ones into the
+        merged settings dict *before* field validation. Normal mode
+        (relay flag unset) is a no-op, preserving the strict fail-fast
+        contract. The relay flag is read from ``os.environ`` because the
+        config is built at import time in many modules.
+
+        Args:
+            data: The settings values merged from init kwargs and env
+                sources, keyed by field name. Non-dict inputs (rare
+                pydantic paths) are passed through unchanged.
+
+        Returns:
+            The (possibly augmented) settings data.
+        """
+        if not relay_mode_enabled() or not isinstance(data, dict):
+            return data
+        for field_name in _RELAY_OPTIONAL_SECRET_FIELDS:
+            data.setdefault(field_name, "")
+        return data
 
     @classmethod
     def load(cls) -> "SensitiveConfig":

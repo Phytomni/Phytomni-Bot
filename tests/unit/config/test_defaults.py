@@ -26,6 +26,7 @@ from mcp_server_phytomni.config.defaults import (
     KnowledgeConfig,
     ServerConfig,
 )
+from mcp_server_phytomni.config.relay_mode import relay_mode_enabled
 
 pytestmark = pytest.mark.unit
 
@@ -242,3 +243,122 @@ def test_use_knowledge_subgraph_routes_both_env_aliases(env_name, monkeypatch):
     config = ServerConfig()
 
     assert config.USE_KNOWLEDGE_SUBGRAPH is True
+
+
+@pytest.mark.parametrize("env_name", ["RELAY_MODE", "PHYTOMNI_RELAY_MODE"])
+def test_relay_mode_field_parses_both_aliases(env_name, monkeypatch):
+    """Both ``RELAY_MODE`` and ``PHYTOMNI_RELAY_MODE`` set the flag.
+
+    The customer relay-mode switch follows the same dual-alias contract
+    as every other ``PHYTOMNI_*`` toggle so a child deployment can use
+    whichever prefix dominates its environment.
+    """
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.setenv(env_name, "1")
+    # Relay mode requires a base URL; supply it so construction succeeds.
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+
+    config = ServerConfig()
+
+    assert config.RELAY_MODE is True
+
+
+def test_relay_mode_defaults_false_outside_relay(monkeypatch):
+    """``RELAY_MODE`` is False when neither alias is set."""
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+
+    assert ServerConfig().RELAY_MODE is False
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("1", True), ("true", True), ("on", True), ("0", False), ("", False)],
+)
+def test_relay_mode_enabled_helper_reads_env(value, expected, monkeypatch):
+    """``relay_mode_enabled`` reads the flag straight from ``os.environ``.
+
+    The import-time validator fork cannot consult a constructed config
+    (the config is what is being built), so it reads the env directly
+    through this helper. Pins the truthy parsing it shares with the
+    ``RELAY_MODE`` bool field.
+    """
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    if value:
+        monkeypatch.setenv("PHYTOMNI_RELAY_MODE", value)
+
+    assert relay_mode_enabled() is expected
+
+
+def test_relay_mode_skips_endpoint_enforcement(monkeypatch):
+    """In relay mode the 19 operator endpoints are no longer required.
+
+    A customer child Bot bootstraps with only ``PHYTOMNI_RELAY_*`` set;
+    it has no operator endpoints/UUIDs. The shared
+    ``_require_non_empty_endpoint`` validator must short-circuit so
+    ``ServerConfig()`` (built at import time in many modules) does not
+    raise ``ValidationError`` during a relay-mode boot.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+    for field in SERVER_REQUIRED_ENDPOINT_FIELDS:
+        monkeypatch.delenv(field, raising=False)
+        monkeypatch.delenv(f"PHYTOMNI_{field}", raising=False)
+
+    config = ServerConfig()
+
+    assert config.RELAY_MODE is True
+
+
+def test_relay_mode_off_still_enforces_endpoints(monkeypatch):
+    """With relay mode unset, missing endpoints still fail fast.
+
+    Pins that the validator fork is gated strictly on relay mode and
+    does not weaken the normal-mode startup contract.
+    """
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.delenv("TOKEN_URL", raising=False)
+    monkeypatch.delenv("PHYTOMNI_TOKEN_URL", raising=False)
+
+    with pytest.raises(ValidationError) as excinfo:
+        ServerConfig()
+
+    assert "TOKEN_URL" in str(excinfo.value)
+
+
+def test_relay_base_url_strips_trailing_slash(monkeypatch):
+    """``RELAY_BASE_URL`` is normalized without a trailing slash.
+
+    The relay client appends ``/v1/relay/...`` paths, so a stored
+    trailing slash would produce a double slash in the upstream URL.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test/api/")
+    for field in SERVER_REQUIRED_ENDPOINT_FIELDS:
+        monkeypatch.delenv(field, raising=False)
+        monkeypatch.delenv(f"PHYTOMNI_{field}", raising=False)
+
+    assert ServerConfig().RELAY_BASE_URL == "https://relay.test/api"
+
+
+def test_relay_mode_requires_base_url(monkeypatch):
+    """Enabling relay mode without a base URL fails fast.
+
+    A child Bot that sets ``RELAY_MODE=1`` but forgets
+    ``RELAY_BASE_URL`` would otherwise forward every dependency to an
+    empty URL; surface the misconfiguration at startup instead.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.delenv("RELAY_BASE_URL", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_BASE_URL", raising=False)
+    for field in SERVER_REQUIRED_ENDPOINT_FIELDS:
+        monkeypatch.delenv(field, raising=False)
+        monkeypatch.delenv(f"PHYTOMNI_{field}", raising=False)
+
+    with pytest.raises(ValidationError) as excinfo:
+        ServerConfig()
+
+    assert "RELAY_BASE_URL" in str(excinfo.value)

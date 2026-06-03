@@ -23,6 +23,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
+from .relay_mode import relay_mode_enabled
+
 
 def _require_non_empty_endpoint(value, info: ValidationInfo):
     """Reject an empty deployment field with an env-name-aware message.
@@ -50,6 +52,12 @@ def _require_non_empty_endpoint(value, info: ValidationInfo):
     Raises:
         ValueError: When the value is empty after env resolution.
     """
+    # Customer relay mode boots with only ``PHYTOMNI_RELAY_*`` set and
+    # has no operator endpoints/UUIDs; skip the non-empty contract so a
+    # relay-mode child Bot does not raise during its import-time config
+    # construction. Normal mode keeps the strict fail-fast behavior.
+    if relay_mode_enabled():
+        return value
     if not value:
         raise ValueError(
             f"{info.field_name} is required; set the {info.field_name} "
@@ -295,6 +303,25 @@ class ServerConfig(BaseSettings):
         ),
     ] = False
 
+    # Customer relay-mode client switches (distinct from the operator-
+    # side ``ApiConfig.RELAY_ENABLED``). When ``RELAY_MODE`` is True a
+    # child Bot routes its non-OBS external dependencies through the
+    # upstream relay API at ``RELAY_BASE_URL`` instead of holding the
+    # operator endpoints/secrets, and gates the import-time validator
+    # fork via ``relay_mode_enabled()`` (in ``config/relay_mode.py``).
+    # Inherited by every ``ServerConfig`` subclass so each agent's
+    # HTTP-boundary helpers can branch on relay mode.
+    RELAY_MODE: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("RELAY_MODE", "PHYTOMNI_RELAY_MODE"),
+    )
+    RELAY_BASE_URL: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "RELAY_BASE_URL", "PHYTOMNI_RELAY_BASE_URL"
+        ),
+    )
+
     # Deployment-specific endpoints + UUIDs are externalised with
     # empty defaults so a misconfigured customer image fails fast
     # with a ``ValidationError`` naming the missing env var, rather
@@ -310,6 +337,26 @@ class ServerConfig(BaseSettings):
         *SERVER_REQUIRED_ENDPOINT_FIELDS,
         mode="after",
     )(_require_non_empty_endpoint)
+
+    @field_validator("RELAY_BASE_URL", mode="after")
+    @classmethod
+    def _normalize_relay_base_url(cls, value: str) -> str:
+        """Strip a trailing slash and require the URL in relay mode.
+
+        The relay client appends ``/v1/relay/...`` paths, so a stored
+        trailing slash would yield a double slash upstream. In relay
+        mode an empty base URL is a fatal misconfiguration (every
+        forwarded dependency would target an empty host), so fail fast;
+        outside relay mode the field is unused and stays optional.
+        """
+        normalized = value.rstrip("/")
+        if relay_mode_enabled() and not normalized:
+            raise ValueError(
+                "RELAY_BASE_URL is required in relay mode; set the "
+                "RELAY_BASE_URL or PHYTOMNI_RELAY_BASE_URL environment "
+                "variable."
+            )
+        return normalized
 
 
 class ChatConfig(ServerConfig):

@@ -8,13 +8,46 @@ Covers environment-only loading, secret repr masking, uppercase OBS variables,
 and legacy OBS environment variable fallback.
 """
 
+import os
+import subprocess
+import sys
 from typing import Any, cast
 
 import pytest
+from pydantic import ValidationError
 
 from mcp_server_phytomni.config import settings
 
 pytestmark = pytest.mark.unit
+
+# Required (no-default) secret fields that relay mode must make optional.
+# Each entry is (field_name, *env_aliases) so the relay-boot test can
+# strip every source the value could resolve from.
+_REQUIRED_SECRET_ENV = (
+    ("DOMAIN_NAME",),
+    ("USER_NAME",),
+    ("USER_PASSWORD",),
+    ("ACCESS_KEY_ID", "AccessKeyID"),
+    ("SECRET_ACCESS_KEY", "SecretAccessKey"),
+    ("BASE_URL",),
+    ("MODEL_ID",),
+    ("API_KEY",),
+    ("CODER_URL",),
+    ("CODER_MODEL",),
+    ("CODER_API_KEY",),
+    ("EMBED_URL",),
+    ("EMBED_MODEL",),
+    ("EMBED_API_KEY",),
+)
+
+
+def _strip_operator_secrets(monkeypatch):
+    """Remove every operator secret env var and its aliases."""
+    for field, *aliases in _REQUIRED_SECRET_ENV:
+        monkeypatch.delenv(field, raising=False)
+        monkeypatch.delenv(f"PHYTOMNI_{field}", raising=False)
+        for alias in aliases:
+            monkeypatch.delenv(alias, raising=False)
 
 
 def test_sensitive_config_load_uses_environment_without_real_env_file(
@@ -120,3 +153,93 @@ def test_sensitive_config_accepts_legacy_obs_env(monkeypatch):
         config.SECRET_ACCESS_KEY.get_secret_value()
         == "legacy-secret-access-key"
     )
+
+
+def test_relay_mode_boots_without_operator_secrets(monkeypatch):
+    """Relay mode makes the operator secret fields optional.
+
+    A customer child Bot ships only ``PHYTOMNI_RELAY_*``; it never
+    receives the operator IAM / OBS / model credentials. With relay
+    mode enabled, ``SensitiveConfig`` must construct cleanly even though
+    all 14 normally-required secrets are absent, so the many modules
+    that build it at import time do not raise during a relay-mode boot.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-secret-value")
+    _strip_operator_secrets(monkeypatch)
+
+    settings_cls = cast(Any, settings.SensitiveConfig)
+    config = settings_cls(_env_file=None)
+
+    assert config.RELAY_API_KEY.get_secret_value() == "relay-secret-value"
+    assert config.API_KEY.get_secret_value() == ""
+    assert config.BASE_URL == ""
+
+
+def test_normal_mode_missing_secret_still_raises(monkeypatch):
+    """Outside relay mode a missing secret still fails fast.
+
+    Pins that the relay fork does not weaken normal-mode validation:
+    the operator deployment must still raise when a credential is
+    absent rather than silently constructing with empty secrets.
+    """
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("PHYTOMNI_API_KEY", raising=False)
+
+    settings_cls = cast(Any, settings.SensitiveConfig)
+    with pytest.raises(ValidationError) as excinfo:
+        settings_cls(_env_file=None)
+
+    assert "API_KEY" in str(excinfo.value)
+
+
+def test_relay_api_key_is_secret_and_redacted(monkeypatch):
+    """``RELAY_API_KEY`` is a ``SecretStr`` masked in repr/model dumps."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-secret-value")
+    _strip_operator_secrets(monkeypatch)
+
+    settings_cls = cast(Any, settings.SensitiveConfig)
+    config = settings_cls(_env_file=None)
+
+    assert "relay-secret-value" not in repr(config)
+    assert "**********" in repr(config)
+
+
+def test_relay_api_key_defaults_empty_outside_relay():
+    """``RELAY_API_KEY`` defaults to an empty secret in normal mode."""
+    config = settings.SensitiveConfig.load()
+
+    assert config.RELAY_API_KEY.get_secret_value() == ""
+
+
+def test_relay_mode_imports_config_building_module_without_secrets():
+    """A module that builds a config at import time boots in relay mode.
+
+    The decisive S1 guarantee: ``storage/uploads.py`` constructs
+    ``ServerConfig()`` at module scope, so a customer relay image
+    importing the package with ONLY ``PHYTOMNI_RELAY_*`` set (no
+    operator endpoints, no secrets) must not raise ``ValidationError``
+    during import. Run the import in a clean subprocess so the
+    operator env the test session carries cannot mask the relax.
+    """
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "PHYTOMNI_TESTING": "1",
+        "PHYTOMNI_RELAY_MODE": "1",
+        "PHYTOMNI_RELAY_BASE_URL": "https://relay.test",
+        "PHYTOMNI_RELAY_API_KEY": "relay-secret-value",
+    }
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import mcp_server_phytomni.storage.uploads"],
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
