@@ -21,6 +21,8 @@ from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
 
 from mcp_server_phytomni.common import relay_client as rc
+from mcp_server_phytomni.config.defaults import ServerConfig
+from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
 
@@ -57,10 +59,12 @@ class _CapturingClient:
         return None
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Record a POST and replay the canned response."""
         self.captured = {"method": "POST", "url": url, **kwargs}
         return self.response
 
     async def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Record a GET and replay the canned response."""
         self.captured = {"method": "GET", "url": url, **kwargs}
         return self.response
 
@@ -176,9 +180,6 @@ def test_build_relay_client_reads_config_and_secret(monkeypatch):
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test/api/")
     monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "factory-key")
-
-    from mcp_server_phytomni.config.defaults import ServerConfig
-    from mcp_server_phytomni.config.settings import SensitiveConfig
 
     config = ServerConfig()
     sensitive = cast(Any, SensitiveConfig)(_env_file=None)
