@@ -380,6 +380,32 @@ async def test_concurrency_cap_rejects_at_limit(
         pass
 
 
+async def test_client_disconnect_audited_distinctly(
+    monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
+) -> None:
+    """A client disconnect mid-stream is audited apart from a clean 200."""
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b"abcdef",
+        )
+
+    _patch_client(monkeypatch, handler)
+
+    response = await _forward(
+        store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
+    )
+    assert isinstance(response, StreamingResponse)
+    iterator = cast("AsyncGenerator[bytes, None]", response.body_iterator)
+    await anext(iterator)
+    await iterator.aclose()
+
+    records = store.query()
+    assert records[0].error_type == "client_disconnected"
+
+
 async def test_mint_failure_releases_concurrency_slot(
     monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
 ) -> None:

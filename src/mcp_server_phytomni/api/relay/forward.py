@@ -25,7 +25,7 @@ from collections.abc import (
     Iterable,
     Mapping,
 )
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, aclosing
 from dataclasses import dataclass
 from typing import Optional
 
@@ -352,21 +352,33 @@ def _streaming_relay_response(
         if outcome.truncated:
             dropped = outcome.total_bytes - len(outcome.body)
             body_text += f"<truncated: {dropped} bytes>"
+        error_type = outcome.error_type
+        if (
+            error_type is None
+            and outcome.finish_reason is not RelayFinishReason.COMPLETE
+        ):
+            error_type = outcome.finish_reason.value
         record(
             status_code=status,
             response_body=body_text,
-            error_type=outcome.error_type,
+            error_type=error_type,
         )
 
     async def _stream() -> AsyncIterator[bytes]:
+        # aclosing() guarantees the tee's finally (the audit write) runs
+        # when the client disconnects: closing this outer generator does
+        # NOT cascade into the inner tee, so it must be closed explicitly.
         try:
-            async for chunk in tee_and_stream(
-                upstream.aiter_bytes(),
-                audit_cap=cap,
-                on_complete=_on_complete,
-                deadline=deadline,
-            ):
-                yield chunk
+            async with aclosing(
+                tee_and_stream(
+                    upstream.aiter_bytes(),
+                    audit_cap=cap,
+                    on_complete=_on_complete,
+                    deadline=deadline,
+                )
+            ) as teed:
+                async for chunk in teed:
+                    yield chunk
         finally:
             await stack.aclose()
 
