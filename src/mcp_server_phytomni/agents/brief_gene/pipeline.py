@@ -17,15 +17,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from httpx import Timeout
-
-from ...common.http import (
-    JsonPostRequest,
-    JsonPostRetry,
-    post_json_with_retries,
-    require_json_object,
-)
-from ...common.httpx_client import get_async_client
+from ...common.http import JsonPostRetry, require_json_object
 from ...common.prompts import get_prompt
 from ...common.responses import (
     attach_message_payload,
@@ -37,6 +29,7 @@ from ...config.settings import get_sensitive_config
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.retrieval import clear_retrieval_caches
+from ..shared.sql import bi_query
 
 BRIEF_CONFIG = BriefGeneConfig()
 
@@ -227,26 +220,18 @@ async def run_bi_api(
         retriable_codes = list(BRIEF_CONFIG.RETRIABLE_CODES)
     else:
         retriable_codes = list(retriable_codes)
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with get_async_client(timeout=client_timeout) as client:
-        data = await post_json_with_retries(
-            client,
-            JsonPostRequest(
-                url=bi_url,
-                headers={
-                    "Content-Type": "application/json",
-                    "token": bi_token,
-                },
-                json_body={"sql": query_sql, "returnType": "json"},
-            ),
-            JsonPostRetry(
-                timeout=timeout,
-                max_retries=max_retries,
-                retriable_codes=retriable_codes,
-                message="Failed to query BI API",
-                network_message="BI API network error",
-            ),
-        )
+    data = await bi_query(
+        query_sql,
+        bi_url=bi_url,
+        headers={"Content-Type": "application/json", "token": bi_token},
+        retry=JsonPostRetry(
+            timeout=timeout,
+            max_retries=max_retries,
+            retriable_codes=retriable_codes,
+            message="Failed to query BI API",
+            network_message="BI API network error",
+        ),
+    )
     return require_json_object(
         data, "Failed to query BI API after all retries"
     )

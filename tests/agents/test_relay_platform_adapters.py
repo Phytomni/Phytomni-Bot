@@ -20,15 +20,22 @@ from typing import Any, Optional
 import pytest
 
 from mcp_server_phytomni.agents.analyst import task_ops
+from mcp_server_phytomni.agents.brief_gene.pipeline import run_bi_api
 from mcp_server_phytomni.agents.data.nl2sql import (
     Nl2SqlRequest,
     _execute_nl2sql_via_relay,
 )
+from mcp_server_phytomni.agents.deep_genome.dispatch import (
+    DeepGenomeDispatchMixin,
+)
+from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
 from mcp_server_phytomni.agents.knowledge import retrieval
 from mcp_server_phytomni.agents.knowledge.retrieval import (
     _rerank_batch,
     _retrieve_scope_docs,
 )
+from mcp_server_phytomni.agents.shared import sql as shared_sql
+from mcp_server_phytomni.agents.shared.sql import relay_bi_query
 
 pytestmark = pytest.mark.agent
 
@@ -221,3 +228,60 @@ async def test_task_delete_routes_through_relay(monkeypatch):
     assert relay.calls[0]["method"] == "POST"
     assert relay.calls[0]["path"] == "analysis/task-9/terminate"
     assert relay.calls[0]["body"] == {"force": True}
+
+
+async def test_relay_bi_query_posts_to_bi_query_route(monkeypatch):
+    """The shared BI relay seam posts the SQL body to /v1/relay/bi/query."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, shared_sql, {"rows": [1]})
+
+    result = await relay_bi_query("SELECT 1", message="BI query failed")
+
+    assert result == {"rows": [1]}
+    assert relay.calls[0]["path"] == "bi/query"
+    assert relay.calls[0]["body"] == {"sql": "SELECT 1", "returnType": "json"}
+
+
+async def test_run_bi_api_routes_through_relay(monkeypatch):
+    """brief_gene run_bi_api routes BI through the relay in relay mode."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, shared_sql, {"data": "x"})
+
+    result = await run_bi_api("SELECT 2")
+
+    assert result == {"data": "x"}
+    assert relay.calls[0]["path"] == "bi/query"
+    assert relay.calls[0]["body"]["sql"] == "SELECT 2"
+
+
+async def test_post_bi_sql_routes_through_relay(monkeypatch):
+    """deep_genome _post_bi_sql routes BI through the relay in relay mode."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, shared_sql, {"records": []})
+
+    result = await _post_bi_sql(
+        "https://operator.invalid/bi", {"token": "t"}, "SELECT 3", 1.0
+    )
+
+    assert result == {"records": []}
+    assert relay.calls[0]["path"] == "bi/query"
+    assert relay.calls[0]["body"]["sql"] == "SELECT 3"
+
+
+async def test_bi_json_routes_through_relay(monkeypatch):
+    """deep_genome dispatch _bi_json routes BI through the relay."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, shared_sql, {"value": 1})
+
+    class _BiProbe(DeepGenomeDispatchMixin):
+        """Test subclass exposing the protected _bi_json publicly."""
+
+        async def call_bi_json(self, sql: str) -> dict:
+            """Invoke the protected BI JSON helper from inside the class."""
+            return await self._bi_json(sql)
+
+    result = await _BiProbe().call_bi_json("SELECT 4")
+
+    assert result == {"value": 1}
+    assert relay.calls[0]["path"] == "bi/query"
+    assert relay.calls[0]["body"]["sql"] == "SELECT 4"

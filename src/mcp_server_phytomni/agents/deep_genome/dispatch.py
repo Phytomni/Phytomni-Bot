@@ -23,6 +23,7 @@ from langgraph.types import Send
 
 from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
+from ...config.relay_mode import relay_mode_enabled
 from ...runtime.langgraph_runner import capture_workflow_boundary
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
@@ -33,7 +34,7 @@ from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
 )
-from ..shared.sql import sql_literal
+from ..shared.sql import relay_bi_query, sql_literal
 from .formatting import SPECIES_CODE_MAP
 from .summary import build_sub_summary
 
@@ -592,6 +593,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
     async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
         """Query the BI SQL endpoint and return the parsed JSON payload."""
+        if relay_mode_enabled():
+            return await relay_bi_query(sql, message="BI query failed")
         payload = {"sql": sql, "returnType": "json"}
         bi_timeout = self.deep_genome_config.TIMEOUT
         async with get_async_client(timeout=bi_timeout) as client:

@@ -4,8 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the DeepGenome BI SQL helper.
 
-``_post_bi_sql`` now routes through the shared ``post_json_with_retries``
-helper for retry parity with brief_gene. Pin the surviving A-5
+``_post_bi_sql`` now routes through the shared ``bi_query`` helper
+(operator BI POST + relay-mode branch). Pin the surviving A-5
 guarantee: retry exhaustion, a non-2xx status, and an empty payload
 surface as the helper's ``McpError``, and a 2xx non-JSON body still
 surfaces as a clear ``McpError`` rather than an opaque decode error.
@@ -36,7 +36,7 @@ def _patch_helper(
     result: Any = None,
     error: Exception | None = None,
 ) -> None:
-    """Replace profile.post_json_with_retries with an async fake.
+    """Replace profile.bi_query with a signature-agnostic async fake.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
@@ -62,7 +62,7 @@ def _patch_helper(
             raise error
         return result
 
-    monkeypatch.setattr(profile, "post_json_with_retries", fake_helper)
+    monkeypatch.setattr(profile, "bi_query", fake_helper)
 
 
 async def test_post_bi_sql_returns_payload_on_success(

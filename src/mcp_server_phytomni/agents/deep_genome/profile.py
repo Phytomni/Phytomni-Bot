@@ -16,25 +16,18 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.docs import format_retrieved_doc_context
-from ...common.http import (
-    JsonPostRequest,
-    JsonPostRetry,
-    post_json_with_retries,
-    require_json_object,
-)
-from ...common.httpx_client import get_async_client
+from ...common.http import JsonPostRetry, require_json_object
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...config.defaults import DeepGenomeConfig
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..chat.service import phyto_chat
-from ..shared.sql import sql_literal
+from ..shared.sql import bi_query, sql_literal
 from .formatting import SPECIES_CODE_MAP, network_to_string
 
 if TYPE_CHECKING:
@@ -85,34 +78,29 @@ async def _post_bi_sql(
             clear message instead of the opaque ``Expecting value:
             line 1 column 1 (char 0)``.
     """
-    client_timeout = Timeout(timeout, connect=timeout)
-    async with get_async_client(timeout=client_timeout) as client:
-        try:
-            data = await post_json_with_retries(
-                client,
-                JsonPostRequest(
-                    url=bi_url,
-                    headers=sql_headers,
-                    json_body={"sql": sql, "returnType": "json"},
-                ),
-                JsonPostRetry(
-                    timeout=timeout,
-                    max_retries=_LOOKUP_CONFIG.MAX_RETRIES,
-                    retriable_codes=list(_LOOKUP_CONFIG.RETRIABLE_CODES),
-                    message="BI query failed",
-                    network_message="BI query network error",
+    try:
+        data = await bi_query(
+            sql,
+            bi_url=bi_url,
+            headers=sql_headers,
+            retry=JsonPostRetry(
+                timeout=timeout,
+                max_retries=_LOOKUP_CONFIG.MAX_RETRIES,
+                retriable_codes=list(_LOOKUP_CONFIG.RETRIABLE_CODES),
+                message="BI query failed",
+                network_message="BI query network error",
+            ),
+        )
+    except ValueError as exc:
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message=(
+                    "BI backend returned non-JSON "
+                    f"(2xx body is not valid JSON: {exc})"
                 ),
             )
-        except ValueError as exc:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=(
-                        "BI backend returned non-JSON "
-                        f"(2xx body is not valid JSON: {exc})"
-                    ),
-                )
-            ) from exc
+        ) from exc
     return require_json_object(
         data, "BI query returned no payload after all retries"
     )
