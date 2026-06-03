@@ -46,6 +46,7 @@ come from environment variables documented in
 ```bash
 phytomni-api-key create --user-id alice --name laptop
 phytomni-api-key create --user-id alice --name short-lived --expires-days 30
+phytomni-api-key create --user-id cust --scope relay:llm --scope relay:retrieve
 phytomni-api-key list
 phytomni-api-key list --user-id alice
 phytomni-api-key revoke --prefix ptm_xxxxxxxx
@@ -55,8 +56,15 @@ phytomni-api-key revoke --prefix ptm_xxxxxxxx
 database keeps only a salted PBKDF2-HMAC-SHA256 hash and the plaintext is
 not recoverable.
 
-`list` prints non-secret metadata only. `revoke` disables an active key by
-its public prefix.
+`--scope` (repeatable) restricts the key to specific services. A
+scope-less key keeps full access to the agent routes, but the relay
+routes (`/v1/relay/*`) require an explicit `relay:<service>` (or
+`relay:*`) scope and deny scope-less keys. Use it to issue a relay
+customer key limited to the services it may reach, e.g.
+`--scope relay:llm`.
+
+`list` prints non-secret metadata only, including each key's scopes.
+`revoke` disables an active key by its public prefix.
 
 ## `phytomni-cache`
 
