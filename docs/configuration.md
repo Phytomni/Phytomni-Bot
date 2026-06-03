@@ -135,6 +135,30 @@ SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
 working directory so restarts use the same stores.
 
+## Relay Variables
+
+These tune the credential-injecting relay (`/v1/relay/*`). The relay
+reuses the existing upstream endpoints (see *Deployment Endpoints and
+UUIDs*) and operator secrets (see *Encrypted Customer Envelope*) — there
+is no relay-specific secret. Every variable accepts an unprefixed or
+`PHYTOMNI_RELAY_*` alias.
+
+| Variable                         | Default                              | Sensitive? | Purpose                                                                                             |
+| -------------------------------- | ------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------- |
+| `RELAY_ENABLED`                  | `false`                              | no         | Expose `/v1/relay/*`; re-read every request so a disable is an instant kill-switch.                 |
+| `RELAY_AUDIT_DB_PATH`            | `.cache/phytomni/relay_audit.sqlite` | no         | Local relay audit SQLite store; keep on a local disk (WAL deadlocks on network filesystems).        |
+| `RELAY_AUDIT_RETENTION_DAYS`     | `90`                                 | no         | Age in days after which audit rows are eligible for cleanup.                                        |
+| `RELAY_REQUEST_MAX_BYTES`        | `10485760`                           | no         | Max relayed request body in bytes; over-limit returns `413` without buffering the whole body.       |
+| `RELAY_RESPONSE_AUDIT_MAX_BYTES` | `10485760`                           | no         | Max upstream response bytes copied into the audit; the client-facing response is never truncated.   |
+| `RELAY_TIMEOUT_SECONDS`          | `600.0`                              | no         | Per-request upstream timeout and the total wall-clock ceiling for a streamed forward.               |
+| `RELAY_RATE_LIMIT_PER_MIN`       | `60`                                 | no         | Per-key relay request budget per minute (separate from `API_RATE_LIMIT_PER_MIN`); over-limit `429`. |
+| `RELAY_MAX_CONCURRENT_PER_KEY`   | `8`                                  | no         | Max in-flight relay forwards per key; excess returns `503`.                                         |
+
+Rate, concurrency, and retention state are per worker, so the effective
+per-key ceilings scale with the worker count. See
+`docs/ops/http-api-runbook.md` *Relay Operations* for the operator
+procedures and `docs/http-api.md` *Relay* for the route contracts.
+
 ## Cache and Registry Variables
 
 | Variable            | Default                             | Purpose                                                  |

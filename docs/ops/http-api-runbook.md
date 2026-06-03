@@ -163,24 +163,34 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 
-| Method   | Path                           | Auth | Operational use                                                                              |
-| -------- | ------------------------------ | ---- | -------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                     | no   | Process liveness.                                                                            |
-| `GET`    | `/readyz`                      | no   | Store-directory writability check.                                                           |
-| `GET`    | `/v1/models`                   | yes  | Authenticated liveness and model map check.                                                  |
-| `POST`   | `/v1/chat/completions`         | yes  | OpenAI-compatible chat-like agents.                                                          |
-| `GET`    | `/v1/agents`                   | yes  | Native agent slug discovery; rows carry `legacy_aliases`.                                    |
-| `POST`   | `/v1/agents/{agent}/runs`      | yes  | Native agent submission.                                                                     |
-| `GET`    | `/v1/runs/{run_id}`            | yes  | Owner-scoped run lookup.                                                                     |
-| `GET`    | `/v1/runs/{run_id}/logs`       | yes  | Reconciled task logs for a run.                                                              |
-| `GET`    | `/v1/runs`                     | yes  | Owner-scoped + service-token delegated listing.                                              |
-| `POST`   | `/v1/files`                    | yes  | Per-user multipart upload (25 MiB ceiling).                                                  |
-| `POST`   | `/v1/api-keys`                 | svc  | Mint a per-user `ptm_...` API key (service tok).                                             |
-| `GET`    | `/v1/api-keys`                 | svc  | List per-user keys (metadata only).                                                          |
-| `DELETE` | `/v1/api-keys/{prefix}`        | svc  | Revoke the key with the given public prefix.                                                 |
-| `GET`    | `/v1/relay/audit`              | svc  | List relay audit records (service token); filter by user, key prefix, service, status, time. |
-| `GET`    | `/v1/relay/audit/{request_id}` | svc  | Fetch relay audit records by request id (service token).                                     |
-| `GET`    | `/v1/relay/healthz`            | yes  | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.              |
+| Method   | Path                               | Auth  | Operational use                                                                              |
+| -------- | ---------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| `GET`    | `/healthz`                         | no    | Process liveness.                                                                            |
+| `GET`    | `/readyz`                          | no    | Store-directory writability check.                                                           |
+| `GET`    | `/v1/models`                       | yes   | Authenticated liveness and model map check.                                                  |
+| `POST`   | `/v1/chat/completions`             | yes   | OpenAI-compatible chat-like agents.                                                          |
+| `GET`    | `/v1/agents`                       | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                    |
+| `POST`   | `/v1/agents/{agent}/runs`          | yes   | Native agent submission.                                                                     |
+| `GET`    | `/v1/runs/{run_id}`                | yes   | Owner-scoped run lookup.                                                                     |
+| `GET`    | `/v1/runs/{run_id}/logs`           | yes   | Reconciled task logs for a run.                                                              |
+| `GET`    | `/v1/runs`                         | yes   | Owner-scoped + service-token delegated listing.                                              |
+| `POST`   | `/v1/files`                        | yes   | Per-user multipart upload (25 MiB ceiling).                                                  |
+| `POST`   | `/v1/api-keys`                     | svc   | Mint a per-user `ptm_...` API key (service tok).                                             |
+| `GET`    | `/v1/api-keys`                     | svc   | List per-user keys (metadata only).                                                          |
+| `DELETE` | `/v1/api-keys/{prefix}`            | svc   | Revoke the key with the given public prefix.                                                 |
+| `GET`    | `/v1/relay/audit`                  | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time. |
+| `GET`    | `/v1/relay/audit/{request_id}`     | svc   | Fetch relay audit records by request id (service token).                                     |
+| `GET`    | `/v1/relay/healthz`                | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.              |
+| `POST`   | `/v1/relay/llm/chat/completions`   | relay | Chat LLM relay (transparent, Bearer-injected).                                               |
+| `POST`   | `/v1/relay/coder/chat/completions` | relay | Coder model relay (transparent, Bearer-injected).                                            |
+| `POST`   | `/v1/relay/embed/embeddings`       | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                      |
+| `POST`   | `/v1/relay/retrieve/search`        | relay | Knowledge retrieve relay (envelope, no credential).                                          |
+| `POST`   | `/v1/relay/rerank/rank`            | relay | Knowledge rerank relay (envelope, no credential).                                            |
+| `POST`   | `/v1/relay/database/nl2sql`        | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                 |
+| `POST`   | `/v1/relay/bi/query`               | relay | BI relay (envelope, static `token`).                                                         |
+| `POST`   | `/v1/relay/analysis/tasks`         | relay | Analysis-platform relay (envelope, IAM `X-Auth-Token`).                                      |
+| `POST`   | `/v1/relay/task/create`            | relay | Remote task-create relay (envelope, no credential).                                          |
+| `POST`   | `/v1/relay/task/update`            | relay | Remote task-update relay (envelope, no credential).                                          |
 
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
@@ -233,6 +243,55 @@ path-traversal segments collapse to the basename
 characters rewrite to `-` (`my report (final).pdf` →
 `my-report-final.pdf`, response `201`). Only empty bodies and
 empty / `.` / `..` filenames return `400`.
+
+## Relay Operations
+
+The credential-injecting relay (`/v1/relay/*`) is off unless
+`RELAY_ENABLED=1`. Operate it as follows.
+
+- **Enable / disable.** Set `RELAY_ENABLED=1` to expose the surface;
+  set it back to `0` to disable. The flag is re-read per request, so a
+  disable takes effect on in-flight workers without a restart — this is
+  the incident kill-switch. While disabled, every relay route returns
+  `404`.
+- **Issue customer keys.** Mint a `ptm_...` key scoped to only the
+  services the customer may reach:
+  `phytomni-api-key create --user-id <customer> --scope relay:llm --scope relay:retrieve`.
+  Use `--scope relay:*` for all relay services. Do **not** issue a
+  scope-less key for relay use — scope-less keys are all-access on the
+  agent routes but are denied (`403`) on relay routes by design.
+- **Per-service upstream auth.** `llm` / `coder` / `embed` inject the
+  operator `Authorization: Bearer` key; `database` / `analysis` inject an
+  IAM `X-Auth-Token`; `bi` injects the static `token` (BI token);
+  `retrieve` / `rerank` / `task` inject nothing (their upstreams are
+  currently unauthenticated). The operator's real secrets come from the
+  same `.env` / `.env.encrypted` the rest of the service uses
+  (`API_KEY`, `CODER_API_KEY`, `EMBED_API_KEY`, `BI_TOKEN`, and the IAM
+  user credentials); no relay-specific secret exists.
+- **Query the audit.** Every relay call is recorded in the local audit
+  store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:
+  `GET /v1/relay/audit?service=llm&user_id=<customer>` and
+  `GET /v1/relay/audit/{request_id}`. Rows hold the verbatim
+  request/response bodies (response capped at
+  `RELAY_RESPONSE_AUDIT_MAX_BYTES`) and the public key prefix — never the
+  key hash or an injected credential header. Treat the audit DB as
+  sensitive (it can contain raw customer payloads): restrict file
+  permissions and keep it on a local disk (SQLite WAL deadlocks on
+  network filesystems).
+- **Retention.** Audit rows are eligible for cleanup after
+  `RELAY_AUDIT_RETENTION_DAYS` (default 90). Purge expired rows on a
+  schedule by calling `RelayAuditStore.purge_expired(retention_days)`
+  (wire it into a cron job alongside the existing task cleanup).
+- **Rate and concurrency.** Relay calls draw on a per-key budget
+  (`RELAY_RATE_LIMIT_PER_MIN`, returns `429` + `Retry-After`) that is
+  separate from the agent budget, and each key may hold at most
+  `RELAY_MAX_CONCURRENT_PER_KEY` in-flight forwards (excess returns
+  `503`). Both counters are per worker; raise the limits cautiously since
+  relay calls spend the operator's metered upstream credentials.
+- **Multi-worker caveat.** The rate, concurrency, and audit-retention
+  state are per worker. With N workers the effective per-key ceilings are
+  ×N, so set the limits accordingly or front the relay with a single
+  worker until a shared store is added.
 
 ## Health Checks
 

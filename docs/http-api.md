@@ -68,24 +68,34 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 
 ## Endpoints
 
-| Method   | Path                           | Auth | Purpose                                                                                                  |
-| -------- | ------------------------------ | ---- | -------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                     | no   | Liveness, no dependencies.                                                                               |
-| `GET`    | `/readyz`                      | no   | Readiness, checks local store directories without creating files.                                        |
-| `GET`    | `/v1/models`                   | yes  | Lists OpenAI-compatible model ids.                                                                       |
-| `POST`   | `/v1/chat/completions`         | yes  | OpenAI-compatible chat endpoint.                                                                         |
-| `GET`    | `/v1/agents`                   | yes  | Lists native agent-run slugs; each row carries `legacy_aliases`.                                         |
-| `POST`   | `/v1/agents/{agent}/runs`      | yes  | Invokes one agent by slug.                                                                               |
-| `GET`    | `/v1/runs/{run_id}`            | yes  | Returns one owner-isolated run state.                                                                    |
-| `GET`    | `/v1/runs/{run_id}/logs`       | yes  | Returns reconciled task logs for a run.                                                                  |
-| `GET`    | `/v1/runs`                     | yes  | Lists owner-scoped runs newest-first.                                                                    |
-| `POST`   | `/v1/files`                    | yes  | Stores one multipart upload in OBS and returns the public path.                                          |
-| `POST`   | `/v1/api-keys`                 | svc  | Mints a per-user `ptm_...` API key.                                                                      |
-| `GET`    | `/v1/api-keys`                 | svc  | Lists per-user keys (metadata only); optional `?user_id=` filter.                                        |
-| `DELETE` | `/v1/api-keys/{prefix}`        | svc  | Revokes the key with the given public prefix.                                                            |
-| `GET`    | `/v1/relay/audit`              | svc  | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range. |
-| `GET`    | `/v1/relay/audit/{request_id}` | svc  | Fetches relay audit records by request id (service token).                                               |
-| `GET`    | `/v1/relay/healthz`            | yes  | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                          |
+| Method   | Path                               | Auth  | Purpose                                                                                                  |
+| -------- | ---------------------------------- | ----- | -------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/healthz`                         | no    | Liveness, no dependencies.                                                                               |
+| `GET`    | `/readyz`                          | no    | Readiness, checks local store directories without creating files.                                        |
+| `GET`    | `/v1/models`                       | yes   | Lists OpenAI-compatible model ids.                                                                       |
+| `POST`   | `/v1/chat/completions`             | yes   | OpenAI-compatible chat endpoint.                                                                         |
+| `GET`    | `/v1/agents`                       | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                         |
+| `POST`   | `/v1/agents/{agent}/runs`          | yes   | Invokes one agent by slug.                                                                               |
+| `GET`    | `/v1/runs/{run_id}`                | yes   | Returns one owner-isolated run state.                                                                    |
+| `GET`    | `/v1/runs/{run_id}/logs`           | yes   | Returns reconciled task logs for a run.                                                                  |
+| `GET`    | `/v1/runs`                         | yes   | Lists owner-scoped runs newest-first.                                                                    |
+| `POST`   | `/v1/files`                        | yes   | Stores one multipart upload in OBS and returns the public path.                                          |
+| `POST`   | `/v1/api-keys`                     | svc   | Mints a per-user `ptm_...` API key.                                                                      |
+| `GET`    | `/v1/api-keys`                     | svc   | Lists per-user keys (metadata only); optional `?user_id=` filter.                                        |
+| `DELETE` | `/v1/api-keys/{prefix}`            | svc   | Revokes the key with the given public prefix.                                                            |
+| `GET`    | `/v1/relay/audit`                  | svc   | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range. |
+| `GET`    | `/v1/relay/audit/{request_id}`     | svc   | Fetches relay audit records by request id (service token).                                               |
+| `GET`    | `/v1/relay/healthz`                | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                          |
+| `POST`   | `/v1/relay/llm/chat/completions`   | relay | Chat LLM relay (transparent); injects the operator `Authorization: Bearer` key.                          |
+| `POST`   | `/v1/relay/coder/chat/completions` | relay | Coder model relay (transparent); injects the operator coder Bearer key.                                  |
+| `POST`   | `/v1/relay/embed/embeddings`       | relay | Embedding relay (transparent); injects the operator embed Bearer key (OpenAI shape, OQ-001).             |
+| `POST`   | `/v1/relay/retrieve/search`        | relay | Knowledge retrieve relay (envelope); no operator credential injected.                                    |
+| `POST`   | `/v1/relay/rerank/rank`            | relay | Knowledge rerank relay (envelope); no operator credential injected.                                      |
+| `POST`   | `/v1/relay/database/nl2sql`        | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                        |
+| `POST`   | `/v1/relay/bi/query`               | relay | BI relay (envelope); injects the static operator `token` (BI token).                                     |
+| `POST`   | `/v1/relay/analysis/tasks`         | relay | Analysis-platform relay (envelope); injects the operator IAM `X-Auth-Token` for the analysis region.     |
+| `POST`   | `/v1/relay/task/create`            | relay | Remote task-create relay (envelope); no operator credential injected.                                    |
+| `POST`   | `/v1/relay/task/update`            | relay | Remote task-update relay (envelope); no operator credential injected.                                    |
 
 `GET /v1/agents` returns one row per registered native slug; each
 row carries a `legacy_aliases: list[str]` carrying the historical
@@ -204,6 +214,68 @@ Routes marked **svc** require the service token configured via
 `503 admin path not enabled`; an absent or wrong token returns `401`.
 The service token is intentionally separate from `ptm_...` user keys
 so a leaked user key cannot escalate to key-issuance scope.
+
+## Relay (Credential-Injecting Proxy)
+
+The relay lets an operator front the outbound leaf-service calls (LLM,
+coder, embedding, knowledge retrieve/rerank, NL2SQL, BI, analysis, task)
+so a downstream deployment can reach them without holding the operator's
+real upstream secrets. The customer calls a `/v1/relay/<service>/...`
+route with an issued `ptm_...` key; the relay validates the key, strips
+the caller credential, injects the operator's real upstream credential,
+forwards to a config-resolved upstream URL, and audits the call.
+
+The whole surface is disabled by default. Set `RELAY_ENABLED=1` (or
+`PHYTOMNI_RELAY_ENABLED=1`) to expose it; the flag is re-read on every
+request, so flipping it back to `0` stops serving in-flight workers
+without a restart, and every relay route returns `404` while disabled.
+
+**Authorization.** Relay routes require a `ptm_...` key whose scopes
+include `relay:<service>` or the `relay:*` wildcard. Unlike the agent
+routes, an empty-scope (all-access) key is **denied** on the relay
+surface, so a legacy convenience key cannot drive the operator's
+upstreams. The admission order is `401` (unknown key) → `429` (the
+relay-specific per-key budget, separate from the agent budget) → `403`
+(missing relay scope). Mint a scoped key with
+`phytomni-api-key create --scope relay:llm` (see the CLI reference).
+
+**Two response families.** OpenAI-family routes (`llm` / `coder` /
+`embed`) are *transparent*: the upstream status and body are passed
+through (so an OpenAI SDK sees its native shapes, including streamed
+SSE), the upstream status is read before the streamed response is built
+so an upstream `5xx` is never masked as a `200`, and response headers are
+reduced to an allowlist (`Content-Type` only) so a reflected operator
+credential header cannot leak. Platform-family routes
+(`retrieve` / `rerank` / `database` / `bi` / `analysis` / `task`) are
+*envelope*: a `2xx` body is returned as-is and any upstream error is
+mapped to the unified error envelope.
+
+**Per-service upstream credential injected:**
+
+| Service                        | Injected upstream credential                     |
+| ------------------------------ | ------------------------------------------------ |
+| `llm` / `coder` / `embed`      | `Authorization: Bearer <operator key>`           |
+| `database` / `analysis`        | IAM `X-Auth-Token` (minted via `get_token`)      |
+| `bi`                           | static `token: <operator BI token>`              |
+| `retrieve` / `rerank` / `task` | none (the upstream is currently unauthenticated) |
+
+**Request and response handling.** The request body is read under a
+streaming byte budget (`RELAY_REQUEST_MAX_BYTES`; over-limit returns
+`413` without buffering the whole body). The upstream URL is resolved
+from server config only — the client query string is never carried onto
+the operator-credentialed call. Each key is bounded to
+`RELAY_MAX_CONCURRENT_PER_KEY` in-flight forwards (excess returns `503`),
+and a forward's total wall-clock lifetime is capped at
+`RELAY_TIMEOUT_SECONDS`. Every call is audited best-effort (a failed
+audit write never fails a successful relay); audit rows store the
+verbatim request/response bodies (capped for the response by
+`RELAY_RESPONSE_AUDIT_MAX_BYTES`) and the public key prefix, never the
+key hash or any injected credential header. Query audits with the
+service-token `GET /v1/relay/audit` routes.
+
+See *Relay Variables* in `docs/configuration.md` for the knobs and the
+*Relay* section of `docs/ops/http-api-runbook.md` for operator
+procedures.
 
 ## OpenAI-compatible Chat
 
