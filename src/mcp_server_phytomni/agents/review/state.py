@@ -64,9 +64,9 @@ class DeepResearchState(ParallelDispatchState):
     Inherits ParallelDispatchState so review participates in the
     universal ``failures`` channel (operator.add concat across N
     concurrent Send workers) alongside design / network / research.
-    Adds 16 review-specific fields organized into three groups:
-    8 Send-payload transient fields, 5 indexed_results accumulators,
-    and 3 final ordered output fields written by reduce_node.
+    Adds 12 review-specific fields organized into three groups:
+    7 Send-payload transient fields, 4 indexed_results accumulators,
+    and 1 final ordered output field written by reduce_node.
 
     Carries every key both ``DeepResearchInput`` and
     ``DeepResearchOutput`` expose plus internal scratch (raw doc
@@ -103,7 +103,6 @@ class DeepResearchState(ParallelDispatchState):
     review_draft: Optional[str]
     original_draft: Optional[str]
     review_feedback: Optional[str]
-    add_query_input: Optional[str]
     knowledge_payload: Optional[Dict[str, Any]]
     draft_content: Optional[str]
     review_content: Optional[str]
@@ -116,10 +115,8 @@ class DeepResearchState(ParallelDispatchState):
     draft_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
     review_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
     revised_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
-    add_query_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
 
     # === Fan-out final ordered output (write-once by reduce_node) ===
     # draft_contents and review_contents already declared above (kept as-is).
     # all_raw_doc_list already declared above (kept as-is).
     revised_contents: List[str]
-    add_query_contents: List[str]

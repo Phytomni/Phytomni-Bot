@@ -728,6 +728,7 @@ class DeepResearchAgent(
                     (task_index, result.get("revised_content", ""))
                 ],
                 "add_doc_list": list(result.get("add_doc_list", [])),
+                "failures": result.get("failures", []),
             }
         except _REVISED_WORKER_CAUGHT as exc:
             logger.exception(
@@ -860,7 +861,6 @@ class DeepResearchAgent(
             "review_draft": None,
             "original_draft": None,
             "review_feedback": None,
-            "add_query_input": None,
             "knowledge_payload": None,
             "draft_content": None,
             "review_content": None,
@@ -870,10 +870,8 @@ class DeepResearchAgent(
             "draft_indexed_results": [],
             "review_indexed_results": [],
             "revised_indexed_results": [],
-            "add_query_indexed_results": [],
             # Fan-out final ordered outputs
             "revised_contents": [],
-            "add_query_contents": [],
         }
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id

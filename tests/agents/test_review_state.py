@@ -48,21 +48,19 @@ def test_review_state_carries_send_transient_fields() -> None:
         "review_draft",
         "original_draft",
         "review_feedback",
-        "add_query_input",
         "knowledge_payload",
     ]:
         assert key in hints, f"transient field {key} missing"
 
 
 def test_review_state_carries_indexed_accumulators() -> None:
-    """5 fan-out sites each have their indexed_results accumulator."""
+    """4 fan-out sites each have their indexed_results accumulator."""
     hints = get_type_hints(DeepResearchState, include_extras=True)
     for key in [
         "retrieve_indexed_results",
         "draft_indexed_results",
         "review_indexed_results",
         "revised_indexed_results",
-        "add_query_indexed_results",
     ]:
         assert key in hints, f"accumulator {key} missing"
 
@@ -74,7 +72,6 @@ def test_review_state_carries_final_ordered_outputs() -> None:
         "draft_contents",
         "review_contents",
         "revised_contents",
-        "add_query_contents",
     ]:
         assert key in hints, f"final output {key} missing"
 

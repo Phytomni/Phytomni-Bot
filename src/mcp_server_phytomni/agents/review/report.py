@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...runtime.workflow_mixins import WorkflowMixinBase
+from ..shared.analysis import _compute_traceback_digest
+from ..shared.parallel_dispatch import FailureRecord
 from .helpers import (
     CITATION_PATTERN,
     _doc_content,
@@ -37,6 +39,41 @@ if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
     DeepResearchState = Dict[str, Any]
+
+
+# Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:93.
+# Documents the catch surface in one place so a future narrowing of
+# caught exceptions is a single-site edit. Used by the add_query
+# result-walk to surface per-call ``self.ka.arun`` failures as
+# ``FailureRecord`` entries on the universal failures channel.
+_ADD_QUERY_FAILURE_TYPES: tuple[type[BaseException], ...] = (BaseException,)
+
+
+def _collect_add_query_failures(
+    subtopic_idx: int,
+    add_query_results: List[Any],
+) -> List[FailureRecord]:
+    """Build FailureRecord entries for failed add_query gather results.
+
+    Walks the ``return_exceptions=True`` results from the supplementary
+    retrieval ``asyncio.gather`` and emits one ``FailureRecord`` per
+    Exception-typed entry. Kept module-level (instead of a mixin
+    method) so ``_feedback_rag`` stays under pylint's local-count
+    threshold and so the failure-walk logic is one ``import``-followed
+    helper away from any future caller.
+    """
+    failures: List[FailureRecord] = []
+    for query_idx, result in enumerate(add_query_results):
+        if isinstance(result, _ADD_QUERY_FAILURE_TYPES):
+            failures.append(
+                FailureRecord(
+                    task_label=f"add_query:{subtopic_idx}:{query_idx}",
+                    message=str(result),
+                    kind="execute",
+                    traceback_digest=_compute_traceback_digest(result),
+                )
+            )
+    return failures
 
 
 @dataclass(frozen=True)
@@ -184,7 +221,15 @@ class ReviewReportMixin(WorkflowMixinBase):
         review_content: str,
         raw_doc_list: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Retrieve additional evidence, revise, and audit citations."""
+        """Retrieve additional evidence, revise, and audit citations.
+
+        Per-call ``self.ka.arun`` failures surface as ``FailureRecord``
+        entries on the returned ``failures`` list so the universal
+        failures channel records which add_query call failed. The
+        formatter still filters Exception entries at
+        ``_format_supplementary_query`` so the merged supplementary
+        snippet block ignores failed calls exactly as before.
+        """
         review_json = _extract_json_object(review_content)
         has_gaps = bool(review_json.get("has_critical_gaps", False))
         add_queries = review_json.get("search_queries", [])
@@ -192,6 +237,7 @@ class ReviewReportMixin(WorkflowMixinBase):
             add_queries = []
 
         add_doc_list: List[Dict[str, Any]] = []
+        failures: List[FailureRecord] = []
         content_to_check = draft_content
 
         if has_gaps and add_queries:
@@ -205,6 +251,9 @@ class ReviewReportMixin(WorkflowMixinBase):
                     for query in add_queries[:3]
                 ],
                 return_exceptions=True,
+            )
+            failures = _collect_add_query_failures(
+                subtopic_idx, add_query_results
             )
             new_knowledge_str = self._format_supplementary_results(
                 SupplementaryResultContext(
@@ -238,6 +287,7 @@ class ReviewReportMixin(WorkflowMixinBase):
         return {
             "revised_content": content_to_check,
             "add_doc_list": add_doc_list,
+            "failures": failures,
         }
 
     def _format_supplementary_results(
