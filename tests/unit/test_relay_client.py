@@ -1,0 +1,192 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Tests for the customer relay client.
+
+Covers relay URL construction under the fixed ``/v1/relay`` prefix,
+bearer-auth header injection, JSON POST and GET response handling, the
+``McpError`` mapping that keeps the relay key out of error text, and the
+``build_relay_client`` factory reading the relay config + secret.
+"""
+
+from __future__ import annotations
+
+import contextlib
+from typing import Any, cast
+
+import httpx
+import pytest
+from mcp.shared.exceptions import McpError
+from pydantic import SecretStr
+
+from mcp_server_phytomni.common import relay_client as rc
+
+pytestmark = pytest.mark.unit
+
+
+def _client(api_key: str = "relay-secret-value") -> rc.RelayClient:
+    """Return a RelayClient with a fixed relay base URL and policy."""
+    return rc.RelayClient(
+        base_url="https://relay.test",
+        api_key=SecretStr(api_key),
+        timeout=5.0,
+        max_retries=2,
+        retriable_codes=(503,),
+    )
+
+
+class _CapturingClient:
+    """Async-context client stub recording one POST/GET and replaying a
+    canned response.
+
+    The real ``httpx.AsyncClient.request`` is blocked offline, so the
+    relay client is exercised against this stub (yielded in place of
+    ``get_async_client``). It records the URL / headers / body the
+    shared retry helper sends so tests can assert the relay contract.
+    """
+
+    def __init__(self, response: httpx.Response) -> None:
+        self.response = response
+        self.captured: dict[str, Any] = {}
+
+    async def __aenter__(self) -> "_CapturingClient":
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.captured = {"method": "POST", "url": url, **kwargs}
+        return self.response
+
+    async def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.captured = {"method": "GET", "url": url, **kwargs}
+        return self.response
+
+
+def _patch_client(monkeypatch, response: httpx.Response) -> _CapturingClient:
+    """Patch ``relay_client.get_async_client`` to yield a capturing stub."""
+    client = _CapturingClient(response)
+
+    @contextlib.asynccontextmanager
+    async def fake_get_async_client(*, timeout: Any = None, **_kwargs: Any):
+        del timeout, _kwargs
+        yield client
+
+    monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
+    return client
+
+
+def _response(status: int, body: Any, method: str = "POST") -> httpx.Response:
+    """Return a canned httpx.Response carrying a request for status raises."""
+    return httpx.Response(
+        status,
+        json=body,
+        request=httpx.Request(method, "https://relay.test/v1/relay/x"),
+    )
+
+
+def test_relay_url_builds_v1_relay_path():
+    """``relay_url`` joins the base under the fixed ``/v1/relay`` prefix."""
+    assert (
+        _client().relay_url("retrieve/search")
+        == "https://relay.test/v1/relay/retrieve/search"
+    )
+
+
+def test_relay_url_strips_leading_slash_on_path():
+    """A leading slash on the relay path does not double the separator."""
+    assert (
+        _client().relay_url("/analysis/abc")
+        == "https://relay.test/v1/relay/analysis/abc"
+    )
+
+
+def test_relay_url_appends_query():
+    """Query mappings are URL-encoded onto the relay path."""
+    url = _client().relay_url(
+        "spa-faq/repo1", {"question": "x y", "page_num": "1"}
+    )
+    assert url.startswith("https://relay.test/v1/relay/spa-faq/repo1?")
+    assert "question=x+y" in url
+    assert "page_num=1" in url
+
+
+def test_repr_masks_api_key():
+    """The relay key never appears in the client repr."""
+    assert "super-secret" not in repr(_client("super-secret"))
+
+
+async def test_post_json_sends_bearer_and_body(monkeypatch):
+    """``post_json`` POSTs the body with a bearer header and parses JSON."""
+    client_stub = _patch_client(monkeypatch, _response(200, {"hits": []}))
+
+    result = await _client("k9").post_json(
+        "retrieve/search",
+        json_body={"q": "gene"},
+        message="relay retrieve failed",
+    )
+
+    assert result == {"hits": []}
+    assert client_stub.captured["method"] == "POST"
+    assert (
+        client_stub.captured["url"]
+        == "https://relay.test/v1/relay/retrieve/search"
+    )
+    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+    assert client_stub.captured["json"] == {"q": "gene"}
+
+
+async def test_get_json_uses_get_method(monkeypatch):
+    """``get_json`` issues a GET carrying the bearer header."""
+    client_stub = _patch_client(
+        monkeypatch, _response(200, {"status": "done"}, method="GET")
+    )
+
+    result = await _client("k9").get_json(
+        "analysis/abc", message="relay status failed"
+    )
+
+    assert result == {"status": "done"}
+    assert client_stub.captured["method"] == "GET"
+    assert (
+        client_stub.captured["url"]
+        == "https://relay.test/v1/relay/analysis/abc"
+    )
+    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+
+
+async def test_non_retriable_status_raises_mcperror_without_key(monkeypatch):
+    """A non-retriable upstream status raises McpError, key-free."""
+    _patch_client(monkeypatch, _response(500, {"err": "boom"}))
+
+    with pytest.raises(McpError) as excinfo:
+        await _client("super-secret").post_json(
+            "retrieve/search",
+            json_body={},
+            message="relay retrieve failed",
+        )
+
+    assert "super-secret" not in str(excinfo.value)
+
+
+def test_build_relay_client_reads_config_and_secret(monkeypatch):
+    """``build_relay_client`` pulls base URL, key, and policy from config."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test/api/")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "factory-key")
+
+    from mcp_server_phytomni.config.defaults import ServerConfig
+    from mcp_server_phytomni.config.settings import SensitiveConfig
+
+    config = ServerConfig()
+    sensitive = cast(Any, SensitiveConfig)(_env_file=None)
+
+    client = rc.build_relay_client(config, sensitive)
+
+    assert client.base_url == "https://relay.test/api"
+    assert client.api_key.get_secret_value() == "factory-key"
+    assert client.timeout == config.TIMEOUT
+    assert client.max_retries == config.MAX_RETRIES
+    assert tuple(client.retriable_codes) == tuple(config.RETRIABLE_CODES)
