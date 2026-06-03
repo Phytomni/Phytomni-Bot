@@ -5391,10 +5391,14 @@ user:
     in different cells.'
   single_cell_analysis_meta: |-
     step1, plot the gene expression in different tissues using
-    plot_single_cell_gene.py;(conda activate af3);
+    the plot script I provided;(conda activate af3);
     step2, summary the results using summary_all.py(conda activate af3);
+    Note:
+      if the species is rice or oryza sativa, the plot script is 
+      plot_single_cell_rice.py;
+      if the species is not rice, the plot script is plot_single_cell_gene.py
     Tool Usage method:
-            usage: plot_single_cell_gene.py [-h] [-i SINGLE_CELL_DATA] [-o
+            usage: plot_single_cell_rice.py [-h] [-i SINGLE_CELL_DATA] [-o
             OUTPUT_DIR] [-g GENE_ID]
             options:
             -h, --help            show this help message and exit
@@ -5405,7 +5409,7 @@ user:
         Question:  Please plot the expression of the gene MYC in different
         cells.
         Cmd line code: conda activate af3 && python
-        plot_single_cell_gene.py -i rice_scRNA_omics.h5ad -o $output_dir -g
+        plot_single_cell_rice.py -i rice_scRNA_omics.h5ad -o $output_dir -g
         MYC
     Note: Using this script will generate 2 figures, ${gene_id}_umap.png and
     ${gene_id}_violin_plot.png, and you need using
