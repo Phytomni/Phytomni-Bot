@@ -26,8 +26,32 @@ from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import forward as forward_module
 from mcp_server_phytomni.api.relay import routes as routes_module
 from mcp_server_phytomni.api.relay.routes import create_relay_router
+from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 
 pytestmark = pytest.mark.server
+
+
+def test_platform_config_aggregates_every_endpoint() -> None:
+    """The real config the platform routes read exposes every URL.
+
+    The route tests mock DeepGenomeConfig, so this pins that the actual
+    multiple-inheritance config exposes all seven platform URLs plus the
+    analysis region the routes resolve by attribute name.
+    """
+    config = DeepGenomeConfig()
+
+    for attr in (
+        "RETRIEVE_URL",
+        "RERANK_URL",
+        "DATABASE_URL",
+        "ANALYSIS_URL",
+        "BI_URL",
+        "CREATE_TASK_URL",
+        "UPDATE_TASK_URL",
+        "ANALYSIS_REGION",
+    ):
+        assert getattr(config, attr)
+
 
 _REAL_REQUEST = httpx.AsyncClient.request
 
