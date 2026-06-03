@@ -43,7 +43,13 @@ MODULE_FLOORS: Dict[str, int] = {
     "src/mcp_server_phytomni/agents/review/report.py": 42,
     "src/mcp_server_phytomni/agents/data/agent.py": 96,
     "src/mcp_server_phytomni/agents/knowledge/agent.py": 41,
-    "src/mcp_server_phytomni/agents/deep_genome/profile.py": 47,
+    # Recalibrated 47->46: the BI SQL POST relocated to the shared
+    # ``agents/shared/sql.py:bi_query`` seam (relay support), so its
+    # previously-counted covered lines left this module. Coverage did not
+    # regress (it moved to sql.py, covered by the bi_query operator test);
+    # profile.py mechanically dropped to 46.24%. Ratchet back toward
+    # TARGET as the deep_genome owner covers the remaining lookup nodes.
+    "src/mcp_server_phytomni/agents/deep_genome/profile.py": 46,
     "src/mcp_server_phytomni/agents/brief_gene/core.py": 48,
     # Transient regression: a merged off-peak / gene-id-conversion /
     # analyst-node change landed un-gated and untested, dropping measured

@@ -4,13 +4,12 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared SQL escaping + relay helpers for BI queries across agents.
 
-The BI backend has no parameterized-query surface, so ``sql_literal``
-lets callers (deep_genome lookups and the brief_gene gene retriever
-today) embed an identifier or string value inside a SQL statement
-without smuggling extra single quotes — and therefore arbitrary clauses
-— through user input. ``relay_bi_query`` is the single seam those same
-callers use in customer relay mode to route a BI SQL query through the
-relay instead of the operator ``BI_URL``.
+``sql_literal`` quote-escapes a value for embedding in a BI SQL string
+(the BI backend has no parameterized-query surface). ``bi_query`` is the
+BI-POST seam shared by the deep_genome and brief_gene boundaries: it
+posts to the operator ``BI_URL`` or, in customer relay mode, forwards to
+``/v1/relay/bi/query`` via ``relay_bi_query`` (the relay injects the
+operator ``BI_TOKEN``).
 """
 
 from typing import Any, Mapping

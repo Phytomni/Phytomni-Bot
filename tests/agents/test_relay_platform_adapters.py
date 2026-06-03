@@ -13,6 +13,7 @@ exercise them without a protected-access access expression.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -38,6 +39,7 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
 )
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.sql import relay_bi_query
+from mcp_server_phytomni.common.http import JsonPostRetry
 from mcp_server_phytomni.runtime import task_manager
 from mcp_server_phytomni.runtime.task_manager import create_task, update_task
 
@@ -357,3 +359,40 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
     assert relay.calls[0]["path"].startswith("spa-faq/")
     assert relay.calls[0]["query"]["question"] == "Arabidopsis"
     assert relay.calls[0]["query"]["page_size"] == "10"
+
+
+async def test_bi_query_operator_mode_posts_to_bi_url(monkeypatch):
+    """Outside relay mode bi_query posts the SQL body to the operator URL."""
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    captured: dict[str, Any] = {}
+
+    @contextlib.asynccontextmanager
+    async def fake_client(*, timeout: Any = None, **_kwargs: Any):
+        del timeout, _kwargs
+        yield None
+
+    async def fake_post(client: Any, request: Any, retry: Any) -> Any:
+        del client, retry
+        captured["url"] = request.url
+        captured["json_body"] = request.json_body
+        return {"rows": []}
+
+    monkeypatch.setattr(shared_sql, "get_async_client", fake_client)
+    monkeypatch.setattr(shared_sql, "post_json_with_retries", fake_post)
+
+    result = await shared_sql.bi_query(
+        "SELECT 9",
+        bi_url="https://operator.invalid/bi",
+        headers={"token": "t"},
+        retry=JsonPostRetry(
+            timeout=1.0,
+            max_retries=0,
+            retriable_codes=(503,),
+            message="BI query failed",
+        ),
+    )
+
+    assert result == {"rows": []}
+    assert captured["url"] == "https://operator.invalid/bi"
+    assert captured["json_body"] == {"sql": "SELECT 9", "returnType": "json"}

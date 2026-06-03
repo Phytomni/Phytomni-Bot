@@ -464,11 +464,11 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
     calls = {"post": 0}
 
     async def fake_helper(*args, **kwargs):
-        """Return fake symbol rows from the BI retry helper.
+        """Return fake symbol rows from the shared BI query helper.
 
         Args:
-            *args: Ignored client/request/retry positional arguments.
-            **kwargs: Ignored keyword arguments.
+            *args: Ignored sql positional argument.
+            **kwargs: Ignored bi_url / headers / retry keyword arguments.
 
         Returns:
             Decoded BI payload with symbol rows.
@@ -477,9 +477,7 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
         calls["post"] += 1
         return {"data": [{"symbol": "NAC001|NAC002"}]}
 
-    monkeypatch.setattr(
-        deep_genome_profile, "post_json_with_retries", fake_helper
-    )
+    monkeypatch.setattr(deep_genome_profile, "bi_query", fake_helper)
 
     lookup_symbol = getattr(deep_genome_agents, "_cached_gene_symbol_lookup")
     first = await lookup_symbol(
@@ -512,20 +510,20 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
     deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
-    async def fake_helper(client, request, retry):
+    async def fake_helper(sql, *, bi_url, headers, retry):
         """Return fake annotation rows selected by SQL text.
 
         Args:
-            client: Ignored async HTTP client.
-            request: BI request whose json_body carries the SQL.
+            sql: BI SQL statement whose text selects the canned rows.
+            bi_url: Ignored operator BI URL.
+            headers: Ignored request headers.
             retry: Ignored retry policy.
 
         Returns:
             Decoded BI payload with annotation rows.
         """
-        del client, retry
+        del bi_url, headers, retry
         calls["post"] += 1
-        sql = request.json_body["sql"]
         if "description" in sql:
             payload = {"data": [{"description": "NAC factor"}]}
         elif "ontology" in sql:
@@ -536,9 +534,7 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
             payload = {"data": [{"mapman": "27.3"}]}
         return payload
 
-    monkeypatch.setattr(
-        deep_genome_profile, "post_json_with_retries", fake_helper
-    )
+    monkeypatch.setattr(deep_genome_profile, "bi_query", fake_helper)
 
     lookup_annotation = getattr(
         deep_genome_agents,
