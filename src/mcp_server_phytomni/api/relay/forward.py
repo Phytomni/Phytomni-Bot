@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import logging
+import re
 import sqlite3
 import time
 from collections.abc import (
@@ -28,6 +29,7 @@ from collections.abc import (
 from contextlib import AsyncExitStack, aclosing
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 from fastapi import HTTPException
@@ -45,6 +47,8 @@ __all__ = [
     "prepare_forward_headers",
     "filter_response_headers",
     "scrub_secrets",
+    "validate_relay_path_segment",
+    "build_relay_query",
     "RelayFinishReason",
     "TeeOutcome",
     "tee_and_stream",
@@ -172,6 +176,58 @@ def scrub_secrets(body: bytes, secrets: Iterable[str]) -> bytes:
     return body
 
 
+# A relay path segment ({task_id}/{repo_id}) is appended to a config URL,
+# so it must not smuggle traversal or an alternate host/path: only an
+# unreserved-id charset survives and ".." is rejected outright.
+_SAFE_PATH_SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def validate_relay_path_segment(value: str, *, field: str) -> str:
+    """Validate a client-supplied relay path segment or reject it.
+
+    The segment is appended to a server-resolved upstream URL, so it must
+    not carry a path separator, traversal sequence, scheme, or whitespace
+    that could redirect the call to another host or path.
+
+    Args:
+        value: The raw path segment from the client request.
+        field: Field name used in the rejection detail (e.g. ``task_id``).
+
+    Returns:
+        The segment unchanged when it is a safe identifier.
+
+    Raises:
+        HTTPException: 400 when the segment is empty, contains ``..``, or
+            holds any character outside ``[A-Za-z0-9._-]``.
+    """
+    if not _SAFE_PATH_SEGMENT.fullmatch(value) or ".." in value:
+        raise HTTPException(status_code=400, detail=f"invalid relay {field}")
+    return value
+
+
+def build_relay_query(query_string: str, allowed: Iterable[str]) -> str:
+    """Rebuild a query string keeping only allowlisted keys.
+
+    The client query is never forwarded wholesale (the upstream URL is
+    server-resolved); a route opts specific keys back in by allowlist.
+    Repeated keys and their order are preserved and values are re-encoded.
+
+    Args:
+        query_string: The raw inbound query string (no leading ``?``).
+        allowed: The query keys a route permits onto the upstream call.
+
+    Returns:
+        A URL-encoded query string of the allowlisted pairs, or ``""``.
+    """
+    permitted = set(allowed)
+    pairs = [
+        (key, value)
+        for key, value in parse_qsl(query_string, keep_blank_values=True)
+        if key in permitted
+    ]
+    return urlencode(pairs)
+
+
 class RelayFinishReason(enum.Enum):
     """How a relayed response stream ended, for the audit record."""
 
@@ -287,6 +343,10 @@ class RelayUpstream:
         service: Relay service name recorded in the audit row.
         inject_headers: Strategy minting the operator auth header(s).
         operation: Optional sub-operation label for the audit row.
+        trust_env: When False the upstream call ignores the host proxy /
+            cert env (an ephemeral client) — needed for a bare-IP upstream
+            the host's HTTP(S)_PROXY cannot reach. True keeps the shared
+            keep-alive pool.
     """
 
     url: str
@@ -294,6 +354,7 @@ class RelayUpstream:
     service: str
     inject_headers: RelayInjectionStrategy
     operation: Optional[str] = None
+    trust_env: bool = True
 
 
 async def _buffered_relay_response(
@@ -452,14 +513,18 @@ async def _open_relay_upstream(
         ) from exc
 
     forward_headers = {**prepare_forward_headers(request.headers), **injected}
-    client = await stack.enter_async_context(
-        get_async_client(
-            timeout=httpx.Timeout(
-                config.RELAY_TIMEOUT_SECONDS,
-                connect=config.RELAY_TIMEOUT_SECONDS,
-            )
-        )
+    # trust_env is passed only when False: any client kwarg opts out of the
+    # shared keep-alive pool, so the default path stays pooled while a
+    # bare-IP upstream gets an ephemeral, proxy-bypassing client.
+    timeout = httpx.Timeout(
+        config.RELAY_TIMEOUT_SECONDS, connect=config.RELAY_TIMEOUT_SECONDS
     )
+    upstream_client = (
+        get_async_client(timeout=timeout)
+        if upstream.trust_env
+        else get_async_client(timeout=timeout, trust_env=False)
+    )
+    client = await stack.enter_async_context(upstream_client)
     try:
         upstream_resp = await client.send(
             client.build_request(

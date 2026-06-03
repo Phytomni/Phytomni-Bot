@@ -13,18 +13,31 @@ scrub.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 
+from mcp_server_phytomni.api.auth import ApiPrincipal
+from mcp_server_phytomni.api.relay import forward as forward_module
+from mcp_server_phytomni.api.relay.audit import RelayAuditStore
 from mcp_server_phytomni.api.relay.forward import (
+    RelayErrorMode,
     RelayFinishReason,
+    RelayUpstream,
     TeeOutcome,
+    build_relay_query,
     filter_response_headers,
+    forward_relay_request,
     prepare_forward_headers,
     scrub_secrets,
     tee_and_stream,
+    validate_relay_path_segment,
 )
 
 pytestmark = pytest.mark.unit
@@ -229,3 +242,144 @@ async def test_tee_marks_client_disconnect_on_aclose() -> None:
     assert first == b"ab"
     assert captured[0].finish_reason is RelayFinishReason.CLIENT_DISCONNECTED
     assert captured[0].body == b"ab"
+
+
+@pytest.mark.parametrize(
+    "segment",
+    ["", "..", "../etc", "a/b", "a b", "http://evil", "a%2fb", "a;b", "a?b"],
+)
+def test_validate_path_segment_rejects_injection(segment: str) -> None:
+    """A traversal / separator / host char in a path segment is a 400."""
+    with pytest.raises(HTTPException) as exc:
+        validate_relay_path_segment(segment, field="task_id")
+
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "segment", ["task-123", "Os01g0100100.v7", "abc_DEF", "9f8e7d6c"]
+)
+def test_validate_path_segment_accepts_safe_id(segment: str) -> None:
+    """A safe identifier passes through unchanged."""
+    assert validate_relay_path_segment(segment, field="task_id") == segment
+
+
+def test_build_relay_query_keeps_only_allowlisted_keys() -> None:
+    """Only allowlisted query keys survive; repeats and order are kept."""
+    out = build_relay_query(
+        "task_name=foo&evil=hack&task_name=bar", ("task_name",)
+    )
+
+    assert out == "task_name=foo&task_name=bar"
+
+
+def test_build_relay_query_drops_everything_when_none_allowed() -> None:
+    """A query with no allowlisted key yields an empty string."""
+    assert build_relay_query("evil=1&x=2", ("task_name",)) == ""
+
+
+def test_relay_upstream_trust_env_defaults_true() -> None:
+    """RelayUpstream trusts the host proxy env by default (shared pool)."""
+
+    async def _noinject() -> dict[str, str]:
+        return {}
+
+    upstream = RelayUpstream(
+        url="https://x.test",
+        error_mode=RelayErrorMode.ENVELOPE,
+        service="s",
+        inject_headers=_noinject,
+    )
+
+    assert upstream.trust_env is True
+
+
+def _minimal_request(method: str = "GET") -> Request:
+    """Build a header-free starlette Request for forward-core tests."""
+    return Request(
+        {
+            "type": "http",
+            "method": method,
+            "headers": [],
+            "query_string": b"",
+            "path": "/",
+        }
+    )
+
+
+def _recording_factory(recorded: dict[str, object]) -> object:
+    """Return an async client factory that records its kwargs."""
+
+    @contextlib.asynccontextmanager
+    async def _factory(**kwargs: object) -> AsyncIterator[httpx.AsyncClient]:
+        recorded["kwargs"] = kwargs
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _r: httpx.Response(
+                    200,
+                    headers={"content-type": "application/json"},
+                    content=b"{}",
+                )
+            )
+        ) as client:
+            yield client
+
+    return _factory
+
+
+async def _forward_with_trust_env(
+    monkeypatch: pytest.MonkeyPatch,
+    audit_store: RelayAuditStore,
+    *,
+    trust_env: bool,
+) -> dict[str, object]:
+    """Run a buffered ENVELOPE forward, returning the client kwargs seen."""
+    recorded: dict[str, object] = {}
+    monkeypatch.setattr(
+        forward_module, "get_async_client", _recording_factory(recorded)
+    )
+    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
+
+    async def _noinject() -> dict[str, str]:
+        return {}
+
+    upstream = RelayUpstream(
+        url="https://x.test",
+        error_mode=RelayErrorMode.ENVELOPE,
+        service="spa_faq",
+        inject_headers=_noinject,
+        trust_env=trust_env,
+    )
+    response = await forward_relay_request(
+        request=_minimal_request(),
+        body=b"",
+        upstream=upstream,
+        principal=ApiPrincipal(
+            user_id="u",
+            key_prefix="ptm_x",
+            scopes=frozenset({"relay:spa_faq"}),
+        ),
+        audit_store=audit_store,
+    )
+    assert response.status_code == 200
+    return cast(dict[str, object], recorded["kwargs"])
+
+
+async def test_forward_passes_trust_env_false_to_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """trust_env=False reaches get_async_client (ephemeral, proxy bypass)."""
+    store = RelayAuditStore(str(tmp_path / "audit.sqlite"))
+    kwargs = await _forward_with_trust_env(monkeypatch, store, trust_env=False)
+
+    assert kwargs.get("trust_env") is False
+
+
+async def test_forward_omits_trust_env_on_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A default upstream passes no trust_env, keeping the shared pool."""
+    store = RelayAuditStore(str(tmp_path / "audit.sqlite"))
+    kwargs = await _forward_with_trust_env(monkeypatch, store, trust_env=True)
+
+    assert "trust_env" not in kwargs
