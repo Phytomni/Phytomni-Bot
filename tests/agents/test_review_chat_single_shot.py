@@ -324,11 +324,20 @@ def test_retrieve_node_is_registered_flag_on() -> None:
     assert "retrieve_node" in node_keys
 
 
-def test_draft_node_is_registered_flag_on() -> None:
-    """Flag-on graph registers ``draft_node`` (legacy gather body)."""
+def test_draft_send_triad_is_registered_flag_on() -> None:
+    """Flag-on graph registers the draft Send triad in place of ``draft_node``.
+
+    The draft site fans out per dimension through
+    ``draft_dispatch`` → ``draft_worker_node`` × N →
+    ``draft_reduce_node``; the legacy ``draft_node`` is wired only on
+    the flag-off ``_wire_legacy`` path.
+    """
     agent = _build_agent(use_subgraph=True)
     node_keys = set(agent.app.get_graph().nodes.keys())
-    assert "draft_node" in node_keys
+    assert "draft_dispatch" in node_keys
+    assert "draft_worker_node" in node_keys
+    assert "draft_reduce_node" in node_keys
+    assert "draft_node" not in node_keys
 
 
 def test_review_node_is_registered_flag_on() -> None:
