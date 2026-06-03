@@ -257,6 +257,46 @@ async def test_bi_json_posts_via_async_factory(
     assert recorded["post_kwargs"]["headers"] == {"X-BI-Token": "stub-token"}
 
 
+async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
+    None
+):
+    """The osa gene-id lookup escapes the id and threads the v2 id.
+
+    Pins the SQL-injection fix: a gene id carrying a single quote must
+    reach the BI query quote-doubled (via ``sql_literal``), never breaking
+    out of its literal, and the osa branch must resolve the v2 id into the
+    expression tasks while emitting all nine analysis tasks.
+    """
+    harness = DispatchHarness("/tmp/deep-out")
+    recorded: dict[str, Any] = {}
+
+    async def _fake_bi_json(sql: str) -> dict[str, Any]:
+        """Record the SQL and return a canned osa id-table row."""
+        recorded["sql"] = sql
+        return {"data": [{"msu_gene_id": "LOC_Os01g012345"}]}
+
+    setattr(harness, "_bi_json", _fake_bi_json)
+    prepare = getattr(harness, "_prepare_analysis_tasks")
+    state = {
+        "gene_id": "Os01'; DROP TABLE id_table; --",
+        "species_code": "osa",
+    }
+
+    result = await prepare(state)
+
+    # The gene id reaches the query quote-doubled, never as a raw breakout.
+    assert "'Os01''; DROP TABLE id_table; --'" in recorded["sql"]
+    assert "= 'Os01'; DROP" not in recorded["sql"]
+    tasks = result["analysis_tasks"]
+    assert len(tasks) == 9
+    tissue = next(
+        task
+        for task in tasks
+        if task["analysis_type"] == "gene_expression_tissues"
+    )
+    assert tissue["target_gene"] == "LOC_Os01g012345"
+
+
 async def test_gene_summary_node_is_topology_passthrough(tmp_path) -> None:
     """Verify _run_gene_summary_node returns an empty state mutation.
 
