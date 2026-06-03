@@ -218,6 +218,7 @@ def test_route_analyst_tasks_emits_send_per_task() -> None:
     assert sends[0].node == "analyst_node"
     assert sends[0].arg == {
         "task_index": 0,
+        "task_submit_sleep": 0,
         "analysis_type": "homology",
         "gene_id": "g1",
     }

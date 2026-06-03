@@ -49,7 +49,7 @@ def test_build_sub_summary_loads_expression_outputs(tmp_path):
     )
 
     assert result.figure_index == 4
-    assert result.data["tissue_path"] == "GeneA/GeneA_tissues.png"
+    assert result.data["tissue_path"] == "../../GeneA/GeneA_tissues.png"
     assert result.data["tissue_summary"] == (
         "Figure 3 shows tissue expression."
     )
@@ -85,7 +85,7 @@ def test_build_sub_summary_reads_explicit_results_dir(tmp_path):
     )
 
     assert result.figure_index == 8
-    assert result.data["tissue_path"] == "GeneA/GeneA_tissues.png"
+    assert result.data["tissue_path"] == "../../GeneA/GeneA_tissues.png"
     assert result.data["tissue_summary"] == (
         "Figure 7 shows mounted tissue expression."
     )
@@ -187,7 +187,7 @@ def test_build_sub_summary_loads_protein_structure_blocks(tmp_path):
 
     assert result.figure_index == 6
     assert (
-        "![3D Structure](GeneA/GeneA_seed_101_sample_0.cif)"
+        "![3D Structure](../../GeneA/GeneA_seed_101_sample_0.cif)"
         in result.data["protein_structures"]
     )
     assert (
