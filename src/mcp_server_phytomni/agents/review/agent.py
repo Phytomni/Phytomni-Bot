@@ -76,6 +76,14 @@ logger = logging.getLogger(__name__)
 # analysis (pylint ``W0718``).
 _DRAFT_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
+# Mirror of ``_DRAFT_WORKER_CAUGHT`` for the review_results fan-out
+# worker.  The legacy ``review_node`` substituted the empty-JSON
+# sentinel ``"{}"`` for failed critiques (see ``report.py``), and
+# ``revise_node`` downstream parses each critique via
+# ``_extract_json_object`` which returns ``{}`` on an empty payload, so
+# the sentinel must remain ``"{}"`` (NOT ``""``) to preserve behaviour.
+_REVIEW_RESULTS_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+
 REVIEW_CONFIG = ReviewConfig()
 
 REVIEW_CONFIG_FIELD_MAP = {
@@ -147,17 +155,19 @@ class DeepResearchAgent(
         (``plan_query`` / ``summary`` / ``follow_up``) with prep + post
         pairs surrounding a single shared ``chat`` node registered via
         :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper`,
-        and replaces the draft site with a Send-dispatch triad
-        (``draft_dispatch`` → N × ``draft_worker_node`` →
-        ``draft_reduce_node``) whose workers await the module-level
-        :data:`CHAT_APP` so xray expands the chat subgraph under each
-        worker. When ``USE_KNOWLEDGE_SUBGRAPH`` is also True the
-        retrieve site is additionally replaced by an analogous
-        Send-dispatch triad (``retrieve_dispatch`` → N ×
+        and replaces both per-dimension chat fan-out sites (draft and
+        review_results) with Send-dispatch triads (``draft_dispatch``
+        → N × ``draft_worker_node`` → ``draft_reduce_node``;
+        ``review_results_dispatch`` → N × ``review_results_worker_node``
+        → ``review_results_reduce_node``) whose workers await the
+        module-level :data:`CHAT_APP` so xray expands the chat
+        subgraph under each worker. When ``USE_KNOWLEDGE_SUBGRAPH`` is
+        also True the retrieve site is additionally replaced by an
+        analogous Send-dispatch triad (``retrieve_dispatch`` → N ×
         ``retrieve_worker_node`` → ``retrieve_reduce_node``). The
-        remaining two fan-out sites (``review_node`` / ``revise_node``)
-        retain their legacy ``asyncio.gather`` bodies; subsequent
-        steps convert them to ``Send``-dispatch workers.
+        remaining fan-out site (``revise_node``) retains its legacy
+        ``asyncio.gather`` body; subsequent steps convert it to a
+        ``Send``-dispatch worker.
 
         Returns:
             Compiled LangGraph application bound to
@@ -218,19 +228,23 @@ class DeepResearchAgent(
         reads the ``pending_post`` sentinel each prep node stages to
         branch back to the correct post node after the chat call.
 
-        The draft site is replaced by a Send-dispatch triad
+        Both per-dimension chat fan-out sites are replaced by
+        Send-dispatch triads: the draft site
         (``draft_dispatch`` → ``draft_worker_node`` × N →
-        ``draft_reduce_node``) so each research dimension fans out
-        to a per-worker ``CHAT_APP.ainvoke`` (xray expands the shared
-        chat subgraph under each worker). The remaining two fan-out
-        sites (``review_node`` / ``revise_node``) retain their legacy
-        ``asyncio.gather`` bodies. When ``USE_KNOWLEDGE_SUBGRAPH`` is
-        also True, the retrieve site is additionally replaced by a
-        Send-dispatch triad (``retrieve_dispatch`` →
-        ``retrieve_worker_node`` × N → ``retrieve_reduce_node``) so
-        each research dimension fans out to a dedicated KnowledgeAgent
-        subgraph invocation before ``draft_dispatch``. Subsequent
-        steps will convert the remaining fan-out sites.
+        ``draft_reduce_node``) and the review_results site
+        (``review_results_dispatch`` →
+        ``review_results_worker_node`` × N →
+        ``review_results_reduce_node``).  Each per-worker
+        ``CHAT_APP.ainvoke`` lets xray expand the shared chat
+        subgraph under every worker key. The remaining fan-out site
+        (``revise_node``) retains its legacy ``asyncio.gather`` body.
+        When ``USE_KNOWLEDGE_SUBGRAPH`` is also True, the retrieve
+        site is additionally replaced by a Send-dispatch triad
+        (``retrieve_dispatch`` → ``retrieve_worker_node`` × N →
+        ``retrieve_reduce_node``) so each research dimension fans out
+        to a dedicated KnowledgeAgent subgraph invocation before
+        ``draft_dispatch``. Subsequent steps will convert the
+        remaining fan-out site.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -297,8 +311,29 @@ class DeepResearchAgent(
         )
         workflow.add_edge("draft_worker_node", "draft_reduce_node")
 
-        # === Remaining fan-out sites retain legacy gather bodies ===
-        workflow.add_node("review_node", self.review_node)
+        # === Review-results site: Send fan-out (flag-on) ===
+        workflow.add_node(
+            "review_results_dispatch",
+            self.review_results_prepare_tasks_node,
+        )
+        workflow.add_node(
+            "review_results_worker_node",
+            self.review_results_worker_node,
+        )
+        workflow.add_node(
+            "review_results_reduce_node",
+            self.review_results_reduce_node,
+        )
+        workflow.add_conditional_edges(
+            "review_results_dispatch",
+            self.route_review_results_tasks,
+            ["review_results_worker_node"],
+        )
+        workflow.add_edge(
+            "review_results_worker_node", "review_results_reduce_node"
+        )
+
+        # === Remaining fan-out site retains legacy gather body ===
         workflow.add_node("revise_node", self.revise_node)
 
         # === Wire prep → chat (3 sites) ===
@@ -321,8 +356,8 @@ class DeepResearchAgent(
         workflow.add_edge(START, "plan_query_prep_node")
         workflow.add_edge("plan_query_post_node", retrieve_in)
         workflow.add_edge(retrieve_out, "draft_dispatch")
-        workflow.add_edge("draft_reduce_node", "review_node")
-        workflow.add_edge("review_node", "revise_node")
+        workflow.add_edge("draft_reduce_node", "review_results_dispatch")
+        workflow.add_edge("review_results_reduce_node", "revise_node")
         workflow.add_edge("revise_node", "summary_prep_node")
         workflow.add_edge("summary_post_node", "follow_up_prep_node")
         workflow.add_edge("follow_up_post_node", END)
@@ -488,6 +523,123 @@ class DeepResearchAgent(
                 },
             )
             for i, param in enumerate(state["dimension_params"])
+        ]
+
+    async def review_results_prepare_tasks_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Prepare for Send fan-out over the per-draft critiques.
+
+        Acts as a graph 'split' node — returns an empty delta. The
+        actual per-dimension Send payloads are constructed by
+        ``route_review_results_tasks`` (see ``add_conditional_edges``
+        in ``_wire_chat_subgraph``). Mirrors
+        ``draft_prepare_tasks_node`` above.
+        """
+        del state
+        return {}
+
+    async def review_results_worker_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Per-dimension critique worker invoked via ``Send``.
+
+        Awaits the module-level :data:`CHAT_APP` so LangGraph's
+        ``find_subgraph_pregel`` walker discovers the compiled chat
+        subgraph through the closure's ``__globals__`` lookup and
+        expands it under ``review_results_worker_node:<child>`` in
+        xray.
+
+        On success writes a single ``(task_index, content)`` tuple
+        into ``review_indexed_results`` via ``operator.add``. On
+        exception writes BOTH the legacy empty-JSON sentinel ``"{}"``
+        AND a ``FailureRecord`` into the shared failures channel
+        (TW-1 coexistence — ``review_results_reduce_node`` downstream
+        still iterates a string per dimension; per-task failure detail
+        surfaces in ``raw.phytomni_state``).
+        """
+        task_index = state["task_index"]
+        try:
+            chat_output = await CHAT_APP.ainvoke(state["chat_payload"])
+            content = message_content(extract_chat_response(chat_output))
+            return {
+                "review_indexed_results": [(task_index, content)],
+            }
+        except _REVIEW_RESULTS_WORKER_CAUGHT as exc:
+            logger.exception(
+                "review_results worker failed: task_index=%s subtopic=%s",
+                task_index,
+                state.get("subtopic"),
+            )
+            return {
+                "review_indexed_results": [(task_index, "{}")],
+                "failures": [
+                    FailureRecord(
+                        task_label=f"review_results:{task_index}",
+                        message=str(exc),
+                        kind="execute",
+                        traceback_digest=_compute_traceback_digest(exc),
+                    )
+                ],
+            }
+
+    async def review_results_reduce_node(
+        self, state: DeepResearchState
+    ) -> Dict[str, Any]:
+        """Project ``review_indexed_results`` into ``review_contents``.
+
+        Sorts the accumulated ``(task_index, content)`` tuples by
+        task_index so concurrent worker completion order does not
+        affect downstream dimension ordering.
+        """
+        indexed = sorted(state["review_indexed_results"], key=lambda t: t[0])
+        return {
+            "review_contents": [content for _, content in indexed],
+        }
+
+    def route_review_results_tasks(
+        self, state: DeepResearchState
+    ) -> List[Send]:
+        """Build N Send payloads, one per draft critique.
+
+        Each payload carries the per-worker ``task_index``, the
+        upstream ``subtopic`` string (used by the worker's failure
+        logging), and the fully built ``chat_payload`` the per-worker
+        ``CHAT_APP.ainvoke`` consumes.  Each prompt receives the
+        current subtopic, the sibling subtopics (for cross-section
+        awareness), and the draft text under critique — matches the
+        legacy ``review_node`` prompt builder in ``report.py``.
+        """
+        chat_kwargs = build_chat_kwargs_for(
+            self.review_config, self.sensitive_config
+        )
+        dimensions = state["research_dimensions"]
+        draft_contents = state["draft_contents"]
+        return [
+            Send(
+                "review_results_worker_node",
+                {
+                    "task_index": i,
+                    "subtopic": dimensions[i],
+                    "chat_payload": build_chat_input(
+                        user_query=get_prompt(
+                            self.review_config.PROMPT_FILE,
+                            "user/deep_research_review",
+                            {
+                                "current_subtopic": dimensions[i],
+                                "other_subtopics": [
+                                    subtopic
+                                    for idx, subtopic in enumerate(dimensions)
+                                    if idx != i
+                                ],
+                                "draft_text": draft_text,
+                            },
+                        ),
+                        chat_kwargs=chat_kwargs,
+                    ),
+                },
+            )
+            for i, draft_text in enumerate(draft_contents)
         ]
 
     async def arun(

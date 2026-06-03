@@ -132,6 +132,11 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_review_draft_fan_out.py": {
         "protected-access",
     },
+    # Flag-branch test for ``DeepResearchAgent`` review_results fan-out
+    # — same protected-helper coverage seam as the draft fan-out sibling.
+    "tests/agents/test_review_review_results_fan_out.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
