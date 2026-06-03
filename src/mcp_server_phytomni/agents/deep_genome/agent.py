@@ -171,6 +171,7 @@ class DeepGenomeState(TypedDict):
     paralogs_summary: Optional[str]
     interaction_summary: Optional[str]
     part1_report: Optional[str]
+    task_submit_sleep: Optional[str]
     analysis_tasks: List[Dict[str, Any]]
     raw_analyst_data: Annotated[Dict[str, Any], update_dict]
     analyst_summaries: Annotated[Dict, update_dict]
