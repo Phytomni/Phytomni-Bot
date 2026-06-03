@@ -132,6 +132,23 @@ class RelayClient:
         )
         return await self._request_json(request, message)
 
+    async def post_data(
+        self, relay_path: str, *, data: Any, message: str
+    ) -> Any:
+        """POST a form/raw ``data`` body to a relay route, parse JSON.
+
+        For boundaries that send form-encoded bodies rather than JSON
+        (the remote task-manager create/update POSTs); the relay
+        forwards the body verbatim.
+        """
+        request = JsonPostRequest(
+            url=self.relay_url(relay_path),
+            method="POST",
+            headers=self._auth_headers(),
+            data=data,
+        )
+        return await self._request_json(request, message)
+
     async def get_json(
         self,
         relay_path: str,

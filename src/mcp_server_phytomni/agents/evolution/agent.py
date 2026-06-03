@@ -18,10 +18,14 @@ from functools import lru_cache
 from json import loads
 from typing import Any, Dict, List
 
+from mcp.shared.exceptions import McpError
+
 from ...auth.iam import get_token
 from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
+from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
@@ -84,31 +88,50 @@ def evolution_submit_kwargs(
 
 async def find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
     """Return taxonomy ids for a target species name."""
-    url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
-        repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
-    )
-    headers = {
-        "X-Auth-Token": await get_token(),
-        "Content-Type": "application/json",
-    }
-    request_params: dict[str, str | int] = {
-        "question": spa_names,
-        "page_size": 10,
-        "page_num": 1,
-    }
-    # trust_env=False mirrors the previous proxies={'http': None,
-    # 'https': None} on the requests call: this endpoint sits on a
-    # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
-    # env would route it through a proxy that cannot reach it.
-    async with get_async_client(timeout=timeout, trust_env=False) as client:
-        response = await client.get(
-            url,
-            headers=headers,
-            params=request_params,
+    if relay_mode_enabled():
+        # The relay injects the operator IAM token and bypasses the proxy
+        # server-side; a failed lookup soft-fails to no taxids, mirroring
+        # the operator path's non-200 handling below.
+        try:
+            response_taxid_data = await current_relay_client().get_json(
+                f"spa-faq/{DEEP_GENOME_CONFIG.SPA_REPO_ID}",
+                query={
+                    "question": spa_names,
+                    "page_size": "10",
+                    "page_num": "1",
+                },
+                message="SPA-FAQ lookup failed",
+            )
+        except McpError:
+            return []
+    else:
+        url = DEEP_GENOME_CONFIG.SPA_FAQ_URL.format(
+            repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
         )
-    if response.status_code != 200:
-        return []
-    response_taxid_data = response.json()
+        headers = {
+            "X-Auth-Token": await get_token(),
+            "Content-Type": "application/json",
+        }
+        request_params: dict[str, str | int] = {
+            "question": spa_names,
+            "page_size": 10,
+            "page_num": 1,
+        }
+        # trust_env=False mirrors the previous proxies={'http': None,
+        # 'https': None} on the requests call: this endpoint sits on a
+        # bare-IP corporate URL, so inheriting HTTP(S)_PROXY from the host
+        # env would route it through a proxy that cannot reach it.
+        async with get_async_client(
+            timeout=timeout, trust_env=False
+        ) as client:
+            response = await client.get(
+                url,
+                headers=headers,
+                params=request_params,
+            )
+        if response.status_code != 200:
+            return []
+        response_taxid_data = response.json()
     if response_taxid_data["total"] <= 0:
         return []
     return [

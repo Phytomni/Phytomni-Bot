@@ -29,6 +29,8 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
 from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
+from mcp_server_phytomni.agents.evolution import agent as evolution_agent
+from mcp_server_phytomni.agents.evolution.agent import find_spa_taxids
 from mcp_server_phytomni.agents.knowledge import retrieval
 from mcp_server_phytomni.agents.knowledge.retrieval import (
     _rerank_batch,
@@ -36,6 +38,8 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
 )
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.sql import relay_bi_query
+from mcp_server_phytomni.runtime import task_manager
+from mcp_server_phytomni.runtime.task_manager import create_task, update_task
 
 pytestmark = pytest.mark.agent
 
@@ -103,6 +107,20 @@ class _FakeRelay:
                 "path": relay_path,
                 "message": message,
                 "query": query,
+            }
+        )
+        return self.response
+
+    async def post_data(
+        self, relay_path: str, *, data: Any, message: str
+    ) -> Any:
+        """Record a relay form-data POST and return the canned response."""
+        self.calls.append(
+            {
+                "method": "POST_DATA",
+                "path": relay_path,
+                "data": data,
+                "message": message,
             }
         )
         return self.response
@@ -285,3 +303,57 @@ async def test_bi_json_routes_through_relay(monkeypatch):
     assert result == {"value": 1}
     assert relay.calls[0]["path"] == "bi/query"
     assert relay.calls[0]["body"]["sql"] == "SELECT 4"
+
+
+async def test_create_task_routes_through_relay(monkeypatch):
+    """Relay-mode create_task POSTs the form body to /v1/relay/task/create."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, task_manager, {"task_id": "t1"})
+
+    result = await create_task(
+        "https://operator.invalid/create",
+        server_id="s1",
+        server_status="running",
+        tool_name="analyst",
+    )
+
+    assert result == {"task_id": "t1"}
+    assert relay.calls[0]["method"] == "POST_DATA"
+    assert relay.calls[0]["path"] == "task/create"
+    assert relay.calls[0]["data"]["server_id"] == "s1"
+
+
+async def test_update_task_routes_through_relay(monkeypatch):
+    """Relay-mode update_task POSTs to /v1/relay/task/update."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, task_manager, {"ok": True})
+
+    result = await update_task(
+        "https://operator.invalid/update",
+        server_id="s1",
+        server_status="done",
+        server_file_path="/obs/out",
+        tool_result="ok",
+    )
+
+    assert result == {"ok": True}
+    assert relay.calls[0]["path"] == "task/update"
+    assert relay.calls[0]["data"]["tool_result"] == "ok"
+
+
+async def test_find_spa_taxids_routes_through_relay(monkeypatch):
+    """Relay-mode SPA-FAQ GETs /v1/relay/spa-faq/{repo_id} with query."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(
+        monkeypatch,
+        evolution_agent,
+        {"total": 1, "records": [{"answer": "9606.1"}]},
+    )
+
+    taxids = await find_spa_taxids("Arabidopsis", 1.0)
+
+    assert taxids == ["9606"]
+    assert relay.calls[0]["method"] == "GET"
+    assert relay.calls[0]["path"].startswith("spa-faq/")
+    assert relay.calls[0]["query"]["question"] == "Arabidopsis"
+    assert relay.calls[0]["query"]["page_size"] == "10"

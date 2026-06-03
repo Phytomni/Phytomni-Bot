@@ -23,7 +23,9 @@ from ..common.http import (
     post_json_with_retries,
 )
 from ..common.httpx_client import get_async_client
+from ..common.relay_client import current_relay_client
 from ..config.defaults import ApiConfig
+from ..config.relay_mode import relay_mode_enabled
 
 DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
 
@@ -46,6 +48,8 @@ class RemoteTaskRequest:
         retriable_codes: Tuple of HTTP status codes that trigger retry.
         max_retries: Maximum number of retry attempts.
         message: Error message prefix for failures.
+        relay_path: Relay route suffix (``task/create`` / ``task/update``)
+            used instead of ``url`` in customer relay mode.
     """
 
     url: str
@@ -54,6 +58,7 @@ class RemoteTaskRequest:
     retriable_codes: tuple[int, ...]
     max_retries: int
     message: str
+    relay_path: str
 
 
 @dataclass(frozen=True)
@@ -521,6 +526,7 @@ async def create_task(
         retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
         max_retries=kwargs.get("max_retries", 5),
         message="Failed to create task",
+        relay_path="task/create",
     )
     return await _post_remote_task(request)
 
@@ -568,6 +574,7 @@ async def update_task(
         retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
         max_retries=kwargs.get("max_retries", 5),
         message="Failed to update task",
+        relay_path="task/update",
     )
     return await _post_remote_task(request)
 
@@ -580,7 +587,17 @@ def _retriable_codes(value: Any) -> tuple[int, ...]:
 
 
 async def _post_remote_task(request: RemoteTaskRequest):
-    """Post one remote task-manager request with retry handling."""
+    """Post one remote task-manager request with retry handling.
+
+    The local ``server_tasks.db`` registry stays local; only this remote
+    POST path is relayed. In customer relay mode the form body is sent to
+    ``/v1/relay/task/{create,update}`` (an unauthenticated upstream the
+    relay forwards verbatim) instead of the operator task URL.
+    """
+    if relay_mode_enabled():
+        return await current_relay_client().post_data(
+            request.relay_path, data=request.data, message=request.message
+        )
     client_timeout = Timeout(request.timeout, connect=request.timeout)
     async with get_async_client(timeout=client_timeout) as client:
         return await post_json_with_retries(
