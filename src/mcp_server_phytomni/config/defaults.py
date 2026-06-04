@@ -544,7 +544,7 @@ class AnalystConfig(KnowledgeConfig):
     )
 
     EXECUTE_CODE: bool = True
-    USER_ID: str = "myc"
+    USER_ID: str = ""
     CREATE_DIR: bool = True
     DOWNLOAD_PATH: str = str(DOWNLOAD_PATH)
     DOWNLOAD_MARKER: Optional[str] = None
