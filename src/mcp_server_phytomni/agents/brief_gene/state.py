@@ -17,7 +17,17 @@ binary-compatible with the legacy ``BriefGeneAgentState`` alias.
 # class-definition time, so future annotations would silently
 # drop every ``Required[]`` marker on ``BriefGeneInput``.
 
-from typing import Any, Dict, List, NotRequired, Required, TypedDict
+import operator
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    NotRequired,
+    Required,
+    Tuple,
+    TypedDict,
+)
 
 
 class BriefGeneInput(TypedDict, total=False):
@@ -87,16 +97,41 @@ class BriefGeneState(TypedDict):
     follow_up_questions: List[str]
     final_response: Dict[str, Any]
     # Additive optional keys used only when ``USE_CHAT_SUBGRAPH`` is on
-    # (Step 6.3 C1 dual-wire). ``generate_prep_node`` stages
-    # ``chat_payload`` + ``pending_post``; the shared ``chat`` mount
-    # writes the chat-completions-style ``chat_response``;
-    # ``generate_post_node`` reads ``chat_response`` to produce
-    # ``final_response``. Marked ``NotRequired`` so legacy fixtures
-    # that construct ``BriefGeneState`` without the chat-subgraph
-    # branch keep type-checking.
+    # (chat-subgraph dual-wire). ``generate_prep_node`` /
+    # ``follow_up_prep_node`` stage ``chat_payload`` + ``pending_post``;
+    # the shared ``chat`` mount writes the chat-completions-style
+    # ``chat_response``; the matching post node reads ``chat_response``
+    # to produce ``final_response`` / ``follow_up_questions``. Marked
+    # ``NotRequired`` so legacy fixtures that construct
+    # ``BriefGeneState`` without the chat-subgraph branch keep
+    # type-checking.
     chat_payload: NotRequired[Dict[str, Any]]
     pending_post: NotRequired[str]
     chat_response: NotRequired[Dict[str, Any]]
+    # Additive optional keys used only when ``USE_KNOWLEDGE_SUBGRAPH``
+    # is on. ``retrieve_prep_tasks_node`` stages the per-symbol task
+    # list under ``retrieve_tasks``; ``route_retrieve_tasks`` dispatches
+    # each task via ``Send`` with the per-task ``knowledge_input`` and
+    # ``task_index`` keys carried on the per-Send state delta; each
+    # ``retrieve_worker_node`` ``ainvoke``s the shared knowledge
+    # subgraph mount and writes the indexed result tuple onto the
+    # ``retrieve_indexed_results`` reducer channel (concat via
+    # ``operator.add``); ``retrieve_reduce_node`` sorts the tuples by
+    # ``task_index``, merges the docs by score descending, applies the
+    # config ``TOP_N`` cap, and projects the final ``retrieved_docs``
+    # plus the ``retrieve_context`` formatted string. ``knowledge_payload``
+    # / ``pending_post_knowledge`` / ``knowledge_response`` carry the
+    # per-Send legs through the shared ``knowledge`` node wrapper
+    # registered via ``make_knowledge_node_wrapper``.
+    retrieve_tasks: NotRequired[List[Dict[str, Any]]]
+    task_index: NotRequired[int]
+    knowledge_input: NotRequired[Dict[str, Any]]
+    knowledge_payload: NotRequired[Dict[str, Any]]
+    pending_post_knowledge: NotRequired[str]
+    knowledge_response: NotRequired[List[Dict[str, Any]]]
+    retrieve_indexed_results: Annotated[
+        List[Tuple[int, List[Dict[str, Any]]]], operator.add
+    ]
 
 
 BriefGeneAgentState = BriefGeneState

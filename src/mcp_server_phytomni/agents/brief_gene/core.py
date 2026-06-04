@@ -17,6 +17,7 @@ from typing import Any, Dict, Literal, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content, parse_follow_up_questions
@@ -31,7 +32,9 @@ from ..shared.chat_subgraph import (
     make_chat_node_wrapper,
 )
 from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.sql import sql_literal
+from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
 from .pipeline import (
     _attach_metadata,
     _dedupe,
@@ -62,7 +65,7 @@ __all__ = [
 BRIEF_CONFIG = BriefGeneConfig()
 
 
-class BriefGeneAgent:
+class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
     """LangGraph-based agent for brief gene function analysis.
 
     Attributes:
@@ -86,6 +89,14 @@ class BriefGeneAgent:
             knowledge_config=brief_config,
             sensitive_config=self.sensitive_config,
         )
+        self._knowledge_app: Optional[CompiledStateGraph]
+        if self.brief_config.USE_KNOWLEDGE_SUBGRAPH:
+            self._knowledge_app = build_knowledge_app(
+                knowledge_config=self.brief_config,
+                sensitive_config=self.sensitive_config,
+            )
+        else:
+            self._knowledge_app = None
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
@@ -117,19 +128,25 @@ class BriefGeneAgent:
         return workflow.compile(checkpointer=self.checkpointer)
 
     def _wire_legacy(self, workflow: StateGraph) -> None:
-        """Register the legacy five-node linear pipeline on ``workflow``.
+        """Register the legacy linear pipeline on ``workflow``.
 
         Preserves the flag-off behavior exactly as it existed before
-        the ``USE_CHAT_SUBGRAPH`` dual-path split. ``generate_node``
-        calls ``phyto_chat`` directly with the per-call kwargs.
+        the ``USE_CHAT_SUBGRAPH`` / ``USE_KNOWLEDGE_SUBGRAPH``
+        dual-path splits. ``generate_node`` calls ``phyto_chat``
+        directly. The ``retrieve`` site honors
+        ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
+        ``retrieve_node`` body; flag-on substitutes the Send-dispatch
+        triad via ``_register_retrieve_nodes`` and routes the
+        surrounding edges through ``_retrieve_targets``.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
                 edges on.
         """
+        retrieve_in, retrieve_out = self._retrieve_targets()
         workflow.add_node("query_judge_node", self.query_judge_node)
         workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
-        workflow.add_node("retrieve_node", self.retrieve_node)
+        self._register_retrieve_nodes(workflow)
         workflow.add_node("generate_node", self.generate_node)
         workflow.add_node("follow_up_node", self.follow_up_node)
 
@@ -139,11 +156,11 @@ class BriefGeneAgent:
             self.route_after_judge,
             {
                 "fetch_annotation_node": "fetch_annotation_node",
-                "retrieve_node": "retrieve_node",
+                "retrieve_node": retrieve_in,
             },
         )
-        workflow.add_edge("fetch_annotation_node", "retrieve_node")
-        workflow.add_edge("retrieve_node", "generate_node")
+        workflow.add_edge("fetch_annotation_node", retrieve_in)
+        workflow.add_edge(retrieve_out, "generate_node")
         workflow.add_conditional_edges(
             "generate_node",
             self.route_after_generate,
@@ -165,15 +182,21 @@ class BriefGeneAgent:
         subgraph in the brief_gene render.
         :func:`~agents.shared.chat_subgraph.make_chat_after_router`
         reads the ``pending_post`` sentinel each prep node stages to
-        branch back to the correct post node after the chat call.
+        branch back to the correct post node after the chat call. The
+        ``retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``
+        independently of the chat flag (delegated via
+        ``_register_retrieve_nodes`` and ``_retrieve_targets``); the
+        cross-product wire (both flags on) surfaces both ``chat:`` and
+        ``retrieve_worker_node:`` subgraph blocks under xray.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
                 edges on.
         """
+        retrieve_in, retrieve_out = self._retrieve_targets()
         workflow.add_node("query_judge_node", self.query_judge_node)
         workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
-        workflow.add_node("retrieve_node", self.retrieve_node)
+        self._register_retrieve_nodes(workflow)
         workflow.add_node("generate_prep_node", self.generate_prep_node)
         workflow.add_node("generate_post_node", self.generate_post_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
@@ -195,11 +218,11 @@ class BriefGeneAgent:
             self.route_after_judge,
             {
                 "fetch_annotation_node": "fetch_annotation_node",
-                "retrieve_node": "retrieve_node",
+                "retrieve_node": retrieve_in,
             },
         )
-        workflow.add_edge("fetch_annotation_node", "retrieve_node")
-        workflow.add_edge("retrieve_node", "generate_prep_node")
+        workflow.add_edge("fetch_annotation_node", retrieve_in)
+        workflow.add_edge(retrieve_out, "generate_prep_node")
         workflow.add_edge("generate_prep_node", "chat")
         workflow.add_edge("follow_up_prep_node", "chat")
         workflow.add_conditional_edges(
@@ -750,6 +773,12 @@ class BriefGeneAgent:
             "retrieve_context": "",
             "follow_up_questions": [],
             "final_response": {},
+            # Seed the Send fan-out reducer channel so the TypedDict
+            # contract is satisfied at ``arun`` entry. The
+            # ``USE_KNOWLEDGE_SUBGRAPH``-on path concats per-worker
+            # ``(task_index, doc_list)`` tuples onto this list via
+            # ``operator.add``; the flag-off path leaves it untouched.
+            "retrieve_indexed_results": [],
         }
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
