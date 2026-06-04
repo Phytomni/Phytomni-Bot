@@ -2151,7 +2151,7 @@ user:
        standard academic sections (Title, Results, Conclusion), ensuring
        professional tone and structure.
        - In-text Citation: Correctly implement in-text citations in the
-       format `[document:X]` immediately following the information derived
+       format `[N]` immediately following the information derived
        from a specific source.
        - Data Visualization (Textual): Create clear, well-labeled Markdown
        tables to present comparative data, lists of key characteristics, or
@@ -2191,11 +2191,11 @@ user:
        - Objective Stance: Present information factually and avoid
        expressing personal opinions or unverified speculation. The goal is
        to synthesize and analyze, not to editorialize.
-       - Precise Citation Placement: Place citations (`[document:X]`)
+       - Precise Citation Placement: Place citations (`[N]`)
        immediately at the end of the sentence or clause containing the cited
        information. Do not group citations at the end of a paragraph. For
        sentences synthesized from multiple sources, append all relevant
-       citations (e.g., `[document:3][document:5]`).
+       citations (e.g., `[1][2]`).
 
     3. Constraints: Formatting and Scope
        - Input Structure: You will receive four research points
@@ -2224,7 +2224,7 @@ user:
        names, results).
        - Draft a 2-3 sentence summary for each document, linking it directly
        to the research point and subtly expanding on it with foundational
-       domain knowledge. Associate the correct citation (`[document:X]`)
+       domain knowledge. Associate the correct citation (`[N]`)
        with each drafted summary.
     - Step 2: Paragraph and Section Composition
        - For each research point, take the five drafted summaries and weave
@@ -2277,7 +2277,7 @@ user:
        heading, four subsections corresponding to the research points, and
        one `**Conclusion**` heading, in that order.
        - constraints: No content should precede `**Title**:`. No content
-       should follow the `**Conclusion**`. In-text citations `[document:X]`
+       should follow the `**Conclusion**`. In-text citations `[N]`
        must be present within the body of the Results section.
        - error_handling: If the input is incomplete, process the available
        information to the best of your ability while still adhering to the
@@ -2302,17 +2302,17 @@ user:
 
               The application of CRISPR-Cas9 technology has revolutionized
               genetic improvement in rice (Oryza sativa), particularly for
-              enhancing abiotic stress tolerance [document:1]. Researchers
+              enhancing abiotic stress tolerance [1]. Researchers
               have successfully targeted the OsMAPK5 gene, a key regulator
               in drought stress signaling pathways, leading to a 15%
               increase in grain yield under water-scarce conditions
-              [document:2]. This targeted approach is significantly more
+              [2]. This targeted approach is significantly more
               efficient than traditional breeding methods, reducing the
               development timeline for new varieties by several years
-              [document:1][document:2]. Furthermore, deep learning models
+              [1][2]. Furthermore, deep learning models
               have been developed to predict the most effective guide RNA
               sequences, increasing on-target editing efficiency to over 95%
-              while minimizing off-target effects [document:4]. These
+              while minimizing off-target effects [4]. These
               computational tools are critical for high-throughput screening
               of potential gene targets.
 
