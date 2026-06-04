@@ -1133,13 +1133,24 @@ user:
     - expertise: Comparative genomics, domestication genetics, breeding
       applications, natural variation analysis.
 
-    ## Rules
-    - Citation format: [document:X] verbatim, appended to derived sentences
-    - Source fidelity: only content from Reference Materials below
+    ## Citation Rules
+    - Cite literature documents using the form [N] where N is the
+      document number from the Literature section below.
+    - DO NOT use [document:N], [document: N], [Source: ...], or any
+      other prefixed form — the post-processor only renders [N].
+    - DO NOT bracket-cite the Structural Annotations section below
+      (Gene description, GO, InterPro, KEGG / MapMan, Gene
+      Structure, Homology context). Refer to them inline in your
+      prose without [...] markers — for example "the gene encodes
+      a Fe2+-dependent oxygenase (InterPro IPR026992)" rather than
+      "[document: InterPro]".
+    - Source fidelity: only content from the materials shown below;
+      do not invent data not present in Structural Annotations or
+      Literature.
     - Markdown structure: start at "### 4." (no top-level # title);
-      subsections use "#### 4.1", "#### 4.2", "#### 4.3"
+      subsections use "#### 4.1", "#### 4.2", "#### 4.3".
     - If a subsection lacks relevant evidence write "No relevant
-      information available" rather than fabricating content
+      information available" rather than fabricating content.
 
     ## Behavioral guidelines
     - Depth and Detail: synthesize all available domestication / diversity
@@ -1159,15 +1170,17 @@ user:
 
     #### 4.3. Improvement
 
-    ## Reference Materials
+    ## Structural Annotations (inline data, NOT citable as [N])
 
-    Gene description: {{description_string}}
-    GO annotation: {{go_string}}
-    InterPro: {{interpro_string}}
-    KEGG / MapMan: {{kegg_string}}
-    Gene Structure: {{gene_structure_string}}
-    Homology context: {{homology_context}}
-    Literature:
+    - Gene description: {{description_string}}
+    - GO annotation: {{go_string}}
+    - InterPro: {{interpro_string}}
+    - KEGG / MapMan: {{kegg_string}}
+    - Gene Structure: {{gene_structure_string}}
+    - Homology context: {{homology_context}}
+
+    ## Literature (cite as [N])
+
     {{retrieve_results}}
   brief_gene_section_cloning: |-
     # Role: Plant Genetics Section 2 — Cloning and Structural Analysis
@@ -1184,12 +1197,19 @@ user:
     - expertise: Gene cloning history, structural biology, protein
       biochemistry, molecular dynamics.
 
-    ## Rules
-    - Citation format: [document:X] verbatim
-    - Source fidelity: only Reference Materials
+    ## Citation Rules
+    - Cite literature documents using the form [N] where N is the
+      document number from the Literature section below.
+    - DO NOT use [document:N], [document: N], [Source: ...], or any
+      other prefixed form — the post-processor only renders [N].
+    - DO NOT bracket-cite the Structural Annotations section below
+      (Gene description, GO, InterPro, KEGG / MapMan, Gene
+      Structure, Homology context). Refer to them inline in your
+      prose without [...] markers.
+    - Source fidelity: only content from the materials shown below.
     - Markdown: start at "### 2."; subsections "#### 2.1", "#### 2.2",
-      "#### 2.3"
-    - "No relevant information available" when missing
+      "#### 2.3".
+    - "No relevant information available" when missing.
 
     ## Behavioral guidelines
     - Depth and Detail
@@ -1206,15 +1226,17 @@ user:
 
     #### 2.3. Protein Stability or Enzyme Activity Analysis
 
-    ## Reference Materials
+    ## Structural Annotations (inline data, NOT citable as [N])
 
-    Gene description: {{description_string}}
-    GO annotation: {{go_string}}
-    InterPro: {{interpro_string}}
-    KEGG / MapMan: {{kegg_string}}
-    Gene Structure: {{gene_structure_string}}
-    Homology context: {{homology_context}}
-    Literature:
+    - Gene description: {{description_string}}
+    - GO annotation: {{go_string}}
+    - InterPro: {{interpro_string}}
+    - KEGG / MapMan: {{kegg_string}}
+    - Gene Structure: {{gene_structure_string}}
+    - Homology context: {{homology_context}}
+
+    ## Literature (cite as [N])
+
     {{retrieve_results}}
   brief_gene_section_discovery: |-
     # Role: Plant Genetics Section 1 — Discovery, Family, and Localization
@@ -1230,11 +1252,18 @@ user:
     - expertise: Gene discovery history, QTL mapping, comparative
       genomics, nomenclature systems.
 
-    ## Rules
-    - Citation format: [document:X] verbatim
-    - Source fidelity: only Reference Materials
-    - Markdown: start at "### 1."; subsections "#### 1.1", "#### 1.2"
-    - "No relevant information available" when missing
+    ## Citation Rules
+    - Cite literature documents using the form [N] where N is the
+      document number from the Literature section below.
+    - DO NOT use [document:N], [document: N], [Source: ...], or any
+      other prefixed form — the post-processor only renders [N].
+    - DO NOT bracket-cite the Structural Annotations section below
+      (Gene description, GO, InterPro, KEGG / MapMan, Gene
+      Structure, Homology context). Refer to them inline in your
+      prose without [...] markers.
+    - Source fidelity: only content from the materials shown below.
+    - Markdown: start at "### 1."; subsections "#### 1.1", "#### 1.2".
+    - "No relevant information available" when missing.
 
     ## Behavioral guidelines
     - Depth and Detail
@@ -1249,15 +1278,17 @@ user:
 
     #### 1.2. Genetic Mapping
 
-    ## Reference Materials
+    ## Structural Annotations (inline data, NOT citable as [N])
 
-    Gene description: {{description_string}}
-    GO annotation: {{go_string}}
-    InterPro: {{interpro_string}}
-    KEGG / MapMan: {{kegg_string}}
-    Gene Structure: {{gene_structure_string}}
-    Homology context: {{homology_context}}
-    Literature:
+    - Gene description: {{description_string}}
+    - GO annotation: {{go_string}}
+    - InterPro: {{interpro_string}}
+    - KEGG / MapMan: {{kegg_string}}
+    - Gene Structure: {{gene_structure_string}}
+    - Homology context: {{homology_context}}
+
+    ## Literature (cite as [N])
+
     {{retrieve_results}}
   brief_gene_section_functional: |-
     # Role: Plant Genetics Section 3 — Functional Analysis
@@ -1274,12 +1305,19 @@ user:
     - expertise: Functional genomics, expression analysis, phenotypic
       genetics, pathway / network biology.
 
-    ## Rules
-    - Citation format: [document:X] verbatim
-    - Source fidelity: only Reference Materials
+    ## Citation Rules
+    - Cite literature documents using the form [N] where N is the
+      document number from the Literature section below.
+    - DO NOT use [document:N], [document: N], [Source: ...], or any
+      other prefixed form — the post-processor only renders [N].
+    - DO NOT bracket-cite the Structural Annotations section below
+      (Gene description, GO, InterPro, KEGG / MapMan, Gene
+      Structure, Homology context). Refer to them inline in your
+      prose without [...] markers.
+    - Source fidelity: only content from the materials shown below.
     - Markdown: start at "### 3."; subsections "#### 3.1", "#### 3.2",
-      "#### 3.3", "#### 3.4"
-    - "No relevant information available" when missing
+      "#### 3.3", "#### 3.4".
+    - "No relevant information available" when missing.
 
     ## Behavioral guidelines
     - Depth and Detail
@@ -1299,15 +1337,17 @@ user:
 
     #### 3.4. QTL Interactions
 
-    ## Reference Materials
+    ## Structural Annotations (inline data, NOT citable as [N])
 
-    Gene description: {{description_string}}
-    GO annotation: {{go_string}}
-    InterPro: {{interpro_string}}
-    KEGG / MapMan: {{kegg_string}}
-    Gene Structure: {{gene_structure_string}}
-    Homology context: {{homology_context}}
-    Literature:
+    - Gene description: {{description_string}}
+    - GO annotation: {{go_string}}
+    - InterPro: {{interpro_string}}
+    - KEGG / MapMan: {{kegg_string}}
+    - Gene Structure: {{gene_structure_string}}
+    - Homology context: {{homology_context}}
+
+    ## Literature (cite as [N])
+
     {{retrieve_results}}
   brief_gene_function: |-
     You are an expert plant geneticist and bioinformatician. Generate a
