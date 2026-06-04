@@ -274,92 +274,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         return {"protocol_report": protocol_content}
 
-    async def _run_report_introduction(self: Any, state: DeepGenomeState):
-        """Generate report introduction section.
-
-        This node generates the introduction section of the gene function
-        report, with context based on gene annotation and analysis.
-
-        Args:
-            state: Current workflow state containing gene_annotation,
-                part12_combined, etc.
-
-        Returns:
-            Dict with introduction_report, or empty dict if already triggered.
-        """
-        logger.info("Generating introduction")
-
-        species_code = state["species_code"]
-        gene_annotation = state.get("gene_annotation", {})
-        gene_string = gene_annotation.get("gene_string", "")
-
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-
-        part12_str = state.get("part12_combined") or ""
-        if use_analyst:
-            protocol_report = state.get("protocol_report", "")
-            experiment_report = state.get("experiment_report", "")
-            part123_str = (
-                f"{part12_str}\n\n"
-                f"## Recommended experiments\n\n{protocol_report}\n\n"
-                f"{experiment_report}\n\n"
-            )
-            content = part123_str
-        else:
-            content = part12_str
-
-        # Prepend brief_gene's mounted-subgraph answer so the
-        # introduction LLM has the gene-function summary brief_gene
-        # generated; degrades to empty string when brief_response is
-        # absent (legacy direct callers / failed mount sentinel).
-        brief_answer = message_content(state.get("brief_response") or {})
-        if brief_answer:
-            content = f"## Brief gene answer\n\n{brief_answer}\n\n{content}"
-
-        introduction_response = await phyto_chat(
-            user_query=get_prompt(
-                self.deep_genome_config.PROMPT_FILE,
-                "user/gene_function_introduction",
-                {
-                    "gene_string": gene_string,
-                    "species_string": SPECIES_CODE_MAP[species_code],
-                    "content": content,
-                },
-            ),
-            prompt_file=self.deep_genome_config.PROMPT_FILE,
-            prompt_path=self.deep_genome_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
-            n=self.deep_genome_config.N,
-            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
-            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
-            response_format=self.deep_genome_config.RESPONSE_FORMAT,
-            stream=self.deep_genome_config.STREAM,
-            temperature=self.deep_genome_config.TEMPERATURE,
-            top_p=self.deep_genome_config.TOP_P,
-            user=self.deep_genome_config.USER,
-            timeout=self.deep_genome_config.TIMEOUT,
-            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
-            max_retries=self.deep_genome_config.MAX_RETRIES,
-        )
-
-        introduction_content = ""
-        if (
-            introduction_response
-            and "choices" in introduction_response
-            and len(introduction_response["choices"]) > 0
-            and "message" in introduction_response["choices"][0]
-        ):
-            introduction_content = introduction_response["choices"][0][
-                "message"
-            ].get("content", "")
-
-        return {"introduction_report": introduction_content}
-
     async def _run_report_discussion(self: Any, state: DeepGenomeState):
         """Generate report discussion section.
 
@@ -472,28 +386,27 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         return {"summary_report": message_content(summary_response)}
 
     def _summary_source_content(self: Any, state: DeepGenomeState) -> str:
-        """Build the source report content for final summary generation."""
+        """Build the source report content for final summary generation.
+
+        M11 cleanup: the M5-era ``brief_response`` prefix block is
+        removed. brief_gene now writes ``introduction_report``
+        directly to state via the mount IO projection, so this
+        helper reads ``state["introduction_report"]`` as the
+        introduction body (no LLM call here, no message_content
+        unwrap of brief_response).
+        """
         part12_str = state.get("part12_combined") or ""
         discussion_report = state.get("discussion_report", "")
-        # brief_gene's mounted-subgraph answer prepended so the summary
-        # LLM sees the gene-function summary brief_gene generated;
-        # degrades to empty string when brief_response is absent.
-        brief_answer = message_content(state.get("brief_response") or {})
-        brief_prefix = (
-            f"## Brief gene answer\n\n{brief_answer}\n\n"
-            if brief_answer
-            else ""
-        )
+        introduction_report = state.get("introduction_report", "")
         if not state.get("config_params", {}).get("use_analyst_agent", True):
             return (
-                f"{brief_prefix}{part12_str}\n\n"
+                f"{introduction_report}\n\n{part12_str}\n\n"
                 f"## Discussion\n\n{discussion_report}\n\n"
             )
 
         return (
             f"# Deep Genome Analysis of {state['gene_id']}\n\n"
-            f"{brief_prefix}"
-            f"{state.get('introduction_report', '')}\n\n{part12_str}\n\n"
+            f"{introduction_report}\n\n{part12_str}\n\n"
             "## Recommended experiments\n\n"
             f"{state.get('protocol_report', '')}\n\n"
             f"{state.get('experiment_report', '')}\n\n"

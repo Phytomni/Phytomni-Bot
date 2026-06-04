@@ -114,7 +114,6 @@ def make_brief_gene_mount_node(
             brief_output = {}
 
         gene_string = str(brief_output.get("gene_id", "") or gene_id)
-        brief_response = brief_output.get("final_response")
         return {
             "gene_annotation": {
                 "gene_string": gene_string,
@@ -122,18 +121,54 @@ def make_brief_gene_mount_node(
                 "go": str(brief_output.get("go_string", "")),
                 "interpro": str(brief_output.get("interpro_string", "")),
                 "mapman": str(brief_output.get("kegg_string", "")),
+                "gene_structure": str(
+                    brief_output.get("gene_structure_string", "")
+                ),
             },
             "knowledge_context": {
                 "literature": list(
                     brief_output.get("retrieved_docs", []) or []
                 ),
             },
-            "brief_response": (
-                dict(brief_response)
-                if isinstance(brief_response, dict)
-                else {}
+            # M11 — brief_gene now owns the preamble production. The
+            # section markdowns + introduction_report flow verbatim
+            # into deep_genome's report assembly so deep_genome no
+            # longer needs its own _run_report_introduction LLM call
+            # or sub-summary / part1_node LLM calls. M5's
+            # brief_response prefix path is retired in the same
+            # commit (the report assembly now reads
+            # state.introduction_report directly instead of
+            # message_content(brief_response)).
+            "orthologs_data": brief_output.get(
+                "orthologs_data", {"gene_list": []}
             ),
-            "part1_completed_branches": 1,
+            "paralogs_data": brief_output.get(
+                "paralogs_data", {"gene_list": []}
+            ),
+            "interaction_data": brief_output.get(
+                "interaction_data", {"gene_list": []}
+            ),
+            "section1_markdown": str(
+                brief_output.get("section1_markdown", "")
+            ),
+            "section2_markdown": str(
+                brief_output.get("section2_markdown", "")
+            ),
+            "section3_markdown": str(
+                brief_output.get("section3_markdown", "")
+            ),
+            "section4_markdown": str(
+                brief_output.get("section4_markdown", "")
+            ),
+            "introduction_report": str(
+                brief_output.get("introduction_report", "")
+            ),
+            # Preamble convergence — brief_gene mount substitutes for
+            # the legacy 4-branch preamble + part1_node aggregator
+            # entirely, so we satisfy the experiment_node barrier
+            # contribution that part1_node used to write (the analyst
+            # synthesize_node contributes the other +1).
+            "experiment_completed_branches": 1,
         }
 
     return _brief_gene_mount

@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional
 
 from langgraph.graph import END
 from langgraph.types import Send
@@ -138,39 +138,6 @@ class AnalysisDispatchContext(NamedTuple):
     output_dir: str
 
 
-def _homology_gene_lists(
-    response: Dict[str, Any],
-    species_code: str,
-) -> tuple[List[tuple[str, str]], List[tuple[str, str]]]:
-    """Split BI homology rows into ortholog and paralog gene lists."""
-    orthologs, paralogs = set(), set()
-    for homology in response["data"]:
-        gene_pair = (
-            homology["homology_species"],
-            homology["homology_gene_id"],
-        )
-        if homology["homology_species"] == species_code:
-            paralogs.add(gene_pair)
-        else:
-            orthologs.add(gene_pair)
-    return sorted(orthologs), sorted(paralogs)
-
-
-def _interaction_gene_list(
-    response: Dict[str, Any],
-    gene_id: str,
-    species_code: str,
-) -> List[tuple[str, str]]:
-    """Build a deduplicated interaction partner list from BI rows."""
-    interactions = set()
-    for interaction in response["data"]:
-        if interaction["query_gene_id"] == gene_id:
-            interactions.add((species_code, interaction["interact_gene_id"]))
-        elif interaction["interact_gene_id"] == gene_id:
-            interactions.add((species_code, interaction["query_gene_id"]))
-    return sorted(interactions)
-
-
 class DeepGenomeDispatchMixin(WorkflowMixinBase):
     """Routing, dispatch, and analysis-task nodes for DeepGenome."""
 
@@ -187,104 +154,17 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             List of node names to execute. When both flags are True, run
             knowledge_node, data_node, and prepare_tasks_node.
         """
+        # M11 (X3b A architecture) — ``data_node`` deleted; brief_gene
+        # mount inside ``knowledge_node`` performs all the BI
+        # annotation + homology + interaction fetching that the
+        # legacy ``data_node`` + 3-branch fan-out used to produce.
+        # ``use_data_agent`` flag is subsumed by the mount.
         use_analyst = state.get("config_params", {}).get(
             "use_analyst_agent", True
         )
-        use_data = state.get("config_params", {}).get("use_data_agent", True)
-        if use_analyst and use_data:
-            return ["knowledge_node", "data_node", "prepare_tasks_node"]
-        if use_analyst and not use_data:
+        if use_analyst:
             return ["knowledge_node", "prepare_tasks_node"]
-        if use_data and not use_analyst:
-            return ["knowledge_node", "data_node"]
         return ["knowledge_node"]
-
-    def _route_after_knowledge(self: Any, state: DeepGenomeState):
-        """Determine path after knowledge_node completes.
-
-        Args:
-            state: Current workflow state containing config_params.
-
-        Returns:
-            Node name: "gene_annotation_node" if use_data is True,
-                       "gene_summary_node" otherwise.
-        """
-        use_data = state.get("config_params", {}).get("use_data_agent", True)
-        if use_data:
-            return "gene_annotation_node"
-        return "gene_summary_node"
-
-    def _route_after_gene_summary(self: Any, state: DeepGenomeState):
-        """Determine path after gene_summary_node completes.
-
-        Args:
-            state: Current workflow state containing config_params.
-
-        Returns:
-            Node name: "experiment_node" if use_analyst is True,
-                       "introduction_node" otherwise.
-        """
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-        if use_analyst:
-            return "experiment_node"
-        return "introduction_node"
-
-    def _route_after_part1(self: Any, state: DeepGenomeState):
-        """Determine path after part1_node completes.
-
-        This decides whether to follow the complete deep analysis framework
-        or jump directly to report writing.
-
-        Args:
-            state: Current workflow state containing config_params.
-
-        Returns:
-            Node name: "experiment_node" if use_analyst is True,
-                       "introduction_node" otherwise.
-        """
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-        if use_analyst:
-            return "experiment_node"
-        return "introduction_node"
-
-    def _route_part1_barrier(self: Any, state: DeepGenomeState):
-        """Route back to part1_node while waiting for 4 branches.
-
-        Args:
-            state: Current workflow state.
-
-        Returns:
-            "part1_node" to re-enter barrier check,
-            or "experiment_node"/"introduction_node" when part1 is ready.
-        """
-        if state.get("part1_waiting"):
-            return "part1_node"
-        # Use original logic after barrier satisfied
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-        if use_analyst:
-            return "experiment_node"
-        return "introduction_node"
-
-    def _route_after_synthesize(self: Any, state: DeepGenomeState):
-        """Determine path after synthesize_node completes.
-
-        Args:
-            state: Current workflow state containing config_params.
-
-        Returns:
-            Node name: "experiment_node" if use_data is True,
-                       "introduction_node" otherwise.
-        """
-        use_data = state.get("config_params", {}).get("use_data_agent", True)
-        if use_data:
-            return "experiment_node"
-        return "introduction_node"
 
     def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
         """Route back to synthesize_node while waiting for analysis tasks.
@@ -452,75 +332,6 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         self._figure_index = result.figure_index
         return result.data
-
-    async def _run_gene_summary_node(self: Any, state: DeepGenomeState):
-        """Convergence pass-through when the data agent path is skipped.
-
-        ``use_data_agent=False`` routes around ``gene_annotation_node`` and
-        ``part1_node``, so LangGraph needs an intermediate node between
-        ``knowledge_node`` and ``experiment_node`` / ``introduction_node``
-        to keep the conditional edges well-formed. The node intentionally
-        carries no state output: ``DeepGenomeState`` has no summary slot
-        the downstream report nodes consume here, and the actual
-        end-of-workflow summarization runs in ``_run_report_summary``
-        with its own prompt. The previous body wrote ``"111"`` to a
-        ``summary_context`` field nothing read; removing the placeholder
-        makes the routing-only contract explicit.
-
-        Args:
-            state: Current workflow state (unused; the node is a
-                topology pass-through).
-
-        Returns:
-            Empty dict; no state mutation.
-        """
-        del state
-        return {}
-
-    async def _run_data_agent(self: Any, state: DeepGenomeState):
-        """Retrieve gene list for network analysis.
-
-        This node queries the database to retrieve orthologous genes,
-        paralogous genes, and protein interaction partners.
-
-        Args:
-            state: Current workflow state containing gene_id and species_code.
-
-        Returns:
-            Dict containing orthologs_data, paralogs_data, and
-            interaction_data.
-        """
-        logger.info("Retrieving gene list")
-        gene_id = state["gene_id"]
-        species_code = state["species_code"]
-        gene_literal = sql_literal(gene_id)
-        gene_homology_response = await self._bi_json(
-            "SELECT query_gene_id, query_species, homology_gene_id, "
-            "homology_species "
-            f"FROM homology_gene WHERE query_gene_id = {gene_literal}"
-        )
-        gene_interaction_response = await self._bi_json(
-            "SELECT query_gene_id, query_protein, interact_gene_id, "
-            "interact_protein "
-            "FROM protein_interaction_col "
-            f"WHERE query_gene_id = {gene_literal} OR "
-            f"interact_gene_id = {gene_literal}"
-        )
-        gene_orthologs_list, gene_paralogs_list = _homology_gene_lists(
-            gene_homology_response,
-            species_code,
-        )
-        gene_interaction_list = _interaction_gene_list(
-            gene_interaction_response,
-            gene_id,
-            species_code,
-        )
-        logger.info("Gene list retrieval completed")
-        return {
-            "orthologs_data": {"gene_list": gene_orthologs_list},
-            "paralogs_data": {"gene_list": gene_paralogs_list},
-            "interaction_data": {"gene_list": gene_interaction_list},
-        }
 
     async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
         """Query the BI SQL endpoint and return the parsed JSON payload."""

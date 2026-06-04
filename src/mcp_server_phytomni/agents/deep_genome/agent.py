@@ -184,14 +184,16 @@ class DeepGenomeState(TypedDict):
     discussion_report: Optional[str]
     summary_report: Optional[str]
     follow_up_questions: Optional[List[str]]
-    # brief_gene's full chat-completions-style response, projected by
-    # the brief_gene_mount node from BriefGeneOutput.final_response.
-    # ``_run_report_introduction`` and ``_run_report_summary`` read
-    # ``message_content(state["brief_response"])`` to prefix the
-    # already-assembled ``content`` they send to the introduction /
-    # summary LLM templates with the brief gene answer brief_gene
-    # produced inside its mounted subgraph.
-    brief_response: Optional[Dict[str, Any]]
+    # M11 — brief_gene now owns the preamble (X3b A architecture).
+    # The mount IO projection (deep_genome/brief_gene_mount.py)
+    # writes these four section markdowns + introduction_report
+    # verbatim from brief_gene's BriefGeneOutput. _summary_source_content
+    # in report.py consumes them directly; the M5-era ``brief_response``
+    # prefix path is removed in the same commit.
+    section1_markdown: str
+    section2_markdown: str
+    section3_markdown: str
+    section4_markdown: str
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
@@ -328,46 +330,29 @@ class DeepGenomeAgents(
     def _build_graph(self):
         workflow = StateGraph(DeepGenomeState)
 
-        # The brief_gene mount takes over the ``knowledge_node`` name
-        # so ``_route_start`` (returns list including ``knowledge_node``)
-        # stays unchanged. The mount factory closure ainvokes the
-        # per-instance compiled BriefGeneAgent subgraph built in
-        # ``__init__``; its output projection writes both
-        # ``gene_annotation`` (replacing the previous
-        # ``_run_gene_annotation_node`` delta) and
-        # ``part1_completed_branches: 1`` (the barrier increment the
-        # previous ``_run_gene_annotation_node`` also wrote), so the
-        # downstream wiring stays unchanged except that the legacy
-        # ``gene_annotation_node`` intermediate disappears.
+        # M11 — X3b A architecture topology completion. brief_gene's
+        # mount node (``knowledge_node`` slot) substitutes for the
+        # entire preamble pipeline (data_node + orthologs / paralogs /
+        # interaction + their annotation sub-summaries + part1_node
+        # aggregator + deep_genome's own ``_run_report_introduction``).
+        # The mount IO projection writes ``gene_annotation`` +
+        # ``knowledge_context`` + ``orthologs_data`` + ``paralogs_data``
+        # + ``interaction_data`` + ``section1-4_markdown`` +
+        # ``introduction_report`` + ``experiment_completed_branches: 1``
+        # (the +1 the legacy ``part1_node`` used to write so the
+        # experiment_node 2-source barrier still fires once
+        # ``synthesize_node`` adds the analyst-side +1).
         workflow.add_node(
             "knowledge_node",
             self.make_brief_gene_mount_node(self._agents.brief_gene_app),
         )
-        workflow.add_node("gene_summary_node", self._run_gene_summary_node)
-        workflow.add_node("data_node", self._run_data_agent)
-        workflow.add_node("orthologs_node", self._run_orthologs_node)
-        workflow.add_node("paralogs_node", self._run_paralogs_node)
-        workflow.add_node("interaction_node", self._run_interaction_node)
-        workflow.add_node(
-            "orthologs_annotation_node", self._run_orthologs_annotation_node
-        )
-        workflow.add_node(
-            "paralogs_annotation_node", self._run_paralogs_annotation_node
-        )
-        workflow.add_node(
-            "interaction_annotation_node",
-            self._run_interaction_annotation_node,
-        )
-        workflow.add_node("part1_node", self._run_part1_node)
 
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
-
         workflow.add_node("analyst_node", self._run_analyst_node)
 
         workflow.add_node("experiment_node", self._run_report_experiment)
         workflow.add_node("protocol_node", self._run_report_protocol)
-        workflow.add_node("introduction_node", self._run_report_introduction)
         workflow.add_node("discussion_node", self._run_report_discussion)
         workflow.add_node("summary_node", self._run_report_summary)
         workflow.add_node("follow_up_node", self._run_follow_up_node)
@@ -375,40 +360,13 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             START,
             self._route_start,
-            ["knowledge_node", "data_node", "prepare_tasks_node"],
+            ["knowledge_node", "prepare_tasks_node"],
         )
-        # ``_route_after_knowledge`` still returns either
-        # ``"gene_summary_node"`` or ``"gene_annotation_node"``; the
-        # dict mapping below remaps the latter to ``part1_node``
-        # because the brief_gene mount already writes the
-        # ``gene_annotation`` delta and the ``part1_completed_branches``
-        # barrier increment that the legacy ``gene_annotation_node``
-        # used to write. Routing via the mapping dict avoids touching
-        # the routing function in ``dispatch.py`` (foreign-active
-        # territory).
-        workflow.add_conditional_edges(
-            "knowledge_node",
-            self._route_after_knowledge,
-            {
-                "gene_summary_node": "gene_summary_node",
-                "gene_annotation_node": "part1_node",
-            },
-        )
-        workflow.add_conditional_edges(
-            "gene_summary_node",
-            self._route_after_gene_summary,
-            ["introduction_node", "experiment_node"],
-        )
-
-        workflow.add_edge("data_node", "orthologs_node")
-        workflow.add_edge("data_node", "paralogs_node")
-        workflow.add_edge("data_node", "interaction_node")
-        workflow.add_edge("orthologs_node", "orthologs_annotation_node")
-        workflow.add_edge("paralogs_node", "paralogs_annotation_node")
-        workflow.add_edge("interaction_node", "interaction_annotation_node")
-        workflow.add_edge("orthologs_annotation_node", "part1_node")
-        workflow.add_edge("paralogs_annotation_node", "part1_node")
-        workflow.add_edge("interaction_annotation_node", "part1_node")
+        # brief_gene mount writes all the preamble fields plus the
+        # experiment_completed_branches +1 contribution, so the
+        # post-mount path goes directly to experiment_node (which
+        # waits for the synthesize_node contribution too).
+        workflow.add_edge("knowledge_node", "experiment_node")
 
         workflow.add_conditional_edges(
             "prepare_tasks_node", self._route_analyst_tasks, ["analyst_node"]
@@ -417,20 +375,15 @@ class DeepGenomeAgents(
             "analyst_node", self._route_after_analyst, [END]
         )
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
+        # The synthesize barrier no longer routes to introduction_node
+        # (deleted — brief_gene mount provides introduction_report
+        # directly); the remaining targets are the synthesize-node
+        # self-loop while waiting and experiment_node when the
+        # analyst-side data is ready.
         workflow.add_conditional_edges(
             "synthesize_node",
             self._route_synthesize_barrier,
-            ["synthesize_node", "experiment_node", "introduction_node"],
-        )
-
-        workflow.add_conditional_edges(
-            "part1_node",
-            self._route_part1_barrier,
-            [
-                "part1_node",
-                "experiment_node",
-                "introduction_node",
-            ],
+            ["synthesize_node", "experiment_node", END],
         )
 
         workflow.add_conditional_edges(
@@ -438,8 +391,10 @@ class DeepGenomeAgents(
             self._route_experiment_barrier,
             ["experiment_node", "protocol_node"],
         )
-        workflow.add_edge("protocol_node", "introduction_node")
-        workflow.add_edge("introduction_node", "discussion_node")
+        # protocol → discussion → summary → follow_up (introduction_node
+        # removed; introduction_report comes from mount and is read
+        # directly by _summary_source_content for downstream prompts).
+        workflow.add_edge("protocol_node", "discussion_node")
         workflow.add_edge("discussion_node", "summary_node")
         workflow.add_edge("summary_node", "follow_up_node")
 

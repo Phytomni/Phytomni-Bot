@@ -199,14 +199,23 @@ def test_route_after_generate_skips_when_disabled() -> None:
     assert agent.route_after_generate(state) == "__end__"
 
 
-def test_brief_gene_subgraph_exposes_two_conditional_sources() -> None:
-    """Compiled BriefGene graph routes from query_judge AND generate.
+def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
+    """Compiled BriefGene graph routes from query_judge / retrieve / render.
 
-    Pins the post-IO-schema topology: ``query_judge_node`` routes
-    to fetch-annotation vs. direct retrieval, ``generate_node``
-    routes to follow-up vs. end. A future refactor that collapses
-    one of these branches surfaces here before the manifest export.
+    M10 (X3b A architecture) — the topology now has THREE
+    conditional sources:
+
+    * ``query_judge_node`` routes to fetch-annotation vs. direct
+      retrieval based on gene_found.
+    * ``retrieve_node`` routes (fan-out) to the four section nodes
+      when gene_found=True or to ``introduction_node`` directly
+      when gene_found=False (D5.a degraded path).
+    * ``render_node`` routes to ``follow_up_node`` or END based on
+      the is_follow_up flag.
+
+    Pins the topology so future refactors that collapse one of
+    these branches surfaces here before the manifest export.
     """
     agent = BriefGeneAgent()
     branches = set(agent.app.builder.branches.keys())
-    assert branches == {"query_judge_node", "generate_node"}
+    assert branches == {"query_judge_node", "retrieve_node", "render_node"}

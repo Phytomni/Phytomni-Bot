@@ -40,6 +40,17 @@ class _FakeBriefGeneState(TypedDict, total=False):
     description_string: str
     retrieved_docs: list[dict[str, Any]]
     final_response: dict[str, Any]
+    # M11 — preamble fan-out fields the brief_gene mount projects to
+    # deep_genome state.
+    gene_structure_string: str
+    orthologs_data: dict[str, Any]
+    paralogs_data: dict[str, Any]
+    interaction_data: dict[str, Any]
+    section1_markdown: str
+    section2_markdown: str
+    section3_markdown: str
+    section4_markdown: str
+    introduction_report: str
 
 
 def _build_fake_brief_gene_app(
@@ -125,59 +136,78 @@ async def test_brief_gene_mount_writes_literature_under_knowledge() -> None:
     assert literature == [{"title": "doc1"}, {"title": "doc2"}]
 
 
-async def test_brief_gene_mount_projects_brief_response_for_report_nodes() -> (
-    None
-):
-    """Mount writes brief_gene's final_response under ``brief_response``.
+async def test_brief_gene_mount_projects_section_markdowns() -> None:
+    """Mount writes ``section1-4_markdown`` from brief_gene's preamble.
 
-    ``_run_report_introduction`` and ``_run_report_summary`` read
-    ``state["brief_response"]`` via ``message_content`` and prepend the
-    extracted text to the content they send to the introduction /
-    summary LLM templates. The mount node MUST project
-    ``BriefGeneOutput.final_response`` into this state key so the
-    report nodes see the brief gene answer brief_gene produced inside
-    the mounted subgraph rather than degrading to an empty prefix.
+    M11 (X3b A architecture) — deep_genome's
+    ``_summary_source_content`` consumes the four section markdowns
+    verbatim, so the mount MUST project them into state.
     """
-    fake_app = _build_fake_brief_gene_app()
+    canned = {
+        "gene_id": "AT1G01010",
+        "go_string": "GO:0003700",
+        "kegg_string": "ath:AT1G01010",
+        "interpro_string": "IPR036093",
+        "description_string": "transcription factor",
+        "section1_markdown": "### 1. Discovery content",
+        "section2_markdown": "### 2. Cloning content",
+        "section3_markdown": "### 3. Functional content",
+        "section4_markdown": "### 4. Application content",
+        "introduction_report": "Introduction paragraphs.",
+        "retrieved_docs": [{"title": "doc1"}],
+        "orthologs_data": {"gene_list": []},
+        "paralogs_data": {"gene_list": []},
+        "interaction_data": {"gene_list": []},
+    }
+    fake_app = _build_fake_brief_gene_app(output=canned)
     mount = make_brief_gene_mount_node(fake_app)
     state = _deep_genome_state()
 
     delta = await mount(cast(Any, state))
 
-    assert delta["brief_response"] == {
-        "choices": [{"message": {"content": "ans"}}]
+    assert delta["section1_markdown"] == "### 1. Discovery content"
+    assert delta["section2_markdown"] == "### 2. Cloning content"
+    assert delta["section3_markdown"] == "### 3. Functional content"
+    assert delta["section4_markdown"] == "### 4. Application content"
+    assert delta["introduction_report"] == "Introduction paragraphs."
+
+
+async def test_brief_gene_mount_projects_homology_data() -> None:
+    """Mount writes orthologs / paralogs / interaction data shapes.
+
+    deep_genome consumer code reads ``state["orthologs_data"]`` etc.
+    after the mount runs (was previously populated by the deleted
+    ``_run_data_agent``); the mount must project these dicts.
+    """
+    canned = {
+        "gene_id": "AT1G01010",
+        "orthologs_data": {"gene_list": [{"homology_gene_id": "X"}]},
+        "paralogs_data": {"gene_list": [{"homology_gene_id": "Y"}]},
+        "interaction_data": {"gene_list": [{"interact_gene_id": "Z"}]},
+    }
+    fake_app = _build_fake_brief_gene_app(output=canned)
+    mount = make_brief_gene_mount_node(fake_app)
+    state = _deep_genome_state()
+
+    delta = await mount(cast(Any, state))
+
+    assert delta["orthologs_data"] == {
+        "gene_list": [{"homology_gene_id": "X"}]
+    }
+    assert delta["paralogs_data"] == {"gene_list": [{"homology_gene_id": "Y"}]}
+    assert delta["interaction_data"] == {
+        "gene_list": [{"interact_gene_id": "Z"}]
     }
 
 
-async def test_brief_gene_mount_brief_response_defaults_to_empty_dict() -> (
-    None
-):
-    """Missing ``final_response`` projects an empty dict rather than None.
+async def test_brief_gene_mount_writes_experiment_branch_counter() -> None:
+    """Mount writes ``experiment_completed_branches: 1``.
 
-    Keeps the DeepGenomeState ``brief_response: Optional[Dict[str, Any]]``
-    contract honoured even when brief_gene returns a partial output
-    without a final_response (degraded run); ``message_content`` returns
-    "" for an empty dict so report nodes degrade gracefully.
-    """
-    fake_app = _build_fake_brief_gene_app(
-        output={"gene_id": "AT1G01010", "retrieved_docs": []}
-    )
-    mount = make_brief_gene_mount_node(fake_app)
-    state = _deep_genome_state()
-
-    delta = await mount(cast(Any, state))
-
-    assert delta["brief_response"] == {}
-
-
-async def test_brief_gene_mount_writes_part1_barrier_counter() -> None:
-    """Mount writes ``part1_completed_branches: 1`` for the part1 barrier.
-
-    Preserves the existing ``_route_part1_barrier`` topology: the
-    barrier reducer accumulates completions across the gene
-    annotation site and the data agent site; the mount node stands
-    in for the gene annotation site so it MUST emit the +1 increment
-    or the barrier will never fire.
+    M11 — the legacy ``part1_node`` LLM aggregator that previously
+    wrote this +1 (after waiting for 4 preamble branches) is
+    deleted; the mount substitutes for it and contributes the +1
+    that experiment_node's 2-source barrier needs (the other +1
+    comes from synthesize_node on the analyst side).
     """
     fake_app = _build_fake_brief_gene_app()
     mount = make_brief_gene_mount_node(fake_app)
@@ -185,7 +215,11 @@ async def test_brief_gene_mount_writes_part1_barrier_counter() -> None:
 
     delta = await mount(cast(Any, state))
 
-    assert delta["part1_completed_branches"] == 1
+    assert delta["experiment_completed_branches"] == 1
+    # M5-era part1_completed_branches no longer projected
+    assert "part1_completed_branches" not in delta
+    # M5 brief_response prefix path removed
+    assert "brief_response" not in delta
 
 
 # ---------------------------------------------------------------------------
@@ -269,8 +303,9 @@ async def test_brief_gene_mount_fallback_on_brief_gene_exception() -> None:
     assert annotation["interpro"] == ""
     assert annotation["mapman"] == ""
     assert delta["knowledge_context"]["literature"] == []
-    # Barrier counter still emitted so the workflow advances.
-    assert delta["part1_completed_branches"] == 1
+    # M11 — Experiment-side barrier counter still emitted so the
+    # downstream experiment_node 2-source barrier advances.
+    assert delta["experiment_completed_branches"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -308,4 +343,4 @@ async def test_brief_gene_mount_handles_partial_brief_gene_output() -> None:
         for key in ("description", "go", "interpro", "mapman")
     )
     assert delta["knowledge_context"]["literature"] == []
-    assert delta["part1_completed_branches"] == 1
+    assert delta["experiment_completed_branches"] == 1
