@@ -16,16 +16,20 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from starlette.requests import Request
 
 from ...auth.iam import get_token
 from ...config.defaults import ApiConfig, DeepGenomeConfig
 from ...config.settings import get_sensitive_config
-from ..auth import ApiPrincipal, relay_scope_satisfied, require_principal
-from ..ratelimit import make_rate_limiter
+from ..auth import ApiPrincipal
 from .audit import get_audit_store
+from .deps import (
+    read_relay_body,
+    relay_enabled_guard,
+    require_relay_access,
+)
 from .forward import (
     RelayErrorMode,
     RelayInjectionStrategy,
@@ -34,6 +38,7 @@ from .forward import (
     forward_relay_request,
     validate_relay_path_segment,
 )
+from .obs import add_obs_routes
 
 __all__ = [
     "create_relay_router",
@@ -96,94 +101,6 @@ def _build_platform_inject(
         return {"X-Auth-Token": token}
 
     return _iam_inject
-
-
-# One relay-specific limiter per worker, kept separate from the agent
-# budget so relay calls (which spend the operator's metered upstream
-# credentials) have their own cost ceiling. Per-worker in-memory state,
-# like the agent limiter; a shared store is needed before multi-worker.
-_relay_rate_limit = make_rate_limiter()
-
-
-def relay_enabled_guard() -> None:
-    """Reject relay requests when the relay surface is disabled.
-
-    ``ApiConfig()`` is constructed per call so ``RELAY_ENABLED`` is
-    re-read on every request: the relay is a security kill-switch, not a
-    boot-time feature gate, so flipping the flag to False stops serving
-    in-flight workers immediately rather than only after a restart.
-
-    Raises:
-        HTTPException: 404 when the relay surface is disabled, so a
-            stock deployment exposes no relay route at all.
-    """
-    if not ApiConfig().RELAY_ENABLED:
-        raise HTTPException(status_code=404, detail="relay disabled")
-
-
-async def read_relay_body(request: Request, max_bytes: int) -> bytes:
-    """Drain the relay request body, rejecting an over-budget read.
-
-    Streams ``request.stream()`` so a chunked body with no (or a
-    falsified) Content-Length cannot exhaust worker memory: the buffer is
-    rejected the moment it exceeds ``max_bytes``, capping peak memory at
-    ``max_bytes`` plus one transport chunk rather than the whole body.
-
-    Args:
-        request: The inbound relay request.
-        max_bytes: Inclusive byte ceiling for the body.
-
-    Returns:
-        The accumulated request body within budget.
-
-    Raises:
-        HTTPException: 413 when the body exceeds ``max_bytes``.
-    """
-    buffer = bytearray()
-    async for chunk in request.stream():
-        buffer.extend(chunk)
-        if len(buffer) > max_bytes:
-            raise HTTPException(
-                status_code=413, detail="relay request body too large"
-            )
-    return bytes(buffer)
-
-
-def require_relay_access(
-    service: str,
-) -> Callable[..., Awaitable[ApiPrincipal]]:
-    """Build the admission dependency for a relay ``service`` route.
-
-    Runs after authentication, then applies the relay-specific per-key
-    rate limit (429, distinct from the agent budget) and the strict
-    relay scope check (403; an empty-scope key is denied here, unlike on
-    agent routes). The ordering keeps 401 (auth) / 429 (budget) / 403
-    (scope) distinct.
-
-    Args:
-        service: The relay service the route fronts (e.g. ``llm``).
-
-    Returns:
-        A dependency yielding the authorized principal.
-    """
-
-    async def _gated(
-        principal: ApiPrincipal = Depends(require_principal),
-    ) -> ApiPrincipal:
-        retry_after = _relay_rate_limit(
-            principal.key_prefix, ApiConfig().RELAY_RATE_LIMIT_PER_MIN
-        )
-        if retry_after is not None:
-            raise HTTPException(
-                status_code=429,
-                detail="relay rate limit exceeded",
-                headers={"Retry-After": str(retry_after)},
-            )
-        if not relay_scope_satisfied(principal.scopes, service):
-            raise HTTPException(status_code=403, detail="insufficient scope")
-        return principal
-
-    return _gated
 
 
 def _openai_relay_handler(
@@ -408,5 +325,7 @@ def create_relay_router() -> APIRouter:
         _spa_faq_handler(),
         methods=["GET"],
     )
+
+    add_obs_routes(router)
 
     return router
