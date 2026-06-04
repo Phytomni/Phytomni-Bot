@@ -157,7 +157,7 @@ template:
     ![Genotype Image]({{mutant_path}}) {{mutant_legend}}
     {{mutant_summary}}
     ### 4. Single-Cell Transcriptomic Atlas
-    ![Single_cell Umap Image]({{umap_path}}) 
+    ![Single_cell Umap Image]({{umap_path}})
     ![Single_cell Violin Image]({{violin_path}})
     {{single_cell_legend}}
     {{single_cell_summary}}
