@@ -17,7 +17,7 @@ binary-compatible with the legacy ``BriefGeneAgentState`` alias.
 # class-definition time, so future annotations would silently
 # drop every ``Required[]`` marker on ``BriefGeneInput``.
 
-from typing import Any, Dict, List, Required, TypedDict
+from typing import Any, Dict, List, NotRequired, Required, TypedDict
 
 
 class BriefGeneInput(TypedDict, total=False):
@@ -86,6 +86,17 @@ class BriefGeneState(TypedDict):
     retrieve_context: str
     follow_up_questions: List[str]
     final_response: Dict[str, Any]
+    # Additive optional keys used only when ``USE_CHAT_SUBGRAPH`` is on
+    # (Step 6.3 C1 dual-wire). ``generate_prep_node`` stages
+    # ``chat_payload`` + ``pending_post``; the shared ``chat`` mount
+    # writes the chat-completions-style ``chat_response``;
+    # ``generate_post_node`` reads ``chat_response`` to produce
+    # ``final_response``. Marked ``NotRequired`` so legacy fixtures
+    # that construct ``BriefGeneState`` without the chat-subgraph
+    # branch keep type-checking.
+    chat_payload: NotRequired[Dict[str, Any]]
+    pending_post: NotRequired[str]
+    chat_response: NotRequired[Dict[str, Any]]
 
 
 BriefGeneAgentState = BriefGeneState
