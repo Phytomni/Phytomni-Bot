@@ -12,6 +12,7 @@ credential-pattern sanitization at the MCP boundary.
 import pytest
 
 from mcp_server_phytomni.mcp.result_formatting import (
+    _normalize_citations,
     build_tool_result_envelope,
     format_tool_result,
 )
@@ -664,3 +665,92 @@ def test_gene_network_result_truncates_long_goal_description() -> None:
         "…[truncated, see raw.phytomni_state.goal_description]"
     )
     assert len(goal_field.encode("utf-8")) <= 256 + 64
+
+
+# --- _normalize_citations: colon-space form correctness ---
+
+
+def test_normalize_citations_captures_colon_space_digit() -> None:
+    """Today's regex misses ``[document: 32]`` (colon + space + digit).
+
+    The widened regex must capture it so the indexed doc_list chunk
+    reaches ``references``.
+    """
+
+    answer = "Evidence supports this hypothesis [document: 32]."
+    doc_list = [
+        {"file_id": f"id{i}", "title": f"Paper {i}"} for i in range(1, 33)
+    ]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert len(refs) == 1
+    assert refs[0]["file_id"] == "id32"
+    assert refs[0]["title"] == "Paper 32"
+    assert text == "Evidence supports this hypothesis [1]."
+
+
+def test_normalize_citations_captures_multi_index_with_prefix() -> None:
+    """``[document: 1, 25]`` must capture both indices."""
+
+    answer = "Both findings agree [document: 1, 25]."
+    doc_list = [
+        {"file_id": f"id{i}", "title": f"Paper {i}"} for i in range(1, 30)
+    ]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["id1", "id25"]
+    assert text == "Both findings agree [1,2]."
+
+
+def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
+    None
+):
+    """Two indices mapping to two distinct file_ids produce two refs.
+
+    Pinning the minimum-correct dedup path: indices that map to
+    distinct file_ids preserve as distinct ``[N]`` references in
+    first-appearance order. A separately-discovered dedup-drop bug
+    (where a third index mapping to an earlier-seen file_id becomes
+    an empty-string substitution rather than re-pointing to the
+    existing ``[N]``) is tracked outside this plan's scope.
+    """
+
+    paper_a = {"file_id": "paper-a", "title": "Paper A"}
+    paper_b = {"file_id": "paper-b", "title": "Paper B"}
+    doc_list = [paper_a, paper_b]
+    answer = "First [2] then [1]."
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["paper-b", "paper-a"]
+    assert text == "First [1] then [2]."
+
+
+def test_normalize_citations_skips_named_pseudo_citations() -> None:
+    """Named brackets stay verbatim — Align-A prompts forbid them upstream."""
+
+    answer = (
+        "See [document: InterPro] for domain notes and "
+        "[document: Homology context] for orthologs."
+    )
+    doc_list = [{"file_id": "p1", "title": "Paper 1"}]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert not refs
+    assert text == answer
+
+
+def test_normalize_citations_no_false_positive_on_prose() -> None:
+    """Prose with letters + digit gap must not be captured.
+
+    The widened regex still requires the digits to follow the
+    letters/separator block immediately. ``[Note: see Chapter 4
+    below]`` has intervening prose between the colon-space and the
+    digit, so it stays verbatim.
+    """
+
+    answer = "[Note: see Chapter 4 below] is unrelated context."
+    doc_list = [{"file_id": f"id{i}", "title": f"P{i}"} for i in range(1, 6)]
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert not refs
+    assert text == answer

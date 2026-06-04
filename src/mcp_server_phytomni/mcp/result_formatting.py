@@ -23,7 +23,7 @@ from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 from .universal_failures import project_universal_failure_metadata
 
-_CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[: ]?)?(\d+(?:,\s*\d+)*)\]")
+_CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
 
 _PHYTOMNI_STATE_KEY = "phytomni_state"
 _METADATA_TEXT_TRUNCATE_BYTES = 4096
