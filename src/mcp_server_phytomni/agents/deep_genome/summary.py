@@ -85,7 +85,7 @@ class SubSummaryBuilder:
         # ../../ prefix below. The prior out_path.split(".out/") recovered
         # this only when out_path was literally under .out/, and produced a
         # full absolute path for obsfs result dirs.
-        self.markdown_path = gene_id
+        self.markdown_path = str(self.out_path).split('.out/')[-1]
         self.data = data
         self.figure_index = figure_index
         self.handlers: Dict[str, Callable[[], None]] = {
@@ -131,8 +131,6 @@ class SubSummaryBuilder:
         Args:
             spec: File patterns and data keys for the result group.
         """
-        print('Start format markdown...')
-        print(self.markdown_path)
         try:
             image_name = self.first_match(spec.image_pattern)
             self.data[spec.image_key] = (
