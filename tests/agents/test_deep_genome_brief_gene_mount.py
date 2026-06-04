@@ -4,10 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the brief_gene subgraph mount adapter on DeepGenomeAgents.
 
-Covers ``make_brief_gene_mount_node`` IO projection (BriefGeneOutput
-flat-string annotation surface → deep_genome nested
-``gene_annotation`` + ``knowledge_context`` shape +
-``part1_completed_branches`` barrier increment), the synthetic
+Covers ``make_brief_gene_mount_node`` IO projection from
+BriefGeneOutput's flat-string annotation surface into deep_genome's
+nested ``gene_annotation`` + ``knowledge_context`` shape, the
 ``user_query`` synthesis from ``gene_id``, the ``is_follow_up=False``
 opt-out passed to brief_gene, and the exception fallback that lets
 deep_genome advance past the part1 barrier on brief_gene faults.

@@ -42,8 +42,10 @@ from ..analyst.agent import (
     ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
 )
+from ..brief_gene.core import BriefGeneAgent
 from ..data.agent import DataAgent
 from ..knowledge.agent import KnowledgeAgent
+from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
 from .formatting import network_to_string
 from .profile import (
@@ -203,14 +205,22 @@ class DeepGenomeAgentDeps(NamedTuple):
         data_agent: DataAgent used for network and annotation queries.
         knowledge_agent: KnowledgeAgent used for literature retrieval.
         analyst_agent: AnalystAgent used for deep analysis task dispatch.
+        brief_gene_app: Compiled BriefGeneAgent subgraph for the
+            brief_gene mount node. ``None`` (default) defers
+            construction to the consuming code path; ``DeepGenomeAgents``
+            populates it via ``_replace`` in ``__init__`` so the mount
+            factory closes over a real ``CompiledStateGraph`` for xray
+            expansion.
     """
 
     data_agent: DataAgent
     knowledge_agent: KnowledgeAgent
     analyst_agent: AnalystAgent
+    brief_gene_app: Any = None
 
 
 class DeepGenomeAgents(
+    DeepGenomeBriefGeneMountMixin,
     DeepGenomeDispatchMixin,
     DeepGenomeProfileMixin,
     DeepGenomeReportMixin,
@@ -289,14 +299,41 @@ class DeepGenomeAgents(
             "Content-Type": "application/json",
             "token": self.sensitive_config.BI_TOKEN.get_secret_value(),
         }
+        # Build a per-instance compiled BriefGeneAgent subgraph so the
+        # brief_gene_mount node (registered in ``_build_graph``)
+        # closes over a real ``CompiledStateGraph`` and LangGraph's
+        # ``find_subgraph_pregel`` walker can discover it for xray
+        # expansion. The knowledge_agent is shared (same instance the
+        # data agent + the now-removed _run_knowledge_agent used) so
+        # the func_cache layer dedups any redundant retrieve calls.
+        # Stash the compiled app on ``_agents`` (DeepGenomeAgentDeps
+        # NamedTuple) so the brief_gene_app sits alongside the other
+        # deep_genome dependencies rather than adding another instance
+        # attribute (pylint ``too-many-instance-attributes`` ceiling).
+        self._agents = self._agents._replace(
+            brief_gene_app=BriefGeneAgent(
+                knowledge_agent=self._agents.knowledge_agent,
+            ).app,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
         workflow = StateGraph(DeepGenomeState)
 
-        workflow.add_node("knowledge_node", self._run_knowledge_agent)
+        # The brief_gene mount takes over the ``knowledge_node`` name
+        # so ``_route_start`` (returns list including ``knowledge_node``)
+        # stays unchanged. The mount factory closure ainvokes the
+        # per-instance compiled BriefGeneAgent subgraph built in
+        # ``__init__``; its output projection writes both
+        # ``gene_annotation`` (replacing the previous
+        # ``_run_gene_annotation_node`` delta) and
+        # ``part1_completed_branches: 1`` (the barrier increment the
+        # previous ``_run_gene_annotation_node`` also wrote), so the
+        # downstream wiring stays unchanged except that the legacy
+        # ``gene_annotation_node`` intermediate disappears.
         workflow.add_node(
-            "gene_annotation_node", self._run_gene_annotation_node
+            "knowledge_node",
+            self.make_brief_gene_mount_node(self._agents.brief_gene_app),
         )
         workflow.add_node("gene_summary_node", self._run_gene_summary_node)
         workflow.add_node("data_node", self._run_data_agent)
@@ -332,13 +369,23 @@ class DeepGenomeAgents(
             self._route_start,
             ["knowledge_node", "data_node", "prepare_tasks_node"],
         )
-        workflow.add_edge("knowledge_node", "gene_annotation_node")
+        # ``_route_after_knowledge`` still returns either
+        # ``"gene_summary_node"`` or ``"gene_annotation_node"``; the
+        # dict mapping below remaps the latter to ``part1_node``
+        # because the brief_gene mount already writes the
+        # ``gene_annotation`` delta and the ``part1_completed_branches``
+        # barrier increment that the legacy ``gene_annotation_node``
+        # used to write. Routing via the mapping dict avoids touching
+        # the routing function in ``dispatch.py`` (foreign-active
+        # territory).
         workflow.add_conditional_edges(
             "knowledge_node",
             self._route_after_knowledge,
-            ["gene_summary_node", "gene_annotation_node"],
+            {
+                "gene_summary_node": "gene_summary_node",
+                "gene_annotation_node": "part1_node",
+            },
         )
-        workflow.add_edge("gene_annotation_node", "part1_node")
         workflow.add_conditional_edges(
             "gene_summary_node",
             self._route_after_gene_summary,

@@ -4,26 +4,18 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """brief_gene subgraph mount adapter for DeepGenomeAgents.
 
-Hosts ``DeepGenomeBriefGeneMountMixin`` providing the
+Hosts ``DeepGenomeBriefGeneMountMixin`` + the
 ``make_brief_gene_mount_node`` factory closure that wires
 ``BriefGeneAgent`` as a structural subgraph inside the deep_genome
-workflow. The closure synthesises a ``BriefGeneInput`` from
-``DeepGenomeState`` (``gene_id`` → ``user_query``;
-``is_follow_up=False``), ``ainvoke``s the compiled brief_gene app,
-and projects the ``BriefGeneOutput`` flat-string annotation surface
-into deep_genome's nested ``gene_annotation: dict`` +
-``knowledge_context: {literature}`` shape plus the
-``part1_completed_branches`` barrier increment.
-
-Mounted in a follow-up commit through DeepGenomeAgents._build_graph;
-this module only defines the factory + mixin so the wiring change is
-reviewable in isolation.
+workflow, projecting BriefGeneOutput into deep_genome's nested
+``gene_annotation`` + ``knowledge_context`` shape plus the part1
+barrier increment.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -47,7 +39,7 @@ _BRIEF_GENE_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
 def make_brief_gene_mount_node(
     brief_gene_app: CompiledStateGraph,
-) -> Callable[[Any], Awaitable[Dict[str, Any]]]:
+) -> Any:
     """Return a node body that mounts brief_gene as a structural subgraph.
 
     Closes over ``brief_gene_app`` so LangGraph's
@@ -155,7 +147,7 @@ class DeepGenomeBriefGeneMountMixin:
 
     def make_brief_gene_mount_node(
         self: Any, brief_gene_app: CompiledStateGraph
-    ) -> Callable[[Any], Awaitable[Dict[str, Any]]]:
+    ) -> Any:
         """Return a node body mounting brief_gene under this consumer.
 
         Delegates to the module-level ``make_brief_gene_mount_node``;

@@ -35,7 +35,6 @@ from ..shared.analysis_storage import (
     get_data_list,
 )
 from ..shared.sql import relay_bi_query, sql_literal
-from .formatting import SPECIES_CODE_MAP
 from .summary import build_sub_summary
 
 if TYPE_CHECKING:
@@ -453,110 +452,6 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         self._figure_index = result.figure_index
         return result.data
-
-    async def _run_knowledge_agent(self: Any, state: DeepGenomeState):
-        """Retrieve literature knowledge for the target gene.
-
-        This node retrieves relevant scientific literature for the target gene
-        using the KnowledgeAgent. It fetches gene symbols, queries literature
-        repositories, and stores sorted results in the knowledge context.
-
-        Args:
-            state: Current workflow state containing gene_id and species_code.
-
-        Returns:
-            Dict with knowledge_context containing literature results.
-        """
-        gene_id = state["gene_id"]
-        species_code = state["species_code"]
-        logger.info("[%s] Retrieving literature knowledge", state["gene_id"])
-
-        # Get gene symbol for the target gene
-        gene_symbol_list = await self._gene_symbol(
-            species_code=species_code, gene_id=gene_id
-        )
-
-        if not gene_symbol_list:
-            gene_symbol_list = [gene_id]
-
-        gene_symbol = gene_symbol_list[0]
-        species_name = SPECIES_CODE_MAP.get(species_code, species_code)
-
-        # Construct user query for KnowledgeAgent
-        user_query = f"{gene_symbol}\n{species_name}?"
-
-        # Call KnowledgeAgent to retrieve literature
-        knowledge_results = await self._agents.knowledge_agent.arun(
-            user_query=user_query,
-            repo_id_dict=self.deep_genome_config.REPO_ID_DICT,
-            is_generate=False,
-            is_follow_up=False,
-        )
-        sorted_docs = sorted(
-            knowledge_results, key=lambda x: x["score"], reverse=True
-        )
-        if (
-            self.deep_genome_config.TOP_N is not None
-            and self.deep_genome_config.TOP_N > 0
-        ):
-            sorted_docs = sorted_docs[: self.deep_genome_config.TOP_N]
-        logger.debug("Retrieved %d literature documents", len(sorted_docs))
-        logger.info("Literature retrieval completed")
-        return {"knowledge_context": {"literature": sorted_docs}}
-
-    async def _run_gene_annotation_node(self: Any, state: DeepGenomeState):
-        """Retrieve annotation for the target gene.
-
-        This node fetches comprehensive annotation information for the target
-        gene including gene symbol, description, GO terms, InterPro domains,
-        and MapMan bins. Results are aggregated into gene_annotation.
-
-        Args:
-            state: Current workflow state containing gene_id and species_code.
-
-        Returns:
-            Dict with gene_annotation data and part1 branch increment.
-        """
-        gene_id = state["gene_id"]
-        species_code = state["species_code"]
-        logger.info("Retrieving gene %s annotation", gene_id)
-
-        # Get gene symbol
-        gene_symbol_list = await self._gene_symbol(
-            species_code=species_code, gene_id=gene_id
-        )
-
-        if not gene_symbol_list:
-            gene_symbol_list = [gene_id]
-
-        gene_string = "|".join(gene_symbol_list)
-
-        # Get gene annotation
-        gene_anno = await self._gene_annotation(
-            species_code=species_code, gene_id=gene_id
-        )
-
-        descruption_string = "; ".join(
-            go["description"] for go in gene_anno.get("description", [])
-        )
-        go_string = "; ".join(go["go_name"] for go in gene_anno.get("go", []))
-        interpro_string = "; ".join(
-            ip["interpro_name"] for ip in gene_anno.get("interpro", [])
-        )
-        mapman_string = "; ".join(
-            mm["mapman_description"] for mm in gene_anno.get("mapman", [])
-        )
-        logger.info("Gene %s annotation query completed", gene_id)
-        return {
-            "gene_annotation": {
-                "gene_string": gene_string,
-                "description": descruption_string,
-                "go": go_string,
-                "interpro": interpro_string,
-                "mapman": mapman_string,
-            },
-            "part1_completed_branches": 1,
-        }
 
     async def _run_gene_summary_node(self: Any, state: DeepGenomeState):
         """Convergence pass-through when the data agent path is skipped.
