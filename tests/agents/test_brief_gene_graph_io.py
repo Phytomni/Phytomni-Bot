@@ -46,13 +46,16 @@ def test_brief_gene_input_requires_only_user_query() -> None:
 
 
 def test_brief_gene_output_exposes_minimal_subset() -> None:
-    """``BriefGeneOutput`` covers BI annotations + retrieval + chat answer.
+    """``BriefGeneOutput`` covers BI + section outputs + chat answer.
 
     Parent graphs reading the subgraph result see the gene id,
-    species code, the four annotation strings (``go_string`` /
-    ``kegg_string`` / ``interpro_string`` / ``description_string``),
-    retrieved docs, final response, and follow-up questions. Internal
-    scratch (``gene_found``, coordinates, scratch lists) stays hidden.
+    species code, the five annotation strings
+    (``go_string`` / ``kegg_string`` / ``interpro_string`` /
+    ``description_string`` / ``gene_structure_string``), three
+    homology dicts, four section markdowns, the introduction report,
+    retrieved docs, final response, and follow-up questions.
+    Internal scratch (``gene_found``, coordinates, scratch lists)
+    stays hidden.
     """
     hints = get_type_hints(BriefGeneOutput)
     assert set(hints.keys()) == {
@@ -62,10 +65,54 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
         "kegg_string",
         "interpro_string",
         "description_string",
+        "gene_structure_string",
+        "orthologs_data",
+        "paralogs_data",
+        "interaction_data",
+        "section1_markdown",
+        "section2_markdown",
+        "section3_markdown",
+        "section4_markdown",
+        "introduction_report",
         "retrieved_docs",
         "final_response",
         "follow_up_questions",
     }
+
+
+def test_brief_gene_state_carries_preamble_fan_out_fields() -> None:
+    """``BriefGeneState`` declares the preamble fan-out fields.
+
+    M6 adds 16 new keys for the X3b A architecture: BI fetch
+    outputs (orthologs / paralogs / interaction dicts), six count
+    summaries for Basic Information bullets, gene structure
+    annotation, four section LLM markdowns, the introduction
+    report, and the ``gene_profile_completed_branches`` barrier
+    counter (renamed from M5-era ``part1_completed_branches``).
+    """
+    preamble_required = {
+        "orthologs_data",
+        "paralogs_data",
+        "interaction_data",
+        "ortholog_count",
+        "ortholog_species_count",
+        "paralog_count",
+        "interaction_count",
+        "cross_species_alias_count",
+        "cross_species_alias_species_count",
+        "gene_structure_string",
+        "section1_markdown",
+        "section2_markdown",
+        "section3_markdown",
+        "section4_markdown",
+        "introduction_report",
+        "gene_profile_completed_branches",
+    }
+    actual = set(get_type_hints(BriefGeneState).keys())
+    missing = preamble_required - actual
+    assert (
+        not missing
+    ), f"BriefGeneState is missing preamble keys: {sorted(missing)}"
 
 
 def test_brief_gene_state_carries_full_legacy_field_set() -> None:

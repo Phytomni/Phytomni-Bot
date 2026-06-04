@@ -48,15 +48,14 @@ class BriefGeneInput(TypedDict, total=False):
 class BriefGeneOutput(TypedDict):
     """Answer surface exposed to the parent graph after compile.
 
-    Carries the BI annotation strings, literature retrieval docs,
-    and the chat-completions-style final response plus follow-up
-    questions, so parent graphs can cite gene context without
-    re-running the brief_gene pipeline. ``description_string``
-    carries the per-species gene description text from the
-    ``annotation_gene_description`` BI table so consumer agents that
-    previously fetched it inline (e.g. ``deep_genome``) can mount
-    brief_gene as a subgraph and read the description through this
-    output field.
+    Carries the five BI annotation flat strings, three homology
+    dicts (orthologs / paralogs / interactions), the four section
+    LLM markdowns produced by the preamble fan-out, the introduction
+    report, literature retrieval docs, the chat-completions-style
+    final response, and follow-up questions. Parent graphs (notably
+    ``deep_genome``) consume the structured section + introduction
+    fields directly to assemble the deep report without re-running
+    any preamble LLM call.
     """
 
     gene_id: str
@@ -65,6 +64,15 @@ class BriefGeneOutput(TypedDict):
     kegg_string: str
     interpro_string: str
     description_string: str
+    gene_structure_string: str
+    orthologs_data: Dict[str, Any]
+    paralogs_data: Dict[str, Any]
+    interaction_data: Dict[str, Any]
+    section1_markdown: str
+    section2_markdown: str
+    section3_markdown: str
+    section4_markdown: str
+    introduction_report: str
     retrieved_docs: List[Dict[str, Any]]
     final_response: Dict[str, Any]
     follow_up_questions: List[str]
@@ -103,6 +111,36 @@ class BriefGeneState(TypedDict):
     retrieve_context: str
     follow_up_questions: List[str]
     final_response: Dict[str, Any]
+    # X3b A architecture (M6) — preamble fan-out fields.
+    # BI fetch outputs from the homology + protein interaction tables;
+    # ``fetch_homology_interactions_node`` writes these dicts and the
+    # six derived count summaries (consumed by the Basic Information
+    # bullets in ``render_node``).
+    gene_structure_string: str
+    orthologs_data: Dict[str, Any]
+    paralogs_data: Dict[str, Any]
+    interaction_data: Dict[str, Any]
+    ortholog_count: int
+    ortholog_species_count: int
+    paralog_count: int
+    interaction_count: int
+    cross_species_alias_count: int
+    cross_species_alias_species_count: int
+    # Section LLM outputs (the four parallel section nodes write these).
+    section1_markdown: str
+    section2_markdown: str
+    section3_markdown: str
+    section4_markdown: str
+    # Introduction LLM output (consumed by ``render_node`` and by
+    # ``deep_genome``'s mount IO projection so deep_genome skips its
+    # own legacy ``_run_report_introduction`` LLM call).
+    introduction_report: str
+    # Barrier counter for the 4-parallel section fan-out (replaces
+    # M5-era ``part1_completed_branches``). Each section node writes
+    # ``+1`` via the ``operator.add`` reducer; the routing function
+    # ``_route_gene_profile_barrier`` advances to ``introduction_node``
+    # once the counter reaches 4.
+    gene_profile_completed_branches: Annotated[int, operator.add]
     # Additive optional keys used only when ``USE_CHAT_SUBGRAPH`` is on
     # (chat-subgraph dual-wire). ``generate_prep_node`` /
     # ``follow_up_prep_node`` stage ``chat_payload`` + ``pending_post``;

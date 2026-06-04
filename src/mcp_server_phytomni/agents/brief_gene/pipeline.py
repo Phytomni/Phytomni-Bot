@@ -192,6 +192,39 @@ def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
     )
 
 
+def _gene_structure_annotation_string(structure_row: Dict[str, Any]) -> str:
+    """Build a concise display string for gene structural metadata.
+
+    Excludes location columns (``chromosome``, ``start``, ``end``,
+    ``strand``) already projected to separate state fields and
+    indexing columns (``gene_id``, ``species_code``,
+    ``sequence_type``); concatenates remaining non-empty key/value
+    pairs as ``key: value`` separated by ``; ``. Empty input
+    returns an empty string so downstream prompts can render
+    "Gene Structure: " gracefully even when BI lacks structural
+    annotation for the gene.
+    """
+    if not structure_row:
+        return ""
+    skip = {
+        "chromosome",
+        "start",
+        "end",
+        "strand",
+        "gene_id",
+        "species_code",
+        "sequence_type",
+    }
+    parts: List[str] = []
+    for key, value in structure_row.items():
+        if key in skip:
+            continue
+        if value in (None, "", 0, "0"):
+            continue
+        parts.append(f"{key}: {value}")
+    return "; ".join(parts)
+
+
 def _description_annotation_string(
     description_rows: List[Dict[str, Any]],
 ) -> str:

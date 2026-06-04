@@ -41,6 +41,7 @@ from .pipeline import (
     _description_annotation_string,
     _first_row,
     _format_docs,
+    _gene_structure_annotation_string,
     _generate_follow_up,
     _go_annotation_string,
     _interpro_annotation_string,
@@ -330,6 +331,16 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         species_all_name = (
             f"{species_english_name} ({species_latin_name}, {species_code})"
         )
+        # M6 — derive Basic Information cross-species alias counts from
+        # the ``id2multispecies`` response (rows = aliases of the same
+        # canonical gene across species mappings). Distinct ``species_code``
+        # values give the species-count summary.
+        alias_rows = (gene_id_info_response or {}).get("data") or []
+        alias_species_codes = {
+            str(item.get("species_code", "")).strip()
+            for item in alias_rows
+            if item.get("species_code")
+        }
         return {
             "gene_found": True,
             "gene_id": gene_id,
@@ -339,6 +350,8 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "species_latin_name": species_latin_name,
             "species_english_name": species_english_name,
             "species_all_name": species_all_name,
+            "cross_species_alias_count": len(alias_rows),
+            "cross_species_alias_species_count": len(alias_species_codes),
         }
 
     async def fetch_annotation_node(self, state: BriefGeneAgentState):
@@ -400,6 +413,9 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
         structure_rows = _safe_rows(annotation_responses, 1)
         structure_row = structure_rows[0] if structure_rows else {}
+        gene_structure_string = _gene_structure_annotation_string(
+            structure_row
+        )
 
         go_string = _go_annotation_string(_safe_rows(annotation_responses, 2))
         kegg_string = _mapman_annotation_string(
@@ -419,6 +435,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "gene_start": str(structure_row.get("start", "")),
             "gene_end": str(structure_row.get("end", "")),
             "gene_strand": str(structure_row.get("strand", "")),
+            "gene_structure_string": gene_structure_string,
             "go_string": go_string,
             "kegg_string": kegg_string,
             "interpro_string": interpro_string,
@@ -791,6 +808,28 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "retrieve_context": "",
             "follow_up_questions": [],
             "final_response": {},
+            # M6 — X3b A architecture preamble fan-out fields.
+            # All seeded empty here so the TypedDict contract holds at
+            # ``arun`` entry; nodes populate them during the workflow.
+            "gene_structure_string": "",
+            "orthologs_data": {"gene_list": []},
+            "paralogs_data": {"gene_list": []},
+            "interaction_data": {"gene_list": []},
+            "ortholog_count": 0,
+            "ortholog_species_count": 0,
+            "paralog_count": 0,
+            "interaction_count": 0,
+            "cross_species_alias_count": 0,
+            "cross_species_alias_species_count": 0,
+            "section1_markdown": "",
+            "section2_markdown": "",
+            "section3_markdown": "",
+            "section4_markdown": "",
+            "introduction_report": "",
+            # Barrier counter reducer (replaces M5-era
+            # ``part1_completed_branches``); each section node writes
+            # +1 via ``operator.add``.
+            "gene_profile_completed_branches": 0,
             # Seed the Send fan-out reducer channel so the TypedDict
             # contract is satisfied at ``arun`` entry. The
             # ``USE_KNOWLEDGE_SUBGRAPH``-on path concats per-worker
