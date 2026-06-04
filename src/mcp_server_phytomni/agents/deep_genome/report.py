@@ -67,7 +67,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                 total_expected,
             )
             return {"synthesis_waiting": True}
-        print('开始进行分析报告生成！')
         logger.info(
             "[Barrier] All analysis completed (%s/%s), starting synthesis",
             completed,
@@ -141,7 +140,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         """
         # Barrier 3: Ultimate convergence - wait for part1 and synthesize
         if state.get("experiment_completed_branches", 0) < 2:
-            print("[Ultimate Barrier] Waiting for experiment branches")
             logger.info(
                 "[Ultimate Barrier] Waiting for both branches: %s/2",
                 state.get("experiment_completed_branches", 0),
@@ -151,24 +149,21 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         # Prevent duplicate execution - already done, let workflow proceed
         if state.get("report_triggered", False):
             return {}
-        print("开始生成实验报告！")
         logger.info(
             "[Ultimate Convergence] Basic profile + Deep analysis merged; "
             "designing recommended experiments"
         )
 
         part12_str = self._part12_profile(state)
-        print("开始请求实验结果")
         experiment_response = await phyto_chat(
             user_query=self._experiment_prompt(state, part12_str),
             **self._chat_kwargs(),
         )
-        print("实验返回请求完成")
         experiment_list = parse_json_list_fragment(
             message_content(experiment_response)
         )
         experiments_str = await self._experiment_protocols(experiment_list)
-        print(experiments_str)
+
         return {
             "experiment_report": experiments_str,
             "part12_combined": part12_str,
@@ -177,7 +172,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
     def _part12_profile(self: Any, state: DeepGenomeState) -> str:
         """Combine basic and deep analysis profiles for report prompts."""
-        print("repart12 实验报告")
         part1_str = state.get("part1_report", "")
         part2_str = str(state.get("synthesize_report", "") or "")
         return f"## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n"
@@ -239,7 +233,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         part12_str = state.get("part12_combined") or ""
         experiment_report = state.get("experiment_report", "")
-        print("开始生成实验protocol报告！")
         protocol_response = await phyto_chat(
             user_query=get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
@@ -278,7 +271,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             protocol_content = protocol_response["choices"][0]["message"].get(
                 "content", ""
             )
-        print(protocol_content)
+
         return {"protocol_report": protocol_content}
 
     async def _run_report_introduction(self: Any, state: DeepGenomeState):
@@ -294,8 +287,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with introduction_report, or empty dict if already triggered.
         """
-        print("开始生成 introduction")
-
         logger.info("Generating introduction")
 
         species_code = state["species_code"]
@@ -358,7 +349,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             introduction_content = introduction_response["choices"][0][
                 "message"
             ].get("content", "")
-        print(introduction_content)
+
         return {"introduction_report": introduction_content}
 
     async def _run_report_discussion(self: Any, state: DeepGenomeState):
@@ -375,7 +366,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             Dict with discussion_report.
         """
         logger.info("Generating discussion")
-        print("开始生成讨论！")
         gene_id = state["gene_id"]
         species_code = state["species_code"]
         gene_annotation = state.get("gene_annotation", {})
@@ -440,7 +430,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             discussion_content = discussion_response["choices"][0][
                 "message"
             ].get("content", "")
-        print(discussion_content)
+
         return {"discussion_report": discussion_content}
 
     async def _run_report_summary(self: Any, state: DeepGenomeState):
@@ -458,7 +448,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             Dict with summary_report.
         """
         logger.info("Generating conclusion and future outlook")
-        print("开始生成展望！")
         summary_response = await phyto_chat(
             user_query=get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
@@ -471,7 +460,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             ),
             **self._chat_kwargs(),
         )
-        print(summary_response)
+
         return {"summary_report": message_content(summary_response)}
 
     def _summary_source_content(self: Any, state: DeepGenomeState) -> str:
