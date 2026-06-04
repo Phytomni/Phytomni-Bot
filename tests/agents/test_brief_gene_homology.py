@@ -122,7 +122,7 @@ def test_interaction_gene_list_excludes_self_loop() -> None:
 async def test_fetch_homology_interactions_projects_state_delta() -> None:
     """Node issues 2 BI queries and projects ``orthologs_data`` etc.
 
-    Mock ``relay_bi_query`` to return canned homology + interaction
+    Mock ``run_bi_api`` to return canned homology + interaction
     responses; assert the returned state delta contains the three
     canonical ``gene_list`` dict shapes plus four count fields the
     Basic Information render later consumes.
@@ -130,7 +130,7 @@ async def test_fetch_homology_interactions_projects_state_delta() -> None:
     state = _state()
 
     with patch(
-        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        "mcp_server_phytomni.agents.brief_gene.homology.run_bi_api",
         new=AsyncMock(
             side_effect=[
                 _homology_response(),

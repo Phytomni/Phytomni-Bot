@@ -16,9 +16,14 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ..shared.sql import relay_bi_query, sql_literal
+from ...config.defaults import BriefGeneConfig
+from ...config.settings import get_sensitive_config
+from ..shared.sql import sql_literal
 from .interactions import _homology_gene_lists, _interaction_gene_list
+from .pipeline import run_bi_api
 from .state import BriefGeneAgentState
+
+BRIEF_GENE_CONFIG = BriefGeneConfig()
 
 
 async def _run_fetch_homology_interactions_node(
@@ -45,20 +50,28 @@ async def _run_fetch_homology_interactions_node(
     gene_id = state["gene_id"]
     species_code = state["species_code"]
     gene_literal = sql_literal(gene_id)
+    sensitive_config = get_sensitive_config()
+    bi_kwargs = {
+        "bi_url": BRIEF_GENE_CONFIG.BI_URL,
+        "bi_token": sensitive_config.BI_TOKEN.get_secret_value(),
+        "timeout": BRIEF_GENE_CONFIG.TIMEOUT,
+        "retriable_codes": BRIEF_GENE_CONFIG.RETRIABLE_CODES,
+        "max_retries": BRIEF_GENE_CONFIG.MAX_RETRIES,
+    }
 
-    homology_response = await relay_bi_query(
+    homology_response = await run_bi_api(
         "SELECT query_gene_id, query_species, homology_gene_id, "
         "homology_species "
         f"FROM homology_gene WHERE query_gene_id = {gene_literal}",
-        message="Homology query failed",
+        **bi_kwargs,
     )
-    interaction_response = await relay_bi_query(
+    interaction_response = await run_bi_api(
         "SELECT query_gene_id, query_protein, interact_gene_id, "
         "interact_protein "
         "FROM protein_interaction_col "
         f"WHERE query_gene_id = {gene_literal} OR "
         f"interact_gene_id = {gene_literal}",
-        message="Interaction query failed",
+        **bi_kwargs,
     )
 
     orthologs_list, paralogs_list = _homology_gene_lists(

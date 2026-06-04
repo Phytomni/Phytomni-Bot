@@ -148,7 +148,7 @@ async def test_workflow_happy_path_assembles_full_preamble() -> None:
             new=AsyncMock(side_effect=bi_responses),
         ),
         patch(
-            "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+            "mcp_server_phytomni.agents.brief_gene.homology.run_bi_api",
             new=AsyncMock(
                 side_effect=[_homology_response(), _interaction_response()]
             ),
