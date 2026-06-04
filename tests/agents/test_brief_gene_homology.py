@@ -2,15 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Unit tests for brief_gene homology + interactions fetch node + helpers.
+"""Unit tests for brief_gene homology + interactions fetch + helpers.
 
-Verifies that ``_run_fetch_homology_interactions_node`` issues two BI
-SQL queries (``homology_gene`` + ``protein_interaction_col``), and
-that the ``_homology_gene_lists`` and ``_interaction_gene_list``
-helpers project BI responses into the canonical ``gene_list`` shape
-that ``orthologs_data`` / ``paralogs_data`` / ``interaction_data``
-use. Count derivation is also pinned so Basic Information bullets
-render correctly downstream.
+Verifies BI fetch SQL + projection to orthologs_data / paralogs_data /
+interaction_data + the count summaries Basic Information renders.
 """
 
 from __future__ import annotations

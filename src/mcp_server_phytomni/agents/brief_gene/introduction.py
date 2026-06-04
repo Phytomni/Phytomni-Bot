@@ -4,14 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """brief_gene introduction LLM node.
 
-Migrated from deep_genome ``_run_report_introduction``, adapted
-for two paths: ``gene_found=True`` (input = section1-4 markdowns
-concatenated, produces a 3-5 paragraph narrative intro to the
-analytical body) and ``gene_found=False`` (D5.a degraded variant
-— input = ``retrieve_context`` only, produces a lit-based intro).
-
-Prompt: ``brief_gene_introduction`` (renamed from deep_genome's
-``gene_function_introduction`` in the same M9 commit).
+Two paths sharing the ``brief_gene_introduction`` prompt:
+gene_found=True feeds section1-4 markdowns concatenated;
+gene_found=False (degraded variant) feeds retrieve_context only.
 """
 
 from __future__ import annotations

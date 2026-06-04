@@ -4,13 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Helpers for homology + protein interaction list projection.
 
-``_homology_gene_lists`` splits a homology BI response into
-cross-species (orthologs) and same-species (paralogs) lists based on
-the input ``species_code``. ``_interaction_gene_list`` projects a
-protein-interaction BI response into a compact list, excluding the
-query gene's self-interaction. Both helpers are migrated from
-``deep_genome/dispatch.py`` as part of the X3b A architecture
-fusion where brief_gene owns the homology + interaction data path.
+``_homology_gene_lists`` splits cross-species (orthologs) vs
+same-species (paralogs); ``_interaction_gene_list`` projects
+a compact partner list excluding self-loops.
 """
 
 from __future__ import annotations

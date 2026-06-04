@@ -4,16 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """End-to-end test for brief_gene preamble workflow (legacy wire).
 
-Verifies that the post-M10 ``_wire_legacy`` topology runs the
-4-section fan-out + barrier + introduction + render in correct
-order. Uses mocked LLM + mocked BI to keep the test offline.
-Covers happy (``gene_found=True``) and degraded
-(``gene_found=False``) paths.
-
-USE_CHAT_SUBGRAPH defaults to False so this test exercises the
-legacy wire (which M10 updated). The chat-subgraph wire is left
-unchanged in M10; a follow-up commit will mirror the preamble
-fan-out into ``_wire_chat_subgraph``.
+Mocks LLM + BI to verify the 4-section fan-out + barrier +
+introduction + render order on the legacy wire (default
+USE_CHAT_SUBGRAPH=False). Covers happy + degraded paths.
 """
 
 from __future__ import annotations

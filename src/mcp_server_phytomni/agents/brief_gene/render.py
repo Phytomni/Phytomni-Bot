@@ -4,14 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """brief_gene preamble render node.
 
-Pure string template assembly — no LLM call. Builds
-``final_response.content`` from BriefGeneState fields following the
-spec's preamble markdown structure (happy + degraded paths).
-
-The Strict directive from the old ``brief_gene_function`` prompt
-("display every supplied basic-genomic bullet verbatim") is
-enforced structurally here by f-string template; the LLM never
-touches the bullet list, so verbatim rendering is guaranteed.
+Pure string template assembly (no LLM): builds
+``final_response.content`` from BriefGeneState fields. The
+bullets are rendered via f-string so verbatim integrity is
+structurally guaranteed (no LLM hallucination path).
 """
 
 from __future__ import annotations

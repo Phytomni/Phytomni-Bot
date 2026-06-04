@@ -4,18 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """4-parallel section LLM nodes for brief_gene preamble fan-out.
 
-Each section node calls ``phyto_chat`` with its dedicated prompt:
-
-- ``_run_section1_node`` -> ``brief_gene_section_discovery`` (§1)
-- ``_run_section2_node`` -> ``brief_gene_section_cloning`` (§2)
-- ``_run_section3_node`` -> ``brief_gene_section_functional`` (§3)
-- ``_run_section4_node`` -> ``brief_gene_section_application`` (§4)
-
-Each node writes the section markdown to its corresponding state
-field (``section1_markdown`` through ``section4_markdown``) and
-increments ``gene_profile_completed_branches`` by 1 so the
-downstream barrier routing function in ``_build_graph`` can fire
-when all 4 sections complete.
+Each ``_run_sectionN_node`` calls ``phyto_chat`` with its
+dedicated prompt (discovery / cloning / functional / application),
+writes ``sectionN_markdown`` to state, and increments
+``gene_profile_completed_branches`` for the downstream barrier.
 """
 
 from __future__ import annotations

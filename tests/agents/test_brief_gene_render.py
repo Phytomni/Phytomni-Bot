@@ -4,13 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for brief_gene preamble render node.
 
-``_render_preamble_node`` is a pure string template that assembles
-``final_response.content`` from BriefGeneState fields: title +
-introduction_report + ## Gene Profiles header + ### Basic Genomic
-Information bullets + section1-4 markdowns. No LLM call. Two
-paths: happy (``gene_found=True`` with all section content) and
-degraded (``gene_found=False`` with intro + Note line +
-literature reference).
+Pins the markdown structure ``_render_preamble_node`` assembles
+on both gene_found=True (full preamble) and gene_found=False
+(degraded Note-line variant) paths.
 """
 
 from __future__ import annotations

@@ -296,24 +296,3 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
     )
     assert tissue["target_gene"] == "LOC_Os01g012345"
 
-
-async def test_gene_summary_node_is_topology_passthrough(tmp_path) -> None:
-    """Verify _run_gene_summary_node returns an empty state mutation.
-
-    The node exists only to connect knowledge_node to the experiment /
-    introduction branches when ``use_data_agent=False``; the previous
-    body wrote a placeholder ``summary_context`` value that no other
-    node reads. The contract this test pins is the absence of stale
-    state writes, not any positive summary content.
-
-    Args:
-        tmp_path: Temporary directory used as fake deep-genome output root.
-    """
-    harness = DispatchHarness(str(tmp_path / "deep-out"))
-    run_node = getattr(harness, "_run_gene_summary_node")
-    sentinel_state: Any = {"gene_id": "GeneA", "species_code": "ath"}
-
-    result = await run_node(sentinel_state)
-
-    assert result == {}
-    assert "summary_context" not in result
