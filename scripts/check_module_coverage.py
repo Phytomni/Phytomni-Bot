@@ -56,7 +56,13 @@ MODULE_FLOORS: Dict[str, int] = {
     # coverage below the prior 56 floor. A regression test for the gene-id
     # BI-SQL escaping recovered it to 53.82%; ratchet this back toward
     # TARGET (80) as the deep_genome owner adds tests for those nodes.
-    "src/mcp_server_phytomni/agents/deep_genome/dispatch.py": 53,
+    # The deep_genome thin-wrapper migration removed 9 nodes
+    # (orthologs/paralogs/interaction + 3 annotation_node + part1_node
+    # + gene_summary_node + data_agent) whose test coverage was high,
+    # dropping the measured floor for what remains in dispatch.py
+    # (mostly the analyst-side prepare_analysis_tasks + submit / download
+    # helpers). Reset the floor to the new measured baseline (44).
+    "src/mcp_server_phytomni/agents/deep_genome/dispatch.py": 44,
     "src/mcp_server_phytomni/agents/review/planning.py": 58,
 }
 TARGET = 80
