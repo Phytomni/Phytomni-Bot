@@ -34,7 +34,7 @@ from mcp_server_phytomni.runtime.request_context import (
     request_context,
 )
 from mcp_server_phytomni.storage import (
-    uploads as uploads_module,
+    obs_relay_ops as obs_relay_ops_module,
 )
 
 # The repo-root ``conftest.py`` installs the offline test env before
@@ -552,23 +552,37 @@ def _build_fake_obs_client() -> Any:
 
     Two fixtures share this helper: ``fake_obs_client_factory`` exposes
     it raw for unit tests that want to control creation timing, and
-    ``fake_obs_client`` patches ``storage.uploads.ObsClient`` for server
+    ``fake_obs_client`` patches ``storage.obs_relay_ops.ObsClient`` (the
+    server-side SDK seam ``upload_user_file`` delegates to) for server
     tests. Each call yields a new class so capture state never leaks
     between cases.
     """
 
     class _FakeObsClient:
-        """Capture-only OBS SDK stand-in for the SDK fallback path."""
+        """Capture-only OBS SDK stand-in for the SDK fallback path.
+
+        Supports ``putContent`` (used by the upload write seam),
+        ``getObject`` (writes seeded ``objects`` bytes to ``downloadPath``),
+        and ``listObjects`` (returns seeded ``pages`` in order). Tests seed
+        ``objects`` / ``pages`` before exercising the download/list ops.
+        """
 
         captured: dict[str, Any] = {}
+        objects: dict[str, bytes] = {}
+        pages: list[Any] = []
 
         def __init__(self, **kwargs: Any) -> None:
             _FakeObsClient.captured = {"init": kwargs}
 
         def __getattr__(self, name: str) -> Any:
             """Map OBS SDK camelCase methods to snake-case fakes."""
-            if name == "putContent":
-                return self._put_content
+            sdk_ops = {
+                "putContent": self._put_content,
+                "getObject": self._get_object,
+                "listObjects": self._list_objects,
+            }
+            if name in sdk_ops:
+                return sdk_ops[name]
             raise AttributeError(name)
 
         def _put_content(self, **kwargs: Any) -> Any:
@@ -577,6 +591,27 @@ def _build_fake_obs_client() -> Any:
                 status=200,
                 requestId="request-id",
                 errorCode=None,
+            )
+
+        def _get_object(self, **kwargs: Any) -> Any:
+            _FakeObsClient.captured["get_object"] = kwargs
+            buffer = _FakeObsClient.objects.get(kwargs["objectKey"], b"")
+            download_path = kwargs.get("downloadPath")
+            if download_path:
+                Path(download_path).write_bytes(buffer)
+            return SimpleNamespace(
+                status=200,
+                body=SimpleNamespace(buffer=buffer),
+                requestId="request-id",
+            )
+
+        def _list_objects(self, **kwargs: Any) -> Any:
+            calls = _FakeObsClient.captured.setdefault("list_calls", [])
+            calls.append(kwargs)
+            return SimpleNamespace(
+                status=200,
+                body=_FakeObsClient.pages.pop(0),
+                requestId="request-id",
             )
 
     return _FakeObsClient
@@ -600,7 +635,7 @@ def fake_obs_client_factory() -> Callable[..., Any]:
 
 @pytest.fixture
 def fake_obs_client(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Patch ``storage.uploads.ObsClient`` with a fresh capturing fake.
+    """Patch ``storage.obs_relay_ops.ObsClient`` with a capturing fake.
 
     Yields the patched class so tests can inspect ``.captured`` for
     OBS init kwargs and ``putContent`` call arguments. Defined in
@@ -609,11 +644,12 @@ def fake_obs_client(monkeypatch: pytest.MonkeyPatch) -> Any:
 
     Args:
         monkeypatch: Pytest monkeypatch used to bind the fake into
-            ``storage.uploads``.
+            ``storage.obs_relay_ops`` (the SDK seam ``upload_user_file``
+            delegates its write to).
 
     Returns:
         The patched fake OBS client class.
     """
     fake = _build_fake_obs_client()
-    monkeypatch.setattr(uploads_module, "ObsClient", fake)
+    monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
     return fake

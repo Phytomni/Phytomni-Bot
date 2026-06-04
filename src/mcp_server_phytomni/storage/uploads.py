@@ -14,17 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
-from obs import ObsClient
-
 from ..config.defaults import ServerConfig
-from ..config.settings import get_sensitive_config
-from .obs_storage import (
-    DEFAULT_OBSFS_MOUNT_ROOT,
-    obs_path_from_key,
-    obsfs_bucket_available,
-    obsfs_or_sdk,
-    obsfs_path_for,
-)
+from .obs_relay_ops import put_object_bytes
+from .obs_storage import DEFAULT_OBSFS_MOUNT_ROOT, obs_path_from_key
 from .path_policy import DEFAULT_USER_ID, IdFactory, safe_path_segment
 
 _SERVER_DEFAULTS = ServerConfig()
@@ -171,40 +163,13 @@ def upload_user_file(
         f"{file_id}/{safe_filename}"
     )
 
-    def _write_via_obsfs() -> None:
-        if not obsfs_bucket_available(target_bucket, obsfs_mount_root):
-            raise FileNotFoundError(
-                "OBSFS bucket is not available: "
-                f"{obsfs_mount_root}/{target_bucket}"
-            )
-        destination = obsfs_path_for(
-            object_key, target_bucket, obsfs_mount_root
-        )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(file_bytes)
-
-    def _write_via_sdk() -> None:
-        access_key, secret_key = get_sensitive_config().obs_credentials()
-        client = ObsClient(
-            access_key_id=access_key,
-            secret_access_key=secret_key,
-            server=target_server,
-        )
-        response = client.putContent(
-            bucketName=target_bucket,
-            objectKey=object_key,
-            content=file_bytes,
-        )
-        status_code = getattr(response, "status", None)
-        if status_code is None or status_code >= 300:
-            raise OSError(
-                "OBS upload failed: "
-                f"requestId={getattr(response, 'requestId', 'unknown')} "
-                f"errorCode={getattr(response, 'errorCode', 'unknown')} "
-                f"errorMessage={getattr(response, 'errorMessage', 'unknown')}"
-            )
-
-    obsfs_or_sdk(_write_via_obsfs, _write_via_sdk)
+    put_object_bytes(
+        target_bucket,
+        object_key,
+        file_bytes,
+        obs_server=target_server,
+        mount_root=obsfs_mount_root,
+    )
 
     return UploadRecord(
         file_id=file_id,
