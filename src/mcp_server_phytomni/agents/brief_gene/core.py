@@ -19,6 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from ...common.prompts import get_prompt
+from ...common.responses import message_content, parse_follow_up_questions
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
@@ -156,18 +157,15 @@ class BriefGeneAgent:
     def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
         """Register the prep + post + shared chat form on ``workflow``.
 
-        Replaces ``generate_node`` with a ``generate_prep_node`` +
-        shared ``chat`` mount + ``generate_post_node`` triple. The
-        chat node is registered via
+        Replaces both ``generate_node`` and ``follow_up_node`` with
+        prep + post pairs surrounding a single shared ``chat`` node.
+        The chat node is registered via
         :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper` so
         LangGraph's ``xray`` rendering can inline the compiled chat
         subgraph in the brief_gene render.
         :func:`~agents.shared.chat_subgraph.make_chat_after_router`
         reads the ``pending_post`` sentinel each prep node stages to
-        branch back to the correct post node after the chat call. The
-        ``follow_up_node`` stays as a single legacy node in this
-        commit; a follow-up commit will replace it with its own prep +
-        post pair using the same shared chat mount.
+        branch back to the correct post node after the chat call.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -178,7 +176,8 @@ class BriefGeneAgent:
         workflow.add_node("retrieve_node", self.retrieve_node)
         workflow.add_node("generate_prep_node", self.generate_prep_node)
         workflow.add_node("generate_post_node", self.generate_post_node)
-        workflow.add_node("follow_up_node", self.follow_up_node)
+        workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
+        workflow.add_node("follow_up_post_node", self.follow_up_post_node)
         workflow.add_node(
             "chat",
             make_chat_node_wrapper(
@@ -202,22 +201,24 @@ class BriefGeneAgent:
         workflow.add_edge("fetch_annotation_node", "retrieve_node")
         workflow.add_edge("retrieve_node", "generate_prep_node")
         workflow.add_edge("generate_prep_node", "chat")
+        workflow.add_edge("follow_up_prep_node", "chat")
         workflow.add_conditional_edges(
             "chat",
             make_chat_after_router(),
             {
                 "generate_post_node": "generate_post_node",
+                "follow_up_post_node": "follow_up_post_node",
             },
         )
         workflow.add_conditional_edges(
             "generate_post_node",
             self.route_after_generate,
             {
-                "follow_up_node": "follow_up_node",
+                "follow_up_node": "follow_up_prep_node",
                 "__end__": END,
             },
         )
-        workflow.add_edge("follow_up_node", END)
+        workflow.add_edge("follow_up_post_node", END)
 
     def route_after_judge(self, state: BriefGeneAgentState) -> str:
         """Route to annotation lookup only when BI found the gene.
@@ -584,6 +585,91 @@ class BriefGeneAgent:
             "final_response": _attach_metadata(
                 phyto_response, state["retrieved_docs"]
             )
+        }
+
+    async def follow_up_prep_node(
+        self, state: BriefGeneAgentState
+    ) -> Dict[str, Any]:
+        """Build the chat payload for follow-up questions generation.
+
+        Mirrors the prompt-building half of the legacy
+        ``follow_up_node``: renders the
+        ``system/follow_up_questions`` template against the prior
+        ``final_response`` (the brief gene answer the user just
+        received) so the LLM can suggest the next questions to ask.
+        The actual chat dispatch runs in the shared ``chat`` node;
+        ``follow_up_post_node`` parses the response back into the
+        ``follow_up_questions`` list and the enriched ``final_response``.
+
+        Args:
+            state: Current workflow state. Reads ``user_query`` and
+                ``final_response`` written by ``generate_post_node``.
+
+        Returns:
+            State delta with a ``ChatInput`` payload under
+            ``chat_payload`` and the ``follow_up_post_node``
+            ``pending_post`` sentinel. ``with_follow_up=False`` is
+            passed explicitly because this site IS the follow-up
+            generation; the chat subgraph router's ``follow_up_node``
+            branch firing here would cascade an unwanted recursive
+            follow-up-on-follow-up generation.
+        """
+        rendered_user_query = get_prompt(
+            self.brief_config.PROMPT_FILE,
+            "system/follow_up_questions",
+            {
+                "user_query": (
+                    f"What is gene function of {state['user_query']}"
+                ),
+                "system_response": message_content(state["final_response"]),
+            },
+        )
+        chat_kwargs = build_chat_kwargs_for(
+            self.brief_config,
+            self.sensitive_config,
+            with_follow_up=False,
+        )
+        chat_payload = build_chat_input(rendered_user_query, chat_kwargs)
+        return {
+            "chat_payload": chat_payload,
+            "pending_post": "follow_up_post_node",
+        }
+
+    async def follow_up_post_node(
+        self, state: BriefGeneAgentState
+    ) -> Dict[str, Any]:
+        """Parse the chat response into follow-up questions + final_response.
+
+        Mirrors the response-parsing half of the legacy
+        ``follow_up_node`` but reads the chat response from
+        ``state['chat_response']`` instead of awaiting a fresh
+        ``phyto_chat`` call. Re-runs ``_attach_metadata`` so the
+        ``final_response`` payload carries the freshly parsed
+        ``follow_up_questions`` list alongside the document references
+        from the retrieval step.
+
+        Args:
+            state: Current workflow state. Reads ``chat_response``
+                written by the shared chat node, plus ``final_response``
+                and ``retrieved_docs`` already staged earlier in the
+                workflow.
+
+        Returns:
+            State delta with ``follow_up_questions`` and the enriched
+            ``final_response``.
+        """
+        chat_response = state.get("chat_response") or {}
+        follow_up_questions = parse_follow_up_questions(
+            message_content(chat_response)
+        )
+        final_response = _attach_metadata(
+            state["final_response"],
+            state["retrieved_docs"],
+            follow_up_questions,
+        )
+        return {
+            "follow_up_questions": follow_up_questions,
+            "final_response": final_response,
         }
 
     async def follow_up_node(self, state: BriefGeneAgentState):

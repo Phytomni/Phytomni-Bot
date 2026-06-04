@@ -13,6 +13,7 @@ chat subgraph in the brief_gene render.
 from __future__ import annotations
 
 from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -288,3 +289,178 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
         "Expected the shared chat subgraph to expand at xray=1 "
         f"(saw nodes: {sorted(nodes)})"
     )
+
+
+# ---------------------------------------------------------------------------
+# follow_up site: flag-off legacy + flag-on prep/post split.
+# ---------------------------------------------------------------------------
+
+
+def _state_post_generate() -> BriefGeneAgentState:
+    """State after ``generate_post_node`` has staged a final_response.
+
+    Pre-populates ``final_response`` with a chat-completions-shaped
+    payload so ``message_content`` returns a non-empty string from
+    both the generate site (what the prep node sees as input) and
+    from ``_attach_metadata`` paths.
+    """
+    state = _gene_found_state()
+    state["final_response"] = {
+        "choices": [{"message": {"content": "Brief gene answer goes here."}}]
+    }
+    return state
+
+
+async def test_follow_up_node_flag_off_routes_through_generate_follow_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag-off ``follow_up_node`` delegates to ``_generate_follow_up``.
+
+    ``_generate_follow_up`` lives in
+    ``brief_gene.pipeline`` and the legacy ``follow_up_node`` body
+    imports it through that module path; the chat subgraph mount
+    must NOT fire on the legacy path. Mock the helper directly so the
+    test stays insulated from the pipeline-module ``phyto_chat``
+    import binding the helper closes over.
+    """
+    _, fake_chat_app = install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_BRIEF_GENE_MODULE,
+        legacy_response=None,
+        subgraph_response=None,
+    )
+    fake_helper = AsyncMock(return_value=["Q1", "Q2", "Q3"])
+    monkeypatch.setattr(
+        f"{_BRIEF_GENE_MODULE}._generate_follow_up",
+        fake_helper,
+    )
+
+    agent = _build_agent(use_subgraph=False)
+    state = _state_post_generate()
+    delta = await agent.follow_up_node(state)
+
+    fake_helper.assert_awaited_once()
+    fake_chat_app.ainvoke.assert_not_awaited()
+    assert delta["follow_up_questions"] == ["Q1", "Q2", "Q3"]
+    assert "final_response" in delta
+
+
+async def test_follow_up_prep_node_stages_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``follow_up_prep_node`` emits a ChatInput payload + sentinel."""
+    install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_BRIEF_GENE_MODULE,
+        legacy_response=None,
+        subgraph_response=None,
+    )
+
+    agent = _build_agent(use_subgraph=True)
+    state = _state_post_generate()
+    delta = await agent.follow_up_prep_node(state)
+
+    assert delta["pending_post"] == "follow_up_post_node"
+    chat_payload = delta["chat_payload"]
+    assert isinstance(chat_payload["user_query"], str)
+    assert "chat_kwargs" in chat_payload
+
+
+async def test_follow_up_prep_node_with_follow_up_false_drift_catch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Drift catch: ``follow_up_prep_node`` MUST keep ``with_follow_up=False``.
+
+    This site IS the follow-up generation; the chat subgraph router's
+    ``follow_up_node`` branch firing here would cascade an unwanted
+    recursive follow-up-on-follow-up generation. Asserts the explicit
+    False value so a future refactor that accidentally flips it
+    trips loud.
+    """
+    install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_BRIEF_GENE_MODULE,
+        legacy_response=None,
+        subgraph_response=None,
+    )
+
+    agent = _build_agent(use_subgraph=True)
+    state = _state_post_generate()
+    delta = await agent.follow_up_prep_node(state)
+
+    chat_kwargs = delta["chat_payload"]["chat_kwargs"]
+    assert chat_kwargs.get("with_follow_up") is False
+
+
+async def test_follow_up_post_node_parses_chat_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``follow_up_post_node`` projects chat_response to questions list."""
+    install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_BRIEF_GENE_MODULE,
+        legacy_response=None,
+        subgraph_response=None,
+    )
+
+    agent = _build_agent(use_subgraph=True)
+    state = _state_post_generate()
+    state["chat_response"] = {
+        "choices": [{"message": {"content": "1. What about Q1?\n2. Or Q2?"}}]
+    }
+    delta = await agent.follow_up_post_node(state)
+
+    assert "follow_up_questions" in delta
+    assert isinstance(delta["follow_up_questions"], list)
+    # ``_attach_metadata`` carries the original final_response forward
+    # with the freshly parsed questions list bolted on.
+    assert "final_response" in delta
+
+
+async def test_follow_up_post_node_handles_missing_chat_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``follow_up_post_node`` falls back when chat_response is absent.
+
+    Mirrors the same defensive pattern ``generate_post_node`` uses:
+    a missing or null chat_response should not crash the post node;
+    ``message_content`` returns "" for an empty dict and
+    ``parse_follow_up_questions`` returns an empty list, leaving
+    ``follow_up_questions`` as a well-formed empty list.
+    """
+    install_chat_subgraph_mocks(
+        monkeypatch,
+        module_path=_BRIEF_GENE_MODULE,
+        legacy_response=None,
+        subgraph_response=None,
+    )
+
+    agent = _build_agent(use_subgraph=True)
+    state = _state_post_generate()
+    delta = await agent.follow_up_post_node(state)
+
+    assert delta["follow_up_questions"] == []
+    assert "final_response" in delta
+
+
+def test_compiled_graph_flag_on_uses_follow_up_prep_post() -> None:
+    """Flag-on graph registers prep + post for follow_up (no legacy node)."""
+    agent = _build_agent(use_subgraph=True)
+    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
+
+    assert "follow_up_prep_node" in nodes
+    assert "follow_up_post_node" in nodes
+    # The legacy ``follow_up_node`` is replaced by the prep/post split
+    # on the flag-on path. Its method body stays on the agent class
+    # so flag-off (registered by ``_wire_legacy``) still works.
+    assert "follow_up_node" not in nodes
+
+
+def test_compiled_graph_flag_off_keeps_follow_up_node() -> None:
+    """Flag-off graph still registers ``follow_up_node`` (no prep/post)."""
+    agent = _build_agent(use_subgraph=False)
+    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
+
+    assert "follow_up_node" in nodes
+    assert "follow_up_prep_node" not in nodes
+    assert "follow_up_post_node" not in nodes
