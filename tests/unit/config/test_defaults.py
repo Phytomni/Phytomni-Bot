@@ -362,3 +362,30 @@ def test_relay_mode_requires_base_url(monkeypatch):
         ServerConfig()
 
     assert "RELAY_BASE_URL" in str(excinfo.value)
+
+
+def test_brief_gene_and_deep_genome_share_repo_id_dict_source():
+    """Brief gene + deep genome configs share REPO_ID_DICT source.
+
+    Both configs inherit ``REPO_ID_DICT`` from the root ``ServerConfig``
+    declaration with the ``REPO_ID_DICT`` / ``PHYTOMNI_REPO_ID_DICT``
+    env alias chain; neither subclass overrides the field. This pins
+    the invariant so a future divergence (e.g. either subclass adding
+    its own ``REPO_ID_DICT`` field with a different default or alias)
+    breaks loud rather than silently splitting brief_gene's
+    KnowledgeAgent retrieval corpus from deep_genome's. The invariant
+    underpins composition: a consumer agent mounting brief_gene as a
+    subgraph inherits brief_gene's retrieval semantics only as long
+    as both configs resolve the same repository UUID map.
+    """
+    # With the test env staging a fixed PHYTOMNI_REPO_ID_DICT, both
+    # subclasses inherit the same value via the shared
+    # validation_alias chain; without it, both default to the same
+    # ``{}``. The actual divergence this test catches is a
+    # subclass-level shadow override that would resolve to a
+    # different dict regardless of the env.
+    brief_repo = BriefGeneConfig().REPO_ID_DICT
+    deep_repo = DeepGenomeConfig().REPO_ID_DICT
+    server_repo = ServerConfig().REPO_ID_DICT
+    assert brief_repo == deep_repo
+    assert brief_repo == server_repo
