@@ -131,6 +131,8 @@ class SubSummaryBuilder:
         Args:
             spec: File patterns and data keys for the result group.
         """
+        print('Start format markdown...')
+        print(self.markdown_path)
         try:
             image_name = self.first_match(spec.image_pattern)
             self.data[spec.image_key] = (

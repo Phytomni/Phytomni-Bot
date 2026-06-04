@@ -192,6 +192,7 @@ class DeepGenomeState(TypedDict):
     part12_combined: Optional[str]
     task_id: Optional[str]
     output_dir: Optional[str]
+    report_dir: Optional[str]
     error: Optional[str]
 
 
@@ -369,14 +370,19 @@ class DeepGenomeAgents(
 
         workflow.add_conditional_edges(
             "part1_node",
-            self._route_after_part1,
+            self._route_part1_barrier,
             [
+                "part1_node",
                 "experiment_node",
                 "introduction_node",
             ],
         )
 
-        workflow.add_edge("experiment_node", "protocol_node")
+        workflow.add_conditional_edges(
+            "experiment_node",
+            self._route_experiment_barrier,
+            ["experiment_node", "protocol_node"],
+        )
         workflow.add_edge("protocol_node", "introduction_node")
         workflow.add_edge("introduction_node", "discussion_node")
         workflow.add_edge("discussion_node", "summary_node")

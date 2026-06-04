@@ -252,6 +252,26 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             return "experiment_node"
         return "introduction_node"
 
+    def _route_part1_barrier(self: Any, state: DeepGenomeState):
+        """Route back to part1_node while waiting for 4 branches.
+
+        Args:
+            state: Current workflow state.
+
+        Returns:
+            "part1_node" to re-enter barrier check,
+            or "experiment_node"/"introduction_node" when part1 is ready.
+        """
+        if state.get("part1_waiting"):
+            return "part1_node"
+        # Use original logic after barrier satisfied
+        use_analyst = state.get("config_params", {}).get(
+            "use_analyst_agent", True
+        )
+        if use_analyst:
+            return "experiment_node"
+        return "introduction_node"
+
     def _route_after_synthesize(self: Any, state: DeepGenomeState):
         """Determine path after synthesize_node completes.
 
@@ -281,6 +301,22 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             return "synthesize_node"
         if state.get("synthesize_report"):
             return "experiment_node"
+        return END
+
+    def _route_experiment_barrier(self: Any, state: DeepGenomeState):
+        """Route back to experiment_node while waiting for both branches.
+
+        Args:
+            state: Current workflow state.
+
+        Returns:
+            "experiment_node" to re-enter the barrier check,
+            or "protocol_node" when experiment report is ready.
+        """
+        if state.get("experiment_waiting"):
+            return "experiment_node"
+        if state.get("report_triggered"):
+            return "protocol_node"
         return END
 
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
