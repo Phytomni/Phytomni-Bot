@@ -494,7 +494,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         follow_up_list = parse_follow_up_questions(
             message_content(follow_up_response)
         )
-        report_dir = state["report_dir"]
+        report_dir = state["report_dir"] or ""
         results_path = Path(report_dir) / f"{state['gene_id']}_report.md"
         final_report = part0145_str + "\n## Follow up questions: \n"
         for follow_up in follow_up_list:
