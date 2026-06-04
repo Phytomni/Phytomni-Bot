@@ -121,3 +121,32 @@ async def test_introduction_node_empty_sections_fallback() -> None:
         delta = await _run_introduction_node(cast(Any, state))
 
     assert delta["introduction_report"] == "Intro despite empty sections."
+
+
+@pytest.mark.asyncio
+async def test_introduction_node_happy_path_threads_retrieve_context() -> None:
+    """gene_found=True: Path C feeds retrieve_context into the prompt.
+
+    Path C makes intro independent of the sections' citation set —
+    it sees the same literature corpus the sections did and can
+    cite documents the sections did not. Pin the contract by
+    asserting a sentinel from retrieve_context reaches the rendered
+    user_query under the prompt's ``## Literature`` block.
+    """
+    state = _happy_state()
+    state["retrieve_context"] = (
+        "[document 1 begin] FAKE-LITERATURE-SENTINEL [document 1 end]"
+    )
+
+    mock_chat = _mock_chat("Intro with literature corpus.")
+    with patch(
+        "mcp_server_phytomni.agents.brief_gene.introduction.phyto_chat",
+        new=mock_chat,
+    ):
+        await _run_introduction_node(cast(Any, state))
+
+    rendered_query = mock_chat.call_args.kwargs.get("user_query", "")
+    assert "FAKE-LITERATURE-SENTINEL" in rendered_query, (
+        "Path C: retrieve_context must be threaded into the prompt's "
+        "## Literature section so intro can independently cite"
+    )

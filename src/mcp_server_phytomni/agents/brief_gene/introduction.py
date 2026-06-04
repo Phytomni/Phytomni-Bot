@@ -27,12 +27,16 @@ BRIEF_GENE_CONFIG = BriefGeneConfig()
 def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
     """Assemble prompt template variables.
 
-    On ``gene_found=True``, the ``content`` variable carries the
-    section1-4 markdowns concatenated so the introduction LLM has
-    the full analytical body to summarize.
+    On ``gene_found=True``, ``content`` is the section1-4 markdowns
+    concatenated (primary narrative source) and ``retrieve_results``
+    is the full retrieve_context (independent citation source so
+    intro can cite literature the sections did not).
     On ``gene_found=False``, ``content`` is just ``retrieve_context``
-    (no sections were produced on this path).
+    (no sections were produced on this path); ``retrieve_results``
+    falls back to the same blob so the prompt template stays well
+    formed.
     """
+    retrieve_context = state.get("retrieve_context", "") or ""
     if state.get("gene_found"):
         sections = "\n\n".join(
             [
@@ -44,10 +48,7 @@ def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
         )
         content = sections.strip() or "(sections not available)"
     else:
-        content = (
-            state.get("retrieve_context", "")
-            or "(no literature context available)"
-        )
+        content = retrieve_context or "(no literature context available)"
 
     gene_symbols = state.get("gene_name_symbol_list") or [
         state.get("user_query", "")
@@ -56,6 +57,19 @@ def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
         "species_string": state.get("species_english_name", ""),
         "gene_string": "|".join(gene_symbols),
         "content": content,
+        "retrieve_results": retrieve_context,
+        "description_string": state.get("description_string", ""),
+        "go_string": state.get("go_string", ""),
+        "interpro_string": state.get("interpro_string", ""),
+        "kegg_string": state.get("kegg_string", ""),
+        "gene_structure_string": state.get("gene_structure_string", ""),
+        "homology_context": (
+            f"Orthologs: {state.get('ortholog_count', 0)} across "
+            f"{state.get('ortholog_species_count', 0)} species; "
+            f"Paralogs: {state.get('paralog_count', 0)} in same species; "
+            "Protein-protein interactions: "
+            f"{state.get('interaction_count', 0)} partners"
+        ),
     }
 
 
