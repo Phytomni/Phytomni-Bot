@@ -51,7 +51,12 @@ class BriefGeneOutput(TypedDict):
     Carries the BI annotation strings, literature retrieval docs,
     and the chat-completions-style final response plus follow-up
     questions, so parent graphs can cite gene context without
-    re-running the brief_gene pipeline.
+    re-running the brief_gene pipeline. ``description_string``
+    carries the per-species gene description text from the
+    ``annotation_gene_description`` BI table so consumer agents that
+    previously fetched it inline (e.g. ``deep_genome``) can mount
+    brief_gene as a subgraph and read the description through this
+    output field.
     """
 
     gene_id: str
@@ -59,6 +64,7 @@ class BriefGeneOutput(TypedDict):
     go_string: str
     kegg_string: str
     interpro_string: str
+    description_string: str
     retrieved_docs: List[Dict[str, Any]]
     final_response: Dict[str, Any]
     follow_up_questions: List[str]
@@ -92,6 +98,7 @@ class BriefGeneState(TypedDict):
     go_string: str
     kegg_string: str
     interpro_string: str
+    description_string: str
     retrieved_docs: List[Dict[str, Any]]
     retrieve_context: str
     follow_up_questions: List[str]

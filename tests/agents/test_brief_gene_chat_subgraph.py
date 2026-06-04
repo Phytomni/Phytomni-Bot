@@ -69,6 +69,7 @@ def _gene_found_state() -> BriefGeneAgentState:
             "go_string": "GO:0003700",
             "kegg_string": "ath:AT1G01010",
             "interpro_string": "IPR036093",
+            "description_string": "transcription factor",
             "retrieved_docs": [{"title": "doc1", "content": "..."}],
             "retrieve_context": "context block",
             "follow_up_questions": [],

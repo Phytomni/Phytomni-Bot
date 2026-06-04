@@ -192,6 +192,35 @@ def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
     )
 
 
+def _description_annotation_string(
+    description_rows: List[Dict[str, Any]],
+) -> str:
+    """Format gene description text from BI annotation rows.
+
+    Mirrors the ``descruption_string`` (sic, deep_genome's spelling)
+    projection in
+    ``deep_genome/dispatch.py:_run_gene_annotation_node``: joins the
+    per-row ``description`` field with ``; `` separators so a
+    consumer agent mounting brief_gene as a subgraph reads the same
+    description shape it previously computed inline. Empty / null
+    rows are dropped; a fully empty result returns the legacy
+    ``"No annotation available."`` sentinel so downstream prompts
+    never receive a bare empty string.
+    """
+    return (
+        "; ".join(
+            _dedupe(
+                [
+                    str(row.get("description", "")).strip()
+                    for row in description_rows
+                    if row.get("description")
+                ]
+            )
+        )
+        or "No annotation available."
+    )
+
+
 async def run_bi_api(
     query_sql: str,
     **kwargs: Any,

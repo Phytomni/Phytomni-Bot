@@ -123,6 +123,7 @@ def _gene_found_state() -> BriefGeneAgentState:
             "go_string": "",
             "kegg_string": "",
             "interpro_string": "",
+            "description_string": "",
             "retrieved_docs": [],
             "retrieve_context": "",
             "follow_up_questions": [],

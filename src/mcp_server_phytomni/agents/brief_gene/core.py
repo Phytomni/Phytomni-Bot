@@ -38,6 +38,7 @@ from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
 from .pipeline import (
     _attach_metadata,
     _dedupe,
+    _description_annotation_string,
     _first_row,
     _format_docs,
     _generate_follow_up,
@@ -351,6 +352,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             annotation strings.
         """
         gene_id_literal = sql_literal(state["gene_id"])
+        species_code_literal = sql_literal(state["species_code"])
         annotation_sqls = [
             f"SELECT * FROM id_table WHERE gene_id = {gene_id_literal}",
             "SELECT * FROM annotation_gene_structure_col "
@@ -361,6 +363,17 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             f"WHERE gene_id = {gene_id_literal}",
             "SELECT * FROM annotation_gene_interpro "
             f"WHERE gene_id = {gene_id_literal}",
+            # ``annotation_gene_description`` is species-keyed: the same
+            # gene_id can carry different descriptive text across
+            # ortholog species, so we MUST filter by both gene_id and
+            # species_code (matching deep_genome's
+            # ``_cached_gene_annotation_lookup`` SQL semantics) to avoid
+            # cross-species contamination. The other annotation tables
+            # above are gene_id-unique by convention; only this one
+            # needs the species disambiguation.
+            "SELECT description FROM annotation_gene_description "
+            f"WHERE gene_id = {gene_id_literal} "
+            f"AND species_code = {species_code_literal}",
         ]
         annotation_responses = await asyncio.gather(
             *[
@@ -395,6 +408,9 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         interpro_string = _interpro_annotation_string(
             _safe_rows(annotation_responses, 4)
         )
+        description_string = _description_annotation_string(
+            _safe_rows(annotation_responses, 5)
+        )
 
         return {
             "gene_name_symbol_list": gene_symbols,
@@ -406,6 +422,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "go_string": go_string,
             "kegg_string": kegg_string,
             "interpro_string": interpro_string,
+            "description_string": description_string,
         }
 
     async def retrieve_node(self, state: BriefGeneAgentState):
@@ -769,6 +786,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "go_string": "",
             "kegg_string": "",
             "interpro_string": "",
+            "description_string": "",
             "retrieved_docs": [],
             "retrieve_context": "",
             "follow_up_questions": [],

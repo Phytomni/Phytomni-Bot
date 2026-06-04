@@ -49,9 +49,10 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
     """``BriefGeneOutput`` covers BI annotations + retrieval + chat answer.
 
     Parent graphs reading the subgraph result see the gene id,
-    species code, the three annotation strings, retrieved docs,
-    final response, and follow-up questions. Internal scratch
-    (``gene_found``, coordinates, scratch lists) stays hidden.
+    species code, the four annotation strings (``go_string`` /
+    ``kegg_string`` / ``interpro_string`` / ``description_string``),
+    retrieved docs, final response, and follow-up questions. Internal
+    scratch (``gene_found``, coordinates, scratch lists) stays hidden.
     """
     hints = get_type_hints(BriefGeneOutput)
     assert set(hints.keys()) == {
@@ -60,6 +61,7 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
         "go_string",
         "kegg_string",
         "interpro_string",
+        "description_string",
         "retrieved_docs",
         "final_response",
         "follow_up_questions",
@@ -71,10 +73,18 @@ def test_brief_gene_state_carries_full_legacy_field_set() -> None:
 
     Pins binary compatibility for internal node annotations that
     still type-hint ``BriefGeneAgentState`` (alias of
-    ``BriefGeneState``). The new ``is_follow_up`` field is the only
-    additive key.
+    ``BriefGeneState``). The assertion is a SUPERSET check rather
+    than an exact-equality check because the chat-subgraph and
+    knowledge-subgraph dual-wire branches added additive
+    ``NotRequired`` scratch keys (``chat_payload`` / ``pending_post``
+    / ``chat_response`` / ``retrieve_tasks`` / ``task_index`` /
+    ``knowledge_input`` / ``knowledge_payload`` /
+    ``pending_post_knowledge`` / ``knowledge_response`` /
+    ``retrieve_indexed_results``) which are scratch-only and do not
+    belong in the legacy contract. The test passes as long as every
+    legacy key stays declared.
     """
-    expected = {
+    legacy_required = {
         "user_query",
         "is_follow_up",
         "gene_found",
@@ -94,12 +104,17 @@ def test_brief_gene_state_carries_full_legacy_field_set() -> None:
         "go_string",
         "kegg_string",
         "interpro_string",
+        "description_string",
         "retrieved_docs",
         "retrieve_context",
         "follow_up_questions",
         "final_response",
     }
-    assert set(get_type_hints(BriefGeneState).keys()) == expected
+    actual = set(get_type_hints(BriefGeneState).keys())
+    missing = legacy_required - actual
+    assert (
+        not missing
+    ), f"BriefGeneState is missing legacy keys: {sorted(missing)}"
 
 
 def test_route_after_generate_defaults_to_follow_up() -> None:
