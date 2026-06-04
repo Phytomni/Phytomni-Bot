@@ -295,4 +295,3 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
         if task["analysis_type"] == "gene_expression_tissues"
     )
     assert tissue["target_gene"] == "LOC_Os01g012345"
-
