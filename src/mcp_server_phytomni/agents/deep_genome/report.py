@@ -158,10 +158,12 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         )
 
         part12_str = self._part12_profile(state)
+        print("开始请求实验结果")
         experiment_response = await phyto_chat(
             user_query=self._experiment_prompt(state, part12_str),
             **self._chat_kwargs(),
         )
+        print("实验返回请求完成")
         experiment_list = parse_json_list_fragment(
             message_content(experiment_response)
         )
@@ -175,6 +177,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
     def _part12_profile(self: Any, state: DeepGenomeState) -> str:
         """Combine basic and deep analysis profiles for report prompts."""
+        print("repart12 实验报告")
         part1_str = state.get("part1_report", "")
         part2_str = str(state.get("synthesize_report", "") or "")
         return f"## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n"
@@ -291,9 +294,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         Returns:
             Dict with introduction_report, or empty dict if already triggered.
         """
-        # Prevent duplicate execution
-        if state.get("report_triggered", False):
-            return {}
         print("开始生成 introduction")
 
         logger.info("Generating introduction")
