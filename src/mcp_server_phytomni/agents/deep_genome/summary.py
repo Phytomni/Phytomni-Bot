@@ -82,10 +82,12 @@ class SubSummaryBuilder:
         self.gene_id = gene_id
         self.out_path = out_path
         # Per-gene image directory the markdown report references via the
-        # ../../ prefix below. The prior out_path.split(".out/") recovered
-        # this only when out_path was literally under .out/, and produced a
-        # full absolute path for obsfs result dirs.
-        self.markdown_path = str(self.out_path).rsplit(".out/", maxsplit=1)[-1]
+        # ../../ prefix below. Use gene_id directly — the prior
+        # ``out_path.split(".out/")[-1]`` recovered the gene dir only when
+        # out_path was literally under ``.out/`` and produced a full
+        # absolute path for obsfs result dirs, breaking the markdown
+        # ``../../{dir}/`` prefix the report renders against.
+        self.markdown_path = gene_id
         self.data = data
         self.figure_index = figure_index
         self.handlers: Dict[str, Callable[[], None]] = {

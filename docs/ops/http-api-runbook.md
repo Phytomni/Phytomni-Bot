@@ -188,6 +188,8 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                      |
 | `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                           |
 | `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope, static `token`).                                                                                   |
+| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object fetch relay (operator OBS credentials; allowlisted prefixes).                                                |
+| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; allowlisted prefixes).                                                 |
 | `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                         |
 | `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                          |
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                  |
