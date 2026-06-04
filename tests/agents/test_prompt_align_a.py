@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from mcp_server_phytomni.common.prompts import get_prompt
+from mcp_server_phytomni.common.responses import assert_no_citation_residue
 
 pytestmark = pytest.mark.unit
 
@@ -76,3 +77,35 @@ def test_literature_only_prompt_uses_align_a(name: str) -> None:
         f"{name} still references `[document:X]` form in its rules "
         f"— Align-A says cite as `[N]` only"
     )
+
+
+# --- e2e helper: citation-residue scanner ---
+
+
+def test_assert_no_citation_residue_passes_on_clean_markdown() -> None:
+    """A clean answer with only `[N]` markers passes."""
+
+    answer = (
+        "This is supported by [1] and [2]. Markdown link [text](url) "
+        "is fine. Image ![alt](path) is fine. Reference link [label]: "
+        "footer is fine."
+    )
+    assert_no_citation_residue(answer)  # raises on failure
+
+
+def test_assert_no_citation_residue_fails_on_named_pseudo_citation() -> None:
+    """A named bracket like `[document: InterPro]` triggers failure."""
+
+    answer = "Domain analysis [document: InterPro] supports the claim."
+    with pytest.raises(AssertionError, match="citation marker leaked"):
+        assert_no_citation_residue(answer)
+
+
+def test_assert_no_citation_residue_ignores_markdown_link_syntax() -> None:
+    """`[label](url)` and `![alt](path)` are link / image syntax."""
+
+    answer = (
+        "See [the paper](https://example.com/p1) and the diagram "
+        "![overview](./diagram.png)."
+    )
+    assert_no_citation_residue(answer)

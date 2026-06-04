@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import re
 
+from mcp_server_phytomni.common.responses import assert_no_citation_residue
+
 PHOTOSYNTHESIS_KEYWORDS = ("photosynthesis", "c3", "calvin", "rubisco")
 WHEAT_DROUGHT_KEYWORDS = (
     "drought",
@@ -114,6 +116,7 @@ def assert_knowledge_answer(answer: str) -> None:
         AssertionError: When the answer is empty or lacks every cue.
     """
     assert answer, "KnowledgeAgent answer was empty"
+    _assert_no_citation_residue_via_markdown_body(answer)
     lowered = answer.lower()
     matched = [kw for kw in WHEAT_DROUGHT_KEYWORDS if kw in lowered]
     assert matched, (
@@ -156,6 +159,16 @@ def assert_data_answer(answer: str) -> None:
     assert cols > 0, f"DataAgent returned 0 columns; got: {answer!r}"
 
 
+def _assert_no_citation_residue_via_markdown_body(answer: str) -> None:
+    """Apply Align-A citation residue scanner to the unwrapped body.
+
+    Unwraps any legacy ``{content, doc_list}`` JSON envelope via
+    ``markdown_body`` first, then runs the shared
+    ``assert_no_citation_residue`` from ``common.responses``.
+    """
+    assert_no_citation_residue(markdown_body(answer))
+
+
 def assert_review_answer(answer: str) -> None:
     """Assert ReviewAgent answer has the multi-section drafting shape.
 
@@ -167,6 +180,7 @@ def assert_review_answer(answer: str) -> None:
             depth>=2 markdown section headers.
     """
     assert answer, "ReviewAgent answer was empty"
+    _assert_no_citation_residue_via_markdown_body(answer)
     count = section_count(answer)
     assert count >= MIN_REVIEW_SECTIONS, (
         f"ReviewAgent answer had only {count} markdown section "
@@ -185,6 +199,7 @@ def assert_brief_gene_answer(answer: str) -> None:
             or lacks every annotation cue.
     """
     assert answer, "BriefGeneAgent answer was empty"
+    _assert_no_citation_residue_via_markdown_body(answer)
     lowered = answer.lower()
     assert GENE_ID.lower() in lowered, (
         f"BriefGeneAgent answer did not mention {GENE_ID}; " f"got: {answer!r}"

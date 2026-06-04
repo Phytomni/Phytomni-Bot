@@ -10,8 +10,50 @@ Functions: message_content, first_message, parse_json_list_fragment,
 """
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any, List, Optional
+
+# Matches any `[<content>]` bracket where the content is NOT just
+# digits (those are valid `[N]` citations) and the bracket is NOT
+# immediately followed by `(` (markdown link / image) or `:`
+# (markdown reference-style link footer).
+_CITATION_RESIDUE_PATTERN = re.compile(
+    r"\[(?![0-9])(?P<content>[^\[\]]{1,80})\](?![(:])"
+)
+
+
+def assert_no_citation_residue(answer: str) -> None:
+    """Assert the markdown body carries zero leaked citation markers.
+
+    Cited-agent answers must contain only ``[N]`` numeric citation
+    markers and markdown image / link / reference-style syntax in
+    bracket form. Any other ``[...]`` shape indicates the LLM
+    drifted away from the Align-A contract — most commonly
+    ``[document: InterPro]`` style named pseudo-citations or
+    ``[document: 32]`` style numeric-with-prefix drift that the
+    widened post-processor regex catches but the prompt should
+    still forbid.
+
+    Args:
+        answer: Raw assistant message content (markdown string).
+
+    Raises:
+        AssertionError: When any non-numeric, non-link bracket
+            content survives in the markdown body, listing the
+            offending samples up to 10.
+    """
+    leaks = [
+        match.group("content").strip()
+        for match in _CITATION_RESIDUE_PATTERN.finditer(answer)
+    ]
+    if not leaks:
+        return
+    sample = leaks[:10]
+    extra = f" (and {len(leaks) - 10} more)" if len(leaks) > 10 else ""
+    raise AssertionError(
+        f"citation marker leaked into client markdown: {sample}{extra}"
+    )
 
 
 def message_content(response: Any) -> str:
