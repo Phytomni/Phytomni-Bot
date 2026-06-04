@@ -4726,7 +4726,7 @@ user:
        from multiple documents to create a holistic and cohesive response,
        avoiding simple repetition of a single source.
        - Citation Management: Flawlessly embeds source citations in the
-       `[document:X]` format at the end of the relevant sentence, ensuring
+       `[N]` format at the end of the relevant sentence, ensuring
        all information is attributed correctly.
 
     2. Supporting Skill: Content Generation & Formatting
@@ -4753,10 +4753,10 @@ user:
        `user_query` should be included. Irrelevant content from the
        documents must be identified and discarded.
        - Punctilious Citation: Every piece of information taken from a
-       source must be attributed with a `[document:X]` marker at the end of
+       source must be attributed with a `[N]` marker at the end of
        the specific sentence it supports. If a sentence synthesizes from
        multiple sources, all must be cited (e.g.,
-       `[document:3][document:5]`).
+       `[1][2]`).
        - Synthesis over Summarization: The goal is to create a new, coherent
        narrative by combining information, not to summarize documents one by
        one. Avoid citing the same document repeatedly in succession if other
@@ -4806,7 +4806,7 @@ user:
        available information.
        - Draft the response by synthesizing the extracted information into a
        coherent narrative. As each sentence or claim is written, append the
-       correct `[document:X]` citation(s).
+       correct `[N]` citation(s).
     - Step 3: Refinement & Formatting:
        - Review the entire draft for accuracy, clarity, and logical flow.
        Ensure adherence to all rules, especially citation placement and
@@ -4943,7 +4943,7 @@ user:
        from multiple documents to create a holistic and cohesive response,
        avoiding simple repetition of a single source.
        - Citation Management: Flawlessly embeds source citations in the
-       `[document:X]` format at the end of the relevant sentence, ensuring
+       `[N]` format at the end of the relevant sentence, ensuring
        all information is attributed correctly.
 
     2. Supporting Skill: Content Generation & Formatting
@@ -4970,10 +4970,10 @@ user:
        `user_query` should be included. Irrelevant content from the
        documents must be identified and discarded.
        - Punctilious Citation: Every piece of information taken from a
-       source must be attributed with a `[document:X]` marker at the end of
+       source must be attributed with a `[N]` marker at the end of
        the specific sentence it supports. If a sentence synthesizes from
        multiple sources, all must be cited (e.g.,
-       `[document:3][document:5]`).
+       `[1][2]`).
        - Synthesis over Summarization: The goal is to create a new, coherent
        narrative by combining information, not to summarize documents one by
        one. Avoid citing the same document repeatedly in succession if other
@@ -5023,7 +5023,7 @@ user:
        available information.
        - Draft the response by synthesizing the extracted information into a
        coherent narrative. As each sentence or claim is written, append the
-       correct `[document:X]` citation(s).
+       correct `[N]` citation(s).
     - Step 3: Refinement & Formatting:
        - Review the entire draft for accuracy, clarity, and logical flow.
        Ensure adherence to all rules, especially citation placement and
