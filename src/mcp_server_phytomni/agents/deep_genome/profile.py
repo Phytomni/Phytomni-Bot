@@ -572,7 +572,6 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             state.get("part1_completed_branches", 0),
         )
         if state.get("part1_completed_branches", 0) < 4:
-            print("[Part1 Barrier] Waiting for branches")
             logger.info(
                 "[Part1 Barrier] Waiting for branches: %s/4",
                 state.get("part1_completed_branches", 0),
@@ -600,7 +599,6 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             part1_report = (
                 f"Gene {state['gene_id']} basic profile generation failed"
             )
-        print(part1_report)
         return {
             "part1_report": part1_report,
             "experiment_completed_branches": 1,
