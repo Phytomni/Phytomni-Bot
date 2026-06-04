@@ -98,8 +98,14 @@ def test_manifest_writes_json_with_expected_nodes(
     assert {
         "query_judge_node",
         "fetch_annotation_node",
+        "fetch_homology_interactions_node",
         "retrieve_node",
-        "generate_node",
+        "section1_node",
+        "section2_node",
+        "section3_node",
+        "section4_node",
+        "introduction_node",
+        "render_node",
         "follow_up_node",
     } <= names
 

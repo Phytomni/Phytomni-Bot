@@ -255,12 +255,25 @@ async def test_generate_post_node_handles_missing_chat_response(
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_off_uses_legacy_generate_node() -> None:
-    """Flag-off graph registers ``generate_node`` (no prep/post split)."""
+def test_compiled_graph_flag_off_uses_preamble_section_nodes() -> None:
+    """Flag-off graph registers the M10 preamble nodes (no chat subgraph).
+
+    M10 (X3b A architecture) replaced the legacy ``generate_node``
+    with a 4-parallel section fan-out + introduction + render. The
+    flag-off legacy wire registers these new nodes alongside
+    ``query_judge_node`` / ``fetch_annotation_node`` / etc, while
+    the chat-subgraph variant (``generate_prep_node`` + ``chat`` +
+    ``generate_post_node``) is still gated off.
+    """
     agent = _build_agent(use_subgraph=False)
     nodes = set(agent.app.get_graph(xray=0).nodes.keys())
 
-    assert "generate_node" in nodes
+    assert "section1_node" in nodes
+    assert "section2_node" in nodes
+    assert "section3_node" in nodes
+    assert "section4_node" in nodes
+    assert "introduction_node" in nodes
+    assert "render_node" in nodes
     assert "generate_prep_node" not in nodes
     assert "generate_post_node" not in nodes
     assert "chat" not in nodes

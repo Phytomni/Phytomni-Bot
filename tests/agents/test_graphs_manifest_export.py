@@ -164,14 +164,28 @@ def test_node_manifest_validates_non_empty_name() -> None:
 
 
 def test_export_real_brief_gene_agent_node_set() -> None:
-    """Real BriefGeneAgent export matches the documented five-node graph."""
+    """Real BriefGeneAgent export matches the post-M10 preamble topology.
+
+    M10 (X3b A architecture) replaces ``generate_node`` with a
+    4-parallel section fan-out + introduction + render. Required
+    nodes are listed here as a subset assertion; the actual graph
+    also has ``fetch_homology_interactions_node`` and the four
+    section nodes plus optional knowledge-subgraph nodes when
+    USE_KNOWLEDGE_SUBGRAPH=True.
+    """
     manifest = export_manifest(BriefGeneAgent().app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "query_judge_node",
         "fetch_annotation_node",
+        "fetch_homology_interactions_node",
         "retrieve_node",
-        "generate_node",
+        "section1_node",
+        "section2_node",
+        "section3_node",
+        "section4_node",
+        "introduction_node",
+        "render_node",
         "follow_up_node",
     }
     assert documented <= names

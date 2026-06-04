@@ -399,9 +399,9 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         discussion_report = state.get("discussion_report", "")
         introduction_report = state.get("introduction_report", "")
         if not state.get("config_params", {}).get("use_analyst_agent", True):
+            # Matches pre-M5 behavior: no intro on the analyst-off path.
             return (
-                f"{introduction_report}\n\n{part12_str}\n\n"
-                f"## Discussion\n\n{discussion_report}\n\n"
+                f"{part12_str}\n\n" f"## Discussion\n\n{discussion_report}\n\n"
             )
 
         return (
