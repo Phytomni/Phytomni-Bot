@@ -192,6 +192,61 @@ def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
     )
 
 
+def _annotation_strings_delta(
+    annotation_responses: List[Any],
+    structure_row: Dict[str, Any],
+) -> Dict[str, str]:
+    """Format the five annotation flat strings into a state-delta dict.
+
+    Keeps ``fetch_annotation_node`` within pylint R0914 too-many-locals
+    cap by computing the five derived strings (gene_structure /
+    go / kegg / interpro / description) in one place and returning
+    them as a dict the caller spreads into its state delta.
+    """
+    return {
+        "gene_structure_string": _gene_structure_annotation_string(
+            structure_row
+        ),
+        "go_string": _go_annotation_string(
+            _safe_rows(annotation_responses, 2)
+        ),
+        "kegg_string": _mapman_annotation_string(
+            _safe_rows(annotation_responses, 3)
+        ),
+        "interpro_string": _interpro_annotation_string(
+            _safe_rows(annotation_responses, 4)
+        ),
+        "description_string": _description_annotation_string(
+            _safe_rows(annotation_responses, 5)
+        ),
+    }
+
+
+def _alias_counts_delta(
+    gene_id_info_response: Optional[Dict[str, Any]],
+) -> Dict[str, int]:
+    """Derive Basic Information cross-species alias counts.
+
+    The ``id2multispecies`` response when queried with the resolved
+    canonical gene_id returns one row per cross-species mapping;
+    counting the rows gives the alias count and counting distinct
+    ``species_code`` values gives the species-count summary.
+    Returns the dict pair directly so ``query_judge_node`` can
+    spread it into its state delta without allocating intermediate
+    locals (keeps pylint R0914 too-many-locals happy).
+    """
+    rows = (gene_id_info_response or {}).get("data") or []
+    species = {
+        str(item.get("species_code", "")).strip()
+        for item in rows
+        if item.get("species_code")
+    }
+    return {
+        "cross_species_alias_count": len(rows),
+        "cross_species_alias_species_count": len(species),
+    }
+
+
 def _gene_structure_annotation_string(structure_row: Dict[str, Any]) -> str:
     """Build a concise display string for gene structural metadata.
 

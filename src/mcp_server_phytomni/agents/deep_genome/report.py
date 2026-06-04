@@ -44,6 +44,42 @@ def _state_gene_string(state: "DeepGenomeState") -> str:
     return state.get("gene_annotation", {}).get("gene_string", "")
 
 
+def _assemble_final_report(state: "DeepGenomeState") -> str:
+    """Concatenate all report sections into one markdown string.
+
+    Branches on ``use_analyst_agent`` to pick between the full
+    seven-section layout (intro + part12 + recommended experiments
+    + discussion + conclusion) and the analyst-off three-section
+    layout (part12 + discussion + conclusion). Extracted from
+    ``_run_follow_up_node`` to keep that node within pylint's
+    R0914 too-many-locals cap.
+    """
+    gene_id = state["gene_id"]
+    use_analyst = state.get("config_params", {}).get(
+        "use_analyst_agent", True
+    )
+    part12 = state.get("part12_combined") or ""
+    discussion = state.get("discussion_report", "")
+    summary = state.get("summary_report", "")
+    if not use_analyst:
+        return (
+            f"# Deep Genome Analysis of {gene_id}\n\n"
+            f"{part12}\n\n"
+            f"## Discussion\n\n{discussion}\n\n"
+            f"## Conclusion and Future Outlook\n\n{summary}\n\n"
+        )
+    return (
+        f"# Deep Genome Analysis of {gene_id}\n\n"
+        f"{state.get('introduction_report', '')}\n\n"
+        f"{part12}\n\n"
+        f"## Recommended experiments\n\n"
+        f"{state.get('protocol_report', '')}\n\n"
+        f"{state.get('experiment_report', '')}\n\n"
+        f"## Discussion\n\n{discussion}\n\n"
+        f"## Conclusion and Future Outlook\n\n{summary}\n\n"
+    )
+
+
 class DeepGenomeReportMixin(WorkflowMixinBase):
     """Report synthesis and finalization nodes for DeepGenome."""
 
@@ -428,40 +464,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         logger.info("Generating follow-up research questions")
 
         gene_id = state["gene_id"]
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-
-        # Assemble complete final report content
-        part12_str = state.get("part12_combined") or ""
-        introduction_report = state.get("introduction_report", "")
-        discussion_report = state.get("discussion_report", "")
-        summary_report = state.get("summary_report", "")
-        experiment_report = state.get("experiment_report", "")
-        protocol_report = state.get("protocol_report", "")
-
-        if use_analyst:
-            part0145_str = (
-                f"# Deep Genome Analysis of {gene_id}\n\n"
-                f"{introduction_report}\n\n"
-                f"{part12_str}\n\n"
-                f"## Recommended experiments\n\n"
-                f"{protocol_report}\n\n"
-                f"{experiment_report}\n\n"
-                f"## Discussion\n\n"
-                f"{discussion_report}\n\n"
-                f"## Conclusion and Future Outlook\n\n"
-                f"{summary_report}\n\n"
-            )
-        else:
-            part0145_str = (
-                f"# Deep Genome Analysis of {gene_id}\n\n"
-                f"{part12_str}\n\n"
-                f"## Discussion\n\n"
-                f"{discussion_report}\n\n"
-                f"## Conclusion and Future Outlook\n\n"
-                f"{summary_report}\n\n"
-            )
+        part0145_str = _assemble_final_report(state)
 
         follow_up_response = await phyto_chat(
             user_query=get_prompt(

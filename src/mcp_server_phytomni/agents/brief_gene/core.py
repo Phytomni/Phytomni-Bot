@@ -44,16 +44,13 @@ from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
 from .homology import _run_fetch_homology_interactions_node
 from .introduction import _run_introduction_node
 from .pipeline import (
+    _alias_counts_delta,
+    _annotation_strings_delta,
     _attach_metadata,
     _dedupe,
-    _description_annotation_string,
     _first_row,
     _format_docs,
-    _gene_structure_annotation_string,
     _generate_follow_up,
-    _go_annotation_string,
-    _interpro_annotation_string,
-    _mapman_annotation_string,
     _safe_rows,
     _split_symbols,
     gene_retrieve,
@@ -411,16 +408,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         species_all_name = (
             f"{species_english_name} ({species_latin_name}, {species_code})"
         )
-        # M6 — derive Basic Information cross-species alias counts from
-        # the ``id2multispecies`` response (rows = aliases of the same
-        # canonical gene across species mappings). Distinct ``species_code``
-        # values give the species-count summary.
-        alias_rows = (gene_id_info_response or {}).get("data") or []
-        alias_species_codes = {
-            str(item.get("species_code", "")).strip()
-            for item in alias_rows
-            if item.get("species_code")
-        }
         return {
             "gene_found": True,
             "gene_id": gene_id,
@@ -430,8 +417,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "species_latin_name": species_latin_name,
             "species_english_name": species_english_name,
             "species_all_name": species_all_name,
-            "cross_species_alias_count": len(alias_rows),
-            "cross_species_alias_species_count": len(alias_species_codes),
+            **_alias_counts_delta(gene_id_info_response),
         }
 
     async def fetch_annotation_node(self, state: BriefGeneAgentState):
@@ -493,20 +479,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
         structure_rows = _safe_rows(annotation_responses, 1)
         structure_row = structure_rows[0] if structure_rows else {}
-        gene_structure_string = _gene_structure_annotation_string(
-            structure_row
-        )
-
-        go_string = _go_annotation_string(_safe_rows(annotation_responses, 2))
-        kegg_string = _mapman_annotation_string(
-            _safe_rows(annotation_responses, 3)
-        )
-        interpro_string = _interpro_annotation_string(
-            _safe_rows(annotation_responses, 4)
-        )
-        description_string = _description_annotation_string(
-            _safe_rows(annotation_responses, 5)
-        )
 
         return {
             "gene_name_symbol_list": gene_symbols,
@@ -515,11 +487,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "gene_start": str(structure_row.get("start", "")),
             "gene_end": str(structure_row.get("end", "")),
             "gene_strand": str(structure_row.get("strand", "")),
-            "gene_structure_string": gene_structure_string,
-            "go_string": go_string,
-            "kegg_string": kegg_string,
-            "interpro_string": interpro_string,
-            "description_string": description_string,
+            **_annotation_strings_delta(annotation_responses, structure_row),
         }
 
     async def retrieve_node(self, state: BriefGeneAgentState):
