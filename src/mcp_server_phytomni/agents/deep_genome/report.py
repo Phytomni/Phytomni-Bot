@@ -310,6 +310,14 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         else:
             content = part12_str
 
+        # Prepend brief_gene's mounted-subgraph answer so the
+        # introduction LLM has the gene-function summary brief_gene
+        # generated; degrades to empty string when brief_response is
+        # absent (legacy direct callers / failed mount sentinel).
+        brief_answer = message_content(state.get("brief_response") or {})
+        if brief_answer:
+            content = f"## Brief gene answer\n\n{brief_answer}\n\n{content}"
+
         introduction_response = await phyto_chat(
             user_query=get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
@@ -467,11 +475,24 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         """Build the source report content for final summary generation."""
         part12_str = state.get("part12_combined") or ""
         discussion_report = state.get("discussion_report", "")
+        # brief_gene's mounted-subgraph answer prepended so the summary
+        # LLM sees the gene-function summary brief_gene generated;
+        # degrades to empty string when brief_response is absent.
+        brief_answer = message_content(state.get("brief_response") or {})
+        brief_prefix = (
+            f"## Brief gene answer\n\n{brief_answer}\n\n"
+            if brief_answer
+            else ""
+        )
         if not state.get("config_params", {}).get("use_analyst_agent", True):
-            return f"{part12_str}\n\n## Discussion\n\n{discussion_report}\n\n"
+            return (
+                f"{brief_prefix}{part12_str}\n\n"
+                f"## Discussion\n\n{discussion_report}\n\n"
+            )
 
         return (
             f"# Deep Genome Analysis of {state['gene_id']}\n\n"
+            f"{brief_prefix}"
             f"{state.get('introduction_report', '')}\n\n{part12_str}\n\n"
             "## Recommended experiments\n\n"
             f"{state.get('protocol_report', '')}\n\n"
@@ -560,12 +581,12 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         follow_up_list = parse_follow_up_questions(
             message_content(follow_up_response)
         )
-        report_dir = state['report_dir']
+        report_dir = state["report_dir"]
         results_path = Path(report_dir) / f"{state['gene_id']}_report.md"
-        final_report = part0145_str + '\n## Follow up questions: \n'
+        final_report = part0145_str + "\n## Follow up questions: \n"
         for follow_up in follow_up_list:
             final_report += follow_up
-            final_report += '\n'
+            final_report += "\n"
         with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(final_report)
         return {

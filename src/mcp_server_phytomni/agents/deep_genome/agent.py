@@ -184,6 +184,14 @@ class DeepGenomeState(TypedDict):
     discussion_report: Optional[str]
     summary_report: Optional[str]
     follow_up_questions: Optional[List[str]]
+    # brief_gene's full chat-completions-style response, projected by
+    # the brief_gene_mount node from BriefGeneOutput.final_response.
+    # ``_run_report_introduction`` and ``_run_report_summary`` read
+    # ``message_content(state["brief_response"])`` to prefix the
+    # already-assembled ``content`` they send to the introduction /
+    # summary LLM templates with the brief gene answer brief_gene
+    # produced inside its mounted subgraph.
+    brief_response: Optional[Dict[str, Any]]
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]

@@ -114,6 +114,7 @@ def make_brief_gene_mount_node(
             brief_output = {}
 
         gene_string = str(brief_output.get("gene_id", "") or gene_id)
+        brief_response = brief_output.get("final_response")
         return {
             "gene_annotation": {
                 "gene_string": gene_string,
@@ -127,6 +128,11 @@ def make_brief_gene_mount_node(
                     brief_output.get("retrieved_docs", []) or []
                 ),
             },
+            "brief_response": (
+                dict(brief_response)
+                if isinstance(brief_response, dict)
+                else {}
+            ),
             "part1_completed_branches": 1,
         }
 

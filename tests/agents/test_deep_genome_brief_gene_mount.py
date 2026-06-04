@@ -125,6 +125,51 @@ async def test_brief_gene_mount_writes_literature_under_knowledge() -> None:
     assert literature == [{"title": "doc1"}, {"title": "doc2"}]
 
 
+async def test_brief_gene_mount_projects_brief_response_for_report_nodes() -> (
+    None
+):
+    """Mount writes brief_gene's final_response under ``brief_response``.
+
+    ``_run_report_introduction`` and ``_run_report_summary`` read
+    ``state["brief_response"]`` via ``message_content`` and prepend the
+    extracted text to the content they send to the introduction /
+    summary LLM templates. The mount node MUST project
+    ``BriefGeneOutput.final_response`` into this state key so the
+    report nodes see the brief gene answer brief_gene produced inside
+    the mounted subgraph rather than degrading to an empty prefix.
+    """
+    fake_app = _build_fake_brief_gene_app()
+    mount = make_brief_gene_mount_node(fake_app)
+    state = _deep_genome_state()
+
+    delta = await mount(cast(Any, state))
+
+    assert delta["brief_response"] == {
+        "choices": [{"message": {"content": "ans"}}]
+    }
+
+
+async def test_brief_gene_mount_brief_response_defaults_to_empty_dict() -> (
+    None
+):
+    """Missing ``final_response`` projects an empty dict rather than None.
+
+    Keeps the DeepGenomeState ``brief_response: Optional[Dict[str, Any]]``
+    contract honoured even when brief_gene returns a partial output
+    without a final_response (degraded run); ``message_content`` returns
+    "" for an empty dict so report nodes degrade gracefully.
+    """
+    fake_app = _build_fake_brief_gene_app(
+        output={"gene_id": "AT1G01010", "retrieved_docs": []}
+    )
+    mount = make_brief_gene_mount_node(fake_app)
+    state = _deep_genome_state()
+
+    delta = await mount(cast(Any, state))
+
+    assert delta["brief_response"] == {}
+
+
 async def test_brief_gene_mount_writes_part1_barrier_counter() -> None:
     """Mount writes ``part1_completed_branches: 1`` for the part1 barrier.
 
