@@ -18,10 +18,11 @@ from typing import Any, Dict
 
 from ..shared.sql import relay_bi_query, sql_literal
 from .interactions import _homology_gene_lists, _interaction_gene_list
+from .state import BriefGeneAgentState
 
 
 async def _run_fetch_homology_interactions_node(
-    state: Dict[str, Any],
+    state: BriefGeneAgentState,
 ) -> Dict[str, Any]:
     """Fetch homology + interactions BI rows for the query gene.
 

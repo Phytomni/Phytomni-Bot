@@ -34,7 +34,15 @@ from ..shared.chat_subgraph import (
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.sql import sql_literal
+from .analytical_sections import (
+    _run_section1_node,
+    _run_section2_node,
+    _run_section3_node,
+    _run_section4_node,
+)
 from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
+from .homology import _run_fetch_homology_interactions_node
+from .introduction import _run_introduction_node
 from .pipeline import (
     _attach_metadata,
     _dedupe,
@@ -51,6 +59,7 @@ from .pipeline import (
     gene_retrieve,
     run_bi_api,
 )
+from .render import _render_preamble_node
 from .state import (
     BriefGeneAgentState,
     BriefGeneInput,
@@ -148,8 +157,17 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         retrieve_in, retrieve_out = self._retrieve_targets()
         workflow.add_node("query_judge_node", self.query_judge_node)
         workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
+        workflow.add_node(
+            "fetch_homology_interactions_node",
+            _run_fetch_homology_interactions_node,
+        )
         self._register_retrieve_nodes(workflow)
-        workflow.add_node("generate_node", self.generate_node)
+        workflow.add_node("section1_node", _run_section1_node)
+        workflow.add_node("section2_node", _run_section2_node)
+        workflow.add_node("section3_node", _run_section3_node)
+        workflow.add_node("section4_node", _run_section4_node)
+        workflow.add_node("introduction_node", _run_introduction_node)
+        workflow.add_node("render_node", _render_preamble_node)
         workflow.add_node("follow_up_node", self.follow_up_node)
 
         workflow.add_edge(START, "query_judge_node")
@@ -161,11 +179,37 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
                 "retrieve_node": retrieve_in,
             },
         )
-        workflow.add_edge("fetch_annotation_node", retrieve_in)
-        workflow.add_edge(retrieve_out, "generate_node")
+        # gene_found=True path: annotation → homology → retrieve →
+        # 4 parallel sections (fan-out via conditional list return) →
+        # introduction (fan-in) → render → conditional follow_up.
+        workflow.add_edge(
+            "fetch_annotation_node", "fetch_homology_interactions_node"
+        )
+        workflow.add_edge("fetch_homology_interactions_node", retrieve_in)
         workflow.add_conditional_edges(
-            "generate_node",
-            self.route_after_generate,
+            retrieve_out,
+            self._route_after_retrieve,
+            [
+                "section1_node",
+                "section2_node",
+                "section3_node",
+                "section4_node",
+                "introduction_node",
+            ],
+        )
+        # Each section converges into introduction_node (LangGraph
+        # fan-in waits for all 4 incoming edges; the
+        # gene_profile_completed_branches counter is also written by
+        # each section node for observability but is not consulted by
+        # the routing function).
+        workflow.add_edge("section1_node", "introduction_node")
+        workflow.add_edge("section2_node", "introduction_node")
+        workflow.add_edge("section3_node", "introduction_node")
+        workflow.add_edge("section4_node", "introduction_node")
+        workflow.add_edge("introduction_node", "render_node")
+        workflow.add_conditional_edges(
+            "render_node",
+            self.route_after_render,
             {
                 "follow_up_node": "follow_up_node",
                 "__end__": END,
@@ -271,6 +315,42 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         Returns:
             "follow_up_node" if the state flag is True (default),
             otherwise "__end__".
+        """
+        if state.get("is_follow_up", True):
+            return "follow_up_node"
+        return "__end__"
+
+    def _route_after_retrieve(self, state: BriefGeneState) -> list[str]:
+        """Route after retrieve based on gene_found flag.
+
+        On the gene_found=True path, return the list of all 4
+        section node names; LangGraph treats a list return from a
+        conditional routing function as parallel dispatch and
+        invokes each named target concurrently. On the
+        gene_found=False (D5.a) path, return a single-element list
+        with ``introduction_node`` to skip the sections (no BI
+        annotation context available) and go straight to the
+        degraded-variant introduction.
+        """
+        if state.get("gene_found"):
+            return [
+                "section1_node",
+                "section2_node",
+                "section3_node",
+                "section4_node",
+            ]
+        return ["introduction_node"]
+
+    def route_after_render(
+        self, state: BriefGeneState
+    ) -> Literal["follow_up_node", "__end__"]:
+        """Route after render based on the is_follow_up flag.
+
+        Mirrors ``route_after_generate`` (kept for the legacy
+        generate path under the deprecated wire). Parent graphs may
+        set ``is_follow_up=False`` via ``BriefGeneInput`` to skip
+        the trailing follow-up-question LLM hop; direct callers
+        leave the field unset and see the legacy True default.
         """
         if state.get("is_follow_up", True):
             return "follow_up_node"

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from .state import BriefGeneAgentState
 
-def _format_gene_string(state: Dict[str, Any]) -> str:
+
+def _format_gene_string(state: BriefGeneAgentState) -> str:
     """Pipe-join gene_name_symbol_list with gene_id_list for display."""
     symbols = state.get("gene_name_symbol_list") or []
     ids = state.get("gene_id_list") or []
@@ -30,7 +32,7 @@ def _format_gene_string(state: Dict[str, Any]) -> str:
     return "|".join(combined) if combined else state.get("gene_id", "")
 
 
-def _render_happy_preamble(state: Dict[str, Any]) -> str:
+def _render_happy_preamble(state: BriefGeneAgentState) -> str:
     """Render full preamble for gene_found=True path."""
     gene_id = state.get("gene_id", "")
     gene_string = _format_gene_string(state)
@@ -78,7 +80,7 @@ def _render_happy_preamble(state: Dict[str, Any]) -> str:
     )
 
 
-def _render_degraded_preamble(state: Dict[str, Any]) -> str:
+def _render_degraded_preamble(state: BriefGeneAgentState) -> str:
     """Render degraded preamble for gene_found=False path (D5.a)."""
     user_query = state.get("user_query", "")
     return (
@@ -94,7 +96,7 @@ def _render_degraded_preamble(state: Dict[str, Any]) -> str:
     )
 
 
-def _render_preamble_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def _render_preamble_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """Assemble final_response.content from state fields.
 
     Returns a state delta writing ``final_response`` in OpenAI

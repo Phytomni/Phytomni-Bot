@@ -28,11 +28,12 @@ from ...config.defaults import BriefGeneConfig
 from ...config.settings import get_sensitive_config
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
+from .state import BriefGeneAgentState
 
 BRIEF_GENE_CONFIG = BriefGeneConfig()
 
 
-def _build_section_context(state: Dict[str, Any]) -> Dict[str, Any]:
+def _build_section_context(state: BriefGeneAgentState) -> Dict[str, Any]:
     """Assemble the prompt template variables shared by all 4 sections.
 
     Sections share BI annotation + literature inputs. The
@@ -61,7 +62,7 @@ def _build_section_context(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _call_section_llm(
-    state: Dict[str, Any],
+    state: BriefGeneAgentState,
     prompt_path: str,
 ) -> str:
     """Shared LLM invocation for a section prompt.
@@ -84,7 +85,7 @@ async def _call_section_llm(
     return message_content(response)
 
 
-async def _run_section1_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_section1_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """§1 Discovery LLM call.
 
     Writes ``section1_markdown`` (the LLM-produced
@@ -100,7 +101,7 @@ async def _run_section1_node(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _run_section2_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_section2_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """§2 Cloning LLM call.
 
     Writes ``section2_markdown`` (the LLM-produced
@@ -115,7 +116,7 @@ async def _run_section2_node(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _run_section3_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_section3_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """§3 Functional LLM call.
 
     Writes ``section3_markdown`` (the LLM-produced
@@ -130,7 +131,7 @@ async def _run_section3_node(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _run_section4_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_section4_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """§4 Application LLM call.
 
     Writes ``section4_markdown`` (the LLM-produced

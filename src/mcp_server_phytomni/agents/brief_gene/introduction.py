@@ -24,11 +24,12 @@ from ...config.defaults import BriefGeneConfig
 from ...config.settings import get_sensitive_config
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
+from .state import BriefGeneAgentState
 
 BRIEF_GENE_CONFIG = BriefGeneConfig()
 
 
-def _build_introduction_context(state: Dict[str, Any]) -> Dict[str, Any]:
+def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
     """Assemble prompt template variables.
 
     On ``gene_found=True``, the ``content`` variable carries the
@@ -63,7 +64,9 @@ def _build_introduction_context(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _run_introduction_node(state: Dict[str, Any]) -> Dict[str, Any]:
+async def _run_introduction_node(
+    state: BriefGeneAgentState,
+) -> Dict[str, Any]:
     """Produce a 3-5 paragraph introduction summarizing sections / lit.
 
     Writes ``introduction_report`` state field consumed by
