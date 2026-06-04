@@ -55,9 +55,7 @@ def _assemble_final_report(state: "DeepGenomeState") -> str:
     R0914 too-many-locals cap.
     """
     gene_id = state["gene_id"]
-    use_analyst = state.get("config_params", {}).get(
-        "use_analyst_agent", True
-    )
+    use_analyst = state.get("config_params", {}).get("use_analyst_agent", True)
     part12 = state.get("part12_combined") or ""
     discussion = state.get("discussion_report", "")
     summary = state.get("summary_report", "")
