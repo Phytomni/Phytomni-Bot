@@ -645,6 +645,31 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
+    # ``USE_EVOLUTION_SUBGRAPH`` / ``USE_DESIGN_SUBGRAPH`` — Step 6.5
+    # opt-in flags that reroute dispatch's evolution / structure /
+    # promoter branches from inline analyst.arun assembly to the
+    # evolution / design module producer wrappers. ``AliasChoices``
+    # mirrors the endpoint-field pattern (AF-NEW-5).
+    USE_EVOLUTION_SUBGRAPH: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "USE_EVOLUTION_SUBGRAPH",
+                "PHYTOMNI_USE_EVOLUTION_SUBGRAPH",
+            ),
+        ),
+    ] = False
+    USE_DESIGN_SUBGRAPH: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "USE_DESIGN_SUBGRAPH",
+                "PHYTOMNI_USE_DESIGN_SUBGRAPH",
+            ),
+        ),
+    ] = False
     BI_URL: Annotated[
         str,
         Field(

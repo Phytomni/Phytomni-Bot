@@ -30,6 +30,11 @@ from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..analyst.storage import download_obs_out
+from ..design.agent import (
+    promoter_design_for_gene,
+    protein_structure_for_gene,
+)
+from ..evolution.agent import evolution_analysis_for_gene
 from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
@@ -567,7 +572,42 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         context: AnalysisDispatchContext,
         run_identity: RunIdentity,
     ) -> dict:
-        """Submit one resolved analysis task to AnalystAgent."""
+        """Submit one resolved analysis task to AnalystAgent.
+
+        For the three analysis types transferred to the evolution /
+        design modules (Step 6.5), branch on the matching
+        ``DeepGenomeConfig`` flag and dispatch through the producer
+        wrapper. Default-False flags keep the legacy
+        ``analyst_agent.arun`` path live so the
+        ``PHYTOMNI_USE_*_SUBGRAPH=false`` rollback knob continues to
+        work until Step 6.6 flips the defaults to True.
+        """
+        analysis_type = context.analysis_type
+        config = self.deep_genome_config
+        if (
+            analysis_type == "evolution_analysis"
+            and config.USE_EVOLUTION_SUBGRAPH
+        ):
+            return await evolution_analysis_for_gene(
+                species=context.species,
+                gene_id=context.gene_id,
+                output_dir=context.output_dir,
+            )
+        if (
+            analysis_type == "protein_structure_analysis"
+            and config.USE_DESIGN_SUBGRAPH
+        ):
+            return await protein_structure_for_gene(
+                species=context.species,
+                gene_id=context.gene_id,
+                output_dir=context.output_dir,
+            )
+        if analysis_type == "promoter_analysis" and config.USE_DESIGN_SUBGRAPH:
+            return await promoter_design_for_gene(
+                species=context.species,
+                gene_id=context.gene_id,
+                output_dir=context.output_dir,
+            )
         goal_description, data_list, meta, compute_resource = (
             self._analysis_prompt_parts(context)
         )

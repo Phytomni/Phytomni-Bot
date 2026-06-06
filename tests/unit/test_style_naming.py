@@ -114,6 +114,13 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_research_chat_subgraph.py": {
         "protected-access",
     },
+    # Flag-branch test for ``DeepGenomeDispatchMixin._submit_analysis_task``
+    # — asserts USE_EVOLUTION_SUBGRAPH / USE_DESIGN_SUBGRAPH route the
+    # 3 transferred analysis types to the evolution / design producer
+    # wrappers, same protected-helper coverage seam.
+    "tests/agents/test_deep_genome_dispatch_routing.py": {
+        "protected-access",
+    },
     # Flag-branch test for ``AnalystAgent._knowledge_app`` lifecycle —
     # asserts the per-instance KA app is built only when the flag is
     # on; same protected-helper coverage seam as the design sibling.
