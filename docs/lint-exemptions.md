@@ -618,14 +618,17 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 63`). The catalog header count above (25)
+`RULE_BASELINES["R0801"] = 97`). The catalog header count above (25)
 reflects an older snapshot; subsequent Phase-6 / F-series steps
 ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus AF-6
-coverage lift), and 63 (F3.C3.3 Send-triad worker mirroring
-analyst / data retrieve-fan-out templates). Each ratchet was
-disclosed in its own commit body; the original 25-cluster catalog
-remains accurate for the legacy clusters but is no longer the
-authoritative count. The main pylint invocation in
+coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
+analyst / data retrieve-fan-out templates), 66 / 79 / 93 / 94
+(brief_gene preamble fusion + Align-A citation rules accumulation,
+documented in their own commit bodies), and 97 (Step 6.4 env/evo
+per-consumer wiring; see entry below). Each ratchet was disclosed
+in its own commit body; the original 25-cluster catalog remains
+accurate for the legacy clusters but is no longer the authoritative
+count. The main pylint invocation in
 `scripts/validate_local.sh` and `scripts/scoped_gate.sh` is run with
 `--disable=R0801,R0903` so the gate-level pylint exits 0 on this
 rule; the baseline script runs its own pylint without the disable
@@ -638,6 +641,40 @@ duplicate or explicitly bumps the baseline in the same diff.
 wrappers' parallel signatures are by design — they map onto one
 backend with one canonical signature. Collapsing them into a generic
 helper would obscure the per-wrapper public contract.
+
+1. **Env/evo USE_CHAT_SUBGRAPH branch mirror** (2 occurrences, added
+   2026-06-07). `agents/environment/agent.py:[91:103]` and
+   `agents/evolution/agent.py:[152:164]` share the same chat-call
+   branch (build_chat_input → \_cached_chat_app().ainvoke →
+   extract_chat_response vs phyto_chat fallback) wrapping their
+   chat_kwargs bag. The mirror is intentional: env and evo are
+   parallel free-function agents and their chat-extraction sites
+   stay structurally aligned with the Step 6.1 single-node chat
+   wiring pattern. Extracting a shared `dispatch_chat_via_flag`
+   helper would erase the per-agent config naming (ENVIRONMENT_CONFIG
+   vs DEEP_GENOME_CONFIG) at the call site, making future audits of
+   "which consumer flipped USE_CHAT_SUBGRAPH" require an extra hop.
+   **Sunset condition**: when Step 6.6 default-flips
+   USE_CHAT_SUBGRAPH to True and the legacy `phyto_chat` branches
+   collapse to env-override fallbacks, both call sites shrink to a
+   3-line block that falls below `min-similar-lines=4`.
+1. **Env/evo \_submit\_\*\_via_subgraph request-dict mirror**
+   (1 occurrence, added 2026-06-07).
+   `agents/environment/graph.py:[180:187]` and
+   `agents/evolution/graph.py:[179:186]` share the same dispatch
+   request dict shape (`analysis_type` / `target_id` /
+   `output_dir` / `prompt_parts` / `compute_resource`) packed for
+   `submit_analyst_via_subgraph`. The mirror is intentional: every
+   subgraph consumer (design / network / research / env / evo)
+   builds the same request shape from its own domain inputs; a
+   shared "build_analyst_request" helper would erase the
+   `target_id` semantics each consumer assigns
+   (region-codes concat for env, gene_id for evo). The Phase 5a
+   design / network sites are not yet line-aligned to env / evo
+   only because design/network nest the dict inside an instance
+   method while env/evo do so at module scope. **Sunset condition**:
+   none — the parallel-structure design extends to every future
+   subgraph consumer and the dict shape is the contract.
 
 **Why refactor is net-negative for cluster 4**: the chat-agent
 stream and non-stream call sites land in two modules
