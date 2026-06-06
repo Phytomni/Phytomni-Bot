@@ -140,3 +140,6 @@ async def test_dispatch_request_carries_to_id_as_target(
     assert request["target_id"] == "TO:0000621"
     assert request["analysis_type"] == "gene_network_analysis"
     assert request["output_dir"] == "/tmp/network-out"
+    # Network preserves its current fire-and-poll-elsewhere semantics:
+    # must override the producer-side default of True.
+    assert call_args.kwargs["is_polling"] is False

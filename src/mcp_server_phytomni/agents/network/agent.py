@@ -207,6 +207,7 @@ class GeneNetworkAgents:
                 self.gene_network_config,
                 self.sensitive_config,
                 request,
+                is_polling=False,
             )
         return await submit_analyst_analysis(
             self.analyst_agent,

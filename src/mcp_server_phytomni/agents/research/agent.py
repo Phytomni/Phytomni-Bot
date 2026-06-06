@@ -300,6 +300,7 @@ class InSilicoResearchAgents:
                     ),
                     "compute_resource": "medium",
                 },
+                is_polling=False,
             )
         else:
             result = await self.analyst_agent.arun(

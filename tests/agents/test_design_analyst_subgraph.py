@@ -106,6 +106,11 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
     )
 
     assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=True)
+    # Design preserves its current fire-and-poll-elsewhere semantics:
+    # must override the producer-side default of True.
+    call_args = subgraph_mock.await_args
+    assert call_args is not None
+    assert call_args.kwargs["is_polling"] is False
 
 
 async def test_via_subgraph_invokes_app_ainvoke_with_input() -> None:
@@ -160,7 +165,11 @@ async def test_via_subgraph_invokes_app_ainvoke_with_input() -> None:
     assert analyst_input["data_list"] == {"sample_a.tsv": "expression matrix"}
     assert analyst_input["compute_resource"] == "medium"
     assert analyst_input["is_preset_plan"] is True
-    assert analyst_input["is_polling"] is False
+    # The producer-side default is now True (forward-looking for the
+    # deep_genome polling consumer). Existing dispatch consumers must
+    # pass is_polling=False explicitly — that branch is exercised by
+    # test_dispatch_uses_subgraph_submit_when_flag_on above.
+    assert analyst_input["is_polling"] is True
     assert analyst_input["is_auto_select"] is False
 
 

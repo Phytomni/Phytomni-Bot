@@ -138,6 +138,9 @@ async def test_submit_task_uses_subgraph_when_flag_on(
         "preset-plan-meta",
         {"sample_a.tsv": "expression matrix"},
     )
+    # Research preserves its current fire-and-poll-elsewhere
+    # semantics: must override the producer-side default of True.
+    assert call_args.kwargs["is_polling"] is False
 
 
 async def test_submit_task_propagates_failed_status_in_both_branches(

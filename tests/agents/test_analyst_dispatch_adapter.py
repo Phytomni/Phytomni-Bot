@@ -70,19 +70,45 @@ def test_map_send_payload_unpacks_prompt_parts() -> None:
     assert result["data_list"] == {"sample_a.tsv": "expression matrix"}
 
 
-def test_map_send_payload_pins_dispatch_flag_constants() -> None:
-    """Three boolean flags match what ``submit_analyst_analysis`` pins.
+def test_map_send_payload_pins_auto_select_and_preset_plan_constants() -> None:
+    """``is_auto_select`` and ``is_preset_plan`` stay pinned constants.
 
-    ``is_polling=False`` (callers poll via ``task_id`` lookups, not
-    inside the dispatched arun), ``is_auto_select=False`` (the data
-    list is preset), and ``is_preset_plan=True`` (the preset plan
-    bypasses the retrieval + critic path).
+    ``is_auto_select=False`` (the data list is preset) and
+    ``is_preset_plan=True`` (the preset plan bypasses the retrieval +
+    critic path) are pinned regardless of caller. Only ``is_polling``
+    is parameterised — see the polling-specific tests below.
     """
     payload = _sample_payload()
     result = dict(map_send_payload_to_analyst_input(payload))
-    assert result["is_polling"] is False
     assert result["is_auto_select"] is False
     assert result["is_preset_plan"] is True
+
+
+def test_map_send_payload_is_polling_defaults_to_true() -> None:
+    """Default ``is_polling=True`` is forward-looking for deep_genome.
+
+    Pins the producer-side default so a deep_genome caller that
+    omits ``is_polling`` inherits the polling semantics its current
+    ``dispatch.py:_submit_analysis_task`` already uses (``arun(...,
+    is_polling=True)``).
+    """
+    payload = _sample_payload()
+    result = dict(map_send_payload_to_analyst_input(payload))
+    assert result["is_polling"] is True
+
+
+def test_map_send_payload_is_polling_false_when_explicit() -> None:
+    """Existing five consumers pass ``is_polling=False`` explicitly.
+
+    Design / network / research / environment / evolution all keep
+    fire-and-poll-elsewhere semantics; an explicit ``False`` kwarg
+    must override the producer-side default so their
+    ``submit_analyst_analysis`` / ``analyst.submit`` paths stay
+    behaviour-preserved when routed through the subgraph.
+    """
+    payload = _sample_payload()
+    result = dict(map_send_payload_to_analyst_input(payload, is_polling=False))
+    assert result["is_polling"] is False
 
 
 def test_map_send_payload_threads_compute_resource_and_output_dir() -> None:

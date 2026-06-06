@@ -34,6 +34,8 @@ __all__ = [
 
 def map_send_payload_to_analyst_input(
     payload: Mapping[str, Any],
+    *,
+    is_polling: bool = True,
 ) -> AnalystInput:
     """Project a dispatch request payload into ``AnalystInput`` shape.
 
@@ -41,18 +43,26 @@ def map_send_payload_to_analyst_input(
     ``AnalystAgent.arun``: pulls ``goal_description`` / ``preset_plan``
     / ``data_list`` from the request's ``prompt_parts`` tuple, threads
     ``compute_resource`` and the optional ``output_dir`` through, and
-    pins the three dispatch flags to the constants
-    ``submit_analyst_analysis`` hard-codes
-    (``is_auto_select=False`` / ``is_polling=False`` /
-    ``is_preset_plan=True``). ``query`` is set to the empty string
-    because the preset-plan path inside the analyst graph never reads
-    ``query`` once ``is_preset_plan`` is True.
+    pins ``is_auto_select=False`` / ``is_preset_plan=True`` (the
+    constants ``submit_analyst_analysis`` hard-codes). ``query`` is
+    set to the empty string because the preset-plan path inside the
+    analyst graph never reads ``query`` once ``is_preset_plan`` is
+    True. ``is_polling`` is parameterised: design / network / research
+    / environment / evolution (the five current dispatch consumers)
+    all submit fire-and-poll-elsewhere style so they pass
+    ``is_polling=False``; the default ``True`` is forward-looking for
+    deep_genome which awaits a polling-terminal task state inline.
 
     Args:
         payload: Request mapping with ``analysis_type`` / ``target_id``
             / ``prompt_parts`` (a 3-tuple of goal description, preset
             plan meta string, and data list dict) / ``compute_resource``
             / optional ``output_dir``.
+        is_polling: Whether the analyst graph should block until the
+            submitted task reaches a terminal state. Defaults to
+            ``True`` (deep_genome semantics); existing dispatch
+            consumers pass ``False`` to match their current
+            ``submit_analyst_analysis`` / ``analyst.submit`` paths.
 
     Returns:
         An ``AnalystInput`` dict suitable for ``ainvoke`` on the
@@ -71,7 +81,7 @@ def map_send_payload_to_analyst_input(
         data_list=data_list,
         compute_resource=payload["compute_resource"],
         output_dir=payload.get("output_dir") or "",
-        is_polling=False,
+        is_polling=is_polling,
         is_auto_select=False,
         is_preset_plan=True,
     )
@@ -114,6 +124,8 @@ async def submit_analyst_via_subgraph(
     config: Any,
     sensitive_config: Any,
     request: Mapping[str, Any],
+    *,
+    is_polling: bool = True,
 ) -> dict[str, Any]:
     """Dispatch one analysis through the analyst's compiled subgraph.
 
@@ -141,6 +153,12 @@ async def submit_analyst_via_subgraph(
             ``target_id`` / ``prompt_parts`` (a 3-tuple of goal
             description, preset plan meta string, and data list
             dict) / ``compute_resource`` / optional ``output_dir``.
+        is_polling: Whether the analyst graph should block until the
+            submitted task reaches a terminal state. Defaults to
+            ``True`` (deep_genome semantics); design / network /
+            research / environment / evolution all pass ``False`` to
+            match their current ``submit_analyst_analysis`` /
+            ``analyst.submit`` fire-and-poll-elsewhere paths.
 
     Returns:
         Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
@@ -154,7 +172,9 @@ async def submit_analyst_via_subgraph(
         config, sensitive_config, request
     )
     enriched_request = {**request, "output_dir": context.output_dir}
-    analyst_input = map_send_payload_to_analyst_input(enriched_request)
+    analyst_input = map_send_payload_to_analyst_input(
+        enriched_request, is_polling=is_polling
+    )
     runnable_config: RunnableConfig = {
         "configurable": {"thread_id": context.thread_id}
     }
