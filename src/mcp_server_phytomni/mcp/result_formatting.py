@@ -726,7 +726,7 @@ def _normalize_citations(
     citation_order = _citation_order(answer)
     selected_docs: list[Mapping[str, Any]] = []
     old_to_new: dict[int, int] = {}
-    seen_keys: set[str] = set()
+    seen_keys: dict[str, int] = {}
 
     for old_index in citation_order:
         if old_index < 1 or old_index > len(doc_list):
@@ -734,10 +734,12 @@ def _normalize_citations(
         doc = doc_list[old_index - 1]
         doc_key = _document_key(doc, old_index)
         if doc_key in seen_keys:
+            old_to_new[old_index] = seen_keys[doc_key]
             continue
-        seen_keys.add(doc_key)
         selected_docs.append(_reference_payload(doc))
-        old_to_new[old_index] = len(selected_docs)
+        new_ref = len(selected_docs)
+        seen_keys[doc_key] = new_ref
+        old_to_new[old_index] = new_ref
 
     def replace_citation(match: re.Match[str]) -> str:
         new_numbers = [

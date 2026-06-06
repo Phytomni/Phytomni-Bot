@@ -709,10 +709,7 @@ def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
 
     Pinning the minimum-correct dedup path: indices that map to
     distinct file_ids preserve as distinct ``[N]`` references in
-    first-appearance order. A separately-discovered dedup-drop bug
-    (where a third index mapping to an earlier-seen file_id becomes
-    an empty-string substitution rather than re-pointing to the
-    existing ``[N]``) is tracked outside this plan's scope.
+    first-appearance order.
     """
 
     paper_a = {"file_id": "paper-a", "title": "Paper A"}
@@ -754,3 +751,71 @@ def test_normalize_citations_no_false_positive_on_prose() -> None:
 
     assert not refs
     assert text == answer
+
+
+# --- _normalize_citations: dedup hit must re-point to existing ref ---
+
+
+def test_normalize_citations_dedup_repoints_to_existing_ref() -> None:
+    """A separate-bracket citation that dedups must re-point, not vanish.
+
+    When the LLM cites three distinct indices in separate brackets and
+    the third one maps to a file_id already cited by the first, the
+    third citation must be rewritten to point at the existing
+    reference number rather than dropping to an empty string. This
+    pins the multi-chunk-same-paper retrieval pattern common in
+    ``brief_gene`` (TOP_N >= 30) where one paper contributes multiple
+    ranked chunks.
+    """
+
+    paper_a = {"file_id": "paper-a", "title": "Paper A"}
+    paper_b = {"file_id": "paper-b", "title": "Paper B"}
+    # doc_list[0]/[2] both map to paper_a; doc_list[1] is paper_b.
+    doc_list = [paper_a, paper_b, paper_a]
+    answer = "First [1] then [2] then [3]."
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
+    assert text == "First [1] then [2] then [1]."
+
+
+def test_normalize_citations_dedup_inside_multi_index_keeps_ref() -> None:
+    """A multi-index bracket with a dedup hit keeps the existing ref.
+
+    ``[1, 2, 3]`` where index 3 dedups to paper_a (the file_id of
+    index 1) must rewrite to ``[1,2,1]`` — not ``[1,2]`` (the dedup
+    index dropped from the joined output).
+    """
+
+    paper_a = {"file_id": "paper-a", "title": "Paper A"}
+    paper_b = {"file_id": "paper-b", "title": "Paper B"}
+    doc_list = [paper_a, paper_b, paper_a]
+    answer = "Multiple findings agree [1, 2, 3]."
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
+    assert text == "Multiple findings agree [1,2,1]."
+
+
+def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
+    """Brief_gene TOP_N=30 pattern: many chunks dedup to a few papers.
+
+    Six cited indices map to two distinct papers (paper-a from
+    indices 1, 3, 5; paper-b from indices 2, 4, 6). All six citation
+    markers must rewrite to the two existing ``[N]`` references in
+    first-appearance order. The pre-fix bug silently dropped indices
+    3, 4, 5, 6 to empty strings.
+    """
+
+    paper_a = {"file_id": "paper-a", "title": "Paper A"}
+    paper_b = {"file_id": "paper-b", "title": "Paper B"}
+    doc_list = [paper_a, paper_b, paper_a, paper_b, paper_a, paper_b]
+    answer = (
+        "Claim [1] also [2] supported [3] cf [4] echoed [5] confirmed [6]."
+    )
+    text, refs = _normalize_citations(answer, doc_list)
+
+    assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
+    assert text == (
+        "Claim [1] also [2] supported [1] cf [2] echoed [1] confirmed [2]."
+    )
