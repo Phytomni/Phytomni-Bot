@@ -14,8 +14,11 @@ analyst submission. Nodes route every external call through the
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, NamedTuple
 
+from ...config.settings import get_sensitive_config
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ..analyst.submission import _build_submit_agent
 from . import agent
 from .agent import (
     ENVIRONMENT_CONFIG,
@@ -24,6 +27,21 @@ from .agent import (
     environment_submit_kwargs,
 )
 from .state import EnvironmentState
+
+
+class _EnvironmentSubmitInputs(NamedTuple):
+    """Narrative inputs the VCI dispatch helpers consume.
+
+    Packed into a NamedTuple so :func:`_submit_vci_via_subgraph` stays
+    under pylint's ``max-args=5`` ceiling. The three remaining helper
+    parameters (``region_codes`` / ``submit_kwargs``) are keyword-only
+    so the call site reads as documentation.
+    """
+
+    goal_description: str
+    data_list: Dict[str, str]
+    output_dir: str
+    meta: str
 
 
 async def extract_region_codes_node(
@@ -90,14 +108,93 @@ async def submit_vci_task_node(
     if not batch:
         output_dir = environment_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/environment/vci_analysis_meta")
-    vci_task = await agent.submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        output_dir=output_dir,
-        meta=meta,
-        **environment_submit_kwargs(kwargs),
-    )
+    if ENVIRONMENT_CONFIG.USE_ANALYST_SUBGRAPH:
+        vci_task = await _submit_vci_via_subgraph(
+            _EnvironmentSubmitInputs(
+                goal_description=goal_description,
+                data_list=data_list,
+                output_dir=output_dir,
+                meta=meta,
+            ),
+            region_codes=(
+                province_code or "",
+                city_code or "",
+                county_code or "",
+            ),
+            submit_kwargs=environment_submit_kwargs(kwargs),
+        )
+    else:
+        vci_task = await agent.submit(
+            goal_description=goal_description,
+            data_list=data_list,
+            output_dir=output_dir,
+            meta=meta,
+            **environment_submit_kwargs(kwargs),
+        )
     return {"vci_analysis_task": vci_task}
+
+
+async def _submit_vci_via_subgraph(
+    inputs: _EnvironmentSubmitInputs,
+    *,
+    region_codes: tuple[str, str, str],
+    submit_kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Dispatch the VCI analysis task through the compiled analyst subgraph.
+
+    Mirrors ``analyst.submit`` (the legacy free-function path) but
+    routes through ``submit_analyst_via_subgraph`` so the analyst
+    graph runs as a structured subgraph. Builds a per-call
+    ``AnalystAgent`` via :func:`_build_submit_agent` so cache and
+    sensitive-config behavior matches the legacy path.
+
+    Args:
+        inputs: ``_EnvironmentSubmitInputs`` carrying the four narrative
+            fields (``goal_description`` / ``data_list`` /
+            ``output_dir`` / ``meta``); packed into a NamedTuple so the
+            helper stays under pylint's ``max-args`` ceiling without
+            silently dropping any field.
+        region_codes: 3-tuple of ``(province, city, county)`` codes;
+            joined as the dispatch ``target_id`` so the analyst
+            thread id includes the analysed region.
+        submit_kwargs: The same kwargs ``environment_submit_kwargs``
+            forwards into ``analyst.submit`` on the legacy path; the
+            cache labels and ``compute_resource`` derive from them.
+
+    Returns:
+        Dispatch state dict (``task_id`` / ``output_dir`` / ``plan`` /
+        ``tool_usages`` / ``task_status``) from
+        :func:`submit_analyst_via_subgraph`.
+    """
+    analyst_agent, _resolved_output_dir, _compute_resource, _thread_id = (
+        _build_submit_agent(
+            submit_kwargs,
+            "analyst-environment-vci",
+            "submit_via_subgraph",
+            "AnalystAgent.environment_vci_submit",
+        )
+    )
+    province, city, county = region_codes
+    request = {
+        "analysis_type": "vci_analysis",
+        "target_id": f"{province}-{city}-{county}",
+        "output_dir": inputs.output_dir,
+        "prompt_parts": (
+            inputs.goal_description,
+            inputs.meta,
+            inputs.data_list,
+        ),
+        "compute_resource": submit_kwargs.get(
+            "compute_resource", ENVIRONMENT_CONFIG.COMPUTE_RESOURCE
+        ),
+    }
+    return await submit_analyst_via_subgraph(
+        analyst_agent,
+        ENVIRONMENT_CONFIG,
+        get_sensitive_config(),
+        request,
+        is_polling=False,
+    )
 
 
 def route_after_extract(

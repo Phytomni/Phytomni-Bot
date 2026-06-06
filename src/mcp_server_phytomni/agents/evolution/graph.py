@@ -14,8 +14,11 @@ analyst submission. Nodes route every external call through the
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, NamedTuple
 
+from ...config.settings import get_sensitive_config
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ..analyst.submission import _build_submit_agent
 from . import agent
 from .agent import (
     DEEP_GENOME_CONFIG,
@@ -24,6 +27,21 @@ from .agent import (
     target_taxids,
 )
 from .state import EvolutionState
+
+
+class _EvolutionSubmitInputs(NamedTuple):
+    """Narrative inputs the evolution dispatch helpers consume.
+
+    Packed into a NamedTuple so :func:`_submit_evolution_via_subgraph`
+    stays under pylint's ``max-args=5`` ceiling. The three remaining
+    helper parameters (``gene_id`` / ``submit_kwargs`` / ``user_id``)
+    are keyword-only so the call site reads as documentation.
+    """
+
+    goal_description: str
+    data_list: Dict[str, str]
+    output_dir: str
+    meta: str
 
 
 async def resolve_target_taxids_node(
@@ -87,15 +105,95 @@ async def submit_evolution_task_node(
     if not batch:
         output_dir = evolution_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/evolution_agents_meta")
-    evo_task = await agent.submit(
-        goal_description=goal_description,
-        data_list=data_list,
-        user_id=user_id,
-        output_dir=output_dir,
-        meta=meta,
-        **evolution_submit_kwargs(kwargs, enable_auto_select),
-    )
+    if DEEP_GENOME_CONFIG.USE_ANALYST_SUBGRAPH:
+        evo_task = await _submit_evolution_via_subgraph(
+            _EvolutionSubmitInputs(
+                goal_description=goal_description,
+                data_list=data_list,
+                output_dir=output_dir,
+                meta=meta,
+            ),
+            user_id=user_id,
+            gene_id=gene_id,
+            submit_kwargs=evolution_submit_kwargs(kwargs, enable_auto_select),
+        )
+    else:
+        evo_task = await agent.submit(
+            goal_description=goal_description,
+            data_list=data_list,
+            user_id=user_id,
+            output_dir=output_dir,
+            meta=meta,
+            **evolution_submit_kwargs(kwargs, enable_auto_select),
+        )
     return {"evolution_agents_task": evo_task}
+
+
+async def _submit_evolution_via_subgraph(
+    inputs: _EvolutionSubmitInputs,
+    *,
+    user_id: Any,
+    gene_id: str,
+    submit_kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Dispatch the evolution analysis task through the analyst subgraph.
+
+    Mirrors ``analyst.submit`` (the legacy free-function path) but
+    routes through ``submit_analyst_via_subgraph`` so the analyst
+    graph runs as a structured subgraph. Builds a per-call
+    ``AnalystAgent`` via :func:`_build_submit_agent` so cache and
+    sensitive-config behavior matches the legacy path.
+
+    Args:
+        inputs: ``_EvolutionSubmitInputs`` carrying the four narrative
+            fields (``goal_description`` / ``data_list`` /
+            ``output_dir`` / ``meta``); packed into a NamedTuple so the
+            helper stays under pylint's ``max-args`` ceiling without
+            silently dropping any field.
+        user_id: Resolved user identifier; threaded through the
+            cached-agent kwargs to match the legacy ``user_id`` arg
+            on ``analyst.submit``.
+        gene_id: Gene identifier from the evolution state; used as the
+            dispatch ``target_id`` so the analyst thread id includes
+            the analysed gene.
+        submit_kwargs: The same kwargs ``evolution_submit_kwargs``
+            forwards into ``analyst.submit`` on the legacy path; the
+            cache labels and ``compute_resource`` derive from them.
+
+    Returns:
+        Dispatch state dict (``task_id`` / ``output_dir`` / ``plan`` /
+        ``tool_usages`` / ``task_status``) from
+        :func:`submit_analyst_via_subgraph`.
+    """
+    submit_kwargs_with_user = {**submit_kwargs, "user_id": user_id}
+    analyst_agent, _resolved_output_dir, _compute_resource, _thread_id = (
+        _build_submit_agent(
+            submit_kwargs_with_user,
+            "analyst-evolution",
+            "submit_via_subgraph",
+            "AnalystAgent.evolution_submit",
+        )
+    )
+    request = {
+        "analysis_type": "evolution_analysis",
+        "target_id": gene_id,
+        "output_dir": inputs.output_dir,
+        "prompt_parts": (
+            inputs.goal_description,
+            inputs.meta,
+            inputs.data_list,
+        ),
+        "compute_resource": submit_kwargs.get(
+            "compute_resource", DEEP_GENOME_CONFIG.COMPUTE_RESOURCE
+        ),
+    }
+    return await submit_analyst_via_subgraph(
+        analyst_agent,
+        DEEP_GENOME_CONFIG,
+        get_sensitive_config(),
+        request,
+        is_polling=False,
+    )
 
 
 def route_after_resolve(
