@@ -75,7 +75,6 @@ def _build_data_app() -> Any:
 def _build_deep_genome_app() -> Any:
     """Return a compiled DeepGenome workflow app with default deps."""
     return DeepGenomeAgents(
-        data_agent=DataAgent(),
         knowledge_agent=KnowledgeAgent(),
         analyst_agent=AnalystAgent(),
     ).app

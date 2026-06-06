@@ -343,7 +343,6 @@ async def test_analyst_agent_arun_invokes_graph_with_initial_state():
 async def test_deep_genome_agent_arun_invokes_graph_with_initial_state():
     """Verify deep genome agent arun invokes graph with initial state."""
     agent = DeepGenomeAgents(
-        data_agent=object(),
         knowledge_agent=None,
         analyst_agent=None,
         deep_genome_config=DeepGenomeConfig(),

@@ -43,7 +43,6 @@ from ..analyst.agent import (
     AnalystAgent,
 )
 from ..brief_gene.core import BriefGeneAgent
-from ..data.agent import DataAgent
 from ..knowledge.agent import KnowledgeAgent
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
@@ -212,7 +211,6 @@ class DeepGenomeAgentDeps(NamedTuple):
     """External agents used by the DeepGenome workflow.
 
     Attributes:
-        data_agent: DataAgent used for network and annotation queries.
         knowledge_agent: KnowledgeAgent used for literature retrieval.
         analyst_agent: AnalystAgent used for deep analysis task dispatch.
         brief_gene_app: Compiled BriefGeneAgent subgraph for the
@@ -223,7 +221,6 @@ class DeepGenomeAgentDeps(NamedTuple):
             expansion.
     """
 
-    data_agent: DataAgent
     knowledge_agent: KnowledgeAgent
     analyst_agent: AnalystAgent
     brief_gene_app: Any = None
@@ -239,9 +236,8 @@ class DeepGenomeAgents(
 
     This agent provides a sophisticated workflow for analyzing gene function
     and related biological processes in plant genomes. It orchestrates multiple
-    specialized agents including data_agent, knowledge_agent, and
-    analyst_agent to perform parallel gene network and deep computational
-    analysis.
+    specialized agents including knowledge_agent and analyst_agent to perform
+    parallel gene network and deep computational analysis.
 
     The workflow consists of three main phases:
     1. **Part 1 - Gene Network Profile**: Retrieves orthologs, paralogs, and
@@ -255,7 +251,6 @@ class DeepGenomeAgents(
        protocols, introduction, discussion, and summary sections.
 
     Attributes:
-        data_agent: Data agent for retrieving gene network information.
         knowledge_agent: Knowledge agent for literature retrieval.
         analyst_agent: Analyst agent for submitting and managing tasks.
         checkpointer: LangGraph MemorySaver for state persistence.
@@ -265,7 +260,6 @@ class DeepGenomeAgents(
 
     Example:
         >>> agents = DeepGenomeAgents(
-        ...     data_agent=data_agent,
         ...     knowledge_agent=knowledge_agent,
         ...     analyst_agent=analyst_agent
         ... )
@@ -277,7 +271,6 @@ class DeepGenomeAgents(
 
     def __init__(
         self,
-        data_agent,
         knowledge_agent,
         analyst_agent,
         **kwargs: Any,
@@ -285,7 +278,6 @@ class DeepGenomeAgents(
         """Initialize the DeepGenomeAgents.
 
         Args:
-            data_agent: Data agent for retrieving gene network information.
             knowledge_agent: Knowledge agent for literature retrieval.
             analyst_agent: Analyst agent for submitting and managing tasks.
             checkpointer: LangGraph MemorySaver for state persistence.
@@ -293,7 +285,6 @@ class DeepGenomeAgents(
             sensitive_config: Sensitive configuration for credentials.
         """
         self._agents = DeepGenomeAgentDeps(
-            data_agent=data_agent,
             knowledge_agent=knowledge_agent,
             analyst_agent=analyst_agent,
         )
@@ -313,9 +304,8 @@ class DeepGenomeAgents(
         # brief_gene_mount node (registered in ``_build_graph``)
         # closes over a real ``CompiledStateGraph`` and LangGraph's
         # ``find_subgraph_pregel`` walker can discover it for xray
-        # expansion. The knowledge_agent is shared (same instance the
-        # data agent + the now-removed _run_knowledge_agent used) so
-        # the func_cache layer dedups any redundant retrieve calls.
+        # expansion. The knowledge_agent instance is reused so the
+        # func_cache layer dedups any redundant retrieve calls.
         # Stash the compiled app on ``_agents`` (DeepGenomeAgentDeps
         # NamedTuple) so the brief_gene_app sits alongside the other
         # deep_genome dependencies rather than adding another instance
@@ -616,10 +606,6 @@ async def gene_function(
     agent = get_cached_agent(
         "DeepGenomeAgents",
         lambda: DeepGenomeAgents(
-            data_agent=DataAgent(
-                data_config=deep_genome_config,
-                sensitive_config=sensitive_config,
-            ),
             knowledge_agent=KnowledgeAgent(
                 knowledge_config=deep_genome_config,
                 sensitive_config=sensitive_config,
