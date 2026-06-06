@@ -24,6 +24,7 @@ from langgraph.types import Send
 from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...config.relay_mode import relay_mode_enabled
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import capture_workflow_boundary
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
@@ -35,6 +36,7 @@ from ..design.agent import (
     protein_structure_for_gene,
 )
 from ..evolution.agent import evolution_analysis_for_gene
+from ..shared.analysis import submit_analyst_analysis
 from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
@@ -500,7 +502,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
-        result = await self._submit_analysis_task(context, run_identity)
+        result = await self._submit_analysis_task(context)
         self._raise_if_agent_failed(result)
 
         task_id = result.get("task_id")
@@ -570,17 +572,22 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _submit_analysis_task(
         self: Any,
         context: AnalysisDispatchContext,
-        run_identity: RunIdentity,
     ) -> dict:
         """Submit one resolved analysis task to AnalystAgent.
 
         For the three analysis types transferred to the evolution /
         design modules (Step 6.5), branch on the matching
         ``DeepGenomeConfig`` flag and dispatch through the producer
-        wrapper. Default-False flags keep the legacy
-        ``analyst_agent.arun`` path live so the
-        ``PHYTOMNI_USE_*_SUBGRAPH=false`` rollback knob continues to
-        work until Step 6.6 flips the defaults to True.
+        wrapper. For the remaining types, build the request dict and
+        route through either ``submit_analyst_via_subgraph``
+        (``USE_ANALYST_SUBGRAPH=True``) or ``submit_analyst_analysis``
+        (legacy fallback). Both shared helpers internally mint their
+        own run identity via ``prepare_analyst_dispatch_context`` so
+        the per-call ``run_identity`` argument the caller used to
+        thread through has retired. Default-False flags keep
+        ``submit_analyst_analysis`` (the analyst.arun fire-and-poll
+        path) live so ``PHYTOMNI_USE_*_SUBGRAPH=false`` continues to
+        work as the rollback knob until Step 6.6 flips the defaults.
         """
         analysis_type = context.analysis_type
         config = self.deep_genome_config
@@ -611,21 +618,27 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         goal_description, data_list, meta, compute_resource = (
             self._analysis_prompt_parts(context)
         )
-        return await self._agents.analyst_agent.arun(
-            query=None,
-            goal_description=goal_description,
-            preset_data_list=data_list,
-            preset_plan=meta,
-            output_dir=context.output_dir,
-            compute_resource=compute_resource,
-            is_auto_select=False,
+        request = {
+            "analysis_type": analysis_type,
+            "target_id": context.gene_id,
+            "output_dir": context.output_dir,
+            "prompt_parts": (goal_description, meta, data_list),
+            "compute_resource": compute_resource,
+        }
+        if config.USE_ANALYST_SUBGRAPH:
+            return await submit_analyst_via_subgraph(
+                self._agents.analyst_agent,
+                config,
+                self.sensitive_config,
+                request,
+                is_polling=True,
+            )
+        return await submit_analyst_analysis(
+            self._agents.analyst_agent,
+            config,
+            self.sensitive_config,
+            request,
             is_polling=True,
-            is_preset_plan=True,
-            thread_id=run_identity.scoped_id(
-                "thread",
-                context.gene_id,
-                context.analysis_type,
-            ),
         )
 
     @staticmethod

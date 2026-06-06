@@ -262,6 +262,8 @@ async def submit_analyst_analysis(
     config: Any,
     sensitive_config: Any,
     request: Mapping[str, Any],
+    *,
+    is_polling: bool = False,
 ) -> dict[str, Any]:
     """Submit one prepared analysis task through AnalystAgent.
 
@@ -271,6 +273,12 @@ async def submit_analyst_analysis(
         sensitive_config: Sensitive config object used for OBS credentials.
         request: Prepared request mapping containing analysis metadata,
             prompt parts, compute resource, target id, and optional output dir.
+        is_polling: Whether the analyst should block until the submitted task
+            reaches a terminal state. Defaults to ``False`` to preserve the
+            fire-and-poll-elsewhere semantics of the design / network /
+            research / environment / evolution consumers; deep_genome's
+            dispatch passes ``True`` to mirror its historical polling
+            behavior at ``dispatch.py:_submit_analysis_task``.
 
     Returns:
         AnalystAgent result payload, including task id and output directory
@@ -289,7 +297,7 @@ async def submit_analyst_analysis(
         output_dir=context.output_dir,
         compute_resource=request["compute_resource"],
         is_auto_select=False,
-        is_polling=False,
+        is_polling=is_polling,
         is_preset_plan=True,
         thread_id=context.thread_id,
     )

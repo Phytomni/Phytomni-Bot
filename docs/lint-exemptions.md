@@ -601,34 +601,34 @@ codebase, in nine clusters:
    the trailing follow-up LLM hop); a shared helper would erase
    each agent's domain-specific node and state typing.
 1. **Analyst submit kwargs, shared.analysis vs deep_genome dispatch**
-   (1 occurrence, added 2026-05-31). `agents/shared/analysis.py`'s
+   (added 2026-05-31, **CLOSED 2026-06-07** by the Step 6.5 cluster
+   #9 sunset commit). `agents/shared/analysis.py`'s
    `submit_analyst_analysis` and `agents/deep_genome/dispatch.py`'s
-   `_run_analyst_node` both build the same
+   `_run_analyst_node` historically built the same
    `analyst_agent.arun(query=None, goal_description=..., preset_data_list=..., preset_plan=..., output_dir=..., compute_resource=...)`
-   call. The clusters became line-aligned (and therefore visible
-   to pylint's `min-similar-lines=4` detector) when the
-   `prepare_analyst_dispatch_context` extraction in
-   `submit_analyst_analysis` pulled the run-identity / output-dir
-   prep out of the function body, leaving the bare arun-kwargs
-   block exposed. **Sunset condition**: when Phase 6c (DeepGenome
-   composition) lands and routes `_run_analyst_node` through the
-   shared `submit_analyst_via_subgraph` helper, both call sites
-   collapse to a one-line helper invocation and this cluster
-   retires (baseline can ratchet back to 24).
+   call. Step 6.5 retires the dispatch-side inline call: deep_genome's
+   `_submit_analysis_task` now branches on `USE_ANALYST_SUBGRAPH` and
+   routes through `submit_analyst_via_subgraph` (flag-on) or
+   `submit_analyst_analysis` (flag-off, the shared legacy fallback)
+   with `is_polling=True`. The bare arun-kwargs block exists only
+   inside `submit_analyst_analysis` now, so the cross-file mirror is
+   gone. The catalog entry stays as a historical record so future
+   readers can trace the closure without diff-archaeology.
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 97`). The catalog header count above (25)
-reflects an older snapshot; subsequent Phase-6 / F-series steps
-ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus AF-6
-coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
+`RULE_BASELINES["R0801"] = 102`). The catalog header count above
+(25) reflects an older snapshot; subsequent Phase-6 / F-series
+steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
+AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
 analyst / data retrieve-fan-out templates), 66 / 79 / 93 / 94
 (brief_gene preamble fusion + Align-A citation rules accumulation,
-documented in their own commit bodies), and 97 (Step 6.4 env/evo
-per-consumer wiring; see entry below). Each ratchet was disclosed
-in its own commit body; the original 25-cluster catalog remains
-accurate for the legacy clusters but is no longer the authoritative
-count. The main pylint invocation in
+documented in their own commit bodies), 97 (Step 6.4 env/evo per-
+consumer wiring; see entry below), and 102 (Step 6.5 producer-
+wrapper request-dict mirrors net of the cluster #9 sunset, see
+entries below). Each ratchet was disclosed in its own commit body;
+the original 25-cluster catalog remains accurate for the legacy
+clusters but is no longer the authoritative count. The main pylint invocation in
 `scripts/validate_local.sh` and `scripts/scoped_gate.sh` is run with
 `--disable=R0801,R0903` so the gate-level pylint exits 0 on this
 rule; the baseline script runs its own pylint without the disable
@@ -658,23 +658,28 @@ helper would obscure the per-wrapper public contract.
    USE_CHAT_SUBGRAPH to True and the legacy `phyto_chat` branches
    collapse to env-override fallbacks, both call sites shrink to a
    3-line block that falls below `min-similar-lines=4`.
-1. **Env/evo \_submit\_\*\_via_subgraph request-dict mirror**
-   (1 occurrence, added 2026-06-07).
-   `agents/environment/graph.py:[180:187]` and
-   `agents/evolution/graph.py:[179:186]` share the same dispatch
-   request dict shape (`analysis_type` / `target_id` /
-   `output_dir` / `prompt_parts` / `compute_resource`) packed for
-   `submit_analyst_via_subgraph`. The mirror is intentional: every
-   subgraph consumer (design / network / research / env / evo)
-   builds the same request shape from its own domain inputs; a
-   shared "build_analyst_request" helper would erase the
-   `target_id` semantics each consumer assigns
-   (region-codes concat for env, gene_id for evo). The Phase 5a
-   design / network sites are not yet line-aligned to env / evo
-   only because design/network nest the dict inside an instance
-   method while env/evo do so at module scope. **Sunset condition**:
-   none — the parallel-structure design extends to every future
-   subgraph consumer and the dict shape is the contract.
+1. **Module-level analyst dispatch request-dict mirror**
+   (added 2026-06-07, expanded by Step 6.5 producer wrappers).
+   Originally `agents/environment/graph.py:[180:187]` ↔
+   `agents/evolution/graph.py:[179:186]`. Step 6.5 introduced four
+   new module-level dispatch sites with the same
+   (`analysis_type` / `target_id` / `output_dir` / `prompt_parts` /
+   `compute_resource`) request dict shape:
+   `agents/evolution/agent.py:evolution_analysis_for_gene`,
+   `agents/design/agent.py:_submit_design_analysis` (consumed by
+   `protein_structure_for_gene` and `promoter_design_for_gene`),
+   and `agents/deep_genome/dispatch.py:_submit_analysis_task` (the
+   cluster-#9 sunset commit). All seven sites build the same dict
+   shape because `submit_analyst_via_subgraph` /
+   `submit_analyst_analysis` are the canonical chokepoints and the
+   dict shape is the contract. A shared `build_analyst_request`
+   helper would erase the `target_id` semantics each consumer
+   assigns (region-codes concat for env, gene_id for evo / design /
+   deep_genome). The Phase 5a design / network sites in
+   `_dispatch_and_wait_analysis` are not yet line-aligned to the
+   module-level ones only because they nest the dict inside an
+   instance method. **Sunset condition**: none — the parallel-
+   structure design extends to every future subgraph consumer.
 
 **Why refactor is net-negative for cluster 4**: the chat-agent
 stream and non-stream call sites land in two modules

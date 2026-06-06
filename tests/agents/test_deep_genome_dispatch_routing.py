@@ -30,12 +30,15 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
-from mcp_server_phytomni.storage.path_policy import RunIdentity
 
 pytestmark = pytest.mark.agent
 
 
-def _build_mixin_instance(use_evo: bool, use_design: bool) -> Any:
+def _build_mixin_instance(
+    use_evo: bool = False,
+    use_design: bool = False,
+    use_analyst: bool = False,
+) -> Any:
     """Construct a minimal stand-in for ``DeepGenomeDispatchMixin``.
 
     The dispatch mixin only reads ``self.deep_genome_config`` and
@@ -49,21 +52,13 @@ def _build_mixin_instance(use_evo: bool, use_design: bool) -> Any:
         update={
             "USE_EVOLUTION_SUBGRAPH": use_evo,
             "USE_DESIGN_SUBGRAPH": use_design,
+            "USE_ANALYST_SUBGRAPH": use_analyst,
         }
-    )
-    analyst_agent_mock = SimpleNamespace(
-        arun=AsyncMock(
-            return_value={
-                "task_id": "legacy-id",
-                "output_dir": "/legacy",
-                "task_status": "SUCCEEDED",
-            }
-        )
     )
     return SimpleNamespace(
         deep_genome_config=config,
         sensitive_config=SimpleNamespace(),
-        _agents=SimpleNamespace(analyst_agent=analyst_agent_mock),
+        _agents=SimpleNamespace(analyst_agent="analyst-stub"),
         _analysis_prompt_parts=lambda _ctx: (
             "goal-stub",
             ["data-stub"],
@@ -83,9 +78,39 @@ def _context(analysis_type: str) -> AnalysisDispatchContext:
     )
 
 
-def _run_identity() -> RunIdentity:
-    """Build a deterministic run identity for the dispatch helper."""
-    return RunIdentity.create(user_id="user-test", scope="evolution_analysis")
+def _install_shared_helper_mocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[AsyncMock, AsyncMock]:
+    """Patch the two shared dispatch helpers on the dispatch module.
+
+    The non-transferred (12 remaining) analysis types route through
+    ``submit_analyst_via_subgraph`` (USE_ANALYST_SUBGRAPH=True) or
+    ``submit_analyst_analysis`` (legacy fallback) since the cluster
+    #9 sunset removed deep_genome's inline ``analyst_agent.arun``
+    call. Tests patch both so each branch can be asserted in
+    isolation.
+    """
+    subgraph_mock = AsyncMock(
+        return_value={
+            "task_id": "subgraph-id",
+            "output_dir": "/obs/subgraph",
+            "task_status": "SUCCEEDED",
+        }
+    )
+    legacy_mock = AsyncMock(
+        return_value={
+            "task_id": "legacy-id",
+            "output_dir": "/obs/legacy",
+            "task_status": "SUCCEEDED",
+        }
+    )
+    monkeypatch.setattr(
+        dispatch_module, "submit_analyst_via_subgraph", subgraph_mock
+    )
+    monkeypatch.setattr(
+        dispatch_module, "submit_analyst_analysis", legacy_mock
+    )
+    return subgraph_mock, legacy_mock
 
 
 def _install_wrapper_mocks(
@@ -124,94 +149,152 @@ async def test_evolution_analysis_routes_to_wrapper_when_flag_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``USE_EVOLUTION_SUBGRAPH=True`` calls evolution_analysis_for_gene."""
-    mixin = _build_mixin_instance(use_evo=True, use_design=False)
+    mixin = _build_mixin_instance(use_evo=True)
     wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
 
     result = (
         await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("evolution_analysis"), _run_identity()
+            mixin, _context("evolution_analysis")
         )
     )
 
     assert result["task_id"] == "evo-id"
     wrappers["evolution_analysis_for_gene"].assert_awaited_once()
-    mixin._agents.analyst_agent.arun.assert_not_awaited()
+    subgraph_mock.assert_not_awaited()
+    legacy_mock.assert_not_awaited()
 
 
 async def test_protein_structure_routes_to_wrapper_when_design_flag_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``USE_DESIGN_SUBGRAPH=True`` routes structure to wrapper."""
-    mixin = _build_mixin_instance(use_evo=False, use_design=True)
+    mixin = _build_mixin_instance(use_design=True)
     wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
 
     result = (
         await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("protein_structure_analysis"), _run_identity()
+            mixin, _context("protein_structure_analysis")
         )
     )
 
     assert result["task_id"] == "struct-id"
     wrappers["protein_structure_for_gene"].assert_awaited_once()
-    mixin._agents.analyst_agent.arun.assert_not_awaited()
+    subgraph_mock.assert_not_awaited()
+    legacy_mock.assert_not_awaited()
 
 
 async def test_promoter_routes_to_wrapper_when_design_flag_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``USE_DESIGN_SUBGRAPH=True`` routes promoter to wrapper."""
-    mixin = _build_mixin_instance(use_evo=False, use_design=True)
+    mixin = _build_mixin_instance(use_design=True)
     wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
 
     result = (
         await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("promoter_analysis"), _run_identity()
+            mixin, _context("promoter_analysis")
         )
     )
 
     assert result["task_id"] == "prom-id"
     wrappers["promoter_design_for_gene"].assert_awaited_once()
-    mixin._agents.analyst_agent.arun.assert_not_awaited()
+    subgraph_mock.assert_not_awaited()
+    legacy_mock.assert_not_awaited()
 
 
 async def test_evolution_analysis_stays_legacy_when_flag_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-off keeps evolution_analysis on the legacy analyst.arun path."""
-    mixin = _build_mixin_instance(use_evo=False, use_design=False)
+    """Flag-off keeps evolution_analysis on the shared legacy path."""
+    mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
 
     result = (
         await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("evolution_analysis"), _run_identity()
+            mixin, _context("evolution_analysis")
         )
     )
 
     assert result["task_id"] == "legacy-id"
-    mixin._agents.analyst_agent.arun.assert_awaited_once()
+    legacy_mock.assert_awaited_once()
+    subgraph_mock.assert_not_awaited()
     wrappers["evolution_analysis_for_gene"].assert_not_awaited()
 
 
-async def test_non_transferred_type_stays_legacy_even_with_flags_on(
+async def test_non_transferred_type_routes_legacy_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both flags on but ``haplotypes_analysis`` still goes legacy.
+    """``haplotypes_analysis`` defaults to ``submit_analyst_analysis``.
 
-    The reroute is strictly opt-in for the 3 transferred analysis
-    types. Other 12 analysis types keep the legacy path until cluster
-    #9 sunset wires USE_ANALYST_SUBGRAPH at the same chokepoint.
+    Without ``USE_ANALYST_SUBGRAPH=True`` the non-transferred 12
+    types stay on the shared legacy helper that fans out
+    ``analyst.arun``, mirroring the pre-Phase-6 production default.
     """
     mixin = _build_mixin_instance(use_evo=True, use_design=True)
     wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
 
     result = (
         await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("haplotypes_analysis"), _run_identity()
+            mixin, _context("haplotypes_analysis")
         )
     )
 
     assert result["task_id"] == "legacy-id"
-    mixin._agents.analyst_agent.arun.assert_awaited_once()
-    wrappers["evolution_analysis_for_gene"].assert_not_awaited()
-    wrappers["protein_structure_for_gene"].assert_not_awaited()
-    wrappers["promoter_design_for_gene"].assert_not_awaited()
+    legacy_mock.assert_awaited_once()
+    subgraph_mock.assert_not_awaited()
+    for wrapper in wrappers.values():
+        wrapper.assert_not_awaited()
+
+
+async def test_non_transferred_type_routes_subgraph_when_analyst_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``USE_ANALYST_SUBGRAPH=True`` routes non-transferred types to subgraph.
+
+    Pins cluster #9 sunset: the 12 remaining analysis types share
+    the same ``submit_analyst_via_subgraph`` chokepoint as design /
+    network / research / environment / evolution once their config's
+    ``USE_ANALYST_SUBGRAPH`` flag is on.
+    """
+    mixin = _build_mixin_instance(use_analyst=True)
+    wrappers = _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, legacy_mock = _install_shared_helper_mocks(monkeypatch)
+
+    result = (
+        await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
+            mixin, _context("haplotypes_analysis")
+        )
+    )
+
+    assert result["task_id"] == "subgraph-id"
+    subgraph_mock.assert_awaited_once()
+    legacy_mock.assert_not_awaited()
+    for wrapper in wrappers.values():
+        wrapper.assert_not_awaited()
+
+
+async def test_subgraph_helper_called_with_is_polling_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """deep_genome dispatch passes ``is_polling=True`` to both helpers.
+
+    Pins the polling semantics that match the historical
+    ``analyst_agent.arun(is_polling=True, ...)`` call site; the legacy
+    fallback defaults to ``is_polling=False`` so the explicit kwarg
+    forwarding is the contract.
+    """
+    mixin = _build_mixin_instance(use_analyst=True)
+    _install_wrapper_mocks(monkeypatch)
+    subgraph_mock, _ = _install_shared_helper_mocks(monkeypatch)
+
+    await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
+        mixin, _context("haplotypes_analysis")
+    )
+
+    assert subgraph_mock.await_args is not None
+    assert subgraph_mock.await_args.kwargs["is_polling"] is True
