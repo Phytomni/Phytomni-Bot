@@ -27,10 +27,11 @@ from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
+from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
-from ..chat.service import phyto_chat
+from ..chat.service import _cached_chat_app, phyto_chat
 from ..shared.analysis_storage import create_output_dir, get_data_list
 from ..shared.options import (
     SubmitKwargsSpec,
@@ -147,11 +148,18 @@ async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
         "user/get_taxid_meta",
         {"user_query": query},
     )
-    phyto_response = await phyto_chat(
-        user_query=prompt,
-        **evolution_chat_kwargs(kwargs),
-    )
-    if phyto_response is None:
+    chat_kwargs_bag = evolution_chat_kwargs(kwargs)
+    if DEEP_GENOME_CONFIG.USE_CHAT_SUBGRAPH:
+        chat_output = await _cached_chat_app().ainvoke(
+            build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
+        )
+        phyto_response = extract_chat_response(chat_output)
+    else:
+        phyto_response = await phyto_chat(
+            user_query=prompt,
+            **chat_kwargs_bag,
+        )
+    if not phyto_response:
         return None
     content = phyto_response["choices"][0]["message"]["content"]
     target_spa_list = loads(content.replace("'", '"'))

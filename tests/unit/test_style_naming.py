@@ -108,6 +108,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_research_analyst_subgraph.py": {
         "protected-access",
     },
+    # Flag-branch test for ``InSilicoResearchAgents._extract_goals`` —
+    # asserts USE_CHAT_SUBGRAPH routes the chat call site through the
+    # compiled chat subgraph, same protected-helper coverage seam.
+    "tests/agents/test_research_chat_subgraph.py": {
+        "protected-access",
+    },
     # Flag-branch test for ``AnalystAgent._knowledge_app`` lifecycle —
     # asserts the per-instance KA app is built only when the flag is
     # on; same protected-helper coverage seam as the design sibling.
