@@ -23,10 +23,11 @@ from ...common.responses import (
     parse_json_list_fragment,
 )
 from ...config.defaults import DeepGenomeConfig
+from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
-from ..chat.service import phyto_chat
+from ..chat.service import _cached_chat_app, phyto_chat
 from .formatting import SPECIES_CODE_MAP
 
 if TYPE_CHECKING:
@@ -80,6 +81,40 @@ def _assemble_final_report(state: "DeepGenomeState") -> str:
 
 class DeepGenomeReportMixin(WorkflowMixinBase):
     """Report synthesis and finalization nodes for DeepGenome."""
+
+    async def _dispatch_chat(
+        self: Any, user_query: str
+    ) -> dict[str, Any] | None:
+        """Dispatch one chat call via either phyto_chat or the chat subgraph.
+
+        Owns the chat-call seam shared by every report node body
+        (experiment / protocol / discussion / summary / follow_up).
+        When ``USE_CHAT_SUBGRAPH=False`` (the production default until
+        the global flag flip), routes through the legacy
+        ``phyto_chat`` helper. When True, invokes the cached chat
+        compiled app with the shared ``chat_adapters`` IO mappers,
+        keeping the response in the historical chat-completion
+        envelope so callers stay agnostic to the dispatch route.
+
+        Args:
+            user_query: Prompt body to send to the chat backend.
+
+        Returns:
+            Chat completion dict matching the historical phyto_chat
+            return shape (``{"choices": [...]}``).
+        """
+        chat_kwargs_bag = self._chat_kwargs()
+        if self.deep_genome_config.USE_CHAT_SUBGRAPH:
+            chat_output = await _cached_chat_app().ainvoke(
+                build_chat_input(
+                    user_query=user_query, chat_kwargs=chat_kwargs_bag
+                )
+            )
+            return extract_chat_response(chat_output)
+        return await phyto_chat(
+            user_query=user_query,
+            **chat_kwargs_bag,
+        )
 
     async def _run_report_synthesizer(self: Any, state: DeepGenomeState):
         """Generate the report after all analysis branches finish."""
@@ -189,9 +224,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         )
 
         part12_str = self._part12_profile(state)
-        experiment_response = await phyto_chat(
-            user_query=self._experiment_prompt(state, part12_str),
-            **self._chat_kwargs(),
+        experiment_response = await self._dispatch_chat(
+            self._experiment_prompt(state, part12_str)
         )
         experiment_list = parse_json_list_fragment(
             message_content(experiment_response)
@@ -267,32 +301,15 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         part12_str = state.get("part12_combined") or ""
         experiment_report = state.get("experiment_report", "")
-        protocol_response = await phyto_chat(
-            user_query=get_prompt(
+        protocol_response = await self._dispatch_chat(
+            get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_protocol",
                 {
                     "analysis_sections": part12_str,
                     "protocol_sections": experiment_report,
                 },
-            ),
-            prompt_file=self.deep_genome_config.PROMPT_FILE,
-            prompt_path=self.deep_genome_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
-            n=self.deep_genome_config.N,
-            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
-            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
-            response_format=self.deep_genome_config.RESPONSE_FORMAT,
-            stream=self.deep_genome_config.STREAM,
-            temperature=self.deep_genome_config.TEMPERATURE,
-            top_p=self.deep_genome_config.TOP_P,
-            user=self.deep_genome_config.USER,
-            timeout=self.deep_genome_config.TIMEOUT,
-            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
-            max_retries=self.deep_genome_config.MAX_RETRIES,
+            )
         )
 
         protocol_content = ""
@@ -347,8 +364,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         else:
             content = part12_str
 
-        discussion_response = await phyto_chat(
-            user_query=get_prompt(
+        discussion_response = await self._dispatch_chat(
+            get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_discussion",
                 {
@@ -356,24 +373,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                     "species_string": SPECIES_CODE_MAP[species_code],
                     "content": content,
                 },
-            ),
-            prompt_file=self.deep_genome_config.PROMPT_FILE,
-            prompt_path=self.deep_genome_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
-            n=self.deep_genome_config.N,
-            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
-            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
-            response_format=self.deep_genome_config.RESPONSE_FORMAT,
-            stream=self.deep_genome_config.STREAM,
-            temperature=self.deep_genome_config.TEMPERATURE,
-            top_p=self.deep_genome_config.TOP_P,
-            user=self.deep_genome_config.USER,
-            timeout=self.deep_genome_config.TIMEOUT,
-            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
-            max_retries=self.deep_genome_config.MAX_RETRIES,
+            )
         )
 
         discussion_content = ""
@@ -404,8 +404,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             Dict with summary_report.
         """
         logger.info("Generating conclusion and future outlook")
-        summary_response = await phyto_chat(
-            user_query=get_prompt(
+        summary_response = await self._dispatch_chat(
+            get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
                 "user/gene_function_summary",
                 {
@@ -413,8 +413,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                     "species_string": SPECIES_CODE_MAP[state["species_code"]],
                     "content": self._summary_source_content(state),
                 },
-            ),
-            **self._chat_kwargs(),
+            )
         )
 
         return {"summary_report": message_content(summary_response)}
@@ -464,32 +463,15 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         gene_id = state["gene_id"]
         part0145_str = _assemble_final_report(state)
 
-        follow_up_response = await phyto_chat(
-            user_query=get_prompt(
+        follow_up_response = await self._dispatch_chat(
+            get_prompt(
                 self.deep_genome_config.PROMPT_FILE,
                 "system/follow_up_questions",
                 {
                     "user_query": f"Analyze the gene {gene_id}",
                     "system_response": part0145_str,
                 },
-            ),
-            prompt_file=self.deep_genome_config.PROMPT_FILE,
-            prompt_path=self.deep_genome_config.PROMPT_PATH,
-            api_key=self.sensitive_config.API_KEY.get_secret_value(),
-            base_url=self.sensitive_config.BASE_URL,
-            model=self.sensitive_config.MODEL_ID,
-            frequency_penalty=self.deep_genome_config.FREQUENCY_PENALTY,
-            n=self.deep_genome_config.N,
-            presence_penalty=self.deep_genome_config.PRESENCE_PENALTY,
-            reasoning_effort=self.deep_genome_config.REASONING_EFFORT,
-            response_format=self.deep_genome_config.RESPONSE_FORMAT,
-            stream=self.deep_genome_config.STREAM,
-            temperature=self.deep_genome_config.TEMPERATURE,
-            top_p=self.deep_genome_config.TOP_P,
-            user=self.deep_genome_config.USER,
-            timeout=self.deep_genome_config.TIMEOUT,
-            retriable_codes=self.deep_genome_config.RETRIABLE_CODES,
-            max_retries=self.deep_genome_config.MAX_RETRIES,
+            )
         )
 
         follow_up_list = parse_follow_up_questions(

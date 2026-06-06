@@ -121,6 +121,13 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_deep_genome_dispatch_routing.py": {
         "protected-access",
     },
+    # Flag-branch test for ``DeepGenomeReportMixin._dispatch_chat`` —
+    # asserts USE_CHAT_SUBGRAPH routes the report node bodies'
+    # chat call sites through the compiled chat subgraph, same
+    # protected-helper coverage seam.
+    "tests/agents/test_deep_genome_chat_subgraph.py": {
+        "protected-access",
+    },
     # Flag-branch test for ``AnalystAgent._knowledge_app`` lifecycle —
     # asserts the per-instance KA app is built only when the flag is
     # on; same protected-helper coverage seam as the design sibling.
