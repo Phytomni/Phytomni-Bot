@@ -27,10 +27,11 @@ from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
+from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
-from ..analyst.agent import submit
+from ..analyst.agent import AnalystAgent, submit
 from ..chat.service import _cached_chat_app, phyto_chat
 from ..shared.analysis_storage import create_output_dir, get_data_list
 from ..shared.options import (
@@ -46,6 +47,7 @@ __all__ = [
     "DEEP_GENOME_CONFIG",
     "create_output_dir",
     "evo_test_analysis",
+    "evolution_analysis_for_gene",
     "evolution_chat_kwargs",
     "evolution_output_dir",
     "evolution_submit_kwargs",
@@ -258,3 +260,70 @@ async def evo_test_analysis(
     return {
         "evolution_agents_task": final_state.get("evolution_agents_task"),
     }
+
+
+async def evolution_analysis_for_gene(
+    species: str,
+    gene_id: str,
+    output_dir: Any = None,
+    *,
+    is_polling: bool = True,
+) -> dict[str, Any]:
+    """Submit an evolution_analysis task via the analyst subgraph.
+
+    Producer-side counterpart to deep_genome's ``evolution_analysis``
+    dispatch branch. Builds the same goal / meta / data-list prompt
+    parts deep_genome currently assembles inline at
+    ``dispatch._analysis_prompt_parts`` and routes the request through
+    ``submit_analyst_via_subgraph`` so the returned dict already
+    matches the ``map_analyst_output_to_dispatch_state`` projection
+    consumed by deep_genome's ``_submit_analysis_task``.
+
+    Args:
+        species: Source species name used to select prepared data.
+        gene_id: Target gene identifier for the analysis prompt.
+        output_dir: Optional pre-allocated OBS output directory.
+            ``None`` lets ``prepare_analyst_dispatch_context`` mint
+            a run-scoped path.
+        is_polling: Whether the analyst graph should block until the
+            submitted task reaches a terminal state. Defaults to
+            ``True`` to preserve deep_genome's existing polling
+            semantics at ``dispatch.py:574``.
+
+    Returns:
+        Projected dispatch dict containing ``task_id`` / ``output_dir``
+        / ``plan`` / ``tool_usages`` / ``task_status`` — the same
+        shape ``submit_analyst_via_subgraph`` always returns.
+    """
+    sensitive = get_sensitive_config()
+    goal_description = get_prompt(
+        DEEP_GENOME_CONFIG.PROMPT_FILE,
+        "user/evolution_analysis",
+        {"gene_id": gene_id},
+    )
+    meta = get_prompt(
+        DEEP_GENOME_CONFIG.PROMPT_FILE,
+        "user/evolution_analysis_meta",
+    )
+    data_list = get_data_list(
+        DEEP_GENOME_CONFIG.DEEPGENOME_DATA,
+        "evolution_analysis",
+        species,
+    )
+    request = {
+        "analysis_type": "evolution_analysis",
+        "target_id": gene_id,
+        "output_dir": output_dir,
+        "prompt_parts": (goal_description, meta, data_list),
+        "compute_resource": "medium",
+    }
+    return await submit_analyst_via_subgraph(
+        AnalystAgent(
+            analyst_config=DEEP_GENOME_CONFIG,
+            sensitive_config=sensitive,
+        ),
+        DEEP_GENOME_CONFIG,
+        sensitive,
+        request,
+        is_polling=is_polling,
+    )

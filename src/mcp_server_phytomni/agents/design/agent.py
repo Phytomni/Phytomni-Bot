@@ -18,6 +18,7 @@ from typing import (
     Dict,
     List,
     Literal,
+    NamedTuple,
     Optional,
 )
 
@@ -370,4 +371,148 @@ async def design_module(
         user_id=user_id,
         batch=batch,
         output_dir=kwargs.get("output_dir"),
+    )
+
+
+class _DesignAnalysisSpec(NamedTuple):
+    """Static spec bundle for one module-level design analysis wrapper.
+
+    Bundling the four ``analysis_type`` / ``goal_path`` / ``meta_path``
+    / ``compute_resource`` fields keeps ``_submit_design_analysis``
+    within the pylint ``too-many-arguments`` budget while preserving
+    a single shared dispatch helper for both ``protein_structure_for_gene``
+    and ``promoter_design_for_gene``.
+    """
+
+    analysis_type: str
+    goal_path: str
+    meta_path: str
+    compute_resource: Literal["small", "medium", "large"]
+
+
+async def _submit_design_analysis(
+    species: str,
+    gene_id: str,
+    spec: _DesignAnalysisSpec,
+    output_dir: Optional[str],
+    *,
+    is_polling: bool,
+) -> dict[str, Any]:
+    """Build prompt parts and dispatch one analyst submission.
+
+    Shared helper for ``protein_structure_for_gene`` and
+    ``promoter_design_for_gene``. Mirrors the
+    ``DigitalDesignAgents._dispatch_and_wait_analysis`` shape used
+    by the parallel-dispatch graph, but at module level so deep_genome
+    can route its single-gene analysis branches here without
+    constructing a full design graph.
+    """
+    sensitive = get_sensitive_config()
+    goal_description = get_prompt(
+        DIGITAL_DESIGN_CONFIG.PROMPT_FILE,
+        spec.goal_path,
+        {"gene_id": gene_id},
+    )
+    meta = get_prompt(DIGITAL_DESIGN_CONFIG.PROMPT_FILE, spec.meta_path)
+    data_list = get_data_list(
+        DIGITAL_DESIGN_CONFIG.DEEPGENOME_DATA,
+        spec.analysis_type,
+        species,
+    )
+    request = {
+        "analysis_type": spec.analysis_type,
+        "target_id": gene_id,
+        "output_dir": output_dir,
+        "prompt_parts": (goal_description, meta, data_list),
+        "compute_resource": spec.compute_resource,
+    }
+    return await submit_analyst_via_subgraph(
+        AnalystAgent(
+            analyst_config=DIGITAL_DESIGN_CONFIG,
+            sensitive_config=sensitive,
+        ),
+        DIGITAL_DESIGN_CONFIG,
+        sensitive,
+        request,
+        is_polling=is_polling,
+    )
+
+
+async def protein_structure_for_gene(
+    species: str,
+    gene_id: str,
+    output_dir: Optional[str] = None,
+    *,
+    is_polling: bool = True,
+) -> dict[str, Any]:
+    """Submit a protein_structure_analysis task via the analyst subgraph.
+
+    Producer-side counterpart to deep_genome's
+    ``protein_structure_analysis`` dispatch branch. Returns the
+    ``submit_analyst_via_subgraph`` projection so deep_genome's
+    commit-2 rerouting is a straight callee swap.
+
+    Args:
+        species: Source species name used to select prepared data.
+        gene_id: Target gene identifier for the structure prompt.
+        output_dir: Optional pre-allocated OBS output directory.
+        is_polling: Whether the analyst graph should block until the
+            submitted task reaches a terminal state. Defaults to
+            ``True`` to preserve deep_genome's polling semantics.
+
+    Returns:
+        Projected dispatch dict containing ``task_id`` / ``output_dir``
+        / ``plan`` / ``tool_usages`` / ``task_status``.
+    """
+    return await _submit_design_analysis(
+        species=species,
+        gene_id=gene_id,
+        spec=_DesignAnalysisSpec(
+            analysis_type="protein_structure_analysis",
+            goal_path="user/structure_analysis",
+            meta_path="user/structure_analysis_meta",
+            compute_resource="medium",
+        ),
+        output_dir=output_dir,
+        is_polling=is_polling,
+    )
+
+
+async def promoter_design_for_gene(
+    species: str,
+    gene_id: str,
+    output_dir: Optional[str] = None,
+    *,
+    is_polling: bool = True,
+) -> dict[str, Any]:
+    """Submit a promoter_analysis task via the analyst subgraph.
+
+    Producer-side counterpart to deep_genome's ``promoter_analysis``
+    dispatch branch. Returns the ``submit_analyst_via_subgraph``
+    projection so deep_genome's commit-2 rerouting is a straight
+    callee swap.
+
+    Args:
+        species: Source species name used to select prepared data.
+        gene_id: Target gene identifier for the promoter prompt.
+        output_dir: Optional pre-allocated OBS output directory.
+        is_polling: Whether the analyst graph should block until the
+            submitted task reaches a terminal state. Defaults to
+            ``True`` to preserve deep_genome's polling semantics.
+
+    Returns:
+        Projected dispatch dict containing ``task_id`` / ``output_dir``
+        / ``plan`` / ``tool_usages`` / ``task_status``.
+    """
+    return await _submit_design_analysis(
+        species=species,
+        gene_id=gene_id,
+        spec=_DesignAnalysisSpec(
+            analysis_type="promoter_analysis",
+            goal_path="user/promoter_analysis",
+            meta_path="user/promoter_analysis_meta",
+            compute_resource="small",
+        ),
+        output_dir=output_dir,
+        is_polling=is_polling,
     )
