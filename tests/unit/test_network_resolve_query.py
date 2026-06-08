@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Iterator
 
 import pytest
 
@@ -25,11 +25,38 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
 
+_RESOLVER_LOGGER_NAME = "mcp_server_phytomni.agents.network.resolve_query"
+
 
 @pytest.fixture(autouse=True)
 def _clear_phyto_chat_cache() -> None:
     """Drop the persistent SQLite cache between cases."""
     chat_service.run_phyto_chat_cached.cache_clear()
+
+
+@pytest.fixture(name="resolver_caplog")
+def _resolver_caplog(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[pytest.LogCaptureFixture]:
+    """Attach caplog directly to the resolver logger.
+
+    ``common/logging_config.configure_logging`` sets the package
+    logger's ``propagate=False`` so warnings reach the configured
+    stderr handler without double-emitting through the root logger.
+    pytest's default ``caplog`` listens on root, so once an earlier
+    test in the full suite triggers ``configure_logging`` (e.g. via
+    api/app or mcp/app), warnings on the resolver logger never reach
+    caplog. Attaching the caplog handler directly to the resolver
+    logger sidesteps the propagation gap. The handler is removed at
+    teardown so the fixture stays per-test.
+    """
+    resolver_logger = logging.getLogger(_RESOLVER_LOGGER_NAME)
+    resolver_logger.addHandler(caplog.handler)
+    resolver_logger.setLevel(logging.WARNING)
+    try:
+        yield caplog
+    finally:
+        resolver_logger.removeHandler(caplog.handler)
 
 
 def _make_response(payload: Any) -> Dict[str, Any]:
@@ -214,7 +241,7 @@ async def test_resolver_rejects_empty_llm_content(
 async def test_resolver_warns_when_picking_upstream_deprecated_id(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],
-    caplog: pytest.LogCaptureFixture,
+    resolver_caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Picking an upstream-deprecated id emits a WARNING log line.
 
@@ -223,6 +250,7 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
     running, but server logs surface the drift so operators can
     audit + migrate when ready.
     """
+    caplog = resolver_caplog
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
         return _make_response({"to_id": "TO:0000139"})
@@ -259,7 +287,7 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
 async def test_resolver_warns_on_post_sort_deprecated_winner(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],
-    caplog: pytest.LogCaptureFixture,
+    resolver_caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Multi-candidate path: deprecated id wins by confidence + warning fires.
 
@@ -271,6 +299,7 @@ async def test_resolver_warns_on_post_sort_deprecated_winner(
     ``candidates.sort`` (or that keyed off ``top_to_id`` rather than
     the chosen candidate) would surface here.
     """
+    caplog = resolver_caplog
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
         return _make_response(
@@ -313,7 +342,7 @@ async def test_resolver_warns_on_post_sort_deprecated_winner(
 async def test_resolver_does_not_warn_for_canonical_id(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],
-    caplog: pytest.LogCaptureFixture,
+    resolver_caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Canonical (upstream-vouched-for) ids must not trigger the warning.
 
@@ -321,6 +350,7 @@ async def test_resolver_does_not_warn_for_canonical_id(
     canonical ids would drown operators in noise + erode the signal's
     actionability.
     """
+    caplog = resolver_caplog
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
         return _make_response({"to_id": "TO:0000207"})
