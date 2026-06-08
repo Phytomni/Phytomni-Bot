@@ -370,40 +370,74 @@ mid-stream failure propagates immediately (a silent retry would
 re-emit chunks the client already received and corrupt the SSE
 timeline). See `agents/chat/service.py:MAX_OPEN_STREAM_RETRIES`.
 
-### BriefGene `resolve_gene_id`
+### Resolver flags: `resolve_gene_id` and `resolve_to_id`
 
-`POST /v1/chat/completions` and `POST /v1/agents/brief_gene/runs` accept an
-optional boolean `resolve_gene_id`. Default is `false`. When `true` the
-HTTP layer issues one structured LLM call (json_schema response format)
-to resolve the free-form user message into a single canonical
-gene/transcript identifier before invoking `BriefGeneAgent`. Use it when
-external clients submit symbols, species names, or full research
-questions rather than the bare locus id BriefGene expects.
+The HTTP layer can resolve a free-form `user_query` into the canonical
+identifier a downstream agent expects, before invoking the agent. Four
+agents support pre-shaping today:
 
-The flag is BriefGene-only. The chat path requires `model="phyto-brief-gene"`;
-the native path requires the `brief_gene` slug. Passing
-`resolve_gene_id=true` to any other model or slug returns `400`. A
-resolver failure (blank input, empty candidates, non-JSON LLM output,
-timeout) also returns `400` carrying the resolver reason in
-`error.message`; failed resolutions are never silently downgraded to a
-nogeneid call.
+| Flag              | Eligible models / agents                                                       | Resolved field    | Metadata keys (on success)                                    |
+| ----------------- | ------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------------- |
+| `resolve_gene_id` | `phyto-brief-gene` (chat path) / `brief_gene` / `deep_genome` / `design` slugs | canonical gene id | `original_query`, `resolved_gene_id`, `resolve_gene_id: true` |
+| `resolve_to_id`   | `network` slug only                                                            | Trait Ontology id | `original_query`, `resolved_to_id`, `resolve_to_id: true`     |
 
-When resolution succeeds the response `metadata` includes
-`original_query`, `resolved_gene_id`, and `resolve_gene_id: true` so
-clients can verify which canonical id BriefGene actually saw. The LLM
-call rides on the shared `~90d` `phyto_chat` cache, so repeated identical
-queries reuse the prior resolution at zero additional model cost.
+`resolve_gene_id` issues one structured LLM call (json_schema response
+format) and returns the single best canonical gene/transcript identifier
+(e.g. `Os01g0177400`, `AT5G42800`). The three gene-id agents share the
+BriefGene resolver internally so a customer prompt warm-cached by one
+agent reuses the resolution on the others through the shared `~90d`
+`phyto_chat` cache. `BriefGene` is the only agent exposed on
+`/v1/chat/completions` today, so the chat path keeps requiring
+`model="phyto-brief-gene"` for the flag; the native runs path accepts
+the flag on any of the three slugs above.
+
+`resolve_to_id` is `network`-only. The resolver injects the customer-
+curated Plant Trait Ontology catalog (`config/to_ontology.json`,
+CC-BY 4.0, releases/2026-01-14, customer-filtered to 573 ids) into the
+LLM user message so the model picks from a closed set; the resolver
+also validates the returned id against the catalog before injecting it
+into `arguments.to_id`. The flag is rejected with `400` on any other
+agent slug.
+
+Both flags share the same misuse / failure contract:
+
+- The flag must come with a non-blank `user_query` field in the
+  request. Missing or blank `user_query` with the flag on returns
+  `400` before any LLM call.
+- The flag is rejected with `400` when passed to an ineligible model
+  or agent slug.
+- Resolver failures (blank input, empty candidates, non-JSON LLM
+  output, timeout, hallucinated TO id outside the catalog) return
+  `400` carrying the resolver reason in `error.message`; failed
+  resolutions never silently fall through to a raw user_query call.
+- The native runs path pops `resolve_gene_id` / `resolve_to_id` and
+  `user_query` from `arguments` before forwarding so each agent's
+  Pydantic schema never sees the resolver-flag keys.
 
 ```bash
+# Chat path — BriefGene only
 curl -s http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
   -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user","content":"What does AT5G42800 do in Arabidopsis?"}]}'
 
+# Native runs — BriefGene (rewrites user_query)
 curl -s http://127.0.0.1:8080/v1/agents/brief_gene/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
   -d '{"arguments":{"user_query":"rice TPR6 function","resolve_gene_id":true}}'
+
+# Native runs — deep_genome (injects resolved id into gene_id)
+curl -s http://127.0.0.1:8080/v1/agents/deep_genome/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"species_code":"osa","user_query":"tell me about CAB1 in rice","resolve_gene_id":true}}'
+
+# Native runs — network (injects resolved TO id into to_id)
+curl -s http://127.0.0.1:8080/v1/agents/network/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"species":"oryza sativa","obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
 ```
 
 ## Native Agent Runs
