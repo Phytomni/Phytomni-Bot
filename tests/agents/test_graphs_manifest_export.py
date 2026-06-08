@@ -28,6 +28,7 @@ from mcp_server_phytomni.agents.evolution.builder import (
 )
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
+from mcp_server_phytomni.graphs.defaults import _build_deep_genome_app
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
     GraphNodeManifest,
@@ -315,5 +316,31 @@ def test_export_real_evolution_subgraph_node_set() -> None:
     documented = {
         "resolve_target_taxids_node",
         "submit_evolution_task_node",
+    }
+    assert documented <= names
+
+
+def test_export_real_deep_genome_subgraph_node_set() -> None:
+    """Real deep_genome subgraph export matches the documented set.
+
+    Pins the deep_genome subgraph's manifest shape so the docs
+    section in ``docs/agent-graphs.md`` and the compiled graph
+    stay in sync. The documented node-name set covers the three
+    phases (Part 1 knowledge + analyst fan-out / Part 2 synthesis +
+    experiment loop / Part 3 protocol → discussion → summary →
+    follow-up) that the report mixin walks.
+    """
+    manifest = export_manifest(_build_deep_genome_app())
+    names = {node.name for node in manifest.nodes}
+    documented = {
+        "knowledge_node",
+        "prepare_tasks_node",
+        "analyst_node",
+        "synthesize_node",
+        "experiment_node",
+        "protocol_node",
+        "discussion_node",
+        "summary_node",
+        "follow_up_node",
     }
     assert documented <= names

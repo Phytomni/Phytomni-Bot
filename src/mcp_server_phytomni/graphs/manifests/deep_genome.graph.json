@@ -1,0 +1,125 @@
+{
+  "edges": [
+    {
+      "conditional": true,
+      "source": "__start__",
+      "target": "knowledge_node"
+    },
+    {
+      "conditional": true,
+      "source": "__start__",
+      "target": "prepare_tasks_node"
+    },
+    {
+      "conditional": true,
+      "source": "analyst_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": false,
+      "source": "discussion_node",
+      "target": "summary_node"
+    },
+    {
+      "conditional": true,
+      "source": "experiment_node",
+      "target": "experiment_node"
+    },
+    {
+      "conditional": true,
+      "source": "experiment_node",
+      "target": "protocol_node"
+    },
+    {
+      "conditional": false,
+      "source": "knowledge_node",
+      "target": "experiment_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "analyst_node"
+    },
+    {
+      "conditional": false,
+      "source": "prepare_tasks_node",
+      "target": "synthesize_node"
+    },
+    {
+      "conditional": false,
+      "source": "protocol_node",
+      "target": "discussion_node"
+    },
+    {
+      "conditional": false,
+      "source": "summary_node",
+      "target": "follow_up_node"
+    },
+    {
+      "conditional": true,
+      "source": "synthesize_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "synthesize_node",
+      "target": "experiment_node"
+    },
+    {
+      "conditional": true,
+      "source": "synthesize_node",
+      "target": "synthesize_node"
+    },
+    {
+      "conditional": false,
+      "source": "follow_up_node",
+      "target": "__end__"
+    }
+  ],
+  "nodes": [
+    {
+      "kind": "boundary",
+      "name": "__start__"
+    },
+    {
+      "kind": "node",
+      "name": "knowledge_node"
+    },
+    {
+      "kind": "node",
+      "name": "prepare_tasks_node"
+    },
+    {
+      "kind": "node",
+      "name": "synthesize_node"
+    },
+    {
+      "kind": "node",
+      "name": "analyst_node"
+    },
+    {
+      "kind": "node",
+      "name": "experiment_node"
+    },
+    {
+      "kind": "node",
+      "name": "protocol_node"
+    },
+    {
+      "kind": "node",
+      "name": "discussion_node"
+    },
+    {
+      "kind": "node",
+      "name": "summary_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_node"
+    },
+    {
+      "kind": "boundary",
+      "name": "__end__"
+    }
+  ]
+}
