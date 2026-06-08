@@ -617,16 +617,21 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 102`). The catalog header count above
+`RULE_BASELINES["R0801"] = 110`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
 analyst / data retrieve-fan-out templates), 66 / 79 / 93 / 94
 (brief_gene preamble fusion + Align-A citation rules accumulation,
 documented in their own commit bodies), 97 (Step 6.4 env/evo per-
-consumer wiring; see entry below), and 102 (Step 6.5 producer-
+consumer wiring; see entry below), 102 (Step 6.5 producer-
 wrapper request-dict mirrors net of the cluster #9 sunset, see
-entries below). Each ratchet was disclosed in its own commit body;
+entries below), and 110 (HTTP resolver cascade for
+deep_genome / design / network — each new `resolve_query.py`
+module mirrors BGA's `_first_message_content` + `_normalize_ candidates` + chat-kwargs assembly shape; intentional parallel
+structure per the AGENTS.md "Per-request context + HTTP-only
+pre-shaping" reference template). Each ratchet was disclosed in
+its own commit body;
 the original 25-cluster catalog remains accurate for the legacy
 clusters but is no longer the authoritative count. The main pylint invocation in
 `scripts/validate_local.sh` and `scripts/scoped_gate.sh` is run with
