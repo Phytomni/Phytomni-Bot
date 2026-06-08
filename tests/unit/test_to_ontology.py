@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from mcp_server_phytomni.agents.network.to_ontology import (
+    DEPRECATED_UPSTREAM_STATUS,
     TO_ONTOLOGY_PATH,
     ToOntologyEntry,
     format_to_ontology_for_prompt,
@@ -84,3 +85,51 @@ def test_to_ontology_path_resolves_to_committed_file() -> None:
     """``TO_ONTOLOGY_PATH`` points at the committed config asset."""
     assert TO_ONTOLOGY_PATH.exists()
     assert TO_ONTOLOGY_PATH.name == "to_ontology.json"
+
+
+def test_load_to_ontology_carries_deprecated_upstream_status_on_32() -> None:
+    """32 entries the upstream PTO release no longer vouches for are flagged.
+
+    Pins the customer-supplied TSV / OBO cross-reference outcome:
+    31 ids are upstream ``is_obsolete: true`` (no replaced_by hint)
+    + 1 id (``TO:0000139`` "grains per panicle") is absent from the
+    upstream catalog entirely. The shipped JSON stamps both with
+    ``status: deprecated_upstream`` so the resolver can warn on pick.
+    A regenerator that loses the flag (or grows the count) surfaces
+    here.
+    """
+    entries = load_to_ontology()
+    deprecated = [
+        entry
+        for entry in entries
+        if entry.status == DEPRECATED_UPSTREAM_STATUS
+    ]
+    assert len(deprecated) == 32
+    deprecated_ids = {entry.id for entry in deprecated}
+    assert "TO:0000139" in deprecated_ids  # OBO-missing anchor
+    assert "TO:0000001" in deprecated_ids  # OBO-obsoleted anchor
+
+
+def test_active_entries_have_empty_status() -> None:
+    """Canonical (non-deprecated) entries carry an empty ``status``.
+
+    Pins the JSON convention: only the 32 problematic ids carry the
+    sentinel; the other 541 stay clean so a future schema migration
+    that defaults the field can rely on ``status == ""`` meaning
+    "still vouched for by upstream".
+    """
+    entries = load_to_ontology()
+    anchor = next(e for e in entries if e.id == "TO:0000207")
+    assert anchor.status == ""
+
+
+def test_format_to_ontology_for_prompt_skips_status_field() -> None:
+    """Prompt injection does not leak the status sentinel to the LLM.
+
+    The deprecated-upstream flag is for operator observability, not
+    LLM steering; surfacing it to the model could bias the resolver
+    away from customer-still-uses ids in unintended ways.
+    """
+    entries = load_to_ontology()
+    text = format_to_ontology_for_prompt(entries)
+    assert DEPRECATED_UPSTREAM_STATUS not in text

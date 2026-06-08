@@ -21,6 +21,7 @@ from typing import List
 from pydantic import BaseModel
 
 __all__ = [
+    "DEPRECATED_UPSTREAM_STATUS",
     "TO_ONTOLOGY_PATH",
     "ToOntologyEntry",
     "format_to_ontology_for_prompt",
@@ -34,13 +35,22 @@ TO_ONTOLOGY_PATH = (
 )
 
 
+DEPRECATED_UPSTREAM_STATUS = "deprecated_upstream"
+
+
 class ToOntologyEntry(BaseModel):
-    """One TO ontology term the resolver may surface as a candidate."""
+    """One TO ontology term the resolver may surface as a candidate.
+
+    ``status`` is ``"deprecated_upstream"`` for the 32 customer ids the
+    upstream PTO release marks ``is_obsolete: true`` (31) or omits
+    entirely (1, TO:0000139). Empty for the canonical 541 entries.
+    """
 
     id: str
     name: str
     synonyms: List[str] = []
     definition: str = ""
+    status: str = ""
 
 
 @lru_cache(maxsize=1)

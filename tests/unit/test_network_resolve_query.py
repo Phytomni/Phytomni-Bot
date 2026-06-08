@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Dict
 
 import pytest
@@ -208,3 +209,86 @@ async def test_resolver_rejects_empty_llm_content(
             sensitive_config=sensitive_config,
         )
     assert "empty content" in str(excinfo.value)
+
+
+async def test_resolver_warns_when_picking_upstream_deprecated_id(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Picking an upstream-deprecated id emits a WARNING log line.
+
+    Pins the Option B observability contract: the catalog still
+    accepts the customer's still-in-use ids so the workflow keeps
+    running, but server logs surface the drift so operators can
+    audit + migrate when ready.
+    """
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response({"to_id": "TO:0000139"})
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="mcp_server_phytomni.agents.network.resolve_query",
+    ):
+        result = await resolve_network_user_query(
+            "grains per panicle",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert result.to_id == "TO:0000139"
+    deprecated_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "deprecated" in record.getMessage()
+    ]
+    assert deprecated_warnings, (
+        f"expected a deprecation warning, got: "
+        f"{[r.getMessage() for r in caplog.records]}"
+    )
+    msg = deprecated_warnings[0].getMessage()
+    assert "TO:0000139" in msg
+    assert "grains per panicle" in msg
+
+
+async def test_resolver_does_not_warn_for_canonical_id(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Canonical (upstream-vouched-for) ids must not trigger the warning.
+
+    Locks down the warning's specificity: a false positive on the 541
+    canonical ids would drown operators in noise + erode the signal's
+    actionability.
+    """
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response({"to_id": "TO:0000207"})
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="mcp_server_phytomni.agents.network.resolve_query",
+    ):
+        result = await resolve_network_user_query(
+            "rice plant height",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert result.to_id == "TO:0000207"
+    deprecated_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "deprecated" in record.getMessage()
+    ]
+    assert not deprecated_warnings

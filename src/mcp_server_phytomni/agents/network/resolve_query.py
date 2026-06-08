@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -24,7 +25,14 @@ from ...config.defaults import GeneNetworkConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
-from .to_ontology import format_to_ontology_for_prompt, load_to_ontology
+from .to_ontology import (
+    DEPRECATED_UPSTREAM_STATUS,
+    ToOntologyEntry,
+    format_to_ontology_for_prompt,
+    load_to_ontology,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "GeneNetworkResolveError",
@@ -179,11 +187,39 @@ async def resolve_network_user_query(
         )
 
     candidates.sort(key=lambda c: c.confidence, reverse=True)
+    _warn_if_deprecated(catalog_entries, candidates[0].to_id, raw_query)
     return GeneNetworkResolveResult(
         to_id=candidates[0].to_id,
         raw_query=raw_query,
         candidates=candidates,
     )
+
+
+def _warn_if_deprecated(
+    catalog_entries: List[ToOntologyEntry],
+    chosen_to_id: str,
+    raw_query: str,
+) -> None:
+    """Emit a WARNING log when the resolver picks an upstream-deprecated id.
+
+    The catalog still accepts these ids so customer workflows do not
+    break, but server logs surface the drift so a future audit can
+    decide whether to migrate the trait to a canonical id. Pulled
+    into its own helper so the resolver's local-variable count stays
+    under pylint's R0914 threshold.
+    """
+    for entry in catalog_entries:
+        if entry.id != chosen_to_id:
+            continue
+        if entry.status == DEPRECATED_UPSTREAM_STATUS:
+            _LOGGER.warning(
+                "GeneNetwork resolver picked upstream-deprecated TO id "
+                "%s for query %r; upstream PTO marks it obsoleted (or "
+                "missing) without a replaced_by hint",
+                chosen_to_id,
+                raw_query,
+            )
+        return
 
 
 def _first_message_content(

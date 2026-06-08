@@ -4,12 +4,16 @@
     "filter": "Customer-supplied 573-id allowlist (TO_mapping.tsv); 541 matched in the upstream .obo and inherited its synonyms + definition; 32 were not in the latest upstream release and kept as {id, name} only. The customer-supplied TO_Description wins on name divergences (163 entries) so resolver prompts match the in-house terminology.",
     "license": "CC-BY 4.0 (Plant Trait Ontology, Planteome consortium)",
     "source": "https://raw.githubusercontent.com/Planteome/plant-trait-ontology/master/to.obo",
+    "status_field": "Entries flagged `status: deprecated_upstream` are kept in the catalog because the customer's TSV authority still uses them, but the upstream Plant Trait Ontology release either marks them `is_obsolete: true` (31 entries; no `replaced_by` / `consider` hint upstream) or omits them entirely (1 entry: TO:0000139). The GeneNetwork resolver emits a `_LOGGER.warning` when it picks one so server logs surface the drift without breaking the customer's current workflow.",
+    "upstream_deprecated_count": 31,
+    "upstream_missing_count": 1,
     "upstream_version": "releases/2026-01-14"
   },
   "entries": [
     {
       "id": "TO:0000001",
-      "name": "carbon sensitivity"
+      "name": "carbon sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Sensitivity to the calcium content in the growth medium. Plays an important role in cell wall synthesis and enzyme activities.",
@@ -76,11 +80,13 @@
     },
     {
       "id": "TO:0000015",
-      "name": "oxygen sensitivity"
+      "name": "oxygen sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000016",
-      "name": "cobalt sensitivity"
+      "name": "cobalt sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A plant trait (TO:0000387) which is a morphological quality of a plant anatomical entity (PO:0025131) or a constituent cellular component (GO:0005575) contained therein.",
@@ -162,11 +168,13 @@
     },
     {
       "id": "TO:0000032",
-      "name": "selenium sensitivity"
+      "name": "selenium sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000034",
-      "name": "chromium sensitivity"
+      "name": "chromium sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "An incompatibility trait (TO:0000035) which is a genetic barrier preventing fertilization in a cross between two different lines.",
@@ -178,7 +186,8 @@
     },
     {
       "id": "TO:0000038",
-      "name": "fluorine sensitivity"
+      "name": "fluorine sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A panicle morphology trait (TO:0000847) which is the measurement in centimeters from panicle base to tip.",
@@ -191,7 +200,8 @@
     },
     {
       "id": "TO:0000042",
-      "name": "f1-hybrid incompatibility"
+      "name": "f1-hybrid incompatibility",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A plant axis morphology trait (TO:0000738) which is a quality of a root (PO:0025025).",
@@ -200,7 +210,8 @@
     },
     {
       "id": "TO:0000046",
-      "name": "f2-generation sterility"
+      "name": "f2-generation sterility",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Causal agent: Tilletia barclayana.",
@@ -241,7 +252,8 @@
     },
     {
       "id": "TO:0000053",
-      "name": "pollen sterility"
+      "name": "pollen sterility",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A biotic plant stress trait (TO:0000179) which is the response to damage to a plant structure (PO:0009011) caused by an animal (NCBITaxon:33208).",
@@ -544,7 +556,8 @@
     },
     {
       "id": "TO:0000106",
-      "name": "male sterility type"
+      "name": "male sterility type",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Assay for the amount of 13kDa seed storage protein present in the endosperm.",
@@ -583,7 +596,8 @@
     },
     {
       "id": "TO:0000114",
-      "name": "flooding related trait"
+      "name": "flooding related trait",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Determined as the dry mass of roots per unit soil volume at a given soil section.",
@@ -697,7 +711,8 @@
     },
     {
       "id": "TO:0000139",
-      "name": "grains per panicle"
+      "name": "grains per panicle",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A cardinal organ part morphology trait (TO:0000754) which is the color of a lemma apiculus (PO:0025616).",
@@ -1031,7 +1046,8 @@
     },
     {
       "id": "TO:0000199",
-      "name": "genic male sterility"
+      "name": "genic male sterility",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A stem strength (TO:0000051) trait which a measure of the fragility of a grass stem (culm; PO:0009047).",
@@ -1147,7 +1163,8 @@
     },
     {
       "id": "TO:0000217",
-      "name": "genic male sterility-thermo-photoperiod sensitive"
+      "name": "genic male sterility-thermo-photoperiod sensitive",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Observations are made on staining behavior and number of nuclei in most of the pollen.",
@@ -1243,7 +1260,8 @@
     },
     {
       "id": "TO:0000236",
-      "name": "crop damage resistance"
+      "name": "crop damage resistance",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "An abiotic plant stress response trait (TO:0000168) which is the response of a plant structure (PO:0009011) to water stress (too little or too much water).",
@@ -1252,7 +1270,8 @@
     },
     {
       "id": "TO:0000238",
-      "name": "growth media composition sensitivity"
+      "name": "growth media composition sensitivity",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A lemma morphology trait (TO:1000023) which is the length of a sterile lemma (PO:0009040).",
@@ -1770,7 +1789,8 @@
     },
     {
       "id": "TO:0000350",
-      "name": "cms-hl type"
+      "name": "cms-hl type",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Sensitivity to the zinc content in the growth medium. It acts as cofactor for certain enzymes like Class II aldolases, metalloproteases, alkaline phosphatase, etc.",
@@ -2279,7 +2299,8 @@
     },
     {
       "id": "TO:0000441",
-      "name": "humidity related trait"
+      "name": "humidity related trait",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Fresh weight of the plant.",
@@ -2580,11 +2601,13 @@
     },
     {
       "id": "TO:0000488",
-      "name": "seed composition based quality trait"
+      "name": "seed composition based quality trait",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000489",
-      "name": "carbohydrate composition related trait"
+      "name": "carbohydrate composition related trait",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A protein content trait (TO:0000598) which is the amount of protein (CHEBI:36080) in a seed (PO:0009010).",
@@ -2593,7 +2616,8 @@
     },
     {
       "id": "TO:0000491",
-      "name": "fat and essential oil composition related trait"
+      "name": "fat and essential oil composition related trait",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A leaf morphology trait (TO:0000748) which is the variation in shapes and forms of a leaf (PO:0025034).",
@@ -2631,11 +2655,13 @@
     },
     {
       "id": "TO:0000497",
-      "name": "fertility restoration trait"
+      "name": "fertility restoration trait",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000498",
-      "name": "female fertility restoration trait"
+      "name": "female fertility restoration trait",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A reproductive shoot system morphology trait (TO:0000786) which is a quality of a  flower (PO:0009046).",
@@ -3077,7 +3103,8 @@
     },
     {
       "id": "TO:0000602",
-      "name": "total fat content"
+      "name": "total fat content",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A metabolite content trait (TO:0000281) which is the amount of lipid in a plant structure (PO:0009011).",
@@ -3178,7 +3205,8 @@
     },
     {
       "id": "TO:0000627",
-      "name": "relative phosphorus utilization efficiency"
+      "name": "relative phosphorus utilization efficiency",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Length of the pedicel.",
@@ -3190,7 +3218,8 @@
     },
     {
       "id": "TO:0000633",
-      "name": "relative total dry weight"
+      "name": "relative total dry weight",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A stem morphology trait (TO:0000361) which is the number of stem nodes (PO:0020141).",
@@ -3202,15 +3231,18 @@
     },
     {
       "id": "TO:0000636",
-      "name": "relative shoot dry weight"
+      "name": "relative shoot dry weight",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000639",
-      "name": "seed fertility"
+      "name": "seed fertility",
+      "status": "deprecated_upstream"
     },
     {
       "id": "TO:0000640",
-      "name": "total root number"
+      "name": "total root number",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "An inflorescence primary branch morphology trait (TO:0000846) which the length of a second order inflorescence axis (PO:0006321).",
@@ -3290,7 +3322,8 @@
     },
     {
       "id": "TO:0000664",
-      "name": "fungal blight disease resistance"
+      "name": "fungal blight disease resistance",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "The number of flowers present on a inflorescence branch or in the inflorescence itself.",
@@ -3312,7 +3345,8 @@
     },
     {
       "id": "TO:0000674",
-      "name": "phytochemical compound content"
+      "name": "phytochemical compound content",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "A metabolite content trait (TO:0000281) which is the amount of ferulic acid (CHEBI:17620) in a plant structure (PO:0009011).",
@@ -3433,7 +3467,8 @@
     },
     {
       "id": "TO:0000732",
-      "name": "lignin monomer content"
+      "name": "lignin monomer content",
+      "status": "deprecated_upstream"
     },
     {
       "definition": "Traits associated with the biosynthesis of lignin in a plant structure (PO:0009011).",

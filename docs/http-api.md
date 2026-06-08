@@ -399,6 +399,15 @@ also validates the returned id against the catalog before injecting it
 into `arguments.to_id`. The flag is rejected with `400` on any other
 agent slug.
 
+Of the 573 catalog ids, 32 carry `status: deprecated_upstream` because
+the upstream PTO release either marks them `is_obsolete: true` (31, no
+`replaced_by` hint) or omits them entirely (1, `TO:0000139` "grains per
+panicle"). The catalog continues to accept those ids so the customer's
+existing workflow keeps running, but the resolver emits a
+`logger.warning` (`mcp_server_phytomni.agents.network.resolve_query`)
+whenever it picks one — operators should treat the warning as an audit
+signal and decide whether to migrate the trait to a canonical id.
+
 Both flags share the same misuse / failure contract:
 
 - The flag must come with a non-blank `user_query` field in the
