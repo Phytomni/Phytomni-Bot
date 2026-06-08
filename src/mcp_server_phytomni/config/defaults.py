@@ -270,12 +270,12 @@ class ServerConfig(BaseSettings):
     USE_CHAT_SUBGRAPH: Annotated[
         bool,
         Field(
-            default=False,
+            default=True,
             validation_alias=AliasChoices(
                 "USE_CHAT_SUBGRAPH", "PHYTOMNI_USE_CHAT_SUBGRAPH"
             ),
         ),
-    ] = False
+    ] = True
 
     # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
     # (analyst / data / review retrieve_node) invoke a KnowledgeAgent
@@ -295,13 +295,13 @@ class ServerConfig(BaseSettings):
     USE_KNOWLEDGE_SUBGRAPH: Annotated[
         bool,
         Field(
-            default=False,
+            default=True,
             validation_alias=AliasChoices(
                 "USE_KNOWLEDGE_SUBGRAPH",
                 "PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH",
             ),
         ),
-    ] = False
+    ] = True
 
     # Customer relay-mode client switches (distinct from the operator-
     # side ``ApiConfig.RELAY_ENABLED``). When ``RELAY_MODE`` is True a
@@ -571,12 +571,12 @@ class AnalystConfig(KnowledgeConfig):
     USE_ANALYST_SUBGRAPH: Annotated[
         bool,
         Field(
-            default=False,
+            default=True,
             validation_alias=AliasChoices(
                 "USE_ANALYST_SUBGRAPH", "PHYTOMNI_USE_ANALYST_SUBGRAPH"
             ),
         ),
-    ] = False
+    ] = True
 
 
 class ReviewConfig(KnowledgeConfig):
@@ -653,23 +653,23 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     USE_EVOLUTION_SUBGRAPH: Annotated[
         bool,
         Field(
-            default=False,
+            default=True,
             validation_alias=AliasChoices(
                 "USE_EVOLUTION_SUBGRAPH",
                 "PHYTOMNI_USE_EVOLUTION_SUBGRAPH",
             ),
         ),
-    ] = False
+    ] = True
     USE_DESIGN_SUBGRAPH: Annotated[
         bool,
         Field(
-            default=False,
+            default=True,
             validation_alias=AliasChoices(
                 "USE_DESIGN_SUBGRAPH",
                 "PHYTOMNI_USE_DESIGN_SUBGRAPH",
             ),
         ),
-    ] = False
+    ] = True
     BI_URL: Annotated[
         str,
         Field(

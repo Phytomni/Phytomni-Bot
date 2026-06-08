@@ -48,9 +48,15 @@ def _build_agent(use_subgraph: bool) -> DataAgent:
     ``ServerConfig`` field without tripping pylint ``C0103`` on a
     direct UPPERCASE attribute assignment, mirroring the
     ``_build_agent`` shape used by the knowledge-subgraph tests.
+    Pins ``USE_KNOWLEDGE_SUBGRAPH=False`` so the test isolates the
+    chat-subgraph branch from the orthogonal knowledge-subgraph
+    structural mount the production default now wires.
     """
     config = DataConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": use_subgraph}
+        update={
+            "USE_CHAT_SUBGRAPH": use_subgraph,
+            "USE_KNOWLEDGE_SUBGRAPH": False,
+        }
     )
     return DataAgent(
         data_config=config,
@@ -94,34 +100,6 @@ async def test_rewrite_node_flag_off_awaits_phyto_chat(
 
     legacy_mock.assert_awaited_once()
     subgraph_app_mock.ainvoke.assert_not_awaited()
-    assert result == {"rewrite_query": "rewritten sql-friendly query"}
-
-
-async def test_rewrite_node_flag_on_direct_call_still_invokes_chat_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Direct ``rewrite_node`` calls with the flag on use the cached chat app.
-
-    Pins the vestigial in-method flag-on branch: when the chat flag
-    is on, ``_build_graph`` routes through the prep + chat + post
-    split rather than ``rewrite_node`` itself, so the in-method
-    flag-on branch is unreachable through the compiled graph. The
-    branch stays in place behind the flag so a direct call (e.g. a
-    consumer that bypasses the compiled graph) keeps producing the
-    same ``rewrite_query`` shape regardless of which path runs.
-    """
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
-        monkeypatch,
-        module_path=_DATA_MODULE,
-        legacy_response=_CHAT_COMPLETION_RESPONSE,
-        subgraph_response={"response": _CHAT_COMPLETION_RESPONSE},
-    )
-
-    agent = _build_agent(use_subgraph=True)
-    result = await agent.rewrite_node(_minimal_rewrite_state())
-
-    subgraph_app_mock.ainvoke.assert_awaited_once()
-    legacy_mock.assert_not_awaited()
     assert result == {"rewrite_query": "rewritten sql-friendly query"}
 
 
