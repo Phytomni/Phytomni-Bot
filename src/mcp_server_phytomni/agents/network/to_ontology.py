@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import List, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 __all__ = [
     "DEPRECATED_UPSTREAM_STATUS",
@@ -36,6 +36,7 @@ TO_ONTOLOGY_PATH = (
 
 
 DEPRECATED_UPSTREAM_STATUS = "deprecated_upstream"
+_StatusLiteral = Literal["", "deprecated_upstream"]
 
 
 class ToOntologyEntry(BaseModel):
@@ -44,13 +45,20 @@ class ToOntologyEntry(BaseModel):
     ``status`` is ``"deprecated_upstream"`` for the 32 customer ids the
     upstream PTO release marks ``is_obsolete: true`` (31) or omits
     entirely (1, TO:0000139). Empty for the canonical 541 entries.
+    The closed-set ``Literal`` type rejects regenerator typos at load
+    time so a stray value like ``"deprecated_upstrem"`` raises a
+    ``ValidationError`` instead of silently disabling the resolver's
+    deprecation warning. ``frozen=True`` keeps the cached singleton
+    list safe from accidental in-process mutation across tests.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     id: str
     name: str
     synonyms: List[str] = []
     definition: str = ""
-    status: str = ""
+    status: _StatusLiteral = ""
 
 
 @lru_cache(maxsize=1)

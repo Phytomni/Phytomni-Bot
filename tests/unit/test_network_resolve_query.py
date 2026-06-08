@@ -256,6 +256,60 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
     assert "grains per panicle" in msg
 
 
+async def test_resolver_warns_on_post_sort_deprecated_winner(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Multi-candidate path: deprecated id wins by confidence + warning fires.
+
+    Pins that the warning operates on the post-``sort`` winner, not
+    on the LLM's top-level ``to_id`` field, by handing the resolver a
+    payload where a canonical id appears at the top level but a
+    deprecated id wins via higher candidate-list confidence. A
+    regression that moved ``_warn_if_deprecated`` above
+    ``candidates.sort`` (or that keyed off ``top_to_id`` rather than
+    the chosen candidate) would surface here.
+    """
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response(
+            {
+                "to_id": "TO:0000207",
+                "candidates": [
+                    {"to_id": "TO:0000207", "confidence": 0.4},
+                    {"to_id": "TO:0000139", "confidence": 0.95},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="mcp_server_phytomni.agents.network.resolve_query",
+    ):
+        result = await resolve_network_user_query(
+            "grains per panicle in rice",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert result.to_id == "TO:0000139"
+    deprecated_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "deprecated" in record.getMessage()
+    ]
+    assert deprecated_warnings, (
+        f"expected a deprecation warning on post-sort winner, "
+        f"got: {[r.getMessage() for r in caplog.records]}"
+    )
+    assert "TO:0000139" in deprecated_warnings[0].getMessage()
+
+
 async def test_resolver_does_not_warn_for_canonical_id(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],

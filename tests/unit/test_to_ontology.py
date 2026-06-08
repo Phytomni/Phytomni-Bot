@@ -11,7 +11,10 @@ embed the catalog into LLM context.
 
 from __future__ import annotations
 
+import json
+
 import pytest
+from pydantic import ValidationError
 
 from mcp_server_phytomni.agents.network.to_ontology import (
     DEPRECATED_UPSTREAM_STATUS,
@@ -110,17 +113,79 @@ def test_load_to_ontology_carries_deprecated_upstream_status_on_32() -> None:
     assert "TO:0000001" in deprecated_ids  # OBO-obsoleted anchor
 
 
-def test_active_entries_have_empty_status() -> None:
-    """Canonical (non-deprecated) entries carry an empty ``status``.
+def test_every_entry_carries_a_known_status_value() -> None:
+    """Closed-set invariant: every entry's ``status`` is in the allowlist.
 
-    Pins the JSON convention: only the 32 problematic ids carry the
-    sentinel; the other 541 stay clean so a future schema migration
-    that defaults the field can rely on ``status == ""`` meaning
-    "still vouched for by upstream".
+    Iterates all 573 entries (not just an anchor) so a regenerator
+    that fat-fingers the sentinel string or invents a new bucket
+    surfaces here at test time. Pairs with the ``Literal`` typing on
+    ``ToOntologyEntry.status`` — if the typo escapes pydantic's
+    closed-set validation (e.g., a manual JSON edit + an empty
+    string default in a new pydantic version), this test catches it.
     """
     entries = load_to_ontology()
-    anchor = next(e for e in entries if e.id == "TO:0000207")
-    assert anchor.status == ""
+    known_statuses = {"", DEPRECATED_UPSTREAM_STATUS}
+    bad = [
+        (entry.id, entry.status)
+        for entry in entries
+        if entry.status not in known_statuses
+    ]
+    assert not bad, f"entries with unknown status: {bad[:5]}"
+    deprecated_count = sum(
+        1 for entry in entries if entry.status == DEPRECATED_UPSTREAM_STATUS
+    )
+    canonical_count = len(entries) - deprecated_count
+    assert canonical_count == 541
+    assert deprecated_count == 32
+
+
+def test_meta_counts_match_entry_aggregates() -> None:
+    """``_meta`` aggregate counts are cross-validated against the entries.
+
+    The JSON's self-describing ``_meta.upstream_deprecated_count`` (31)
+    and ``upstream_missing_count`` (1) MUST equal the count of entries
+    flagged ``status: deprecated_upstream`` (32 total). A regenerator
+    that updates one side without the other silently makes the JSON
+    lie about itself; this test forces both sides to move together.
+    """
+    raw = json.loads(TO_ONTOLOGY_PATH.read_text(encoding="utf-8"))
+    meta = raw["_meta"]
+    declared_total = (
+        meta["upstream_deprecated_count"] + meta["upstream_missing_count"]
+    )
+    entries = load_to_ontology()
+    actual_total = sum(
+        1 for entry in entries if entry.status == DEPRECATED_UPSTREAM_STATUS
+    )
+    assert declared_total == actual_total
+
+
+def test_rejects_unknown_status_value_at_load() -> None:
+    """Typo'd ``status`` value raises ``ValidationError`` at model load.
+
+    Locks down the closed-set guarantee the resolver's deprecation
+    warning depends on: if a regenerator wrote
+    ``"status": "deprecated_upstrem"`` (missing 'a') the typo silently
+    disables the warning forever. The ``Literal`` typing makes that
+    a load-time crash instead.
+    """
+    with pytest.raises(ValidationError):
+        ToOntologyEntry.model_validate(
+            {"id": "TO:0001", "name": "x", "status": "deprecated_upstrem"}
+        )
+
+
+def test_entries_are_frozen_against_in_process_mutation() -> None:
+    """``frozen=True`` prevents per-test mutation from poisoning the cache.
+
+    ``load_to_ontology`` is an ``lru_cache`` singleton; without
+    ``frozen=True`` a test that monkeypatches an entry's status would
+    leak into every later test in the run and create order-dependent
+    failures.
+    """
+    entry = load_to_ontology()[0]
+    with pytest.raises(ValidationError):
+        setattr(entry, "status", DEPRECATED_UPSTREAM_STATUS)
 
 
 def test_format_to_ontology_for_prompt_skips_status_field() -> None:

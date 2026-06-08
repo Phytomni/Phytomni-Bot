@@ -401,12 +401,17 @@ agent slug.
 
 Of the 573 catalog ids, 32 carry `status: deprecated_upstream` because
 the upstream PTO release either marks them `is_obsolete: true` (31, no
-`replaced_by` hint) or omits them entirely (1, `TO:0000139` "grains per
-panicle"). The catalog continues to accept those ids so the customer's
-existing workflow keeps running, but the resolver emits a
-`logger.warning` (`mcp_server_phytomni.agents.network.resolve_query`)
-whenever it picks one — operators should treat the warning as an audit
-signal and decide whether to migrate the trait to a canonical id.
+`replaced_by` / `consider` hint) or omits them entirely (1, `TO:0000139`
+"grains per panicle"). The catalog continues to accept those ids so the
+customer's existing workflow keeps running, but the resolver emits a
+WARNING-level log line through `_LOGGER` in
+`mcp_server_phytomni.agents.network.resolve_query` whenever it picks
+one. The warning carries the chosen id and the original query so
+operators can audit whether the downstream network backend still
+returns a meaningful result for the upstream-deprecated trait —
+this contract covers the Bot resolver / `arguments.to_id` injection
+boundary only, not the network backend's downstream acceptance of
+the id, which is opaque to the Bot.
 
 Both flags share the same misuse / failure contract:
 
@@ -447,6 +452,15 @@ curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
   -d '{"arguments":{"species":"oryza sativa","obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
+
+# Native runs — network with a query that resolves to an
+# upstream-deprecated id; the request still succeeds and the
+# resolver emits the deprecation WARNING in server logs so the
+# operator can audit whether to migrate the trait to a canonical id.
+curl -s http://127.0.0.1:8080/v1/agents/network/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"arguments":{"species":"oryza sativa","obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
 ```
 
 ## Native Agent Runs
