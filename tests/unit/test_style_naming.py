@@ -128,6 +128,14 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_deep_genome_chat_subgraph.py": {
         "protected-access",
     },
+    # Flag-branch test for
+    # ``DeepGenomeReportMixin._dispatch_knowledge_retrieve`` — asserts
+    # USE_KNOWLEDGE_SUBGRAPH routes ``_experiment_protocols`` through
+    # the compiled knowledge subgraph, same protected-helper coverage
+    # seam.
+    "tests/agents/test_deep_genome_knowledge_subgraph.py": {
+        "protected-access",
+    },
     # Flag-branch test for ``AnalystAgent._knowledge_app`` lifecycle —
     # asserts the per-instance KA app is built only when the flag is
     # on; same protected-helper coverage seam as the design sibling.

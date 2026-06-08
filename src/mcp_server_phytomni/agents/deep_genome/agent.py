@@ -44,6 +44,7 @@ from ..analyst.agent import (
 )
 from ..brief_gene.core import BriefGeneAgent
 from ..knowledge.agent import KnowledgeAgent
+from ..shared.knowledge_subgraph import build_knowledge_app
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
 from .formatting import network_to_string
@@ -219,11 +220,17 @@ class DeepGenomeAgentDeps(NamedTuple):
             populates it via ``_replace`` in ``__init__`` so the mount
             factory closes over a real ``CompiledStateGraph`` for xray
             expansion.
+        knowledge_app: Compiled KnowledgeAgent subgraph for the
+            ``USE_KNOWLEDGE_SUBGRAPH``-on path. ``None`` when the flag
+            is off so the report mixin's
+            ``_dispatch_knowledge_retrieve`` helper falls back to
+            ``knowledge_agent.arun``.
     """
 
     knowledge_agent: KnowledgeAgent
     analyst_agent: AnalystAgent
     brief_gene_app: Any = None
+    knowledge_app: Any = None
 
 
 class DeepGenomeAgents(
@@ -310,10 +317,31 @@ class DeepGenomeAgents(
         # NamedTuple) so the brief_gene_app sits alongside the other
         # deep_genome dependencies rather than adding another instance
         # attribute (pylint ``too-many-instance-attributes`` ceiling).
+        # Per-instance compiled KnowledgeAgent subgraph for the
+        # ``USE_KNOWLEDGE_SUBGRAPH``-on path. Mirrors the analyst /
+        # brief_gene / review pattern: when the flag is True, the
+        # report mixin's ``_dispatch_knowledge_retrieve`` helper
+        # routes through this app's ``ainvoke`` instead of the
+        # legacy ``knowledge_agent.arun``. ``None`` when the flag is
+        # off so attempting to use the app on the wrong branch is a
+        # loud ``NoneType`` error rather than a silent fallback.
+        # Stashed on ``_agents`` (DeepGenomeAgentDeps NamedTuple)
+        # alongside ``brief_gene_app`` so the per-instance
+        # attribute count stays under pylint's
+        # ``too-many-instance-attributes`` ceiling.
+        knowledge_app = (
+            build_knowledge_app(
+                knowledge_config=self.deep_genome_config,
+                sensitive_config=self.sensitive_config,
+            )
+            if self.deep_genome_config.USE_KNOWLEDGE_SUBGRAPH
+            else None
+        )
         self._agents = self._agents._replace(
             brief_gene_app=BriefGeneAgent(
                 knowledge_agent=self._agents.knowledge_agent,
             ).app,
+            knowledge_app=knowledge_app,
         )
         self.app = self._build_graph()
 

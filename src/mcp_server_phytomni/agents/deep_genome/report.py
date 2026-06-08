@@ -82,6 +82,52 @@ def _assemble_final_report(state: "DeepGenomeState") -> str:
 class DeepGenomeReportMixin(WorkflowMixinBase):
     """Report synthesis and finalization nodes for DeepGenome."""
 
+    async def _dispatch_knowledge_retrieve(
+        self: Any,
+        user_query: str,
+        repo_id_dict: dict[str, int],
+    ) -> dict[str, Any] | None:
+        """Dispatch one protocol retrieval via the configured knowledge path.
+
+        Owns the knowledge-call seam ``_experiment_protocols`` uses to
+        fan out one retrieve+generate per recommended experiment. When
+        ``USE_KNOWLEDGE_SUBGRAPH=False`` (the production default until
+        the global flag flip), routes through the legacy
+        ``knowledge_agent.arun`` helper. When True, invokes the
+        per-instance compiled knowledge subgraph
+        (``self._agents.knowledge_app``, built in
+        ``DeepGenomeAgents.__init__``) with the same
+        ``KnowledgeInput`` shape every other USE_KNOWLEDGE_SUBGRAPH
+        consumer uses, then unwraps the
+        ``KnowledgeOutput.final_response`` envelope so callers keep
+        their historical chat-completion dict interface.
+
+        Args:
+            user_query: Retrieval query (one recommended experiment).
+            repo_id_dict: Repo id → page size mapping consumed by the
+                retriever (protocol repo for deep_genome).
+
+        Returns:
+            Chat completion dict matching the historical
+            ``knowledge_agent.arun`` return shape.
+        """
+        if self.deep_genome_config.USE_KNOWLEDGE_SUBGRAPH:
+            knowledge_output = await self._agents.knowledge_app.ainvoke(
+                {
+                    "user_query": user_query,
+                    "repo_id_dict": repo_id_dict,
+                    "is_generate": True,
+                    "is_follow_up": False,
+                }
+            )
+            return knowledge_output["final_response"]
+        return await self._agents.knowledge_agent.arun(
+            user_query=user_query,
+            repo_id_dict=repo_id_dict,
+            is_generate=True,
+            is_follow_up=False,
+        )
+
     async def _dispatch_chat(
         self: Any, user_query: str
     ) -> dict[str, Any] | None:
@@ -268,15 +314,13 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         """Retrieve protocol sections for recommended experiments."""
         sections = []
         for index, experiment in enumerate(experiments):
-            protocol_response = await self._agents.knowledge_agent.arun(
+            protocol_response = await self._dispatch_knowledge_retrieve(
                 user_query=experiment,
                 repo_id_dict={
                     DEEP_GENOME_CONFIG.PROTOCOL_REPO_ID: (
                         DEEP_GENOME_CONFIG.PROTOCOL_PAGE_SIZE
                     )
                 },
-                is_generate=True,
-                is_follow_up=False,
             )
             sections.append(
                 f"## {index + 1}. Step-by-Step {experiment} Protocol\n\n"
