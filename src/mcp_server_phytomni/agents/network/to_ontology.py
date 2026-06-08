@@ -1,0 +1,74 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Plant Trait Ontology catalog loader for the GeneNetwork resolver.
+
+Reads the customer-filtered TO catalog committed at
+``src/mcp_server_phytomni/config/to_ontology.json`` (CC-BY 4.0
+Planteome, see the file's ``_meta.license`` field) into a typed list.
+The catalog is loaded once per process via ``lru_cache`` so the
+resolver's prompt-injection cost is paid at most once.
+"""
+
+from __future__ import annotations
+
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import List
+
+from pydantic import BaseModel
+
+__all__ = [
+    "TO_ONTOLOGY_PATH",
+    "ToOntologyEntry",
+    "format_to_ontology_for_prompt",
+    "load_to_ontology",
+]
+
+TO_ONTOLOGY_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "config"
+    / "to_ontology.json"
+)
+
+
+class ToOntologyEntry(BaseModel):
+    """One TO ontology term the resolver may surface as a candidate."""
+
+    id: str
+    name: str
+    synonyms: List[str] = []
+    definition: str = ""
+
+
+@lru_cache(maxsize=1)
+def load_to_ontology() -> List[ToOntologyEntry]:
+    """Load the committed TO catalog into a typed list (process-cached).
+
+    Returns the customer-filtered set rather than the full upstream
+    .obo so the resolver only ever picks ids the deployment is
+    actually configured for.
+    """
+    payload = json.loads(TO_ONTOLOGY_PATH.read_text(encoding="utf-8"))
+    raw_entries: list = []
+    if isinstance(payload, dict):
+        raw_entries = payload.get("entries") or []
+    return [ToOntologyEntry.model_validate(item) for item in raw_entries]
+
+
+def format_to_ontology_for_prompt(entries: List[ToOntologyEntry]) -> str:
+    """Format the catalog as a compact text block for LLM injection.
+
+    One line per entry: ``TO:NNNNNNN | <name> | synonyms: ...``. Skips
+    the definition (kept in the JSON for documentation only) so the
+    prompt stays within the per-call token budget the resolver pays.
+    """
+    lines: List[str] = []
+    for entry in entries:
+        line = f"{entry.id} | {entry.name}"
+        if entry.synonyms:
+            line += f" | synonyms: {', '.join(entry.synonyms)}"
+        lines.append(line)
+    return "\n".join(lines)

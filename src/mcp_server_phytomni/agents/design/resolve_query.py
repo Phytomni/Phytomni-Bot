@@ -1,0 +1,130 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Resolve free-form HTTP user queries into DigitalDesign gene ids.
+
+Public: DigitalDesignResolveError, DigitalDesignIdCandidate,
+DigitalDesignResolveResult, resolve_design_user_query.
+
+Thin wrapper around BGA's resolver — shares the gene_id namespace,
+prompt, and ~90 d phyto_chat cache. Per-domain error class so the
+HTTP layer can disambiguate 400 responses by agent.
+"""
+
+from __future__ import annotations
+
+from typing import List
+
+from pydantic import BaseModel
+
+from ...config.defaults import BriefGeneConfig, DigitalDesignConfig
+from ...config.settings import SensitiveConfig
+from ..brief_gene.resolve_query import (
+    BriefGeneIdCandidate,
+    BriefGeneResolveError,
+    resolve_brief_gene_user_query,
+)
+
+__all__ = [
+    "DigitalDesignIdCandidate",
+    "DigitalDesignResolveError",
+    "DigitalDesignResolveResult",
+    "resolve_design_user_query",
+]
+
+
+class DigitalDesignResolveError(ValueError):
+    """Raised when the LLM cannot resolve a usable gene id for design.
+
+    Per-domain ValueError subclass so the HTTP API layer maps it to a
+    400 with the domain name in the error and so callers can ``except``
+    on the design type alone without catching every other agent's
+    resolver failure.
+    """
+
+
+class DigitalDesignIdCandidate(BaseModel):
+    """One LLM-proposed candidate gene id for digital design."""
+
+    gene_id: str
+    confidence: float = 0.0
+
+
+class DigitalDesignResolveResult(BaseModel):
+    """Resolver output: chosen gene id, original query, all candidates."""
+
+    gene_id: str
+    raw_query: str
+    candidates: List[DigitalDesignIdCandidate]
+
+
+async def resolve_design_user_query(
+    raw_query: str,
+    *,
+    design_config: DigitalDesignConfig,
+    sensitive_config: SensitiveConfig,
+    timeout_seconds: float = 90.0,
+) -> DigitalDesignResolveResult:
+    """Resolve free-form text into the canonical gene id design expects.
+
+    Delegates to ``resolve_brief_gene_user_query`` because both agents
+    operate over the same canonical gene_id namespace. Wraps the
+    result and any error so callers see design-typed objects.
+
+    Args:
+        raw_query: Free-form user query (English or Chinese).
+        design_config: DigitalDesign non-secret config; projected into
+            a BriefGeneConfig view internally so the BGA resolver's
+            prompt + json schema + chat dispatch reuse on identical
+            kwargs.
+        sensitive_config: Shared sensitive config; supplies the chat
+            api key and base url.
+        timeout_seconds: Resolver wall-clock budget.
+
+    Returns:
+        Typed DigitalDesignResolveResult with chosen gene_id + original
+        raw_query + full candidate list sorted by confidence desc.
+
+    Raises:
+        DigitalDesignResolveError: blank input, retry-exhausted LLM,
+            empty / unparseable LLM payload, or wall-clock timeout.
+            Other unexpected exceptions propagate so the outer FastAPI
+            handler renders them as 500.
+    """
+    brief_field_names = list(BriefGeneConfig.model_fields.keys())
+    brief_view = BriefGeneConfig(
+        **{
+            field: getattr(design_config, field)
+            for field in brief_field_names
+            if hasattr(design_config, field)
+        }
+    )
+    try:
+        bga_result = await resolve_brief_gene_user_query(
+            raw_query,
+            brief_config=brief_view,
+            sensitive_config=sensitive_config,
+            timeout_seconds=timeout_seconds,
+        )
+    except BriefGeneResolveError as exc:
+        raise DigitalDesignResolveError(str(exc)) from exc
+
+    return DigitalDesignResolveResult(
+        gene_id=bga_result.gene_id,
+        raw_query=bga_result.raw_query,
+        candidates=[
+            _to_design_candidate(candidate)
+            for candidate in bga_result.candidates
+        ],
+    )
+
+
+def _to_design_candidate(
+    candidate: BriefGeneIdCandidate,
+) -> DigitalDesignIdCandidate:
+    """Project a BGA candidate into the design-typed view."""
+    return DigitalDesignIdCandidate(
+        gene_id=candidate.gene_id,
+        confidence=candidate.confidence,
+    )

@@ -1,0 +1,4390 @@
+{
+  "_meta": {
+    "description": "Plant Trait Ontology (TO) catalog used by the GeneNetworkAgent resolver to map a free-form trait query to a canonical TO id. Each entry has the canonical id, the customer-curated name, and optional synonyms + definition pulled from the upstream .obo.",
+    "filter": "Customer-supplied 573-id allowlist (TO_mapping.tsv); 541 matched in the upstream .obo and inherited its synonyms + definition; 32 were not in the latest upstream release and kept as {id, name} only. The customer-supplied TO_Description wins on name divergences (163 entries) so resolver prompts match the in-house terminology.",
+    "license": "CC-BY 4.0 (Plant Trait Ontology, Planteome consortium)",
+    "source": "https://raw.githubusercontent.com/Planteome/plant-trait-ontology/master/to.obo",
+    "upstream_version": "releases/2026-01-14"
+  },
+  "entries": [
+    {
+      "id": "TO:0000001",
+      "name": "carbon sensitivity"
+    },
+    {
+      "definition": "Sensitivity to the calcium content in the growth medium. Plays an important role in cell wall synthesis and enzyme activities.",
+      "id": "TO:0000006",
+      "name": "calcium sensitivity",
+      "synonyms": [
+        "calcium deficiency",
+        "CALSN"
+      ]
+    },
+    {
+      "definition": "Response by the plant in terms of sensitivity to sulfur content in the growth medium. It is important for synthesis of some amino acid residues.",
+      "id": "TO:0000007",
+      "name": "sulfur sensitivity",
+      "synonyms": [
+        "SFSN",
+        "sulfur deficiency"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the potassium ion content in the growth medium. It plays an important role in controlling water by osmosis and also in the metal ion homeostasis.",
+      "id": "TO:0000008",
+      "name": "potassium sensitivity",
+      "synonyms": [
+        "KSN",
+        "potassium deficiency"
+      ]
+    },
+    {
+      "definition": "A plant male sterility trait (TO:0000437) which arises as a result of photoperiod.",
+      "id": "TO:0000009",
+      "name": "genic male sterility-photoperiod sensitive",
+      "synonyms": [
+        "PGMS",
+        "photoperiod sensitive genic male sterility",
+        "PPDSNGMS"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the magnesium content in the growth medium. It is important for chlorophyll biosynthesis and metal ion homeostasis.",
+      "id": "TO:0000010",
+      "name": "magnesium sensitivity",
+      "synonyms": [
+        "magnesium deficiency",
+        "MGSN"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the nitrogen content in the growth medium. It is important for protein synthesis, chlorophyll etc.",
+      "id": "TO:0000011",
+      "name": "nitrogen sensitivity",
+      "synonyms": [
+        "NISN",
+        "nitrogen deficiency"
+      ]
+    },
+    {
+      "definition": "Average weight of the panicle from the plants or tillers in a given study.",
+      "id": "TO:0000014",
+      "name": "panicle weight",
+      "synonyms": [
+        "PNWT"
+      ]
+    },
+    {
+      "id": "TO:0000015",
+      "name": "oxygen sensitivity"
+    },
+    {
+      "id": "TO:0000016",
+      "name": "cobalt sensitivity"
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is a morphological quality of a plant anatomical entity (PO:0025131) or a constituent cellular component (GO:0005575) contained therein.",
+      "id": "TO:0000017",
+      "name": "anatomy and morphology related trait",
+      "synonyms": [
+        "plant architecture trait",
+        "plant structure trait"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the boron content in the growth medium. It plays an important role in cell division.",
+      "id": "TO:0000018",
+      "name": "boron sensitivity",
+      "synonyms": [
+        "boron deficiency",
+        "BOSN"
+      ]
+    },
+    {
+      "definition": "Average height measurements of 10 seedlings, in centimeters from the base of the shoot to the tip of the tallest leaf blade.",
+      "id": "TO:0000019",
+      "name": "seedling height",
+      "synonyms": [
+        "SH"
+      ]
+    },
+    {
+      "definition": "A viral disease response trait (TO:0000148) which is caused by a black streaked dwarf virus.",
+      "id": "TO:0000020",
+      "name": "black streak dwarf virus resistance",
+      "synonyms": [
+        "BSDVRS"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the copper ion content in the growth medium. Plays a role as cofactor in synthesis of some enzymes important in photosynthesis.",
+      "id": "TO:0000021",
+      "name": "copper sensitivity",
+      "synonyms": [
+        "CUSN"
+      ]
+    },
+    {
+      "definition": "Important for nitrate fixation.",
+      "id": "TO:0000025",
+      "name": "molybdenum sensitivity"
+    },
+    {
+      "definition": "Actual count of the total number of tillers after full heading, Specify if per plant, hill or area.",
+      "id": "TO:0000027",
+      "name": "culm number",
+      "synonyms": [
+        "CmN"
+      ]
+    },
+    {
+      "definition": "Number of unfilled florets in a grass inflorescence.",
+      "id": "TO:0000028",
+      "name": "unfilled grain number",
+      "synonyms": [
+        "UNFILGRNB",
+        "unfilled florets per panicle",
+        "unfilled grain"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the chlorine content in the growth medium. Chloride helps regulate the correct pH (acid/alkaline) balance. This is a major electrolyte in the living cell besides sodium and potassium. It is available to the cell mainly in the form of NaCl and KCl salts.",
+      "id": "TO:0000029",
+      "name": "chlorine sensitivity",
+      "synonyms": [
+        "CHLORSN"
+      ]
+    },
+    {
+      "definition": "A mineral and ion transport trait (TO:0020096) which involves the uptake and movement of silicon.",
+      "id": "TO:0000031",
+      "name": "silicon sensitivity"
+    },
+    {
+      "id": "TO:0000032",
+      "name": "selenium sensitivity"
+    },
+    {
+      "id": "TO:0000034",
+      "name": "chromium sensitivity"
+    },
+    {
+      "definition": "An incompatibility trait (TO:0000035) which is a genetic barrier preventing fertilization in a cross between two different lines.",
+      "id": "TO:0000036",
+      "name": "hybrid incompatibility",
+      "synonyms": [
+        "HYBIC"
+      ]
+    },
+    {
+      "id": "TO:0000038",
+      "name": "fluorine sensitivity"
+    },
+    {
+      "definition": "A panicle morphology trait (TO:0000847) which is the measurement in centimeters from panicle base to tip.",
+      "id": "TO:0000040",
+      "name": "panicle length",
+      "synonyms": [
+        "PnL",
+        "PNLG"
+      ]
+    },
+    {
+      "id": "TO:0000042",
+      "name": "f1-hybrid incompatibility"
+    },
+    {
+      "definition": "A plant axis morphology trait (TO:0000738) which is a quality of a root (PO:0025025).",
+      "id": "TO:0000043",
+      "name": "root anatomy and morphology trait"
+    },
+    {
+      "id": "TO:0000046",
+      "name": "f2-generation sterility"
+    },
+    {
+      "definition": "Causal agent: Tilletia barclayana.",
+      "id": "TO:0000048",
+      "name": "kernel smut disease resistance",
+      "synonyms": [
+        "KSm",
+        "KSRS"
+      ]
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is the extent of branching. (PO:0009049).",
+      "id": "TO:0000050",
+      "name": "inflorescence branching",
+      "synonyms": [
+        "panicle branching"
+      ]
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the strength of a stem (PO:0009047).",
+      "id": "TO:0000051",
+      "name": "stem strength",
+      "synonyms": [
+        "Cs",
+        "culm strength",
+        "CULMSTR",
+        "STEMSTR"
+      ]
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is the extent of primary branching that usually sets the tone for shape and compactness of the inflorescence (PO:0009049) (rice panicle).",
+      "id": "TO:0000052",
+      "name": "primary branching of inflorescence",
+      "synonyms": [
+        "PBR",
+        "primary branching of panicle"
+      ]
+    },
+    {
+      "id": "TO:0000053",
+      "name": "pollen sterility"
+    },
+    {
+      "definition": "A biotic plant stress trait (TO:0000179) which is the response to damage to a plant structure (PO:0009011) caused by an animal (NCBITaxon:33208).",
+      "id": "TO:0000054",
+      "name": "animal damage resistance",
+      "synonyms": [
+        "pest resistance"
+      ]
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the color of a stem (PO:0009047).",
+      "id": "TO:0000056",
+      "name": "stem color"
+    },
+    {
+      "definition": "A fruit moisture content trait (TO:0000686) which is the amount of moisture in a caryopsis fruit (PO:0030104).",
+      "id": "TO:0000057",
+      "name": "grain moisture"
+    },
+    {
+      "definition": "A chemical stress sensitivity (TO:0000482) which is the tolerance exhibited by a plant towards the applied herbicide.",
+      "id": "TO:0000058",
+      "name": "herbicide sensitivity",
+      "synonyms": [
+        "herbicide tolerance",
+        "weedicide tolerance"
+      ]
+    },
+    {
+      "definition": "Color of the stem node.",
+      "id": "TO:0000059",
+      "name": "node color",
+      "synonyms": [
+        "NDCL"
+      ]
+    },
+    {
+      "definition": "Abortion at uni-nucleate stage of microspore development.",
+      "id": "TO:0000060",
+      "name": "aborted uni-nucleate stage",
+      "synonyms": [
+        "UNUABR"
+      ]
+    },
+    {
+      "definition": "A stem strength (TO:0000051) trait which is the tendency of stem node (PO:0020141) to break apart.",
+      "id": "TO:0000061",
+      "name": "node shattering",
+      "synonyms": [
+        "brittle node"
+      ]
+    },
+    {
+      "definition": "An enzyme activity trait (TO:0000599) which is a measure of the acitivity of polyphenol oxidase (PPO) enzymes in a seed coat or hull of a grain which catalyze the oxidation of phenolic compounds leading to the formation of melanin-like pigments.",
+      "id": "TO:0000062",
+      "name": "phenol reaction"
+    },
+    {
+      "definition": "A plant stress response trait (TO:0000164) which is the result of mutations that naturally form necrotic lesions in the absence of significant stress or damage and without being harmed by pathogens.",
+      "id": "TO:0000063",
+      "name": "mimic response",
+      "synonyms": [
+        "disease mimic response",
+        "lesion mimic",
+        "MIRP"
+      ]
+    },
+    {
+      "definition": "A whole plant morphology trait (TO:0000398) which is a quality of a plant embryo (PO:0009009).",
+      "id": "TO:0000064",
+      "name": "embryo related trait"
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the color of a root (PO:0009005).",
+      "id": "TO:0000065",
+      "name": "root color",
+      "synonyms": [
+        "RTCL"
+      ]
+    },
+    {
+      "definition": "A plant male sterility trait (TO:0000437) which arises as a result of temperature extremes.",
+      "id": "TO:0000067",
+      "name": "genic male sterility-thermo sensitive",
+      "synonyms": [
+        "TGMS",
+        "thermo sensitive genic male sterility"
+      ]
+    },
+    {
+      "definition": "Measure of percentage of plants that lodged.",
+      "id": "TO:0000068",
+      "name": "lodging incidence",
+      "synonyms": [
+        "Lg",
+        "LOI"
+      ]
+    },
+    {
+      "definition": "A leaf color (TO:0000326) trait where the leaf (PO:0009025) has areas of green and non-green tissue.",
+      "id": "TO:0000069",
+      "name": "variegated leaf",
+      "synonyms": [
+        "albino leaf striping",
+        "leaf stripes"
+      ]
+    },
+    {
+      "definition": "The anthocyanin content in a plant structure (PO:0009011).",
+      "id": "TO:0000071",
+      "name": "anthocyanin content",
+      "synonyms": [
+        "ANTHCN"
+      ]
+    },
+    {
+      "definition": "An awn morphology trait (TO:0002718) which is the length of awn (PO:0025349).",
+      "id": "TO:0000072",
+      "name": "awn length",
+      "synonyms": [
+        "An",
+        "awning",
+        "AWNLG"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the manganese content in the growth medium. It is important for activation of some enzymes and role in metal ion homeostasis.",
+      "id": "TO:0000073",
+      "name": "manganese sensitivity",
+      "synonyms": [
+        "MNSN"
+      ]
+    },
+    {
+      "definition": "An Ascomycete fungal disease response trait (TO:0001145) caused by Pyricularia grisea (Magnaporthe grisea).",
+      "id": "TO:0000074",
+      "name": "blast disease",
+      "synonyms": [
+        "blast disease resistance trait",
+        "blast disease susceptibility"
+      ]
+    },
+    {
+      "definition": "Response shown by the plant in terms of sensitivity to light stress (quality and quantity of light).",
+      "id": "TO:0000075",
+      "name": "light sensitivity"
+    },
+    {
+      "definition": "A collective plant organ structure morphology trait (TO:0000842) which is a quality of a shoot system (PO:0009006).",
+      "id": "TO:0000077",
+      "name": "shoot anatomy and morphology trait"
+    },
+    {
+      "definition": "The average dry weight of the root determined in a study.",
+      "id": "TO:0000078",
+      "name": "root dry weight",
+      "synonyms": [
+        "rdw",
+        "rdw/t",
+        "root dry weight per tiller",
+        "RTDWT",
+        "total root dry weight"
+      ]
+    },
+    {
+      "definition": "A bract morphology trait (TO:0000815) which is a quality of a flower bract (PO:0009034).",
+      "id": "TO:0000079",
+      "name": "lemma and palea anatomy and morphology trait"
+    },
+    {
+      "definition": "A plant nutrient response trait (TO:0000480) shown by the plant grown in either the excess or deficient amount of the micronutrient in the growth medium (soil).",
+      "id": "TO:0000080",
+      "name": "micronutrient sensitivity",
+      "synonyms": [
+        "micronutrient deficiency"
+      ]
+    },
+    {
+      "definition": "A whole plant morphology trait (TO:0000398) which is the number of roots (PO:0009005).",
+      "id": "TO:0000084",
+      "name": "root number",
+      "synonyms": [
+        "RTNB",
+        "tnr"
+      ]
+    },
+    {
+      "definition": "A drought stress response trait (TO:0000394) which is the rolling of a leaf preceding the leaf drying stage.",
+      "id": "TO:0000085",
+      "name": "leaf rolling",
+      "synonyms": [
+        "LFRL",
+        "wilting"
+      ]
+    },
+    {
+      "definition": "A grain quality trait (TO:0000162) which is the aroma of the cooked or uncooked grains.",
+      "id": "TO:0000087",
+      "name": "aroma",
+      "synonyms": [
+        "AROMA",
+        "odour",
+        "scent",
+        "Sct"
+      ]
+    },
+    {
+      "definition": "Causal agent: rice yellow mottle virus (RYMV). Symptoms: stunting, reduced tillering, mottling and yellowish streaking of the leaves, delayed flowering or incomplete emergence of the panicle; in extreme cases, death of plants.",
+      "id": "TO:0000088",
+      "name": "rice yellow mottle virus resistance",
+      "synonyms": [
+        "RYMV",
+        "RYMVRS"
+      ]
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the mode of branching, angle of primary branches, and spikelet density of a panicle inflorescence (PO:0030123).",
+      "id": "TO:0000089",
+      "name": "panicle type",
+      "synonyms": [
+        "panicle attitude of branches",
+        "PnT",
+        "PNTYPE"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the osmoticum in the growth medium.",
+      "id": "TO:0000095",
+      "name": "osmotic response sensitivity",
+      "synonyms": [
+        "oa",
+        "OSRPSN"
+      ]
+    },
+    {
+      "definition": "A shoot system growth and development trait (TO:0000654) which is the ability of a plant to regenerate after harvesting, allowing a secod harvest.",
+      "id": "TO:0000096",
+      "name": "ratooning ability",
+      "synonyms": [
+        "RAAB"
+      ]
+    },
+    {
+      "definition": "Amount of amylopectin present in a plant structure (PO:0009011).",
+      "id": "TO:0000097",
+      "name": "amylopectin content",
+      "synonyms": [
+        "AMYPCTCN"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is a wrinkled and glassy endosperm (PO:0009089) when dry.",
+      "id": "TO:0000099",
+      "name": "sugary endosperm",
+      "synonyms": [
+        "sugary kernel"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is a shrunken and opaque endosperm (PO:0009089).",
+      "id": "TO:0000100",
+      "name": "shrunken endosperm",
+      "synonyms": [
+        "collapsed kernel",
+        "transluscent kernel"
+      ]
+    },
+    {
+      "definition": "Response to the phosphorus content in the growth medium.",
+      "id": "TO:0000102",
+      "name": "phosphorus sensitivity",
+      "synonyms": [
+        "PDef",
+        "PHOSN",
+        "phosphorus deficiency",
+        "phosphorus toxicity"
+      ]
+    },
+    {
+      "definition": "The sensitivity response shown by the plant growing in a stagnant water for a long period of time (not unlike deepwater presence during flash flooding of the fields).",
+      "id": "TO:0000103",
+      "name": "deepwater stress",
+      "synonyms": [
+        "deep water stress",
+        "DWSTR"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is an opaque and soft endosperm (PO:0009089).",
+      "id": "TO:0000104",
+      "name": "floury endosperm"
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is a glassy and tarnished endosperm (PO:0009089) with low amylose content (TO:0000196).",
+      "id": "TO:0000105",
+      "name": "dull endosperm",
+      "synonyms": [
+        "glassy endosperm"
+      ]
+    },
+    {
+      "id": "TO:0000106",
+      "name": "male sterility type"
+    },
+    {
+      "definition": "Assay for the amount of 13kDa seed storage protein present in the endosperm.",
+      "id": "TO:0000107",
+      "name": "endosperm storage protein-1 content"
+    },
+    {
+      "definition": "A leaf growth and development trait (TO:0000655) which is the extent of leaf shattering based on the development of a leaf abscission zone (PO:0006501).",
+      "id": "TO:0000108",
+      "name": "leaf shattering",
+      "synonyms": [
+        "leaf abscission",
+        "LFSH"
+      ]
+    },
+    {
+      "definition": "Assay for amount of 57kDa seed storage protein present in the endosperm.",
+      "id": "TO:0000109",
+      "name": "endosperm storage protein-2 content"
+    },
+    {
+      "definition": "A biotic plant stress trait (TO:0000179) which is the response to damage to a plant structure (PO:0009011) caused by an infection by a microbial pathogen.",
+      "id": "TO:0000112",
+      "name": "disease resistance",
+      "synonyms": [
+        "disease control",
+        "disease resistance trait",
+        "disease susceptibility",
+        "disease tolerance"
+      ]
+    },
+    {
+      "definition": "An embryo shape trait (TO:0000193) that is a large sized plant embryo (PO:0009009).",
+      "id": "TO:0000113",
+      "name": "giant embryo"
+    },
+    {
+      "id": "TO:0000114",
+      "name": "flooding related trait"
+    },
+    {
+      "definition": "Determined as the dry mass of roots per unit soil volume at a given soil section.",
+      "id": "TO:0000115",
+      "name": "root mass density",
+      "synonyms": [
+        "rmd",
+        "RTMD"
+      ]
+    },
+    {
+      "definition": "A flag leaf morphology trait (TO:0000832) which is an angle of the flag leaf (PO:0020103) measured near the collar, as the angle of attachment between the flag leaf blade and the main inflorescence axis in grass plants.",
+      "id": "TO:0000124",
+      "name": "flag leaf angle",
+      "synonyms": [
+        "FLFAG"
+      ]
+    },
+    {
+      "definition": "Proportion of usable (economically significant) biomass over total (biological) biomass, expressed as a percentage.",
+      "id": "TO:0000128",
+      "name": "harvest index",
+      "synonyms": [
+        "HI",
+        "HVID"
+      ]
+    },
+    {
+      "definition": "An Ascomycete fungal disease response trait (TO:0001145) caused by Ustilaginoidea virens.",
+      "id": "TO:0000129",
+      "name": "false smut disease resistance",
+      "synonyms": [
+        "FSm",
+        "FSRS"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the far red light content in the growth environment.",
+      "id": "TO:0000130",
+      "name": "far red light sensitivity",
+      "synonyms": [
+        "FRLTSN",
+        "Pfr light sensitivity"
+      ]
+    },
+    {
+      "definition": "Water potential of a leaf.",
+      "id": "TO:0000131",
+      "name": "leaf water potential",
+      "synonyms": [
+        "LFWP",
+        "lwp"
+      ]
+    },
+    {
+      "definition": "Actual measurements in millimeters from the outer diameter of the stem at the basal portion of the main stem.",
+      "id": "TO:0000132",
+      "name": "basal internode diameter",
+      "synonyms": [
+        "BAINDIA",
+        "DBI"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the treatment of starch with an alkali solution, which alters its physical and chemical properties.",
+      "id": "TO:0000134",
+      "name": "alkali digestion",
+      "synonyms": [
+        "AlkD",
+        "ALKDIG"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the length of a leaf (PO:0025034).",
+      "id": "TO:0000135",
+      "name": "leaf length",
+      "synonyms": [
+        "LFLG",
+        "lfln",
+        "LL"
+      ]
+    },
+    {
+      "definition": "Leaf relative water content is determined at midday (12.00 noon).",
+      "id": "TO:0000136",
+      "name": "relative water content",
+      "synonyms": [
+        "leaf relative water content",
+        "rec",
+        "RELWCN"
+      ]
+    },
+    {
+      "definition": "Number of days required for the inflorescence (head/cob/panicle) to emerge from the flag leaf of a plant or a group of plants in a study.",
+      "id": "TO:0000137",
+      "name": "days to heading",
+      "synonyms": [
+        "DTHD",
+        "heading date"
+      ]
+    },
+    {
+      "definition": "A grain protein content (TO:0001136) which is the amount of protein (CHEBI:36080) in a brown rice grain (caryopsis fruit; PO:0030104).",
+      "id": "TO:0000138",
+      "name": "brown rice protein",
+      "synonyms": [
+        "BrP",
+        "BRWRPROT",
+        "Prt"
+      ]
+    },
+    {
+      "id": "TO:0000139",
+      "name": "grains per panicle"
+    },
+    {
+      "definition": "A cardinal organ part morphology trait (TO:0000754) which is the color of a lemma apiculus (PO:0025616).",
+      "id": "TO:0000140",
+      "name": "apiculus color",
+      "synonyms": [
+        "ApC",
+        "APICL"
+      ]
+    },
+    {
+      "definition": "An awn morphology trait (TO:0002718) which is a color of the awn (PO:0025349).",
+      "id": "TO:0000141",
+      "name": "awn color",
+      "synonyms": [
+        "AWNCL"
+      ]
+    },
+    {
+      "definition": "An inflorescence branching (TO:0000050) trait which is the extent of secondary branching that usually determines the shape and compactness of the inflorescence  (PO:0009049) (such as in rice panicle).",
+      "id": "TO:0000142",
+      "name": "secondary branching of inflorescence",
+      "synonyms": [
+        "panicle secondary branching",
+        "PnBr",
+        "SBR",
+        "secondary branching of panicle"
+      ]
+    },
+    {
+      "definition": "Relative yield was calculated as the ratio of biomass in stress to that of control.",
+      "id": "TO:0000143",
+      "name": "relative biomass",
+      "synonyms": [
+        "RB",
+        "relative biomass yield",
+        "RELBIOM"
+      ]
+    },
+    {
+      "definition": "A shoot axis internode morphology trait (TO:0000755) which is the length of a shoot axis internode (PO:0005005).",
+      "id": "TO:0000145",
+      "name": "internode length",
+      "synonyms": [
+        "INLG"
+      ]
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the length of a seed (PO:0009010).",
+      "id": "TO:0000146",
+      "name": "seed length",
+      "synonyms": [
+        "SDLG"
+      ]
+    },
+    {
+      "definition": "A microbial disease response (TO:0000112) trait which is the response to damage to a plant structure (PO:0009011) caused by an infection by a virus (NCBITaxon:10239).",
+      "id": "TO:0000148",
+      "name": "viral disease resistance"
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the width of a seed (PO:0009010).",
+      "id": "TO:0000149",
+      "name": "seed width",
+      "synonyms": [
+        "plump seed",
+        "SDWD"
+      ]
+    },
+    {
+      "definition": "A panicle morphology trait (TO:0000847) which is the average number of panicles per plant in a study.",
+      "id": "TO:0000152",
+      "name": "panicle number",
+      "synonyms": [
+        "NOP",
+        "NP",
+        "number of effective tiller per plant",
+        "number of panicle",
+        "panicle number per plant",
+        "panicle number per tiller",
+        "PN",
+        "PNNB",
+        "seed setting tillers per plant",
+        "spike number",
+        "TP"
+      ]
+    },
+    {
+      "definition": "Relative yield is calculated as a ratio of yield in stress to that of control.",
+      "id": "TO:0000153",
+      "name": "relative yield",
+      "synonyms": [
+        "RELYLD",
+        "RY"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the red light content in the growth environment.",
+      "id": "TO:0000158",
+      "name": "red light sensitivity",
+      "synonyms": [
+        "Pr light sensitivity",
+        "RLTSN"
+      ]
+    },
+    {
+      "definition": "Sensitivity response observed in an environment illuminated with blue light.",
+      "id": "TO:0000159",
+      "name": "blue light sensitivity",
+      "synonyms": [
+        "BLTSN"
+      ]
+    },
+    {
+      "definition": "Response shown by the plant in the presence of UV light stress.",
+      "id": "TO:0000160",
+      "name": "UV light sensitivity",
+      "synonyms": [
+        "Ultraviolet light sensitivity",
+        "Ultraviolet resistance",
+        "UV resistance",
+        "UVRS"
+      ]
+    },
+    {
+      "definition": "Response shown by the plant in terms of sensitivity to one or more types of radiation stress (quality and quantity of light).",
+      "id": "TO:0000161",
+      "name": "radiation response trait",
+      "synonyms": [
+        "radiation sensitivity",
+        "RADSN",
+        "response to radiation"
+      ]
+    },
+    {
+      "definition": "A fruit quality trait (TO:0002728) that is the commercial and /or economical value of the grain (i.e. fruit (PO:0009001)), or its overall improvement.",
+      "id": "TO:0000162",
+      "name": "seed quality"
+    },
+    {
+      "definition": "Response with respect to application of auxin.",
+      "id": "TO:0000163",
+      "name": "auxin sensitivity",
+      "synonyms": [
+        "AUXSN",
+        "IAA response",
+        "IAA sensitivity",
+        "indole-3-acetic acid response",
+        "indole-3-acetic acid sensitivity"
+      ]
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is the response of a plant structure (PO:0009011) to a plant stress (PSO:0000001).",
+      "id": "TO:0000164",
+      "name": "stress trait",
+      "synonyms": [
+        "crop damage",
+        "stress resistance",
+        "stress susceptibility",
+        "stress tolerance"
+      ]
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the extent of coverage of panicle inflorescence (PO:0030123) by a sheath of a flag leaf (PO:0020103).",
+      "id": "TO:0000165",
+      "name": "panicle exsertion",
+      "synonyms": [
+        "Exs",
+        "PNEX"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the gibberellic acid content in the growth medium or on external application.",
+      "id": "TO:0000166",
+      "name": "gibberellic acid sensitivity",
+      "synonyms": [
+        "GA3 response",
+        "GASN",
+        "GB response",
+        "gibberellic acid response",
+        "Gibberellin response"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the cytokinin content in the growth medium or external application.",
+      "id": "TO:0000167",
+      "name": "cytokinin sensitivity",
+      "synonyms": [
+        "CKSN"
+      ]
+    },
+    {
+      "definition": "A plant stress response trait (TO:0000164) which is the response of a plant structure (PO:0009011) to an abiotic plant stress (PSO:0000012).",
+      "id": "TO:0000168",
+      "name": "abiotic stress trait",
+      "synonyms": [
+        "abiotic stress tolerance"
+      ]
+    },
+    {
+      "definition": "A submergence tolerance trait (TO:0000524) which is the ability of a plant to grow taller to survive flooding or submergence.",
+      "id": "TO:0000170",
+      "name": "elongation ability",
+      "synonyms": [
+        "Elon"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the jasmonic acid content in the growth medium or on external application.",
+      "id": "TO:0000172",
+      "name": "jasmonic acid sensitivity",
+      "synonyms": [
+        "JASN"
+      ]
+    },
+    {
+      "definition": "Sensitivity to ethylene (C2H2) content in the growth medium or the environment.",
+      "id": "TO:0000173",
+      "name": "ethylene sensitivity",
+      "synonyms": [
+        "ETHSN",
+        "ethylene response"
+      ]
+    },
+    {
+      "definition": "A bacterial blight disease resistance (TO:0000770) that is involved in the response to rice bacterial blight disease. Causal agent: Xanthomonas oryzae pv. oryzae.",
+      "id": "TO:0000175",
+      "name": "bacterial blight disease resistance",
+      "synonyms": [
+        "BB",
+        "BBRS",
+        "leaf blight"
+      ]
+    },
+    {
+      "definition": "A plant stress response trait (TO:0000164) which is the response of a plant structure (PO:0009011) to biotic plant stress (PSO:0000011).",
+      "id": "TO:0000179",
+      "name": "biotic stress trait"
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the fertility to a spikelet (PO:0009051).",
+      "id": "TO:0000180",
+      "name": "spikelet fertility",
+      "synonyms": [
+        "percent sterility",
+        "seed setting",
+        "SpFert",
+        "SPKFRT"
+      ]
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the weight of a seed (PO:0009010).",
+      "id": "TO:0000181",
+      "name": "seed weight",
+      "synonyms": [
+        "SDWT"
+      ]
+    },
+    {
+      "definition": "A multi-tissue plant structure morphology trait (TO:0000836) which is a quality of a seed (PO:0009010).",
+      "id": "TO:0000184",
+      "name": "seed anatomy and morphology trait"
+    },
+    {
+      "definition": "Color of the stigma in a blossoming flower.",
+      "id": "TO:0000185",
+      "name": "stigma color",
+      "synonyms": [
+        "SgC",
+        "STICL"
+      ]
+    },
+    {
+      "definition": "An anther morphology trait (TO:1000022) which is the color (PATO:0000014) of an anther (PO:0009066)",
+      "id": "TO:0000187",
+      "name": "anther color",
+      "synonyms": [
+        "ANTCL"
+      ]
+    },
+    {
+      "definition": "Drought sensitivity is highly interactive with crop phenology, plant growth prior to stress, and timing, duration, and intensity of drought stress. For many soils, it takes at least 2 rainless weeks to cause marked differences in drought sensitivity during the vegetative stage and at least 7 rainless days during the reproductive stage to cause severe drought injury. Leaf rolling precedes leaf drying during drought. Repeated ratings are recommended through progress of the drought.",
+      "id": "TO:0000188",
+      "name": "drought sensitivity",
+      "synonyms": [
+        "drought susceptibility",
+        "DRS",
+        "DRSN"
+      ]
+    },
+    {
+      "definition": "A seed viability trait (TO:0000345) which is the absence of a plant embryo (PO:0009009) in a seed (PO:0009010).",
+      "id": "TO:0000189",
+      "name": "embryoless",
+      "synonyms": [
+        "germless"
+      ]
+    },
+    {
+      "definition": "A seed coat morphology trait (TO:0000838) which is the color of the seed coat (PO:0009088).",
+      "id": "TO:0000190",
+      "name": "seed coat color",
+      "synonyms": [
+        "bran color",
+        "SCC",
+        "SDCCL"
+      ]
+    },
+    {
+      "definition": "A plant embryo morphology trait (TO:0000064) which is the shape of a plant embryo (PO:0009009).",
+      "id": "TO:0000193",
+      "name": "embryo shape"
+    },
+    {
+      "definition": "A polysaccharide content trait (TO:0006007) which is the amount of amylose (CHEBI:28102) in a plant structure (PO:0009011).",
+      "id": "TO:0000196",
+      "name": "amylose content",
+      "synonyms": [
+        "Amy",
+        "AMYCN"
+      ]
+    },
+    {
+      "definition": "A ligule morphology trait (TO:0002748) which is the color of a ligule (PO:0020105).",
+      "id": "TO:0000197",
+      "name": "ligule color",
+      "synonyms": [
+        "LgC",
+        "LIGCL"
+      ]
+    },
+    {
+      "id": "TO:0000199",
+      "name": "genic male sterility"
+    },
+    {
+      "definition": "A stem strength (TO:0000051) trait which a measure of the fragility of a grass stem (culm; PO:0009047).",
+      "id": "TO:0000200",
+      "name": "brittle culm"
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the variation in color of the panicle inflorescence (PO:0030123).",
+      "id": "TO:0000201",
+      "name": "panicle color",
+      "synonyms": [
+        "PNCL"
+      ]
+    },
+    {
+      "definition": "Ratio of germinated to non-germinated seeds.",
+      "id": "TO:0000202",
+      "name": "germination ratio",
+      "synonyms": [
+        "GERMRO"
+      ]
+    },
+    {
+      "definition": "Causal agent: Xanthomonas oryzae pv. oryzicola.",
+      "id": "TO:0000203",
+      "name": "bacterial leaf streak disease resistance",
+      "synonyms": [
+        "BLS",
+        "BLSRS"
+      ]
+    },
+    {
+      "definition": "A Hemiptera damage response trait (TO:0001164) caused by a white-backed planthopper (Sogatella furcifera).",
+      "id": "TO:0000205",
+      "name": "white-backed planthopper resistance",
+      "synonyms": [
+        "WBPH",
+        "WBPHRS"
+      ]
+    },
+    {
+      "definition": "A leaf attitude (TO:0000206) which is  the angle of a leaf (PO:0025034) measured against the stem.",
+      "id": "TO:0000206",
+      "name": "leaf angle",
+      "synonyms": [
+        "LBP",
+        "LFAG"
+      ]
+    },
+    {
+      "definition": "A whole plant morphology trait (TO:0000398) which is the height of a whole plant (PO:0000003).",
+      "id": "TO:0000207",
+      "name": "plant height",
+      "synonyms": [
+        "Ht",
+        "PTHT",
+        "shoot height"
+      ]
+    },
+    {
+      "definition": "A spikelet floret morphology trait (TO:0000274) which is the number of lemma (PO:0009037) in a spikelet floret (PO:0009082).",
+      "id": "TO:0000208",
+      "name": "lemma number"
+    },
+    {
+      "definition": "A spikelet floret morphology trait (TO:0000274) which is the number of  palea (PO:0009038) in a spikelet floret (PO:0009082).",
+      "id": "TO:0000209",
+      "name": "palea number",
+      "synonyms": [
+        "PALNB"
+      ]
+    },
+    {
+      "definition": "A stamen morphology trait (TO:0000215) which is the number of anthers (PO:0009066) in a stamen (PO:0009029).",
+      "id": "TO:0000210",
+      "name": "anther number",
+      "synonyms": [
+        "ANTNB"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the texture, firmness, and flow properties of a starch.",
+      "id": "TO:0000211",
+      "name": "gel consistency",
+      "synonyms": [
+        "GelC",
+        "GELCON"
+      ]
+    },
+    {
+      "definition": "Causal agent: rice grassy stunt virus 1 (RGSV1) and rice grassy stunt virus 2 (RGSV2). Symptoms: RGSV1 causes severe stunting, excessive tillering, pale green to yellow and narrow leaves with small rusty spots. RGSV2 causes severe stunting, excessive tillering, yellow to orange and narrow leaves with small rusty spots.",
+      "id": "TO:0000213",
+      "name": "rice grassy stunt 1 and 2 virus resistance",
+      "synonyms": [
+        "RGSVRS"
+      ]
+    },
+    {
+      "definition": "An anther morphology trait (TO:1000022) which is the shape (PATO:0000052) of an anther (PO:0009066).",
+      "id": "TO:0000214",
+      "name": "anther shape",
+      "synonyms": [
+        "ANTSHP"
+      ]
+    },
+    {
+      "definition": "A microsporophyll morphology trait (TO:0000868) which is a quality of a stamen (PO:0009029).",
+      "id": "TO:0000215",
+      "name": "stamen anatomy and morphology trait",
+      "synonyms": [
+        "stamen related trait"
+      ]
+    },
+    {
+      "id": "TO:0000217",
+      "name": "genic male sterility-thermo-photoperiod sensitive"
+    },
+    {
+      "definition": "Observations are made on staining behavior and number of nuclei in most of the pollen.",
+      "id": "TO:0000218",
+      "name": "pollen abortion type",
+      "synonyms": [
+        "abortion pattern",
+        "abortion pattern of male sterile lines"
+      ]
+    },
+    {
+      "definition": "A glume morphology trait (TO:0000869) which is the color of a glume (PO:0009039).",
+      "id": "TO:0000221",
+      "name": "glume color",
+      "synonyms": [
+        "GLCL",
+        "glume discoloration",
+        "glume pigmentation",
+        "pigmentation of glume"
+      ]
+    },
+    {
+      "definition": "A grain yield trait (TO:0000396) which is the amount of whole (3/4 of original length or longer) milled kernels separated from the total amount of milled rice.",
+      "id": "TO:0000222",
+      "name": "head rice",
+      "synonyms": [
+        "head milled rice",
+        "head rice ratio",
+        "HEADR"
+      ]
+    },
+    {
+      "definition": "A carpel morphology trait (TO:0006012) which is a quality of a pistil.",
+      "id": "TO:0000223",
+      "name": "pistil anatomy and morphology trait",
+      "synonyms": [
+        "pistil related trait"
+      ]
+    },
+    {
+      "definition": "Sensitivity to the iron ion content in the growth medium. It is important for synthesis of chlorophyll and some enzyme activities.",
+      "id": "TO:0000224",
+      "name": "iron sensitivity",
+      "synonyms": [
+        "FESN",
+        "FeTox",
+        "iron toxicity"
+      ]
+    },
+    {
+      "definition": "An androecium morphology trait (TO:0000215) which is the number of stamens (PO:0009029) present in an androecium (PO:0009061).",
+      "id": "TO:0000225",
+      "name": "stamen number",
+      "synonyms": [
+        "STANB"
+      ]
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the length of a root (PO:0009005).",
+      "id": "TO:0000227",
+      "name": "root length",
+      "synonyms": [
+        "maximum root depth",
+        "maximum root length",
+        "MRD",
+        "MRL",
+        "RTLG"
+      ]
+    },
+    {
+      "definition": "Sensitivity response on the plant development and the related growth stages by the duration of light, to which the plant has been exposed.",
+      "id": "TO:0000229",
+      "name": "photoperiod sensitivity",
+      "synonyms": [
+        "PPDSN"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is the absence of endosperm (PO:0009089) in the seed (PO:0009010) or grain.",
+      "id": "TO:0000231",
+      "name": "endospermless",
+      "synonyms": [
+        "ENDMIN"
+      ]
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the volume of a root (PO:0009005).",
+      "id": "TO:0000233",
+      "name": "root volume",
+      "synonyms": [
+        "RTVOL"
+      ]
+    },
+    {
+      "id": "TO:0000236",
+      "name": "crop damage resistance"
+    },
+    {
+      "definition": "An abiotic plant stress response trait (TO:0000168) which is the response of a plant structure (PO:0009011) to water stress (too little or too much water).",
+      "id": "TO:0000237",
+      "name": "water stress trait"
+    },
+    {
+      "id": "TO:0000238",
+      "name": "growth media composition sensitivity"
+    },
+    {
+      "definition": "A lemma morphology trait (TO:1000023) which is the length of a sterile lemma (PO:0009040).",
+      "id": "TO:0000240",
+      "name": "sterile lemma length",
+      "synonyms": [
+        "SLmL",
+        "STLEMLG"
+      ]
+    },
+    {
+      "definition": "A shoot system morphology trait (TO:0000077) which is the number of leaves (PO:0025034) in a shoot system (PO:0009006) of a plant.",
+      "id": "TO:0000241",
+      "name": "leaf number",
+      "synonyms": [
+        "LFNB"
+      ]
+    },
+    {
+      "definition": "A plant vigor trait (TO:0000250) which is the capacity of plant cells, tissues, or organs, when cultured in a controlled, artificial environment, to develop into new, complete plants.",
+      "id": "TO:0000243",
+      "name": "invitro regeneration ability",
+      "synonyms": [
+        "INVRAB"
+      ]
+    },
+    {
+      "definition": "No pollen development.",
+      "id": "TO:0000245",
+      "name": "pollen free"
+    },
+    {
+      "definition": "A macronutrient sensitivity (TO:0000176) response shown by the plant either grown in an excess or deficient amount of the primary macronutrient in the growth medium.",
+      "id": "TO:0000248",
+      "name": "primary macronutrient sensitivity"
+    },
+    {
+      "definition": "A measure of aging of leaf.",
+      "id": "TO:0000249",
+      "name": "leaf senescence",
+      "synonyms": [
+        "Foilar senescence",
+        "LFSNS",
+        "Sen"
+      ]
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is a measure of the active and/or healthy growth and development of a plant stucture (PO:0009011) or a population of plants.",
+      "id": "TO:0000250",
+      "name": "vigor related trait",
+      "synonyms": [
+        "plant vigour trait"
+      ]
+    },
+    {
+      "definition": "A seed growth and development trait (TO:0000653) where a seed (PO:0009010) remains in a state of quiescence or dormancy (GO:0022611).",
+      "id": "TO:0000253",
+      "name": "seed dormancy",
+      "synonyms": [
+        "SDDOR"
+      ]
+    },
+    {
+      "definition": "A Basidiomycete fungal disease response trait (TO:0001146) which is caused by Rhizoctonia solani (PECO:0007379) exposure.",
+      "id": "TO:0000255",
+      "name": "sheath blight disease resistance",
+      "synonyms": [
+        "ShB",
+        "SHBTRS"
+      ]
+    },
+    {
+      "definition": "The extent of the root branching as determined under variable treatments and environments.",
+      "id": "TO:0000257",
+      "name": "root branching",
+      "synonyms": [
+        "rbr",
+        "RTBR"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the thickness of a leaf (PO:0025034).",
+      "id": "TO:0000258",
+      "name": "leaf thickness"
+    },
+    {
+      "definition": "A temperature stress response trait (TO:0000432) which is the response to warmer than normal growth conditions.",
+      "id": "TO:0000259",
+      "name": "heat tolerance",
+      "synonyms": [
+        "HTol"
+      ]
+    },
+    {
+      "definition": "An animal damage response trait (TO:0000054) which is the response to damage to a plant structure (PO:0009011) caused by an insect (NCBITaxon:6960).",
+      "id": "TO:0000261",
+      "name": "insect damage resistance",
+      "synonyms": [
+        "insect resistance"
+      ]
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the shape of a panicle inflorescence (PO:0030123).",
+      "id": "TO:0000262",
+      "name": "panicle shape"
+    },
+    {
+      "definition": "A lemma and palea morphology trait (TO:0000079) which is the color of the lemma (PO:0009037) and the palea (PO:0009038).",
+      "id": "TO:0000264",
+      "name": "lemma and palea color",
+      "synonyms": [
+        "LEMCL",
+        "Lemma color",
+        "LEMPALCL",
+        "LmPC",
+        "PALCL",
+        "palea color"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is the chalkiness of an endosperm (PO:0009089) on the scale of (a) white belly, (b) white center or (c) white back.",
+      "id": "TO:0000266",
+      "name": "chalky endosperm",
+      "synonyms": [
+        "CHALK",
+        "chalkiness of endosperm",
+        "Clk"
+      ]
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is the shape of an inflorescence (PO:0009049).",
+      "id": "TO:0000268",
+      "name": "inflorescence shape",
+      "synonyms": [
+        "head shape"
+      ]
+    },
+    {
+      "definition": "A grain weight (TO:0000919) which is the weight of a sample of 100 grains (caryopsis fruit; PO:0030104), with the caryopsis hull (PO:0006000).",
+      "id": "TO:0000269",
+      "name": "100-seed weight",
+      "synonyms": [
+        "100-grain weight",
+        "HGRWT",
+        "HSDWT",
+        "hundred grain weight",
+        "hundred seed weight"
+      ]
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) trait which is the length of an inflorescence (PO:0009049).",
+      "id": "TO:0000271",
+      "name": "inflorescence length"
+    },
+    {
+      "definition": "A Lepidoptera damage response trait (TO:0001162) which is caused by a true armyworm (Mythimna unipuncta).",
+      "id": "TO:0000273",
+      "name": "armyworm resistance",
+      "synonyms": [
+        "AWRRS"
+      ]
+    },
+    {
+      "definition": "A flower morphology trait (TO:0000499) which is a quality of a spikelet floret (PO:0009082).",
+      "id": "TO:0000274",
+      "name": "floret anatomy and morphology trait",
+      "synonyms": [
+        "floret related trait"
+      ]
+    },
+    {
+      "definition": "Becoming tolerant to drought like conditions of minimal or no water content in the growth environment.",
+      "id": "TO:0000276",
+      "name": "drought tolerance",
+      "synonyms": [
+        "drought resistance",
+        "DRTL"
+      ]
+    },
+    {
+      "definition": "The ratio determined from the parameters evaluated for root length and the shoot length in a study.",
+      "id": "TO:0000278",
+      "name": "root to shoot ratio",
+      "synonyms": [
+        "r/s ratio",
+        "root length to shoot length ratio",
+        "root/shoot ratio",
+        "RTSHRO"
+      ]
+    },
+    {
+      "definition": "Represents the seedling growth of the plant.",
+      "id": "TO:0000280",
+      "name": "seedling vigor",
+      "synonyms": [
+        "Sd",
+        "SDLVIG"
+      ]
+    },
+    {
+      "definition": "A biochemical trait (TO:0000277) which is the amount of a metabolite in a plant structure (PO:0009011).",
+      "id": "TO:0000281",
+      "name": "metabolite content related trait"
+    },
+    {
+      "definition": "A water stress response trait (TO:0000237) as a result of flooding or submergence in water.",
+      "id": "TO:0000286",
+      "name": "submergence sensitivity",
+      "synonyms": [
+        "Sub",
+        "submergence tolerance",
+        "SUBSN"
+      ]
+    },
+    {
+      "definition": "A grain shape (TO:0002730) of the brown rice. Measure after harvesting, cleaning, and dehulling.",
+      "id": "TO:0000287",
+      "name": "brown rice shape",
+      "synonyms": [
+        "BrS",
+        "BRWSHP"
+      ]
+    },
+    {
+      "definition": "A carotenoid content trait (TO:0000496) which is the amount of carotene (CHEBI:23042) in a plant structure (PO:0009011).",
+      "id": "TO:0000289",
+      "name": "carotene content"
+    },
+    {
+      "definition": "A polyphenol content trait (TO:0001172) which is the amount of flavonoid (CHEBI:47916) in a plant structure (PO:0009011).",
+      "id": "TO:0000290",
+      "name": "flavonoid content"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of carbohydrate (CHEBI:16646) in a plant structure (PO:0009011).",
+      "id": "TO:0000291",
+      "name": "carbohydrate content",
+      "synonyms": [
+        "CARBCN"
+      ]
+    },
+    {
+      "definition": "A chlorophyll content trait (TO:0000495) which is the chlorophyll a content in a plant structure (PO:0009011).",
+      "id": "TO:0000293",
+      "name": "chlorophyll-a content",
+      "synonyms": [
+        "Chl a",
+        "chl-a",
+        "chlorophyll-a content"
+      ]
+    },
+    {
+      "definition": "A leaf sheath auricle morphology trait (TO:0002717) which is the color of a leaf sheath auricle (PO:0020106).",
+      "id": "TO:0000294",
+      "name": "auricle color",
+      "synonyms": [
+        "AC",
+        "AUCL"
+      ]
+    },
+    {
+      "definition": "A chlorophyll content trait (TO:0000495) which is the chlorophyll b content in a plant structure (PO:0009011).",
+      "id": "TO:0000295",
+      "name": "chlorophyll-b content",
+      "synonyms": [
+        "chl b content",
+        "chl-b content",
+        "chlorophyll-b content"
+      ]
+    },
+    {
+      "definition": "Represents the growth of plant. Used to evaluate genetic material under stress and non-stress conditions, several factors may interact, influencing the seedling vigor (e.g. tillering ability, plant height, etc).",
+      "id": "TO:0000296",
+      "name": "vegetative vigor",
+      "synonyms": [
+        "vegetative growth vigor",
+        "Vg",
+        "VGVIG"
+      ]
+    },
+    {
+      "definition": "A chlorophyll content trait (TO:0000495) which is the ratio of chlorophyll a to chlorophyll b in a plant structure (PO:0009011).",
+      "id": "TO:0000298",
+      "name": "chlorophyll ratio",
+      "synonyms": [
+        "chl a to chl b ratio",
+        "chl-a to chl-b ratio",
+        "chlorophyll content ratio",
+        "CHLRO"
+      ]
+    },
+    {
+      "definition": "A leaf lamina morphology trait (TO:0000829) which is the color of the leaf lamina (PO:0020039).",
+      "id": "TO:0000299",
+      "name": "leaf lamina color",
+      "synonyms": [
+        "LBC",
+        "leaf blade color",
+        "leaf color",
+        "LFLCL"
+      ]
+    },
+    {
+      "definition": "Amount of glucose present in a plant structure (PO:0009011).",
+      "id": "TO:0000300",
+      "name": "glucose content",
+      "synonyms": [
+        "D-glucose content",
+        "dextrose content",
+        "GLUCCN"
+      ]
+    },
+    {
+      "definition": "The xanthophyll content in a plant structure (PO:0009011).",
+      "id": "TO:0000301",
+      "name": "xanthophyll content",
+      "synonyms": [
+        "XANCN"
+      ]
+    },
+    {
+      "definition": "A temperature stress response trait (TO:0000432) which is the response to colder than normal growth conditions.",
+      "id": "TO:0000303",
+      "name": "cold tolerance",
+      "synonyms": [
+        "COLDTL",
+        "CTol"
+      ]
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the thickness of a seed (PO:0009010).",
+      "id": "TO:0000304",
+      "name": "seed thickness",
+      "synonyms": [
+        "SDTH"
+      ]
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the thickness of a root (PO:0009005).",
+      "id": "TO:0000306",
+      "name": "root thickness",
+      "synonyms": [
+        "RTTH"
+      ]
+    },
+    {
+      "definition": "Amount of hexose present in a plant structure (PO:0009011).",
+      "id": "TO:0000307",
+      "name": "hexose content",
+      "synonyms": [
+        "HEXCN"
+      ]
+    },
+    {
+      "definition": "A pollen fertility trait (TO:0000421) where the formerly male sterile pollen becomes fertile.",
+      "id": "TO:0000308",
+      "name": "male fertility restoration trait",
+      "synonyms": [
+        "male fertility restoration in F1 hybrids",
+        "MALERF"
+      ]
+    },
+    {
+      "definition": "Catalysis of the hydrolysis of terminal non-reducing beta-D-fructofuranoside residues in beta-D-fructofuranosides.",
+      "id": "TO:0000311",
+      "name": "invertase activity",
+      "synonyms": [
+        "acid invertase",
+        "alkaline invertase",
+        "beta-D-fructofuranoside fructohydrolase",
+        "beta-fructofuranosidase activity",
+        "beta-fructosidase",
+        "beta-h-fructosidase",
+        "fructosylinvertase",
+        "glucosucrase",
+        "INVACT",
+        "invertin",
+        "maxinvert L 1000",
+        "saccharase",
+        "sucrase"
+      ]
+    },
+    {
+      "definition": "A microbial disease response (TO:0000112) trait which is the response to damage to a plant structure (PO:0009011) caused by an infection by a bacterium (NCBITaxon:2).",
+      "id": "TO:0000315",
+      "name": "bacterial disease resistance"
+    },
+    {
+      "definition": "The photosynthesis ability determined on a plant structure (PO:0009011) under stress.",
+      "id": "TO:0000316",
+      "name": "photosynthetic ability",
+      "synonyms": [
+        "PHOTOSYNAB"
+      ]
+    },
+    {
+      "definition": "A Lepidoptera damage response trait (TO:0001162) which is caused by a cutworm (Spodoptera litura).",
+      "id": "TO:0000317",
+      "name": "cutworm resistance",
+      "synonyms": [
+        "CUWRRS"
+      ]
+    },
+    {
+      "definition": "Amount of Rubisco enzyme or protein present in a plant structure (PO:0009011).",
+      "id": "TO:0000319",
+      "name": "rubisco content",
+      "synonyms": [
+        "RUBISCOCN"
+      ]
+    },
+    {
+      "definition": "Amount of soluble protein present in a plant structure (PO:0009011).",
+      "id": "TO:0000325",
+      "name": "soluble protein content",
+      "synonyms": [
+        "SPROTCN"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the color of a leaf (PO:0025034).",
+      "id": "TO:0000326",
+      "name": "leaf color",
+      "synonyms": [
+        "LFCL"
+      ]
+    },
+    {
+      "definition": "A yield trait (TO: 0000371) that is the amount of a plant structure (PO:0009011) or portion of plant substance (PO:0025161) produced by the shoot system (PO:0009006) which is harvested.",
+      "id": "TO:0000327",
+      "name": "biomass yield",
+      "synonyms": [
+        "BIOMYLD",
+        "BY"
+      ]
+    },
+    {
+      "definition": "The amount of sucrose present in a plant structure (PO:0009011).",
+      "id": "TO:0000328",
+      "name": "sucrose content",
+      "synonyms": [
+        "saccharose content",
+        "SUCROSECN"
+      ]
+    },
+    {
+      "definition": "A shoot system growth and development trait (TO:0000654) which is the formation of a basal axillary shoot system (tiller; PO:0005001).",
+      "id": "TO:0000329",
+      "name": "tillering ability",
+      "synonyms": [
+        "Ti",
+        "TIAB"
+      ]
+    },
+    {
+      "definition": "Amount of sugar present in a plant structure (PO:0009011).",
+      "id": "TO:0000333",
+      "name": "sugar content",
+      "synonyms": [
+        "SUGARCN"
+      ]
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the thickness of a stem (PO:0009047).",
+      "id": "TO:0000339",
+      "name": "stem thickness",
+      "synonyms": [
+        "culm thickness",
+        "culm thickness (sensu Poaceae)",
+        "CULMTH",
+        "STEMTH"
+      ]
+    },
+    {
+      "definition": "Total amount of soluble sugar present in a plant structure (PO:0009011).",
+      "id": "TO:0000340",
+      "name": "total soluble sugar content",
+      "synonyms": [
+        "TSOLSUGARCN"
+      ]
+    },
+    {
+      "definition": "Represents the angle of panicle axis.",
+      "id": "TO:0000342",
+      "name": "panicle axis angle",
+      "synonyms": [
+        "PnAk"
+      ]
+    },
+    {
+      "definition": "A flowering time trait (TO:0002616) which is the number of days required for an individual flower (PO:0009046), a whole plant (PO:0000003) or a plant population to reach flowering stage (PO:0007616) from a predetermined time point (e.g. the date of seed sowing, seedling transplant, or seedling emergence).",
+      "id": "TO:0000344",
+      "name": "days to flower",
+      "synonyms": [
+        "days to flowering",
+        "Delay in flowering time",
+        "DTFL"
+      ]
+    },
+    {
+      "definition": "A seed quality trait (TO:0000931) which is the the ability of a seed to germinate, grow, and develop into a new plant.",
+      "id": "TO:0000345",
+      "name": "seed viability",
+      "synonyms": [
+        "SDVIA"
+      ]
+    },
+    {
+      "definition": "A basal axillary shoot system morphology trait (TO:0001168) which is the number of tillers per plant.",
+      "id": "TO:0000346",
+      "name": "tiller number",
+      "synonyms": [
+        "TINB"
+      ]
+    },
+    {
+      "id": "TO:0000350",
+      "name": "cms-hl type"
+    },
+    {
+      "definition": "Sensitivity to the zinc content in the growth medium. It acts as cofactor for certain enzymes like Class II aldolases, metalloproteases, alkaline phosphatase, etc.",
+      "id": "TO:0000351",
+      "name": "zinc sensitivity",
+      "synonyms": [
+        "PDef",
+        "zinc deficiency",
+        "ZNSN"
+      ]
+    },
+    {
+      "definition": "The dry weight of the whole plant.",
+      "id": "TO:0000352",
+      "name": "plant dry weight",
+      "synonyms": [
+        "DMASS",
+        "dry mass",
+        "PTDWT",
+        "RTWT",
+        "total dry mass"
+      ]
+    },
+    {
+      "definition": "Abortion at later stage of microspore development, the pollen looks like fertile pollen.",
+      "id": "TO:0000353",
+      "name": "aborted at pollen maturity stage",
+      "synonyms": [
+        "PMTABR"
+      ]
+    },
+    {
+      "definition": "A chemical stress response trait (TO:0000482) to aluminum minerals in the growth environment.",
+      "id": "TO:0000354",
+      "name": "aluminum sensitivity",
+      "synonyms": [
+        "ALSN",
+        "aluminium sensitivity",
+        "aluminum toxicity"
+      ]
+    },
+    {
+      "definition": "A plant vigor trait (TO:0000250) which is a biological phenomenon where the offspring of two genetically distinct parents exhibits superior traits compared to its parents.",
+      "id": "TO:0000355",
+      "name": "heterosis",
+      "synonyms": [
+        "HET",
+        "heterosis in f1 hybrid",
+        "hybrid vigor"
+      ]
+    },
+    {
+      "definition": "An Ascomycete fungal disease response trait (TO:0001145) caused by Cochliobolus miyabeanus (Bipolaris oryzae, Drechslera oryzae).",
+      "id": "TO:0000356",
+      "name": "brown spot disease resistance",
+      "synonyms": [
+        "BS"
+      ]
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is the growth (GO:0048590) and development (GO:0032502) of a plant anatomical entity (PO:0025131) or a constituent cellular component (GO:0005575).",
+      "id": "TO:0000357",
+      "name": "growth and development trait"
+    },
+    {
+      "definition": "A plant sterility trait (TO:0000485) where the plant is unable to produce viable seeds, even with viable pollen present.",
+      "id": "TO:0000358",
+      "name": "female sterility",
+      "synonyms": [
+        "FEMST"
+      ]
+    },
+    {
+      "definition": "Measure of growth or elongation rate of the leaf in a plant.",
+      "id": "TO:0000360",
+      "name": "leaf elongation rate",
+      "synonyms": [
+        "leaf growth rate",
+        "LFELRATE"
+      ]
+    },
+    {
+      "definition": "A shoot axis morphology trait (TO:0000739) which is the quality of a stem (PO:0009047).",
+      "id": "TO:0000361",
+      "name": "stem anatomy and morphology trait",
+      "synonyms": [
+        "core morphology trait"
+      ]
+    },
+    {
+      "definition": "Changes monitored in leaf collar color.",
+      "id": "TO:0000364",
+      "name": "leaf collar color",
+      "synonyms": [
+        "CC",
+        "collar color",
+        "LFCCL"
+      ]
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is the amount of time taken by the reproductive growth phase in a plant's life cycle.",
+      "id": "TO:0000366",
+      "name": "reproductive growth time",
+      "synonyms": [
+        "RGTM"
+      ]
+    },
+    {
+      "definition": "The changes in the color of basal leaf sheath.",
+      "id": "TO:0000367",
+      "name": "basal leaf sheath color",
+      "synonyms": [
+        "BALFSCL",
+        "BLSC"
+      ]
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is the length of time of the vegetative growth phase in a plant's life cycle.",
+      "id": "TO:0000369",
+      "name": "vegetative growth time",
+      "synonyms": [
+        "VGTM"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the width of a leaf (PO:0025034).",
+      "id": "TO:0000370",
+      "name": "leaf width",
+      "synonyms": [
+        "LFWD",
+        "lfwid",
+        "LW"
+      ]
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is a harvestable product that is a plant anatomical entity (PO:0025131) or one or more constituent cellular components (GO:0005575) contained therein.",
+      "id": "TO:0000371",
+      "name": "yield trait",
+      "synonyms": [
+        "YLD"
+      ]
+    },
+    {
+      "definition": "A reproductive shoot system morphology trait (TO:0000786) that is a quality of an inflorescence (PO:0009049).",
+      "id": "TO:0000373",
+      "name": "inflorescence anatomy and morphology trait",
+      "synonyms": [
+        "Head morphology trait",
+        "inflorescence structure trait"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the tendency of gelatinized starch granules to break during cooking, especially at high temperature.",
+      "id": "TO:0000374",
+      "name": "breakdown viscosity",
+      "synonyms": [
+        "BRKVIS"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the balance of gelatinization (granule swelling and disruption) and retrogradation (network formation and water trapping).",
+      "id": "TO:0000376",
+      "name": "consistency viscosity",
+      "synonyms": [
+        "CONVIS"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the viscosity of a starch paste after it has been cooked and cooled down.",
+      "id": "TO:0000379",
+      "name": "cool paste viscosity",
+      "synonyms": [
+        "CPVIS"
+      ]
+    },
+    {
+      "definition": "A grain weight (TO:0000919) which is the weight of a sample of 1000 grains (caryopsis fruit; PO:0030104), with the caryopsis hull (PO:0006000).",
+      "id": "TO:0000382",
+      "name": "1000-seed weight",
+      "synonyms": [
+        "1000-grain weight",
+        "TGRWT",
+        "thousand grain weight",
+        "thousand seed weight",
+        "TSDWT"
+      ]
+    },
+    {
+      "definition": "An animal damage response trait (TO:0000054) which is the response to damage to a plant structure (PO:0009011) caused by a nematode (NCBITaxon:6231).",
+      "id": "TO:0000384",
+      "name": "nematode damage resistance",
+      "synonyms": [
+        "NDRS"
+      ]
+    },
+    {
+      "definition": "Causal agent: rice ragged stunt virus (RRSV). Symptoms: plants are stunted but remain dark green. Leaves are ragged and twisted. Vein swelling on leaf collar, leaf blades and leaf sheaths.",
+      "id": "TO:0000386",
+      "name": "rice ragged stunt virus resistance",
+      "synonyms": [
+        "RSVRS"
+      ]
+    },
+    {
+      "definition": "A plant male sterility trait (TO:0000437) which shows mendelian inheritance, caused by genetic modifications or mutations in the nuclear genome.",
+      "id": "TO:0000389",
+      "name": "nuclear mediated male sterility",
+      "synonyms": [
+        "genic male sterility"
+      ]
+    },
+    {
+      "definition": "Percentage opaque white area in the kernel core.",
+      "id": "TO:0000390",
+      "name": "grain core percent white",
+      "synonyms": [
+        "GRCPCENTWHT"
+      ]
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the size of a seed (PO:0009010).",
+      "id": "TO:0000391",
+      "name": "seed size"
+    },
+    {
+      "definition": "A plant trait (TO:0000387) which is a measure of the ability of a plant to reproduce.",
+      "id": "TO:0000392",
+      "name": "sterility or fertility trait",
+      "synonyms": [
+        "sterility or fertility trait"
+      ]
+    },
+    {
+      "definition": "A water stress response trait (TO:0000237) which is a response by a plant structure (PO:0009011) to growth conditions with lower than optimal water availability.",
+      "id": "TO:0000394",
+      "name": "drought related trait",
+      "synonyms": [
+        "dessication related trait"
+      ]
+    },
+    {
+      "definition": "A fruit yield trait (TO:0000871) that is the amount of grain.",
+      "id": "TO:0000396",
+      "name": "grain yield",
+      "synonyms": [
+        "caryopsis yield",
+        "GRYLD",
+        "Yld"
+      ]
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the size of the grain (caryopsis fruit; PO:0030104).",
+      "id": "TO:0000397",
+      "name": "grain size",
+      "synonyms": [
+        "GRSZ"
+      ]
+    },
+    {
+      "definition": "A grain quality trait (TO:0000399) which is the thickness of a dehulled grain with a pericarp (PO:0009084).",
+      "id": "TO:0000399",
+      "name": "grain thickness",
+      "synonyms": [
+        "GRTH"
+      ]
+    },
+    {
+      "definition": "A lemma morphology trait (TO:1000023) which is the color of the sterile lemma (PO:0009040).",
+      "id": "TO:0000400",
+      "name": "sterile lemma color",
+      "synonyms": [
+        "SLmC",
+        "STLEMCL"
+      ]
+    },
+    {
+      "definition": "A chemical stress sensitivity (TO:0000482) which is the tolerance exhibited by a plant or a group of plants (population) towards the plant growth hormone.",
+      "id": "TO:0000401",
+      "name": "plant growth hormone sensitivity",
+      "synonyms": [
+        "growth regulator sensitivity",
+        "plant hormone response"
+      ]
+    },
+    {
+      "definition": "A grain width (TO:0000975) which is the width of the dehulled grain with pericarp (PO:0009084).",
+      "id": "TO:0000402",
+      "name": "grain width",
+      "synonyms": [
+        "dehulled grain curved width",
+        "dehulled grain width",
+        "DHULGRWD",
+        "GRWD",
+        "width of grain without hull"
+      ]
+    },
+    {
+      "definition": "A Lepidoptera damage response trait (TO:0001162) which is caused by a rice leaf roller (Cnaphalocrocis medinalis).",
+      "id": "TO:0000403",
+      "name": "leaf-folder resistance",
+      "synonyms": [
+        "leaf roller response",
+        "LF",
+        "LFFRS"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the minimum viscosity that the starch slurry reaches during a holding period at a constant high temperature.",
+      "id": "TO:0000408",
+      "name": "hot paste viscosity",
+      "synonyms": [
+        "HPVIS",
+        "trough viscosity"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is maximum viscosity of a starch slurry as starch granules swell and absorb water during heating.",
+      "id": "TO:0000409",
+      "name": "peak viscosity",
+      "synonyms": [
+        "PVIS"
+      ]
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the ratio of grain length (TO:0000734) to grain width (TO:0002762), including the caryopsis hull (PO:0006000).",
+      "id": "TO:0000411",
+      "name": "seed length to width ratio",
+      "synonyms": [
+        "GRLGWDRO",
+        "SDLGWDRO"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the difference between the peak viscosity (TO:0000409) and the cool paste viscosity (TO:0000379).",
+      "id": "TO:0000412",
+      "name": "setback viscosity",
+      "synonyms": [
+        "setback",
+        "SETBK",
+        "SETBKVIS"
+      ]
+    },
+    {
+      "definition": "A plant female sterility trait (TO:0000358) which is caused by abortion of the embryo sac (PO:0025074).",
+      "id": "TO:0000416",
+      "name": "embryosac abortion",
+      "synonyms": [
+        "EBSABR"
+      ]
+    },
+    {
+      "definition": "An Ascomycete fungal disease response trait (TO:0001145) caused by Gibberella fujikuroi.",
+      "id": "TO:0000418",
+      "name": "bakanae disease resistance",
+      "synonyms": [
+        "Bak",
+        "BKRS"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is a quality of a vascular leaf (PO:0009025).",
+      "id": "TO:0000419",
+      "name": "leaf anatomy and morphology trait"
+    },
+    {
+      "definition": "A plant reproductive trait (TO:0000392) which is the quality of being able to produce viable offspring.",
+      "id": "TO:0000420",
+      "name": "fertility related trait"
+    },
+    {
+      "definition": "A plant fertility trait (TO:0000420) which is the ability of pollen grains to successfully fertilize an ovule, leading to seed production",
+      "id": "TO:0000421",
+      "name": "pollen fertility",
+      "synonyms": [
+        "male fertility",
+        "POFRT"
+      ]
+    },
+    {
+      "definition": "A Diptera damage response trait (TO:0001163) which is caused by a rice gall midge (Orseolia oryzae).",
+      "id": "TO:0000423",
+      "name": "gall midge resistance",
+      "synonyms": [
+        "GM",
+        "GMRS"
+      ]
+    },
+    {
+      "definition": "A Hemiptera damage response trait (TO:0001164) caused by a brown planthopper (Nilaparvata lugens).",
+      "id": "TO:0000424",
+      "name": "brown planthopper resistance",
+      "synonyms": [
+        "BPH",
+        "BPHRS"
+      ]
+    },
+    {
+      "definition": "A stem internode morphology trait (TO:0000756) which is the color of the stem internode (PO:0020142).",
+      "id": "TO:0000426",
+      "name": "internode color",
+      "synonyms": [
+        "CmlC",
+        "culm internode color",
+        "INCL"
+      ]
+    },
+    {
+      "definition": "The angle of the culm with respect to the ground surface in a grass plant.",
+      "id": "TO:0000427",
+      "name": "culm angle",
+      "synonyms": [
+        "CmA",
+        "CULMAG"
+      ]
+    },
+    {
+      "definition": "An in vitro regeneration ability trait (TO:0000243) which is the ability to generate a plant callus (PO:0005052) in culture.",
+      "id": "TO:0000428",
+      "name": "callus induction",
+      "synonyms": [
+        "CAIND"
+      ]
+    },
+    {
+      "definition": "Plant sensitivity observed in response to different concentrations of salt in the growth medium.",
+      "id": "TO:0000429",
+      "name": "salt sensitivity",
+      "synonyms": [
+        "Sal",
+        "saline sensitivity",
+        "SALTSN"
+      ]
+    },
+    {
+      "definition": "Rate of germination of the seed.",
+      "id": "TO:0000430",
+      "name": "germination rate",
+      "synonyms": [
+        "germination speed",
+        "GERMRATE",
+        "GERMSP"
+      ]
+    },
+    {
+      "definition": "An ear infructescence morphology trait (TO:0000976) that is the length of an ear infructescence (PO:0025597) from base to tip.",
+      "id": "TO:0000431",
+      "name": "ear length",
+      "synonyms": [
+        "ear infructescence length",
+        "EARLG",
+        "earln"
+      ]
+    },
+    {
+      "definition": "An abiotic plant stress response trait (TO:0000168) which is the response to temperature stress.",
+      "id": "TO:0000432",
+      "name": "temperature response trait"
+    },
+    {
+      "definition": "A plant vigor trait (TO:0000250) which is the oxidative power of a root (PO:0009005).",
+      "id": "TO:0000434",
+      "name": "root activity",
+      "synonyms": [
+        "RTACT"
+      ]
+    },
+    {
+      "definition": "A seed viability trait (TO:0000345) which is the length of time a seed stays viable.",
+      "id": "TO:0000435",
+      "name": "seed longevity",
+      "synonyms": [
+        "SDLNG"
+      ]
+    },
+    {
+      "definition": "Determined by counting the filled and unfilled spikelets of the bagged grass inflorescence.",
+      "id": "TO:0000436",
+      "name": "spikelet sterility",
+      "synonyms": [
+        "SPKST"
+      ]
+    },
+    {
+      "definition": "A plant sterility trait (TO:0000485) which is the incompetence of pollen (PO:0025281) to fertilize the plant egg cell (PO:0020094).",
+      "id": "TO:0000437",
+      "name": "male sterility",
+      "synonyms": [
+        "degree of male sterility of male sterile lines",
+        "male sterility measure",
+        "MALEST",
+        "pollen sterility"
+      ]
+    },
+    {
+      "definition": "A microbial disease response (TO:0000112) trait which is the response to damage to a plant structure (PO:0009011) caused by an infection by a fungal pathogen (NCBITaxon:4751).",
+      "id": "TO:0000439",
+      "name": "fungal disease resistance"
+    },
+    {
+      "definition": "Number of grains (full grain with hull) present in one plant.",
+      "id": "TO:0000440",
+      "name": "grain number per plant",
+      "synonyms": [
+        "GRNBPPT"
+      ]
+    },
+    {
+      "id": "TO:0000441",
+      "name": "humidity related trait"
+    },
+    {
+      "definition": "Fresh weight of the plant.",
+      "id": "TO:0000442",
+      "name": "plant fresh weight",
+      "synonyms": [
+        "PLFWT"
+      ]
+    },
+    {
+      "definition": "A weed damage response trait (TO:0000347) which is caused by a plant which derives nutrients from other plants (their hosts) by attaching to them and penetrating their tissues.",
+      "id": "TO:0000444",
+      "name": "parasitic weed"
+    },
+    {
+      "definition": "A fruit morphology trait (TO:0002629) which is the number of seeds (PO:0009010) in a fruit (PO:0009001).",
+      "id": "TO:0000445",
+      "name": "seed number",
+      "synonyms": [
+        "number of seeds per pod",
+        "pod seed number",
+        "SDNB"
+      ]
+    },
+    {
+      "definition": "Determined by counting the number of spikelets filled with grain in one inflorescence (panicle).",
+      "id": "TO:0000447",
+      "name": "filled grain number",
+      "synonyms": [
+        "FGRNB",
+        "FILGRNB",
+        "filled fruit number",
+        "filled grain number per panicle",
+        "grain number per panicle (sensu Oryza)",
+        "GRNBPPN",
+        "number of grains per panicle"
+      ]
+    },
+    {
+      "definition": "Determined by counting the percent spikelets filled with grain in one grass inflorescence (panicle) or plant.",
+      "id": "TO:0000448",
+      "name": "filled grain percentage",
+      "synonyms": [
+        "FGRPCENT",
+        "Filled grain percent per panicle"
+      ]
+    },
+    {
+      "definition": "Average weight of dehulled grains per plant.",
+      "id": "TO:0000449",
+      "name": "grain yield per plant",
+      "synonyms": [
+        "GRYLDPPL"
+      ]
+    },
+    {
+      "definition": "Average weight of dehulled grains per panicle.",
+      "id": "TO:0000450",
+      "name": "grain yield per panicle",
+      "synonyms": [
+        "GRYLDPPN"
+      ]
+    },
+    {
+      "definition": "A ratio of number of tiller bearing the panicles to the total number of tillers in rice.",
+      "id": "TO:0000453",
+      "name": "panicle to tiller ratio",
+      "synonyms": [
+        "panicle tiller ratio",
+        "PNTIRO",
+        "productive tiller percent"
+      ]
+    },
+    {
+      "definition": "A Lepidoptera damage response trait (TO:0001162) caused by a rice stem borer (Chilo suppressalis).",
+      "id": "TO:0000454",
+      "name": "stem borer resistance",
+      "synonyms": [
+        "CULMBRRS",
+        "SB"
+      ]
+    },
+    {
+      "definition": "An infructescence morphology trait (TO:0000920) which is the percent of seeds (PO:0009010) set in an infructescence (PO:0006342).",
+      "id": "TO:0000455",
+      "name": "seed set percent",
+      "synonyms": [
+        "percent seed set",
+        "SDSPCENT"
+      ]
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the average number of spikelets (PO:0009051) in one or more inflorescence (PO:0009049) (e.g. rice panicle) found in a plant or on all plants of a study.",
+      "id": "TO:0000456",
+      "name": "spikelet number",
+      "synonyms": [
+        "number of spikelets per panicle",
+        "spikelet number per panicle",
+        "SPKNB"
+      ]
+    },
+    {
+      "definition": "A yield trait (TO:0000371) which is the amount of biomass obtained.",
+      "id": "TO:0000457",
+      "name": "total biomass yield",
+      "synonyms": [
+        "dry matter yield",
+        "TBIOMYLD",
+        "total dry weight"
+      ]
+    },
+    {
+      "definition": "A light response trait (TO:0000075 ) which is the response to the intensity of light.",
+      "id": "TO:0000460",
+      "name": "light intensity sensitivity",
+      "synonyms": [
+        "light intensity sensitivity"
+      ]
+    },
+    {
+      "definition": "A vegetative growth time (TO:0000369) which is the period between seeding and heading when the plant is not sensitive to day length.",
+      "id": "TO:0000461",
+      "name": "basic vegetative phase",
+      "synonyms": [
+        "BAVEGPH"
+      ]
+    },
+    {
+      "definition": "A starch gelatinization trait (TO:0001167) which is the temperature at which a starch granule (GO:0043036) swells and absorbs water.",
+      "id": "TO:0000462",
+      "name": "gelatinization temperature",
+      "synonyms": [
+        "GELTZTMP"
+      ]
+    },
+    {
+      "definition": "A biochemical trait (TO:0000277) that is the amount of a particular mineral or ion constituent occurring in a plant anatomical entity (PO:0025131).",
+      "id": "TO:0000465",
+      "name": "mineral and ion content related trait"
+    },
+    {
+      "definition": "Amount of carbon present in the dry mass.",
+      "id": "TO:0000466",
+      "name": "carbon content",
+      "synonyms": [
+        "CBCN"
+      ]
+    },
+    {
+      "definition": "A drought stress response trait (TO:0000394) which is the changes in the stability of the cell membrane during water deficit stress.",
+      "id": "TO:0000467",
+      "name": "cell membrane stability",
+      "synonyms": [
+        "CELMBSTB"
+      ]
+    },
+    {
+      "definition": "A rice blast disease response (TO:0000074) caused by Pyricularia grisea (Magnaporthe grisea) affecting a leaf (PO:0009025).",
+      "id": "TO:0000468",
+      "name": "leaf blast disease resistance",
+      "synonyms": [
+        "Bl",
+        "LFBLRS"
+      ]
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is the number of days from planting to the fruit ripening stage (PO:0025502) or seed maturation stage (PO:0007632).",
+      "id": "TO:0000469",
+      "name": "days to maturity",
+      "synonyms": [
+        "DTMT",
+        "Mat",
+        "time to harvest"
+      ]
+    },
+    {
+      "definition": "A portion of plant tissue morphology trait (TO:0000843) which is a quality of a vascular tissue and its parts.",
+      "id": "TO:0000470",
+      "name": "vascular tissue related trait"
+    },
+    {
+      "definition": "A plant structure morphology trait (TO:0000839) which is the number of vascular bundles (PO:0005020) in a plant structure (PO:0009011).",
+      "id": "TO:0000472",
+      "name": "vascular bundle number",
+      "synonyms": [
+        "VBNB"
+      ]
+    },
+    {
+      "definition": "Measurement of extent of grain shattering, which depends on development of abscission zone. This trait often refers to shattering or the premature or ease of shedding of the grass fruit called caryopsis from the inflorescence.",
+      "id": "TO:0000473",
+      "name": "grain shattering",
+      "synonyms": [
+        "caryopsis shattering",
+        "GRSH"
+      ]
+    },
+    {
+      "definition": "Angle of opening of glumes is measured on each floret, assessment based on mean angle of glume opening.",
+      "id": "TO:0000474",
+      "name": "glume opening",
+      "synonyms": [
+        "glume angle",
+        "opening of glume of male sterile lines"
+      ]
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of plant hormone (CHEBI:37848) in a plant structure (PO:0009011).",
+      "id": "TO:0000476",
+      "name": "growth hormone content"
+    },
+    {
+      "definition": "A rice blast disease response (TO:0000074) caused by Pyricularia grisea (Magnaporthe grisea) affecting a panicle inflorescence (PO:0030123).",
+      "id": "TO:0000477",
+      "name": "panicle blast disease resistance",
+      "synonyms": [
+        "PB",
+        "PNBLRS"
+      ]
+    },
+    {
+      "definition": "Measures the growth hormone concentration in a plant structure (PO:0009011).",
+      "id": "TO:0000478",
+      "name": "abscisic acid concentration",
+      "synonyms": [
+        "ABA concentration",
+        "ABACONC",
+        "abscisic acid accumulation",
+        "abscisic acid content"
+      ]
+    },
+    {
+      "definition": "Plant sensitivity to an acidic (pH<7) growth media.",
+      "id": "TO:0000479",
+      "name": "acid sensitivity",
+      "synonyms": [
+        "ADSN"
+      ]
+    },
+    {
+      "definition": "A biochemical response trait (TO:0000277) which is the plant's response to an excess or deficient amount of the nutrients in the growth environment.",
+      "id": "TO:0000480",
+      "name": "nutrient sensitivity",
+      "synonyms": [
+        "nutrient deficiency"
+      ]
+    },
+    {
+      "definition": "Plant sensitivity to an alkali (pH>7) growth media.",
+      "id": "TO:0000481",
+      "name": "alkali sensitivity",
+      "synonyms": [
+        "ALKSN"
+      ]
+    },
+    {
+      "definition": "An abiotic plant stress response trait (TO:0000168) which is the response of a plant structure (PO:0009011) to chemical stress.",
+      "id": "TO:0000482",
+      "name": "chemical stress sensitivity"
+    },
+    {
+      "definition": "Measure of the seed's germination ability at sub-permissive temperature levels.",
+      "id": "TO:0000483",
+      "name": "germinability at low temperature",
+      "synonyms": [
+        "GERMABITMP",
+        "germination ability at low temperature"
+      ]
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the shape of a seed (PO:0009010).",
+      "id": "TO:0000484",
+      "name": "seed shape",
+      "synonyms": [
+        "SDSHP"
+      ]
+    },
+    {
+      "definition": "A plant reproductive trait (TO:0000392) which is the quality of not being able to produce viable offspring.",
+      "id": "TO:0000485",
+      "name": "sterility related trait"
+    },
+    {
+      "definition": "A seed morphology trait (TO:0000184) which is the color of a seed (PO:0009010).",
+      "id": "TO:0000486",
+      "name": "seed color",
+      "synonyms": [
+        "SDCL"
+      ]
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is the color of an endosperm (PO:0009089).",
+      "id": "TO:0000487",
+      "name": "endosperm color",
+      "synonyms": [
+        "ENDCL"
+      ]
+    },
+    {
+      "id": "TO:0000488",
+      "name": "seed composition based quality trait"
+    },
+    {
+      "id": "TO:0000489",
+      "name": "carbohydrate composition related trait"
+    },
+    {
+      "definition": "A protein content trait (TO:0000598) which is the amount of protein (CHEBI:36080) in a seed (PO:0009010).",
+      "id": "TO:0000490",
+      "name": "protein composition related trait"
+    },
+    {
+      "id": "TO:0000491",
+      "name": "fat and essential oil composition related trait"
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the variation in shapes and forms of a leaf (PO:0025034).",
+      "id": "TO:0000492",
+      "name": "leaf shape",
+      "synonyms": [
+        "LFSHP"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the composition of a leaf (PO:0025034).",
+      "id": "TO:0000493",
+      "name": "leaf composition trait"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of a plant pigment in a plant strucuture.",
+      "id": "TO:0000494",
+      "name": "pigment content"
+    },
+    {
+      "definition": "A pigment content trait (TO:0000494) which is a measure of the chlorophyll a and/or chlorophyll b content in a plant structure (PO:0009011).",
+      "id": "TO:0000495",
+      "name": "chlorophyll content",
+      "synonyms": [
+        "CHLCN"
+      ]
+    },
+    {
+      "definition": "The carotenoid content in a plant structure (PO:0009011). Includes naturally occurring tetra terpenes that are synthesized only in plants.",
+      "id": "TO:0000496",
+      "name": "carotenoid content",
+      "synonyms": [
+        "CRTCN"
+      ]
+    },
+    {
+      "id": "TO:0000497",
+      "name": "fertility restoration trait"
+    },
+    {
+      "id": "TO:0000498",
+      "name": "female fertility restoration trait"
+    },
+    {
+      "definition": "A reproductive shoot system morphology trait (TO:0000786) which is a quality of a  flower (PO:0009046).",
+      "id": "TO:0000499",
+      "name": "flower anatomy and morphology trait"
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the weight of a spikelet (PO:0009051).",
+      "id": "TO:0000501",
+      "name": "spikelet weight",
+      "synonyms": [
+        "SPKWT"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the leaf surface temperature.",
+      "id": "TO:0000504",
+      "name": "leaf temperature",
+      "synonyms": [
+        "LFTMP"
+      ]
+    },
+    {
+      "definition": "It is a measure of reduced net ammonium production in response to the receipt of photosynthate.",
+      "id": "TO:0000506",
+      "name": "nitrogen recycling",
+      "synonyms": [
+        "NIRCYC",
+        "nitrogen conservation"
+      ]
+    },
+    {
+      "definition": "The ability of the plant to adust the osmotic potential under stress conditions.",
+      "id": "TO:0000507",
+      "name": "osmotic adjustment capacity",
+      "synonyms": [
+        "OSADJCAP"
+      ]
+    },
+    {
+      "definition": "A mineral and ion transport trait (TO:0020096) which involves phosphorus ion uptake in a plant structure (PO:0009011).",
+      "id": "TO:0000511",
+      "name": "phosphorus uptake",
+      "synonyms": [
+        "PHOUP"
+      ]
+    },
+    {
+      "definition": "Percent of plants survived under submerged conditions.",
+      "id": "TO:0000512",
+      "name": "Plant survival percentage under submergence",
+      "synonyms": [
+        "PTSPCENTSUB"
+      ]
+    },
+    {
+      "definition": "The total potassium ion concentration measured a plant structure (PO:0009011) or plant extract.",
+      "id": "TO:0000513",
+      "name": "potassium concentration",
+      "synonyms": [
+        "KCONC"
+      ]
+    },
+    {
+      "definition": "A mineral and ion transport trait (TO:0020096) which involves potassium ion uptake in a plant structure (PO:0009011).",
+      "id": "TO:0000514",
+      "name": "potassium uptake",
+      "synonyms": [
+        "KUP"
+      ]
+    },
+    {
+      "definition": "A plant vigor trait (TO:0000250) that is the increase in aboveground biomass in a defined period of time.",
+      "id": "TO:0000515",
+      "name": "relative growth rate",
+      "synonyms": [
+        "RELGRATE"
+      ]
+    },
+    {
+      "definition": "The relative length of the root determined after a given treatment as compared to the one determined under normal conditions.",
+      "id": "TO:0000516",
+      "name": "relative root length",
+      "synonyms": [
+        "RELRTLG"
+      ]
+    },
+    {
+      "definition": "It is calculated from the deepest soil layer where roots were present and the longest root measured in the layer.",
+      "id": "TO:0000519",
+      "name": "rooting depth",
+      "synonyms": [
+        "maximum rooting depth",
+        "RTDP"
+      ]
+    },
+    {
+      "definition": "The rate of closure of stomata due to stress or coupled to the rate of photosynthesis and/or transpiration.",
+      "id": "TO:0000520",
+      "name": "stomatal closure rate",
+      "synonyms": [
+        "STOCSRRATE"
+      ]
+    },
+    {
+      "definition": "It is a numerical measure of the maximum rate of passage of either water vapour or carbon dioxide through the stomata.",
+      "id": "TO:0000522",
+      "name": "stomatal conductance",
+      "synonyms": [
+        "STOCOND"
+      ]
+    },
+    {
+      "definition": "Stomatal resistance (or its inverse, stomatal conductance) can therefore be calculated from the transpiration rate and humidity gradient. (The humidity gradient is the humidity inside the leaf, determined from leaf temperature based on the assumption that the leaf's air spaces are saturated with vapor, minus the humidity of the ambient air, which is measured directly).",
+      "id": "TO:0000523",
+      "name": "stomatal resistance",
+      "synonyms": [
+        "STORS"
+      ]
+    },
+    {
+      "definition": "A submergence response trait (TO:0000286) which is the ability to tolerate flooding or submergence in water.",
+      "id": "TO:0000524",
+      "name": "submergence tolerance",
+      "synonyms": [
+        "SUBTL"
+      ]
+    },
+    {
+      "definition": "The ratio of total sodium to potassium ion content measured a plant structure (PO:0009011).",
+      "id": "TO:0000525",
+      "name": "sodium to potassium content ratio",
+      "synonyms": [
+        "Na/K ratio",
+        "NAKRO",
+        "sodium to potassium ratio"
+      ]
+    },
+    {
+      "definition": "The total sodium ion concentration measured in a given volume of a plant structure (PO:0009011) or plant extract.",
+      "id": "TO:0000526",
+      "name": "sodium concentration",
+      "synonyms": [
+        "NACONC"
+      ]
+    },
+    {
+      "definition": "A mineral and ion transport trait (TO:0020096) which involves sodium ion uptake in a plant structure (PO:0009011).",
+      "id": "TO:0000527",
+      "name": "sodium uptake",
+      "synonyms": [
+        "NAUP"
+      ]
+    },
+    {
+      "definition": "Number of stomata present on the abaxial surface of leaf.",
+      "id": "TO:0000529",
+      "name": "abaxial stomatal frequency",
+      "synonyms": [
+        "ABXSTOFQ"
+      ]
+    },
+    {
+      "definition": "Number of stomata present on the adaxial surface of leaf.",
+      "id": "TO:0000530",
+      "name": "adaxial stomatal frequency",
+      "synonyms": [
+        "ADXSTOFQ"
+      ]
+    },
+    {
+      "definition": "An anther morphology trait (TO:1000022) which is the length (PATO:0000122) of an anther (PO:0009066).",
+      "id": "TO:0000531",
+      "name": "anther length",
+      "synonyms": [
+        "ANTLG"
+      ]
+    },
+    {
+      "definition": "Variation in the color of the culm of a grass plant.",
+      "id": "TO:0000534",
+      "name": "culm color",
+      "synonyms": [
+        "CULMCL"
+      ]
+    },
+    {
+      "definition": "A spikelet floret morphology trait (TO:0000274) which is the color of a spikelet floret (PO:0009082).",
+      "id": "TO:0000536",
+      "name": "floret color",
+      "synonyms": [
+        "FLCL"
+      ]
+    },
+    {
+      "definition": "Number of the large sized vascular bundles.",
+      "id": "TO:0000539",
+      "name": "large vascular bundle number",
+      "synonyms": [
+        "LVBNB"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the total area of a leaf (PO:0025034).",
+      "id": "TO:0000540",
+      "name": "leaf area",
+      "synonyms": [
+        "LFAR"
+      ]
+    },
+    {
+      "definition": "A leaf composition trait (TO:0000493) which is the amount of nitrogen (CHEBI:51143) in the leaf (PO:0025034).",
+      "id": "TO:0000543",
+      "name": "leaf nitrogen content",
+      "synonyms": [
+        "LFNICN"
+      ]
+    },
+    {
+      "definition": "A mesocotyl morphology trait (TO:0000758) which is the length of a mesocotyl (PO:0020037).",
+      "id": "TO:0000544",
+      "name": "mesocotyl length",
+      "synonyms": [
+        "MCTLG"
+      ]
+    },
+    {
+      "definition": "A primary branch of inflorescence (TO:0000052) trait which is the number of primary branches present in the inflorescence (PO:0009049).",
+      "id": "TO:0000547",
+      "name": "primary branch number",
+      "synonyms": [
+        "NPB",
+        "number of primary rachis branches",
+        "number of second order inflorescence axes",
+        "panicle primary branch number",
+        "PBRNB",
+        "PRB",
+        "primary branches per panicle"
+      ]
+    },
+    {
+      "definition": "The dry weight of the shoot without inflorescence.",
+      "id": "TO:0000552",
+      "name": "shoot dry weight",
+      "synonyms": [
+        "SHDWT",
+        "total shoot dry weight"
+      ]
+    },
+    {
+      "definition": "A secondary branching of inflorescence (TO:0000142) trait which is the number of secondary branches in an inflorescence (PO:0009049).",
+      "id": "TO:0000557",
+      "name": "secondary branch number",
+      "synonyms": [
+        "number of third order inflorescence axes",
+        "SBRNB",
+        "secondary branches per panicle"
+      ]
+    },
+    {
+      "definition": "Number of small sized vascular bundles present in a plant structure (PO:0009011).",
+      "id": "TO:0000558",
+      "name": "small vascular bundle number",
+      "synonyms": [
+        "SVBNB"
+      ]
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the width of the spikelets (PO:0009051) present in a grass inflorescence.",
+      "id": "TO:0000564",
+      "name": "spikelet width",
+      "synonyms": [
+        "SPKWD"
+      ]
+    },
+    {
+      "definition": "Number of spikelets present in the rice panicle per unit length.",
+      "id": "TO:0000565",
+      "name": "spikelets per panicle length",
+      "synonyms": [
+        "number of spikelets per cm panicle length",
+        "spikelet number per panicle length",
+        "SPKPPNLG"
+      ]
+    },
+    {
+      "definition": "A vascular leaf morphology trait (TO:0000419) which is the number of leaf stomatal complexes (PO:0025183) present on the leaf surface.",
+      "id": "TO:0000566",
+      "name": "stomatal frequency",
+      "synonyms": [
+        "STOFQ"
+      ]
+    },
+    {
+      "definition": "A basal axillary shoot system morphology trait (TO:0001168) which is the angle of a tiller.",
+      "id": "TO:0000567",
+      "name": "tiller angle",
+      "synonyms": [
+        "TIAG"
+      ]
+    },
+    {
+      "definition": "A shoot axis morphology trait (TO:0000739) which is the weight of a shoot axis.",
+      "id": "TO:0000568",
+      "name": "shoot weight",
+      "synonyms": [
+        "SHWT",
+        "total shoot weight"
+      ]
+    },
+    {
+      "definition": "Fresh weight of the shoot without inflorescence.",
+      "id": "TO:0000571",
+      "name": "shoot fresh weight",
+      "synonyms": [
+        "SHFWT",
+        "total shoot fresh weight"
+      ]
+    },
+    {
+      "definition": "A portion of plant tissue morphology trait (TO:0000843) which is a quality of an endosperm (PO:0009089).",
+      "id": "TO:0000575",
+      "name": "endosperm related trait"
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the length of the stem (PO:0009047).",
+      "id": "TO:0000576",
+      "name": "stem length",
+      "synonyms": [
+        "CmL",
+        "core length",
+        "culm height",
+        "culm length",
+        "CULMLG",
+        "stem height",
+        "STEMLG"
+      ]
+    },
+    {
+      "definition": "The average fresh weight of the root determined in a study.",
+      "id": "TO:0000578",
+      "name": "root fresh weight",
+      "synonyms": [
+        "RTFWT",
+        "total root fresh weight"
+      ]
+    },
+    {
+      "definition": "A plant male sterility trait (TO:0000437) which is caused by genes located in the maternal mitochondrial genome, leading to non-functional pollen.",
+      "id": "TO:0000580",
+      "name": "cytoplasmic male sterility"
+    },
+    {
+      "definition": "A reproductive shoot system morphology trait (TO:0000786) which is the number of inflorescences (PO:0009049).",
+      "id": "TO:0000582",
+      "name": "inflorescence number",
+      "synonyms": [
+        "INFLONB"
+      ]
+    },
+    {
+      "definition": "A root length (TO:0000227) that is the length of one or more seminal roots (PO:0000046).",
+      "id": "TO:0000586",
+      "name": "seminal root length"
+    },
+    {
+      "definition": "A seed quality trait (TO:0000931) which is the quality of the endosperm (PO:0009089) texture, content, composition, size, etc.",
+      "id": "TO:0000587",
+      "name": "endosperm quality",
+      "synonyms": [
+        "End",
+        "endosperm quality (sensu Poaceae)"
+      ]
+    },
+    {
+      "definition": "A grain weight (TO:0000919) which is the weight a dehulled grain (caryopsis fruit;  PO:0030104).",
+      "id": "TO:0000590",
+      "name": "grain weight",
+      "synonyms": [
+        "DHULGRWT",
+        "GRWT"
+      ]
+    },
+    {
+      "definition": "A dehulled grain weight (TO:0000590) which is the weight of a sample of 100 dehulled grains (caryopsis fruit; PO:0030104).",
+      "id": "TO:0000591",
+      "name": "100-dehulled grain weight",
+      "synonyms": [
+        "HDGRWT",
+        "HDHULGRWT",
+        "hundred dehulled grain weight",
+        "hundred grain weight"
+      ]
+    },
+    {
+      "definition": "A dehulled grain weight (TO:0000590) which is the weight of a sample of 1000 dehulled grains (caryopsis fruit; PO:0030104) .",
+      "id": "TO:0000592",
+      "name": "1000-dehulled grain weight",
+      "synonyms": [
+        "TDGRWT",
+        "TDHULGRWT",
+        "thousand dehulled grain weight",
+        "thousand grain weight"
+      ]
+    },
+    {
+      "definition": "A plant trait (TO:0000387) that contributes to the overall utility, nutritional, or economic value of a plant, plant structure (PO:0009011) or plant product",
+      "id": "TO:0000597",
+      "name": "quality trait"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of protein (CHEBI:36080) in a plant structure (PO:0009011).",
+      "id": "TO:0000598",
+      "name": "protein content",
+      "synonyms": [
+        "PROTCN",
+        "total protein content"
+      ]
+    },
+    {
+      "definition": "A biochemical trait which is a quality of an enzymatic reaction.",
+      "id": "TO:0000599",
+      "name": "enzyme activity",
+      "synonyms": [
+        "enzymatic activity",
+        "enzyme catalytic activity"
+      ]
+    },
+    {
+      "definition": "Response shown by the plant in the presence of UV-B light stress.",
+      "id": "TO:0000601",
+      "name": "UV-B light sensitivity",
+      "synonyms": [
+        "Ultraviolet-A light sensitivity",
+        "Ultraviolet-B resistance",
+        "UV-B resistance",
+        "UVBRS"
+      ]
+    },
+    {
+      "id": "TO:0000602",
+      "name": "total fat content"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of lipid in a plant structure (PO:0009011).",
+      "id": "TO:0000604",
+      "name": "fat and essential oil content",
+      "synonyms": [
+        "fat and oil content",
+        "fat content (narrrow)",
+        "oil content"
+      ]
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of hydrogen peroxide or the peroxide reactive ion in a plant structure.",
+      "id": "TO:0000605",
+      "name": "hydrogen peroxide content",
+      "synonyms": [
+        "H2O2 content",
+        "H2O2CN"
+      ]
+    },
+    {
+      "definition": "A mineral and ion content trait (TO:0000465) which is the sodium cation (CHEBI:29101) composition in a plant structure (PO:0009011).",
+      "id": "TO:0000608",
+      "name": "sodium content"
+    },
+    {
+      "definition": "A mineral and ion content trait (TO:0000465) which is the potassium cation (CHEBI:29103) composition in a plant structure (PO:0009011).",
+      "id": "TO:0000609",
+      "name": "potassium content"
+    },
+    {
+      "definition": "A lemma morphology trait (TO:1000023) which is the shape of the lemma (PO:0009037).",
+      "id": "TO:0000614",
+      "name": "lemma shape"
+    },
+    {
+      "definition": "Response with respect to application of abscisic acid.",
+      "id": "TO:0000615",
+      "name": "abscisic acid sensitivity",
+      "synonyms": [
+        "ABA response",
+        "ABASN",
+        "abscisic acid response"
+      ]
+    },
+    {
+      "definition": "A grain quality trait (TO:0000162) which is the percentage of crushed, dehulled grain with at least one fourth of the size still intact.",
+      "id": "TO:0000618",
+      "name": "crushed grain percentage",
+      "synonyms": [
+        "CRUSHDHULGRPCENT",
+        "crushed dehulled-grain percentage",
+        "CRUSHGRPCENT",
+        "percent broken"
+      ]
+    },
+    {
+      "definition": "A phenomenon associated to the seeds that germinate before becoming detached or harvested from the parent plant. Thus the germination occurs before the seed undergoes dormancy.",
+      "id": "TO:0000619",
+      "name": "vivipary",
+      "synonyms": [
+        "preharvest germination"
+      ]
+    },
+    {
+      "definition": "A whole plant growth and development trait (TO:0000947) that is a quality of a plant embryo development stage (PO:0007631).",
+      "id": "TO:0000620",
+      "name": "embryo development trait"
+    },
+    {
+      "definition": "A shoot system growth and development trait (TO:0000654) which is the development of an inflorescence (PO:0009049) .",
+      "id": "TO:0000621",
+      "name": "inflorescence development trait"
+    },
+    {
+      "definition": "Traits associated with observing effects on the development of the flower and its parts.",
+      "id": "TO:0000622",
+      "name": "flower development trait",
+      "synonyms": [
+        "floret development trait"
+      ]
+    },
+    {
+      "definition": "This is an assay of any direct or indirect, harmful or beneficial effect of one plant on another through the production of chemical compounds (allelochemicals) that escape in the environment.",
+      "id": "TO:0000624",
+      "name": "allelopathic effect",
+      "synonyms": [
+        "ALLELPATHEF"
+      ]
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the density of a spikelet (PO:0009051) in the inflorescence (PO:0009049) or on the given inflorescence branch (PO:0009081) order.",
+      "id": "TO:0000625",
+      "name": "spikelet density",
+      "synonyms": [
+        "SPKDN"
+      ]
+    },
+    {
+      "id": "TO:0000627",
+      "name": "relative phosphorus utilization efficiency"
+    },
+    {
+      "definition": "Length of the pedicel.",
+      "id": "TO:0000630",
+      "name": "pedicel length",
+      "synonyms": [
+        "PDCLG"
+      ]
+    },
+    {
+      "id": "TO:0000633",
+      "name": "relative total dry weight"
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the number of stem nodes (PO:0020141).",
+      "id": "TO:0000634",
+      "name": "node number",
+      "synonyms": [
+        "NDNB"
+      ]
+    },
+    {
+      "id": "TO:0000636",
+      "name": "relative shoot dry weight"
+    },
+    {
+      "id": "TO:0000639",
+      "name": "seed fertility"
+    },
+    {
+      "id": "TO:0000640",
+      "name": "total root number"
+    },
+    {
+      "definition": "An inflorescence primary branch morphology trait (TO:0000846) which the length of a second order inflorescence axis (PO:0006321).",
+      "id": "TO:0000641",
+      "name": "primary branch length",
+      "synonyms": [
+        "PBRLG"
+      ]
+    },
+    {
+      "definition": "A leaf sheath morphology trait (TO:0000835) which is the measurement, in centimeters of the leaf sheath (PO:0020104) diameter.",
+      "id": "TO:0000642",
+      "name": "leaf sheath diameter",
+      "synonyms": [
+        "LFSDIA"
+      ]
+    },
+    {
+      "definition": "The relative (dry)weight of the root determined after a given treatment as compared to the one determined under normal conditions.",
+      "id": "TO:0000644",
+      "name": "relative root dry weight",
+      "synonyms": [
+        "RELRTDWT"
+      ]
+    },
+    {
+      "definition": "A lemma morphology trait (TO:1000023) which is the length of the lemma (PO:0009037).",
+      "id": "TO:0000650",
+      "name": "lemma length",
+      "synonyms": [
+        "LEMLG"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the leaf surface area affected by abiotic stresses like insecticides and cold temperature as evidenced by chlorotic and/or necrotic tissue.",
+      "id": "TO:0000652",
+      "name": "leaf necrosis",
+      "synonyms": [
+        "leaf scorch",
+        "LFNEC"
+      ]
+    },
+    {
+      "definition": "A multi-tissue plant structure development trait (TO:0000927) that has as primary participant a seed (PO:0009010).",
+      "id": "TO:0000653",
+      "name": "seed development trait"
+    },
+    {
+      "definition": "A plant structure growth and development trait (TO:0000928) that is a quality of the growth of the shoot system (PO:0009006), and shoot system development stages (PO:0025527).",
+      "id": "TO:0000654",
+      "name": "shoot development trait"
+    },
+    {
+      "definition": "A plant organ development trait (TO:0000927) that has as primary participant a leaf (PO:0025034).",
+      "id": "TO:0000655",
+      "name": "leaf development trait"
+    },
+    {
+      "definition": "Traits associated with observing effects on the development of the root and its parts.",
+      "id": "TO:0000656",
+      "name": "root development trait"
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is a quality of a spikelet (PO:0009051).",
+      "id": "TO:0000657",
+      "name": "spikelet anatomy and morphology trait"
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is the time interval between the appearance of successive leaves on the developing shoot axis.",
+      "id": "TO:0000659",
+      "name": "phyllochron"
+    },
+    {
+      "definition": "An axillary bud dormancy (TO:0000660) trait which affects the growth of a tiller (basal axillary shoot system (PO:0005001)).",
+      "id": "TO:0000661",
+      "name": "tiller bud dormancy"
+    },
+    {
+      "id": "TO:0000664",
+      "name": "fungal blight disease resistance"
+    },
+    {
+      "definition": "The number of flowers present on a inflorescence branch or in the inflorescence itself.",
+      "id": "TO:0000670",
+      "name": "floret number",
+      "synonyms": [
+        "FLNB"
+      ]
+    },
+    {
+      "definition": "A plant reproductive trait (TO:0000392) in which a flower fails to complete develpment and dies.",
+      "id": "TO:0000671",
+      "name": "pre-flowering flower abortion",
+      "synonyms": [
+        "frequency of pre-flowering floret abortion",
+        "pre-flowering floret abortion",
+        "PREFLFLRABR"
+      ]
+    },
+    {
+      "id": "TO:0000674",
+      "name": "phytochemical compound content"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of ferulic acid (CHEBI:17620) in a plant structure (PO:0009011).",
+      "id": "TO:0000675",
+      "name": "ferulic acid content",
+      "synonyms": [
+        "4-hydroxy-3-methoxycinnamic acid",
+        "FERULICACIDCN"
+      ]
+    },
+    {
+      "definition": "Amount of starch present in a plant structure (PO:0009011).",
+      "id": "TO:0000696",
+      "name": "starch content",
+      "synonyms": [
+        "STARCHCN"
+      ]
+    },
+    {
+      "definition": "Concentration of starch present in a plant structure (PO:0009011).",
+      "id": "TO:0000702",
+      "name": "starch concentration",
+      "synonyms": [
+        "STARCHCONC"
+      ]
+    },
+    {
+      "definition": "A collective phyllome structure morphology trait (TO:0000845) that is the color of a caryopsis hull (PO:0006000).",
+      "id": "TO:0000706",
+      "name": "hull color",
+      "synonyms": [
+        "HULCL"
+      ]
+    },
+    {
+      "definition": "A pericarp morphology trait (TO:0000945) that is the color of the pericarp (PO:0009084).",
+      "id": "TO:0000707",
+      "name": "pericarp color",
+      "synonyms": [
+        "bran color",
+        "dehulled grain color",
+        "DHULGRCL",
+        "grain color",
+        "PERICARPCL"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the appearance of glossiness of the leaf surface. Contributed by change in either the amount or content of cuticle wax (PO:0025386) on a leaf (PO:0025034).",
+      "id": "TO:0000709",
+      "name": "leaf gloss"
+    },
+    {
+      "definition": "A seed protein content (TO:0000490) trait which is the amount of globulin proteins in a seed.",
+      "id": "TO:0000710",
+      "name": "globulin protein content"
+    },
+    {
+      "definition": "An assay to determine the tolerance exhibited by a plant or a group of plants (population) towards the applied herbicide sulfonylurea.",
+      "id": "TO:0000712",
+      "name": "sulfonylurea herbicide sensitivity"
+    },
+    {
+      "definition": "An endosperm morphology trait (TO:0000575) which is a brittle endosperm (PO:0009089).",
+      "id": "TO:0000713",
+      "name": "brittle endosperm"
+    },
+    {
+      "definition": "A grain quality trait (TO:0000162) where the grain (caryopsis fruit; PO:0030104) has a wrinkled appearance, usually from a lack of starch accumulation.",
+      "id": "TO:0000718",
+      "name": "wrinkled seed",
+      "synonyms": [
+        "wrinkled kernel",
+        "wrinkled seed"
+      ]
+    },
+    {
+      "definition": "Traits associated with observing effects on the microsporocyte development.",
+      "id": "TO:0000723",
+      "name": "microsporocyte development trait"
+    },
+    {
+      "definition": "A count of the number of megasporocyte that is done to determine any increase or decrease in number.",
+      "id": "TO:0000725",
+      "name": "megasporocyte number"
+    },
+    {
+      "definition": "A count of the number of microsporocyte that is done to determine any increase or decrease in number.",
+      "id": "TO:0000726",
+      "name": "microsporocyte number"
+    },
+    {
+      "definition": "The formation of spores.",
+      "id": "TO:0000727",
+      "name": "sporogenesis"
+    },
+    {
+      "definition": "The traits associated with various developmental landmarks and processes of cell division during either the meiotic cell cycle or mitotic cell cycle.",
+      "id": "TO:0000728",
+      "name": "cell cycle trait",
+      "synonyms": [
+        "cell division cycle"
+      ]
+    },
+    {
+      "definition": "The traits associated with various developmental landmarks and processes of cell division during either the meiotic cell cycle.",
+      "id": "TO:0000729",
+      "name": "meiotic cell cycle trait"
+    },
+    {
+      "definition": "The traits associated with various developmental landmarks and processes of cell division during the mitotic cell cycle.",
+      "id": "TO:0000730",
+      "name": "mitotic cell cycle trait"
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amount of lignin in a plant structure (PO:0009011).",
+      "id": "TO:0000731",
+      "name": "lignin content"
+    },
+    {
+      "id": "TO:0000732",
+      "name": "lignin monomer content"
+    },
+    {
+      "definition": "Traits associated with the biosynthesis of lignin in a plant structure (PO:0009011).",
+      "id": "TO:0000733",
+      "name": "lignin biosynthesis trait",
+      "synonyms": [
+        "lignin biosynthesis"
+      ]
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the length of a grain (caryopsis fruit; PO:0030104).",
+      "id": "TO:0000734",
+      "name": "grain length",
+      "synonyms": [
+        "DHULGRLG",
+        "GRLG",
+        "KERLG",
+        "kernel length",
+        "length of dehulled grain",
+        "length of grain without hull"
+      ]
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is the time between the initiation of two leaves on the shoot apical meristem (PO:0020148).",
+      "id": "TO:0000735",
+      "name": "plastochron"
+    },
+    {
+      "definition": "A bacterial disease resistance (TO:0000315) that is involved in the response to bacterial blight disease.",
+      "id": "TO:0000770",
+      "name": "bacterial blight disease resistance"
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the weight of a caryopsis fruit (grain or kernel; PO:0030104).",
+      "id": "TO:0000919",
+      "name": "grain weight",
+      "synonyms": [
+        "20 kernel weight",
+        "caryopsis fruit weight",
+        "GRWT",
+        "kernel weight",
+        "kwt"
+      ]
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the width of a grain (PO:0009001).",
+      "id": "TO:0000975",
+      "name": "grain width",
+      "synonyms": [
+        "caryopsis width",
+        "kernel width"
+      ]
+    },
+    {
+      "definition": "A glume morphology trait (TO:0000869) which is amount the glume (PO:0009039) covers the caryopsis. Often measured as percentage.",
+      "id": "TO:0001000",
+      "name": "glume cover"
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is the exsertion of an inflorescence (PO:0009049).",
+      "id": "TO:0001002",
+      "name": "inflorescence exsertion"
+    },
+    {
+      "definition": "Number of basal tillers per plant, should represent most plants within a study.",
+      "id": "TO:0001004",
+      "name": "basal tiller number",
+      "synonyms": [
+        "basal axillary shoot number"
+      ]
+    },
+    {
+      "definition": "The height of the tallest basal tiller (basal axillary shoot) of a plant.",
+      "id": "TO:0001005",
+      "name": "basal tiller length",
+      "synonyms": [
+        "basal tiller height"
+      ]
+    },
+    {
+      "definition": "A root number (TO:0000084) trait which is the number of adventitious roots (shoot-borne root; PO:0000042).",
+      "id": "TO:0001006",
+      "name": "adventitious root number"
+    },
+    {
+      "definition": "A coleoptile morphology trait (TO:0000753) which is the length of a coleoptile (PO:0020033).",
+      "id": "TO:0001007",
+      "name": "coleoptile length"
+    },
+    {
+      "definition": "A count of number of roots present below a given depth from the soil surface.",
+      "id": "TO:0001009",
+      "name": "deep root number"
+    },
+    {
+      "definition": "A root length (TO:0000227) that is the length of one or more lateral roots (PO:0020121).",
+      "id": "TO:0001012",
+      "name": "lateral root length"
+    },
+    {
+      "definition": "Average sum of number of lateral roots in a plant derived per experiment.",
+      "id": "TO:0001013",
+      "name": "lateral root number"
+    },
+    {
+      "definition": "A leaf weight trait (TO:0000505) which is the dry weight of a leaf (PO:0025034).",
+      "id": "TO:0001014",
+      "name": "leaf dry weight"
+    },
+    {
+      "definition": "The total amount of carbon fixed by the plant per unit time and is measured by determining the changes in CO2 concentration over a plant leaf in a glass enclosure.",
+      "id": "TO:0001015",
+      "name": "photosynthetic rate",
+      "synonyms": [
+        "gross photosynthetic rate",
+        "leaf photosynthetic rate"
+      ]
+    },
+    {
+      "definition": "A chlorophyll content trait (TO:0000495) which is the relative chlorophyll content of a plant structure (PO:0009011) after a treatment, as compared to that determined under normal growth conditions.",
+      "id": "TO:0001016",
+      "name": "relative chlorophyll content"
+    },
+    {
+      "definition": "As determined by the ratio of photosynthetic rate to transpiration rate.",
+      "id": "TO:0001017",
+      "name": "water use efficiency",
+      "synonyms": [
+        "photosynthetic rate to transpiration rate ratio"
+      ]
+    },
+    {
+      "definition": "The rate of  transpiration.",
+      "id": "TO:0001018",
+      "name": "transpiration rate"
+    },
+    {
+      "definition": "A ratio of root dry weight to total plant dry weight.",
+      "id": "TO:0001019",
+      "name": "root to total biomass ratio",
+      "synonyms": [
+        "root dry weight to total plant dry weight ratio"
+      ]
+    },
+    {
+      "definition": "A mineral and ion content trait (TO:0000465) which is the phosphorus cation (CHEBI:33467) composition in a plant structure (PO:0009011).",
+      "id": "TO:0001024",
+      "name": "phosphorus content",
+      "synonyms": [
+        "PHOCN"
+      ]
+    },
+    {
+      "definition": "Amount of phosphorus in the leaf.",
+      "id": "TO:0001025",
+      "name": "leaf phosphorus content",
+      "synonyms": [
+        "LFPHOCN"
+      ]
+    },
+    {
+      "definition": "It is measured as the difference between gross photosynthesis (the total amount of carbon fixed by the plant per unit time) and the respiration (the total amount of carbon lost metabolically during that same time).",
+      "id": "TO:0001027",
+      "name": "net photosynthetic rate"
+    },
+    {
+      "definition": "It is a ratio of harvest index in stress to that of control environment.",
+      "id": "TO:0001029",
+      "name": "relative harvest index"
+    },
+    {
+      "definition": "It is a ratio of leaf area determined from a stressed plant to that grown in normal environment.",
+      "id": "TO:0001030",
+      "name": "relative leaf area"
+    },
+    {
+      "definition": "A panicle number (TO:0000152) trait which is the ratio of panicle number determined from a stressed plant to that grown in normal environment.",
+      "id": "TO:0001032",
+      "name": "relative panicle number"
+    },
+    {
+      "definition": "It is a ratio of the plant height determined from a stressed plant to that grown in normal environment.",
+      "id": "TO:0001034",
+      "name": "relative plant height"
+    },
+    {
+      "definition": "A stem morphology trait (TO:0000361) which is the width of a stem (PO:0009047).",
+      "id": "TO:0001035",
+      "name": "stem width",
+      "synonyms": [
+        "culm diameter",
+        "culm width"
+      ]
+    },
+    {
+      "definition": "A floral organ morphology trait (TO:0000862) which is the size of a floral organ (PO:0025395).",
+      "id": "TO:0002600",
+      "name": "flower organ size"
+    },
+    {
+      "definition": "A stamen morphology trait (TO:0000225) which is the size of a stamen (PO:0009029).",
+      "id": "TO:0002601",
+      "name": "stamen size"
+    },
+    {
+      "definition": "A pistil morphology trait (TO:0000223) which is the size of a pistil.",
+      "id": "TO:0002602",
+      "name": "pistil size"
+    },
+    {
+      "definition": "A stamen morphology trait (TO:0000215) which is the length of a stamen (PO:0009029).",
+      "id": "TO:0002609",
+      "name": "stamen length"
+    },
+    {
+      "definition": "A pistil morphology trait (TO:0000223) which is the length of a pistil.",
+      "id": "TO:0002610",
+      "name": "pistil length"
+    },
+    {
+      "definition": "A plant phenological trait (TO:0000933) which is a quality of the timing of anthesis (flowering stage; PO:0007616).",
+      "id": "TO:0002616",
+      "name": "flowering time",
+      "synonyms": [
+        "anthesis timing",
+        "time of flowering"
+      ]
+    },
+    {
+      "definition": "A fruit morphology trait (TO:0002629) which is the width of a fruit (PO:0009001).",
+      "id": "TO:0002627",
+      "name": "fruit width",
+      "synonyms": [
+        "FRWD",
+        "kernel plumpness",
+        "kernel width",
+        "percentage of plump kernels",
+        "plump grain"
+      ]
+    },
+    {
+      "definition": "A multi-tissue plant structure morphology trait (TO:0000836) which is a quality of a fruit (PO:0009001).",
+      "id": "TO:0002629",
+      "name": "fruit structure trait",
+      "synonyms": [
+        "fruit morphology"
+      ]
+    },
+    {
+      "definition": "A biological process trait (TO:0000283) that is the process of fruit ripening (GO:0009835).",
+      "id": "TO:0002633",
+      "name": "fruit ripening trait",
+      "synonyms": [
+        "fruit ripening"
+      ]
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the size of a leaf (PO:0025034).",
+      "id": "TO:0002637",
+      "name": "leaf size"
+    },
+    {
+      "definition": "An assay to associate observing effects on the development of shoot meristem.",
+      "id": "TO:0002638",
+      "name": "shoot meristem development",
+      "synonyms": [
+        "shoot meristem abortion"
+      ]
+    },
+    {
+      "definition": "A shoot axis morphology trait (TO:0000739) which is the number of, or pattern of, branches arising from a shoot axis (PO:0025029).",
+      "id": "TO:0002639",
+      "name": "shoot branching"
+    },
+    {
+      "definition": "A fiber content trait (TO:0002642) which is the proportion of fiber that is composed of cellulose and lignin and is highly indigestible or slowly digestible in a feed or forage.",
+      "id": "TO:0002641",
+      "name": "acid detergent fiber",
+      "synonyms": [
+        "ACIDDETFIBR",
+        "ADF"
+      ]
+    },
+    {
+      "definition": "A plant quality trait (TO:0000597) which is the content and quality of fiber in a plant structure (PO:0009011).",
+      "id": "TO:0002642",
+      "name": "dietary fiber related trait"
+    },
+    {
+      "definition": "A chemical stress sensitivity (TO:0000482) which is the tolerance exhibited by a plant or a group of plants (population) towards the applied pesticide.",
+      "id": "TO:0002649",
+      "name": "pesticide sensitivity"
+    },
+    {
+      "definition": "A phototropism response trait (TO:0002650) which which is the directional growth of a root (PO:0009005) in response to light.",
+      "id": "TO:0002652",
+      "name": "root phototropism"
+    },
+    {
+      "definition": "Assay for the amount of seed storage protein present in the endosperm.",
+      "id": "TO:0002653",
+      "name": "endosperm storage protein content"
+    },
+    {
+      "definition": "A starch quality trait (TO:0001166) which the size of a starch grain (GO:0043036).",
+      "id": "TO:0002655",
+      "name": "starch grain size"
+    },
+    {
+      "definition": "Assay to determine the shape of the starch grain.\\n\\nA starch quality trait (TO:0001166) which the shape of a starch grain (GO:0043036).",
+      "id": "TO:0002656",
+      "name": "starch grain shape"
+    },
+    {
+      "definition": "A chemical stress response trait (TO:0000482) reactive oxygen species  in the growth environment.",
+      "id": "TO:0002657",
+      "name": "oxidative stress"
+    },
+    {
+      "definition": "An assay to determine if the starch grains are formed in a plant structure (PO:0009011). Often associated with the starch biosynthesis and branching of the starch.",
+      "id": "TO:0002658",
+      "name": "starch grain synthesis"
+    },
+    {
+      "definition": "A pistil morphology trait (TO:0000223) which is the number of pistils in the gynoecium (PO:0009062).",
+      "id": "TO:0002659",
+      "name": "pistil number"
+    },
+    {
+      "definition": "Measures the cytokinin content in a plant structure (PO:0009011).",
+      "id": "TO:0002660",
+      "name": "cytokinin content"
+    },
+    {
+      "definition": "This trait can be derived based on the parameters like, degree of grain filling, grain hardness, hull color, grain moisture, etc. It can be determined for (a)synchronously with any of these parameters.",
+      "id": "TO:0002661",
+      "name": "seed maturation",
+      "synonyms": [
+        "asynchronous seed maturation",
+        "nonsynchronous seed maturation",
+        "SDMT",
+        "synchronous seed maturation"
+      ]
+    },
+    {
+      "definition": "A leaf rolling trait (TO:0000085) which is the tolerance for leaf rolling or wilting observed in response to stresses like drought, water and temperature. It precedes leaf drying stage.",
+      "id": "TO:0002662",
+      "name": "leaf rolling tolerance",
+      "synonyms": [
+        "Cold-induced wilting tolerance",
+        "LFRLTL",
+        "wilting tolerance"
+      ]
+    },
+    {
+      "definition": "Tolerance for leaf color yellowing observed in response to stresses like drought, water and temperature. It may precedes leaf drying stage.",
+      "id": "TO:0002664",
+      "name": "leaf yellowing tolerance",
+      "synonyms": [
+        "Cold-induced yellowing tolerance",
+        "LFYTL"
+      ]
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the length of a root hair (GO:0035618) present on a root (PO:0009005).",
+      "id": "TO:0002665",
+      "name": "root hair length",
+      "synonyms": [
+        "RTHLG",
+        "RTHRLG"
+      ]
+    },
+    {
+      "definition": "Amount of phosphorus in the seed.",
+      "id": "TO:0002666",
+      "name": "seed phosphorus content",
+      "synonyms": [
+        "SDPHOCN"
+      ]
+    },
+    {
+      "definition": "A growth hormone content (TO:0000476) trait which is the abscisic acid (CHEBI:62431) content in a plant structure (PO:0009011).",
+      "id": "TO:0002667",
+      "name": "abscisic acid content",
+      "synonyms": [
+        "ABA content",
+        "ABACN"
+      ]
+    },
+    {
+      "definition": "Measures the jasmonic acid content in a plant structure (PO:0009011).",
+      "id": "TO:0002668",
+      "name": "jasmonic acid content",
+      "synonyms": [
+        "JA content",
+        "jasmonate content"
+      ]
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is phytoalexin content in a plant structure (PO:0009011).",
+      "id": "TO:0002669",
+      "name": "diterpenoid phytoalexin content"
+    },
+    {
+      "definition": "Measures the momilactone A content in a plant structure (PO:0009011).",
+      "id": "TO:0002670",
+      "name": "momilactone A content",
+      "synonyms": [
+        "phytoalexin momilactone A content"
+      ]
+    },
+    {
+      "definition": "Measures the momilactone B content in a plant structure (PO:0009011).",
+      "id": "TO:0002671",
+      "name": "momilactone B content",
+      "synonyms": [
+        "phytoalexin momilactone B content"
+      ]
+    },
+    {
+      "definition": "A growth hormone content (TO:0000476) trait which is the amount of auxin (CHEBI:22676) in a plant structure (PO:0009011).",
+      "id": "TO:0002672",
+      "name": "auxin content",
+      "synonyms": [
+        "AUXCN"
+      ]
+    },
+    {
+      "definition": "A metabolite content trait (TO:0000281) which is the amino acid content in a plant structure (PO:0009011).",
+      "id": "TO:0002673",
+      "name": "amino acid content"
+    },
+    {
+      "definition": "Amino acid tryptophan content in a plant structure (PO:0009011).",
+      "id": "TO:0002674",
+      "name": "tryptophan content"
+    },
+    {
+      "definition": "Measures the gibberellic acid content in a plant structure (PO:0009011).",
+      "id": "TO:0002675",
+      "name": "gibberellic acid content",
+      "synonyms": [
+        "GA content",
+        "GACN",
+        "gibberellin content"
+      ]
+    },
+    {
+      "definition": "Measures the brassinosteroid content in a plant structure (PO:0009011).",
+      "id": "TO:0002676",
+      "name": "brassinosteroid content",
+      "synonyms": [
+        "BRCN"
+      ]
+    },
+    {
+      "definition": "Response with respect to application of Brassinosteroid.",
+      "id": "TO:0002677",
+      "name": "brassinosteroid sensitivity",
+      "synonyms": [
+        "BRSN"
+      ]
+    },
+    {
+      "definition": "A seed protein content (TO:0000490) trait which is the amount of albumin protein in a seed.",
+      "id": "TO:0002680",
+      "name": "albumin content",
+      "synonyms": [
+        "albumen content"
+      ]
+    },
+    {
+      "definition": "An assay to measure the extent of curling of the leaf lamina.",
+      "id": "TO:0002681",
+      "name": "leaf curling",
+      "synonyms": [
+        "curled leaf trait",
+        "frizzled leaf trait"
+      ]
+    },
+    {
+      "definition": "A plant cell morphology trait (TO:0002683) which is the size of a plant cell (PO:0009002) type.",
+      "id": "TO:0002684",
+      "name": "plant cell size"
+    },
+    {
+      "definition": "A count of number of crown roots present in the seedling.",
+      "id": "TO:0002685",
+      "name": "crown root number"
+    },
+    {
+      "definition": "Traits associated with observing effects on the growth and development of the plant cell and its parts.",
+      "id": "TO:0002686",
+      "name": "cell growth and development trait"
+    },
+    {
+      "definition": "An assay to determine the variation in the length of the plant cell due to cell growth and elongation.",
+      "id": "TO:0002687",
+      "name": "cell elongation trait",
+      "synonyms": [
+        "cell length"
+      ]
+    },
+    {
+      "definition": "A leaf lamina morphology trait (TO:0000829) which is the extent of the bending that occurrs to the leaf lamina (PO:0020039) joint in degrees.",
+      "id": "TO:0002688",
+      "name": "leaf lamina joint bending"
+    },
+    {
+      "definition": "A leaf sheath morphology trait (TO:0000835) which is the length of the leaf sheath (PO:0020104).",
+      "id": "TO:0002689",
+      "name": "leaf sheath length",
+      "synonyms": [
+        "LFSLG"
+      ]
+    },
+    {
+      "definition": "A peduncle morphology trait (TO:0000776) which is the length of a peduncle (PO:0009053).",
+      "id": "TO:0002691",
+      "name": "peduncle length",
+      "synonyms": [
+        "neck internode length"
+      ]
+    },
+    {
+      "definition": "An assay to determine the variation in the root meristem development.",
+      "id": "TO:0002692",
+      "name": "root meristem development"
+    },
+    {
+      "definition": "An abiotic plant stress response trait (TO:0000168) which is the response of a plant structure (PO:0009011) to abnormal gravity.",
+      "id": "TO:0002693",
+      "name": "gravity response trait"
+    },
+    {
+      "definition": "An assay to determine the sensory impression of a fruit by the chemical senses of taste and smell.",
+      "id": "TO:0002694",
+      "name": "fruit flavor trait",
+      "synonyms": [
+        "pod flavor trait"
+      ]
+    },
+    {
+      "definition": "The beta-carotene content in a plant structure (PO:0009011).",
+      "id": "TO:0002695",
+      "name": "beta-carotene content",
+      "synonyms": [
+        "beta-carotenoid content"
+      ]
+    },
+    {
+      "definition": "The alpha-carotene content in a plant structure (PO:0009011).",
+      "id": "TO:0002696",
+      "name": "alpha carotene content",
+      "synonyms": [
+        "alpha-carotenoid content"
+      ]
+    },
+    {
+      "definition": "The lycopene content in a plant structure (PO:0009011).",
+      "id": "TO:0002699",
+      "name": "lycopene content"
+    },
+    {
+      "definition": "The leutein content in a plant structure (PO:0009011).",
+      "id": "TO:0002701",
+      "name": "lutein content"
+    },
+    {
+      "definition": "An Ascomycete fungal disease response trait (TO:0001145) caused by Cercospora spp.",
+      "id": "TO:0002702",
+      "name": "cercospora leaf spot resistance"
+    },
+    {
+      "definition": "A root morphology trait (TO:0000043) which is the shape of a root (PO:0009005).",
+      "id": "TO:0002710",
+      "name": "root shape"
+    },
+    {
+      "definition": "A whole plant growth and development trait (TO:0000947) which is the color of plant and the photosynthetic organs remain green compared to turning yellow and or brown at the time of senescing.",
+      "id": "TO:0002712",
+      "name": "stay green trait"
+    },
+    {
+      "definition": "A plant structure growth and development trait (TO:0000928) which is a quality of plastid development.",
+      "id": "TO:0002714",
+      "name": "plastid development trait",
+      "synonyms": [
+        "plastid biogenesis trait",
+        "plastid structure trait"
+      ]
+    },
+    {
+      "definition": "Trait(s) associated with phenotypes observed for abnormal development of chloroplast structure and biogenesis.",
+      "id": "TO:0002715",
+      "name": "chloroplast development trait",
+      "synonyms": [
+        "chloroplast biogenesis trait",
+        "chloroplast structure trait"
+      ]
+    },
+    {
+      "definition": "A cardinal organ part morphology trait (TO:0000754) which is a quality of an awn (PO:0025349).",
+      "id": "TO:0002718",
+      "name": "awn anatomy and morphology trait"
+    },
+    {
+      "definition": "A leaf sheath morphology trait (TO:0000835) which is the color of the leaf sheath (PO:0020104).",
+      "id": "TO:0002724",
+      "name": "leaf sheath color",
+      "synonyms": [
+        "LFSCL"
+      ]
+    },
+    {
+      "definition": "A lemma morphology trait (TO:1000023) which is the shape of a sterile lemma (PO:0009040).",
+      "id": "TO:0002726",
+      "name": "sterile lemma shape",
+      "synonyms": [
+        "STLEMSHP"
+      ]
+    },
+    {
+      "definition": "A lemma morphology trait (TO:0000079) which is the width of a sterile lemma (PO:0009040).",
+      "id": "TO:0002727",
+      "name": "sterile lemma width",
+      "synonyms": [
+        "STLEMWD"
+      ]
+    },
+    {
+      "definition": "Traits associated with the fruit abscission zone.",
+      "id": "TO:0002729",
+      "name": "fruit senescing quality trait"
+    },
+    {
+      "definition": "A caryopsis fruit morphology trait (TO:0001079) which is the shape of a grain (caryopsis fruit; PO:0030104).",
+      "id": "TO:0002730",
+      "name": "grain shape",
+      "synonyms": [
+        "dehulled grain shape",
+        "DHULGRSHP",
+        "GRSHP"
+      ]
+    },
+    {
+      "definition": "A grain size (TO:0000397) which is the grain length and grain width on dehulled grain.",
+      "id": "TO:0002731",
+      "name": "grain length to width ratio",
+      "synonyms": [
+        "dehulled-grain length to width ratio",
+        "DHULGRLGWDRO",
+        "GRLHWDRO"
+      ]
+    },
+    {
+      "definition": "An awn morphology trait (TO:0002718) which is the presence or absence of an awn (PO:0025349). Observation may include relative awn size.",
+      "id": "TO:0002734",
+      "name": "awn presence",
+      "synonyms": [
+        "AWNPLU"
+      ]
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000582 ) which is the number of flowers (PO:0009046).",
+      "id": "TO:0002736",
+      "name": "flower number"
+    },
+    {
+      "definition": "A grain volume (TO:0001108) which is the volume of a dehulled grain.",
+      "id": "TO:0002743",
+      "name": "grain volume",
+      "synonyms": [
+        "DHULGRVOL"
+      ]
+    },
+    {
+      "definition": "Estimated by the angle of inclination of the main shoot/stem against the soil/growth medium surface.",
+      "id": "TO:0002756",
+      "name": "shoot habit",
+      "synonyms": [
+        "culm habit",
+        "CULMHAB",
+        "growth habit",
+        "stem habit",
+        "STEMHAB"
+      ]
+    },
+    {
+      "definition": "A flag leaf morphology trait (TO:0000832) which is the length of the flag leaf (PO:0020103).",
+      "id": "TO:0002757",
+      "name": "flag leaf length",
+      "synonyms": [
+        "FLFLG"
+      ]
+    },
+    {
+      "definition": "Actual measurements, in centimeters of the widest portion of the flag leaf lamina.",
+      "id": "TO:0002758",
+      "name": "flag leaf lamina width",
+      "synonyms": [
+        "flag leaf blade width",
+        "FLFLWD"
+      ]
+    },
+    {
+      "definition": "A fruit number trait (TO:0000894) which is the number of grains (caryopsis fruit; PO:0030104) in an infructescence (PO:0006342).",
+      "id": "TO:0002759",
+      "name": "grain number",
+      "synonyms": [
+        "GRNB",
+        "kernel number"
+      ]
+    },
+    {
+      "definition": "A spikelet morphology trait (TO:0000657) which is the length of a spikelet (PO:0009051).",
+      "id": "TO:0002768",
+      "name": "spikelet length",
+      "synonyms": [
+        "SPKLG"
+      ]
+    },
+    {
+      "definition": "The linoleic acid content in or extracted from a plant structure (PO:0009011).",
+      "id": "TO:0005001",
+      "name": "linoleic acid content",
+      "synonyms": [
+        "(9Z,12Z)-Octadecadienoic acid content",
+        "(Z,Z)-9,12-octadecadienoic acid content",
+        "9-cis,12-cis-Octadecadienoic acid content",
+        "9Z,12Z-octadecadienoic acid content",
+        "cis,cis-linoleic acid content",
+        "high linoleic oil content",
+        "linoleic oil content",
+        "low linoleic oil content"
+      ]
+    },
+    {
+      "definition": "The oleic acid content in or extracted from a plant structure (PO:0009011).",
+      "id": "TO:0005002",
+      "name": "oleic acid content",
+      "synonyms": [
+        "(9Z)-octadec-9-enoic acid content",
+        "(9Z)-Octadecenoic acid content",
+        "(Z)-Octadec-9-enoic acid content",
+        "cis-9-octadecenoic acid content",
+        "high oleic oil content",
+        "mid oleic oil content",
+        "oleic oil content"
+      ]
+    },
+    {
+      "definition": "The alpha-linolenic acid content in or extracted from a plant structure (PO:0009011).",
+      "id": "TO:0005005",
+      "name": "alpha-linolenic acid content",
+      "synonyms": [
+        "(9,12,15)-linolenic acid content",
+        "(9Z,12Z,15Z)-Octadecatrienoic acid content",
+        "(Z,Z,Z)-9,12,15-octadecatrienoic acid content",
+        "9,12,15-Octadecatrienoic acid content",
+        "9-cis,12-cis,15-cis-octadecatrienoic acid content",
+        "all-cis-9,12,15-octadecatrienoic acid content",
+        "cis,cis,cis-9,12,15-octadecatrienoic acid content"
+      ]
+    },
+    {
+      "definition": "An assay to determine the sensitivity (tolerance or susceptibility) exhibited by a plant or a group of plants (population) towards the applied herbicide glyphosate.",
+      "id": "TO:0005006",
+      "name": "glyphosate sensitivity",
+      "synonyms": [
+        "glyphosate susceptibility",
+        "glyphosate tolerance"
+      ]
+    },
+    {
+      "definition": "An assay to determine the sensitivity (tolerance or susceptibility) exhibited by a plant or a group of plants (population) towards the applied herbicide glufosinate.",
+      "id": "TO:0005007",
+      "name": "glufosinate sensitivity",
+      "synonyms": [
+        "glufosinate susceptibility",
+        "glufosinate tolerance"
+      ]
+    },
+    {
+      "definition": "Tolerance to the high salt content in the growth medium.",
+      "id": "TO:0006001",
+      "name": "salt tolerance",
+      "synonyms": [
+        "SALTTL"
+      ]
+    },
+    {
+      "definition": "Amino acid proline content in a plant structure (PO:0009011).",
+      "id": "TO:0006002",
+      "name": "proline content"
+    },
+    {
+      "definition": "Amount of oligosaccharides present in the plant or its parts.",
+      "id": "TO:0006003",
+      "name": "oligosaccharide content"
+    },
+    {
+      "definition": "Amount of raffinose present in a plant structure (PO:0009011).",
+      "id": "TO:0006004",
+      "name": "raffinose content"
+    },
+    {
+      "definition": "Amount of fructose present in a plant structure (PO:0009011).",
+      "id": "TO:0006005",
+      "name": "fructose content"
+    },
+    {
+      "definition": "Amount of monosaccharide present in a plant structure (PO:0009011).",
+      "id": "TO:0006006",
+      "name": "monosaccharide content"
+    },
+    {
+      "definition": "Amount of polysaccharide present in a plant structure (PO:0009011).",
+      "id": "TO:0006007",
+      "name": "polysaccharide content"
+    },
+    {
+      "definition": "A plant organ morphology trait (TO:0000736) which is a quality of a lodicule (PO:0009036) and its parts.",
+      "id": "TO:0006009",
+      "name": "lodicule anatomy and morphology trait"
+    },
+    {
+      "definition": "A lodicule morphology trait (TO:0006009) which is the average number of lodicules (PO:0009036) per grass flower (floret) in a study.",
+      "id": "TO:0006010",
+      "name": "lodicule number"
+    },
+    {
+      "definition": "A lodicule morphology trait (TO:0006009) which is the shape of a lodicule (PO:0009036).",
+      "id": "TO:0006011",
+      "name": "lodicule shape"
+    },
+    {
+      "definition": "A megasporophyll morphology trait (TO:0000867) which is a quality of a carpel (PO:0009030).",
+      "id": "TO:0006012",
+      "name": "carpel anatomy and morphology trait"
+    },
+    {
+      "definition": "A carpel morphology trait (TO:0006012) which is the number of carpels (PO:0009030) in the gynoecium (PO:0009062).",
+      "id": "TO:0006013",
+      "name": "carpel number"
+    },
+    {
+      "definition": "A leaf morphology trait (TO:0000748) which is the arrangement of the leaves on the shoot of a plant.",
+      "id": "TO:0006014",
+      "name": "phyllotaxy",
+      "synonyms": [
+        "leaf arrangement"
+      ]
+    },
+    {
+      "definition": "An assay to determine the variation in the  meristematic tissue development.",
+      "id": "TO:0006016",
+      "name": "meristem tissue development trait"
+    },
+    {
+      "definition": "Trait to determine the variation or effect on the establishment of meristem identity or determinacy.",
+      "id": "TO:0006017",
+      "name": "meristem identity",
+      "synonyms": [
+        "meristem determinacy"
+      ]
+    },
+    {
+      "definition": "Trait associated with observing effects on the establishment of floral organ identity.",
+      "id": "TO:0006019",
+      "name": "floral organ identity"
+    },
+    {
+      "definition": "An assay to associate observing effects on the development of shoot apical (SAM) meristem.",
+      "id": "TO:0006020",
+      "name": "shoot apical meristem development"
+    },
+    {
+      "definition": "Trait associated with the transition of vegetative growth phase to the reproductive growth phase.",
+      "id": "TO:0006021",
+      "name": "vegetative to reproductive phase transition trait"
+    },
+    {
+      "definition": "Traits associated with observing effects on the development of the floral organ and its parts.",
+      "id": "TO:0006022",
+      "name": "floral organ development trait"
+    },
+    {
+      "definition": "Traits associated with observing effects on the development of the lodicule in a grass flower (floret).",
+      "id": "TO:0006023",
+      "name": "lodicule development trait"
+    },
+    {
+      "definition": "Number of glumes in an inflorescence of grass, sedge or similar plant.",
+      "id": "TO:0006029",
+      "name": "glume number"
+    },
+    {
+      "definition": "Trait associated to observed effect on the establishment of spikelet meristem identity or determinacy.",
+      "id": "TO:0006030",
+      "name": "spikelet meristem identity"
+    },
+    {
+      "definition": "An inflorescence morphology trait (TO:0000373) which is the variation in size of inflorescence (PO:0009049).",
+      "id": "TO:0006031",
+      "name": "inflorescence size"
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the variation in size of panicle inflorescence (PO:0030123).",
+      "id": "TO:0006032",
+      "name": "panicle size"
+    },
+    {
+      "definition": "Elongation of the stem.",
+      "id": "TO:0006036",
+      "name": "stem elongation"
+    },
+    {
+      "definition": "A floral organ morphology trait (TO:0000862) which is the number of floral organ (PO:0025395) types in a flower (PO:0009046).",
+      "id": "TO:0006038",
+      "name": "floral organ number"
+    },
+    {
+      "definition": "The percentage of seeds that germinate against the total number of seeds planted.",
+      "id": "TO:0010001",
+      "name": "percent germination"
+    },
+    {
+      "definition": "A panicle inflorescence morphology trait (TO:0000847) which is the compactness of a panicle inflorescence (PO:0030123).",
+      "id": "TO:0020001",
+      "name": "panicle compactness and shape"
+    },
+    {
+      "definition": "A potassium content trait (TO:0000609) which is the potassium cation (CHEBI:29103) composition in a shoot system (PO:0009006).",
+      "id": "TO:0020003",
+      "name": "shoot potassium content"
+    },
+    {
+      "definition": "A sodium content trait (TO:0000608) which is the sodium cation (CHEBI:29101) composition in a shoot system (PO:0009006).",
+      "id": "TO:0020004",
+      "name": "shoot sodium content"
+    },
+    {
+      "definition": "A glume morphology trait (TO:0000869) which is the length of a glume (PO:0009039) measured in mm (millimeter).",
+      "id": "TO:0020033",
+      "name": "glume length"
+    },
+    {
+      "definition": "A glume morphology trait (TO:0000869) with is the measurement of width of glume (PO:0009039) in mm (millimeter).",
+      "id": "TO:0020034",
+      "name": "glume width"
+    }
+  ]
+}

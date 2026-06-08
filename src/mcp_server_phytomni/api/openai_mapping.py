@@ -25,6 +25,7 @@ __all__ = [
     "tool_for_model",
     "tool_accepts_obs",
     "tool_accepts_resolve_gene_id",
+    "tool_accepts_resolve_to_id",
     "tool_accepts_stream",
     "flatten_messages",
     "to_chat_completion",
@@ -43,10 +44,21 @@ MODEL_TO_TOOL = {
 # only takes a single gene/transcript id, so it rejects document lists.
 _OBS_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
-# Tools that support HTTP-side resolve_gene_id LLM preprocessing. Only
-# BriefGene benefits because it requires a single canonical id and is
-# the agent advertised standalone to external clients.
-_RESOLVE_GENE_ID_CAPABLE_TOOLS = {"BriefGeneAgent"}
+# Tools that support HTTP-side resolve_gene_id LLM preprocessing.
+# DeepGenome / DigitalDesign share BriefGene's canonical gene id
+# namespace and therefore reuse the same resolver-flag wiring.
+_RESOLVE_GENE_ID_CAPABLE_TOOLS = {
+    "BriefGeneAgent",
+    "DeepGenomeAgent",
+    "DigitalDesignAgent",
+}
+
+# Tools that support HTTP-side resolve_to_id LLM preprocessing.
+# GeneNetwork takes a Trait Ontology id (e.g. ``TO:0000207``) whose
+# closed-set catalog ships at ``config/to_ontology.json``; the
+# resolver injects that catalog into the LLM prompt and validates
+# the proposed id against it before returning.
+_RESOLVE_TO_ID_CAPABLE_TOOLS = {"GeneNetworkAgent"}
 
 # Tools that support SSE streaming via ``invoke_tool_streamed``. v1
 # wires only ChatAgent — the other chat-like models (knowledge /
@@ -72,6 +84,11 @@ def tool_accepts_obs(tool_name: str) -> bool:
 def tool_accepts_resolve_gene_id(tool_name: str) -> bool:
     """Return True when the tool supports resolve_gene_id preprocessing."""
     return tool_name in _RESOLVE_GENE_ID_CAPABLE_TOOLS
+
+
+def tool_accepts_resolve_to_id(tool_name: str) -> bool:
+    """Return True when the tool supports resolve_to_id preprocessing."""
+    return tool_name in _RESOLVE_TO_ID_CAPABLE_TOOLS
 
 
 def tool_accepts_stream(tool_name: str) -> bool:
