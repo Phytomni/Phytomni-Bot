@@ -1,82 +1,200 @@
 {
-  "nodes": [
-    {
-      "name": "__start__",
-      "kind": "boundary"
-    },
-    {
-      "name": "plan_node",
-      "kind": "node"
-    },
-    {
-      "name": "retrieve_node",
-      "kind": "node"
-    },
-    {
-      "name": "draft_node",
-      "kind": "node"
-    },
-    {
-      "name": "review_node",
-      "kind": "node"
-    },
-    {
-      "name": "revise_node",
-      "kind": "node"
-    },
-    {
-      "name": "summary_node",
-      "kind": "node"
-    },
-    {
-      "name": "post_process_node",
-      "kind": "node"
-    },
-    {
-      "name": "__end__",
-      "kind": "boundary"
-    }
-  ],
   "edges": [
     {
+      "conditional": false,
       "source": "__start__",
-      "target": "plan_node",
-      "conditional": false
+      "target": "plan_query_prep_node"
     },
     {
-      "source": "draft_node",
-      "target": "review_node",
-      "conditional": false
+      "conditional": true,
+      "source": "chat",
+      "target": "follow_up_post_node"
     },
     {
-      "source": "plan_node",
-      "target": "retrieve_node",
-      "conditional": false
+      "conditional": true,
+      "source": "chat",
+      "target": "plan_query_post_node"
     },
     {
-      "source": "retrieve_node",
-      "target": "draft_node",
-      "conditional": false
+      "conditional": true,
+      "source": "chat",
+      "target": "summary_post_node"
     },
     {
-      "source": "review_node",
-      "target": "revise_node",
-      "conditional": false
+      "conditional": true,
+      "source": "draft_dispatch",
+      "target": "draft_worker_node"
     },
     {
-      "source": "revise_node",
-      "target": "summary_node",
-      "conditional": false
+      "conditional": false,
+      "source": "draft_reduce_node",
+      "target": "review_results_dispatch"
     },
     {
-      "source": "summary_node",
-      "target": "post_process_node",
-      "conditional": false
+      "conditional": false,
+      "source": "draft_worker_node",
+      "target": "draft_reduce_node"
     },
     {
-      "source": "post_process_node",
-      "target": "__end__",
-      "conditional": false
+      "conditional": false,
+      "source": "follow_up_prep_node",
+      "target": "chat"
+    },
+    {
+      "conditional": false,
+      "source": "plan_query_post_node",
+      "target": "retrieve_dispatch"
+    },
+    {
+      "conditional": false,
+      "source": "plan_query_prep_node",
+      "target": "chat"
+    },
+    {
+      "conditional": true,
+      "source": "retrieve_dispatch",
+      "target": "retrieve_worker_node"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_reduce_node",
+      "target": "draft_dispatch"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_worker_node",
+      "target": "retrieve_reduce_node"
+    },
+    {
+      "conditional": true,
+      "source": "review_results_dispatch",
+      "target": "review_results_worker_node"
+    },
+    {
+      "conditional": false,
+      "source": "review_results_reduce_node",
+      "target": "revised_dispatch"
+    },
+    {
+      "conditional": false,
+      "source": "review_results_worker_node",
+      "target": "review_results_reduce_node"
+    },
+    {
+      "conditional": true,
+      "source": "revised_dispatch",
+      "target": "revised_worker_node"
+    },
+    {
+      "conditional": false,
+      "source": "revised_reduce_node",
+      "target": "summary_prep_node"
+    },
+    {
+      "conditional": false,
+      "source": "revised_worker_node",
+      "target": "revised_reduce_node"
+    },
+    {
+      "conditional": false,
+      "source": "summary_post_node",
+      "target": "follow_up_prep_node"
+    },
+    {
+      "conditional": false,
+      "source": "summary_prep_node",
+      "target": "chat"
+    },
+    {
+      "conditional": false,
+      "source": "follow_up_post_node",
+      "target": "__end__"
+    }
+  ],
+  "nodes": [
+    {
+      "kind": "boundary",
+      "name": "__start__"
+    },
+    {
+      "kind": "node",
+      "name": "plan_query_prep_node"
+    },
+    {
+      "kind": "node",
+      "name": "plan_query_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "summary_prep_node"
+    },
+    {
+      "kind": "node",
+      "name": "summary_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_prep_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "chat"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_dispatch"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_worker_node"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_reduce_node"
+    },
+    {
+      "kind": "node",
+      "name": "draft_dispatch"
+    },
+    {
+      "kind": "node",
+      "name": "draft_worker_node"
+    },
+    {
+      "kind": "node",
+      "name": "draft_reduce_node"
+    },
+    {
+      "kind": "node",
+      "name": "review_results_dispatch"
+    },
+    {
+      "kind": "node",
+      "name": "review_results_worker_node"
+    },
+    {
+      "kind": "node",
+      "name": "review_results_reduce_node"
+    },
+    {
+      "kind": "node",
+      "name": "revised_dispatch"
+    },
+    {
+      "kind": "node",
+      "name": "revised_worker_node"
+    },
+    {
+      "kind": "node",
+      "name": "revised_reduce_node"
+    },
+    {
+      "kind": "boundary",
+      "name": "__end__"
     }
   ]
 }

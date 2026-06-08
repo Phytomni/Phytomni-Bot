@@ -128,6 +128,16 @@ async def test_evo_test_analysis_with_all_species_submits_task(
         captured["submit"] = kwargs
         return {"task_id": "evo-task-456"}
 
+    # Pin the legacy paths the rest of this test mocks: with both
+    # default-True flags the wrapper would route through the chat
+    # subgraph + ``submit_analyst_via_subgraph`` and skip the
+    # ``phyto_chat`` / ``submit`` mocks installed below.
+    monkeypatch.setattr(
+        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", False
+    )
+    monkeypatch.setattr(
+        evolution_agent.DEEP_GENOME_CONFIG, "USE_ANALYST_SUBGRAPH", False
+    )
     monkeypatch.setattr(evolution_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(evolution_agent, "get_prompt", fake_get_prompt)
     monkeypatch.setattr(evolution_agent, "get_data_list", fake_get_data_list)
@@ -208,6 +218,9 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
         assert params is None or isinstance(params, dict)
         return f"prompt:{prompt_path}"
 
+    monkeypatch.setattr(
+        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", False
+    )
     monkeypatch.setattr(evolution_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(evolution_agent, "get_prompt", fake_get_prompt)
 

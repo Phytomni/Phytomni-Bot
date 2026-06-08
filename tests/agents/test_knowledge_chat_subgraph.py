@@ -25,10 +25,7 @@ from mcp_server_phytomni.agents.knowledge.state import (
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
-from ._subgraph_branch_fakes import (
-    install_chat_branch_mocks,
-    install_chat_subgraph_mocks,
-)
+from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
 pytestmark = pytest.mark.agent
 
@@ -76,36 +73,6 @@ def _minimal_generate_state() -> KnowledgeState:
     )
 
 
-async def test_generate_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off retains the legacy single-node ``phyto_chat`` call.
-
-    The flag-off path stays unchanged from the pre-subgraph shape:
-    ``generate_node`` calls ``phyto_chat`` directly and merges the
-    document list into the returned message. This test pins that
-    contract so a future rollout of the flag-on default does not
-    silently delete the legacy branch.
-    """
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
-        monkeypatch,
-        module_path=_KNOWLEDGE_MODULE,
-        legacy_response=_CHAT_COMPLETION_RESPONSE,
-        subgraph_response={"response": _CHAT_COMPLETION_RESPONSE},
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    result = await agent.generate_node(_minimal_generate_state())
-
-    legacy_mock.assert_awaited_once()
-    subgraph_app_mock.ainvoke.assert_not_awaited()
-    assert result["main_response"] is result["final_response"]
-    message = result["main_response"]["choices"][0]["message"]
-    assert message["content"] == "synthesised answer"
-    assert message["doc_list"] == [{"title": "Plant Biology.pdf"}]
-    assert message["total"] == 10000
-
-
 _FOLLOW_UP_CHAT_RESPONSE = {
     "choices": [
         {"message": {"content": '["next question one", "next question two"]'}}
@@ -131,38 +98,6 @@ def _minimal_follow_up_state() -> KnowledgeState:
             },
         },
     )
-
-
-async def test_follow_up_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off retains the legacy single-node ``phyto_chat`` call.
-
-    Pins the legacy follow-up path so the flag-off default keeps
-    parsing follow-up questions from a direct ``phyto_chat`` return
-    rather than the shared chat subgraph.
-    """
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
-        monkeypatch,
-        module_path=_KNOWLEDGE_MODULE,
-        legacy_response=_FOLLOW_UP_CHAT_RESPONSE,
-        subgraph_response={"response": _FOLLOW_UP_CHAT_RESPONSE},
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    result = await agent.follow_up_node(_minimal_follow_up_state())
-
-    legacy_mock.assert_awaited_once()
-    subgraph_app_mock.ainvoke.assert_not_awaited()
-    assert result["follow_up_questions"] == [
-        "next question one",
-        "next question two",
-    ]
-    message = result["final_response"]["choices"][0]["message"]
-    assert message["follow_up_questions"] == [
-        "next question one",
-        "next question two",
-    ]
 
 
 async def test_generate_prep_node_builds_chat_payload_and_pending_post() -> (

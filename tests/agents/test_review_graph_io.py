@@ -24,6 +24,7 @@ from mcp_server_phytomni.agents.review.state import (
     DeepResearchInput,
     DeepResearchOutput,
 )
+from mcp_server_phytomni.config.defaults import ReviewConfig
 
 pytestmark = pytest.mark.agent
 
@@ -98,7 +99,10 @@ def test_review_subgraph_compiles_with_no_conditional_branches() -> None:
     edge chain. A future refactor adding branches surfaces here
     before downstream consumers notice.
     """
-    agent = DeepResearchAgent()
+    config = ReviewConfig().model_copy(
+        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+    )
+    agent = DeepResearchAgent(review_config=config)
     assert set(agent.app.builder.branches.keys()) == set()
     nodes = {n.id for n in agent.app.get_graph().nodes.values()}
     assert {

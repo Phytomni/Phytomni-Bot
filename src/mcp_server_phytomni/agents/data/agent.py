@@ -29,11 +29,7 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.chat_adapters import (
-    build_chat_input,
-    build_chat_kwargs_for,
-    extract_chat_response,
-)
+from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...graphs.data_to_knowledge_adapters import (
     build_data_knowledge_input,
     extract_data_knowledge_response,
@@ -43,7 +39,6 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
-from ..chat.service import _cached_chat_app, phyto_chat
 from ..knowledge.retrieval import retrieve
 from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
@@ -182,22 +177,17 @@ class DataAgent:
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two flag axes drive the wire shape independently:
-        ``USE_CHAT_SUBGRAPH`` splits the single rewrite site into
-        ``rewrite_prep_node`` + ``rewrite_post_node`` around a single
-        shared ``chat`` node registered via
-        ``make_chat_node_wrapper`` so xray expansion surfaces the chat
-        subgraph in the data render; ``USE_KNOWLEDGE_SUBGRAPH`` splits
-        the single retrieve site into ``retrieve_prep_node`` +
-        ``retrieve_post_node`` around a per-instance compiled
-        ``knowledge`` node registered via
-        ``make_knowledge_node_wrapper`` so xray expansion surfaces the
-        knowledge subgraph in the data render. The chat post node
-        reads ``chat_response``; the knowledge post node reads
-        ``knowledge_response`` selected by a router on
-        ``pending_post_knowledge``. Distinct state keys mean the
-        cross-product wire (both flags on) keeps the branches
-        independent.
+        Splits the single rewrite site into ``rewrite_prep_node`` +
+        ``rewrite_post_node`` around a shared ``chat`` node
+        registered via ``make_chat_node_wrapper`` so xray expansion
+        surfaces the chat subgraph in the data render.
+        ``USE_KNOWLEDGE_SUBGRAPH`` independently splits the retrieve
+        site into ``retrieve_prep_node`` + ``retrieve_post_node``
+        around a per-instance compiled ``knowledge`` node. The chat
+        post node reads ``chat_response``; the knowledge post node
+        reads ``knowledge_response`` selected by a router on
+        ``pending_post_knowledge``. The legacy single-node forms
+        retired when ``USE_CHAT_SUBGRAPH`` default flipped to True.
         """
         workflow = StateGraph(
             state_schema=DataState,
@@ -208,39 +198,28 @@ class DataAgent:
         self._register_retrieve_nodes(workflow)
         retrieve_in, retrieve_out = self._retrieve_targets()
 
-        if self.data_config.USE_CHAT_SUBGRAPH:
-            workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
-            workflow.add_node("rewrite_post_node", self.rewrite_post_node)
-            workflow.add_node(
-                "chat",
-                make_chat_node_wrapper(
-                    build_input_fn=lambda state: state["chat_payload"],
-                    extract_output_fn=lambda chat_output: (
-                        chat_output.get("response") or {}
-                    ),
-                    response_key="chat_response",
+        workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
+        workflow.add_node("rewrite_post_node", self.rewrite_post_node)
+        workflow.add_node(
+            "chat",
+            make_chat_node_wrapper(
+                build_input_fn=lambda state: state["chat_payload"],
+                extract_output_fn=lambda chat_output: (
+                    chat_output.get("response") or {}
                 ),
-            )
-            workflow.add_conditional_edges(
-                START,
-                self.route_start,
-                [retrieve_in, "search_node"],
-            )
-            workflow.add_edge(retrieve_out, "rewrite_prep_node")
-            workflow.add_edge("rewrite_prep_node", "chat")
-            workflow.add_edge("chat", "rewrite_post_node")
-            workflow.add_edge("rewrite_post_node", "search_node")
-            workflow.add_edge("search_node", END)
-        else:
-            workflow.add_node("rewrite_node", self.rewrite_node)
-            workflow.add_conditional_edges(
-                START,
-                self.route_start,
-                [retrieve_in, "search_node"],
-            )
-            workflow.add_edge(retrieve_out, "rewrite_node")
-            workflow.add_edge("rewrite_node", "search_node")
-            workflow.add_edge("search_node", END)
+                response_key="chat_response",
+            ),
+        )
+        workflow.add_conditional_edges(
+            START,
+            self.route_start,
+            [retrieve_in, "search_node"],
+        )
+        workflow.add_edge(retrieve_out, "rewrite_prep_node")
+        workflow.add_edge("rewrite_prep_node", "chat")
+        workflow.add_edge("chat", "rewrite_post_node")
+        workflow.add_edge("rewrite_post_node", "search_node")
+        workflow.add_edge("search_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -452,70 +431,6 @@ class DataAgent:
         )
 
         return {"retrieve_prompt": retrieve_prompt}
-
-    async def rewrite_node(self, state: DataAgentState):
-        """Rewrite the query using an LLM for better SQL generation.
-
-        This node sends the retrieved scenarios and original query to an LLM,
-        which rewrites the query in a format optimized for natural language
-        to SQL conversion. This improves the accuracy of the resulting SQL.
-
-        Args:
-            state: The current workflow state containing retrieve_prompt.
-
-        Returns:
-            A dictionary containing the rewrite_query key with the
-            LLM-rewritten query.
-
-        Raises:
-            McpError: If the phyto_chat service fails to respond.
-        """
-        if self.data_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_chat_kwargs_for(
-                self.data_config, self.sensitive_config
-            )
-            chat_input = build_chat_input(
-                user_query=state["retrieve_prompt"],
-                chat_kwargs=chat_kwargs,
-            )
-            chat_output = await _cached_chat_app().ainvoke(chat_input)
-            phyto_response = extract_chat_response(chat_output)
-        else:
-            phyto_response = await phyto_chat(
-                user_query=state["retrieve_prompt"],
-                prompt_file=self.data_config.PROMPT_FILE,
-                prompt_path=self.data_config.PROMPT_PATH,
-                api_key=self.sensitive_config.API_KEY.get_secret_value(),
-                base_url=self.sensitive_config.BASE_URL,
-                model=self.sensitive_config.MODEL_ID,
-                frequency_penalty=self.data_config.FREQUENCY_PENALTY,
-                n=self.data_config.N,
-                presence_penalty=self.data_config.PRESENCE_PENALTY,
-                reasoning_effort=self.data_config.REASONING_EFFORT,
-                response_format=self.data_config.RESPONSE_FORMAT,
-                stream=self.data_config.STREAM,
-                temperature=self.data_config.TEMPERATURE,
-                top_p=self.data_config.TOP_P,
-                user=self.data_config.USER,
-                timeout=self.data_config.TIMEOUT,
-                retriable_codes=self.data_config.RETRIABLE_CODES,
-                max_retries=self.data_config.MAX_RETRIES,
-            )
-
-        if (
-            not phyto_response
-            or "choices" not in phyto_response
-            or not phyto_response["choices"]
-        ):
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="Failed to get response from phyto_chat service",
-                )
-            )
-
-        rewrite_query = phyto_response["choices"][0]["message"]["content"]
-        return {"rewrite_query": rewrite_query}
 
     async def rewrite_prep_node(self, state: DataAgentState) -> Dict[str, Any]:
         """Build the chat payload for the rewrite call.

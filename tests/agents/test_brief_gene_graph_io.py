@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.brief_gene.state import (
     BriefGeneOutput,
     BriefGeneState,
 )
+from mcp_server_phytomni.config.defaults import BriefGeneConfig
 
 pytestmark = pytest.mark.agent
 
@@ -202,8 +203,8 @@ def test_route_after_generate_skips_when_disabled() -> None:
 def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
     """Compiled BriefGene graph routes from query_judge / retrieve / render.
 
-    M10 (X3b A architecture) — the topology now has THREE
-    conditional sources:
+    M10 (X3b A architecture) — the legacy single-node topology has
+    THREE conditional sources:
 
     * ``query_judge_node`` routes to fetch-annotation vs. direct
       retrieval based on gene_found.
@@ -214,8 +215,14 @@ def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
       the is_follow_up flag.
 
     Pins the topology so future refactors that collapse one of
-    these branches surfaces here before the manifest export.
+    these branches surfaces here before the manifest export. Pinned
+    against the explicit flag-off config because the default flipped
+    to True (which wires the prep+chat+post structural mount) — the
+    legacy topology is still reachable via the env-only override.
     """
-    agent = BriefGeneAgent()
+    config = BriefGeneConfig().model_copy(
+        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+    )
+    agent = BriefGeneAgent(brief_config=config)
     branches = set(agent.app.builder.branches.keys())
     assert branches == {"query_judge_node", "retrieve_node", "render_node"}

@@ -75,46 +75,6 @@ async def test_retrieve_node_assembles_prompt_from_retrieved_docs(
     )
 
 
-async def test_rewrite_node_returns_llm_content_as_rewrite_query(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """rewrite_node forwards the LLM message content as rewrite_query."""
-
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return {
-            "choices": [
-                {"message": {"content": "SELECT gene FROM orthologs;"}}
-            ]
-        }
-
-    monkeypatch.setattr(data_agent, "phyto_chat", fake_phyto_chat)
-
-    result = await _agent().rewrite_node(_state(retrieve_prompt="USER_PROMPT"))
-
-    assert result == {"rewrite_query": "SELECT gene FROM orthologs;"}
-
-
-async def test_rewrite_node_raises_when_llm_returns_no_choices(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An empty LLM response raises a sanitized INTERNAL_ERROR McpError.
-
-    Pins the defensive branch: when phyto_chat returns a payload that
-    drops the ``choices`` field, the rewrite node must reject the
-    response rather than KeyError into the LangGraph runner.
-    """
-
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return {"choices": []}
-
-    monkeypatch.setattr(data_agent, "phyto_chat", fake_phyto_chat)
-
-    with pytest.raises(McpError) as excinfo:
-        await _agent().rewrite_node(_state(retrieve_prompt="USER_PROMPT"))
-
-    assert "Failed to get response" in excinfo.value.error.message
-
-
 async def test_search_node_executes_rewrite_query_when_rewrite_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

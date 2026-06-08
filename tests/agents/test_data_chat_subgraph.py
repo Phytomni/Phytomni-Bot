@@ -26,10 +26,7 @@ from mcp_server_phytomni.agents.data.state import (
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
-from ._subgraph_branch_fakes import (
-    install_chat_branch_mocks,
-    install_chat_subgraph_mocks,
-)
+from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
 pytestmark = pytest.mark.agent
 
@@ -75,32 +72,6 @@ def _minimal_rewrite_state() -> DataAgentState:
         DataAgentState,
         {"retrieve_prompt": "stitched scenarios + user question"},
     )
-
-
-async def test_rewrite_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off retains the legacy single-node ``phyto_chat`` call.
-
-    The flag-off path stays unchanged from the pre-subgraph shape:
-    ``rewrite_node`` calls ``phyto_chat`` directly and extracts the
-    rewritten query from the returned chat-completion dict. This
-    test pins that contract so a future rollout of the flag-on
-    default does not silently delete the legacy branch.
-    """
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
-        monkeypatch,
-        module_path=_DATA_MODULE,
-        legacy_response=_CHAT_COMPLETION_RESPONSE,
-        subgraph_response={"response": _CHAT_COMPLETION_RESPONSE},
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    result = await agent.rewrite_node(_minimal_rewrite_state())
-
-    legacy_mock.assert_awaited_once()
-    subgraph_app_mock.ainvoke.assert_not_awaited()
-    assert result == {"rewrite_query": "rewritten sql-friendly query"}
 
 
 async def test_rewrite_prep_node_builds_chat_payload() -> None:

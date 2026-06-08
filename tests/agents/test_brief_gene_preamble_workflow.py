@@ -17,6 +17,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
+from mcp_server_phytomni.config.defaults import BriefGeneConfig
+
+_LEGACY_CONFIG = BriefGeneConfig().model_copy(
+    update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+)
 
 pytestmark = pytest.mark.agent
 
@@ -94,7 +99,7 @@ async def test_workflow_happy_path_assembles_full_preamble() -> None:
     ## Gene Profiles + ### Basic Genomic Information bullets +
     section1-4 markdowns.
     """
-    agent = BriefGeneAgent()
+    agent = BriefGeneAgent(brief_config=_LEGACY_CONFIG)
 
     # query_judge_node issues 3 BI calls; fetch_annotation_node issues 6.
     bi_responses = [
@@ -190,7 +195,7 @@ async def test_workflow_gene_not_found_degraded_path() -> None:
     ``follow_up_node`` also calls ``phyto_chat`` (the
     ``_generate_follow_up`` path) and must be mocked separately.
     """
-    agent = BriefGeneAgent()
+    agent = BriefGeneAgent(brief_config=_LEGACY_CONFIG)
 
     with (
         patch(

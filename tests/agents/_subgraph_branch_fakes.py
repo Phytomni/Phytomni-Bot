@@ -316,7 +316,14 @@ def install_chat_subgraph_mocks(
     fake_chat_app = SimpleNamespace(
         ainvoke=AsyncMock(return_value={"response": subgraph_response})
     )
-    monkeypatch.setattr(f"{module_path}.phyto_chat", phyto_chat_mock)
+    # ``raising=False`` so consumer modules that retired the legacy
+    # ``phyto_chat`` import (when their flag-off branch was deleted)
+    # still drive the structural-mount tests; the returned legacy
+    # mock stays a never-awaited no-op in that case so callers'
+    # ``legacy_mock.assert_not_awaited()`` keeps reading correctly.
+    monkeypatch.setattr(
+        f"{module_path}.phyto_chat", phyto_chat_mock, raising=False
+    )
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.shared.chat_subgraph.CHAT_APP",
         fake_chat_app,

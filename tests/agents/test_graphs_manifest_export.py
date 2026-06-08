@@ -28,6 +28,7 @@ from mcp_server_phytomni.agents.evolution.builder import (
 )
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
+from mcp_server_phytomni.config.defaults import AnalystConfig, BriefGeneConfig
 from mcp_server_phytomni.graphs.defaults import _build_deep_genome_app
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
@@ -172,9 +173,15 @@ def test_export_real_brief_gene_agent_node_set() -> None:
     nodes are listed here as a subset assertion; the actual graph
     also has ``fetch_homology_interactions_node`` and the four
     section nodes plus optional knowledge-subgraph nodes when
-    USE_KNOWLEDGE_SUBGRAPH=True.
+    USE_KNOWLEDGE_SUBGRAPH=True. Pinned against the explicit
+    flag-off config because the default flipped to True (which
+    wires the structural chat / knowledge mounts that rename
+    several of the legacy nodes).
     """
-    manifest = export_manifest(BriefGeneAgent().app)
+    config = BriefGeneConfig().model_copy(
+        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+    )
+    manifest = export_manifest(BriefGeneAgent(brief_config=config).app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "query_judge_node",
@@ -212,33 +219,48 @@ def test_export_real_chat_subgraph_node_set() -> None:
 
 
 def test_export_real_knowledge_subgraph_node_set() -> None:
-    """Real KnowledgeAgent export matches the documented four-node graph.
+    """Real KnowledgeAgent export matches the structural-mount topology.
 
     Pins the knowledge subgraph's manifest shape so the docs section
     in ``docs/agent-graphs.md`` and the compiled graph stay in sync.
+    The legacy single-node ``generate_node`` / ``follow_up_node``
+    bodies retired when ``USE_CHAT_SUBGRAPH`` default flipped to
+    True; the compiled graph now always wires the prep + chat +
+    post split.
     """
     manifest = export_manifest(KnowledgeAgent().app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "process_files_node",
         "retrieve_node",
-        "generate_node",
-        "follow_up_node",
+        "generate_prep_node",
+        "generate_post_node",
+        "follow_up_prep_node",
+        "follow_up_post_node",
+        "chat",
     }
     assert documented <= names
 
 
 def test_export_real_data_subgraph_node_set() -> None:
-    """Real DataAgent export matches the documented three-node graph.
+    """Real DataAgent export matches the structural-mount topology.
 
     Pins the data subgraph's manifest shape so the docs section in
     ``docs/agent-graphs.md`` and the compiled graph stay in sync.
+    The legacy single-node ``rewrite_node`` body retired when
+    ``USE_CHAT_SUBGRAPH`` default flipped to True; ``retrieve_node``
+    also splits into prep + post + knowledge when
+    ``USE_KNOWLEDGE_SUBGRAPH`` default is True.
     """
     manifest = export_manifest(DataAgent().app)
     names = {node.name for node in manifest.nodes}
     documented = {
-        "retrieve_node",
-        "rewrite_node",
+        "retrieve_prep_node",
+        "retrieve_post_node",
+        "rewrite_prep_node",
+        "rewrite_post_node",
+        "knowledge",
+        "chat",
         "search_node",
     }
     assert documented <= names
@@ -247,12 +269,17 @@ def test_export_real_data_subgraph_node_set() -> None:
 def test_export_real_analyst_subgraph_node_set() -> None:
     """Real AnalystAgent export matches the documented nine-node graph.
 
-    Pins the analyst subgraph's manifest shape so the docs section
-    in ``docs/agent-graphs.md`` and the compiled graph stay in
-    sync. A future refactor that collapses one of the routing
-    nodes surfaces here before the manifest JSON snapshot diverges.
+    Pins the analyst subgraph's legacy single-node manifest shape
+    so the docs section in ``docs/agent-graphs.md`` and the
+    compiled graph stay in sync. Pinned against the explicit
+    flag-off config because the default flipped to True (which
+    wires the chat / knowledge structural mounts that rename
+    several of the legacy nodes).
     """
-    manifest = export_manifest(AnalystAgent().app)
+    config = AnalystConfig().model_copy(
+        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+    )
+    manifest = export_manifest(AnalystAgent(analyst_config=config).app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "parse_query_node",

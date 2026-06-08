@@ -95,18 +95,22 @@ def test_manifest_writes_json_with_expected_nodes(
     assert written.exists()
     payload = json.loads(written.read_text(encoding="utf-8"))
     names = {node["name"] for node in payload["nodes"]}
+    # Default ``USE_CHAT_SUBGRAPH=True`` + ``USE_KNOWLEDGE_SUBGRAPH=True``
+    # wire the structural mount form: retrieve fan-out splits into
+    # prep / worker / reduce and generate / follow_up split into
+    # prep + chat + post; the legacy single-node names retired when
+    # the defaults flipped.
     assert {
         "query_judge_node",
         "fetch_annotation_node",
-        "fetch_homology_interactions_node",
-        "retrieve_node",
-        "section1_node",
-        "section2_node",
-        "section3_node",
-        "section4_node",
-        "introduction_node",
-        "render_node",
-        "follow_up_node",
+        "retrieve_prep_tasks_node",
+        "retrieve_worker_node",
+        "retrieve_reduce_node",
+        "generate_prep_node",
+        "generate_post_node",
+        "follow_up_prep_node",
+        "follow_up_post_node",
+        "chat",
     } <= names
 
 

@@ -31,18 +31,13 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.chat_adapters import (
-    build_chat_input,
-    build_chat_kwargs_for,
-    extract_chat_response,
-)
+from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...storage.downloads import download_list_convert
-from ..chat.service import _cached_chat_app, phyto_chat
 from ..shared.chat_subgraph import (
     make_chat_after_router,
     make_chat_node_wrapper,
@@ -136,14 +131,12 @@ class KnowledgeAgent:
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two shapes are returned based on ``USE_CHAT_SUBGRAPH``:
-        flag-off keeps the legacy four-node form where
-        ``generate_node`` and ``follow_up_node`` each await
-        ``phyto_chat`` directly; flag-on splits both into prep + post
-        pairs surrounding a single shared chat node registered via
-        ``add_node`` with a conditional router that reads
+        Splits ``generate_node`` and ``follow_up_node`` into prep +
+        post pairs surrounding a single shared chat node registered
+        via ``add_node`` with a conditional router that reads
         ``pending_post`` to direct the chat output back to the
-        correct post node.
+        correct post node. The legacy single-node form was retired
+        when ``USE_CHAT_SUBGRAPH`` default flipped to True.
         """
         workflow = StateGraph(
             state_schema=KnowledgeState,
@@ -152,87 +145,56 @@ class KnowledgeAgent:
         )
         workflow.add_node("process_files_node", self.process_files_node)
         workflow.add_node("retrieve_node", self.retrieve_node)
-
-        if self.knowledge_config.USE_CHAT_SUBGRAPH:
-            workflow.add_node("generate_prep_node", self.generate_prep_node)
-            workflow.add_node("generate_post_node", self.generate_post_node)
-            workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
-            workflow.add_node("follow_up_post_node", self.follow_up_post_node)
-            workflow.add_node(
-                "chat",
-                make_chat_node_wrapper(
-                    build_input_fn=lambda state: state["chat_payload"],
-                    extract_output_fn=lambda chat_output: (
-                        chat_output.get("response") or {}
-                    ),
-                    response_key="chat_response",
+        workflow.add_node("generate_prep_node", self.generate_prep_node)
+        workflow.add_node("generate_post_node", self.generate_post_node)
+        workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
+        workflow.add_node("follow_up_post_node", self.follow_up_post_node)
+        workflow.add_node(
+            "chat",
+            make_chat_node_wrapper(
+                build_input_fn=lambda state: state["chat_payload"],
+                extract_output_fn=lambda chat_output: (
+                    chat_output.get("response") or {}
                 ),
-            )
-            workflow.add_conditional_edges(
-                START,
-                self.route_start,
-                {
-                    "process_files_node": "process_files_node",
-                    "retrieve_node": "retrieve_node",
-                },
-            )
-            workflow.add_edge("process_files_node", "retrieve_node")
-            workflow.add_conditional_edges(
-                "retrieve_node",
-                self.route_after_retrieve,
-                {
-                    "generate_node": "generate_prep_node",
-                    "__end__": END,
-                },
-            )
-            workflow.add_edge("generate_prep_node", "chat")
-            workflow.add_conditional_edges(
-                "chat",
-                make_chat_after_router(),
-                {
-                    "generate_post_node": "generate_post_node",
-                    "follow_up_post_node": "follow_up_post_node",
-                },
-            )
-            workflow.add_conditional_edges(
-                "generate_post_node",
-                self.route_after_generate,
-                {
-                    "follow_up_node": "follow_up_prep_node",
-                    "__end__": END,
-                },
-            )
-            workflow.add_edge("follow_up_prep_node", "chat")
-            workflow.add_edge("follow_up_post_node", END)
-        else:
-            workflow.add_node("generate_node", self.generate_node)
-            workflow.add_node("follow_up_node", self.follow_up_node)
-            workflow.add_conditional_edges(
-                START,
-                self.route_start,
-                {
-                    "process_files_node": "process_files_node",
-                    "retrieve_node": "retrieve_node",
-                },
-            )
-            workflow.add_edge("process_files_node", "retrieve_node")
-            workflow.add_conditional_edges(
-                "retrieve_node",
-                self.route_after_retrieve,
-                {
-                    "generate_node": "generate_node",
-                    "__end__": END,
-                },
-            )
-            workflow.add_conditional_edges(
-                "generate_node",
-                self.route_after_generate,
-                {
-                    "follow_up_node": "follow_up_node",
-                    "__end__": END,
-                },
-            )
-            workflow.add_edge("follow_up_node", END)
+                response_key="chat_response",
+            ),
+        )
+        workflow.add_conditional_edges(
+            START,
+            self.route_start,
+            {
+                "process_files_node": "process_files_node",
+                "retrieve_node": "retrieve_node",
+            },
+        )
+        workflow.add_edge("process_files_node", "retrieve_node")
+        workflow.add_conditional_edges(
+            "retrieve_node",
+            self.route_after_retrieve,
+            {
+                "generate_node": "generate_prep_node",
+                "__end__": END,
+            },
+        )
+        workflow.add_edge("generate_prep_node", "chat")
+        workflow.add_conditional_edges(
+            "chat",
+            make_chat_after_router(),
+            {
+                "generate_post_node": "generate_post_node",
+                "follow_up_post_node": "follow_up_post_node",
+            },
+        )
+        workflow.add_conditional_edges(
+            "generate_post_node",
+            self.route_after_generate,
+            {
+                "follow_up_node": "follow_up_prep_node",
+                "__end__": END,
+            },
+        )
+        workflow.add_edge("follow_up_prep_node", "chat")
+        workflow.add_edge("follow_up_post_node", END)
 
         return workflow.compile(checkpointer=self.checkpointer)
 
@@ -329,183 +291,6 @@ class KnowledgeAgent:
         return {
             "retrieved_docs": retrieve_response.get("doc_list", []),
             "retrieve_context": retrieve_context,
-        }
-
-    async def generate_node(self, state: KnowledgeAgentState):
-        """Generate a response based on retrieved documents and user files.
-
-        This node constructs a prompt using the retrieved context and any
-        uploaded file content, then sends it to the LLM for response
-        generation.
-        The retrieved documents are attached to the response for reference.
-
-        Args:
-            state: The current workflow state containing user_query,
-                   retrieve_context, upload_context, and retrieved_docs.
-
-        Returns:
-            A dictionary containing:
-                - main_response: The LLM response with document references.
-                - final_response: The same response (may be updated later).
-        """
-        user_query = state["user_query"]
-        retrieve_context = state["retrieve_context"]
-        upload_context = state.get("upload_context", "")
-
-        if upload_context:
-            chat_query = get_prompt(
-                self.knowledge_config.PROMPT_FILE,
-                "user/retrieval_file",
-                {
-                    "retrieve_results": retrieve_context,
-                    "upload_context": upload_context,
-                    "user_query": user_query,
-                },
-            )
-        else:
-            chat_query = get_prompt(
-                self.knowledge_config.PROMPT_FILE,
-                "user/retrieval",
-                {
-                    "retrieve_results": retrieve_context,
-                    "user_query": user_query,
-                },
-            )
-
-        if self.knowledge_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_chat_kwargs_for(
-                self.knowledge_config, self.sensitive_config
-            )
-            chat_input = build_chat_input(
-                user_query=chat_query, chat_kwargs=chat_kwargs
-            )
-            chat_output = await _cached_chat_app().ainvoke(chat_input)
-            phyto_response = extract_chat_response(chat_output)
-        else:
-            phyto_response = await phyto_chat(
-                user_query=chat_query,
-                prompt_file=self.knowledge_config.PROMPT_FILE,
-                prompt_path=self.knowledge_config.PROMPT_PATH,
-                api_key=self.sensitive_config.API_KEY.get_secret_value(),
-                base_url=self.sensitive_config.BASE_URL,
-                model=self.sensitive_config.MODEL_ID,
-                frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
-                n=self.knowledge_config.N,
-                presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
-                reasoning_effort=self.knowledge_config.REASONING_EFFORT,
-                response_format=self.knowledge_config.RESPONSE_FORMAT,
-                stream=self.knowledge_config.STREAM,
-                temperature=self.knowledge_config.TEMPERATURE,
-                top_p=self.knowledge_config.TOP_P,
-                user=self.knowledge_config.USER,
-                timeout=self.knowledge_config.TIMEOUT,
-                retriable_codes=self.knowledge_config.RETRIABLE_CODES,
-                max_retries=self.knowledge_config.MAX_RETRIES,
-            )
-
-        doc_list_payload = {
-            "doc_list": state["retrieved_docs"],
-            "total": 10000,
-        }
-
-        if (
-            phyto_response
-            and "choices" in phyto_response
-            and len(phyto_response["choices"]) > 0
-        ):
-            if (
-                "message" in phyto_response["choices"][0]
-                and phyto_response["choices"][0]["message"] is not None
-            ):
-                phyto_response["choices"][0]["message"].update(
-                    doc_list_payload
-                )
-            else:
-                phyto_response["choices"][0]["message"] = doc_list_payload
-        else:
-            if phyto_response is None:
-                phyto_response = {"choices": [{"message": doc_list_payload}]}
-            elif "choices" not in phyto_response:
-                phyto_response["choices"] = [{"message": doc_list_payload}]
-            elif len(phyto_response["choices"]) == 0:
-                phyto_response["choices"].append({"message": doc_list_payload})
-
-        return {
-            "main_response": phyto_response,
-            "final_response": phyto_response,
-        }
-
-    async def follow_up_node(self, state: KnowledgeAgentState):
-        """Generate suggested follow-up questions.
-
-        This node analyzes the initial LLM response and generates relevant
-        follow-up questions that the user might want to ask. Questions are
-        parsed from the LLM output and attached to the final response.
-
-        Args:
-            state: The current workflow state containing user_query
-                   and main_response.
-
-        Returns:
-            A dictionary containing:
-                - follow_up_questions: A list of suggested questions.
-                - final_response: Response with follow-up questions.
-        """
-        user_query = state["user_query"]
-        phyto_response = state["main_response"]
-        system_response_text = message_content(phyto_response)
-
-        follow_up_query = get_prompt(
-            self.knowledge_config.PROMPT_FILE,
-            "system/follow_up_questions",
-            {
-                "user_query": user_query,
-                "system_response": system_response_text,
-            },
-        )
-
-        if self.knowledge_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs = build_chat_kwargs_for(
-                self.knowledge_config, self.sensitive_config
-            )
-            chat_input = build_chat_input(
-                user_query=follow_up_query, chat_kwargs=chat_kwargs
-            )
-            chat_output = await _cached_chat_app().ainvoke(chat_input)
-            follow_up_response = extract_chat_response(chat_output)
-        else:
-            follow_up_response = await phyto_chat(
-                user_query=follow_up_query,
-                prompt_file=self.knowledge_config.PROMPT_FILE,
-                prompt_path=self.knowledge_config.PROMPT_PATH,
-                api_key=self.sensitive_config.API_KEY.get_secret_value(),
-                base_url=self.sensitive_config.BASE_URL,
-                model=self.sensitive_config.MODEL_ID,
-                frequency_penalty=self.knowledge_config.FREQUENCY_PENALTY,
-                n=self.knowledge_config.N,
-                presence_penalty=self.knowledge_config.PRESENCE_PENALTY,
-                reasoning_effort=self.knowledge_config.REASONING_EFFORT,
-                response_format=self.knowledge_config.RESPONSE_FORMAT,
-                stream=self.knowledge_config.STREAM,
-                temperature=self.knowledge_config.TEMPERATURE,
-                top_p=self.knowledge_config.TOP_P,
-                user=self.knowledge_config.USER,
-                timeout=self.knowledge_config.TIMEOUT,
-                retriable_codes=self.knowledge_config.RETRIABLE_CODES,
-                max_retries=self.knowledge_config.MAX_RETRIES,
-            )
-
-        follow_up_list = parse_follow_up_questions(
-            message_content(follow_up_response)
-        )
-
-        phyto_response["choices"][0]["message"].update(
-            {"follow_up_questions": follow_up_list}
-        )
-
-        return {
-            "follow_up_questions": follow_up_list,
-            "final_response": phyto_response,
         }
 
     async def generate_prep_node(

@@ -25,6 +25,7 @@ from mcp_server_phytomni.agents.analyst.state import (
     AnalystOutput,
     AnalystState,
 )
+from mcp_server_phytomni.config.defaults import AnalystConfig
 
 pytestmark = pytest.mark.agent
 
@@ -165,7 +166,10 @@ def test_analyst_subgraph_exposes_five_conditional_sources() -> None:
     collapses one of these branches surfaces here before manifest
     export.
     """
-    agent = AnalystAgent()
+    config = AnalystConfig().model_copy(
+        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+    )
+    agent = AnalystAgent(analyst_config=config)
     branches = set(agent.app.builder.branches.keys())
     assert branches == {
         "parse_query_node",

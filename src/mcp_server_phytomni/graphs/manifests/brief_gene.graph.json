@@ -1,74 +1,124 @@
 {
-  "nodes": [
-    {
-      "name": "__start__",
-      "kind": "boundary"
-    },
-    {
-      "name": "query_judge_node",
-      "kind": "node"
-    },
-    {
-      "name": "fetch_annotation_node",
-      "kind": "node"
-    },
-    {
-      "name": "retrieve_node",
-      "kind": "node"
-    },
-    {
-      "name": "generate_node",
-      "kind": "node"
-    },
-    {
-      "name": "follow_up_node",
-      "kind": "node"
-    },
-    {
-      "name": "__end__",
-      "kind": "boundary"
-    }
-  ],
   "edges": [
     {
+      "conditional": false,
       "source": "__start__",
-      "target": "query_judge_node",
-      "conditional": false
+      "target": "query_judge_node"
     },
     {
+      "conditional": true,
+      "source": "chat",
+      "target": "follow_up_post_node"
+    },
+    {
+      "conditional": true,
+      "source": "chat",
+      "target": "generate_post_node"
+    },
+    {
+      "conditional": false,
       "source": "fetch_annotation_node",
-      "target": "retrieve_node",
-      "conditional": false
+      "target": "retrieve_prep_tasks_node"
     },
     {
-      "source": "generate_node",
-      "target": "__end__",
-      "conditional": true
+      "conditional": false,
+      "source": "follow_up_prep_node",
+      "target": "chat"
     },
     {
-      "source": "generate_node",
-      "target": "follow_up_node",
-      "conditional": true
+      "conditional": true,
+      "source": "generate_post_node",
+      "target": "__end__"
     },
     {
+      "conditional": true,
+      "source": "generate_post_node",
+      "target": "follow_up_prep_node"
+    },
+    {
+      "conditional": false,
+      "source": "generate_prep_node",
+      "target": "chat"
+    },
+    {
+      "conditional": true,
       "source": "query_judge_node",
-      "target": "fetch_annotation_node",
-      "conditional": true
+      "target": "fetch_annotation_node"
     },
     {
+      "conditional": true,
       "source": "query_judge_node",
-      "target": "retrieve_node",
-      "conditional": true
+      "target": "retrieve_prep_tasks_node"
     },
     {
-      "source": "retrieve_node",
-      "target": "generate_node",
-      "conditional": false
+      "conditional": true,
+      "source": "retrieve_prep_tasks_node",
+      "target": "retrieve_worker_node"
     },
     {
-      "source": "follow_up_node",
-      "target": "__end__",
-      "conditional": false
+      "conditional": false,
+      "source": "retrieve_reduce_node",
+      "target": "generate_prep_node"
+    },
+    {
+      "conditional": false,
+      "source": "retrieve_worker_node",
+      "target": "retrieve_reduce_node"
+    },
+    {
+      "conditional": false,
+      "source": "follow_up_post_node",
+      "target": "__end__"
+    }
+  ],
+  "nodes": [
+    {
+      "kind": "boundary",
+      "name": "__start__"
+    },
+    {
+      "kind": "node",
+      "name": "query_judge_node"
+    },
+    {
+      "kind": "node",
+      "name": "fetch_annotation_node"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_prep_tasks_node"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_worker_node"
+    },
+    {
+      "kind": "node",
+      "name": "retrieve_reduce_node"
+    },
+    {
+      "kind": "node",
+      "name": "generate_prep_node"
+    },
+    {
+      "kind": "node",
+      "name": "generate_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_prep_node"
+    },
+    {
+      "kind": "node",
+      "name": "follow_up_post_node"
+    },
+    {
+      "kind": "node",
+      "name": "chat"
+    },
+    {
+      "kind": "boundary",
+      "name": "__end__"
     }
   ]
 }

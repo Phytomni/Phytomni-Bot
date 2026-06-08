@@ -38,7 +38,10 @@ def _build_agent(use_subgraph: bool) -> DeepResearchAgent:
     direct UPPERCASE attribute assignment.
     """
     config = ReviewConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": use_subgraph}
+        update={
+            "USE_CHAT_SUBGRAPH": use_subgraph,
+            "USE_KNOWLEDGE_SUBGRAPH": False,
+        }
     )
     return DeepResearchAgent(
         review_config=config,

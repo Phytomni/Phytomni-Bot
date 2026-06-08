@@ -143,6 +143,16 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         captured["submit"] = kwargs
         return {"task_id": "vci-task-123"}
 
+    # Pin the legacy paths the rest of this test mocks: with both
+    # default-True flags the wrapper would route through the chat
+    # subgraph + ``submit_analyst_via_subgraph`` and skip the
+    # ``phyto_chat`` / ``submit`` mocks installed below.
+    monkeypatch.setattr(
+        environment_agent.ENVIRONMENT_CONFIG, "USE_CHAT_SUBGRAPH", False
+    )
+    monkeypatch.setattr(
+        environment_agent.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", False
+    )
     monkeypatch.setattr(environment_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(
         environment_agent, "load_text_file", fake_load_text_file
@@ -229,6 +239,9 @@ async def test_region_vci_analysis_returns_none_task_when_codes_missing(
         assert params is None or isinstance(params, dict)
         return f"prompt:{prompt_path}"
 
+    monkeypatch.setattr(
+        environment_agent.ENVIRONMENT_CONFIG, "USE_CHAT_SUBGRAPH", False
+    )
     monkeypatch.setattr(environment_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(
         environment_agent, "load_text_file", fake_load_text_file
