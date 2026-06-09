@@ -47,7 +47,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # ``docs/lint-exemptions.md``.
 RULE_BASELINES: Dict[str, int] = {
     "R0801": 110,  # duplicate-code: cross-file similar blocks
-    "R0903": 16,  # too-few-public-methods: test fake classes + Protocol stubs
+    # too-few-public-methods: test fake classes + Protocol stubs +
+    # GraphLoader (load + flag-gated __init__ only).
+    "R0903": 17,
 }
 
 
