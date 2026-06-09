@@ -16,8 +16,16 @@ system:
 
     Output strictly valid JSON conforming to the provided schema:
     - top-level "gene_id" must be the single best canonical id
-    - optional "candidates" is a list of {gene_id, confidence in [0, 1]}
-      enumerating alternatives in order of likelihood
+    - top-level "species_code" must be the matching three-letter species
+      code from the supported catalog (e.g. "osa" for Oryza sativa,
+      "ath" for Arabidopsis thaliana, "zma" for Zea mays); the code
+      MUST agree with the gene_id chosen above. If the species cannot
+      be determined from the query, leave "species_code" as the empty
+      string ""
+    - optional "candidates" is a list of {gene_id, confidence in [0, 1],
+      optional species_code} enumerating alternatives in order of
+      likelihood; per-candidate species_code defaults to the top-level
+      value when omitted
     - never wrap the JSON in markdown code fences
     - never include explanations, prose, lists outside the schema, or
       symbol-only outputs (resolve gene symbols to canonical ids when
@@ -26,6 +34,10 @@ system:
       list the others under "candidates"
     - if the user query is ambiguous, still return your best single
       guess; never refuse
+
+    Example output (do not echo verbatim):
+    {"gene_id": "Os01g0177400", "species_code": "osa",
+     "candidates": [{"gene_id": "Os01g0177400", "confidence": 0.9}]}
 
     输入可能是英文或中文; 输出必须严格符合上述 JSON schema, 不要返回
     markdown 围栏、解释段落或工具歧义提示。
@@ -1528,7 +1540,12 @@ user:
   brief_gene_resolve_gene_id: |-
     The user submitted the following free-form query through the HTTP
     API. Resolve it to a single canonical plant gene/transcript id and
-    return the JSON object described in the system instructions.
+    return the JSON object described in the system instructions. The
+    response must include both top-level "gene_id" and top-level
+    "species_code" (matching three-letter code from the supported
+    catalog, e.g. "osa", "ath", "zma"); leave "species_code" as the
+    empty string "" only when the species cannot be determined from
+    the query.
 
     User query:
     {{user_query}}

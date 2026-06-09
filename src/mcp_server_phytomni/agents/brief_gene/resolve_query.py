@@ -43,12 +43,14 @@ _RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "properties": {
                 "gene_id": {"type": "string"},
+                "species_code": {"type": "string"},
                 "candidates": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
                             "gene_id": {"type": "string"},
+                            "species_code": {"type": "string"},
                             "confidence": {
                                 "type": "number",
                                 "minimum": 0,
@@ -59,7 +61,7 @@ _RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
                     },
                 },
             },
-            "required": ["gene_id"],
+            "required": ["gene_id", "species_code"],
         },
     },
 }
@@ -75,16 +77,28 @@ class BriefGeneResolveError(ValueError):
 
 
 class BriefGeneIdCandidate(BaseModel):
-    """One LLM-proposed candidate gene id with optional confidence."""
+    """One LLM-proposed candidate gene id with optional confidence.
+
+    Per-candidate ``species_code`` is optional: when the LLM omits it
+    the candidate inherits the top-level species code chosen for the
+    resolution.
+    """
 
     gene_id: str
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    species_code: str = ""
 
 
 class BriefGeneResolveResult(BaseModel):
-    """Resolver output: chosen gene id, original query, all candidates."""
+    """Resolver output: chosen gene id, species, original query, candidates.
+
+    ``species_code`` is the matching three-letter code from the supported
+    catalog (e.g. ``osa``, ``ath``, ``zma``) that callers like the
+    DeepGenome and Design HTTP runs paths require alongside ``gene_id``.
+    """
 
     gene_id: str
+    species_code: str
     raw_query: str
     candidates: List[BriefGeneIdCandidate]
 
@@ -108,14 +122,17 @@ async def resolve_brief_gene_user_query(
             call exceeding this raises BriefGeneResolveError.
 
     Returns:
-        Typed result with the chosen gene_id, the original raw_query,
-        and the full candidate list sorted by confidence descending.
+        Typed result with the chosen gene_id, the matching species_code
+        (three-letter code from the supported catalog), the original
+        raw_query, and the full candidate list sorted by confidence
+        descending.
 
     Raises:
         BriefGeneResolveError: blank input, retry-exhausted LLM,
-            empty / unparseable LLM payload, or wall-clock timeout.
-            Other unexpected exceptions propagate so the outer FastAPI
-            handler renders them as 500.
+            empty / unparseable LLM payload, blank or missing
+            species_code, or wall-clock timeout. Other unexpected
+            exceptions propagate so the outer FastAPI handler renders
+            them as 500.
     """
     if not raw_query or not raw_query.strip():
         raise BriefGeneResolveError("query is blank")
@@ -160,9 +177,18 @@ async def resolve_brief_gene_user_query(
     if not isinstance(payload, dict):
         raise BriefGeneResolveError("LLM output is not a JSON object")
 
+    species_raw = payload.get("species_code")
+    species_code = species_raw.strip() if isinstance(species_raw, str) else ""
+    if not species_code:
+        raise BriefGeneResolveError(
+            "species_code could not be determined from query: "
+            f"'{raw_query}'"
+        )
+
     candidates = _normalize_candidates(
         payload.get("gene_id"),
         payload.get("candidates"),
+        species_code,
     )
     if not candidates:
         raise BriefGeneResolveError("no valid candidate")
@@ -170,6 +196,7 @@ async def resolve_brief_gene_user_query(
     candidates.sort(key=lambda c: c.confidence, reverse=True)
     return BriefGeneResolveResult(
         gene_id=candidates[0].gene_id,
+        species_code=species_code,
         raw_query=raw_query,
         candidates=candidates,
     )
@@ -197,12 +224,15 @@ def _first_message_content(
 def _normalize_candidates(
     top_gene_id: Any,
     candidates_field: Any,
+    top_species_code: str,
 ) -> List[BriefGeneIdCandidate]:
     """Build the candidate list, dropping blanks and clamping confidence.
 
     Prefer an explicit ``candidates`` list when present; fall back to
     the top-level ``gene_id`` only when no usable candidate survives
-    the cleaning pass.
+    the cleaning pass. Per-candidate ``species_code`` defaults to
+    ``top_species_code`` when absent or blank so downstream consumers
+    always see a populated three-letter code.
     """
     out: List[BriefGeneIdCandidate] = []
     if isinstance(candidates_field, list):
@@ -218,11 +248,28 @@ def _normalize_candidates(
             except (TypeError, ValueError):
                 confidence = 0.0
             confidence = max(0.0, min(1.0, confidence))
+            candidate_species_raw = raw.get("species_code")
+            candidate_species = (
+                candidate_species_raw.strip()
+                if isinstance(candidate_species_raw, str)
+                else ""
+            )
+            species_code = candidate_species or top_species_code
             out.append(
-                BriefGeneIdCandidate(gene_id=gene_id, confidence=confidence)
+                BriefGeneIdCandidate(
+                    gene_id=gene_id,
+                    confidence=confidence,
+                    species_code=species_code,
+                )
             )
     if not out and isinstance(top_gene_id, str):
         cleaned = top_gene_id.strip()
         if cleaned:
-            out.append(BriefGeneIdCandidate(gene_id=cleaned, confidence=1.0))
+            out.append(
+                BriefGeneIdCandidate(
+                    gene_id=cleaned,
+                    confidence=1.0,
+                    species_code=top_species_code,
+                )
+            )
     return out

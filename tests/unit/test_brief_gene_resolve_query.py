@@ -52,7 +52,7 @@ async def test_resolver_returns_typed_result_for_single_id(
     brief_config, sensitive_config = configs
 
     async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "AT5G42800"})
+        return _make_response({"gene_id": "AT5G42800", "species_code": "ath"})
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
 
@@ -63,9 +63,14 @@ async def test_resolver_returns_typed_result_for_single_id(
     )
 
     assert result.gene_id == "AT5G42800"
+    assert result.species_code == "ath"
     assert result.raw_query == "What does AT5G42800 do in Arabidopsis?"
     assert result.candidates == [
-        BriefGeneIdCandidate(gene_id="AT5G42800", confidence=1.0)
+        BriefGeneIdCandidate(
+            gene_id="AT5G42800",
+            confidence=1.0,
+            species_code="ath",
+        )
     ]
 
 
@@ -80,6 +85,7 @@ async def test_resolver_selects_top_confidence_candidate(
         return _make_response(
             {
                 "gene_id": "X",
+                "species_code": "osa",
                 "candidates": [
                     {"gene_id": "X", "confidence": 0.3},
                     {"gene_id": "Os01g0177400", "confidence": 0.9},
@@ -96,10 +102,12 @@ async def test_resolver_selects_top_confidence_candidate(
     )
 
     assert result.gene_id == "Os01g0177400"
+    assert result.species_code == "osa"
     assert [c.gene_id for c in result.candidates] == [
         "Os01g0177400",
         "X",
     ]
+    assert all(c.species_code == "osa" for c in result.candidates)
 
 
 async def test_resolver_accepts_top_level_gene_id_without_candidates(
@@ -110,7 +118,9 @@ async def test_resolver_accepts_top_level_gene_id_without_candidates(
     brief_config, sensitive_config = configs
 
     async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "  Zm00001eb000010  "})
+        return _make_response(
+            {"gene_id": "  Zm00001eb000010  ", "species_code": "zma"}
+        )
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
 
@@ -121,8 +131,10 @@ async def test_resolver_accepts_top_level_gene_id_without_candidates(
     )
 
     assert result.gene_id == "Zm00001eb000010"
+    assert result.species_code == "zma"
     assert len(result.candidates) == 1
     assert result.candidates[0].confidence == 1.0
+    assert result.candidates[0].species_code == "zma"
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "\n\t  "])
@@ -148,7 +160,9 @@ async def test_resolver_rejects_empty_candidates(
     brief_config, sensitive_config = configs
 
     async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "", "candidates": []})
+        return _make_response(
+            {"gene_id": "", "species_code": "ath", "candidates": []}
+        )
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
 
@@ -238,6 +252,7 @@ async def test_resolver_clamps_out_of_range_confidence(
         return _make_response(
             {
                 "gene_id": "AT1G01010",
+                "species_code": "ath",
                 "candidates": [
                     {"gene_id": "AT1G01010", "confidence": 1.5},
                     {"gene_id": "X", "confidence": -0.2},
@@ -257,3 +272,95 @@ async def test_resolver_clamps_out_of_range_confidence(
     assert max(confidences) == pytest.approx(1.0)
     assert min(confidences) == pytest.approx(0.0)
     assert result.gene_id == "AT1G01010"
+    assert result.species_code == "ath"
+
+
+async def test_resolver_rejects_missing_species_code(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """LLM payload without species_code field surfaces a 400 semantic error."""
+    brief_config, sensitive_config = configs
+
+    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+        return _make_response({"gene_id": "Os01g0177400"})
+
+    monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
+
+    with pytest.raises(
+        BriefGeneResolveError, match="species_code could not be determined"
+    ):
+        await resolve_brief_gene_user_query(
+            "rice flowering gene",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        )
+
+
+async def test_resolver_rejects_blank_species_code(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """Whitespace-only species_code is treated as undetermined and rejected."""
+    brief_config, sensitive_config = configs
+
+    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+        return _make_response(
+            {"gene_id": "Os01g0177400", "species_code": "   "}
+        )
+
+    monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
+
+    with pytest.raises(
+        BriefGeneResolveError, match="species_code could not be determined"
+    ):
+        await resolve_brief_gene_user_query(
+            "rice flowering gene",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        )
+
+
+async def test_resolver_preserves_per_candidate_species_code(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """Explicit per-candidate species_code wins over the top-level fallback."""
+    brief_config, sensitive_config = configs
+
+    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+        return _make_response(
+            {
+                "gene_id": "Os01g0177400",
+                "species_code": "osa",
+                "candidates": [
+                    {
+                        "gene_id": "Os01g0177400",
+                        "confidence": 0.9,
+                        "species_code": "osa",
+                    },
+                    {
+                        "gene_id": "AT1G01010",
+                        "confidence": 0.4,
+                        "species_code": "ath",
+                    },
+                    {"gene_id": "X", "confidence": 0.1},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
+
+    result = await resolve_brief_gene_user_query(
+        "rice vs arabidopsis homolog",
+        brief_config=brief_config,
+        sensitive_config=sensitive_config,
+    )
+
+    assert result.species_code == "osa"
+    species_by_gene = {c.gene_id: c.species_code for c in result.candidates}
+    assert species_by_gene == {
+        "Os01g0177400": "osa",
+        "AT1G01010": "ath",
+        "X": "osa",
+    }

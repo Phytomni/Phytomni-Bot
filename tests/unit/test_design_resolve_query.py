@@ -48,7 +48,7 @@ async def test_resolver_returns_design_typed_result(
     """Happy path delegates to BGA and returns Design-typed result."""
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "AT1G01010"})
+        return _make_response({"gene_id": "AT1G01010", "species_code": "ath"})
 
     monkeypatch.setattr(bga_module, "phyto_chat", fake_phyto_chat)
     design_config, sensitive_config = configs
@@ -72,7 +72,9 @@ async def test_resolver_maps_bga_error_to_design_error(
     """BriefGeneResolveError raised inside BGA maps to the design type."""
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "", "candidates": []})
+        return _make_response(
+            {"gene_id": "", "species_code": "ath", "candidates": []}
+        )
 
     monkeypatch.setattr(bga_module, "phyto_chat", fake_phyto_chat)
     design_config, sensitive_config = configs

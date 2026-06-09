@@ -58,8 +58,13 @@ async def test_resolver_returns_deep_genome_typed_result(
         return _make_response(
             {
                 "gene_id": "Os01g0177400",
+                "species_code": "osa",
                 "candidates": [
-                    {"gene_id": "Os01g0177400", "confidence": 0.92}
+                    {
+                        "gene_id": "Os01g0177400",
+                        "confidence": 0.92,
+                        "species_code": "osa",
+                    }
                 ],
             }
         )
@@ -92,7 +97,9 @@ async def test_resolver_maps_bga_error_to_deep_genome_error(
     """
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"gene_id": "", "candidates": []})
+        return _make_response(
+            {"gene_id": "", "species_code": "osa", "candidates": []}
+        )
 
     monkeypatch.setattr(bga_module, "phyto_chat", fake_phyto_chat)
     deep_genome_config, sensitive_config = configs

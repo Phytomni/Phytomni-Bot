@@ -27,12 +27,24 @@ from mcp_server_phytomni.api import app as api_app
 pytestmark = pytest.mark.server
 
 
-def _resolved(gene_id: str, raw: str) -> BriefGeneResolveResult:
-    """Return a canned resolver result for a single-candidate case."""
+def _resolved(
+    gene_id: str, raw: str, species_code: str = "osa"
+) -> BriefGeneResolveResult:
+    """Return a canned resolver result for a single-candidate case.
+
+    ``species_code`` defaults to ``"osa"`` (rice) for fixture brevity;
+    tests that wire-shape-check the metadata block can override per
+    case when the expected value differs from the default.
+    """
     return BriefGeneResolveResult(
         gene_id=gene_id,
         raw_query=raw,
-        candidates=[BriefGeneIdCandidate(gene_id=gene_id, confidence=1.0)],
+        species_code=species_code,
+        candidates=[
+            BriefGeneIdCandidate(
+                gene_id=gene_id, confidence=1.0, species_code=species_code
+            )
+        ],
     )
 
 
