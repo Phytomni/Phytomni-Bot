@@ -366,8 +366,8 @@ async def _maybe_resolve_brief_gene_query(
     Returns:
         Tuple of ``(user_query_for_tool, metadata_patch)``. The metadata
         patch is empty when the flag is off and otherwise carries the
-        ``original_query`` / ``resolved_gene_id`` / ``resolve_gene_id``
-        keys for caller observability.
+        ``original_query`` / ``resolved_gene_id`` / ``resolved_species_code``
+        / ``resolve_gene_id`` keys for caller observability.
 
     Raises:
         HTTPException: 400 when the flag is set on a non-BriefGene
@@ -396,6 +396,7 @@ async def _maybe_resolve_brief_gene_query(
     return result.gene_id, {
         "original_query": raw_query,
         "resolved_gene_id": result.gene_id,
+        "resolved_species_code": result.species_code,
         "resolve_gene_id": True,
     }
 

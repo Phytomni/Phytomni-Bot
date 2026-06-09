@@ -134,6 +134,7 @@ async def test_chat_resolves_when_flag_true_for_brief_gene(
     metadata = body["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == raw_query
     assert metadata.get("resolved_gene_id") == "AT5G42800"
+    assert metadata.get("resolved_species_code") == "osa"
     assert metadata.get("resolve_gene_id") is True
 
 
@@ -339,6 +340,7 @@ async def test_native_runs_resolves_when_flag_true_for_brief_gene(
     metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "rice TPR6 function"
     assert metadata.get("resolved_gene_id") == "Os01g0177400"
+    assert metadata.get("resolved_species_code") == "osa"
     assert metadata.get("resolve_gene_id") is True
 
 
