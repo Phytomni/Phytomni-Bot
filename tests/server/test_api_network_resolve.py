@@ -105,7 +105,6 @@ async def test_native_runs_resolves_when_flag_true(
         issued_api_key,
         "network",
         {
-            "species_code": "osa",
             "obs_file_list": [],
             "user_query": "rice plant height trait",
             "resolve_to_id": True,
@@ -120,6 +119,7 @@ async def test_native_runs_resolves_when_flag_true(
     metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "rice plant height trait"
     assert metadata.get("resolved_to_id") == "TO:0000207"
+    assert metadata.get("resolved_species_code") == "osa"
     assert metadata.get("resolve_to_id") is True
 
 
@@ -274,7 +274,6 @@ async def test_native_runs_resolver_failure_returns_400(
         issued_api_key,
         "network",
         {
-            "species_code": "osa",
             "obs_file_list": [],
             "user_query": "ambiguous trait",
             "resolve_to_id": True,
@@ -285,3 +284,49 @@ async def test_native_runs_resolver_failure_returns_400(
     body = response.json()
     assert "catalog" in body["error"]["message"]
     assert "to_id" not in captured
+
+
+async def test_native_runs_blank_species_code_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """LLM blank species_code surfaces as HTTP 400, never 500.
+
+    The network resolver owns its own empty-string guard (independent
+    of the BGA path): when the LLM omits ``species_code`` the
+    resolver raises ``GeneNetworkResolveError`` and the API layer
+    maps that to 400. Pinning this case here keeps the contract
+    regression-proofed at the HTTP boundary.
+    """
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    _stub_network_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, network_config: Any, sensitive_config: Any
+    ) -> GeneNetworkResolveResult:
+        del raw_query, network_config, sensitive_config
+        raise GeneNetworkResolveError(
+            "species_code could not be determined from query: baz"
+        )
+
+    monkeypatch.setattr(api_app, "resolve_network_user_query", fake_resolve)
+
+    response = await _post_run(
+        api_client,
+        issued_api_key,
+        "network",
+        {
+            "obs_file_list": [],
+            "user_query": "baz",
+            "resolve_to_id": True,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "species_code" in body["error"]["message"]
+    assert "to_id" not in captured
+    assert "species_code" not in captured

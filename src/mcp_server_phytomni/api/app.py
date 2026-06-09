@@ -52,14 +52,17 @@ from ..agents.brief_gene.resolve_query import (
 )
 from ..agents.deep_genome.resolve_query import (
     DeepGenomeResolveError,
+    DeepGenomeResolveResult,
     resolve_deep_genome_user_query,
 )
 from ..agents.design.resolve_query import (
     DigitalDesignResolveError,
+    DigitalDesignResolveResult,
     resolve_design_user_query,
 )
 from ..agents.network.resolve_query import (
     GeneNetworkResolveError,
+    GeneNetworkResolveResult,
     resolve_network_user_query,
 )
 from ..common.httpx_client import aclose_shared_client, init_shared_client
@@ -402,15 +405,18 @@ async def _maybe_resolve_deep_genome_query(
     raw_query: str,
     resolve_flag: bool,
     agent_slug: Optional[str] = None,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[Optional[DeepGenomeResolveResult], dict[str, Any]]:
     """Mirror of ``_maybe_resolve_brief_gene_query`` for deep_genome.
 
     Sibling helper kept per-domain so each agent's 400-on-misuse
     string names the agent explicitly and the resolver call site
-    closes over the deep_genome-typed result + error class.
+    closes over the deep_genome-typed result + error class. Returns
+    the typed result (or ``None`` when ``resolve_flag`` is off) so
+    the caller can inject both ``gene_id`` and ``species_code`` into
+    the downstream agent arguments.
     """
     if not resolve_flag:
-        return raw_query, {}
+        return None, {}
     if agent_slug != "deep_genome":
         raise HTTPException(
             status_code=400,
@@ -424,9 +430,10 @@ async def _maybe_resolve_deep_genome_query(
         )
     except DeepGenomeResolveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result.gene_id, {
+    return result, {
         "original_query": raw_query,
         "resolved_gene_id": result.gene_id,
+        "resolved_species_code": result.species_code,
         "resolve_gene_id": True,
     }
 
@@ -436,10 +443,15 @@ async def _maybe_resolve_design_query(
     raw_query: str,
     resolve_flag: bool,
     agent_slug: Optional[str] = None,
-) -> tuple[str, dict[str, Any]]:
-    """Mirror of ``_maybe_resolve_brief_gene_query`` for design."""
+) -> tuple[Optional[DigitalDesignResolveResult], dict[str, Any]]:
+    """Mirror of ``_maybe_resolve_brief_gene_query`` for design.
+
+    Returns the typed result (or ``None`` when ``resolve_flag`` is
+    off) so the caller can inject both ``gene_id`` and
+    ``species_code`` into the DigitalDesignAgent arguments.
+    """
     if not resolve_flag:
-        return raw_query, {}
+        return None, {}
     if agent_slug != "design":
         raise HTTPException(
             status_code=400,
@@ -453,9 +465,10 @@ async def _maybe_resolve_design_query(
         )
     except DigitalDesignResolveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result.gene_id, {
+    return result, {
         "original_query": raw_query,
         "resolved_gene_id": result.gene_id,
+        "resolved_species_code": result.species_code,
         "resolve_gene_id": True,
     }
 
@@ -496,12 +509,14 @@ async def _apply_runs_resolver(
             detail="resolve_to_id is only valid for GeneNetwork calls",
         )
     if flag_to_id:
-        resolved, meta = await _maybe_resolve_network_query(
+        network_result, meta = await _maybe_resolve_network_query(
             raw_query=raw_query,
             resolve_flag=True,
             agent_slug=agent,
         )
-        arguments["to_id"] = resolved
+        assert network_result is not None
+        arguments["to_id"] = network_result.to_id
+        arguments["species_code"] = network_result.species_code
         return meta
     # flag_gene_id branch: dispatch by agent slug to the matching
     # gene-id resolver and inject into the agent-shaped target field.
@@ -515,20 +530,24 @@ async def _apply_runs_resolver(
         arguments["user_query"] = resolved
         return meta
     if agent == "deep_genome":
-        resolved, meta = await _maybe_resolve_deep_genome_query(
+        deep_genome_result, meta = await _maybe_resolve_deep_genome_query(
             raw_query=raw_query,
             resolve_flag=True,
             agent_slug=agent,
         )
-        arguments["gene_id"] = resolved
+        assert deep_genome_result is not None
+        arguments["gene_id"] = deep_genome_result.gene_id
+        arguments["species_code"] = deep_genome_result.species_code
         return meta
     if agent == "design":
-        resolved, meta = await _maybe_resolve_design_query(
+        design_result, meta = await _maybe_resolve_design_query(
             raw_query=raw_query,
             resolve_flag=True,
             agent_slug=agent,
         )
-        arguments["gene_id"] = resolved
+        assert design_result is not None
+        arguments["gene_id"] = design_result.gene_id
+        arguments["species_code"] = design_result.species_code
         return meta
     raise HTTPException(
         status_code=400,
@@ -544,17 +563,20 @@ async def _maybe_resolve_network_query(
     raw_query: str,
     resolve_flag: bool,
     agent_slug: Optional[str] = None,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[Optional[GeneNetworkResolveResult], dict[str, Any]]:
     """Mirror of the gene-id resolvers but for GeneNetwork's TO id.
 
     The flag, target field, and metadata key all use ``to_id`` rather
     than ``gene_id`` because the GeneNetwork tool dispatches on a
     Trait Ontology identifier; the resolver itself injects the
     committed TO catalog into the LLM prompt and validates the
-    returned id against that catalog.
+    returned id against that catalog. Returns the typed result (or
+    ``None`` when ``resolve_flag`` is off) so the caller can inject
+    both ``to_id`` and ``species_code`` into the GeneNetworkAgent
+    arguments.
     """
     if not resolve_flag:
-        return raw_query, {}
+        return None, {}
     if agent_slug != "network":
         raise HTTPException(
             status_code=400,
@@ -568,9 +590,10 @@ async def _maybe_resolve_network_query(
         )
     except GeneNetworkResolveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result.to_id, {
+    return result, {
         "original_query": raw_query,
         "resolved_to_id": result.to_id,
+        "resolved_species_code": result.species_code,
         "resolve_to_id": True,
     }
 

@@ -103,7 +103,6 @@ async def test_native_runs_resolves_when_flag_true(
         issued_api_key,
         "deep_genome",
         {
-            "species_code": "osa",
             "user_query": "tell me about CAB1 in rice",
             "resolve_gene_id": True,
         },
@@ -117,6 +116,7 @@ async def test_native_runs_resolves_when_flag_true(
     metadata = body["result"]["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "tell me about CAB1 in rice"
     assert metadata.get("resolved_gene_id") == "Os01g0177400"
+    assert metadata.get("resolved_species_code") == "osa"
     assert metadata.get("resolve_gene_id") is True
 
 
@@ -224,7 +224,6 @@ async def test_native_runs_resolver_failure_returns_400(
         issued_api_key,
         "deep_genome",
         {
-            "species_code": "osa",
             "user_query": "ambiguous query",
             "resolve_gene_id": True,
         },
@@ -234,3 +233,51 @@ async def test_native_runs_resolver_failure_returns_400(
     body = response.json()
     assert "no valid candidate" in body["error"]["message"]
     assert "gene_id" not in captured
+
+
+async def test_native_runs_blank_species_code_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """LLM blank species_code surfaces as HTTP 400, never 500.
+
+    The resolver itself owns the empty-string guard
+    (``BriefGene`` / ``DeepGenome`` resolvers both raise their typed
+    ``*ResolveError`` with a readable message before returning); the
+    API layer maps that to HTTP 400. Pinning this case here keeps the
+    contract regression-proofed at the HTTP boundary so a future
+    handler rewrite cannot silently fall back to 500.
+    """
+    del tasks_db_path
+    captured: dict[str, Any] = {}
+    _stub_deep_genome_handler(monkeypatch, captured)
+
+    async def fake_resolve(
+        raw_query: str, *, deep_genome_config: Any, sensitive_config: Any
+    ) -> DeepGenomeResolveResult:
+        del raw_query, deep_genome_config, sensitive_config
+        raise DeepGenomeResolveError(
+            "species_code could not be determined from query: foo"
+        )
+
+    monkeypatch.setattr(
+        api_app, "resolve_deep_genome_user_query", fake_resolve
+    )
+
+    response = await _post_run(
+        api_client,
+        issued_api_key,
+        "deep_genome",
+        {
+            "user_query": "foo",
+            "resolve_gene_id": True,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "species_code" in body["error"]["message"]
+    assert "gene_id" not in captured
+    assert "species_code" not in captured
