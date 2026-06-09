@@ -6,17 +6,11 @@
 """Chain the network agent with the deepgenome agent.
 
 Public surface: ChainTop20MissingError, network_to_deep_genome_chain.
-``network_to_deep_genome_chain`` runs the existing ``network_analysis``
-entry to completion, downloads the analyst's top-20 gene list (a CSV
-emitted by the upstream ``construct_network.py`` script and named like
-``<TO_ID>_top20_gene.csv``), parses the 20 gene IDs, and submits the
-existing ``gene_function`` entry for each gene in parallel via
-``asyncio.gather``.
-
-The species name is resolved to a deepgenome ``species_code`` through
-``SPECIES_TO_CODE`` (sourced from the description string in
-``mcp/schemas.py:178-249``); keep the two in sync if the schema dict
-grows.
+The chain runs ``network_analysis`` to completion, downloads the
+``<TO_ID>_top20_gene.csv`` artefact from ``construct_network.py``,
+parses the 20 gene IDs, and fans them out via ``asyncio.gather``
+into ``gene_function``. ``SPECIES_TO_CODE`` mirrors the schema
+dict at ``mcp/schemas.py:178-249`` — keep them in sync.
 """
 
 from __future__ import annotations
@@ -155,7 +149,9 @@ class ChainTop20MissingError(FileNotFoundError):
         """
         self.output_dir = output_dir
         self.filename = filename
-        full_message = f"{message} (output_dir={output_dir}, filename={filename})"
+        full_message = (
+            f"{message} (output_dir={output_dir}, filename={filename})"
+        )
         super().__init__(full_message)
 
 
@@ -183,8 +179,11 @@ def _parse_top20_gene_ids(csv_path: Path) -> List[str]:
         reader = csv.DictReader(handle)
         fieldnames = reader.fieldnames or []
         chosen = next(
-            (header for header in _GENE_ID_HEADER_CANDIDATES
-             if header in fieldnames),
+            (
+                header
+                for header in _GENE_ID_HEADER_CANDIDATES
+                if header in fieldnames
+            ),
             None,
         )
         if chosen is None:
@@ -225,9 +224,7 @@ def _build_top20_object_key(
     return f"{prefix.rstrip('/')}/{filename}"
 
 
-def _obsfs_top20_match(
-    output_dir: str, bucket_name: str
-) -> Optional[str]:
+def _obsfs_top20_match(output_dir: str, bucket_name: str) -> Optional[str]:
     """Return the first filename matching ``TOP20_GLOB`` under obsfs.
 
     Args:
@@ -301,13 +298,12 @@ def _find_top20_object_key(
         ChainTop20MissingError: When neither obsfs nor the SDK find
             a matching file.
     """
+
     def _obsfs_action() -> str:
         basename = _obsfs_top20_match(output_dir, bucket_name)
         if basename is None:
             raise FileNotFoundError("no obsfs match")
-        return _build_top20_object_key(
-            output_dir, basename, bucket_name
-        )
+        return _build_top20_object_key(output_dir, basename, bucket_name)
 
     def _sdk_action() -> str:
         key = _sdk_top20_match(output_dir, bucket_name, obs_server)
@@ -346,9 +342,7 @@ def _scratch_dir_for(user_id: Optional[str]) -> Path:
     return target
 
 
-async def _download_top20_csv(
-    output_dir: str, scratch_dir: Path
-) -> Path:
+async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
     """Download the network agent's top20 gene CSV to the local scratch.
 
     Locates the file under the network output dir via the obsfs glob
@@ -380,8 +374,7 @@ async def _download_top20_csv(
             output_dir=output_dir,
             filename=TOP20_GLOB,
             message=(
-                "network output_dir did not produce a usable OBS "
-                "object key"
+                "network output_dir did not produce a usable OBS " "object key"
             ),
         )
     sensitive = get_sensitive_config()
@@ -509,26 +502,21 @@ async def network_to_deep_genome_chain(
     csv_path = await _download_top20_csv(output_dir, scratch_dir)
     gene_ids = _parse_top20_gene_ids(csv_path)
     if not gene_ids:
-        logger.warning(
-            "network chain parsed 0 gene IDs from %s", csv_path
-        )
+        logger.warning("network chain parsed 0 gene IDs from %s", csv_path)
 
     species_code = SPECIES_TO_CODE[species]
-    deep_kwargs = _filter_chain_kwargs(kwargs)
     coros = [
         gene_function(
             species_code=species_code,
             gene_id=gene_id,
             user_id=user_id,
-            **deep_kwargs,
+            **forwarded_kwargs,
         )
         for gene_id in gene_ids
     ]
     envelopes: List[Any] = []
     if coros:
-        envelopes = list(
-            await asyncio.gather(*coros, return_exceptions=True)
-        )
+        envelopes = list(await asyncio.gather(*coros, return_exceptions=True))
 
     return {
         "network_envelope": network_envelope,
@@ -563,5 +551,8 @@ def _filter_chain_kwargs(kwargs: Mapping[str, Any]) -> Dict[str, Any]:
         (including unknown keys) is forwarded so call-site overrides
         of any field in the agent config field maps still work.
     """
-    return {key: value for key, value in kwargs.items()
-            if key not in _CHAIN_DROPPED_KWARGS}
+    return {
+        key: value
+        for key, value in kwargs.items()
+        if key not in _CHAIN_DROPPED_KWARGS
+    }
