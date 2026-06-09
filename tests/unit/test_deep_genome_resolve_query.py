@@ -79,10 +79,12 @@ async def test_resolver_returns_deep_genome_typed_result(
     )
 
     assert result.gene_id == "Os01g0177400"
+    assert result.species_code == "osa"
     assert result.raw_query == "tell me about CAB1 in rice"
     assert len(result.candidates) == 1
     assert isinstance(result.candidates[0], DeepGenomeIdCandidate)
     assert result.candidates[0].confidence == pytest.approx(0.92)
+    assert result.candidates[0].species_code == "osa"
 
 
 async def test_resolver_maps_bga_error_to_deep_genome_error(

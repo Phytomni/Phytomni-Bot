@@ -45,16 +45,28 @@ class DeepGenomeResolveError(ValueError):
 
 
 class DeepGenomeIdCandidate(BaseModel):
-    """One LLM-proposed candidate gene id for deep_genome."""
+    """One LLM-proposed candidate gene id for deep_genome.
+
+    Per-candidate ``species_code`` mirrors BGA's projection: optional
+    at the candidate level so blanks fall through to the top-level
+    species code chosen for the resolution.
+    """
 
     gene_id: str
     confidence: float = 0.0
+    species_code: str = ""
 
 
 class DeepGenomeResolveResult(BaseModel):
-    """Resolver output: chosen gene id, original query, all candidates."""
+    """Resolver output: chosen gene id, species, raw query, candidates.
+
+    ``species_code`` is the three-letter code BGA extracted alongside
+    ``gene_id``; the HTTP injection site reads it to populate the
+    DeepGenomeAgent ``species_code`` argument without a second LLM call.
+    """
 
     gene_id: str
+    species_code: str
     raw_query: str
     candidates: List[DeepGenomeIdCandidate]
 
@@ -117,6 +129,7 @@ async def resolve_deep_genome_user_query(
 
     return DeepGenomeResolveResult(
         gene_id=bga_result.gene_id,
+        species_code=bga_result.species_code,
         raw_query=bga_result.raw_query,
         candidates=[
             _to_deep_genome_candidate(candidate)
@@ -132,4 +145,5 @@ def _to_deep_genome_candidate(
     return DeepGenomeIdCandidate(
         gene_id=candidate.gene_id,
         confidence=candidate.confidence,
+        species_code=candidate.species_code,
     )

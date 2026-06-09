@@ -33,8 +33,13 @@ def _resolved(gene_id: str, raw: str) -> DeepGenomeResolveResult:
     """Return a canned deep_genome resolver result."""
     return DeepGenomeResolveResult(
         gene_id=gene_id,
+        species_code="osa",
         raw_query=raw,
-        candidates=[DeepGenomeIdCandidate(gene_id=gene_id, confidence=1.0)],
+        candidates=[
+            DeepGenomeIdCandidate(
+                gene_id=gene_id, confidence=1.0, species_code="osa"
+            )
+        ],
     )
 
 

@@ -60,9 +60,11 @@ async def test_resolver_returns_design_typed_result(
     )
 
     assert result.gene_id == "AT1G01010"
+    assert result.species_code == "ath"
     assert result.raw_query == "design AT1G01010 promoter"
     assert len(result.candidates) == 1
     assert isinstance(result.candidates[0], DigitalDesignIdCandidate)
+    assert result.candidates[0].species_code == "ath"
 
 
 async def test_resolver_maps_bga_error_to_design_error(

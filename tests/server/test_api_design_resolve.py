@@ -31,9 +31,12 @@ def _resolved(gene_id: str, raw: str) -> DigitalDesignResolveResult:
     """Return a canned design resolver result."""
     return DigitalDesignResolveResult(
         gene_id=gene_id,
+        species_code="ath",
         raw_query=raw,
         candidates=[
-            DigitalDesignIdCandidate(gene_id=gene_id, confidence=1.0),
+            DigitalDesignIdCandidate(
+                gene_id=gene_id, confidence=1.0, species_code="ath"
+            ),
         ],
     )
 
