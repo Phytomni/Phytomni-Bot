@@ -79,7 +79,7 @@ async def test_resolver_returns_typed_result_for_valid_to_id(
 
     async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
         captured["kwargs"] = kwargs
-        return _make_response({"to_id": "TO:0000207"})
+        return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
     network_config, sensitive_config = configs
@@ -91,10 +91,12 @@ async def test_resolver_returns_typed_result_for_valid_to_id(
     )
 
     assert result.to_id == "TO:0000207"
+    assert result.species_code == "osa"
     assert result.raw_query == "rice plant height trait"
     assert len(result.candidates) == 1
     assert isinstance(result.candidates[0], GeneNetworkToIdCandidate)
     assert result.candidates[0].confidence == pytest.approx(1.0)
+    assert result.candidates[0].species_code == "osa"
     # The resolver embeds the TO catalog into the user prompt; assert
     # the LLM call carries a substantial user_query that includes a
     # representative catalog line.
@@ -111,6 +113,7 @@ async def test_resolver_picks_top_confidence_among_candidates(
         return _make_response(
             {
                 "to_id": "TO:0000207",
+                "species_code": "osa",
                 "candidates": [
                     {"to_id": "TO:0000207", "confidence": 0.55},
                     {"to_id": "TO:0000276", "confidence": 0.91},
@@ -129,7 +132,9 @@ async def test_resolver_picks_top_confidence_among_candidates(
 
     # Top-confidence id (drought tolerance, TO:0000276) wins.
     assert result.to_id == "TO:0000276"
+    assert result.species_code == "osa"
     assert result.candidates[0].confidence == pytest.approx(0.91)
+    assert result.candidates[0].species_code == "osa"
 
 
 async def test_resolver_rejects_blank_query(
@@ -159,7 +164,7 @@ async def test_resolver_rejects_id_not_in_catalog(
     """
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"to_id": "TO:9999999"})
+        return _make_response({"to_id": "TO:9999999", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
     network_config, sensitive_config = configs
@@ -202,7 +207,7 @@ async def test_resolver_maps_timeout_to_resolve_error(
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
         await asyncio.sleep(5)
-        return _make_response({"to_id": "TO:0000207"})
+        return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
     network_config, sensitive_config = configs
@@ -253,7 +258,7 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
     caplog = resolver_caplog
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"to_id": "TO:0000139"})
+        return _make_response({"to_id": "TO:0000139", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
     network_config, sensitive_config = configs
@@ -305,6 +310,7 @@ async def test_resolver_warns_on_post_sort_deprecated_winner(
         return _make_response(
             {
                 "to_id": "TO:0000207",
+                "species_code": "osa",
                 "candidates": [
                     {"to_id": "TO:0000207", "confidence": 0.4},
                     {"to_id": "TO:0000139", "confidence": 0.95},
@@ -353,7 +359,7 @@ async def test_resolver_does_not_warn_for_canonical_id(
     caplog = resolver_caplog
 
     async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
-        return _make_response({"to_id": "TO:0000207"})
+        return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
     network_config, sensitive_config = configs
@@ -376,3 +382,95 @@ async def test_resolver_does_not_warn_for_canonical_id(
         and "deprecated" in record.getMessage()
     ]
     assert not deprecated_warnings
+
+
+async def test_resolver_rejects_blank_species_code(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """LLM omitting species_code maps to a definitive 400-grade error.
+
+    The HTTP runs path requires species_code alongside to_id; the
+    resolver raises rather than silently shipping an empty string so
+    the API layer surfaces an actionable 400 instead of a downstream
+    Pydantic ValidationError.
+    """
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response({"to_id": "TO:0000207", "species_code": ""})
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with pytest.raises(GeneNetworkResolveError) as excinfo:
+        await resolve_network_user_query(
+            "ambiguous trait",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+    assert "species_code" in str(excinfo.value)
+
+
+async def test_resolver_rejects_missing_species_code_key(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """LLM payload entirely missing species_code raises ResolveError."""
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response({"to_id": "TO:0000207"})
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with pytest.raises(GeneNetworkResolveError) as excinfo:
+        await resolve_network_user_query(
+            "ambiguous trait",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+    assert "species_code" in str(excinfo.value)
+
+
+async def test_resolver_propagates_per_candidate_species_code(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """Per-candidate species_code overrides the top-level default.
+
+    Locks the contract that ``_normalize_candidates`` honours an
+    explicit per-candidate species_code when present while falling
+    back to the top-level value when blank or omitted.
+    """
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response(
+            {
+                "to_id": "TO:0000207",
+                "species_code": "osa",
+                "candidates": [
+                    {
+                        "to_id": "TO:0000207",
+                        "confidence": 0.4,
+                        "species_code": "ath",
+                    },
+                    {"to_id": "TO:0000276", "confidence": 0.95},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    result = await resolve_network_user_query(
+        "rice plant height",
+        network_config=network_config,
+        sensitive_config=sensitive_config,
+    )
+
+    # Top-confidence candidate wins; its species defaults to top-level.
+    assert result.to_id == "TO:0000276"
+    assert result.species_code == "osa"
+    candidate_by_id = {c.to_id: c for c in result.candidates}
+    assert candidate_by_id["TO:0000207"].species_code == "ath"
+    assert candidate_by_id["TO:0000276"].species_code == "osa"

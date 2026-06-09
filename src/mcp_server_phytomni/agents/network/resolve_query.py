@@ -51,12 +51,14 @@ _RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "properties": {
                 "to_id": {"type": "string"},
+                "species_code": {"type": "string"},
                 "candidates": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
                             "to_id": {"type": "string"},
+                            "species_code": {"type": "string"},
                             "confidence": {
                                 "type": "number",
                                 "minimum": 0,
@@ -67,7 +69,7 @@ _RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
                     },
                 },
             },
-            "required": ["to_id"],
+            "required": ["to_id", "species_code"],
         },
     },
 }
@@ -83,16 +85,28 @@ class GeneNetworkResolveError(ValueError):
 
 
 class GeneNetworkToIdCandidate(BaseModel):
-    """One LLM-proposed candidate TO id with optional confidence."""
+    """One LLM-proposed candidate TO id with optional confidence.
+
+    Per-candidate ``species_code`` is optional: when the LLM omits it
+    the candidate inherits the top-level species code chosen for the
+    resolution.
+    """
 
     to_id: str
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    species_code: str = ""
 
 
 class GeneNetworkResolveResult(BaseModel):
-    """Resolver output: chosen TO id, original query, all candidates."""
+    """Resolver output: chosen TO id, species, query, all candidates.
+
+    ``species_code`` is the matching three-letter code from the
+    supported catalog (e.g. ``osa``, ``ath``, ``zma``) that callers
+    like the GeneNetwork HTTP runs path require alongside ``to_id``.
+    """
 
     to_id: str
+    species_code: str
     raw_query: str
     candidates: List[GeneNetworkToIdCandidate]
 
@@ -115,13 +129,15 @@ async def resolve_network_user_query(
         timeout_seconds: Resolver wall-clock budget.
 
     Returns:
-        Typed GeneNetworkResolveResult with chosen to_id + original
-        raw_query + full candidate list sorted by confidence desc.
+        Typed GeneNetworkResolveResult with chosen to_id + matching
+        species_code + original raw_query + full candidate list sorted
+        by confidence desc.
 
     Raises:
         GeneNetworkResolveError: blank input, retry-exhausted LLM,
-            empty / unparseable LLM payload, wall-clock timeout, or
-            LLM-proposed id not present in the committed TO catalog.
+            empty / unparseable LLM payload, blank or missing
+            species_code, wall-clock timeout, or LLM-proposed id not
+            present in the committed TO catalog.
     """
     if not raw_query or not raw_query.strip():
         raise GeneNetworkResolveError("query is blank")
@@ -176,10 +192,18 @@ async def resolve_network_user_query(
     if not isinstance(payload, dict):
         raise GeneNetworkResolveError("LLM output is not a JSON object")
 
+    species_code = _extract_species_code(payload.get("species_code"))
+    if not species_code:
+        raise GeneNetworkResolveError(
+            "species_code could not be determined from query: "
+            f"'{raw_query}'"
+        )
+
     candidates = _normalize_candidates(
         payload.get("to_id"),
         payload.get("candidates"),
         valid_to_ids,
+        species_code,
     )
     if not candidates:
         raise GeneNetworkResolveError(
@@ -190,6 +214,7 @@ async def resolve_network_user_query(
     _warn_if_deprecated(candidates[0].to_id, raw_query)
     return GeneNetworkResolveResult(
         to_id=candidates[0].to_id,
+        species_code=species_code,
         raw_query=raw_query,
         candidates=candidates,
     )
@@ -230,6 +255,11 @@ def _warn_if_deprecated(chosen_to_id: str, raw_query: str) -> None:
     )
 
 
+def _extract_species_code(raw: Any) -> str:
+    """Normalize an LLM-provided species_code field to a stripped string."""
+    return raw.strip() if isinstance(raw, str) else ""
+
+
 def _first_message_content(
     phyto_response: Dict[str, Any],
 ) -> Optional[str]:
@@ -253,6 +283,7 @@ def _normalize_candidates(
     top_to_id: Any,
     candidates_field: Any,
     valid_to_ids: set,
+    top_species_code: str,
 ) -> List[GeneNetworkToIdCandidate]:
     """Build candidate list, dropping blanks and ids outside the catalog.
 
@@ -261,6 +292,10 @@ def _normalize_candidates(
     the LLM to pick from the supplied catalog, but a non-compliant
     completion still loses its bogus ids here rather than reaching
     the downstream BI / agent layer that has no equivalent check.
+
+    Per-candidate ``species_code`` defaults to ``top_species_code``
+    when absent or blank so downstream consumers always see a
+    populated three-letter code.
     """
     out: List[GeneNetworkToIdCandidate] = []
     if isinstance(candidates_field, list):
@@ -276,11 +311,28 @@ def _normalize_candidates(
             except (TypeError, ValueError):
                 confidence = 0.0
             confidence = max(0.0, min(1.0, confidence))
+            candidate_species_raw = raw.get("species_code")
+            candidate_species = (
+                candidate_species_raw.strip()
+                if isinstance(candidate_species_raw, str)
+                else ""
+            )
+            species_code = candidate_species or top_species_code
             out.append(
-                GeneNetworkToIdCandidate(to_id=to_id, confidence=confidence)
+                GeneNetworkToIdCandidate(
+                    to_id=to_id,
+                    confidence=confidence,
+                    species_code=species_code,
+                )
             )
     if not out and isinstance(top_to_id, str):
         cleaned = top_to_id.strip()
         if cleaned and cleaned in valid_to_ids:
-            out.append(GeneNetworkToIdCandidate(to_id=cleaned, confidence=1.0))
+            out.append(
+                GeneNetworkToIdCandidate(
+                    to_id=cleaned,
+                    confidence=1.0,
+                    species_code=top_species_code,
+                )
+            )
     return out

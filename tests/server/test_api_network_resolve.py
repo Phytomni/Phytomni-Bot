@@ -27,12 +27,24 @@ from mcp_server_phytomni.api import app as api_app
 pytestmark = pytest.mark.server
 
 
-def _resolved(to_id: str, raw: str) -> GeneNetworkResolveResult:
-    """Return a canned network resolver result."""
+def _resolved(
+    to_id: str, raw: str, species_code: str = "osa"
+) -> GeneNetworkResolveResult:
+    """Return a canned network resolver result.
+
+    ``species_code`` defaults to ``"osa"`` (rice) for fixture brevity;
+    tests that wire-shape-check the metadata block can override per
+    case when the expected value differs from the default.
+    """
     return GeneNetworkResolveResult(
         to_id=to_id,
         raw_query=raw,
-        candidates=[GeneNetworkToIdCandidate(to_id=to_id, confidence=1.0)],
+        species_code=species_code,
+        candidates=[
+            GeneNetworkToIdCandidate(
+                to_id=to_id, confidence=1.0, species_code=species_code
+            )
+        ],
     )
 
 

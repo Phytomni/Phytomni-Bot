@@ -52,8 +52,15 @@ system:
       catalog (each line is "TO:NNNNNNN | name | synonyms: ...").
     - Never fabricate a TO id that is not in the catalog.
     - top-level "to_id" must be the single best canonical id.
-    - optional "candidates" is a list of {to_id, confidence in [0, 1]}
-      enumerating alternatives in order of likelihood.
+    - top-level "species_code" must be the matching three-letter
+      species code from the supported catalog (e.g. "osa" for Oryza
+      sativa, "ath" for Arabidopsis thaliana, "zma" for Zea mays). If
+      the species cannot be determined from the query, leave
+      "species_code" as the empty string "".
+    - optional "candidates" is a list of {to_id, confidence in [0, 1],
+      optional species_code} enumerating alternatives in order of
+      likelihood; per-candidate species_code defaults to the top-level
+      value when omitted.
     - never wrap the JSON in markdown code fences.
     - never include explanations, prose, or lists outside the schema.
     - if the user query is ambiguous, still return your best single
@@ -1553,6 +1560,11 @@ user:
     The user submitted the following free-form query through the HTTP
     API. Pick the single best matching TO id from the catalog in the
     system instructions and return the JSON object described there.
+    The response must include both top-level "to_id" and top-level
+    "species_code" (matching three-letter code from the supported
+    catalog, e.g. "osa", "ath", "zma"); leave "species_code" as the
+    empty string "" only when the species cannot be determined from
+    the query.
 
     User query:
     {{user_query}}
