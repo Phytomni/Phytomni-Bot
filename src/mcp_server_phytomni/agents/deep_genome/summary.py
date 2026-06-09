@@ -87,7 +87,10 @@ class SubSummaryBuilder:
         # out_path was literally under ``.out/`` and produced a full
         # absolute path for obsfs result dirs, breaking the markdown
         # ``../../{dir}/`` prefix the report renders against.
-        self.markdown_path = gene_id
+        if ".out" in str(out_path):
+            self.markdown_path = str(out_path).split(".out/")[-1]
+        else:
+            self.markdown_path = gene_id
         self.data = data
         self.figure_index = figure_index
         self.handlers: Dict[str, Callable[[], None]] = {
