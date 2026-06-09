@@ -63,14 +63,14 @@ async def test_design_module_applies_config_and_secret_overrides(
 
         async def arun(
             self,
-            species: str,
+            species_code: str,
             gene_id: str,
             **kwargs: Any,
         ) -> dict[str, Any]:
             """Capture design run arguments.
 
             Args:
-                species: Species forwarded by design_module.
+                species_code: Species code forwarded by design_module.
                 gene_id: Target gene forwarded by design_module.
                 **kwargs: Additional wrapper options forwarded to arun.
 
@@ -78,7 +78,7 @@ async def test_design_module_applies_config_and_secret_overrides(
                 Minimal design result payload.
             """
             captured["run"] = {
-                "species": species,
+                "species_code": species_code,
                 "gene_id": gene_id,
                 "user_id": kwargs.get("user_id"),
                 "batch": kwargs.get("batch", False),
@@ -102,7 +102,7 @@ async def test_design_module_applies_config_and_secret_overrides(
     monkeypatch.setattr(analysis_helpers, "get_cached_agent", _no_cache)
 
     result = await digital_design_agents.design_module(
-        species="osa",
+        species_code="osa",
         gene_id="gene-1",
         user_id="user-1",
         batch=False,
@@ -153,14 +153,14 @@ async def test_network_analysis_applies_config_and_secret_overrides(
 
         async def arun(
             self,
-            species: str,
+            species_code: str,
             to_id: str,
             **kwargs: Any,
         ) -> dict[str, Any]:
             """Capture network run arguments.
 
             Args:
-                species: Species forwarded by network_analysis.
+                species_code: Species code forwarded by network_analysis.
                 to_id: Target id forwarded by network_analysis.
                 **kwargs: Additional wrapper options forwarded to arun.
 
@@ -168,7 +168,7 @@ async def test_network_analysis_applies_config_and_secret_overrides(
                 Minimal network result payload.
             """
             captured["run"] = {
-                "species": species,
+                "species_code": species_code,
                 "to_id": to_id,
                 "user_id": kwargs.get("user_id"),
                 "batch": kwargs.get("batch", False),
@@ -192,7 +192,7 @@ async def test_network_analysis_applies_config_and_secret_overrides(
     monkeypatch.setattr(analysis_helpers, "get_cached_agent", _no_cache)
 
     result = await gene_network_agents.network_analysis(
-        species="osa",
+        species_code="osa",
         to_id="to-1",
         user_id="user-2",
         batch=True,

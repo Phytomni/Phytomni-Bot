@@ -74,7 +74,7 @@ async def test_network_state_reduction_dispatches_single_task(
 
     async def fake_dispatch(
         analysis_type: str,
-        species: str,
+        species_code: str,
         to_id: str,
         output_dir: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -82,14 +82,14 @@ async def test_network_state_reduction_dispatches_single_task(
 
         Args:
             analysis_type: Network analysis type forwarded by the worker.
-            species: Species forwarded by the worker.
+            species_code: Species code forwarded by the worker.
             to_id: Target id forwarded by the worker.
             output_dir: Output directory forwarded by the worker.
 
         Returns:
             Deterministic task payload echoing ``analysis_type``.
         """
-        assert species == "oryza sativa"
+        assert species_code == "osa"
         assert to_id == "TO:0000207"
         assert output_dir == "/tmp/network-out"
         dispatched.append(analysis_type)
@@ -103,7 +103,7 @@ async def test_network_state_reduction_dispatches_single_task(
 
     initial_state: dict[str, Any] = dict.fromkeys(["error"], None)
     initial_state.update(
-        species="oryza sativa",
+        species_code="osa",
         to_id="TO:0000207",
         user_id="test-user",
         batch=False,
@@ -191,7 +191,7 @@ async def test_network_state_reduction_handles_dual_failure(
 
     async def fake_dispatch(
         analysis_type: str,
-        species: str,
+        species_code: str,
         to_id: str,
         output_dir: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -199,14 +199,14 @@ async def test_network_state_reduction_handles_dual_failure(
 
         Args:
             analysis_type: Network analysis label for the failing task.
-            species: Species forwarded by the dispatcher.
+            species_code: Species code forwarded by the dispatcher.
             to_id: Trait Ontology id forwarded by the dispatcher.
             output_dir: Optional output directory (unused).
 
         Raises:
             RuntimeError: Always, tagged with the analysis type.
         """
-        assert species == "oryza sativa"
+        assert species_code == "osa"
         assert to_id == "TO:0000207"
         _ = output_dir
         raise RuntimeError(f"boom {analysis_type}")
@@ -215,7 +215,7 @@ async def test_network_state_reduction_handles_dual_failure(
 
     seed_state: dict[str, Any] = dict.fromkeys(["error"], None)
     seed_state.update(
-        species="oryza sativa",
+        species_code="osa",
         to_id="TO:0000207",
         user_id="test-user",
         batch=False,

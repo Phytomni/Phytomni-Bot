@@ -148,7 +148,7 @@ async def test_evo_test_analysis_with_all_species_submits_task(
 
     result = await evolution_agent.evo_test_analysis(
         query="Compare PHYB across species",
-        species="osa",
+        species_code="osa",
         gene_id="AtPHYB",
         user_id="test-user",
     )
@@ -226,7 +226,7 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
 
     result = await evolution_agent.evo_test_analysis(
         query="ambiguous request",
-        species="osa",
+        species_code="osa",
         gene_id="AtPHYB",
     )
 

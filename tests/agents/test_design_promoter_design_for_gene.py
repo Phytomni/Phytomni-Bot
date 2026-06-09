@@ -67,7 +67,7 @@ async def test_returns_submit_helper_result_verbatim(
     submit_mock = _install_stub_dependencies(monkeypatch)
 
     result = await promoter_design_for_gene(
-        species="Arabidopsis thaliana",
+        species_code="ath",
         gene_id="AT1G01010",
     )
 
@@ -91,7 +91,7 @@ async def test_request_shape_targets_promoter_analysis(
     submit_mock = _install_stub_dependencies(monkeypatch)
 
     await promoter_design_for_gene(
-        species="Arabidopsis thaliana",
+        species_code="ath",
         gene_id="AT1G01010",
     )
 

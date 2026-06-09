@@ -200,7 +200,7 @@ def route_analysis_tasks(
         node_name: Graph node name that receives each task payload.
         target_key: State key holding the target identifier to copy.
         tasks_key: State key containing prepared task mappings.
-        state: Current workflow state with species, target, and tasks.
+        state: Current workflow state with species_code, target, and tasks.
 
     Returns:
         LangGraph Send commands that fan tasks out to ``node_name``.
@@ -210,7 +210,7 @@ def route_analysis_tasks(
             node_name,
             {
                 "task_index": index,
-                "species": state["species"],
+                "species_code": state["species_code"],
                 target_key: state[target_key],
                 "output_dir": state.get("output_dir"),
                 **task,
@@ -403,7 +403,8 @@ async def capture_dispatched_analysis(
     """Capture an analysis dispatched by target-key based state.
 
     Args:
-        state: Current LangGraph state containing species, target, and output.
+        state: Current LangGraph state containing species_code, target, and
+            output.
         analysis_type: Analysis type label passed to the dispatch callback.
         target_key: State key holding the analysis target identifier.
         dispatch_call: Callback that dispatches one target-specific analysis.
@@ -418,7 +419,7 @@ async def capture_dispatched_analysis(
         analysis_type,
         lambda: dispatch_call(
             analysis_type,
-            state["species"],
+            state["species_code"],
             state[target_key],
             state.get("output_dir"),
         ),

@@ -74,7 +74,7 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="protein_design_analysis",
-        species="arabidopsis thaliana",
+        species_code="ath",
         gene_id="AT1G01010",
         output_dir="/tmp/design-out",
     )
@@ -100,7 +100,7 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="protein_design_analysis",
-        species="arabidopsis thaliana",
+        species_code="ath",
         gene_id="AT1G01010",
         output_dir="/tmp/design-out",
     )

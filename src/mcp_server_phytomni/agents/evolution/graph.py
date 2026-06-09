@@ -86,7 +86,7 @@ async def submit_evolution_task_node(
             "submit_evolution_task_node reached with target_taxids=None; "
             "route_after_resolve should have short-circuited to END"
         )
-    species = state["species"]
+    species_code = state["species_code"]
     gene_id = state["gene_id"]
     user_id = kwargs.get("user_id", DEEP_GENOME_CONFIG.USER_ID)
     prompt_file = kwargs.get("prompt_file", DEEP_GENOME_CONFIG.PROMPT_FILE)
@@ -100,7 +100,7 @@ async def submit_evolution_task_node(
         {"gene_id": gene_id, "target_taxid": taxids},
     )
     data_list = agent.get_data_list(
-        deepgenome_data, "evolution_analysis", species
+        deepgenome_data, "evolution_analysis", species_code
     )
     if not batch:
         output_dir = evolution_output_dir(user_id, kwargs)

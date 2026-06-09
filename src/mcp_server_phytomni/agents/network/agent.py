@@ -71,8 +71,7 @@ class GeneNetworkState(ParallelDispatchState):
     adds the gene-network-specific fields below.
 
     Attributes:
-        species: Latin species name in lowercase with spaces (e.g.,
-            "oryza sativa", "arabidopsis thaliana").
+        species_code: Three-letter species code (e.g., "osa", "ath").
         to_id: Trait Ontology identifier for the target phenotype,
             formatted like "TO:0000207".
         user_id: User identifier.
@@ -85,7 +84,7 @@ class GeneNetworkState(ParallelDispatchState):
         error: Error message if any task failed during execution.
     """
 
-    species: str  # Latin name lowercase with spaces (e.g. "oryza sativa")
+    species_code: str  # Three-letter species code (e.g. "osa")
     to_id: str  # Trait Ontology id formatted like "TO:0000207"
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
@@ -112,7 +111,7 @@ class GeneNetworkAgents:
     Example:
         >>> agents = GeneNetworkAgents()
         >>> result = await agents.arun(
-        ...     species="osa",
+        ...     species_code="osa",
         ...     to_id="TO:0000621"
         ... )
     """
@@ -174,7 +173,7 @@ class GeneNetworkAgents:
     async def _dispatch_and_wait_analysis(
         self,
         analysis_type: str,
-        species: str,
+        species_code: str,
         to_id: str,
         output_dir: Optional[str] = None,
     ) -> dict:
@@ -182,7 +181,7 @@ class GeneNetworkAgents:
 
         Args:
             analysis_type: Type of network analysis.
-            species: Species name.
+            species_code: Three-letter species code (e.g., "osa").
             to_id: Target gene identifier.
             output_dir: Optional output directory path.
 
@@ -191,7 +190,7 @@ class GeneNetworkAgents:
         """
         goal_description, meta, data_list = self._analysis_prompt_parts(
             analysis_type,
-            species,
+            species_code,
             to_id,
         )
         request = {
@@ -219,7 +218,7 @@ class GeneNetworkAgents:
     def _analysis_prompt_parts(
         self,
         analysis_type: str,
-        species: str,
+        species_code: str,
         to_id: str,
     ) -> tuple[str, str, Any]:
         """Return goal, meta, and data list for one network analysis."""
@@ -236,7 +235,7 @@ class GeneNetworkAgents:
         data_list = get_data_list(
             self.gene_network_config.DEEPGENOME_DATA,
             analysis_type,
-            species,
+            species_code,
         )
         return goal_description, meta, data_list
 
@@ -271,7 +270,7 @@ class GeneNetworkAgents:
             State update with submitted task metadata or error details.
         """
         task_index = state.get("task_index")
-        species = state["species"]
+        species_code = state["species_code"]
         to_id = state["to_id"]
         analysis_type = state["analysis_type"]
 
@@ -281,7 +280,7 @@ class GeneNetworkAgents:
             analysis_type,
             to_id,
         )
-        logger.debug("Species: %s", species)
+        logger.debug("Species code: %s", species_code)
 
         return await capture_dispatched_analysis(
             state,
@@ -293,15 +292,14 @@ class GeneNetworkAgents:
 
     async def arun(
         self,
-        species: str,
+        species_code: str,
         to_id: str,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Submit a gene network analysis task and return task_id.
 
         Args:
-            species: Latin species name in lowercase with spaces (e.g.,
-                "oryza sativa", "arabidopsis thaliana").
+            species_code: Three-letter species code (e.g., "osa", "ath").
             to_id: Trait Ontology identifier for the target phenotype,
                 formatted like "TO:0000207".
             user_id: Optional user identifier.
@@ -313,7 +311,7 @@ class GeneNetworkAgents:
         """
         return await run_analysis_graph(
             self.app,
-            {"species": species, "to_id": to_id},
+            {"species_code": species_code, "to_id": to_id},
             kwargs,
             ("network_task", "error", "failures"),
             AnalysisStateSpec(
@@ -324,7 +322,7 @@ class GeneNetworkAgents:
 
 
 async def network_analysis(
-    species: str,
+    species_code: str,
     to_id: str,
     user_id: Optional[str] = None,
     batch: bool = False,
@@ -333,7 +331,7 @@ async def network_analysis(
     """Compatibility wrapper around the LangGraph gene network agent.
 
     Args:
-        species: Target species name.
+        species_code: Three-letter species code (e.g., "osa", "ath").
         to_id: Trait Ontology identifier for the target phenotype.
         user_id: Optional user identifier for output paths.
         batch: Whether to reuse provided output directories.
@@ -358,7 +356,7 @@ async def network_analysis(
         ),
     )
     return await agent.arun(
-        species=species,
+        species_code=species_code,
         to_id=to_id,
         user_id=user_id,
         batch=batch,

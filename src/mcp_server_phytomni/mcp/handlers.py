@@ -334,7 +334,7 @@ async def handle_digital_design_agent(
     design_config = DigitalDesignConfig()
     runtime = load_handler_runtime()
     return await design_module(
-        species=args.species_code,
+        species_code=args.species_code,
         gene_id=args.gene_id,
         user_id=current_request_user() or design_config.USER_ID,
         batch=True,
@@ -371,7 +371,7 @@ async def handle_gene_network_agent(
     network_config = GeneNetworkConfig()
     runtime = load_handler_runtime()
     return await network_analysis(
-        species=args.species_code,
+        species_code=args.species_code,
         to_id=args.to_id,
         user_id=current_request_user() or network_config.USER_ID,
         batch=False,

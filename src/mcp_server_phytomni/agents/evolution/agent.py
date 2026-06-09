@@ -218,7 +218,7 @@ def _cached_evolution_app() -> Any:
 
 async def evo_test_analysis(
     query: str,
-    species: str,
+    species_code: str,
     gene_id: str,
     batch: bool = False,
     enable_auto_select: bool = False,
@@ -234,7 +234,8 @@ async def evo_test_analysis(
 
     Args:
         query: Natural-language evolution analysis request.
-        species: Source species used to select prepared data.
+        species_code: Three-letter species code used to select
+            prepared data (e.g., "osa", "ath").
         gene_id: Target gene identifier for the analysis prompt.
         batch: Whether to reuse the provided output directory.
         enable_auto_select: Whether AnalystAgent may auto-select
@@ -250,7 +251,7 @@ async def evo_test_analysis(
     """
     initial_state: dict[str, Any] = {
         "query": query,
-        "species": species,
+        "species_code": species_code,
         "gene_id": gene_id,
         "batch": batch,
         "enable_auto_select": enable_auto_select,
@@ -263,7 +264,7 @@ async def evo_test_analysis(
 
 
 async def evolution_analysis_for_gene(
-    species: str,
+    species_code: str,
     gene_id: str,
     output_dir: Any = None,
     *,
@@ -280,7 +281,8 @@ async def evolution_analysis_for_gene(
     consumed by deep_genome's ``_submit_analysis_task``.
 
     Args:
-        species: Source species name used to select prepared data.
+        species_code: Three-letter species code used to select prepared
+            data.
         gene_id: Target gene identifier for the analysis prompt.
         output_dir: Optional pre-allocated OBS output directory.
             ``None`` lets ``prepare_analyst_dispatch_context`` mint
@@ -308,7 +310,7 @@ async def evolution_analysis_for_gene(
     data_list = get_data_list(
         DEEP_GENOME_CONFIG.DEEPGENOME_DATA,
         "evolution_analysis",
-        species,
+        species_code,
     )
     request = {
         "analysis_type": "evolution_analysis",

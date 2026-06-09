@@ -67,7 +67,7 @@ async def test_dispatch_uses_legacy_submit_when_flag_off(
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="gene_network_analysis",
-        species="arabidopsis thaliana",
+        species_code="ath",
         to_id="TO:0000621",
         output_dir="/tmp/network-out",
     )
@@ -94,7 +94,7 @@ async def test_dispatch_uses_subgraph_submit_when_flag_on(
 
     result = await agent._dispatch_and_wait_analysis(
         analysis_type="gene_network_analysis",
-        species="arabidopsis thaliana",
+        species_code="ath",
         to_id="TO:0000621",
         output_dir="/tmp/network-out",
     )
@@ -129,7 +129,7 @@ async def test_dispatch_request_carries_to_id_as_target(
 
     await agent._dispatch_and_wait_analysis(
         analysis_type="gene_network_analysis",
-        species="arabidopsis thaliana",
+        species_code="ath",
         to_id="TO:0000621",
         output_dir="/tmp/network-out",
     )

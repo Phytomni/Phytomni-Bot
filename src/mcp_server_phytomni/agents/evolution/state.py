@@ -27,7 +27,8 @@ class EvolutionInput(TypedDict, total=False):
 
     Attributes:
         query: Natural-language evolution analysis request.
-        species: Source species used to select prepared data.
+        species_code: Three-letter species code used to select
+            prepared data (e.g., "osa", "ath").
         gene_id: Target gene identifier for the analysis prompt.
         batch: When ``True`` the caller-provided ``output_dir`` in
             ``kwargs`` is reused instead of materialising a fresh
@@ -39,7 +40,7 @@ class EvolutionInput(TypedDict, total=False):
     """
 
     query: Required[str]
-    species: Required[str]
+    species_code: Required[str]
     gene_id: Required[str]
     batch: bool
     enable_auto_select: bool
@@ -69,7 +70,7 @@ class EvolutionState(TypedDict, total=False):
     """
 
     query: Required[str]
-    species: Required[str]
+    species_code: Required[str]
     gene_id: Required[str]
     batch: bool
     enable_auto_select: bool

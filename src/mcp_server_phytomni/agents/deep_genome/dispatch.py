@@ -615,7 +615,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             and config.USE_EVOLUTION_SUBGRAPH
         ):
             return await evolution_analysis_for_gene(
-                species=context.species,
+                species_code=context.species,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )
@@ -624,13 +624,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             and config.USE_DESIGN_SUBGRAPH
         ):
             return await protein_structure_for_gene(
-                species=context.species,
+                species_code=context.species,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )
         if analysis_type == "promoter_analysis" and config.USE_DESIGN_SUBGRAPH:
             return await promoter_design_for_gene(
-                species=context.species,
+                species_code=context.species,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )

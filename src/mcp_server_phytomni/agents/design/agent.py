@@ -78,8 +78,7 @@ class DigitalDesignState(ParallelDispatchState):
     design-specific fields below.
 
     Attributes:
-        species: Latin species name in lowercase with spaces (e.g.,
-            "arabidopsis thaliana", "oryza sativa").
+        species_code: Three-letter species code (e.g., "ath", "osa").
         gene_id: Gene identifier for target protein or promoter.
         user_id: User identifier.
         batch: Whether this is batch processing.
@@ -91,7 +90,7 @@ class DigitalDesignState(ParallelDispatchState):
         error: Error message if any task failed during execution.
     """
 
-    species: str
+    species_code: str
     gene_id: str
     user_id: str
     batch: bool
@@ -117,7 +116,7 @@ class DigitalDesignAgents:
     Example:
         >>> agents = DigitalDesignAgents()
         >>> result = await agents.arun(
-        ...     species="osa",
+        ...     species_code="osa",
         ...     gene_id="Os01g0177400"
         ... )
     """
@@ -179,7 +178,7 @@ class DigitalDesignAgents:
     async def _dispatch_and_wait_analysis(
         self,
         analysis_type: str,
-        species: str,
+        species_code: str,
         gene_id: str,
         output_dir: Optional[str] = None,
     ) -> dict:
@@ -187,7 +186,7 @@ class DigitalDesignAgents:
 
         Args:
             analysis_type: Type of design analysis.
-            species: Species name.
+            species_code: Three-letter species code (e.g., "ath").
             gene_id: Target gene identifier.
             output_dir: Optional output directory path.
 
@@ -196,7 +195,7 @@ class DigitalDesignAgents:
         """
         goal_description, meta, data_list = self._analysis_prompt_parts(
             analysis_type,
-            species,
+            species_code,
             gene_id,
         )
         request = {
@@ -224,7 +223,7 @@ class DigitalDesignAgents:
     def _analysis_prompt_parts(
         self,
         analysis_type: str,
-        species: str,
+        species_code: str,
         gene_id: str,
     ) -> tuple[str, str, Any]:
         """Return goal, meta, and data list for one design analysis."""
@@ -241,7 +240,7 @@ class DigitalDesignAgents:
         data_list = get_data_list(
             self.digital_design_config.DEEPGENOME_DATA,
             analysis_type,
-            species,
+            species_code,
         )
         return goal_description, meta, data_list
 
@@ -302,15 +301,14 @@ class DigitalDesignAgents:
 
     async def arun(
         self,
-        species: str,
+        species_code: str,
         gene_id: str,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Submit protein design tasks and return task_ids.
 
         Args:
-            species: Latin species name in lowercase with spaces (e.g.,
-                "arabidopsis thaliana", "oryza sativa").
+            species_code: Three-letter species code (e.g., "ath", "osa").
             gene_id: Gene identifier.
             user_id: Optional user identifier.
             batch: Whether this is batch processing.
@@ -321,7 +319,7 @@ class DigitalDesignAgents:
         """
         return await run_analysis_graph(
             self.app,
-            {"species": species, "gene_id": gene_id},
+            {"species_code": species_code, "gene_id": gene_id},
             kwargs,
             ("design_task_result", "error", "failures"),
             AnalysisStateSpec(
@@ -332,7 +330,7 @@ class DigitalDesignAgents:
 
 
 async def design_module(
-    species: str,
+    species_code: str,
     gene_id: str,
     user_id: Optional[str] = None,
     batch: bool = True,
@@ -341,7 +339,7 @@ async def design_module(
     """Compatibility wrapper around the LangGraph digital design agent.
 
     Args:
-        species: Target species name.
+        species_code: Three-letter species code (e.g., "ath", "osa").
         gene_id: Target gene identifier.
         user_id: Optional user identifier for output paths.
         batch: Whether to reuse provided output directories.
@@ -366,7 +364,7 @@ async def design_module(
         ),
     )
     return await agent.arun(
-        species=species,
+        species_code=species_code,
         gene_id=gene_id,
         user_id=user_id,
         batch=batch,
@@ -391,7 +389,7 @@ class _DesignAnalysisSpec(NamedTuple):
 
 
 async def _submit_design_analysis(
-    species: str,
+    species_code: str,
     gene_id: str,
     spec: _DesignAnalysisSpec,
     output_dir: Optional[str],
@@ -417,7 +415,7 @@ async def _submit_design_analysis(
     data_list = get_data_list(
         DIGITAL_DESIGN_CONFIG.DEEPGENOME_DATA,
         spec.analysis_type,
-        species,
+        species_code,
     )
     request = {
         "analysis_type": spec.analysis_type,
@@ -439,7 +437,7 @@ async def _submit_design_analysis(
 
 
 async def protein_structure_for_gene(
-    species: str,
+    species_code: str,
     gene_id: str,
     output_dir: Optional[str] = None,
     *,
@@ -453,7 +451,8 @@ async def protein_structure_for_gene(
     commit-2 rerouting is a straight callee swap.
 
     Args:
-        species: Source species name used to select prepared data.
+        species_code: Three-letter species code used to select prepared
+            data.
         gene_id: Target gene identifier for the structure prompt.
         output_dir: Optional pre-allocated OBS output directory.
         is_polling: Whether the analyst graph should block until the
@@ -465,7 +464,7 @@ async def protein_structure_for_gene(
         / ``plan`` / ``tool_usages`` / ``task_status``.
     """
     return await _submit_design_analysis(
-        species=species,
+        species_code=species_code,
         gene_id=gene_id,
         spec=_DesignAnalysisSpec(
             analysis_type="protein_structure_analysis",
@@ -479,7 +478,7 @@ async def protein_structure_for_gene(
 
 
 async def promoter_design_for_gene(
-    species: str,
+    species_code: str,
     gene_id: str,
     output_dir: Optional[str] = None,
     *,
@@ -493,7 +492,8 @@ async def promoter_design_for_gene(
     callee swap.
 
     Args:
-        species: Source species name used to select prepared data.
+        species_code: Three-letter species code used to select prepared
+            data.
         gene_id: Target gene identifier for the promoter prompt.
         output_dir: Optional pre-allocated OBS output directory.
         is_polling: Whether the analyst graph should block until the
@@ -505,7 +505,7 @@ async def promoter_design_for_gene(
         / ``plan`` / ``tool_usages`` / ``task_status``.
     """
     return await _submit_design_analysis(
-        species=species,
+        species_code=species_code,
         gene_id=gene_id,
         spec=_DesignAnalysisSpec(
             analysis_type="promoter_analysis",
