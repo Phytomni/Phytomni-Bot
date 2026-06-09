@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "GraphEdgeManifest": {
+      "description": "Serializable metadata for one graph edge.",
+      "properties": {
+        "conditional": {
+          "default": false,
+          "title": "Conditional",
+          "type": "boolean"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "GraphEdgeManifest",
+      "type": "object"
+    },
+    "GraphNodeManifest": {
+      "description": "Serializable metadata for one graph node.",
+      "properties": {
+        "kind": {
+          "default": "node",
+          "enum": [
+            "node",
+            "subgraph",
+            "boundary"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GraphNodeManifest",
+      "type": "object"
+    }
+  },
+  "$id": "https://phytomni.cn/schemas/graph_manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Serializable structural manifest of one compiled LangGraph app.",
+  "properties": {
+    "edges": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/GraphEdgeManifest"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "nodes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/GraphNodeManifest"
+      },
+      "title": "Nodes",
+      "type": "array"
+    }
+  },
+  "title": "GraphManifest",
+  "type": "object"
+}

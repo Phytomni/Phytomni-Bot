@@ -277,6 +277,27 @@ class ServerConfig(BaseSettings):
         ),
     ] = True
 
+    # ``GRAPH_LOADER_ENABLED`` — when ``True``, the declarative
+    # ``graphs.loader.GraphLoader`` may be instantiated and used to
+    # read a JSON manifest into a structural graph view. Default
+    # ``False`` makes the loader a no-op pathway: construction raises
+    # so the surface stays inert in production and in offline tests.
+    # The ``AliasChoices`` pair mirrors the endpoint-field pattern so
+    # ``PHYTOMNI_GRAPH_LOADER=true`` routes to the same field as the
+    # unprefixed form. Lives on ``ServerConfig`` so every subclass
+    # inherits the field; the loader itself imports ``ServerConfig``
+    # directly to read this flag.
+    GRAPH_LOADER_ENABLED: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices(
+                "GRAPH_LOADER_ENABLED",
+                "PHYTOMNI_GRAPH_LOADER",
+            ),
+        ),
+    ] = False
+
     # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
     # (analyst / data / review retrieve_node) invoke a KnowledgeAgent
     # subgraph through ``adapter_node`` instead of calling the
