@@ -376,14 +376,16 @@ The HTTP layer can resolve a free-form `user_query` into the canonical
 identifier a downstream agent expects, before invoking the agent. Four
 agents support pre-shaping today:
 
-| Flag              | Eligible models / agents                                                       | Resolved field    | Metadata keys (on success)                                    |
-| ----------------- | ------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------------- |
-| `resolve_gene_id` | `phyto-brief-gene` (chat path) / `brief_gene` / `deep_genome` / `design` slugs | canonical gene id | `original_query`, `resolved_gene_id`, `resolve_gene_id: true` |
-| `resolve_to_id`   | `network` slug only                                                            | Trait Ontology id | `original_query`, `resolved_to_id`, `resolve_to_id: true`     |
+| Flag              | Eligible models / agents                                                       | Resolved fields                              | Metadata keys (on success)                                                             |
+| ----------------- | ------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `resolve_gene_id` | `phyto-brief-gene` (chat path) / `brief_gene` / `deep_genome` / `design` slugs | canonical gene id (+ `species_code` on runs) | `original_query`, `resolved_gene_id`, `resolved_species_code`, `resolve_gene_id: true` |
+| `resolve_to_id`   | `network` slug only                                                            | Trait Ontology id + `species_code`           | `original_query`, `resolved_to_id`, `resolved_species_code`, `resolve_to_id: true`     |
 
 `resolve_gene_id` issues one structured LLM call (json_schema response
 format) and returns the single best canonical gene/transcript identifier
-(e.g. `Os01g0177400`, `AT5G42800`). The three gene-id agents share the
+(e.g. `Os01g0177400`, `AT5G42800`) alongside the matching 3-letter
+`species_code` (e.g. `osa` for Oryza sativa, `ath` for Arabidopsis
+thaliana, `zma` for Zea mays). The three gene-id agents share the
 BriefGene resolver internally so a customer prompt warm-cached by one
 agent reuses the resolution on the others through the shared `~90d`
 `phyto_chat` cache. `BriefGene` is the only agent exposed on
@@ -391,13 +393,28 @@ agent reuses the resolution on the others through the shared `~90d`
 `model="phyto-brief-gene"` for the flag; the native runs path accepts
 the flag on any of the three slugs above.
 
+On the `deep_genome` and `design` native runs paths,
+`resolve_gene_id` injects **both** fields into the forwarded
+arguments — `arguments.gene_id` AND `arguments.species_code` — because
+the `DeepGenomeAgent` and `DigitalDesignAgent` input schemas require
+both fields. The caller therefore sends only `user_query` +
+`resolve_gene_id: true` and the HTTP layer fills in the pair before
+the agent's Pydantic schema runs. If the resolver cannot determine a
+species from the query, the request returns `400` carrying the
+resolver reason rather than falling back to a blank `species_code`
+that would Pydantic-fail downstream.
+
 `resolve_to_id` is `network`-only. The resolver injects the customer-
 curated Plant Trait Ontology catalog (`config/to_ontology.json`,
 CC-BY 4.0, releases/2026-01-14, customer-filtered to 573 ids) into the
 LLM user message so the model picks from a closed set; the resolver
 also validates the returned id against the catalog before injecting it
-into `arguments.to_id`. The flag is rejected with `400` on any other
-agent slug.
+into `arguments.to_id`. The same structured LLM call also produces
+the `species_code` matching the trait query, and the network branch
+injects **both** `arguments.to_id` AND `arguments.species_code`
+because `GeneNetworkAgent` requires both. A blank `species_code`
+returns `400` rather than falling through. The flag is rejected with
+`400` on any other agent slug.
 
 Of the 573 catalog ids, 32 carry `status: deprecated_upstream` because
 the upstream PTO release either marks them `is_obsolete: true` (31, no
@@ -424,6 +441,11 @@ Both flags share the same misuse / failure contract:
   output, timeout, hallucinated TO id outside the catalog) return
   `400` carrying the resolver reason in `error.message`; failed
   resolutions never silently fall through to a raw user_query call.
+- A blank `species_code` from the LLM (or one outside the supported
+  catalog) returns `400` for the `deep_genome`, `design`, and
+  `network` slugs because their agent schemas require the field;
+  failed species determination never silently falls through to a
+  Pydantic ValidationError.
 - The native runs path pops `resolve_gene_id` / `resolve_to_id` and
   `user_query` from `arguments` before forwarding so each agent's
   Pydantic schema never sees the resolver-flag keys.
@@ -441,17 +463,17 @@ curl -s http://127.0.0.1:8080/v1/agents/brief_gene/runs \
   -H 'Content-Type: application/json' \
   -d '{"arguments":{"user_query":"rice TPR6 function","resolve_gene_id":true}}'
 
-# Native runs — deep_genome (injects resolved id into gene_id)
+# Native runs — deep_genome (resolver injects both gene_id and species_code)
 curl -s http://127.0.0.1:8080/v1/agents/deep_genome/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"species_code":"osa","user_query":"tell me about CAB1 in rice","resolve_gene_id":true}}'
+  -d '{"arguments":{"user_query":"tell me about CAB1 in rice","resolve_gene_id":true}}'
 
-# Native runs — network (injects resolved TO id into to_id)
+# Native runs — network (resolver injects both to_id and species_code)
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"species_code":"osa","obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
+  -d '{"arguments":{"obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
 
 # Native runs — network with a query that resolves to an
 # upstream-deprecated id; the request still succeeds and the
@@ -460,7 +482,7 @@ curl -s http://127.0.0.1:8080/v1/agents/network/runs \
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"species_code":"osa","obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
+  -d '{"arguments":{"obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
 ```
 
 ## Native Agent Runs
