@@ -378,28 +378,93 @@ class DigitalDesignAgent(BaseModel):
     """Input parameters for protein and promoter design task submission.
 
     Attributes:
-        species: Latin species name for design analysis.
+        species_code: Three-letter species code for design analysis.
         gene_id: Single target gene identifier.
         obs_file_list: Optional uploaded context files.
     """
 
-    species: Annotated[
+    species_code: Annotated[
         str,
         Field(
-            description="Target species for design analysis as a Latin name "
-            "in lowercase with spaces, not a species_code. Examples: "
-            "'arabidopsis thaliana', 'oryza sativa', 'zea mays', "
-            "'glycine max', 'triticum aestivum', 'hordeum vulgare', "
-            "'solanum lycopersicum', 'solanum tuberosum', 'brassica napus', "
-            "'gossypium hirsutum', 'sorghum bicolor'.",
+            description=(
+                """Three-letter species_code for the target gene. Fill this
+                with one supported code, not a Latin name or common name.
+                Supported species_code values are the keys of this dict: {
+                'ach': 'kiwi (Actinidia chinensis)',
+                'aco': 'pineapple (Ananas comosus)',
+                'aly': 'Arabidopsis lyrata',
+                'aof': 'garden (Asparagus officinalis)',
+                'ata': 'rough-spike (Aegilops tauschii)',
+                'ath': 'thale (Arabidopsis thaliana)',
+                'atr': 'Amborella trichopoda',
+                'bdi': 'Brachypodium distachyon',
+                'bna': 'oilseed (Brassica napus)',
+                'bol': 'Brassica oleracea',
+                'bra': 'Brassica rapa',
+                'bvu': 'suger (Beta vulgaris)',
+                'can': 'pepper (Capsicum annuum)',
+                'cav': 'Corylus avellana',
+                'cbr': 'Chara braunii',
+                'ccan': 'coffee (Coffea canephora)',
+                'ccl': 'citrus (Citrus clementina)',
+                'cla': 'watermelon (Citrullus lanatus)',
+                'cme': 'muskmelon (Cucumis melo)',
+                'cqu': 'quinoa (Chenopodium quinoa)',
+                'cre': 'Chlamydomonas reinhardtii',
+                'csa': 'cucumber (Cucumis sativus)',
+                'dca': 'carrot (Daucus carota)',
+                'dex': 'white (Digitaria exilis)',
+                'ecu': 'weeping (Eragrostis curvula)',
+                'egr': 'Eucalyptus grandis',
+                'esa': 'saltwater (Eutrema salsugineum)',
+                'ghi': 'upland (Gossypium hirsutum)',
+                'gma': 'soybean (Glycine max)',
+                'gra': 'cotton (Gossypium raimondii)',
+                'han': 'sunflower (Helianthus annuus)',
+                'hvu': 'barley (Hordeum vulgare)',
+                'lpe': 'Lolium perenne',
+                'lsa': 'lettuce (Lactuca sativa)',
+                'mac': 'banana (Musa acuminata)',
+                'mes': 'cassava (Manihot esculenta)',
+                'mpo': 'liverwort (Marchantia polymorpha)',
+                'mtr': 'barrel (Medicago truncatula)',
+                'obr': 'wild (Oryza brachyantha)',
+                'oeu': 'common (Olea europaea)',
+                'osa': 'rice (Oryza sativa)',
+                'pha': "Hall's (Panicum hallii)",
+                'ppa': 'Physcomitrium patens',
+                'ppe': 'peach (Prunus persica)',
+                'psa': 'garden (Pisum sativum)',
+                'pso': 'opium (Papaver somniferum)',
+                'ptr': 'black (Populus trichocarpa)',
+                'pvu': 'common (Phaseolus vulgaris)',
+                'qlo': 'Quercus lobata',
+                'rch': 'rose (Rosa chinensis)',
+                'sbi': 'sorghum (Sorghum bicolor)',
+                'sce': 'rye (Secale cereale)',
+                'sit': 'foxtail (Setaria italica)',
+                'sly': 'tomato (Solanum lycopersicum)',
+                'smo': 'Selaginella moellendorffii',
+                'ssp': 'sugarcane (Saccharum spontaneum)',
+                'stu': 'potato (Solanum tuberosum)',
+                'svi': 'green (Setaria viridis)',
+                'tae': 'wheat (Triticum aestivum)',
+                'tca': 'cacao (Theobroma cacao)',
+                'tdi': 'emmer (Triticum dicoccoides)',
+                'tpr': 'red (Trifolium pratense)',
+                'ttu': 'durum (Triticum turgidum)',
+                'vvi': 'grape (Vitis vinifera)',
+                'zma': 'maize (Zea mays)'}"""
+            ),
         ),
     ]
     gene_id: Annotated[
         str,
         Field(
             description="Single target gene identifier for protein and "
-            "promoter design in the selected species. Do not include multiple "
-            "genes, trait IDs, or a general function-analysis question.",
+            "promoter design in the selected species_code. Do not include "
+            "multiple genes, trait IDs, or a general function-analysis "
+            "question.",
         ),
     ]
     obs_file_list: Annotated[
@@ -425,20 +490,83 @@ class GeneNetworkAgent(BaseModel):
     """Input parameters for trait-associated gene network task submission.
 
     Attributes:
-        species: Latin species name for network analysis.
+        species_code: Three-letter species code for network analysis.
         to_id: Trait Ontology identifier for the target phenotype.
         obs_file_list: Optional uploaded context files.
     """
 
-    species: Annotated[
+    species_code: Annotated[
         str,
         Field(
-            description="Target species for trait-associated gene network "
-            "analysis as a Latin name in lowercase with spaces, not a "
-            "species_code. Examples: 'arabidopsis thaliana', 'oryza sativa', "
-            "'zea mays', 'glycine max', 'triticum aestivum', "
-            "'hordeum vulgare', 'solanum lycopersicum', 'solanum tuberosum', "
-            "'brassica napus', 'gossypium hirsutum', 'sorghum bicolor'.",
+            description=("""Three-letter species_code for trait-associated gene
+                network analysis. Fill this with one supported code, not a
+                Latin name or common name. Supported species_code values
+                are the keys of this dict: {
+                'ach': 'kiwi (Actinidia chinensis)',
+                'aco': 'pineapple (Ananas comosus)',
+                'aly': 'Arabidopsis lyrata',
+                'aof': 'garden (Asparagus officinalis)',
+                'ata': 'rough-spike (Aegilops tauschii)',
+                'ath': 'thale (Arabidopsis thaliana)',
+                'atr': 'Amborella trichopoda',
+                'bdi': 'Brachypodium distachyon',
+                'bna': 'oilseed (Brassica napus)',
+                'bol': 'Brassica oleracea',
+                'bra': 'Brassica rapa',
+                'bvu': 'suger (Beta vulgaris)',
+                'can': 'pepper (Capsicum annuum)',
+                'cav': 'Corylus avellana',
+                'cbr': 'Chara braunii',
+                'ccan': 'coffee (Coffea canephora)',
+                'ccl': 'citrus (Citrus clementina)',
+                'cla': 'watermelon (Citrullus lanatus)',
+                'cme': 'muskmelon (Cucumis melo)',
+                'cqu': 'quinoa (Chenopodium quinoa)',
+                'cre': 'Chlamydomonas reinhardtii',
+                'csa': 'cucumber (Cucumis sativus)',
+                'dca': 'carrot (Daucus carota)',
+                'dex': 'white (Digitaria exilis)',
+                'ecu': 'weeping (Eragrostis curvula)',
+                'egr': 'Eucalyptus grandis',
+                'esa': 'saltwater (Eutrema salsugineum)',
+                'ghi': 'upland (Gossypium hirsutum)',
+                'gma': 'soybean (Glycine max)',
+                'gra': 'cotton (Gossypium raimondii)',
+                'han': 'sunflower (Helianthus annuus)',
+                'hvu': 'barley (Hordeum vulgare)',
+                'lpe': 'Lolium perenne',
+                'lsa': 'lettuce (Lactuca sativa)',
+                'mac': 'banana (Musa acuminata)',
+                'mes': 'cassava (Manihot esculenta)',
+                'mpo': 'liverwort (Marchantia polymorpha)',
+                'mtr': 'barrel (Medicago truncatula)',
+                'obr': 'wild (Oryza brachyantha)',
+                'oeu': 'common (Olea europaea)',
+                'osa': 'rice (Oryza sativa)',
+                'pha': "Hall's (Panicum hallii)",
+                'ppa': 'Physcomitrium patens',
+                'ppe': 'peach (Prunus persica)',
+                'psa': 'garden (Pisum sativum)',
+                'pso': 'opium (Papaver somniferum)',
+                'ptr': 'black (Populus trichocarpa)',
+                'pvu': 'common (Phaseolus vulgaris)',
+                'qlo': 'Quercus lobata',
+                'rch': 'rose (Rosa chinensis)',
+                'sbi': 'sorghum (Sorghum bicolor)',
+                'sce': 'rye (Secale cereale)',
+                'sit': 'foxtail (Setaria italica)',
+                'sly': 'tomato (Solanum lycopersicum)',
+                'smo': 'Selaginella moellendorffii',
+                'ssp': 'sugarcane (Saccharum spontaneum)',
+                'stu': 'potato (Solanum tuberosum)',
+                'svi': 'green (Setaria viridis)',
+                'tae': 'wheat (Triticum aestivum)',
+                'tca': 'cacao (Theobroma cacao)',
+                'tdi': 'emmer (Triticum dicoccoides)',
+                'tpr': 'red (Trifolium pratense)',
+                'ttu': 'durum (Triticum turgidum)',
+                'vvi': 'grape (Vitis vinifera)',
+                'zma': 'maize (Zea mays)'}"""),
         ),
     ]
     to_id: Annotated[

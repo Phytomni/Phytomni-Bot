@@ -42,7 +42,7 @@ def _stub_network_handler(
     """Replace GeneNetworkAgent handler with a minimal capturing stub."""
 
     async def fake(args: Any) -> dict[str, Any]:
-        captured["species"] = args.species
+        captured["species_code"] = args.species_code
         captured["to_id"] = args.to_id
         return {"answer": "network submission", "doc_list": []}
 
@@ -93,7 +93,7 @@ async def test_native_runs_resolves_when_flag_true(
         issued_api_key,
         "network",
         {
-            "species": "oryza sativa",
+            "species_code": "osa",
             "obs_file_list": [],
             "user_query": "rice plant height trait",
             "resolve_to_id": True,
@@ -102,7 +102,7 @@ async def test_native_runs_resolves_when_flag_true(
 
     assert response.status_code == 202  # remote-submit agent
     body = response.json()
-    assert captured["species"] == "oryza sativa"
+    assert captured["species_code"] == "osa"
     assert captured["to_id"] == "TO:0000207"
     assert resolver_calls == ["rice plant height trait"]
     metadata = body["result"]["formatted"].get("metadata") or {}
@@ -137,7 +137,7 @@ async def test_native_runs_skips_resolver_when_flag_false(
         issued_api_key,
         "network",
         {
-            "species": "oryza sativa",
+            "species_code": "osa",
             "to_id": "TO:0000207",
             "obs_file_list": [],
             "resolve_to_id": False,
@@ -222,7 +222,7 @@ async def test_native_runs_rejects_missing_user_query(
         issued_api_key,
         "network",
         {
-            "species": "oryza sativa",
+            "species_code": "osa",
             "obs_file_list": [],
             "resolve_to_id": True,
         },
@@ -262,7 +262,7 @@ async def test_native_runs_resolver_failure_returns_400(
         issued_api_key,
         "network",
         {
-            "species": "oryza sativa",
+            "species_code": "osa",
             "obs_file_list": [],
             "user_query": "ambiguous trait",
             "resolve_to_id": True,

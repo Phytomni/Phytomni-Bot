@@ -44,7 +44,7 @@ def _stub_design_handler(
     """Replace DigitalDesignAgent handler with a minimal capturing stub."""
 
     async def fake(args: Any) -> dict[str, Any]:
-        captured["species"] = args.species
+        captured["species_code"] = args.species_code
         captured["gene_id"] = args.gene_id
         return {"answer": "design submission", "doc_list": []}
 
@@ -95,7 +95,7 @@ async def test_native_runs_resolves_when_flag_true(
         issued_api_key,
         "design",
         {
-            "species": "Arabidopsis thaliana",
+            "species_code": "ath",
             "obs_file_list": [],
             "user_query": "design AT1G01010 promoter",
             "resolve_gene_id": True,
@@ -104,7 +104,7 @@ async def test_native_runs_resolves_when_flag_true(
 
     assert response.status_code == 202  # remote-submit agent
     body = response.json()
-    assert captured["species"] == "Arabidopsis thaliana"
+    assert captured["species_code"] == "ath"
     assert captured["gene_id"] == "AT1G01010"
     assert resolver_calls == ["design AT1G01010 promoter"]
     metadata = body["result"]["formatted"].get("metadata") or {}
@@ -139,7 +139,7 @@ async def test_native_runs_skips_resolver_when_flag_false(
         issued_api_key,
         "design",
         {
-            "species": "Arabidopsis thaliana",
+            "species_code": "ath",
             "gene_id": "AT1G01010",
             "obs_file_list": [],
             "resolve_gene_id": False,
@@ -177,7 +177,7 @@ async def test_native_runs_rejects_missing_user_query(
         issued_api_key,
         "design",
         {
-            "species": "Arabidopsis thaliana",
+            "species_code": "ath",
             "obs_file_list": [],
             "resolve_gene_id": True,
         },
@@ -214,7 +214,7 @@ async def test_native_runs_resolver_failure_returns_400(
         issued_api_key,
         "design",
         {
-            "species": "Arabidopsis thaliana",
+            "species_code": "ath",
             "obs_file_list": [],
             "user_query": "ambiguous query",
             "resolve_gene_id": True,

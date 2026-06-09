@@ -451,7 +451,7 @@ curl -s http://127.0.0.1:8080/v1/agents/deep_genome/runs \
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"species":"oryza sativa","obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
+  -d '{"arguments":{"species_code":"osa","obs_file_list":[],"user_query":"rice plant height trait","resolve_to_id":true}}'
 
 # Native runs — network with a query that resolves to an
 # upstream-deprecated id; the request still succeeds and the
@@ -460,7 +460,7 @@ curl -s http://127.0.0.1:8080/v1/agents/network/runs \
 curl -s http://127.0.0.1:8080/v1/agents/network/runs \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"arguments":{"species":"oryza sativa","obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
+  -d '{"arguments":{"species_code":"osa","obs_file_list":[],"user_query":"grains per panicle","resolve_to_id":true}}'
 ```
 
 ## Native Agent Runs
