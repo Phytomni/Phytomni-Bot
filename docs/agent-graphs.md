@@ -372,7 +372,62 @@ evolution / knowledge / review subgraphs (nine total). Snapshots
 act as a visible contract for parent-graph authors and as
 regression bait — any node-set or edge-set drift surfaces as a
 diff in the same PR that causes it. A CI re-export-and-diff guard
-remains pending.
+remains pending. See [Declarative Graphs](#declarative-graphs) for
+the reverse direction: reading a manifest back into a validated
+view via `GraphLoader`.
+
+## Declarative Graphs
+
+`graphs/loader.py` ships a default-off loader that reads any
+committed `graphs/manifests/*.graph.json` snapshot back into a
+validated `GraphManifest` view. It is the read-back complement of
+the `export_manifest()` write path and the foundation for future
+LLM-authored or human-edited manifests that compile into LangGraph
+apps.
+
+**Feature flag.** `GRAPH_LOADER_ENABLED` on `ServerConfig` (env
+`GRAPH_LOADER_ENABLED` or `PHYTOMNI_GRAPH_LOADER`) gates
+construction; the default is `False`. With the flag off,
+`GraphLoader()` raises `GraphLoaderDisabledError`, so import-time
+exposure does not enable anything. Set
+`PHYTOMNI_GRAPH_LOADER=true` per deployment to opt in.
+
+**Allowlist.** `graphs/allowlist.py` derives
+`default_subgraph_allowlist()` from
+`build_default_registry().names()` — the same id set every other
+registry consumer reads. The loader rejects any node whose `kind`
+is `subgraph` and whose name is not in this set, so a manifest can
+never reference a Python implementation outside the central
+catalog. Adding a new agent to `build_default_registry()` lifts it
+into the allowlist automatically.
+
+**Schema.** `graphs/schema/graph_manifest.schema.json` is a static
+JSON Schema export of `GraphManifest.model_json_schema()`. It is
+the public contract LLM prompt assemblers, declarative graph
+editors, and external jsonschema-based validators should read; the
+loader test pins it equal to the Pydantic-generated schema so the
+two cannot silently drift.
+
+**Out of scope (today).** The loader produces a validated
+structural view (nodes + edges + boundary classification); it does
+**not** resolve `node_ref` to Python callables, **not** evaluate
+inline route expressions, and **not** compile a runnable graph.
+Future phases extend the loader to assemble compiled graphs from a
+manifest; the safety constraint stays in `graphs/allowlist.py` so
+node-ref and route-fn lookups inherit the same guard.
+
+**Tour.** A flag-on smoke (e.g. in a Python REPL after setting
+the env var) looks like:
+
+```python
+from mcp_server_phytomni.graphs.loader import GraphLoader
+
+loader = GraphLoader()  # raises GraphLoaderDisabledError if flag is off
+manifest = loader.load(
+    "src/mcp_server_phytomni/graphs/manifests/chat.graph.json"
+)
+print(manifest.subgraph_node_names)
+```
 
 ## Adding a New Subgraph
 
