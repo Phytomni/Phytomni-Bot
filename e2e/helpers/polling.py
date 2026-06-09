@@ -7,16 +7,26 @@ Tools that submit work to the analysis platform (Analyst, DeepGenome,
 DigitalDesign, GeneNetwork, InSilicoResearch) return a task handle and
 defer execution to a separate backend. The MCP surface in
 ``src/mcp_server_phytomni/mcp/schemas.py`` does not expose a public
-task-status tool, so this helper drops one layer: it inspects the local
-``server_tasks.db`` (managed by
-``mcp_server_phytomni/runtime/task_manager.py``) and polls until the
-task reaches a terminal status. See ``e2e/README.md`` for the rationale
-behind not routing this through the MCP client.
+task-status tool; this helper drops one layer and combines two
+sources on every iteration so remote-submit agents (which never
+update the local row themselves) still reach terminal:
+
+- the local ``server_tasks.db`` row (managed by
+  ``mcp_server_phytomni/runtime/task_manager.py``), inspected
+  through :func:`_read_task_state`;
+- the live backend reconcile bridge
+  (``mcp_server_phytomni/runtime/task_reconcile.reconcile_task``)
+  which issues a single non-blocking ``task_status`` call and
+  prefers the live verdict when reachable.
+
+See ``e2e/README.md`` for the rationale behind not routing this
+through the MCP client.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import sqlite3
@@ -26,8 +36,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
+from mcp_server_phytomni.runtime.task_reconcile import reconcile_task
 
 from .client import call_tool, submit_timeout_seconds
+
+_logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "server_tasks.db"
 DEFAULT_TIMEOUT_SECONDS = 600.0
@@ -58,8 +71,12 @@ class TaskState:
 
     @property
     def succeeded(self) -> bool:
-        """Whether the task reached a success terminal state."""
-        return self.status in SUCCESS_STATUSES
+        """Whether the task reached a success terminal state.
+
+        Normalises case so backend verdicts like ``'SUCCEEDED'`` and
+        local-DB rows like ``'succeeded'`` both register as success.
+        """
+        return self.status.lower() in SUCCESS_STATUSES
 
 
 class TaskPollingTimeoutError(TimeoutError):
@@ -96,6 +113,49 @@ def resolve_db_path() -> Path:
     return Path.cwd() / DEFAULT_DB_PATH
 
 
+def _state_is_terminal(state: TaskState) -> bool:
+    """Return True if ``state.status`` falls in :data:`TERMINAL_STATUSES`.
+
+    Backend ``task_status`` calls historically return upper-cased
+    verdicts (``'FAILED'`` / ``'SUCCEEDED'``); the local DB rows are
+    lower-cased. The comparison normalises so case drift from either
+    side cannot mask a terminal state.
+    """
+    return state.status.lower() in TERMINAL_STATUSES
+
+
+async def _reconciled_task_state(
+    task_id: str,
+    resolved_db: Path,
+) -> Optional[TaskState]:
+    """Return a fresh ``TaskState`` combining local DB + live backend.
+
+    Calls :func:`reconcile_task` which itself issues one local
+    ``SELECT`` plus one live backend ``task_status`` lookup; falls
+    through to the local-only read if reconcile raises (network
+    down, backend 5xx, auth misconfigured). Returns ``None`` when
+    even the local row is missing so the caller keeps polling.
+    """
+    try:
+        reconciled = await reconcile_task(task_id)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        _logger.debug(
+            "reconcile_task(%s) failed: %s; falling back to local DB",
+            task_id,
+            exc,
+        )
+        return _read_task_state(resolved_db, task_id)
+    status = reconciled.get("status", "unknown")
+    if status == "unknown":
+        return _read_task_state(resolved_db, task_id)
+    return TaskState(
+        task_id=task_id,
+        status=str(status),
+        analysis_id=str(reconciled.get("analysis_id", "") or ""),
+        output_dir=str(reconciled.get("output_dir", "") or ""),
+    )
+
+
 async def poll_until_done(
     task_id: str,
     *,
@@ -103,7 +163,17 @@ async def poll_until_done(
     timeout_seconds: Optional[float] = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
 ) -> TaskState:
-    """Poll the local task DB until ``task_id`` reaches terminal status.
+    """Poll local DB + live backend until ``task_id`` reaches terminal.
+
+    Each iteration calls
+    :func:`mcp_server_phytomni.runtime.task_reconcile.reconcile_task`
+    which combines a local DB read with a single live backend
+    ``task_status`` lookup. This avoids the silent-failure mode where
+    remote-submit agents (network / design / evolution / environment
+    / research) never update the local row themselves, so a passive
+    local-only poll would forever see ``status='submitted'`` and
+    time out even after backend reached terminal. The reconcile call
+    degrades to the local-only read when the backend is unreachable.
 
     Args:
         task_id: Task id originally returned by an async tool call.
@@ -111,7 +181,7 @@ async def poll_until_done(
             ``resolve_db_path()``.
         timeout_seconds: Total poll budget. Defaults to
             ``resolve_timeout_seconds()``.
-        poll_interval_seconds: Delay between DB reads.
+        poll_interval_seconds: Delay between iterations.
 
     Returns:
         Final ``TaskState`` once the task reaches a terminal status.
@@ -129,10 +199,10 @@ async def poll_until_done(
     last_state: Optional[TaskState] = None
 
     while time.monotonic() < deadline:
-        state = _read_task_state(resolved_db, task_id)
+        state = await _reconciled_task_state(task_id, resolved_db)
         if state is not None:
             last_state = state
-            if state.status in TERMINAL_STATUSES:
+            if _state_is_terminal(state):
                 return state
         await asyncio.sleep(poll_interval_seconds)
 
