@@ -153,13 +153,13 @@ class AnalysisDispatchContext(NamedTuple):
 
     Attributes:
         analysis_type: DeepGenome analysis task type.
-        species: Display species name used in prompts.
+        species_code: Three-letter species code used in get_data_list lookup.
         gene_id: Target gene identifier.
         output_dir: OBS output directory for task results.
     """
 
     analysis_type: str
-    species: str
+    species_code: str
     gene_id: str
     output_dir: str
 
@@ -269,7 +269,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             state: Current workflow state containing task details:
                 - task_index: Index of the current task
                 - target_gene: Target gene identifier
-                - species: Species code
+                - species_code: Three-letter species code
                 - analysis_type: Type of analysis to perform
 
         Returns:
@@ -280,7 +280,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         """
         task_index = state.get("task_index")
         gene_id = state["target_gene"]
-        species = state["species"]
+        species_code = state["species_code"]
         analysis_type = state["analysis_type"]
         sleep_seconds = state.get("task_submit_sleep", 0)
         if sleep_seconds > 0:
@@ -301,7 +301,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             """Dispatch one analysis branch and return state updates."""
             result = await self._dispatch_and_wait_analysis(
                 analysis_type=analysis_type,
-                species=species,
+                species_code=species_code,
                 gene_id=gene_id,
             )
 
@@ -389,8 +389,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             Dict with analysis_tasks list.
         """
         gene_id = state["gene_id"]
-        species = state.get("species_code", "")
-        match species:
+        species_code = state.get("species_code", "")
+        match species_code:
             case "osa":
                 gene_id_reponse = await self._bi_json(
                     f"SELECT * FROM id_table WHERE gene_id = "
@@ -410,71 +410,79 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         tasks = [
             {
                 "target_gene": gene_id,
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "evolution_analysis",
                 "compute": "medium",
                 "func_name": "evolution_analysis",
             },
             {
                 "target_gene": (
-                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                    gene_idv2
+                    if species_code in ["osa", "zma", "gma"]
+                    else gene_id
                 ),
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "gene_expression_tissues",
                 "compute": "small",
                 "func_name": "gene_expression_tissues",
             },
             {
                 "target_gene": (
-                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                    gene_idv2
+                    if species_code in ["osa", "zma", "gma"]
+                    else gene_id
                 ),
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "gene_expression_cultivars",
                 "compute": "small",
                 "func_name": "gene_expression_cultivars",
             },
             {
                 "target_gene": (
-                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                    gene_idv2
+                    if species_code in ["osa", "zma", "gma"]
+                    else gene_id
                 ),
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "gene_expression_treatments",
                 "compute": "small",
                 "func_name": "gene_expression_treatments",
             },
             {
                 "target_gene": (
-                    gene_idv2 if species in ["osa", "zma", "gma"] else gene_id
+                    gene_idv2
+                    if species_code in ["osa", "zma", "gma"]
+                    else gene_id
                 ),
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "gene_expression_genotypes",
                 "compute": "small",
                 "func_name": "gene_expression_genotypes",
             },
             {
                 "target_gene": gene_id,
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "single_cell_analysis",
                 "compute": "small",
                 "func_name": "single_cell_analysis",
             },
             {
                 "target_gene": gene_id,
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "promoter_analysis",
                 "compute": "small",
                 "func_name": "promoter_analysis",
             },
             {
                 "target_gene": gene_id,
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "smep_analysis",
                 "compute": "small",
                 "func_name": "smep_analysis",
             },
             {
                 "target_gene": gene_id,
-                "species": species,
+                "species_code": species_code,
                 "analysis_type": "smoc_analysis",
                 "compute": "small",
                 "func_name": "smoc_analysis",
@@ -485,7 +493,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _dispatch_and_wait_analysis(
         self: Any,
         analysis_type: str,
-        species: str,
+        species_code: str,
         gene_id: str,
         output_dir: Optional[str] = None,
     ) -> dict:
@@ -497,7 +505,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
         Args:
             analysis_type: Analysis type name (e.g., "evolution_analysis").
-            species: Species code for the analysis.
+            species_code: Three-letter species code for the analysis.
             gene_id: Gene identifier for the analysis.
             output_dir: Optional output directory path.
 
@@ -515,7 +523,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         context = AnalysisDispatchContext(
             analysis_type=analysis_type,
-            species=species,
+            species_code=species_code,
             gene_id=gene_id,
             output_dir=resolved_output_dir,
         )
@@ -566,7 +574,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         data_list = get_data_list(
             self.deep_genome_config.DEEPGENOME_DATA,
             data_json_path,
-            context.species,
+            context.species_code,
         )
         if sub_title:
             data_list = data_list[sub_title]
@@ -615,7 +623,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             and config.USE_EVOLUTION_SUBGRAPH
         ):
             return await evolution_analysis_for_gene(
-                species_code=context.species,
+                species_code=context.species_code,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )
@@ -624,13 +632,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             and config.USE_DESIGN_SUBGRAPH
         ):
             return await protein_structure_for_gene(
-                species_code=context.species,
+                species_code=context.species_code,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )
         if analysis_type == "promoter_analysis" and config.USE_DESIGN_SUBGRAPH:
             return await promoter_design_for_gene(
-                species_code=context.species,
+                species_code=context.species_code,
                 gene_id=context.gene_id,
                 output_dir=context.output_dir,
             )

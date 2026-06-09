@@ -117,7 +117,7 @@ def test_download_analysis_result_uses_readable_obsfs_dir(
 
     context = AnalysisDispatchContext(
         analysis_type="gene_expression_tissues",
-        species="ath",
+        species_code="ath",
         gene_id="GeneA",
         output_dir="/obs/phytomni/results/GeneA",
     )
@@ -163,7 +163,7 @@ def test_download_analysis_result_falls_back_to_sdk_download(
 
     context = AnalysisDispatchContext(
         analysis_type="gene_expression_tissues",
-        species="ath",
+        species_code="ath",
         gene_id="GeneA",
         output_dir="/obs/phytomni/results/GeneA",
     )

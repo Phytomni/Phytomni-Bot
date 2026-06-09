@@ -72,7 +72,7 @@ def _context(analysis_type: str) -> AnalysisDispatchContext:
     """Build a dispatch context for a single-gene single-task submit."""
     return AnalysisDispatchContext(
         analysis_type=analysis_type,
-        species="Arabidopsis thaliana",
+        species_code="ath",
         gene_id="AT1G01010",
         output_dir="/obs/run/out",
     )
