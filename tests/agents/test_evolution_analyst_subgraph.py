@@ -30,12 +30,12 @@ def _state_with_taxids() -> EvolutionState:
     """Build an EvolutionState ready for ``submit_evolution_task_node``.
 
     The resolve step has populated ``target_taxids``; the submit node
-    only reads taxids / species / gene_id plus the ``kwargs`` / ``batch``
-    overrides so the surrounding state stays minimal.
+    only reads taxids / species_code / gene_id plus the ``kwargs`` /
+    ``batch`` overrides so the surrounding state stays minimal.
     """
     return {
         "query": "Evolution analysis for AT1G01010",
-        "species": "Arabidopsis thaliana",
+        "species_code": "ath",
         "gene_id": "AT1G01010",
         "target_taxids": "3702,3711",
         "kwargs": {"user_id": "user-test"},

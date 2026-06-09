@@ -36,7 +36,7 @@ _KITCHEN_SINK_STATE: dict[str, Any] = {
         "literature": {"hits": []},
     },
     "goal_description": "Build co-expression network for Os01g0177400",
-    "species": "oryza sativa",
+    "species_code": "osa",
     "retrieve_prompt": "irrelevant intermediate scratch",
     "paper_text": "Long paper text that should not be lifted.",
 }

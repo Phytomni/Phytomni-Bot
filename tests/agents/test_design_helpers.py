@@ -76,6 +76,6 @@ def test_analysis_prompt_parts_rejects_unknown_type() -> None:
     with pytest.raises(ValueError, match="does-not-exist"):
         agent._analysis_prompt_parts(
             analysis_type="does-not-exist",
-            species="arabidopsis thaliana",
+            species_code="ath",
             gene_id="AT1G01010",
         )

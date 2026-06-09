@@ -614,7 +614,7 @@ def test_gene_network_result_lifts_goal_description() -> None:
         },
         "phytomni_state": {
             "goal_description": "Build co-expression network for gene X",
-            "species": "oryza sativa",
+            "species_code": "osa",
         },
     }
 

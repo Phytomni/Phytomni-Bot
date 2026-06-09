@@ -127,7 +127,7 @@ def test_route_after_resolve_routes_to_submit_when_taxids_present() -> None:
     """
     state: EvolutionState = {
         "query": "anything",
-        "species": "osa",
+        "species_code": "osa",
         "gene_id": "AtPHYB",
         "target_taxids": "9606,10090",
     }
@@ -144,7 +144,7 @@ def test_route_after_resolve_short_circuits_when_taxids_none() -> None:
     """
     state: EvolutionState = {
         "query": "ambiguous request",
-        "species": "osa",
+        "species_code": "osa",
         "gene_id": "AtPHYB",
         "target_taxids": None,
     }

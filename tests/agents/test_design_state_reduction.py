@@ -78,7 +78,7 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
 
     async def fake_dispatch(
         analysis_type: str,
-        species: str,
+        species_code: str,
         gene_id: str,
         output_dir: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -86,14 +86,14 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
 
         Args:
             analysis_type: Design analysis type forwarded by the worker.
-            species: Species forwarded by the worker.
+            species_code: Species code forwarded by the worker.
             gene_id: Gene id forwarded by the worker.
             output_dir: Output directory forwarded by the worker.
 
         Returns:
             Deterministic task payload echoing ``analysis_type``.
         """
-        assert species == "arabidopsis thaliana"
+        assert species_code == "ath"
         assert gene_id == "AT1G01010"
         assert output_dir == "/tmp/design-out"
         dispatched.append(analysis_type)
@@ -106,7 +106,7 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
 
     initial_state = {
-        "species": "arabidopsis thaliana",
+        "species_code": "ath",
         "gene_id": "AT1G01010",
         "user_id": "test-user",
         "batch": False,
@@ -188,7 +188,7 @@ async def test_design_state_reduction_handles_dual_failure(
 
     async def fake_dispatch(
         analysis_type: str,
-        species: str,
+        species_code: str,
         gene_id: str,
         output_dir: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -196,14 +196,14 @@ async def test_design_state_reduction_handles_dual_failure(
 
         Args:
             analysis_type: Design analysis label for the failing task.
-            species: Species forwarded by the dispatcher.
+            species_code: Species code forwarded by the dispatcher.
             gene_id: Target gene identifier forwarded by the dispatcher.
             output_dir: Optional output directory (unused).
 
         Raises:
             RuntimeError: Always, tagged with the analysis type.
         """
-        assert species == "oryza sativa"
+        assert species_code == "osa"
         assert gene_id == "Os01g0177400"
         _ = output_dir
         raise RuntimeError(f"boom {analysis_type}")
@@ -211,7 +211,7 @@ async def test_design_state_reduction_handles_dual_failure(
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
 
     seed_state: dict[str, Any] = {
-        "species": "oryza sativa",
+        "species_code": "osa",
         "gene_id": "Os01g0177400",
         "user_id": "test-user",
         "batch": False,
