@@ -152,9 +152,7 @@ _FIGURE_LABEL_RE = re.compile(r"\bFigure \d+\b")
 _EMPTY_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*\)\s*")
 
 
-def _section_has_data(
-    data: dict[str, Any], keys: tuple[str, ...]
-) -> bool:
+def _section_has_data(data: dict[str, Any], keys: tuple[str, ...]) -> bool:
     """Return True when every required key holds non-empty data.
 
     Treats the ``None Results`` placeholder string the loaders write

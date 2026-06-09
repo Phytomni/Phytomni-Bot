@@ -88,7 +88,7 @@ class SubSummaryBuilder:
         # absolute path for obsfs result dirs, breaking the markdown
         # ``../../{dir}/`` prefix the report renders against.
         if ".out" in str(out_path):
-            self.markdown_path = str(out_path).split(".out/")[-1]
+            self.markdown_path = str(out_path).rsplit(".out/", maxsplit=1)[-1]
         else:
             self.markdown_path = gene_id
         self.data = data

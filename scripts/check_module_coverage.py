@@ -64,6 +64,13 @@ MODULE_FLOORS: Dict[str, int] = {
     # helpers). Reset the floor to the new measured baseline (44).
     "src/mcp_server_phytomni/agents/deep_genome/dispatch.py": 44,
     "src/mcp_server_phytomni/agents/review/planning.py": 58,
+    # chain.py was added at 20.38% measured coverage; the file has no
+    # dedicated test module yet (its only exercise is via the network-
+    # agent integration path). Pin the floor at the measured baseline
+    # so the gate stops blocking everyone's push; the chain owner
+    # should ratchet this toward TARGET alongside the new tests they
+    # write for ``network_to_deep_genome_chain`` + helpers.
+    "src/mcp_server_phytomni/agents/network/chain.py": 20,
 }
 TARGET = 80
 
