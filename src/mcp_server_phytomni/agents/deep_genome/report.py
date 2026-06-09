@@ -13,8 +13,9 @@ and follow-up questions into the final report state.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ...common.prompts import get_prompt
 from ...common.responses import (
@@ -38,6 +39,181 @@ else:
 logger = logging.getLogger(__name__)
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
+
+
+class SynthesisSection(NamedTuple):
+    """Configuration for one synthesis section in the final report.
+
+    Attributes:
+        template_key: Key of the section template in prompts.yaml
+            (``template/<template_key>``).
+        required_keys: Data keys that must all be present and non-empty
+            for the section to be rendered. Missing values cause the
+            section to be skipped.
+        legend_keys: Data keys whose ``Figure N`` label is rewritten at
+            render time to match the section's render position.
+    """
+
+    template_key: str
+    required_keys: tuple[str, ...]
+    legend_keys: tuple[str, ...]
+
+
+# Single source of truth for report section order. Sections not present
+# in this list are not rendered. When an analyst branch has no data, the
+# section is dropped and the next rendered section still receives the
+# next integer — do not reorder the remaining entries around the gap.
+_SYNTHESIS_SECTIONS: tuple[SynthesisSection, ...] = (
+    SynthesisSection(
+        template_key="section_phylogenetic",
+        required_keys=("tree_path", "tree_summary", "tree_legend"),
+        legend_keys=("tree_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_transcriptomic_tissue",
+        required_keys=("tissue_path", "tissue_summary", "tissue_legend"),
+        legend_keys=("tissue_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_transcriptomic_cultivar",
+        required_keys=(
+            "cultivar_path",
+            "cultivar_summary",
+            "cultivar_legend",
+        ),
+        legend_keys=("cultivar_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_transcriptomic_treatment",
+        required_keys=(
+            "treatment_path",
+            "treatment_summary",
+            "treatment_legend",
+        ),
+        legend_keys=("treatment_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_genetic",
+        required_keys=("mutant_path", "mutant_summary", "mutant_legend"),
+        legend_keys=("mutant_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_single_cell",
+        required_keys=("single_cell_summary",),
+        legend_keys=("single_cell_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_haplotype",
+        required_keys=("haplotype_path", "haplotype_summary"),
+        legend_keys=("haplotype_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_cis_regulatory_motif",
+        required_keys=("motif_path", "motif_summary", "motif_legend"),
+        legend_keys=("motif_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_cis_regulatory_smep",
+        required_keys=("smep_path", "smep_summary", "smep_legend"),
+        legend_keys=("smep_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_cis_regulatory_smoc",
+        required_keys=("smoc_path", "smoc_summary", "smoc_legend"),
+        legend_keys=("smoc_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_protein_domain",
+        required_keys=("domain_table", "domain_summary"),
+        legend_keys=("domain_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_protein_structure",
+        required_keys=("protein_structures",),
+        legend_keys=(),
+    ),
+    SynthesisSection(
+        template_key="section_ai_design_promoter",
+        required_keys=(
+            "promoter_path",
+            "promoter_summary",
+            "promoter_legend",
+        ),
+        legend_keys=("promoter_legend",),
+    ),
+    SynthesisSection(
+        template_key="section_ai_design_protein",
+        required_keys=("protein_path", "protein_summary", "protein_legend"),
+        legend_keys=("protein_legend",),
+    ),
+)
+
+_FIGURE_LABEL_RE = re.compile(r"\bFigure \d+\b")
+_EMPTY_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*\)\s*")
+
+
+def _section_has_data(
+    data: dict[str, Any], keys: tuple[str, ...]
+) -> bool:
+    """Return True when every required key holds non-empty data.
+
+    Treats the ``None Results`` placeholder string the loaders write
+    when files are missing as empty so such sections are skipped.
+    """
+    for key in keys:
+        value = data.get(key)
+        if not value:
+            return False
+        if isinstance(value, str) and value.strip().lower() == "none results":
+            return False
+    return True
+
+
+def _assemble_sections(
+    data: dict[str, Any],
+    prompt_file: Any,
+) -> str:
+    """Render report sections in order, skipping sections with no data.
+
+    Iterates over ``_SYNTHESIS_SECTIONS`` and renders each section via
+    the matching ``template/<key>`` entry in ``prompts.yaml``. Sections
+    whose required keys are missing or empty are dropped; the next
+    rendered section still receives the next integer, so a gap in the
+    data does not cause the downstream numbering to stall. Each
+    section's legend text is rewritten so the ``Figure N`` label
+    matches the section's render position rather than its data-load
+    order, which keeps cross-references stable across runs.
+
+    Args:
+        data: Report data dictionary keyed by template placeholders.
+        prompt_file: Prompt file path consumed by ``get_prompt``.
+
+    Returns:
+        Concatenated markdown body of all rendered sections separated
+        by blank lines, with empty image placeholders stripped.
+    """
+    sections: list[str] = []
+    section_index = 0
+    for section in _SYNTHESIS_SECTIONS:
+        if not _section_has_data(data, section.required_keys):
+            continue
+        section_index += 1
+        section_data = dict(data)
+        for legend_key in section.legend_keys:
+            legend = section_data.get(legend_key)
+            if isinstance(legend, str) and legend:
+                section_data[legend_key] = _FIGURE_LABEL_RE.sub(
+                    f"Figure {section_index}", legend
+                )
+        section_data["section_number"] = section_index
+        sections.append(
+            get_prompt(
+                prompt_file,
+                f"template/{section.template_key}",
+                section_data,
+            )
+        )
+    return _EMPTY_IMAGE_RE.sub("", "\n".join(sections))
 
 
 def _state_gene_string(state: "DeepGenomeState") -> str:
@@ -189,33 +365,14 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         )
 
         gene_results_data = state.get("analyst_summaries", {})
-        gene_results = get_prompt(
-            self.deep_genome_config.PROMPT_FILE,
-            "template/gene_function_result",
+        gene_results_body = _assemble_sections(
             gene_results_data,
+            self.deep_genome_config.PROMPT_FILE,
         )
-        obj_replace_dict = {
-            "tree_path": "![Tree Image]()",
-            "tissue_path": "![Tissue Image]()",
-            "cultivar_path": "![Cultivar Image]()",
-            "treatment_path": "![Treatment Image]()",
-            "mutant_path": "![Genotype Image]()",
-            "umap_path": "![Single_cell Umap Image]()",
-            "violin_path": "![Single_cell Violin Image]()",
-            "haplotype_path": "![Haplotype Image]()",
-            "fst_path": "![fst Image]()",
-            "motif_path": "![Motif Image]()",
-            "smep_path": "![SMEP Image]()",
-            "smoc_path": "![SMOC Image]()",
-            "promoter_path": "![Promoter Design]()",
-            "protein_path": "![Protein Design]()",
-        }
-        for obj_key, replace_content in obj_replace_dict.items():
-            try:
-                if gene_results_data[obj_key] == "":
-                    gene_results = gene_results.replace(replace_content, "")
-            except KeyError:
-                continue
+        gene_results = (
+            f"## Bioinformatic Analysis and Molecular Design\n\n"
+            f"{gene_results_body}"
+        )
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope="report",
