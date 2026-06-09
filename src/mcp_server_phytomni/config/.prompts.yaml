@@ -158,44 +158,51 @@ system:
     1. Domestication studies
     2. Applications (e.g., stress resistance)
 template:
-  gene_function_result: |-
-    ## Bioinformatic Analysis and Molecular Design
-    ### 1. Phylogenetic Analysis
+  section_phylogenetic: |-
+    ### {{section_number}}. Phylogenetic Analysis
     ![Tree Image]({{tree_path}}) {{tree_legend}}
     {{tree_summary}}
-    ### 2. Transcriptomic Profiling
-    #### 2.1. Expression Profile in Different Tissues
+  section_transcriptomic_tissue: |-
+    ### {{section_number}}. Expression Profile in Different Tissues
     ![Tissue Image]({{tissue_path}}) {{tissue_legend}}
     {{tissue_summary}}
-    #### 2.2. Expression Profile across Different Cultivars
+  section_transcriptomic_cultivar: |-
+    ### {{section_number}}. Expression Profile across Different Cultivars
     ![Cultivar Image]({{cultivar_path}}) {{cultivar_legend}}
     {{cultivar_summary}}
-    #### 2.3. Expression Profile under Different kinds of Stresses
+  section_transcriptomic_treatment: |-
+    ### {{section_number}}. Expression Profile under Different kinds of Stresses
     ![Treatment Image]({{treatment_path}}) {{treatment_legend}}
     {{treatment_summary}}
-    ### 3. The Genetic Relationship and its Counterparts
+  section_genetic: |-
+    ### {{section_number}}. The Genetic Relationship and its Counterparts
     ![Genotype Image]({{mutant_path}}) {{mutant_legend}}
     {{mutant_summary}}
-    ### 4. Single-Cell Transcriptomic Atlas
+  section_single_cell: |-
+    ### {{section_number}}. Single-Cell Transcriptomic Atlas
     ![Single_cell Umap Image]({{umap_path}})
     ![Single_cell Violin Image]({{violin_path}})
     {{single_cell_legend}}
     {{single_cell_summary}}
-    ### 5. Haplotype analysis
+  section_haplotype: |-
+    ### {{section_number}}. Haplotype analysis
     ![Haplotype Image]({{haplotype_path}}) {{haplotype_legend}}
     {{haplotype_summary}}
     ![fst Image]({{fst_path}})
-    ### 6. cis-Regulatory Landscape
-    #### 6.1. Motif Analysis
+  section_cis_regulatory_motif: |-
+    ### {{section_number}}. Motif Analysis (cis-Regulatory)
     ![Motif Image]({{motif_path}}) {{motif_legend}}
     {{motif_summary}}
-    #### 6.2. Gene Epigenetic Predictions
+  section_cis_regulatory_smep: |-
+    ### {{section_number}}. Gene Epigenetic Predictions
     ![SMEP Image]({{smep_path}}) {{smep_legend}}
-    ![SMOC Image]({{smoc_path}}) {{smoc_legend}}
     {{smep_summary}}
+  section_cis_regulatory_smoc: |-
+    ### {{section_number}}. Chromatin Accessibility Predictions
+    ![SMOC Image]({{smoc_path}}) {{smoc_legend}}
     {{smoc_summary}}
-    ### 7. Protein Characterization
-    #### 7.1. Domain Architecture Evolution {{domain_table}}
+  section_protein_domain: |-
+    ### {{section_number}}. Domain Architecture Evolution {{domain_table}}
     {{domain_legend}}
     *This tabular output delineates the results of a sequence or profile
     homology search, comprising 23 columns that report both global and
@@ -220,13 +227,15 @@ template:
     enabling rigorous interpretation of domain architecture and evolutionary
     relationships.*
     {{domain_summary}}
-    #### 7.2. 3D Structure Prediction
+  section_protein_structure: |-
+    ### {{section_number}}. 3D Structure Prediction
     {{protein_structures}}
-    ### 8. Artificial Intelligence Design
-    #### 8.1. Promoter Design
+  section_ai_design_promoter: |-
+    ### {{section_number}}. Promoter Design
     ![Promoter Design]({{promoter_path}}) {{promoter_legend}}
     {{promoter_summary}}
-    #### 8.2. Protein Design
+  section_ai_design_protein: |-
+    ### {{section_number}}. Protein Design
     ![Protein Design]({{protein_path}}) {{protein_legend}}
     {{protein_summary}}
 user:
