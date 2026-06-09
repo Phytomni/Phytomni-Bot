@@ -18,13 +18,10 @@ from typing import List
 
 from pydantic import BaseModel
 
-from ...config.defaults import BriefGeneConfig, DeepGenomeConfig
+from ...config.defaults import DeepGenomeConfig
 from ...config.settings import SensitiveConfig
-from ..brief_gene.resolve_query import (
-    BriefGeneIdCandidate,
-    BriefGeneResolveError,
-    resolve_brief_gene_user_query,
-)
+from ..brief_gene.resolve_query import BriefGeneIdCandidate
+from ..shared.bga_delegation import resolve_via_bga
 
 __all__ = [
     "DeepGenomeIdCandidate",
@@ -109,24 +106,13 @@ async def resolve_deep_genome_user_query(
             Other unexpected exceptions propagate so the outer FastAPI
             handler renders them as 500.
     """
-    brief_field_names = list(BriefGeneConfig.model_fields.keys())
-    brief_view = BriefGeneConfig(
-        **{
-            field: getattr(deep_genome_config, field)
-            for field in brief_field_names
-            if hasattr(deep_genome_config, field)
-        }
+    bga_result = await resolve_via_bga(
+        raw_query,
+        deep_genome_config,
+        sensitive_config,
+        timeout_seconds,
+        error_cls=DeepGenomeResolveError,
     )
-    try:
-        bga_result = await resolve_brief_gene_user_query(
-            raw_query,
-            brief_config=brief_view,
-            sensitive_config=sensitive_config,
-            timeout_seconds=timeout_seconds,
-        )
-    except BriefGeneResolveError as exc:
-        raise DeepGenomeResolveError(str(exc)) from exc
-
     return DeepGenomeResolveResult(
         gene_id=bga_result.gene_id,
         species_code=bga_result.species_code,
