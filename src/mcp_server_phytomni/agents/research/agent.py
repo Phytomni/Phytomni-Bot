@@ -282,36 +282,23 @@ class InSilicoResearchAgents:
             "Submitting research task via AnalystAgent: %s", task.task_name
         )
 
-        if self.in_silico_config.USE_ANALYST_SUBGRAPH:
-            result = await submit_analyst_via_subgraph(
-                self.analyst_agent,
-                self.in_silico_config,
-                self.sensitive_config,
-                {
-                    "analysis_type": task.task_name,
-                    "target_id": task.task_name,
-                    "output_dir": task.output_dir,
-                    "prompt_parts": (
-                        task.goal_description,
-                        task.context,
-                        task.data_list,
-                    ),
-                    "compute_resource": "medium",
-                },
-                is_polling=False,
-            )
-        else:
-            result = await self.analyst_agent.arun(
-                query=None,
-                goal_description=task.goal_description,
-                preset_data_list=task.data_list,
-                preset_plan=task.context,  # Pass context as predefined plan
-                output_dir=task.output_dir,
-                compute_resource="medium",
-                is_auto_select=False,
-                is_polling=False,
-                thread_id=task.thread_id,
-            )
+        result = await submit_analyst_via_subgraph(
+            self.analyst_agent,
+            self.in_silico_config,
+            self.sensitive_config,
+            {
+                "analysis_type": task.task_name,
+                "target_id": task.task_name,
+                "output_dir": task.output_dir,
+                "prompt_parts": (
+                    task.goal_description,
+                    task.context,
+                    task.data_list,
+                ),
+                "compute_resource": "medium",
+            },
+            is_polling=False,
+        )
 
         if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
             raise RuntimeError(

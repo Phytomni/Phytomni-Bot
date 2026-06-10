@@ -108,29 +108,20 @@ async def submit_vci_task_node(
     if not batch:
         output_dir = environment_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/environment/vci_analysis_meta")
-    if ENVIRONMENT_CONFIG.USE_ANALYST_SUBGRAPH:
-        vci_task = await _submit_vci_via_subgraph(
-            _EnvironmentSubmitInputs(
-                goal_description=goal_description,
-                data_list=data_list,
-                output_dir=output_dir,
-                meta=meta,
-            ),
-            region_codes=(
-                province_code or "",
-                city_code or "",
-                county_code or "",
-            ),
-            submit_kwargs=environment_submit_kwargs(kwargs),
-        )
-    else:
-        vci_task = await agent.submit(
+    vci_task = await _submit_vci_via_subgraph(
+        _EnvironmentSubmitInputs(
             goal_description=goal_description,
             data_list=data_list,
             output_dir=output_dir,
             meta=meta,
-            **environment_submit_kwargs(kwargs),
-        )
+        ),
+        region_codes=(
+            province_code or "",
+            city_code or "",
+            county_code or "",
+        ),
+        submit_kwargs=environment_submit_kwargs(kwargs),
+    )
     return {"vci_analysis_task": vci_task}
 
 

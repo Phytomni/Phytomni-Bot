@@ -2,12 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Flag-branch tests for the evolution analyst-subgraph dispatch.
+"""Dispatch tests for the evolution analyst-subgraph submission.
 
-Asserts ``submit_evolution_task_node`` calls ``agent.submit`` directly
-when ``USE_ANALYST_SUBGRAPH=False`` and routes through
-``submit_analyst_via_subgraph`` when ``True``. Both branches are
-pinned without constructing a real ``AnalystAgent``.
+Asserts ``submit_evolution_task_node`` always routes through
+``submit_analyst_via_subgraph``. The branch is pinned without
+constructing a real ``AnalystAgent``.
 """
 
 from __future__ import annotations
@@ -44,13 +43,17 @@ def _state_with_taxids() -> EvolutionState:
     }
 
 
-def _install_legacy_submit(
+def _install_submit_deps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncMock:
-    """Patch the prompt / data / submit dependencies for the legacy path."""
+    """Patch prompt / data deps and a sentinel ``agent.submit`` guard.
+
+    The returned mock pins that the removed free-function submit path
+    is never awaited now that dispatch always routes via subgraph.
+    """
 
     async def fake_submit(**kwargs: Any) -> dict[str, Any]:
-        return {"task_id": "legacy-evo-task", "submit_kwargs": kwargs}
+        return {"task_id": "free-fn-evo-task", "submit_kwargs": kwargs}
 
     submit_mock = AsyncMock(side_effect=fake_submit)
     monkeypatch.setattr(evolution_graph.agent, "submit", submit_mock)
@@ -67,41 +70,11 @@ def _install_legacy_submit(
     return submit_mock
 
 
-async def test_submit_evolution_task_uses_legacy_when_flag_off(
+async def test_submit_evolution_task_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default flag-off path awaits the legacy ``agent.submit``.
-
-    Pins the production-default routing: ``submit_evolution_task_node``
-    must call ``analyst.submit`` directly and the subgraph helper must
-    not run. ``USE_ANALYST_SUBGRAPH`` defaults to ``False`` on
-    ``DeepGenomeConfig`` (the config evolution shares with deep_genome)
-    so the default state of the config object is what production sees.
-    """
-    monkeypatch.setattr(
-        evolution_graph.DEEP_GENOME_CONFIG, "USE_ANALYST_SUBGRAPH", False
-    )
-    legacy_mock = _install_legacy_submit(monkeypatch)
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-evo-task"})
-    monkeypatch.setattr(
-        evolution_graph, "submit_analyst_via_subgraph", subgraph_mock
-    )
-
-    result = await submit_evolution_task_node(_state_with_taxids())
-
-    assert result["evolution_agents_task"]["task_id"] == "legacy-evo-task"
-    legacy_mock.assert_awaited_once()
-    subgraph_mock.assert_not_awaited()
-
-
-async def test_submit_evolution_task_uses_subgraph_when_flag_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-on path delegates to ``submit_analyst_via_subgraph``."""
-    monkeypatch.setattr(
-        evolution_graph.DEEP_GENOME_CONFIG, "USE_ANALYST_SUBGRAPH", True
-    )
-    legacy_mock = _install_legacy_submit(monkeypatch)
+    """Submission delegates to ``submit_analyst_via_subgraph``."""
+    free_fn_mock = _install_submit_deps(monkeypatch)
     subgraph_mock = AsyncMock(
         return_value={
             "task_id": "subgraph-evo-task",
@@ -122,22 +95,19 @@ async def test_submit_evolution_task_uses_subgraph_when_flag_on(
 
     assert result["evolution_agents_task"]["task_id"] == "subgraph-evo-task"
     subgraph_mock.assert_awaited_once()
-    legacy_mock.assert_not_awaited()
+    free_fn_mock.assert_not_awaited()
 
 
 async def test_submit_evolution_subgraph_request_carries_target_and_polling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on path uses ``gene_id`` as ``target_id`` and pins polling.
+    """Submission uses ``gene_id`` as ``target_id`` and pins polling.
 
     The subgraph helper builds the dispatch request from the resolved
     gene_id and threads ``is_polling=False`` so the analyst graph runs
-    fire-and-poll-elsewhere just like the legacy ``analyst.submit`` path.
+    fire-and-poll-elsewhere.
     """
-    monkeypatch.setattr(
-        evolution_graph.DEEP_GENOME_CONFIG, "USE_ANALYST_SUBGRAPH", True
-    )
-    _install_legacy_submit(monkeypatch)
+    _install_submit_deps(monkeypatch)
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-evo-task"})
     monkeypatch.setattr(
         evolution_graph, "submit_analyst_via_subgraph", subgraph_mock

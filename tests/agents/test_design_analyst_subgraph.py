@@ -2,13 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Branch + invocation tests for the analyst-subgraph dispatch flag.
+"""Invocation tests for the analyst-subgraph dispatch path.
 
-Covers ``DigitalDesignAgents._dispatch_and_wait_analysis`` branching
-on ``USE_ANALYST_SUBGRAPH`` and the ``submit_analyst_via_subgraph``
-adapter: payload projection into ``AnalystInput``, ``app.ainvoke``
-invocation with the per-task ``thread_id`` ``RunnableConfig``, and
-the ``map_analyst_output_to_dispatch_state`` round-trip.
+Covers ``DigitalDesignAgents._dispatch_and_wait_analysis`` routing
+through ``submit_analyst_via_subgraph`` and the adapter itself:
+payload projection into ``AnalystInput``, ``app.ainvoke`` invocation
+with the per-task ``thread_id`` ``RunnableConfig``, and the
+``map_analyst_output_to_dispatch_state`` round-trip.
 """
 
 # pylint: disable=protected-access
@@ -47,52 +47,25 @@ pytestmark = pytest.mark.agent
 _DESIGN_MODULE = "mcp_server_phytomni.agents.design.agent"
 
 
-def _build_agent(use_subgraph: bool) -> DigitalDesignAgents:
-    """Construct a design dispatcher with the flag set per the arg."""
+def _build_agent() -> DigitalDesignAgents:
+    """Construct a design dispatcher for the subgraph-dispatch path."""
     return build_branch_agent(
         DigitalDesignConfig,
         DigitalDesignAgents,
         "digital_design_config",
-        use_subgraph,
     )
 
 
-async def test_dispatch_uses_legacy_submit_when_flag_off(
+async def test_dispatch_uses_subgraph_submit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default flag-off path calls the legacy ``submit_analyst_analysis``.
+    """Dispatch always calls ``submit_analyst_via_subgraph``.
 
-    The legacy direct-``arun`` path is the production default; the
-    test patches both candidate helpers on the design module's
-    namespace and asserts only the legacy one was awaited.
+    Analyst work routes unconditionally through the compiled subgraph
+    entry point; the test asserts the legacy ``submit_analyst_analysis``
+    helper is never awaited (no double-dispatch, no fallback).
     """
-    agent = _build_agent(use_subgraph=False)
-    legacy_mock, subgraph_mock = install_branch_mocks(
-        monkeypatch, _DESIGN_MODULE
-    )
-    stub_prompt_parts(monkeypatch, agent)
-
-    result = await agent._dispatch_and_wait_analysis(
-        analysis_type="protein_design_analysis",
-        species_code="ath",
-        gene_id="AT1G01010",
-        output_dir="/tmp/design-out",
-    )
-
-    assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=False)
-
-
-async def test_dispatch_uses_subgraph_submit_when_flag_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``USE_ANALYST_SUBGRAPH=True`` calls ``submit_analyst_via_subgraph``.
-
-    The opt-in subgraph path replaces the direct-``arun`` call with
-    the compiled subgraph entry point; the test asserts the legacy
-    helper is bypassed entirely so the flag's behavior is binary
-    (no double-dispatch, no fallback).
-    """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     legacy_mock, subgraph_mock = install_branch_mocks(
         monkeypatch, _DESIGN_MODULE
     )

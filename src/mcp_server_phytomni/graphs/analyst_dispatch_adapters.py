@@ -136,9 +136,9 @@ async def submit_analyst_via_subgraph(
     rather than ``analyst_agent.arun(...)``. The dispatcher still
     owns the ``analyst_agent`` instance built with its own per-call
     config, so USER_ID, APP_ID, retry, and storage behavior remain
-    consistent with the legacy path. The two helpers therefore form
-    the two routes the ``USE_ANALYST_SUBGRAPH`` flag selects between
-    on every dispatcher subclass of ``AnalystConfig``.
+    consistent with the historical direct-``arun`` path. Every
+    dispatcher subclass of ``AnalystConfig`` submits analyst work
+    through this helper.
 
     Args:
         analyst_agent: ``AnalystAgent``-compatible instance owning a

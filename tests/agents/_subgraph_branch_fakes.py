@@ -50,7 +50,14 @@ def install_branch_mocks(
     """
     legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(f"{module_path}.submit_analyst_analysis", legacy_mock)
+    # ``raising=False`` so consumer modules that retired the flag-off
+    # ``submit_analyst_analysis`` import still drive the structural
+    # subgraph-mount tests; the returned legacy mock stays a
+    # never-awaited no-op there so ``assert_branch_taken(subgraph=True)``
+    # keeps reading correctly.
+    monkeypatch.setattr(
+        f"{module_path}.submit_analyst_analysis", legacy_mock, raising=False
+    )
     monkeypatch.setattr(
         f"{module_path}.submit_analyst_via_subgraph", subgraph_mock
     )
@@ -102,13 +109,10 @@ def build_branch_agent(
     config_cls: type,
     agent_cls: type,
     config_kwarg: str,
-    use_subgraph: bool,
 ) -> Any:
-    """Construct a dispatcher agent with ``USE_ANALYST_SUBGRAPH`` set.
+    """Construct a dispatcher agent wired with a stub analyst.
 
-    Builds the dispatcher's config via ``model_copy`` (avoids pylint
-    C0103 invalid-name on direct UPPERCASE attribute assignment) and
-    wires a ``SimpleNamespace`` analyst stub so the dispatcher
+    Wires a ``SimpleNamespace`` analyst stub so the dispatcher
     instantiation never reaches a real ``AnalystAgent`` constructor.
 
     Args:
@@ -120,21 +124,17 @@ def build_branch_agent(
             uses for its config object (e.g.
             ``"digital_design_config"`` for design,
             ``"gene_network_config"`` for network).
-        use_subgraph: Initial ``USE_ANALYST_SUBGRAPH`` value.
 
     Returns:
         A dispatcher instance wired with the analyst stub and a
         ``SensitiveConfig.load()`` real instance (tests run under
         the ``tests/conftest.py`` ``_TEST_ENV``).
     """
-    config = config_cls().model_copy(
-        update={"USE_ANALYST_SUBGRAPH": use_subgraph}
-    )
     analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
     return agent_cls(
         sensitive_config=SensitiveConfig.load(),
         analyst_agent=cast(AnalystAgent, analyst_stub),
-        **{config_kwarg: config},
+        **{config_kwarg: config_cls()},
     )
 
 

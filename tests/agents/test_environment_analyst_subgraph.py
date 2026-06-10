@@ -2,12 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Flag-branch tests for the environment VCI analyst-subgraph dispatch.
+"""Dispatch tests for the environment VCI analyst-subgraph routing.
 
-Asserts ``submit_vci_task_node`` calls ``agent.submit`` directly when
-``USE_ANALYST_SUBGRAPH=False`` and routes through
-``submit_analyst_via_subgraph`` when ``True``. Both branches are
-pinned without constructing a real ``AnalystAgent``.
+Asserts ``submit_vci_task_node`` always routes through
+``submit_analyst_via_subgraph`` and never falls back to the legacy
+``agent.submit``. The path is pinned without constructing a real
+``AnalystAgent``.
 """
 
 from __future__ import annotations
@@ -62,46 +62,15 @@ def _install_legacy_submit(
     return submit_mock
 
 
-async def test_submit_vci_task_uses_legacy_when_flag_off(
+async def test_submit_vci_task_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default flag-off path awaits the legacy ``agent.submit``.
+    """Submission delegates to ``submit_analyst_via_subgraph``.
 
-    Pins the production-default routing: ``submit_vci_task_node`` must
-    call ``analyst.submit`` directly and the subgraph helper must not
-    run. ``USE_ANALYST_SUBGRAPH`` defaults to ``False`` on
-    ``EnvironmentConfig`` so the default state of the env config
-    object is what production sees.
+    The dispatch path forwards the goal / data / output_dir / meta into
+    the dispatch request and never calls the legacy ``agent.submit``;
+    the test asserts both observable conditions.
     """
-    monkeypatch.setattr(
-        environment_graph.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", False
-    )
-    legacy_mock = _install_legacy_submit(monkeypatch)
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-vci-task"})
-    monkeypatch.setattr(
-        environment_graph, "submit_analyst_via_subgraph", subgraph_mock
-    )
-
-    result = await submit_vci_task_node(_state_with_codes())
-
-    assert result["vci_analysis_task"]["task_id"] == "legacy-vci-task"
-    legacy_mock.assert_awaited_once()
-    subgraph_mock.assert_not_awaited()
-
-
-async def test_submit_vci_task_uses_subgraph_when_flag_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-on path delegates to ``submit_analyst_via_subgraph``.
-
-    The opt-in path forwards the goal / data / output_dir / meta into
-    the dispatch request and bypasses the legacy ``agent.submit`` call;
-    the test asserts both observable conditions so the flag's
-    behavior is binary.
-    """
-    monkeypatch.setattr(
-        environment_graph.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", True
-    )
     legacy_mock = _install_legacy_submit(monkeypatch)
     subgraph_mock = AsyncMock(
         return_value={
@@ -132,16 +101,13 @@ async def test_submit_vci_task_uses_subgraph_when_flag_on(
 async def test_submit_vci_subgraph_request_carries_target_and_polling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on path packs the region codes into ``target_id`` and pins polling.
+    """Dispatch packs the region codes into ``target_id`` and pins polling.
 
     The subgraph helper builds the dispatch request from the resolved
     province / city / county codes and threads ``is_polling=False`` so
     the analyst graph runs fire-and-poll-elsewhere just like the
     legacy ``analyst.submit`` path.
     """
-    monkeypatch.setattr(
-        environment_graph.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", True
-    )
     _install_legacy_submit(monkeypatch)
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-vci-task"})
     monkeypatch.setattr(

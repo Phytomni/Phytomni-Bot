@@ -525,28 +525,6 @@ class AnalystConfig(KnowledgeConfig):
     MAX_POLL: float = 86400
     PLAN_MIN_SCORE: int = 0
 
-    # Dispatcher-side opt-in: when True, ``DigitalDesignAgents``
-    # (and the upcoming Network / Research / Environment / DeepGenome
-    # dispatchers) route their per-task analyst submission through
-    # the analyst's compiled subgraph entry point
-    # (``analyst_agent.app.ainvoke`` with ``AnalystInput``) instead of
-    # the legacy ``analyst_agent.arun`` direct call. Default ``False``
-    # keeps the production behavior identical to today; flip to
-    # ``True`` per deployment once parent-graph composition has been
-    # validated end-to-end. Inherited by every dispatcher config that
-    # subclasses ``AnalystConfig``. ``AliasChoices`` mirrors the
-    # endpoint-field pattern so ``PHYTOMNI_USE_ANALYST_SUBGRAPH``
-    # routes to the same field as the unprefixed form.
-    USE_ANALYST_SUBGRAPH: Annotated[
-        bool,
-        Field(
-            default=True,
-            validation_alias=AliasChoices(
-                "USE_ANALYST_SUBGRAPH", "PHYTOMNI_USE_ANALYST_SUBGRAPH"
-            ),
-        ),
-    ] = True
-
 
 class ReviewConfig(KnowledgeConfig):
     """Configuration settings for review generation or related tasks.

@@ -36,7 +36,6 @@ from ..design.agent import (
     protein_structure_for_gene,
 )
 from ..evolution.agent import evolution_analysis_for_gene
-from ..shared.analysis import submit_analyst_analysis
 from ..shared.analysis_storage import (
     ensure_run_output_dir,
     get_data_list,
@@ -606,15 +605,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         design modules (Step 6.5), branch on the matching
         ``DeepGenomeConfig`` flag and dispatch through the producer
         wrapper. For the remaining types, build the request dict and
-        route through either ``submit_analyst_via_subgraph``
-        (``USE_ANALYST_SUBGRAPH=True``) or ``submit_analyst_analysis``
-        (legacy fallback). Both shared helpers internally mint their
-        own run identity via ``prepare_analyst_dispatch_context`` so
-        the per-call ``run_identity`` argument the caller used to
-        thread through has retired. Default-False flags keep
-        ``submit_analyst_analysis`` (the analyst.arun fire-and-poll
-        path) live so ``PHYTOMNI_USE_*_SUBGRAPH=false`` continues to
-        work as the rollback knob until Step 6.6 flips the defaults.
+        route through ``submit_analyst_via_subgraph``. The shared
+        helper internally mints its own run identity via
+        ``prepare_analyst_dispatch_context`` so the per-call
+        ``run_identity`` argument the caller used to thread through
+        has retired.
         """
         analysis_type = context.analysis_type
         config = self.deep_genome_config
@@ -652,15 +647,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": compute_resource,
         }
-        if config.USE_ANALYST_SUBGRAPH:
-            return await submit_analyst_via_subgraph(
-                self._agents.analyst_agent,
-                config,
-                self.sensitive_config,
-                request,
-                is_polling=True,
-            )
-        return await submit_analyst_analysis(
+        return await submit_analyst_via_subgraph(
             self._agents.analyst_agent,
             config,
             self.sensitive_config,

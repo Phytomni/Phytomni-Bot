@@ -184,27 +184,6 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
 
 @pytest.mark.parametrize(
     "env_name",
-    ["USE_ANALYST_SUBGRAPH", "PHYTOMNI_USE_ANALYST_SUBGRAPH"],
-)
-def test_use_analyst_subgraph_routes_both_env_aliases(env_name, monkeypatch):
-    """Both env names toggle ``AnalystConfig.USE_ANALYST_SUBGRAPH``.
-
-    Pins the ``AliasChoices`` contract so the env-prefix promise in
-    ``docs/configuration.md`` and ``.env.example`` holds; the prefixed
-    form silently no-op'd until ``Field(validation_alias=...)`` was
-    added.
-    """
-    monkeypatch.delenv("USE_ANALYST_SUBGRAPH", raising=False)
-    monkeypatch.delenv("PHYTOMNI_USE_ANALYST_SUBGRAPH", raising=False)
-    monkeypatch.setenv(env_name, "true")
-
-    config = AnalystConfig()
-
-    assert config.USE_ANALYST_SUBGRAPH is True
-
-
-@pytest.mark.parametrize(
-    "env_name",
     ["USE_EVOLUTION_SUBGRAPH", "PHYTOMNI_USE_EVOLUTION_SUBGRAPH"],
 )
 def test_use_evolution_subgraph_routes_both_env_aliases(env_name, monkeypatch):

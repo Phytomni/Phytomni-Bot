@@ -13,10 +13,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mcp_server_phytomni.agents.environment import agent as environment_agent
+from mcp_server_phytomni.agents.environment import graph as environment_graph
 
 pytestmark = pytest.mark.agent
 
@@ -139,26 +141,38 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         assert "run_identity" in obs_kwargs
         return "obs://phytomni/test/vci-out"
 
-    async def fake_submit(**kwargs: Any) -> dict[str, Any]:
-        """Capture submit kwargs and return a fake task payload.
+    async def fake_submit_via_subgraph(
+        *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Capture the dispatch request and return a fake task payload.
 
         Args:
-            **kwargs: Analyst submit keyword arguments forwarded by the
-                environment wrapper.
+            *args: Positional dispatch arguments; ``args[3]`` is the
+                analyst dispatch request assembled by the node.
+            **kwargs: Keyword dispatch arguments forwarded by the node
+                (notably ``is_polling``).
 
         Returns:
-            Fake VCI task dictionary echoing the captured goal_description.
+            Fake VCI task dictionary returned to the wrapper.
         """
-        captured["submit"] = kwargs
+        captured["submit_args"] = args
+        captured["submit_kwargs"] = kwargs
         return {"task_id": "vci-task-123"}
 
-    # Pin ``USE_ANALYST_SUBGRAPH=False`` so the analyst submission
-    # routes through the wrapper-namespace ``submit`` this test mocks
-    # rather than ``submit_analyst_via_subgraph``. Region-code
-    # extraction always runs through the compiled chat subgraph, so
-    # ``_cached_chat_app`` is stubbed below to drive that path.
+    # Analyst submission always routes through
+    # ``submit_analyst_via_subgraph``; ``_build_submit_agent`` is stubbed
+    # because constructing a real ``AnalystAgent`` reaches the cached-agent
+    # registry + IAM token acquisition, neither available offline.
+    # Region-code extraction always runs through the compiled chat
+    # subgraph, so ``_cached_chat_app`` is stubbed below to drive it.
+    subgraph_mock = AsyncMock(side_effect=fake_submit_via_subgraph)
     monkeypatch.setattr(
-        environment_agent.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", False
+        environment_graph, "submit_analyst_via_subgraph", subgraph_mock
+    )
+    monkeypatch.setattr(
+        environment_graph,
+        "_build_submit_agent",
+        lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
     )
     monkeypatch.setattr(
         environment_agent, "_cached_chat_app", lambda: fake_chat_app
@@ -171,7 +185,6 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
     monkeypatch.setattr(
         environment_agent, "create_output_dir", fake_create_output_dir
     )
-    monkeypatch.setattr(environment_agent, "submit", fake_submit)
 
     result = await environment_agent.region_vci_analysis(
         query="Analyze Beijing vegetation index",
@@ -179,17 +192,16 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
     )
 
     assert result == {"vci_analysis_task": {"task_id": "vci-task-123"}}
-    assert captured["submit"]["goal_description"] == (
-        "prompt:user/environment/vci_analysis"
+    request = captured["submit_args"][3]
+    assert request["analysis_type"] == "vci_analysis"
+    assert request["target_id"] == "110000-110100-110101"
+    assert request["output_dir"] == "obs://phytomni/test/vci-out"
+    assert request["prompt_parts"] == (
+        "prompt:user/environment/vci_analysis",
+        "prompt:user/environment/vci_analysis_meta",
+        ["obs://data/vci-1", "obs://data/vci-2"],
     )
-    assert captured["submit"]["data_list"] == [
-        "obs://data/vci-1",
-        "obs://data/vci-2",
-    ]
-    assert captured["submit"]["output_dir"] == "obs://phytomni/test/vci-out"
-    assert captured["submit"]["meta"] == (
-        "prompt:user/environment/vci_analysis_meta"
-    )
+    assert captured["submit_kwargs"]["is_polling"] is False
 
 
 async def test_region_vci_analysis_returns_none_task_when_codes_missing(

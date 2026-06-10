@@ -37,7 +37,6 @@ from ..shared.analysis import (
     get_configured_analysis_agent,
     route_analysis_tasks,
     run_analysis_graph,
-    submit_analyst_analysis,
 )
 from ..shared.analysis_storage import get_data_list
 from ..shared.parallel_dispatch import (
@@ -200,19 +199,12 @@ class GeneNetworkAgents:
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": self._get_compute_resource(analysis_type),
         }
-        if self.gene_network_config.USE_ANALYST_SUBGRAPH:
-            return await submit_analyst_via_subgraph(
-                self.analyst_agent,
-                self.gene_network_config,
-                self.sensitive_config,
-                request,
-                is_polling=False,
-            )
-        return await submit_analyst_analysis(
+        return await submit_analyst_via_subgraph(
             self.analyst_agent,
             self.gene_network_config,
             self.sensitive_config,
             request,
+            is_polling=False,
         )
 
     def _analysis_prompt_parts(

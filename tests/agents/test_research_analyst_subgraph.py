@@ -2,14 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Flag-branch tests for InSilicoResearchAgents analyst-subgraph dispatch.
+"""Dispatch tests for InSilicoResearchAgents analyst-subgraph routing.
 
-Asserts ``_submit_research_task`` calls ``analyst_agent.arun``
-directly when ``USE_ANALYST_SUBGRAPH=False`` and routes through
-``submit_analyst_via_subgraph`` when ``True``. Research differs
-from design / network: it bypasses ``submit_analyst_analysis``
-and threads a pre-computed ``thread_id`` per task; the test pins
-both branches without disturbing the rest of the dispatch flow.
+Asserts ``_submit_research_task`` routes through
+``submit_analyst_via_subgraph``. Research differs from design /
+network: it bypasses ``submit_analyst_analysis`` and threads a
+pre-computed ``thread_id`` per task; the test pins the dispatch
+contract without disturbing the rest of the flow.
 """
 
 # pylint: disable=protected-access
@@ -35,18 +34,15 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 pytestmark = pytest.mark.agent
 
 
-def _build_agent(use_subgraph: bool) -> InSilicoResearchAgents:
-    """Build a research agent with USE_ANALYST_SUBGRAPH set per the arg.
+def _build_agent() -> InSilicoResearchAgents:
+    """Build a research agent for analyst-subgraph dispatch tests.
 
     The analyst stub is a ``SimpleNamespace`` whose ``arun`` is an
-    AsyncMock — the legacy branch awaits it directly, while the
-    subgraph branch is dispatched through a separately-patched
-    ``submit_analyst_via_subgraph`` so each branch is observable
+    AsyncMock — dispatch is routed through a separately-patched
+    ``submit_analyst_via_subgraph`` so the call is observable
     without constructing a real ``AnalystAgent``.
     """
-    config = InSilicoResearchConfig().model_copy(
-        update={"USE_ANALYST_SUBGRAPH": use_subgraph}
-    )
+    config = InSilicoResearchConfig()
     analyst_stub = SimpleNamespace(
         arun=AsyncMock(return_value={"task_id": "legacy-task"})
     )
@@ -58,7 +54,7 @@ def _build_agent(use_subgraph: bool) -> InSilicoResearchAgents:
 
 
 def _sample_task() -> ResearchTaskContext:
-    """Return a frozen ResearchTaskContext for both branch tests."""
+    """Return a frozen ResearchTaskContext for the dispatch tests."""
     return ResearchTaskContext(
         goal_description="Investigate gene X under stress.",
         context="preset-plan-meta",
@@ -69,46 +65,16 @@ def _sample_task() -> ResearchTaskContext:
     )
 
 
-async def test_submit_task_uses_legacy_arun_when_flag_off(
+async def test_submit_task_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default flag-off path awaits ``analyst_agent.arun`` directly.
+    """Dispatch delegates to ``submit_analyst_via_subgraph``.
 
-    Pins the production-default routing: the legacy direct-``arun``
-    call must run with the task's pre-computed ``thread_id`` (so the
-    parent research graph's per-goal checkpoint keys stay stable)
-    and the subgraph helper must not be invoked.
+    The path forwards the task's prompt parts and target name into
+    the dispatch request and bypasses the direct ``arun`` call; the
+    test asserts both observable conditions.
     """
-    agent = _build_agent(use_subgraph=False)
-    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.research.agent."
-        "submit_analyst_via_subgraph",
-        subgraph_mock,
-    )
-
-    result = await agent._submit_research_task(_sample_task())
-
-    assert result["task_id"] == "legacy-task"
-    cast(AsyncMock, agent.analyst_agent.arun).assert_awaited_once()
-    legacy_call = cast(AsyncMock, agent.analyst_agent.arun).await_args
-    assert legacy_call is not None
-    assert legacy_call.kwargs["thread_id"] == "thread-research-goal-0"
-    assert legacy_call.kwargs["compute_resource"] == "medium"
-    subgraph_mock.assert_not_awaited()
-
-
-async def test_submit_task_uses_subgraph_when_flag_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-on path delegates to ``submit_analyst_via_subgraph``.
-
-    The opt-in path forwards the task's prompt parts and target
-    name into the dispatch request and bypasses the legacy
-    ``arun`` call; the test asserts both observable conditions so
-    the flag's behavior is binary.
-    """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={
             "task_id": "subgraph-task",
@@ -143,17 +109,17 @@ async def test_submit_task_uses_subgraph_when_flag_on(
     assert call_args.kwargs["is_polling"] is False
 
 
-async def test_submit_task_propagates_failed_status_in_both_branches(
+async def test_submit_task_propagates_failed_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``FAILED_AT_AGENT_LEVEL`` status raises ``RuntimeError`` in both modes.
+    """``FAILED_AT_AGENT_LEVEL`` status raises ``RuntimeError``.
 
-    The post-dispatch error check runs after the branch returns, so
-    a subgraph-path failure surfaces the same way a legacy-path
-    failure does. Pins the cross-branch contract so the flag
-    cannot accidentally swallow analyst failures.
+    The post-dispatch error check runs after the subgraph helper
+    returns, so a dispatch-path failure surfaces as a
+    ``RuntimeError``. Pins the contract so dispatch cannot
+    accidentally swallow analyst failures.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={
             "task_status": "FAILED_AT_AGENT_LEVEL",

@@ -105,27 +105,17 @@ async def submit_evolution_task_node(
     if not batch:
         output_dir = evolution_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/evolution_agents_meta")
-    if DEEP_GENOME_CONFIG.USE_ANALYST_SUBGRAPH:
-        evo_task = await _submit_evolution_via_subgraph(
-            _EvolutionSubmitInputs(
-                goal_description=goal_description,
-                data_list=data_list,
-                output_dir=output_dir,
-                meta=meta,
-            ),
-            user_id=user_id,
-            gene_id=gene_id,
-            submit_kwargs=evolution_submit_kwargs(kwargs, enable_auto_select),
-        )
-    else:
-        evo_task = await agent.submit(
+    evo_task = await _submit_evolution_via_subgraph(
+        _EvolutionSubmitInputs(
             goal_description=goal_description,
             data_list=data_list,
-            user_id=user_id,
             output_dir=output_dir,
             meta=meta,
-            **evolution_submit_kwargs(kwargs, enable_auto_select),
-        )
+        ),
+        user_id=user_id,
+        gene_id=gene_id,
+        submit_kwargs=evolution_submit_kwargs(kwargs, enable_auto_select),
+    )
     return {"evolution_agents_task": evo_task}
 
 
