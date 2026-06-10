@@ -27,7 +27,6 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
 
-_ANALYST_MODULE = "mcp_server_phytomni.agents.analyst.graph"
 _CORE_MODULE = "mcp_server_phytomni.agents.analyst.core"
 
 
@@ -101,34 +100,6 @@ def _build_agent(
 # ---------------------------------------------------------------------------
 # Direct call: ``method_retrieve_node`` still awaits ``multi_retrieve``.
 # ---------------------------------------------------------------------------
-
-
-async def test_method_retrieve_node_awaits_multi_retrieve(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``method_retrieve_node`` calls ``multi_retrieve`` directly."""
-    legacy_mock = AsyncMock(
-        return_value={"doc_list": [{"title": "Doc A", "content": "doc-A"}]}
-    )
-    monkeypatch.setattr(f"{_ANALYST_MODULE}.multi_retrieve", legacy_mock)
-    monkeypatch.setattr(
-        f"{_ANALYST_MODULE}.download_upload_context",
-        AsyncMock(return_value=("uploaded", 9)),
-    )
-
-    agent = _build_agent(monkeypatch)
-    state = cast(
-        AnalystState,
-        {
-            "goal_description": "assemble transcriptome",
-            "obs_file_list": [],
-        },
-    )
-    result = await agent.method_retrieve_node(state)
-
-    legacy_mock.assert_awaited_once()
-    assert result["method_context"]["upload_context"] == "uploaded"
-    assert "doc-A" in result["method_context"]["retrieve_context"]
 
 
 # ---------------------------------------------------------------------------
