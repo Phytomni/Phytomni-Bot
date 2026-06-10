@@ -13,10 +13,12 @@ shell metacharacters), and the size/empty-body guard rails that the
 from __future__ import annotations
 
 from typing import Any, Callable
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from mcp_server_phytomni.storage import obs_relay_ops as obs_relay_ops_module
+from mcp_server_phytomni.storage import uploads as uploads_module
 from mcp_server_phytomni.storage.uploads import (
     InvalidUploadError,
     UploadRecord,
@@ -28,7 +30,7 @@ from mcp_server_phytomni.storage.uploads import (
 pytestmark = pytest.mark.unit
 
 
-def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
+async def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
@@ -37,7 +39,7 @@ def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     fake = fake_obs_client_factory()
     monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
 
-    record = upload_user_file(
+    record = await upload_user_file(
         file_bytes=b"hello-bytes",
         original_filename="report.pdf",
         user_id="alice",
@@ -66,7 +68,7 @@ def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     assert put_kwargs["objectKey"].endswith("/report.pdf")
 
 
-def test_upload_user_file_writes_to_obsfs_when_mounted(
+async def test_upload_user_file_writes_to_obsfs_when_mounted(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
@@ -77,7 +79,7 @@ def test_upload_user_file_writes_to_obsfs_when_mounted(
     fake = fake_obs_client_factory()
     monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
 
-    record = upload_user_file(
+    record = await upload_user_file(
         file_bytes=b"data",
         original_filename="notes.txt",
         user_id="bob",
@@ -106,7 +108,7 @@ def test_upload_user_file_writes_to_obsfs_when_mounted(
     )
 
 
-def test_upload_user_file_rejects_empty_body(
+async def test_upload_user_file_rejects_empty_body(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
@@ -116,7 +118,7 @@ def test_upload_user_file_rejects_empty_body(
         obs_relay_ops_module, "ObsClient", fake_obs_client_factory()
     )
     with pytest.raises(InvalidUploadError, match="empty"):
-        upload_user_file(
+        await upload_user_file(
             file_bytes=b"",
             original_filename="file.bin",
             user_id="u",
@@ -127,7 +129,7 @@ def test_upload_user_file_rejects_empty_body(
         )
 
 
-def test_upload_user_file_rejects_oversize(
+async def test_upload_user_file_rejects_oversize(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
@@ -137,7 +139,7 @@ def test_upload_user_file_rejects_oversize(
         obs_relay_ops_module, "ObsClient", fake_obs_client_factory()
     )
     with pytest.raises(UploadTooLargeError, match="exceeds"):
-        upload_user_file(
+        await upload_user_file(
             file_bytes=b"x" * 11,
             original_filename="x.bin",
             user_id="u",
@@ -177,7 +179,7 @@ def test_safe_upload_filename_rejects_empty_and_dot_names() -> None:
             safe_upload_filename(bad)
 
 
-def test_upload_user_file_anonymizes_missing_user_id(
+async def test_upload_user_file_anonymizes_missing_user_id(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
@@ -186,7 +188,7 @@ def test_upload_user_file_anonymizes_missing_user_id(
     monkeypatch.setattr(
         obs_relay_ops_module, "ObsClient", fake_obs_client_factory()
     )
-    record = upload_user_file(
+    record = await upload_user_file(
         file_bytes=b"data",
         original_filename="x.bin",
         user_id="",
@@ -197,3 +199,32 @@ def test_upload_user_file_anonymizes_missing_user_id(
         obsfs_mount_root=str(tmp_path / "no-mount"),
     )
     assert "/agent_data/uploads/anonymous/r/" in record.obs_path
+
+
+async def test_upload_user_file_uses_relay_when_relay_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Relay mode forwards bytes to the relay and skips the OBS SDK."""
+    relay = Mock()
+    relay.put_obs_object = AsyncMock(return_value={"obs_path": "/obs/x"})
+    monkeypatch.setattr(uploads_module, "relay_mode_enabled", lambda: True)
+    monkeypatch.setattr(uploads_module, "current_relay_client", lambda: relay)
+    no_local = Mock()
+    monkeypatch.setattr(uploads_module, "put_object_bytes", no_local)
+
+    record = await upload_user_file(
+        file_bytes=b"payload",
+        original_filename="x.pdf",
+        user_id="alice",
+        request_id="req-1",
+        max_bytes=1024,
+        prefix="agent_data/uploads",
+        bucket_name="phytomni",
+    )
+
+    assert relay.put_obs_object.await_count == 1
+    assert relay.put_obs_object.await_args.args[1] == b"payload"
+    assert not no_local.called
+    assert record.obs_path.startswith(
+        "/obs/phytomni/agent_data/uploads/alice/req-1/"
+    )

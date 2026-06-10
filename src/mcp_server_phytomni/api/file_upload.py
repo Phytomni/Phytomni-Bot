@@ -120,7 +120,7 @@ async def handle_file_upload(
         )
     request_id = current_request_id() or IdFactory().new_id("request")
     try:
-        record = upload_user_file(
+        record = await upload_user_file(
             file_bytes=file_bytes,
             original_filename=file.filename or "",
             user_id=user_id,

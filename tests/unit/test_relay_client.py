@@ -71,6 +71,13 @@ class _CapturingClient:
         self.captured = {"method": "GET", "url": url, **kwargs}
         return self.response
 
+    async def request(
+        self, method: str, url: str, **kwargs: Any
+    ) -> httpx.Response:
+        """Record a non-GET/POST request (e.g. PUT) and replay it."""
+        self.captured = {"method": method, "url": url, **kwargs}
+        return self.response
+
 
 def _patch_client(monkeypatch, response: httpx.Response) -> _CapturingClient:
     """Patch ``relay_client.get_async_client`` to yield a capturing stub."""
@@ -212,3 +219,23 @@ def test_current_relay_client_reads_live_relay_config(monkeypatch):
 
     assert client.base_url == "https://relay.test"
     assert client.api_key.get_secret_value() == "live-key"
+
+
+async def test_put_obs_object_puts_bytes_with_path_query(monkeypatch):
+    """``put_obs_object`` PUTs raw bytes to /obs/object with the path query."""
+    client_stub = _patch_client(
+        monkeypatch, _response(200, {"obs_path": "/obs/phytomni/x"}, "PUT")
+    )
+
+    result = await _client("k9").put_obs_object(
+        "/obs/phytomni/agent_data/x.pdf",
+        b"file-bytes",
+        message="relay upload failed",
+    )
+
+    assert result == {"obs_path": "/obs/phytomni/x"}
+    assert client_stub.captured["method"] == "PUT"
+    assert "v1/relay/obs/object?" in client_stub.captured["url"]
+    assert "path=" in client_stub.captured["url"]
+    assert client_stub.captured["data"] == b"file-bytes"
+    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"

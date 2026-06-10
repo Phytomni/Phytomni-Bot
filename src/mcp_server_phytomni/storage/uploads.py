@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from ..common.relay_client import current_relay_client
 from ..config.defaults import ServerConfig
+from ..config.relay_mode import relay_mode_enabled
 from .obs_relay_ops import put_object_bytes
 from .obs_storage import DEFAULT_OBSFS_MOUNT_ROOT, obs_path_from_key
 from .path_policy import DEFAULT_USER_ID, IdFactory, safe_path_segment
@@ -98,7 +100,7 @@ def safe_upload_filename(original_filename: str) -> str:
 # Conceptually-atomic OBS upload (validate -> resolve target ->
 # write). Splitting the args into dataclasses adds caller boilerplate
 # without splitting the responsibility. See docs/lint-exemptions.md.
-def upload_user_file(
+async def upload_user_file(
     file_bytes: bytes,
     original_filename: str,
     user_id: str,
@@ -163,17 +165,23 @@ def upload_user_file(
         f"{file_id}/{safe_filename}"
     )
 
-    put_object_bytes(
-        target_bucket,
-        object_key,
-        file_bytes,
-        obs_server=target_server,
-        mount_root=obsfs_mount_root,
-    )
+    obs_path = obs_path_from_key(target_bucket, object_key)
+    if relay_mode_enabled():
+        await current_relay_client().put_obs_object(
+            obs_path, file_bytes, message="Failed to upload file via relay"
+        )
+    else:
+        put_object_bytes(
+            target_bucket,
+            object_key,
+            file_bytes,
+            obs_server=target_server,
+            mount_root=obsfs_mount_root,
+        )
 
     return UploadRecord(
         file_id=file_id,
         filename=safe_filename,
         bytes=len(file_bytes),
-        obs_path=obs_path_from_key(target_bucket, object_key),
+        obs_path=obs_path,
     )

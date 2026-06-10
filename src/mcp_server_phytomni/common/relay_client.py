@@ -164,6 +164,24 @@ class RelayClient:
         )
         return await self._request_json(request, message)
 
+    async def put_obs_object(
+        self, obs_path: str, content: bytes, *, message: str
+    ) -> Any:
+        """PUT raw object bytes to the OBS upload relay, parse JSON.
+
+        Sends the validated client OBS path as the ``path`` query and the
+        object bytes as the request body to ``PUT /v1/relay/obs/object``;
+        the operator relay terminates the upload server-side with its own
+        OBS credentials and returns the stored ``obs_path``.
+        """
+        request = JsonPostRequest(
+            url=self.relay_url("obs/object", {"path": obs_path}),
+            method="PUT",
+            headers=self._auth_headers(),
+            data=content,
+        )
+        return await self._request_json(request, message)
+
 
 def build_relay_client(
     config: ServerConfig, sensitive: SensitiveConfig
