@@ -141,8 +141,8 @@ class BriefGeneState(TypedDict):
     # ``_route_gene_profile_barrier`` advances to ``introduction_node``
     # once the counter reaches 4.
     gene_profile_completed_branches: Annotated[int, operator.add]
-    # Additive optional keys used only when ``USE_CHAT_SUBGRAPH`` is on
-    # (chat-subgraph dual-wire). ``generate_prep_node`` /
+    # Additive optional keys for the chat-subgraph split.
+    # ``generate_prep_node`` /
     # ``follow_up_prep_node`` stage ``chat_payload`` + ``pending_post``;
     # the shared ``chat`` mount writes the chat-completions-style
     # ``chat_response``; the matching post node reads ``chat_response``

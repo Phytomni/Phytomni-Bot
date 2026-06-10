@@ -7,7 +7,7 @@
 Data / Knowledge / Analyst chat sites pass the same 17-key bag to
 ``phyto_chat`` and unwrap the chat-completion dict the same way; the
 structural-mount wiring routes those calls through the shared chat
-subgraph behind ``USE_CHAT_SUBGRAPH``. Two optional kwargs encode
+subgraph. Two optional kwargs encode
 divergence: ``response_format`` for analyst's per-site overrides,
 ``obs_file_list`` for data / knowledge's upload-context forwarding.
 """

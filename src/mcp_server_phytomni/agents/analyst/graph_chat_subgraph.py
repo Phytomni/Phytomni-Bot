@@ -8,7 +8,7 @@ Exports :class:`AnalystChatSubgraphMixin`, the prep + post halves of
 each chat node (``parse_query`` / ``data_select`` / ``plan`` /
 ``check`` / ``tool_extract``). The legacy single-node bodies stay in
 ``graph.py``; this mixin only owns the prep + post pairs surrounding
-the shared chat node mounted when ``USE_CHAT_SUBGRAPH`` is on.
+the shared chat node mounted into the compiled graph.
 """
 
 from __future__ import annotations

@@ -82,16 +82,12 @@ def _build_agent(
     use_knowledge_subgraph: bool,
     *,
     monkeypatch: pytest.MonkeyPatch | None = None,
-    use_chat_subgraph: bool = False,
 ) -> BriefGeneAgent:
     """Construct a ``BriefGeneAgent`` with the specified flag combination."""
     if use_knowledge_subgraph and monkeypatch is not None:
         _install_fake_knowledge_app(monkeypatch)
     config = BriefGeneConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": use_knowledge_subgraph,
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
-        }
+        update={"USE_KNOWLEDGE_SUBGRAPH": use_knowledge_subgraph}
     )
     return BriefGeneAgent(
         brief_config=config,
@@ -372,7 +368,6 @@ def test_compiled_graph_cross_product_both_flags_on(
     agent = _build_agent(
         use_knowledge_subgraph=True,
         monkeypatch=monkeypatch,
-        use_chat_subgraph=True,
     )
     nodes = list(agent.app.get_graph(xray=1).nodes.keys())
 

@@ -201,28 +201,24 @@ def test_route_after_generate_skips_when_disabled() -> None:
 
 
 def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
-    """Compiled BriefGene graph routes from query_judge / retrieve / render.
+    """Compiled BriefGene graph exposes the chat-mount conditionals.
 
-    M10 (X3b A architecture) — the legacy single-node topology has
-    THREE conditional sources:
+    The chat-subgraph topology has THREE conditional sources:
 
     * ``query_judge_node`` routes to fetch-annotation vs. direct
       retrieval based on gene_found.
-    * ``retrieve_node`` routes (fan-out) to the four section nodes
-      when gene_found=True or to ``introduction_node`` directly
-      when gene_found=False (D5.a degraded path).
-    * ``render_node`` routes to ``follow_up_node`` or END based on
-      the is_follow_up flag.
+    * ``chat`` routes back to the correct post node (generate vs.
+      follow_up) via ``make_chat_after_router``.
+    * ``generate_post_node`` routes to the follow_up prep node or END
+      based on the is_follow_up flag.
 
-    Pins the topology so future refactors that collapse one of
-    these branches surfaces here before the manifest export. Pinned
-    against the explicit flag-off config because the default flipped
-    to True (which wires the prep+chat+post structural mount) — the
-    legacy topology is still reachable via the env-only override.
+    ``USE_KNOWLEDGE_SUBGRAPH`` is pinned ``False`` so the retrieve
+    site stays a single node and the conditional set isolates the
+    chat split.
     """
     config = BriefGeneConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+        update={"USE_KNOWLEDGE_SUBGRAPH": False}
     )
     agent = BriefGeneAgent(brief_config=config)
     branches = set(agent.app.builder.branches.keys())
-    assert branches == {"query_judge_node", "retrieve_node", "render_node"}
+    assert branches == {"query_judge_node", "chat", "generate_post_node"}

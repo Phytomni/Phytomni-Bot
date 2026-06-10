@@ -108,9 +108,9 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_research_analyst_subgraph.py": {
         "protected-access",
     },
-    # Flag-branch test for ``InSilicoResearchAgents._extract_goals`` —
-    # asserts USE_CHAT_SUBGRAPH routes the chat call site through the
-    # compiled chat subgraph, same protected-helper coverage seam.
+    # Test for ``InSilicoResearchAgents._extract_goals`` — asserts
+    # the chat call site routes through the compiled chat subgraph,
+    # same protected-helper coverage seam.
     "tests/agents/test_research_chat_subgraph.py": {
         "protected-access",
     },
@@ -121,10 +121,9 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_deep_genome_dispatch_routing.py": {
         "protected-access",
     },
-    # Flag-branch test for ``DeepGenomeReportMixin._dispatch_chat`` —
-    # asserts USE_CHAT_SUBGRAPH routes the report node bodies'
-    # chat call sites through the compiled chat subgraph, same
-    # protected-helper coverage seam.
+    # Test for ``DeepGenomeReportMixin._dispatch_chat`` — asserts
+    # the report node bodies' chat call sites route through the
+    # compiled chat subgraph, same protected-helper coverage seam.
     "tests/agents/test_deep_genome_chat_subgraph.py": {
         "protected-access",
     },

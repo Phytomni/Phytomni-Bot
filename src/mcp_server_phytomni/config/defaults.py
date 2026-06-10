@@ -251,32 +251,6 @@ class ServerConfig(BaseSettings):
         ),
     ] = None
 
-    # Consumer-side opt-in: when True, every agent that invokes chat
-    # (knowledge / data / analyst / review / brief_gene / design /
-    # network / research / environment / evolution / deep_genome)
-    # routes its chat call through the chat agent's compiled subgraph
-    # via ``adapter_node(chat_subgraph)`` instead of the legacy direct
-    # ``phyto_chat`` function call. Default ``False`` preserves
-    # pre-Phase-6 behavior; flip to ``True`` per deployment once
-    # parent-graph composition has been validated end-to-end.
-    # Inherited by every consumer agent config that subclasses
-    # ``ServerConfig`` (every ``*Config`` except ``ApiConfig``, which
-    # is an independent ``BaseSettings`` subclass). The ``AliasChoices``
-    # wrapper mirrors every endpoint field above so customer images
-    # that opt-in via ``PHYTOMNI_USE_CHAT_SUBGRAPH=true`` route to the
-    # same field as the unprefixed form (the env-prefix promise in
-    # ``docs/configuration.md`` + ``.env.example`` must hold for the
-    # Step 6.6 default-True rollback knob to work in production).
-    USE_CHAT_SUBGRAPH: Annotated[
-        bool,
-        Field(
-            default=True,
-            validation_alias=AliasChoices(
-                "USE_CHAT_SUBGRAPH", "PHYTOMNI_USE_CHAT_SUBGRAPH"
-            ),
-        ),
-    ] = True
-
     # ``GRAPH_LOADER_ENABLED`` — when ``True``, the declarative
     # ``graphs.loader.GraphLoader`` may be instantiated and used to
     # read a JSON manifest into a structural graph view. Default
@@ -301,10 +275,9 @@ class ServerConfig(BaseSettings):
     # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
     # (analyst / data / review retrieve_node) invoke a KnowledgeAgent
     # subgraph through ``adapter_node`` instead of calling the
-    # ``multi_retrieve`` / ``retrieve`` helpers inline. Review
-    # additionally requires ``USE_CHAT_SUBGRAPH=True`` (the Send-
-    # dispatch retrieve triad lives only inside review's
-    # ``_wire_chat_subgraph`` branch). Default ``False`` preserves
+    # ``multi_retrieve`` / ``retrieve`` helpers inline. Review's
+    # Send-dispatch retrieve triad lives inside its chat-subgraph
+    # wiring. Default ``False`` preserves
     # pre-Phase-6 behavior; flip to ``True`` per deployment after
     # parent-graph composition is validated.
     # Inherited by every consumer-side config that subclasses

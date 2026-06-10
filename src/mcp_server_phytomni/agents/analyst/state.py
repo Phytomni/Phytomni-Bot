@@ -80,7 +80,7 @@ class AnalystState(TypedDict):
     Mirrors the legacy ``AnalystAgentsState`` field set plus six
     optional keys surrounding the prep+post subgraph splits — three
     for the chat subgraph (``pending_post`` / ``chat_payload`` /
-    ``chat_response``) used when ``USE_CHAT_SUBGRAPH`` is on, and
+    ``chat_response``) for the chat subgraph split, and
     three for the knowledge subgraph (``pending_post_knowledge`` /
     ``knowledge_payload`` / ``knowledge_response``) used when
     ``USE_KNOWLEDGE_SUBGRAPH`` is on — along with the additive

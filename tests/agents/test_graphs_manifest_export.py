@@ -166,35 +166,27 @@ def test_node_manifest_validates_non_empty_name() -> None:
 
 
 def test_export_real_brief_gene_agent_node_set() -> None:
-    """Real BriefGeneAgent export matches the post-M10 preamble topology.
+    """Real BriefGeneAgent export covers the chat-subgraph topology.
 
-    M10 (X3b A architecture) replaces ``generate_node`` with a
-    4-parallel section fan-out + introduction + render. Required
-    nodes are listed here as a subset assertion; the actual graph
-    also has ``fetch_homology_interactions_node`` and the four
-    section nodes plus optional knowledge-subgraph nodes when
-    USE_KNOWLEDGE_SUBGRAPH=True. Pinned against the explicit
-    flag-off config because the default flipped to True (which
-    wires the structural chat / knowledge mounts that rename
-    several of the legacy nodes).
+    The generate and follow_up sites each split into a prep + post
+    pair around the shared ``chat`` mount. ``USE_KNOWLEDGE_SUBGRAPH``
+    is pinned ``False`` so the single ``retrieve_node`` stays and this
+    set isolates the chat split.
     """
     config = BriefGeneConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+        update={"USE_KNOWLEDGE_SUBGRAPH": False}
     )
     manifest = export_manifest(BriefGeneAgent(brief_config=config).app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "query_judge_node",
         "fetch_annotation_node",
-        "fetch_homology_interactions_node",
         "retrieve_node",
-        "section1_node",
-        "section2_node",
-        "section3_node",
-        "section4_node",
-        "introduction_node",
-        "render_node",
-        "follow_up_node",
+        "generate_prep_node",
+        "generate_post_node",
+        "follow_up_prep_node",
+        "follow_up_post_node",
+        "chat",
     }
     assert documented <= names
 
@@ -224,9 +216,8 @@ def test_export_real_knowledge_subgraph_node_set() -> None:
     Pins the knowledge subgraph's manifest shape so the docs section
     in ``docs/agent-graphs.md`` and the compiled graph stay in sync.
     The legacy single-node ``generate_node`` / ``follow_up_node``
-    bodies retired when ``USE_CHAT_SUBGRAPH`` default flipped to
-    True; the compiled graph now always wires the prep + chat +
-    post split.
+    bodies were retired in favor of the structural chat mount; the
+    compiled graph now always wires the prep + chat + post split.
     """
     manifest = export_manifest(KnowledgeAgent().app)
     names = {node.name for node in manifest.nodes}
@@ -247,9 +238,9 @@ def test_export_real_data_subgraph_node_set() -> None:
 
     Pins the data subgraph's manifest shape so the docs section in
     ``docs/agent-graphs.md`` and the compiled graph stay in sync.
-    The legacy single-node ``rewrite_node`` body retired when
-    ``USE_CHAT_SUBGRAPH`` default flipped to True; ``retrieve_node``
-    also splits into prep + post + knowledge when
+    The legacy single-node ``rewrite_node`` body was retired in
+    favor of the structural chat mount; ``retrieve_node`` also splits
+    into prep + post + knowledge when
     ``USE_KNOWLEDGE_SUBGRAPH`` default is True.
     """
     manifest = export_manifest(DataAgent().app)

@@ -2,18 +2,16 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for BriefGeneAgent's ``generate_node`` chat site.
+"""Tests for BriefGeneAgent's generate + follow_up chat sites.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy ``generate_node``
-direct ``phyto_chat`` call; flag-on routes through a prep + shared
-``chat`` mount + post triple so LangGraph xray can inline the compiled
-chat subgraph in the brief_gene render.
+Each site routes through a prep node that stages the chat payload, the
+shared ``chat`` subgraph mount, and a post node, so LangGraph xray can
+inline the compiled chat subgraph in the brief_gene render.
 """
 
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -29,18 +27,14 @@ pytestmark = pytest.mark.agent
 _BRIEF_GENE_MODULE = "mcp_server_phytomni.agents.brief_gene.core"
 
 
-def _build_agent(use_subgraph: bool) -> BriefGeneAgent:
-    """Construct a ``BriefGeneAgent`` with ``USE_CHAT_SUBGRAPH`` set.
+def _build_agent() -> BriefGeneAgent:
+    """Construct a ``BriefGeneAgent`` with default config.
 
-    Uses ``model_copy`` to flip the flag on the inherited
-    ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment.
+    The chat subgraph mount is unconditional, so no flag override is
+    needed.
     """
-    config = BriefGeneConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": use_subgraph}
-    )
     return BriefGeneAgent(
-        brief_config=config,
+        brief_config=BriefGeneConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
@@ -86,33 +80,6 @@ def _gene_not_found_state() -> BriefGeneAgentState:
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: generate_node still awaits ``phyto_chat`` directly.
-# ---------------------------------------------------------------------------
-
-
-async def test_generate_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``generate_node`` calls ``phyto_chat`` directly."""
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response={
-            "choices": [{"message": {"content": "legacy answer"}}]
-        },
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = _gene_found_state()
-    delta = await agent.generate_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert "final_response" in delta
-
-
-# ---------------------------------------------------------------------------
 # Flag-on prep: stages chat_payload + pending_post.
 # ---------------------------------------------------------------------------
 
@@ -128,7 +95,7 @@ async def test_generate_prep_node_stages_payload_when_gene_found(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _gene_found_state()
     delta = await agent.generate_prep_node(state)
 
@@ -152,7 +119,7 @@ async def test_generate_prep_node_stages_payload_when_gene_not_found(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _gene_not_found_state()
     delta = await agent.generate_prep_node(state)
 
@@ -185,7 +152,7 @@ async def test_generate_prep_node_drift_catch_with_follow_up_false(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _gene_found_state()
     delta = await agent.generate_prep_node(state)
 
@@ -208,7 +175,7 @@ async def test_generate_post_node_parses_chat_response(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _gene_found_state()
     state["chat_response"] = {
         "choices": [{"message": {"content": "subgraph answer"}}]
@@ -240,7 +207,7 @@ async def test_generate_post_node_handles_missing_chat_response(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _gene_found_state()
     # No ``chat_response`` key staged: simulates the upstream chat
     # mount returning a null payload.
@@ -255,33 +222,9 @@ async def test_generate_post_node_handles_missing_chat_response(
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_off_uses_preamble_section_nodes() -> None:
-    """Flag-off graph registers the M10 preamble nodes (no chat subgraph).
-
-    M10 (X3b A architecture) replaced the legacy ``generate_node``
-    with a 4-parallel section fan-out + introduction + render. The
-    flag-off legacy wire registers these new nodes alongside
-    ``query_judge_node`` / ``fetch_annotation_node`` / etc, while
-    the chat-subgraph variant (``generate_prep_node`` + ``chat`` +
-    ``generate_post_node``) is still gated off.
-    """
-    agent = _build_agent(use_subgraph=False)
-    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
-
-    assert "section1_node" in nodes
-    assert "section2_node" in nodes
-    assert "section3_node" in nodes
-    assert "section4_node" in nodes
-    assert "introduction_node" in nodes
-    assert "render_node" in nodes
-    assert "generate_prep_node" not in nodes
-    assert "generate_post_node" not in nodes
-    assert "chat" not in nodes
-
-
 def test_compiled_graph_flag_on_uses_prep_chat_post() -> None:
     """Flag-on graph registers prep + chat + post (no legacy generate)."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     nodes = set(agent.app.get_graph(xray=0).nodes.keys())
 
     assert "generate_prep_node" in nodes
@@ -293,7 +236,7 @@ def test_compiled_graph_flag_on_uses_prep_chat_post() -> None:
 
 def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     """xray=1 surfaces ``chat:``-prefixed keys under the shared mount."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     nodes = list(agent.app.get_graph(xray=1).nodes.keys())
 
     # Every child node of the shared ``chat`` subgraph mount appears
@@ -325,40 +268,6 @@ def _state_post_generate() -> BriefGeneAgentState:
     return state
 
 
-async def test_follow_up_node_flag_off_routes_through_generate_follow_up(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``follow_up_node`` delegates to ``_generate_follow_up``.
-
-    ``_generate_follow_up`` lives in
-    ``brief_gene.pipeline`` and the legacy ``follow_up_node`` body
-    imports it through that module path; the chat subgraph mount
-    must NOT fire on the legacy path. Mock the helper directly so the
-    test stays insulated from the pipeline-module ``phyto_chat``
-    import binding the helper closes over.
-    """
-    _, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-    fake_helper = AsyncMock(return_value=["Q1", "Q2", "Q3"])
-    monkeypatch.setattr(
-        f"{_BRIEF_GENE_MODULE}._generate_follow_up",
-        fake_helper,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = _state_post_generate()
-    delta = await agent.follow_up_node(state)
-
-    fake_helper.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert delta["follow_up_questions"] == ["Q1", "Q2", "Q3"]
-    assert "final_response" in delta
-
-
 async def test_follow_up_prep_node_stages_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -370,7 +279,7 @@ async def test_follow_up_prep_node_stages_payload(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _state_post_generate()
     delta = await agent.follow_up_prep_node(state)
 
@@ -398,7 +307,7 @@ async def test_follow_up_prep_node_with_follow_up_false_drift_catch(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _state_post_generate()
     delta = await agent.follow_up_prep_node(state)
 
@@ -417,7 +326,7 @@ async def test_follow_up_post_node_parses_chat_response(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _state_post_generate()
     state["chat_response"] = {
         "choices": [{"message": {"content": "1. What about Q1?\n2. Or Q2?"}}]
@@ -449,7 +358,7 @@ async def test_follow_up_post_node_handles_missing_chat_response(
         subgraph_response=None,
     )
 
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = _state_post_generate()
     delta = await agent.follow_up_post_node(state)
 
@@ -459,22 +368,11 @@ async def test_follow_up_post_node_handles_missing_chat_response(
 
 def test_compiled_graph_flag_on_uses_follow_up_prep_post() -> None:
     """Flag-on graph registers prep + post for follow_up (no legacy node)."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     nodes = set(agent.app.get_graph(xray=0).nodes.keys())
 
     assert "follow_up_prep_node" in nodes
     assert "follow_up_post_node" in nodes
-    # The legacy ``follow_up_node`` is replaced by the prep/post split
-    # on the flag-on path. Its method body stays on the agent class
-    # so flag-off (registered by ``_wire_legacy``) still works.
+    # The legacy ``follow_up_node`` was removed; the graph now
+    # registers only the prep/post split.
     assert "follow_up_node" not in nodes
-
-
-def test_compiled_graph_flag_off_keeps_follow_up_node() -> None:
-    """Flag-off graph still registers ``follow_up_node`` (no prep/post)."""
-    agent = _build_agent(use_subgraph=False)
-    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
-
-    assert "follow_up_node" in nodes
-    assert "follow_up_prep_node" not in nodes
-    assert "follow_up_post_node" not in nodes

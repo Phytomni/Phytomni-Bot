@@ -95,7 +95,7 @@ def test_manifest_writes_json_with_expected_nodes(
     assert written.exists()
     payload = json.loads(written.read_text(encoding="utf-8"))
     names = {node["name"] for node in payload["nodes"]}
-    # Default ``USE_CHAT_SUBGRAPH=True`` + ``USE_KNOWLEDGE_SUBGRAPH=True``
+    # The unconditional chat mount + default ``USE_KNOWLEDGE_SUBGRAPH=True``
     # wire the structural mount form: retrieve fan-out splits into
     # prep / worker / reduce and generate / follow_up split into
     # prep + chat + post; the legacy single-node names retired when
