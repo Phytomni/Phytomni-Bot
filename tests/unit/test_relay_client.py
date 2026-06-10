@@ -239,3 +239,58 @@ async def test_put_obs_object_puts_bytes_with_path_query(monkeypatch):
     assert "path=" in client_stub.captured["url"]
     assert client_stub.captured["data"] == b"file-bytes"
     assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+
+
+async def test_get_obs_object_returns_raw_bytes(monkeypatch):
+    """``get_obs_object`` GETs /obs/object and returns the raw body bytes."""
+    client_stub = _patch_client(
+        monkeypatch,
+        httpx.Response(
+            200,
+            content=b"ATOM 1 N",
+            request=httpx.Request(
+                "GET", "https://relay.test/v1/relay/obs/object"
+            ),
+        ),
+    )
+
+    data = await _client("k9").get_obs_object(
+        "/obs/phytomni/agent_data/out/r.cif", message="relay download failed"
+    )
+
+    assert data == b"ATOM 1 N"
+    assert client_stub.captured["method"] == "GET"
+    assert "v1/relay/obs/object?" in client_stub.captured["url"]
+    assert "path=" in client_stub.captured["url"]
+
+
+async def test_get_obs_list_returns_keys(monkeypatch):
+    """``get_obs_list`` GETs /obs/list with the prefix query, unwraps keys."""
+    client_stub = _patch_client(
+        monkeypatch,
+        _response(200, {"keys": ["pfx/a.png", "pfx/b.md"]}, "GET"),
+    )
+
+    keys = await _client("k9").get_obs_list(
+        "agent_data/user_data/u/runs/d/r/t/output/",
+        message="relay list failed",
+    )
+
+    assert keys == ["pfx/a.png", "pfx/b.md"]
+    assert "v1/relay/obs/list?" in client_stub.captured["url"]
+    assert "prefix=" in client_stub.captured["url"]
+
+
+async def test_put_obs_dir_puts_marker(monkeypatch):
+    """``put_obs_dir`` PUTs /obs/dir with the path query, parses JSON."""
+    client_stub = _patch_client(
+        monkeypatch, _response(200, {"obs_path": "/obs/phytomni/d/"}, "PUT")
+    )
+
+    result = await _client("k9").put_obs_dir(
+        "/obs/phytomni/agent_data/d/output/", message="relay mkdir failed"
+    )
+
+    assert result == {"obs_path": "/obs/phytomni/d/"}
+    assert client_stub.captured["method"] == "PUT"
+    assert "v1/relay/obs/dir?" in client_stub.captured["url"]

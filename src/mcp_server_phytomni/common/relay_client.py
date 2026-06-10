@@ -22,7 +22,12 @@ from pydantic import SecretStr
 
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig, get_sensitive_config
-from .http import JsonPostRequest, JsonPostRetry, post_json_with_retries
+from .http import (
+    JsonPostRequest,
+    JsonPostRetry,
+    post_json_with_retries,
+    request_response_with_retries,
+)
 from .httpx_client import get_async_client
 
 __all__ = ["RelayClient", "build_relay_client", "current_relay_client"]
@@ -179,6 +184,62 @@ class RelayClient:
             method="PUT",
             headers=self._auth_headers(),
             data=content,
+        )
+        return await self._request_json(request, message)
+
+    async def _request_bytes(
+        self, request: JsonPostRequest, message: str
+    ) -> bytes:
+        """Run one relay request and return the raw response bytes.
+
+        Used for the OBS download relay, whose body is the object's raw
+        bytes rather than JSON; the shared retry helper still maps a
+        non-retriable status / exhaustion to a key-free ``McpError``.
+        """
+        async with get_async_client(timeout=self.timeout) as client:
+            response = await request_response_with_retries(
+                client, request, self._retry(message)
+            )
+            return response.content
+
+    async def get_obs_object(self, obs_path: str, *, message: str) -> bytes:
+        """GET one object's raw bytes from the OBS download relay.
+
+        Sends the validated client OBS path as the ``path`` query to
+        ``GET /v1/relay/obs/object``; the operator relay reads the object
+        server-side with its own credentials and streams the bytes back.
+        """
+        request = JsonPostRequest(
+            url=self.relay_url("obs/object", {"path": obs_path}),
+            method="GET",
+            headers=self._auth_headers(),
+        )
+        return await self._request_bytes(request, message)
+
+    async def get_obs_list(
+        self, obs_prefix: str, *, message: str
+    ) -> list[str]:
+        """List object keys under an output-root prefix via the relay.
+
+        ``GET /v1/relay/obs/list?prefix=`` returns ``{"keys": [...]}``; the
+        relay rejects a prefix outside the server-owned output root (403).
+        """
+        result = await self.get_json(
+            "obs/list", message=message, query={"prefix": obs_prefix}
+        )
+        keys = result.get("keys") if isinstance(result, dict) else None
+        return list(keys) if isinstance(keys, list) else []
+
+    async def put_obs_dir(self, obs_path: str, *, message: str) -> Any:
+        """Create a zero-byte directory marker via the OBS relay.
+
+        ``PUT /v1/relay/obs/dir?path=`` makes the operator relay mint the
+        output-dir marker server-side and return the stored ``obs_path``.
+        """
+        request = JsonPostRequest(
+            url=self.relay_url("obs/dir", {"path": obs_path}),
+            method="PUT",
+            headers=self._auth_headers(),
         )
         return await self._request_json(request, message)
 

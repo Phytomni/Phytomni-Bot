@@ -22,7 +22,9 @@ from markitdown import MarkItDown
 from obs import ObsClient
 
 from ..common.docs import format_upload_context
+from ..common.relay_client import current_relay_client
 from ..config.defaults import ServerConfig
+from ..config.relay_mode import relay_mode_enabled
 from ..config.settings import SensitiveConfig
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
@@ -226,6 +228,11 @@ async def _resolve_obs_file(
     context: ObsTransferContext,
 ) -> ResolvedObsFile:
     """Return an obsfs source file or a downloaded temporary file."""
+    if relay_mode_enabled():
+        return ResolvedObsFile(
+            file_path=await _download_obs_file_via_relay(obs_file, context),
+            cleanup=True,
+        )
     obsfs_file = _obsfs_source_file(obs_file, context)
     if obsfs_file is not None:
         return ResolvedObsFile(file_path=str(obsfs_file), cleanup=False)
@@ -253,11 +260,8 @@ def _obsfs_source_file(
     return None
 
 
-async def _download_obs_file_from_sdk(
-    obs_file: str,
-    context: ObsTransferContext,
-) -> str:
-    """Download one OBS object to the temporary directory using the SDK."""
+def _local_download_target(obs_file: str, context: ObsTransferContext) -> str:
+    """Return a fresh run-scoped local path for one OBS download."""
     user_name = _temp_download_group(obs_file)
     run_identity = RunIdentity.create(user_id=user_name, scope="obs-download")
     server_path = (
@@ -267,8 +271,28 @@ async def _download_obs_file_from_sdk(
         / run_identity.run_id
     )
     server_path.mkdir(parents=True, exist_ok=True)
-    server_file = str(server_path / Path(obs_file).name)
+    return str(server_path / Path(obs_file).name)
 
+
+async def _download_obs_file_via_relay(
+    obs_file: str,
+    context: ObsTransferContext,
+) -> str:
+    """Download one OBS object through the relay to a local temp file."""
+    server_file = _local_download_target(obs_file, context)
+    data = await current_relay_client().get_obs_object(
+        obs_file, message="Failed to download file via relay"
+    )
+    Path(server_file).write_bytes(data)
+    return server_file
+
+
+async def _download_obs_file_from_sdk(
+    obs_file: str,
+    context: ObsTransferContext,
+) -> str:
+    """Download one OBS object to the temporary directory using the SDK."""
+    server_file = _local_download_target(obs_file, context)
     obs_client = ObsClient(
         access_key_id=context.credentials.access_key_id,
         secret_access_key=context.credentials.secret_access_key,
