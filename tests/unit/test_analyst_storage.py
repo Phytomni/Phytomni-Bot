@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -62,6 +63,36 @@ def test_create_output_dir_prefers_obsfs(tmp_path):
         "phytomni",
     )
     assert (root / object_key).is_dir()
+
+
+def test_create_output_dir_relay_mode_skips_marker(tmp_path, monkeypatch):
+    """Relay mode returns the run-scoped path without minting a marker.
+
+    Args:
+        tmp_path: Temporary directory standing in for an absent mount.
+        monkeypatch: Pytest monkeypatch toggling relay mode and the SDK.
+    """
+    monkeypatch.setattr(analysis_storage, "relay_mode_enabled", lambda: True)
+    no_sdk = Mock()
+    monkeypatch.setattr(analysis_storage, "ObsClient", no_sdk)
+    run_identity = RunIdentity.create(
+        "user-a",
+        "analysis_task",
+        IdFactory(token_factory=lambda _: "abc12345"),
+    )
+
+    result = analysis_storage.create_output_dir(
+        "user-a",
+        "analysis_task",
+        bucket_name="phytomni",
+        obsfs_mount_root=str(tmp_path / "no-mount"),
+        run_identity=run_identity,
+    )
+
+    assert result.startswith("/obs/phytomni/")
+    assert result.endswith("/analysis_task/output/")
+    assert not no_sdk.called
+    assert not (tmp_path / "no-mount").exists()
 
 
 def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):

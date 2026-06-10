@@ -20,6 +20,7 @@ from obs import ObsClient
 from ...common.prompts import file_cache_fingerprint
 from ...config.data_loaders import load_species_data
 from ...config.defaults import AnalystConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
@@ -145,6 +146,13 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     if not isinstance(run_identity, RunIdentity):
         run_identity = RunIdentity.create(user_id=user_id, scope=task)
     output_dir = task_output_key(run_identity, task)
+    if relay_mode_enabled():
+        # OBS has a flat namespace, so the zero-byte directory marker is
+        # cosmetic: the remote analysis platform creates the path when it
+        # writes results there. A relay child (no operator OBS creds)
+        # therefore returns the run-scoped path without minting a marker,
+        # avoiding a relay round trip on every analysis submit.
+        return obs_path_from_key(bucket_name, output_dir)
     try:
         _create_output_dir_obsfs(
             output_dir,
