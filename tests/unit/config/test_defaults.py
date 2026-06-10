@@ -182,46 +182,6 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
     assert field in str(excinfo.value)
 
 
-@pytest.mark.parametrize(
-    "env_name",
-    ["USE_EVOLUTION_SUBGRAPH", "PHYTOMNI_USE_EVOLUTION_SUBGRAPH"],
-)
-def test_use_evolution_subgraph_routes_both_env_aliases(env_name, monkeypatch):
-    """Both env names toggle ``DeepGenomeConfig.USE_EVOLUTION_SUBGRAPH``.
-
-    Step 6.5 introduces the flag from inception on ``DeepGenomeConfig``
-    (deep_genome-only consumer scope) with the AliasChoices wrapper so
-    production rollback via ``PHYTOMNI_USE_EVOLUTION_SUBGRAPH=false``
-    works once Step 6.6 flips the default to True.
-    """
-    monkeypatch.delenv("USE_EVOLUTION_SUBGRAPH", raising=False)
-    monkeypatch.delenv("PHYTOMNI_USE_EVOLUTION_SUBGRAPH", raising=False)
-    monkeypatch.setenv(env_name, "true")
-
-    config = DeepGenomeConfig()
-
-    assert config.USE_EVOLUTION_SUBGRAPH is True
-
-
-@pytest.mark.parametrize(
-    "env_name",
-    ["USE_DESIGN_SUBGRAPH", "PHYTOMNI_USE_DESIGN_SUBGRAPH"],
-)
-def test_use_design_subgraph_routes_both_env_aliases(env_name, monkeypatch):
-    """Both env names toggle ``DeepGenomeConfig.USE_DESIGN_SUBGRAPH``.
-
-    Mirrors the Step 6.5 evolution flag introduction so the AF-NEW-5
-    rollback contract covers both new flags from the start.
-    """
-    monkeypatch.delenv("USE_DESIGN_SUBGRAPH", raising=False)
-    monkeypatch.delenv("PHYTOMNI_USE_DESIGN_SUBGRAPH", raising=False)
-    monkeypatch.setenv(env_name, "true")
-
-    config = DeepGenomeConfig()
-
-    assert config.USE_DESIGN_SUBGRAPH is True
-
-
 @pytest.mark.parametrize("env_name", ["RELAY_MODE", "PHYTOMNI_RELAY_MODE"])
 def test_relay_mode_field_parses_both_aliases(env_name, monkeypatch):
     """Both ``RELAY_MODE`` and ``PHYTOMNI_RELAY_MODE`` set the flag.

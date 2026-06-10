@@ -2,11 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Flag-branch tests for the deep_genome producer-wrapper reroute.
+"""Routing tests for the deep_genome producer-wrapper reroute.
 
-Pins ``DeepGenomeDispatchMixin._submit_analysis_task`` routing: when
-``USE_EVOLUTION_SUBGRAPH`` is True, ``evolution_analysis`` tasks call
-``evolution_analysis_for_gene``; when ``USE_DESIGN_SUBGRAPH`` is True,
+Pins ``DeepGenomeDispatchMixin._submit_analysis_task`` routing:
+``evolution_analysis`` tasks call ``evolution_analysis_for_gene``;
 ``protein_structure_analysis`` / ``promoter_analysis`` tasks call the
 matching design module wrappers. Non-transferred analysis types route
 through ``submit_analyst_via_subgraph``.
@@ -15,7 +14,7 @@ through ``submit_analyst_via_subgraph``.
 # pylint: disable=protected-access
 # Test file exercises ``_submit_analysis_task`` (the internal
 # dispatch chokepoint inside DeepGenomeAgents) directly to assert
-# flag routing.
+# producer-wrapper routing.
 
 from __future__ import annotations
 
@@ -34,10 +33,7 @@ from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 pytestmark = pytest.mark.agent
 
 
-def _build_mixin_instance(
-    use_evo: bool = False,
-    use_design: bool = False,
-) -> Any:
+def _build_mixin_instance() -> Any:
     """Construct a minimal stand-in for ``DeepGenomeDispatchMixin``.
 
     The dispatch mixin only reads ``self.deep_genome_config`` and
@@ -47,14 +43,8 @@ def _build_mixin_instance(
     ``DeepGenomeAgents`` (which would compile a graph and bind a
     ``BriefGeneAgent`` subgraph).
     """
-    config = DeepGenomeConfig().model_copy(
-        update={
-            "USE_EVOLUTION_SUBGRAPH": use_evo,
-            "USE_DESIGN_SUBGRAPH": use_design,
-        }
-    )
     return SimpleNamespace(
-        deep_genome_config=config,
+        deep_genome_config=DeepGenomeConfig(),
         sensitive_config=SimpleNamespace(),
         _agents=SimpleNamespace(analyst_agent="analyst-stub"),
         _analysis_prompt_parts=lambda _ctx: (
@@ -130,11 +120,11 @@ def _install_wrapper_mocks(
     return mocks
 
 
-async def test_evolution_analysis_routes_to_wrapper_when_flag_on(
+async def test_evolution_analysis_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``USE_EVOLUTION_SUBGRAPH=True`` calls evolution_analysis_for_gene."""
-    mixin = _build_mixin_instance(use_evo=True)
+    """``evolution_analysis`` routes to evolution_analysis_for_gene."""
+    mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
 
@@ -149,11 +139,11 @@ async def test_evolution_analysis_routes_to_wrapper_when_flag_on(
     subgraph_mock.assert_not_awaited()
 
 
-async def test_protein_structure_routes_to_wrapper_when_design_flag_on(
+async def test_protein_structure_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``USE_DESIGN_SUBGRAPH=True`` routes structure to wrapper."""
-    mixin = _build_mixin_instance(use_design=True)
+    """``protein_structure_analysis`` routes structure to its wrapper."""
+    mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
 
@@ -168,11 +158,11 @@ async def test_protein_structure_routes_to_wrapper_when_design_flag_on(
     subgraph_mock.assert_not_awaited()
 
 
-async def test_promoter_routes_to_wrapper_when_design_flag_on(
+async def test_promoter_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``USE_DESIGN_SUBGRAPH=True`` routes promoter to wrapper."""
-    mixin = _build_mixin_instance(use_design=True)
+    """``promoter_analysis`` routes promoter to its wrapper."""
+    mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
 
