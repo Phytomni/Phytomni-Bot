@@ -617,7 +617,7 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 108`). The catalog header count above
+`RULE_BASELINES["R0801"] = 95`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
@@ -640,12 +640,14 @@ rule; the baseline script runs its own pylint without the disable
 and counts the violations against the pinned baseline. A new R0801
 violation pushes the count past the baseline, the baseline script
 exits 1, and the gate fails until the author either resolves the
-duplicate or explicitly bumps the baseline in the same diff. The two
+duplicate or explicitly bumps the baseline in the same diff. The three
 most recent ratchets after 110 were 112 (resolver shared-helper
-extraction into `agents/shared/bga_delegation.py`) and 108 (removing
-the five `USE_*_SUBGRAPH` flags collapsed the chat-fallback and
-dispatch request-dict flag-off mirror clusters below
-`min-similar-lines=4`).
+extraction into `agents/shared/bga_delegation.py`), 108 (removing the
+five `USE_*_SUBGRAPH` flags collapsed the chat-fallback and dispatch
+request-dict flag-off mirror clusters below `min-similar-lines=4`), and
+95 (deleting the unwired legacy monolithic analyst / review nodes
+removed every prep/post-vs-monolithic-half mirror cluster, since the
+split nodes no longer have a single-node twin to duplicate).
 
 **Why refactor is net-negative for cluster 1**: the analyst fan-out
 wrappers' parallel signatures are by design — they map onto one
