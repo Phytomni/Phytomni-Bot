@@ -220,11 +220,11 @@ class DeepGenomeAgentDeps(NamedTuple):
             populates it via ``_replace`` in ``__init__`` so the mount
             factory closes over a real ``CompiledStateGraph`` for xray
             expansion.
-        knowledge_app: Compiled KnowledgeAgent subgraph for the
-            ``USE_KNOWLEDGE_SUBGRAPH``-on path. ``None`` when the flag
-            is off so the report mixin's
-            ``_dispatch_knowledge_retrieve`` helper falls back to
-            ``knowledge_agent.arun``.
+        knowledge_app: Compiled KnowledgeAgent subgraph used by the
+            report mixin's ``_dispatch_knowledge_retrieve`` helper.
+            ``None`` (default) defers construction to the consuming
+            code path; ``DeepGenomeAgents`` populates it via
+            ``_replace`` in ``__init__``.
     """
 
     knowledge_agent: KnowledgeAgent
@@ -317,25 +317,16 @@ class DeepGenomeAgents(
         # NamedTuple) so the brief_gene_app sits alongside the other
         # deep_genome dependencies rather than adding another instance
         # attribute (pylint ``too-many-instance-attributes`` ceiling).
-        # Per-instance compiled KnowledgeAgent subgraph for the
-        # ``USE_KNOWLEDGE_SUBGRAPH``-on path. Mirrors the analyst /
-        # brief_gene / review pattern: when the flag is True, the
-        # report mixin's ``_dispatch_knowledge_retrieve`` helper
-        # routes through this app's ``ainvoke`` instead of the
-        # legacy ``knowledge_agent.arun``. ``None`` when the flag is
-        # off so attempting to use the app on the wrong branch is a
-        # loud ``NoneType`` error rather than a silent fallback.
-        # Stashed on ``_agents`` (DeepGenomeAgentDeps NamedTuple)
-        # alongside ``brief_gene_app`` so the per-instance
-        # attribute count stays under pylint's
+        # Per-instance compiled KnowledgeAgent subgraph. Mirrors the
+        # analyst / brief_gene / review pattern: the report mixin's
+        # ``_dispatch_knowledge_retrieve`` helper routes through this
+        # app's ``ainvoke``. Stashed on ``_agents``
+        # (DeepGenomeAgentDeps NamedTuple) alongside ``brief_gene_app``
+        # so the per-instance attribute count stays under pylint's
         # ``too-many-instance-attributes`` ceiling.
-        knowledge_app = (
-            build_knowledge_app(
-                knowledge_config=self.deep_genome_config,
-                sensitive_config=self.sensitive_config,
-            )
-            if self.deep_genome_config.USE_KNOWLEDGE_SUBGRAPH
-            else None
+        knowledge_app = build_knowledge_app(
+            knowledge_config=self.deep_genome_config,
+            sensitive_config=self.sensitive_config,
         )
         self._agents = self._agents._replace(
             brief_gene_app=BriefGeneAgent(

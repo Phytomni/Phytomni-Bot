@@ -102,14 +102,10 @@ class AnalystAgent(
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_config = analyst_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
-        self._knowledge_app: Optional[CompiledStateGraph]
-        if self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
-            self._knowledge_app = build_knowledge_app(
-                knowledge_config=self.analyst_config,
-                sensitive_config=self.sensitive_config,
-            )
-        else:
-            self._knowledge_app = None
+        self._knowledge_app: CompiledStateGraph = build_knowledge_app(
+            knowledge_config=self.analyst_config,
+            sensitive_config=self.sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -118,8 +114,8 @@ class AnalystAgent(
         Each of the five chat sites (``parse_query`` / ``data_select`` /
         ``plan`` / ``check`` / ``tool_extract``) is split into a prep +
         post pair surrounding a shared ``chat`` node mounted via
-        ``make_chat_node_wrapper``. ``USE_KNOWLEDGE_SUBGRAPH`` splits the
-        ``method_retrieve`` site into a prep + post pair surrounding a
+        ``make_chat_node_wrapper``. The ``method_retrieve`` site is
+        split into a prep + post pair surrounding a
         per-instance compiled ``knowledge`` node mounted via
         ``make_knowledge_node_wrapper``. Each chat post node reads
         ``chat_response`` set by a router on ``pending_post``; each
@@ -144,27 +140,20 @@ class AnalystAgent(
     def _method_retrieve_targets(self) -> tuple[str, str]:
         """Return (incoming, outgoing) node names for the method_retrieve site.
 
-        The legacy single-node form keeps ``method_retrieve_node`` as
-        both the incoming target (callers routing into retrieval) and
-        the outgoing source (edges fanning out after retrieval). The
-        knowledge-subgraph form splits the site into
+        The knowledge-subgraph form splits the site into
         ``method_retrieve_prep_node`` (incoming) and
         ``method_retrieve_post_node`` (outgoing), with the shared
         ``knowledge`` node mounted between them. Returning the pair
         from one helper lets ``_wire_chat_subgraph`` substitute names
         without duplicating the conditional.
         """
-        if self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
-            return "method_retrieve_prep_node", "method_retrieve_post_node"
-        return "method_retrieve_node", "method_retrieve_node"
+        return "method_retrieve_prep_node", "method_retrieve_post_node"
 
     def _register_method_retrieve_nodes(self, workflow: StateGraph) -> None:
         """Register the method_retrieve node(s) on ``workflow``.
 
-        Under ``USE_KNOWLEDGE_SUBGRAPH=False`` registers the legacy
-        single ``method_retrieve_node``. Under ``=True`` registers the
-        prep + post pair plus a shared ``knowledge`` node whose
-        wrapper closes over the per-instance compiled
+        Registers the prep + post pair plus a shared ``knowledge`` node
+        whose wrapper closes over the per-instance compiled
         ``self._knowledge_app`` so ``find_subgraph_pregel`` discovers
         it at parent compile time and xray expands the knowledge block
         in the analyst render. The after-knowledge router is wired
@@ -172,17 +161,7 @@ class AnalystAgent(
         the chat after-router; adding more knowledge sites later only
         needs another branch in the mapping dict.
         """
-        if not self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
-            workflow.add_node(
-                "method_retrieve_node", self.method_retrieve_node
-            )
-            return
         knowledge_app = self._knowledge_app
-        if knowledge_app is None:
-            raise RuntimeError(
-                "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
-                "_knowledge_app was not built in __init__"
-            )
         workflow.add_node(
             "method_retrieve_prep_node", self.method_retrieve_prep_node
         )
@@ -222,11 +201,9 @@ class AnalystAgent(
         the early-return cases (``parse_query`` when
         ``goal_description`` is already set; ``check`` when a preset
         plan with no method context auto-approves). The
-        ``method_retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``:
-        flag-off keeps the legacy ``method_retrieve_node``; flag-on
-        substitutes the prep/knowledge/post triple via
-        ``_register_method_retrieve_nodes`` and routes the surrounding
-        edges through ``_method_retrieve_targets``.
+        ``method_retrieve`` site mounts the prep/knowledge/post triple
+        via ``_register_method_retrieve_nodes`` and routes the
+        surrounding edges through ``_method_retrieve_targets``.
         """
         method_in, method_out = self._method_retrieve_targets()
         workflow.add_node("parse_query_prep_node", self.parse_query_prep_node)

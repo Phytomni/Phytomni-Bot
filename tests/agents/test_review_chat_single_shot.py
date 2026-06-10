@@ -26,13 +26,8 @@ pytestmark = pytest.mark.agent
 
 def _build_agent() -> DeepResearchAgent:
     """Construct a ``DeepResearchAgent`` for the single-shot chat sites."""
-    config = ReviewConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": False,
-        }
-    )
     return DeepResearchAgent(
-        review_config=config,
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
@@ -205,15 +200,24 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fan-out sites retain legacy gather bodies under flag-on.
+# Fan-out sites register Send triads.
 # ---------------------------------------------------------------------------
 
 
-def test_retrieve_node_is_registered_flag_on() -> None:
-    """Flag-on graph registers ``retrieve_node`` (legacy gather body)."""
+def test_retrieve_send_triad_is_registered() -> None:
+    """Graph registers the retrieve Send triad in place of ``retrieve_node``.
+
+    The retrieve site fans out per dimension through
+    ``retrieve_dispatch`` → ``retrieve_worker_node`` × N →
+    ``retrieve_reduce_node``; no legacy single ``retrieve_node`` is
+    registered.
+    """
     agent = _build_agent()
     node_keys = set(agent.app.get_graph().nodes.keys())
-    assert "retrieve_node" in node_keys
+    assert "retrieve_dispatch" in node_keys
+    assert "retrieve_worker_node" in node_keys
+    assert "retrieve_reduce_node" in node_keys
+    assert "retrieve_node" not in node_keys
 
 
 def test_draft_send_triad_is_registered_flag_on() -> None:

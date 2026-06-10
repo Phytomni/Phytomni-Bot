@@ -28,7 +28,6 @@ from mcp_server_phytomni.agents.evolution.builder import (
 )
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
-from mcp_server_phytomni.config.defaults import AnalystConfig, BriefGeneConfig
 from mcp_server_phytomni.graphs.defaults import _build_deep_genome_app
 from mcp_server_phytomni.graphs.manifest import (
     GraphManifest,
@@ -166,22 +165,21 @@ def test_node_manifest_validates_non_empty_name() -> None:
 
 
 def test_export_real_brief_gene_agent_node_set() -> None:
-    """Real BriefGeneAgent export covers the chat-subgraph topology.
+    """Real BriefGeneAgent export covers the chat + knowledge topology.
 
     The generate and follow_up sites each split into a prep + post
-    pair around the shared ``chat`` mount. ``USE_KNOWLEDGE_SUBGRAPH``
-    is pinned ``False`` so the single ``retrieve_node`` stays and this
-    set isolates the chat split.
+    pair around the shared ``chat`` mount; the retrieve site mounts
+    the Send-dispatch knowledge triad (prep_tasks → worker × N →
+    reduce).
     """
-    config = BriefGeneConfig().model_copy(
-        update={"USE_KNOWLEDGE_SUBGRAPH": False}
-    )
-    manifest = export_manifest(BriefGeneAgent(brief_config=config).app)
+    manifest = export_manifest(BriefGeneAgent().app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "query_judge_node",
         "fetch_annotation_node",
-        "retrieve_node",
+        "retrieve_prep_tasks_node",
+        "retrieve_worker_node",
+        "retrieve_reduce_node",
         "generate_prep_node",
         "generate_post_node",
         "follow_up_prep_node",
@@ -240,8 +238,7 @@ def test_export_real_data_subgraph_node_set() -> None:
     ``docs/agent-graphs.md`` and the compiled graph stay in sync.
     The legacy single-node ``rewrite_node`` body was retired in
     favor of the structural chat mount; ``retrieve_node`` also splits
-    into prep + post + knowledge when
-    ``USE_KNOWLEDGE_SUBGRAPH`` default is True.
+    into prep + post around the mounted knowledge subgraph.
     """
     manifest = export_manifest(DataAgent().app)
     names = {node.name for node in manifest.nodes}
@@ -258,26 +255,24 @@ def test_export_real_data_subgraph_node_set() -> None:
 
 
 def test_export_real_analyst_subgraph_node_set() -> None:
-    """Real AnalystAgent export covers the chat-subgraph node set.
+    """Real AnalystAgent export covers the chat + knowledge node set.
 
-    Pins the analyst subgraph's structural chat-mount shape so the
-    docs section in ``docs/agent-graphs.md`` and the compiled graph
-    stay in sync. ``USE_KNOWLEDGE_SUBGRAPH=False`` keeps the single
-    ``method_retrieve_node`` so this set isolates the chat split:
-    each chat site becomes a prep + post pair around the shared
-    ``chat`` node.
+    Pins the analyst subgraph's structural-mount shape so the docs
+    section in ``docs/agent-graphs.md`` and the compiled graph stay
+    in sync. Each chat site becomes a prep + post pair around the
+    shared ``chat`` node; the method_retrieve site becomes a prep +
+    post pair around the mounted ``knowledge`` node.
     """
-    config = AnalystConfig().model_copy(
-        update={"USE_KNOWLEDGE_SUBGRAPH": False}
-    )
-    manifest = export_manifest(AnalystAgent(analyst_config=config).app)
+    manifest = export_manifest(AnalystAgent().app)
     names = {node.name for node in manifest.nodes}
     documented = {
         "parse_query_prep_node",
         "parse_query_post_node",
         "data_select_prep_node",
         "data_select_post_node",
-        "method_retrieve_node",
+        "method_retrieve_prep_node",
+        "method_retrieve_post_node",
+        "knowledge",
         "plan_prep_node",
         "plan_post_node",
         "check_prep_node",

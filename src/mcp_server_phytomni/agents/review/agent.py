@@ -138,13 +138,10 @@ class DeepResearchAgent(
             sensitive_config=self.sensitive_config,
         )
         self._knowledge_app: Optional[CompiledStateGraph]
-        if self.review_config.USE_KNOWLEDGE_SUBGRAPH:
-            self._knowledge_app = build_knowledge_app(
-                knowledge_config=self.review_config,
-                sensitive_config=self.sensitive_config,
-            )
-        else:
-            self._knowledge_app = None
+        self._knowledge_app = build_knowledge_app(
+            knowledge_config=self.review_config,
+            sensitive_config=self.sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -160,10 +157,10 @@ class DeepResearchAgent(
         ``review_results_dispatch`` → N × ``review_results_worker_node``
         → ``review_results_reduce_node``) whose workers await the
         module-level :data:`CHAT_APP` so xray expands the chat
-        subgraph under each worker. When ``USE_KNOWLEDGE_SUBGRAPH`` is
-        also True the retrieve site is additionally replaced by an
-        analogous Send-dispatch triad (``retrieve_dispatch`` → N ×
-        ``retrieve_worker_node`` → ``retrieve_reduce_node``). The
+        subgraph under each worker. The retrieve site is likewise
+        replaced by an analogous Send-dispatch triad
+        (``retrieve_dispatch`` → N × ``retrieve_worker_node`` →
+        ``retrieve_reduce_node``). The
         revised fan-out site is likewise replaced by a Send triad
         (``revised_dispatch`` → N × ``revised_worker_node`` →
         ``revised_reduce_node``) whose workers call
@@ -214,8 +211,7 @@ class DeepResearchAgent(
         concurrently; the only legacy ``asyncio.gather`` body that
         remains lives inside ``_feedback_rag`` itself for the
         per-query supplementary retrieval fan-in.
-        When ``USE_KNOWLEDGE_SUBGRAPH`` is also True, the retrieve
-        site is additionally replaced by a Send-dispatch triad
+        The retrieve site is likewise replaced by a Send-dispatch triad
         (``retrieve_dispatch`` → ``retrieve_worker_node`` × N →
         ``retrieve_reduce_node``) so each research dimension fans out
         to a dedicated KnowledgeAgent subgraph invocation before
@@ -243,37 +239,30 @@ class DeepResearchAgent(
             ),
         )
 
-        # === Retrieve site: Send fan-out (flag-on) or legacy gather (off) ===
-        if self.review_config.USE_KNOWLEDGE_SUBGRAPH:
-            knowledge_app = self._knowledge_app
-            if knowledge_app is None:
-                raise RuntimeError(
-                    "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
-                    "_knowledge_app was not built in __init__"
-                )
-            workflow.add_node(
-                "retrieve_dispatch", self.retrieve_prepare_tasks_node
+        # === Retrieve site: Send fan-out ===
+        knowledge_app = self._knowledge_app
+        if knowledge_app is None:
+            raise RuntimeError(
+                "unreachable: _knowledge_app must be built in __init__"
             )
-            workflow.add_node(
-                "retrieve_worker_node",
-                self.make_retrieve_worker_node(knowledge_app),
-            )
-            workflow.add_node(
-                "retrieve_reduce_node", self.retrieve_reduce_node
-            )
-            workflow.add_conditional_edges(
-                "retrieve_dispatch",
-                self.route_retrieve_tasks,
-                ["retrieve_worker_node"],
-            )
-            workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
-            retrieve_in, retrieve_out = (
-                "retrieve_dispatch",
-                "retrieve_reduce_node",
-            )
-        else:
-            workflow.add_node("retrieve_node", self.retrieve_node)
-            retrieve_in, retrieve_out = "retrieve_node", "retrieve_node"
+        workflow.add_node(
+            "retrieve_dispatch", self.retrieve_prepare_tasks_node
+        )
+        workflow.add_node(
+            "retrieve_worker_node",
+            self.make_retrieve_worker_node(knowledge_app),
+        )
+        workflow.add_node("retrieve_reduce_node", self.retrieve_reduce_node)
+        workflow.add_conditional_edges(
+            "retrieve_dispatch",
+            self.route_retrieve_tasks,
+            ["retrieve_worker_node"],
+        )
+        workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
+        retrieve_in, retrieve_out = (
+            "retrieve_dispatch",
+            "retrieve_reduce_node",
+        )
 
         # === Draft site: Send fan-out (flag-on) ===
         workflow.add_node("draft_dispatch", self.draft_prepare_tasks_node)

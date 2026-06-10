@@ -2,10 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for BriefGeneAgent's knowledge retrieval fan-out.
+"""Tests for BriefGeneAgent's knowledge retrieval fan-out.
 
-Pins ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
-``retrieve_node``; flag-on routes through a Send-dispatch triad
+The retrieve site routes through a Send-dispatch triad
 (``retrieve_prep_tasks_node`` → N × ``retrieve_worker_node`` →
 ``retrieve_reduce_node``) so each per-symbol task fans out to a
 dedicated KnowledgeAgent subgraph invocation.
@@ -79,16 +78,13 @@ def _install_fake_knowledge_app(
 
 
 def _build_agent(
-    use_knowledge_subgraph: bool,
     *,
     monkeypatch: pytest.MonkeyPatch | None = None,
 ) -> BriefGeneAgent:
-    """Construct a ``BriefGeneAgent`` with the specified flag combination."""
-    if use_knowledge_subgraph and monkeypatch is not None:
+    """Construct a ``BriefGeneAgent`` with a faked knowledge app."""
+    if monkeypatch is not None:
         _install_fake_knowledge_app(monkeypatch)
-    config = BriefGeneConfig().model_copy(
-        update={"USE_KNOWLEDGE_SUBGRAPH": use_knowledge_subgraph}
-    )
+    config = BriefGeneConfig()
     return BriefGeneAgent(
         brief_config=config,
         sensitive_config=SensitiveConfig.load(),
@@ -138,20 +134,17 @@ def _gene_not_found_state() -> BriefGeneAgentState:
 
 
 # ---------------------------------------------------------------------------
-# Constructor: _knowledge_app built only on flag-on.
+# Constructor: _knowledge_app always built.
 # ---------------------------------------------------------------------------
 
 
-def test_knowledge_app_built_only_when_flag_on(
+def test_knowledge_app_always_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_knowledge_app`` is ``None`` flag-off, populated flag-on."""
-    agent_off = _build_agent(use_knowledge_subgraph=False)
-    assert agent_off._knowledge_app is None
-
+    """``_knowledge_app`` is always populated in ``__init__``."""
     fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent_on = _build_agent(use_knowledge_subgraph=True)
-    assert agent_on._knowledge_app is fake_app
+    agent = _build_agent()
+    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +156,7 @@ async def test_prep_tasks_node_gene_found_emits_n_plus_one_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """gene_found=True with N=2 symbols emits 3 tasks (2 + combined)."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     delta = await agent.retrieve_prep_tasks_node(_gene_found_state())
 
     tasks = delta["retrieve_tasks"]
@@ -181,7 +174,7 @@ async def test_prep_tasks_node_gene_not_found_emits_single_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """gene_found=False emits a single task carrying the raw user_query."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     delta = await agent.retrieve_prep_tasks_node(_gene_not_found_state())
 
     tasks = delta["retrieve_tasks"]
@@ -202,7 +195,7 @@ def test_route_retrieve_tasks_emits_one_send_per_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``route_retrieve_tasks`` returns one Send per staged task."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     state = _gene_found_state()
     state["retrieve_tasks"] = [
         {"knowledge_input": {"user_query": f"q{i}"}} for i in range(3)
@@ -228,7 +221,7 @@ async def test_retrieve_worker_factory_success_path(
     fake_app = _install_fake_knowledge_app(
         monkeypatch, docs_by_query={"q0": [{"title": "doc0"}]}
     )
-    agent = _build_agent(use_knowledge_subgraph=True)
+    agent = _build_agent()
     worker = agent.make_retrieve_worker_node(fake_app)
 
     state = _gene_found_state()
@@ -256,7 +249,7 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
         f"{_CORE_MODULE}.build_knowledge_app",
         lambda **_kwargs: cast(CompiledStateGraph, _BrokenApp()),
     )
-    agent = _build_agent(use_knowledge_subgraph=True)
+    agent = _build_agent()
     worker = agent.make_retrieve_worker_node(
         cast(CompiledStateGraph, _BrokenApp())
     )
@@ -279,7 +272,7 @@ async def test_retrieve_reduce_node_sorts_by_task_index_and_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reduce sorts tuples by task_index, merges, sorts docs by score."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     state = _gene_found_state()
     # Workers complete in non-monotonic order; reducer must restore
     # task_index ordering before merging.
@@ -304,7 +297,7 @@ async def test_retrieve_reduce_node_handles_empty_indexed_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reduce on an empty reducer channel returns empty docs."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     state = _gene_found_state()
     state["retrieve_indexed_results"] = []
     delta = await agent.retrieve_reduce_node(state)
@@ -313,29 +306,15 @@ async def test_retrieve_reduce_node_handles_empty_indexed_results(
 
 
 # ---------------------------------------------------------------------------
-# Compile-time node sets: flag-off vs flag-on wire shapes.
+# Compile-time node sets: the Send-dispatch fan-out wire shape.
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_off_keeps_legacy_retrieve_node(
+def test_compiled_graph_registers_fan_out_triad(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-off graph registers ``retrieve_node`` (no fan-out triad)."""
-    del monkeypatch
-    agent = _build_agent(use_knowledge_subgraph=False)
-    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
-
-    assert "retrieve_node" in nodes
-    assert "retrieve_prep_tasks_node" not in nodes
-    assert "retrieve_worker_node" not in nodes
-    assert "retrieve_reduce_node" not in nodes
-
-
-def test_compiled_graph_flag_on_registers_fan_out_triad(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-on graph registers prep_tasks + worker + reduce."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    """Graph registers prep_tasks + worker + reduce (no legacy node)."""
+    agent = _build_agent(monkeypatch=monkeypatch)
     nodes = set(agent.app.get_graph(xray=0).nodes.keys())
 
     assert "retrieve_prep_tasks_node" in nodes
@@ -344,11 +323,11 @@ def test_compiled_graph_flag_on_registers_fan_out_triad(
     assert "retrieve_node" not in nodes
 
 
-def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
+def test_compiled_graph_xray_expands_knowledge_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """xray=1 surfaces ``retrieve_worker_node:`` prefixed child keys."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch=monkeypatch)
     nodes = list(agent.app.get_graph(xray=1).nodes.keys())
 
     worker_children = [
@@ -361,14 +340,11 @@ def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
     )
 
 
-def test_compiled_graph_cross_product_both_flags_on(
+def test_compiled_graph_chat_and_knowledge_subgraphs_coexist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both flags on: chat + knowledge subgraphs coexist under xray."""
-    agent = _build_agent(
-        use_knowledge_subgraph=True,
-        monkeypatch=monkeypatch,
-    )
+    """chat + knowledge subgraphs coexist under xray."""
+    agent = _build_agent(monkeypatch=monkeypatch)
     nodes = list(agent.app.get_graph(xray=1).nodes.keys())
 
     # Chat subgraph block under the shared chat mount.

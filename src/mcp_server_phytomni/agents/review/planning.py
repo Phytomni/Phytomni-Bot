@@ -15,7 +15,6 @@ plugs into DeepResearchAgent via multiple inheritance and shares the
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List
@@ -247,58 +246,6 @@ class ReviewPlanningMixin(WorkflowMixinBase):
             "research_dimensions": [
                 str(dimension) for dimension in dimensions[:4]
             ],
-        }
-
-    async def retrieve_node(self: Any, state: DeepResearchState):
-        """Retrieve documents for each research dimension.
-
-        Args:
-            state: Current workflow state with planned research dimensions and
-                upload context length.
-
-        Returns:
-            State updates containing raw documents, per-dimension prompt
-            parameters, and accumulated context length.
-        """
-        dimensions = state["research_dimensions"]
-        results = await asyncio.gather(
-            *[
-                self.ka.arun(
-                    user_query=dimension,
-                    is_generate=False,
-                    is_follow_up=False,
-                )
-                for dimension in dimensions
-            ],
-            return_exceptions=True,
-        )
-
-        accumulator = RetrievalAccumulator(
-            raw_docs=[],
-            current_length=state["total_length"],
-        )
-        dimension_params = []
-        dimension_length = (
-            self.review_config.MAX_TOKENS - state["total_length"]
-        ) / max(1, len(dimensions))
-
-        for index, result in enumerate(results):
-            fragments = self._dimension_fragments(
-                result,
-                accumulator,
-                state["total_length"] + dimension_length * (index + 1),
-            )
-            dimension_params.append(
-                {
-                    "subtopic": dimensions[index],
-                    "knowledge": "\n\n".join(fragments),
-                }
-            )
-
-        return {
-            "all_raw_doc_list": accumulator.raw_docs,
-            "dimension_params": dimension_params,
-            "total_length": accumulator.current_length,
         }
 
     async def retrieve_prepare_tasks_node(

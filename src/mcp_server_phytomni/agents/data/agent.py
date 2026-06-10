@@ -39,7 +39,6 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
-from ..knowledge.retrieval import retrieve
 from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -165,13 +164,10 @@ class DataAgent:
         self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
         self._knowledge_app: Optional[CompiledStateGraph]
-        if self.data_config.USE_KNOWLEDGE_SUBGRAPH:
-            self._knowledge_app = build_knowledge_app(
-                knowledge_config=self.data_config,
-                sensitive_config=self.sensitive_config,
-            )
-        else:
-            self._knowledge_app = None
+        self._knowledge_app = build_knowledge_app(
+            knowledge_config=self.data_config,
+            sensitive_config=self.sensitive_config,
+        )
         self.app = self._build_graph()
 
     def _build_graph(self):
@@ -181,13 +177,13 @@ class DataAgent:
         ``rewrite_post_node`` around a shared ``chat`` node
         registered via ``make_chat_node_wrapper`` so xray expansion
         surfaces the chat subgraph in the data render.
-        ``USE_KNOWLEDGE_SUBGRAPH`` independently splits the retrieve
-        site into ``retrieve_prep_node`` + ``retrieve_post_node``
-        around a per-instance compiled ``knowledge`` node. The chat
-        post node reads ``chat_response``; the knowledge post node
-        reads ``knowledge_response`` selected by a router on
-        ``pending_post_knowledge``. The chat site is always mounted as
-        the prep + post pair around the shared chat node.
+        The retrieve site is always mounted as ``retrieve_prep_node``
+        + ``retrieve_post_node`` around a per-instance compiled
+        ``knowledge`` node. The chat post node reads ``chat_response``;
+        the knowledge post node reads ``knowledge_response`` selected
+        by a router on ``pending_post_knowledge``. The chat site is
+        always mounted as the prep + post pair around the shared chat
+        node.
         """
         workflow = StateGraph(
             state_schema=DataState,
@@ -196,7 +192,7 @@ class DataAgent:
         )
         workflow.add_node("search_node", self.search_node)
         self._register_retrieve_nodes(workflow)
-        retrieve_in, retrieve_out = self._retrieve_targets()
+        retrieve_in, retrieve_out = "retrieve_prep_node", "retrieve_post_node"
 
         workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
         workflow.add_node("rewrite_post_node", self.rewrite_post_node)
@@ -223,45 +219,23 @@ class DataAgent:
 
         return workflow.compile(checkpointer=self.checkpointer)
 
-    def _retrieve_targets(self) -> tuple[str, str]:
-        """Return (incoming, outgoing) node names for the retrieve site.
-
-        The legacy single-node form keeps ``retrieve_node`` as both
-        the incoming target (``START`` routing into retrieval) and
-        the outgoing source (edge into the rewrite stage). The
-        knowledge-subgraph form splits the site into
-        ``retrieve_prep_node`` (incoming) and ``retrieve_post_node``
-        (outgoing), with the shared ``knowledge`` node mounted
-        between them. Returning the pair from one helper lets
-        ``_build_graph`` substitute names without duplicating the
-        conditional.
-        """
-        if self.data_config.USE_KNOWLEDGE_SUBGRAPH:
-            return "retrieve_prep_node", "retrieve_post_node"
-        return "retrieve_node", "retrieve_node"
-
     def _register_retrieve_nodes(self, workflow: StateGraph) -> None:
-        """Register the retrieve node(s) on ``workflow``.
+        """Register the retrieve prep + post pair on ``workflow``.
 
-        Under ``USE_KNOWLEDGE_SUBGRAPH=False`` registers the legacy
-        single ``retrieve_node``. Under ``=True`` registers the prep
-        + post pair plus a shared ``knowledge`` node whose wrapper
-        closes over the per-instance compiled ``self._knowledge_app``
-        so ``find_subgraph_pregel`` discovers it at parent compile
-        time and xray expands the knowledge block in the data
-        render. The after-knowledge router is wired here as a
-        one-branch ``conditional_edges`` for symmetry with the chat
-        after-router; adding more knowledge sites later only needs
-        another branch in the mapping dict.
+        Registers ``retrieve_prep_node`` + ``retrieve_post_node`` plus
+        a shared ``knowledge`` node whose wrapper closes over the
+        per-instance compiled ``self._knowledge_app`` so
+        ``find_subgraph_pregel`` discovers it at parent compile time
+        and xray expands the knowledge block in the data render. The
+        after-knowledge router is wired here as a one-branch
+        ``conditional_edges`` for symmetry with the chat after-router;
+        adding more knowledge sites later only needs another branch in
+        the mapping dict.
         """
-        if not self.data_config.USE_KNOWLEDGE_SUBGRAPH:
-            workflow.add_node("retrieve_node", self.retrieve_node)
-            return
         knowledge_app = self._knowledge_app
         if knowledge_app is None:
             raise RuntimeError(
-                "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
-                "_knowledge_app was not built in __init__"
+                "unreachable: _knowledge_app must be built in __init__"
             )
         workflow.add_node("retrieve_prep_node", self.retrieve_prep_node)
         workflow.add_node("retrieve_post_node", self.retrieve_post_node)
@@ -285,7 +259,7 @@ class DataAgent:
 
     def route_start(
         self, state: DataAgentState
-    ) -> Literal["retrieve_node", "search_node"]:
+    ) -> Literal["retrieve_prep_node", "search_node"]:
         """Choose whether the workflow should rewrite before SQL search.
 
         Args:
@@ -295,59 +269,8 @@ class DataAgent:
             Name of the first graph node to execute.
         """
         if state["is_rewrite"]:
-            return "retrieve_node"
+            return "retrieve_prep_node"
         return "search_node"
-
-    async def retrieve_node(self, state: DataAgentState):
-        """Retrieve relevant database scenarios and construct a query prompt.
-
-        This node searches the knowledge base for relevant database scenarios
-        that can help the LLM better understand the query context. It formats
-        the retrieved scenarios into a prompt template for the rewrite node.
-
-        Args:
-            state: The current workflow state containing user_query.
-
-        Returns:
-            A dictionary containing the retrieve_prompt key with the
-            constructed prompt for the next node.
-        """
-        user_query = state["user_query"]
-        retrieve_response = await retrieve(
-            user_query=user_query,
-            retrieve_url=self.data_config.RETRIEVE_URL,
-            repo_id=self.data_config.DATA_REPO_ID,
-            page_num=self.data_config.PAGE_NUM,
-            page_size=self.data_config.DATA_PAGE_SIZE,
-            filter_string=self.data_config.FILTER_STRING,
-            scope=self.data_config.SCOPE,
-            extra_repo_ids=None,
-            rerank_url=self.data_config.RERANK_URL,
-            rerank_batch_size=self.data_config.RERANK_BATCH_SIZE,
-            score_threshold=self.data_config.SCORE_THRESHOLD,
-            timeout=self.data_config.TIMEOUT,
-            retriable_codes=self.data_config.RETRIABLE_CODES,
-            max_retries=self.data_config.MAX_RETRIES,
-        )
-
-        retrieve_results = []
-        total_length = 0
-        for i, doc in enumerate(retrieve_response.get("doc_list", [])):
-            fragment = format_retrieved_doc_fragment(doc, i, label="scenario")
-            if total_length + len(fragment) <= DATA_CONFIG.MAX_TOKENS:
-                retrieve_results.append(fragment)
-                total_length += len(fragment)
-            else:
-                break
-
-        retrieve_context = "\n\n".join(retrieve_results)
-        retrieve_prompt = get_prompt(
-            DATA_CONFIG.PROMPT_FILE,
-            "user/database",
-            {"scenario_prompts": retrieve_context, "user_query": user_query},
-        )
-
-        return {"retrieve_prompt": retrieve_prompt}
 
     async def retrieve_prep_node(
         self, state: DataAgentState

@@ -187,7 +187,7 @@ def test_data_agent_routes_start_by_rewrite_flag():
 
     assert (
         agent.route_start(cast(DataAgentState, {"is_rewrite": True}))
-        == "retrieve_node"
+        == "retrieve_prep_node"
     )
     assert (
         agent.route_start(cast(DataAgentState, {"is_rewrite": False}))

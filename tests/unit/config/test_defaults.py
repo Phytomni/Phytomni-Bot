@@ -205,27 +205,6 @@ def test_use_analyst_subgraph_routes_both_env_aliases(env_name, monkeypatch):
 
 @pytest.mark.parametrize(
     "env_name",
-    ["USE_KNOWLEDGE_SUBGRAPH", "PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH"],
-)
-def test_use_knowledge_subgraph_routes_both_env_aliases(env_name, monkeypatch):
-    """Both env names toggle ``ServerConfig.USE_KNOWLEDGE_SUBGRAPH``.
-
-    Step 6.2 introduces the flag from inception with the AliasChoices
-    wrapper (AF-NEW-5 lesson) so production rollback via
-    ``PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH=false`` works once Step 6.6
-    flips the default to True.
-    """
-    monkeypatch.delenv("USE_KNOWLEDGE_SUBGRAPH", raising=False)
-    monkeypatch.delenv("PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH", raising=False)
-    monkeypatch.setenv(env_name, "true")
-
-    config = ServerConfig()
-
-    assert config.USE_KNOWLEDGE_SUBGRAPH is True
-
-
-@pytest.mark.parametrize(
-    "env_name",
     ["USE_EVOLUTION_SUBGRAPH", "PHYTOMNI_USE_EVOLUTION_SUBGRAPH"],
 )
 def test_use_evolution_subgraph_routes_both_env_aliases(env_name, monkeypatch):

@@ -35,13 +35,8 @@ def _build_agent() -> DeepResearchAgent:
     The prep / route helpers stage a ``chat_payload`` carrying the
     explicit ``with_follow_up`` value for the shared chat subgraph.
     """
-    config = ReviewConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": False,
-        }
-    )
     return DeepResearchAgent(
-        review_config=config,
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 

@@ -14,9 +14,11 @@ coverage there.
 
 from __future__ import annotations
 
-from typing import get_type_hints
+from typing import Any, TypedDict, get_type_hints
 
 import pytest
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.analyst.state import (
@@ -28,6 +30,37 @@ from mcp_server_phytomni.agents.analyst.state import (
 from mcp_server_phytomni.config.defaults import AnalystConfig
 
 pytestmark = pytest.mark.agent
+
+_CORE_MODULE = "mcp_server_phytomni.agents.analyst.core"
+
+
+class _FakeKnowledgeState(TypedDict, total=False):
+    """Minimal state shape for the offline knowledge-subgraph stub."""
+
+    retrieved_docs: list[dict[str, Any]]
+
+
+def _install_fake_knowledge_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch ``build_knowledge_app`` to return a trivial compiled stub.
+
+    The ``method_retrieve`` site always mounts the per-instance
+    compiled KnowledgeAgent app in ``AnalystAgent.__init__``; this
+    substitutes a tiny compiled subgraph so construction stays fully
+    offline (no real KnowledgeAgent compile, no real retrieve).
+    """
+
+    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
+        del state
+        return {"retrieved_docs": []}
+
+    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
+    workflow.add_node("noop", _noop)
+    workflow.add_edge(START, "noop")
+    workflow.add_edge("noop", END)
+    fake_app: CompiledStateGraph = workflow.compile()
+    monkeypatch.setattr(
+        f"{_CORE_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
+    )
 
 
 def _required_keys(td: type) -> set[str]:
@@ -107,8 +140,7 @@ def test_analyst_state_carries_full_field_union() -> None:
     used by the prep + post split surrounding the shared chat node.
     The three ``knowledge_payload`` / ``knowledge_response`` /
     ``pending_post_knowledge`` keys mirror that pair for the
-    ``USE_KNOWLEDGE_SUBGRAPH`` wire surrounding the shared knowledge
-    node.
+    knowledge-subgraph wire surrounding the shared knowledge node.
     """
     expected = {
         "query",
@@ -152,12 +184,14 @@ def test_analyst_agents_state_is_analyst_state_alias() -> None:
     assert AnalystAgentsState is AnalystState
 
 
-def test_analyst_subgraph_exposes_conditional_sources() -> None:
+def test_analyst_subgraph_exposes_conditional_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Compiled analyst graph records every conditional router.
 
-    Pins the chat-subgraph topology (``USE_KNOWLEDGE_SUBGRAPH=False``):
+    Pins the chat + knowledge subgraph topology:
     ``parse_query_prep_node`` / ``chat`` / ``parse_query_post_node`` /
-    ``data_select_post_node`` / ``check_prep_node`` /
+    ``data_select_post_node`` / ``knowledge`` / ``check_prep_node`` /
     ``check_post_node`` / ``submit_node`` / ``pooling_node`` each
     register an ``add_conditional_edges`` branch. Reaching this
     assertion also proves the 3-schema ``StateGraph`` form compiled —
@@ -166,16 +200,15 @@ def test_analyst_subgraph_exposes_conditional_sources() -> None:
     A future refactor that collapses one of these branches surfaces
     here before manifest export.
     """
-    config = AnalystConfig().model_copy(
-        update={"USE_KNOWLEDGE_SUBGRAPH": False}
-    )
-    agent = AnalystAgent(analyst_config=config)
+    _install_fake_knowledge_app(monkeypatch)
+    agent = AnalystAgent(analyst_config=AnalystConfig())
     branches = set(agent.app.builder.branches.keys())
     assert branches == {
         "parse_query_prep_node",
         "chat",
         "parse_query_post_node",
         "data_select_post_node",
+        "knowledge",
         "check_prep_node",
         "check_post_node",
         "submit_node",

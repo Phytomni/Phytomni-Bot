@@ -2,13 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``AnalystAgent`` knowledge retrieval.
+"""Tests for ``AnalystAgent`` knowledge retrieval.
 
-Pins ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
-``method_retrieve_node``; flag-on routes through a prep + post pair
+The ``method_retrieve`` site always routes through a prep + post pair
 surrounding a per-instance compiled KnowledgeAgent app. Also covers
-the cross-product with the always-mounted chat subgraph when
-``USE_KNOWLEDGE_SUBGRAPH`` is on.
+the cross-product with the always-mounted chat subgraph.
 """
 
 # pylint: disable=protected-access
@@ -81,43 +79,34 @@ def _install_fake_knowledge_app(
 
 
 def _build_agent(
-    use_subgraph: bool,
-    *,
-    monkeypatch: pytest.MonkeyPatch | None = None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AnalystAgent:
-    """Construct an ``AnalystAgent`` with the knowledge flag set.
+    """Construct an ``AnalystAgent`` with an offline knowledge app.
 
-    Uses ``model_copy`` to flip the flag on the inherited
-    ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment. The chat subgraph is always
-    mounted, so the cross-product wire is exercised simply by setting
-    ``use_subgraph=True``. When ``monkeypatch`` is supplied, the
-    helper installs the fake knowledge app via
-    :func:`_install_fake_knowledge_app` so the flag-on construction
-    stays offline.
+    The ``method_retrieve`` site always mounts the prep + post pair
+    surrounding the per-instance compiled KnowledgeAgent app, and the
+    chat subgraph is always mounted too, so the cross-product wire is
+    exercised on every construction. The helper installs the fake
+    knowledge app via :func:`_install_fake_knowledge_app` so the
+    construction stays offline (no real KnowledgeAgent compile, no
+    real retrieve).
     """
-    if use_subgraph and monkeypatch is not None:
-        _install_fake_knowledge_app(monkeypatch)
-    config = AnalystConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": use_subgraph,
-        }
-    )
+    _install_fake_knowledge_app(monkeypatch)
     return AnalystAgent(
-        analyst_config=config,
+        analyst_config=AnalystConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: ``method_retrieve_node`` still awaits ``multi_retrieve``.
+# Direct call: ``method_retrieve_node`` still awaits ``multi_retrieve``.
 # ---------------------------------------------------------------------------
 
 
-async def test_method_retrieve_node_flag_off_awaits_multi_retrieve(
+async def test_method_retrieve_node_awaits_multi_retrieve(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-off ``method_retrieve_node`` calls ``multi_retrieve`` directly."""
+    """``method_retrieve_node`` calls ``multi_retrieve`` directly."""
     legacy_mock = AsyncMock(
         return_value={"doc_list": [{"title": "Doc A", "content": "doc-A"}]}
     )
@@ -127,7 +116,7 @@ async def test_method_retrieve_node_flag_off_awaits_multi_retrieve(
         AsyncMock(return_value=("uploaded", 9)),
     )
 
-    agent = _build_agent(use_subgraph=False)
+    agent = _build_agent(monkeypatch)
     state = cast(
         AnalystState,
         {
@@ -143,7 +132,7 @@ async def test_method_retrieve_node_flag_off_awaits_multi_retrieve(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on prep node stages ``knowledge_payload`` + ``pending_post_knowledge``.
+# Prep node stages ``knowledge_payload`` + ``pending_post_knowledge``.
 # ---------------------------------------------------------------------------
 
 
@@ -151,7 +140,7 @@ async def test_method_retrieve_prep_node_stages_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Prep node stages ``knowledge_payload`` and post sentinel."""
-    agent = _build_agent(use_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     state = cast(
         AnalystState,
         {"goal_description": "assemble transcriptome"},
@@ -168,7 +157,7 @@ async def test_method_retrieve_prep_node_stages_payload(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on post node parses ``knowledge_response`` into ``method_context``.
+# Post node parses ``knowledge_response`` into ``method_context``.
 # ---------------------------------------------------------------------------
 
 
@@ -181,7 +170,7 @@ async def test_method_retrieve_post_node_parses_knowledge_response(
         ".download_upload_context",
         AsyncMock(return_value=("uploaded", 9)),
     )
-    agent = _build_agent(use_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     state = cast(
         AnalystState,
         {
@@ -207,7 +196,7 @@ async def test_method_retrieve_post_node_defaults_empty_docs(
         ".download_upload_context",
         AsyncMock(return_value=("", 0)),
     )
-    agent = _build_agent(use_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     state = cast(
         AnalystState,
         {
@@ -223,44 +212,31 @@ async def test_method_retrieve_post_node_defaults_empty_docs(
 
 
 # ---------------------------------------------------------------------------
-# Constructor: ``_knowledge_app`` is only instantiated when the flag is on.
+# Constructor: ``_knowledge_app`` is always instantiated.
 # ---------------------------------------------------------------------------
 
 
-def test_knowledge_app_built_only_when_flag_on(
+def test_knowledge_app_always_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_knowledge_app`` is ``None`` flag-off, populated flag-on."""
-    agent_off = _build_agent(use_subgraph=False)
-    assert agent_off._knowledge_app is None
+    """``_knowledge_app`` is always the compiled KnowledgeAgent app."""
     fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent_on = AnalystAgent(
-        analyst_config=AnalystConfig().model_copy(
-            update={"USE_KNOWLEDGE_SUBGRAPH": True}
-        ),
+    agent = AnalystAgent(
+        analyst_config=AnalystConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
-    assert agent_on._knowledge_app is fake_app
+    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------
-# Structural: flag-off has the legacy node; flag-on has the prep+post pair.
+# Structural: the method_retrieve site mounts the prep+post pair.
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_off_keeps_legacy_method_retrieve_node() -> None:
-    """Flag-off compiled graph has ``method_retrieve_node`` only."""
-    agent = _build_agent(use_subgraph=False)
-    node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
-    assert "method_retrieve_node" in node_keys
-    assert "method_retrieve_prep_node" not in node_keys
-    assert "method_retrieve_post_node" not in node_keys
-
-
-def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
+def test_compiled_graph_xray_expands_knowledge_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on graph exposes the shared knowledge subgraph to ``xray``.
+    """Compiled graph exposes the shared knowledge subgraph to ``xray``.
 
     Structural check: ``StateGraph.get_graph(xray=True)`` walks the
     compiled graph and inlines any node whose body closes over a
@@ -272,7 +248,7 @@ def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
     with no child prefix would mean the wrapper hid the subgraph and
     the render reverted to an opaque box.
     """
-    agent = _build_agent(use_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(key.startswith("knowledge:") for key in node_keys), sorted(
         node_keys
@@ -283,18 +259,15 @@ def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
 
 
 # ---------------------------------------------------------------------------
-# Cross-product: knowledge flag on — chat AND knowledge subgraphs are mounted.
+# Cross-product: both chat AND knowledge subgraphs are mounted.
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_both_flags_on_xray_expands_both_subgraphs(
+def test_compiled_graph_xray_expands_both_subgraphs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Knowledge flag on: xray surfaces ``chat:`` AND ``knowledge:`` keys."""
-    agent = _build_agent(
-        use_subgraph=True,
-        monkeypatch=monkeypatch,
-    )
+    """xray surfaces both ``chat:`` AND ``knowledge:`` keys."""
+    agent = _build_agent(monkeypatch)
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
     assert any(key.startswith("knowledge:") for key in node_keys), sorted(

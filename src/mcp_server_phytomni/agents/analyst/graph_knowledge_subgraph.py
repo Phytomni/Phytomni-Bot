@@ -6,9 +6,8 @@
 
 Exports :class:`AnalystKnowledgeSubgraphMixin`, the prep + post halves
 surrounding the per-instance compiled KnowledgeAgent app that
-replaces the inline ``multi_retrieve`` call when
-``USE_KNOWLEDGE_SUBGRAPH`` is on. The legacy node stays in
-``graph.py``.
+replaces the inline ``multi_retrieve`` call. The legacy node
+stays in ``graph.py``.
 """
 
 from __future__ import annotations

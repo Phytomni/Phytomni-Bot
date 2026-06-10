@@ -153,8 +153,8 @@ class BriefGeneState(TypedDict):
     chat_payload: NotRequired[Dict[str, Any]]
     pending_post: NotRequired[str]
     chat_response: NotRequired[Dict[str, Any]]
-    # Additive optional keys used only when ``USE_KNOWLEDGE_SUBGRAPH``
-    # is on. ``retrieve_prep_tasks_node`` stages the per-symbol task
+    # Additive optional keys for the knowledge-subgraph split.
+    # ``retrieve_prep_tasks_node`` stages the per-symbol task
     # list under ``retrieve_tasks``; ``route_retrieve_tasks`` dispatches
     # each task via ``Send`` with the per-task ``knowledge_input`` and
     # ``task_index`` keys carried on the per-Send state delta; each

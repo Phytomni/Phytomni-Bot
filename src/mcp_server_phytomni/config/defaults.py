@@ -272,31 +272,6 @@ class ServerConfig(BaseSettings):
         ),
     ] = False
 
-    # ``USE_KNOWLEDGE_SUBGRAPH`` — when ``True``, consumer agents
-    # (analyst / data / review retrieve_node) invoke a KnowledgeAgent
-    # subgraph through ``adapter_node`` instead of calling the
-    # ``multi_retrieve`` / ``retrieve`` helpers inline. Review's
-    # Send-dispatch retrieve triad lives inside its chat-subgraph
-    # wiring. Default ``False`` preserves
-    # pre-Phase-6 behavior; flip to ``True`` per deployment after
-    # parent-graph composition is validated.
-    # Inherited by every consumer-side config that subclasses
-    # ``ServerConfig``. ``AliasChoices`` mirrors the endpoint-field
-    # pattern from inception so the ``PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH``
-    # env form routes to the same field as the unprefixed form (the
-    # AF-NEW-5 fix lesson — Steps 6.2-6.5 flag introductions all use
-    # this shape).
-    USE_KNOWLEDGE_SUBGRAPH: Annotated[
-        bool,
-        Field(
-            default=True,
-            validation_alias=AliasChoices(
-                "USE_KNOWLEDGE_SUBGRAPH",
-                "PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH",
-            ),
-        ),
-    ] = True
-
     # Customer relay-mode client switches (distinct from the operator-
     # side ``ApiConfig.RELAY_ENABLED``). When ``RELAY_MODE`` is True a
     # child Bot routes its non-OBS external dependencies through the

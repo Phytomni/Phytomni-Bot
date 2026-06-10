@@ -11,9 +11,11 @@ single shared chat node registered via ``add_node`` from the
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, TypedDict, cast
 
 import pytest
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.data.agent import DataAgent
@@ -36,33 +38,60 @@ _CHAT_COMPLETION_RESPONSE = {
 }
 
 
-def _build_agent() -> DataAgent:
+class _FakeKnowledgeState(TypedDict, total=False):
+    """Minimal state shape for the offline knowledge-subgraph stub."""
+
+    retrieved_docs: list[dict[str, Any]]
+
+
+def _install_fake_knowledge_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> CompiledStateGraph:
+    """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
+
+    ``DataAgent.__init__`` builds the per-instance compiled KA
+    subgraph unconditionally; this chat-focused test substitutes a
+    tiny compiled subgraph so construction stays offline (no real
+    KnowledgeAgent compile, no real retrieve) while the chat-subgraph
+    mount under test is exercised through the same graph.
+    """
+
+    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
+        del state
+        return {"retrieved_docs": []}
+
+    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
+    workflow.add_node("noop", _noop)
+    workflow.add_edge(START, "noop")
+    workflow.add_edge("noop", END)
+    fake_app = workflow.compile()
+    monkeypatch.setattr(
+        f"{_DATA_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
+    )
+    return fake_app
+
+
+def _build_agent(monkeypatch: pytest.MonkeyPatch) -> DataAgent:
     """Construct a ``DataAgent`` with the chat subgraph mounted.
 
-    Uses ``model_copy`` to set the inherited ``ServerConfig`` field
-    without tripping pylint ``C0103`` on a direct UPPERCASE attribute
-    assignment, mirroring the ``_build_agent`` shape used by the
-    knowledge-subgraph tests. Pins ``USE_KNOWLEDGE_SUBGRAPH=False`` so
-    the test isolates the chat-subgraph mount from the orthogonal
-    knowledge-subgraph structural mount the production default wires.
+    The knowledge subgraph is always mounted at the retrieve site, so
+    the helper installs an offline knowledge-app stub via
+    :func:`_install_fake_knowledge_app` to keep construction offline,
+    then isolates the chat-subgraph mount under test.
     """
-    config = DataConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": False,
-        }
-    )
+    _install_fake_knowledge_app(monkeypatch)
     return DataAgent(
-        data_config=config,
+        data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
 
 def _minimal_rewrite_state() -> DataAgentState:
-    """Return the minimal state ``rewrite_node`` reads.
+    """Return the minimal state the rewrite prep node reads.
 
-    ``rewrite_node`` only reads ``retrieve_prompt`` (the prompt
-    already stitched by ``retrieve_node``); no other keys are read
-    at this node, so the dict stays minimal.
+    The rewrite prep node only reads ``retrieve_prompt`` (the prompt
+    already stitched by ``retrieve_post_node``); no other keys are
+    read at this node, so the dict stays minimal.
     """
     return cast(
         DataAgentState,
@@ -70,7 +99,9 @@ def _minimal_rewrite_state() -> DataAgentState:
     )
 
 
-async def test_rewrite_prep_node_builds_chat_payload() -> None:
+async def test_rewrite_prep_node_builds_chat_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Prep node stages the ``chat_payload`` for the shared chat node.
 
     The prep node owns the prompt-passing half of the legacy
@@ -80,7 +111,7 @@ async def test_rewrite_prep_node_builds_chat_payload() -> None:
     needs no ``pending_post`` sentinel because the after-chat edge
     is unconditional.
     """
-    agent = _build_agent()
+    agent = _build_agent(monkeypatch)
     result = await agent.rewrite_prep_node(_minimal_rewrite_state())
 
     chat_payload = result["chat_payload"]
@@ -90,7 +121,9 @@ async def test_rewrite_prep_node_builds_chat_payload() -> None:
     assert "obs_file_list" not in chat_payload
 
 
-async def test_rewrite_post_node_extracts_rewrite_query() -> None:
+async def test_rewrite_post_node_extracts_rewrite_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Post node extracts ``rewrite_query`` from the chat response.
 
     The post node mirrors the response-validation + content-extraction
@@ -98,7 +131,7 @@ async def test_rewrite_post_node_extracts_rewrite_query() -> None:
     from ``state['chat_response']`` (written by the shared chat node)
     instead of awaiting a fresh ``phyto_chat`` call.
     """
-    agent = _build_agent()
+    agent = _build_agent(monkeypatch)
     state = cast(
         DataAgentState,
         {
@@ -112,7 +145,9 @@ async def test_rewrite_post_node_extracts_rewrite_query() -> None:
     assert result == {"rewrite_query": "rewritten Q"}
 
 
-async def test_rewrite_post_node_raises_on_empty_chat_response() -> None:
+async def test_rewrite_post_node_raises_on_empty_chat_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Post node raises ``McpError`` when the chat response is missing.
 
     Pins the upstream-failure contract: when the shared chat node
@@ -120,7 +155,7 @@ async def test_rewrite_post_node_raises_on_empty_chat_response() -> None:
     same ``McpError`` the legacy ``rewrite_node`` raised so the
     failure mode stays observable across both graph shapes.
     """
-    agent = _build_agent()
+    agent = _build_agent(monkeypatch)
     empty_state = cast(DataAgentState, {})
     with pytest.raises(McpError):
         await agent.rewrite_post_node(empty_state)
@@ -149,13 +184,16 @@ async def test_compiled_graph_routes_through_shared_chat(
         subgraph_response=_CHAT_COMPLETION_RESPONSE,
     )
 
-    async def fake_retrieve_node(
+    async def fake_retrieve_post_node(
         _self: DataAgent, _state: DataAgentState
     ) -> dict:
-        """Stub ``retrieve_node`` so the test never hits the live backend.
+        """Stub ``retrieve_post_node`` so the test never hits the backend.
 
-        Returns the same fixed ``retrieve_prompt`` the unit tests
-        above use so the prep node observes a deterministic input.
+        The retrieve site always routes ``retrieve_prep_node`` ->
+        ``knowledge`` -> ``retrieve_post_node``; the offline knowledge
+        stub returns no docs, so the post node is stubbed to emit the
+        same fixed ``retrieve_prompt`` the unit tests use, giving the
+        rewrite prep node a deterministic input.
         """
         return {
             "retrieve_prompt": "stitched scenarios + user question",
@@ -177,9 +215,11 @@ async def test_compiled_graph_routes_through_shared_chat(
     # Patch the class methods BEFORE constructing the agent so the
     # original ``_build_graph`` call captures the stubs instead of
     # the real backend-hitting bound methods.
-    monkeypatch.setattr(DataAgent, "retrieve_node", fake_retrieve_node)
+    monkeypatch.setattr(
+        DataAgent, "retrieve_post_node", fake_retrieve_post_node
+    )
     monkeypatch.setattr(DataAgent, "search_node", fake_search_node)
-    agent = _build_agent()
+    agent = _build_agent(monkeypatch)
     initial_input = cast(
         DataInput,
         {
@@ -204,7 +244,9 @@ async def test_compiled_graph_routes_through_shared_chat(
     }
 
 
-def test_compiled_graph_xray_expands_chat_subgraph() -> None:
+def test_compiled_graph_xray_expands_chat_subgraph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Compiled graph exposes the shared chat subgraph to ``xray``.
 
     Structural check: ``StateGraph.get_graph(xray=True)`` walks the
@@ -218,6 +260,6 @@ def test_compiled_graph_xray_expands_chat_subgraph() -> None:
     hid the subgraph behind another closure and the render reverted
     to an opaque box.
     """
-    agent = _build_agent()
+    agent = _build_agent(monkeypatch)
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)

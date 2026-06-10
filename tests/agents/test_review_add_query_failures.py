@@ -32,18 +32,12 @@ pytestmark = pytest.mark.agent
 def _build_agent() -> DeepResearchAgent:
     """Construct a ``DeepResearchAgent`` for ``_feedback_rag`` probes.
 
-    Pins ``USE_KNOWLEDGE_SUBGRAPH`` off so the agent constructor does
-    not eagerly assemble the knowledge subgraph; the tests target
-    ``_feedback_rag`` directly without invoking the compiled LangGraph
-    workflow.
+    The tests target ``_feedback_rag`` directly without invoking the
+    compiled LangGraph workflow; the knowledge subgraph compiled at
+    construction time is offline-only and never awaited here.
     """
-    config = ReviewConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": False,
-        }
-    )
     return DeepResearchAgent(
-        review_config=config,
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 

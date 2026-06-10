@@ -82,8 +82,8 @@ class AnalystState(TypedDict):
     for the chat subgraph (``pending_post`` / ``chat_payload`` /
     ``chat_response``) for the chat subgraph split, and
     three for the knowledge subgraph (``pending_post_knowledge`` /
-    ``knowledge_payload`` / ``knowledge_response``) used when
-    ``USE_KNOWLEDGE_SUBGRAPH`` is on — along with the additive
+    ``knowledge_payload`` / ``knowledge_response``) for the knowledge
+    subgraph split — along with the additive
     ``error_detail`` key that ``failure_state`` writes when the graph
     raises. Value types intentionally match the legacy annotations so
     internal node bracket access

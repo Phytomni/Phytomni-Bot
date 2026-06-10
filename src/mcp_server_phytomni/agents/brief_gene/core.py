@@ -40,10 +40,8 @@ from .pipeline import (
     _attach_metadata,
     _dedupe,
     _first_row,
-    _format_docs,
     _safe_rows,
     _split_symbols,
-    gene_retrieve,
     run_bi_api,
 )
 from .state import (
@@ -86,14 +84,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             knowledge_config=brief_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: Optional[CompiledStateGraph]
-        if self.brief_config.USE_KNOWLEDGE_SUBGRAPH:
-            self._knowledge_app = build_knowledge_app(
-                knowledge_config=self.brief_config,
-                sensitive_config=self.sensitive_config,
-            )
-        else:
-            self._knowledge_app = None
+        self._knowledge_app: CompiledStateGraph = build_knowledge_app(
+            knowledge_config=self.brief_config,
+            sensitive_config=self.sensitive_config,
+        )
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.app = self._build_graph()
 
@@ -104,8 +98,8 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         ``follow_up_node`` into prep + post pairs surrounding a shared
         ``chat`` subgraph mount so LangGraph's xray rendering can
         inline the compiled chat subgraph under the brief_gene render.
-        The ``retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``
-        independently via ``_register_retrieve_nodes`` /
+        The ``retrieve`` site mounts the Send-dispatch knowledge
+        subgraph triad via ``_register_retrieve_nodes`` /
         ``_retrieve_targets``.
         """
         workflow = StateGraph(
@@ -128,11 +122,11 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         :func:`~agents.shared.chat_subgraph.make_chat_after_router`
         reads the ``pending_post`` sentinel each prep node stages to
         branch back to the correct post node after the chat call. The
-        ``retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``
-        independently of the chat flag (delegated via
-        ``_register_retrieve_nodes`` and ``_retrieve_targets``); the
-        cross-product wire (both flags on) surfaces both ``chat:`` and
-        ``retrieve_worker_node:`` subgraph blocks under xray.
+        ``retrieve`` site mounts the Send-dispatch knowledge subgraph
+        triad (delegated via ``_register_retrieve_nodes`` and
+        ``_retrieve_targets``); the combined wire surfaces both
+        ``chat:`` and ``retrieve_worker_node:`` subgraph blocks under
+        xray.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -356,38 +350,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             **_annotation_strings_delta(annotation_responses, structure_row),
         }
 
-    async def retrieve_node(self, state: BriefGeneAgentState):
-        """Retrieve gene literature through the LangGraph KnowledgeAgent.
-
-        Args:
-            state: Current workflow state with gene resolution metadata.
-
-        Returns:
-            State updates containing retrieved documents and prompt context.
-        """
-        if state["gene_found"]:
-            result = await gene_retrieve(
-                species=state["species_all_name"],
-                gene_symbol_list=state["gene_id_list"],
-                knowledge_agent=self.ka,
-                top_n=self.brief_config.TOP_N,
-                semaphore=asyncio.Semaphore(self.brief_config.MAX_CONCURRENCY),
-            )
-            doc_list = result.get("doc_list", [])
-        else:
-            result = await self.ka.arun(
-                user_query=state["user_query"],
-                is_generate=False,
-                is_follow_up=False,
-            )
-            doc_list = result if isinstance(result, list) else []
-        return {
-            "retrieved_docs": doc_list,
-            "retrieve_context": _format_docs(
-                doc_list, self.brief_config.MAX_TOKENS
-            ),
-        }
-
     async def generate_prep_node(
         self, state: BriefGeneAgentState
     ) -> Dict[str, Any]:
@@ -472,7 +434,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         Args:
             state: Current workflow state. Reads ``chat_response``
                 written by the shared chat node and ``retrieved_docs``
-                staged by ``retrieve_node``.
+                staged by ``retrieve_reduce_node``.
 
         Returns:
             State delta with ``final_response``.
@@ -632,10 +594,9 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             # +1 via ``operator.add``.
             "gene_profile_completed_branches": 0,
             # Seed the Send fan-out reducer channel so the TypedDict
-            # contract is satisfied at ``arun`` entry. The
-            # ``USE_KNOWLEDGE_SUBGRAPH``-on path concats per-worker
-            # ``(task_index, doc_list)`` tuples onto this list via
-            # ``operator.add``; the flag-off path leaves it untouched.
+            # contract is satisfied at ``arun`` entry. The retrieve
+            # workers concat per-worker ``(task_index, doc_list)``
+            # tuples onto this list via ``operator.add``.
             "retrieve_indexed_results": [],
         }
         final_state = await ainvoke_graph(

@@ -33,16 +33,8 @@ _AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
 def _build_agent() -> DeepResearchAgent:
     """Construct a ``DeepResearchAgent`` for the draft fan-out."""
-    config = ReviewConfig().model_copy(
-        update={
-            # Pin USE_KNOWLEDGE_SUBGRAPH False so the retrieve site keeps
-            # its legacy ``retrieve_node`` and the test focuses on the
-            # draft fan-out wiring.
-            "USE_KNOWLEDGE_SUBGRAPH": False,
-        }
-    )
     return DeepResearchAgent(
-        review_config=config,
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 

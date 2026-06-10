@@ -2,13 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``DeepResearchAgent`` knowledge retrieval fan-out.
+"""Tests for ``DeepResearchAgent`` knowledge retrieval fan-out.
 
-Pins ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
-``retrieve_node`` which calls ``ka.arun`` via ``asyncio.gather``;
-flag-on routes through a Send-dispatch triad (``retrieve_dispatch`` →
-N × ``retrieve_worker_node`` → ``retrieve_reduce_node``). Also covers
-partial failure, reduce ordering, and xray subgraph expansion.
+The retrieve site routes through a Send-dispatch triad
+(``retrieve_dispatch`` → N × ``retrieve_worker_node`` →
+``retrieve_reduce_node``). Also covers partial failure, reduce
+ordering, and xray subgraph expansion.
 """
 
 # pylint: disable=protected-access
@@ -73,46 +72,23 @@ def _install_fake_knowledge_app(
 
 
 def _build_agent(
-    use_knowledge_subgraph: bool,
-    *,
-    monkeypatch: pytest.MonkeyPatch | None = None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` with the specified flag.
+    """Construct a ``DeepResearchAgent`` with the Send-based fan-out.
 
-    The Send-based knowledge fan-out wires into ``_wire_chat_subgraph``,
-    so ``USE_KNOWLEDGE_SUBGRAPH`` toggles the retrieve site between the
-    legacy ``retrieve_node`` and the Send-dispatch triad.
+    The knowledge subgraph is always mounted at the retrieve site via
+    the Send-dispatch triad; ``_install_fake_knowledge_app`` keeps the
+    per-instance KA compile deterministic and offline.
     """
-    if use_knowledge_subgraph and monkeypatch is not None:
-        _install_fake_knowledge_app(monkeypatch)
-    config = ReviewConfig().model_copy(
-        update={
-            "USE_KNOWLEDGE_SUBGRAPH": use_knowledge_subgraph,
-        }
-    )
+    _install_fake_knowledge_app(monkeypatch)
     return DeepResearchAgent(
-        review_config=config,
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: ``retrieve_node`` still gathers via ``ka.arun``.
-# ---------------------------------------------------------------------------
-
-
-def test_retrieve_node_flag_off_graph_keeps_legacy_node() -> None:
-    """Flag-off compiled graph has ``retrieve_node`` and no Send triad."""
-    agent = _build_agent(use_knowledge_subgraph=False)
-    node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
-    assert "retrieve_node" in node_keys
-    assert "retrieve_dispatch" not in node_keys
-    assert "retrieve_worker_node" not in node_keys
-    assert "retrieve_reduce_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Flag-on prepare node returns empty delta.
+# Prepare node returns empty delta.
 # ---------------------------------------------------------------------------
 
 
@@ -120,7 +96,7 @@ async def test_retrieve_prepare_tasks_node_returns_empty_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``retrieve_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     state = cast(
         DeepResearchState,
         {"research_dimensions": ["photosynthesis", "chlorophyll"]},
@@ -130,7 +106,7 @@ async def test_retrieve_prepare_tasks_node_returns_empty_delta(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on route_retrieve_tasks returns N Send payloads.
+# route_retrieve_tasks returns N Send payloads.
 # ---------------------------------------------------------------------------
 
 
@@ -138,7 +114,7 @@ def test_route_retrieve_tasks_returns_n_sends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``route_retrieve_tasks`` returns one Send per research dimension."""
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     dimensions = ["photosynthesis", "chlorophyll", "stomatal conductance"]
     state = cast(DeepResearchState, {"research_dimensions": dimensions})
     sends = agent.route_retrieve_tasks(state)
@@ -156,7 +132,7 @@ def test_route_retrieve_tasks_returns_n_sends(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on worker success: writes (task_index, docs) tuple.
+# Worker success: writes (task_index, docs) tuple.
 # ---------------------------------------------------------------------------
 
 
@@ -168,7 +144,7 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
     fake_app = AsyncMock(
         ainvoke=AsyncMock(return_value={"retrieved_docs": docs})
     )
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     worker = agent.make_retrieve_worker_node(fake_app)
     state = cast(
         DeepResearchState,
@@ -190,7 +166,7 @@ async def test_retrieve_worker_node_success_writes_indexed_result(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on worker exception: writes empty sentinel AND FailureRecord.
+# Worker exception: writes empty sentinel AND FailureRecord.
 # ---------------------------------------------------------------------------
 
 
@@ -201,7 +177,7 @@ async def test_retrieve_worker_node_exception_writes_sentinel_and_failure(
     fake_app = AsyncMock(
         ainvoke=AsyncMock(side_effect=RuntimeError("backend timeout"))
     )
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     worker = agent.make_retrieve_worker_node(fake_app)
     state = cast(
         DeepResearchState,
@@ -224,7 +200,7 @@ async def test_retrieve_worker_node_exception_writes_sentinel_and_failure(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on reduce: sorts indexed_results by task_index before iterating.
+# Reduce: sorts indexed_results by task_index before iterating.
 # ---------------------------------------------------------------------------
 
 
@@ -236,7 +212,7 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
     Delivers the same ``dimension_params`` ordering regardless of the
     order concurrent workers completed.
     """
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     # Supply results out-of-order (task 1 arrives before task 0).
     doc_0 = {"title": "D0", "content": "c0"}
     doc_1 = {"title": "D1", "content": "c1"}
@@ -258,7 +234,7 @@ async def test_retrieve_reduce_node_sorts_by_task_index(
 
 
 # ---------------------------------------------------------------------------
-# Flag-on partial failure (1 of N): reduce produces N dimension_params.
+# Partial failure (1 of N): reduce produces N dimension_params.
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +246,7 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
     The failed dimension gets empty fragments; the reduce does not skip
     it, so ``draft_node`` still receives a slot for every dimension.
     """
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     doc = {"title": "D2", "content": "c2"}
     state = cast(
         DeepResearchState,
@@ -294,40 +270,31 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
 
 
 # ---------------------------------------------------------------------------
-# Constructor: ``_knowledge_app`` is only built when the flag is on.
+# Constructor: ``_knowledge_app`` is always built.
 # ---------------------------------------------------------------------------
 
 
-def test_knowledge_app_built_only_when_flag_on(
+def test_knowledge_app_always_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_knowledge_app`` is ``None`` flag-off, populated flag-on."""
-    agent_off = _build_agent(
-        use_knowledge_subgraph=False, monkeypatch=monkeypatch
-    )
-    assert agent_off._knowledge_app is None
-
+    """``_knowledge_app`` is populated with the compiled KA subgraph."""
     fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent_on = DeepResearchAgent(
-        review_config=ReviewConfig().model_copy(
-            update={
-                "USE_KNOWLEDGE_SUBGRAPH": True,
-            }
-        ),
+    agent = DeepResearchAgent(
+        review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
-    assert agent_on._knowledge_app is fake_app
+    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------
-# Structural: flag-on graph has Send triad; flag-off keeps legacy.
+# Structural: compiled graph has the retrieve Send triad.
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_on_has_send_triad(
+def test_compiled_graph_has_send_triad(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on graph has ``retrieve_dispatch``, worker, and reduce nodes.
+    """Compiled graph has ``retrieve_dispatch``, worker, and reduce nodes.
 
     ``retrieve_worker_node`` registers a ``CompiledStateGraph`` via the
     factory closure, so LangGraph's xray render REPLACES the flat key
@@ -335,7 +302,7 @@ def test_compiled_graph_flag_on_has_send_triad(
     ``"retrieve_worker_node"`` key would indicate xray did NOT discover
     the subgraph; the prefixed form is the success signal.
     """
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "retrieve_dispatch" in node_keys
     assert any(
@@ -350,10 +317,10 @@ def test_compiled_graph_flag_on_has_send_triad(
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
+def test_compiled_graph_xray_expands_knowledge_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Flag-on graph exposes the KA subgraph to ``xray``.
+    """Compiled graph exposes the KA subgraph to ``xray``.
 
     ``find_subgraph_pregel`` walks the worker closure's free variable to
     find the compiled ``_knowledge_app`` and inlines it. LangGraph
@@ -364,7 +331,7 @@ def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
     a plain flat ``retrieve_worker_node`` key would mean the walker
     failed to find the subgraph.
     """
-    agent = _build_agent(use_knowledge_subgraph=True, monkeypatch=monkeypatch)
+    agent = _build_agent(monkeypatch)
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("retrieve_worker_node:") for key in node_keys

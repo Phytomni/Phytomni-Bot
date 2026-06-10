@@ -49,27 +49,20 @@ class BriefGeneKnowledgeSubgraphMixin:
     def _retrieve_targets(self: Any) -> tuple[str, str]:
         """Return (incoming, outgoing) node names for the retrieve site.
 
-        The legacy single-node form keeps ``retrieve_node`` as both
-        the incoming target (callers routing into retrieval) and the
-        outgoing source (edges fanning out after retrieval). The
-        knowledge-subgraph form splits the site into
+        The knowledge-subgraph form splits the site into
         ``retrieve_prep_tasks_node`` (incoming) and
         ``retrieve_reduce_node`` (outgoing), with the Send-dispatched
         per-symbol fan-out into a shared ``knowledge`` mount sitting
         between them. Returning the pair from one helper lets
-        ``_wire_legacy`` and ``_wire_chat_subgraph`` substitute names
-        without duplicating the conditional.
+        ``_wire_chat_subgraph`` substitute names without inlining the
+        pair at each call site.
         """
-        if self.brief_config.USE_KNOWLEDGE_SUBGRAPH:
-            return "retrieve_prep_tasks_node", "retrieve_reduce_node"
-        return "retrieve_node", "retrieve_node"
+        return "retrieve_prep_tasks_node", "retrieve_reduce_node"
 
     def _register_retrieve_nodes(self: Any, workflow: StateGraph) -> None:
-        """Register the retrieve node(s) on ``workflow``.
+        """Register the retrieve nodes on ``workflow``.
 
-        Under ``USE_KNOWLEDGE_SUBGRAPH=False`` registers the legacy
-        single ``retrieve_node``. Under ``=True`` registers the
-        Send-dispatch triad
+        Registers the Send-dispatch triad
         (``retrieve_prep_tasks_node`` → ``route_retrieve_tasks`` →
         ``retrieve_worker_node`` × N → ``retrieve_reduce_node``).
         Each per-worker ``ainvoke`` closes over the compiled
@@ -81,14 +74,10 @@ class BriefGeneKnowledgeSubgraphMixin:
             workflow: Uncompiled ``StateGraph`` to register the
                 retrieve site nodes and edges on.
         """
-        if not self.brief_config.USE_KNOWLEDGE_SUBGRAPH:
-            workflow.add_node("retrieve_node", self.retrieve_node)
-            return
         knowledge_app = self._knowledge_app
         if knowledge_app is None:
             raise RuntimeError(
-                "unreachable: USE_KNOWLEDGE_SUBGRAPH is True but "
-                "_knowledge_app was not built in __init__"
+                "unreachable: _knowledge_app must be built in __init__"
             )
         workflow.add_node(
             "retrieve_prep_tasks_node", self.retrieve_prep_tasks_node

@@ -261,17 +261,14 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         user_query: str,
         repo_id_dict: dict[str, int],
     ) -> dict[str, Any] | None:
-        """Dispatch one protocol retrieval via the configured knowledge path.
+        """Dispatch one protocol retrieval via the knowledge subgraph.
 
         Owns the knowledge-call seam ``_experiment_protocols`` uses to
-        fan out one retrieve+generate per recommended experiment. When
-        ``USE_KNOWLEDGE_SUBGRAPH=False`` (the production default until
-        the global flag flip), routes through the legacy
-        ``knowledge_agent.arun`` helper. When True, invokes the
-        per-instance compiled knowledge subgraph
+        fan out one retrieve+generate per recommended experiment.
+        Invokes the per-instance compiled knowledge subgraph
         (``self._agents.knowledge_app``, built in
         ``DeepGenomeAgents.__init__``) with the same
-        ``KnowledgeInput`` shape every other USE_KNOWLEDGE_SUBGRAPH
+        ``KnowledgeInput`` shape every other knowledge-subgraph
         consumer uses, then unwraps the
         ``KnowledgeOutput.final_response`` envelope so callers keep
         their historical chat-completion dict interface.
@@ -285,22 +282,15 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             Chat completion dict matching the historical
             ``knowledge_agent.arun`` return shape.
         """
-        if self.deep_genome_config.USE_KNOWLEDGE_SUBGRAPH:
-            knowledge_output = await self._agents.knowledge_app.ainvoke(
-                {
-                    "user_query": user_query,
-                    "repo_id_dict": repo_id_dict,
-                    "is_generate": True,
-                    "is_follow_up": False,
-                }
-            )
-            return knowledge_output["final_response"]
-        return await self._agents.knowledge_agent.arun(
-            user_query=user_query,
-            repo_id_dict=repo_id_dict,
-            is_generate=True,
-            is_follow_up=False,
+        knowledge_output = await self._agents.knowledge_app.ainvoke(
+            {
+                "user_query": user_query,
+                "repo_id_dict": repo_id_dict,
+                "is_generate": True,
+                "is_follow_up": False,
+            }
         )
+        return knowledge_output["final_response"]
 
     async def _dispatch_chat(
         self: Any, user_query: str

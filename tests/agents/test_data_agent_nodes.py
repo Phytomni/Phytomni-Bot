@@ -4,8 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the DataAgent LangGraph nodes.
 
-Covers retrieve_node prompt assembly, rewrite_node LLM dispatch and its
-empty-response defensive raise, and search_node nl2sql execution plus
+Covers rewrite_node LLM dispatch and its empty-response defensive
+raise, and search_node nl2sql execution plus
 its None-result defensive raise. The full agent.arun integration is out
 of scope; these tests exercise each node method directly with mocked
 external services.
@@ -40,39 +40,6 @@ def _state(**overrides: Any) -> DataAgentState:
 def _agent() -> DataAgent:
     """Build a DataAgent instance with the cached default config."""
     return DataAgent()
-
-
-async def test_retrieve_node_assembles_prompt_from_retrieved_docs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """retrieve_node forwards retrieve hits into the rewrite prompt."""
-    captured_get_prompt: Dict[str, Any] = {}
-
-    async def fake_retrieve(**_kwargs: Any) -> Dict[str, Any]:
-        return {
-            "doc_list": [
-                {"content": "scenario doc body", "title": "doc-1"},
-            ]
-        }
-
-    def fake_get_prompt(
-        _file: str, prompt_path: str, args: Dict[str, Any]
-    ) -> str:
-        captured_get_prompt["path"] = prompt_path
-        captured_get_prompt["args"] = args
-        return "RETRIEVE_PROMPT"
-
-    monkeypatch.setattr(data_agent, "retrieve", fake_retrieve)
-    monkeypatch.setattr(data_agent, "get_prompt", fake_get_prompt)
-
-    result = await _agent().retrieve_node(_state())
-
-    assert result == {"retrieve_prompt": "RETRIEVE_PROMPT"}
-    assert captured_get_prompt["path"] == "user/database"
-    assert (
-        captured_get_prompt["args"]["user_query"]
-        == "List orthologs of Os01g0177400"
-    )
 
 
 async def test_search_node_executes_rewrite_query_when_rewrite_enabled(
@@ -134,8 +101,8 @@ async def test_search_node_raises_when_nl2sql_returns_none(
 
 
 def test_route_start_routes_through_retrieve_when_rewrite_enabled() -> None:
-    """route_start picks the retrieve_node entry when is_rewrite is True."""
-    assert _agent().route_start(_state()) == "retrieve_node"
+    """route_start picks the retrieve prep entry when is_rewrite is True."""
+    assert _agent().route_start(_state()) == "retrieve_prep_node"
 
 
 def test_route_start_routes_directly_to_search_when_rewrite_off() -> None:

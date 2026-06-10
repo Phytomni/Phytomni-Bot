@@ -201,9 +201,9 @@ def test_route_after_generate_skips_when_disabled() -> None:
 
 
 def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
-    """Compiled BriefGene graph exposes the chat-mount conditionals.
+    """Compiled BriefGene graph exposes the chat + retrieve conditionals.
 
-    The chat-subgraph topology has THREE conditional sources:
+    The wired topology has FOUR conditional sources:
 
     * ``query_judge_node`` routes to fetch-annotation vs. direct
       retrieval based on gene_found.
@@ -211,14 +211,14 @@ def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
       follow_up) via ``make_chat_after_router``.
     * ``generate_post_node`` routes to the follow_up prep node or END
       based on the is_follow_up flag.
-
-    ``USE_KNOWLEDGE_SUBGRAPH`` is pinned ``False`` so the retrieve
-    site stays a single node and the conditional set isolates the
-    chat split.
+    * ``retrieve_prep_tasks_node`` fans out one ``Send`` per staged
+      retrieve task via ``route_retrieve_tasks``.
     """
-    config = BriefGeneConfig().model_copy(
-        update={"USE_KNOWLEDGE_SUBGRAPH": False}
-    )
-    agent = BriefGeneAgent(brief_config=config)
+    agent = BriefGeneAgent(brief_config=BriefGeneConfig())
     branches = set(agent.app.builder.branches.keys())
-    assert branches == {"query_judge_node", "chat", "generate_post_node"}
+    assert branches == {
+        "query_judge_node",
+        "chat",
+        "generate_post_node",
+        "retrieve_prep_tasks_node",
+    }
