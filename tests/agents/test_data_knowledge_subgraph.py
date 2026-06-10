@@ -7,8 +7,9 @@
 Pins ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
 ``retrieve_node`` which awaits ``retrieve`` directly; flag-on routes
 through a prep + post pair surrounding a per-instance compiled
-KnowledgeAgent app. Also covers the cross-product when both
-``USE_CHAT_SUBGRAPH`` and ``USE_KNOWLEDGE_SUBGRAPH`` are on.
+KnowledgeAgent app. Also covers the cross-product where the
+always-mounted chat subgraph and the flag-on knowledge subgraph are
+both present.
 """
 
 # pylint: disable=protected-access
@@ -83,16 +84,15 @@ def _build_agent(
     use_subgraph: bool,
     *,
     monkeypatch: pytest.MonkeyPatch | None = None,
-    use_chat_subgraph: bool = False,
 ) -> DataAgent:
     """Construct a ``DataAgent`` with the knowledge flag set.
 
     Uses ``model_copy`` to flip the flag on the inherited
     ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment. The optional
-    ``use_chat_subgraph`` argument exercises the cross-product wire
-    when both flags are on. When ``monkeypatch`` is supplied, the
-    helper installs the fake knowledge app via
+    direct UPPERCASE attribute assignment. The chat subgraph is always
+    mounted, so the cross-product test simply asserts it appears
+    alongside the flag-on knowledge subgraph. When ``monkeypatch`` is
+    supplied, the helper installs the fake knowledge app via
     :func:`_install_fake_knowledge_app` so the flag-on construction
     stays offline.
     """
@@ -101,7 +101,6 @@ def _build_agent(
     config = DataConfig().model_copy(
         update={
             "USE_KNOWLEDGE_SUBGRAPH": use_subgraph,
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
         }
     )
     return DataAgent(
@@ -287,18 +286,21 @@ def test_compiled_graph_flag_on_xray_expands_knowledge_subgraph(
 
 
 # ---------------------------------------------------------------------------
-# Cross-product: both flags on — chat AND knowledge subgraphs are mounted.
+# Cross-product: knowledge flag on — chat AND knowledge subgraphs mounted.
 # ---------------------------------------------------------------------------
 
 
-def test_compiled_graph_both_flags_on_xray_expands_both_subgraphs(
+def test_compiled_graph_knowledge_flag_on_xray_expands_both_subgraphs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both flags on: xray surfaces ``chat:`` AND ``knowledge:`` keys."""
+    """Knowledge flag on: xray surfaces ``chat:`` AND ``knowledge:`` keys.
+
+    The chat subgraph is always mounted, so when the knowledge flag is
+    on both subgraphs appear in the xray render together.
+    """
     agent = _build_agent(
         use_subgraph=True,
         monkeypatch=monkeypatch,
-        use_chat_subgraph=True,
     )
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)

@@ -2,14 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``DeepResearchAgent`` per-dimension draft fan-out.
+"""Tests for ``DeepResearchAgent`` per-dimension draft fan-out.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy ``draft_node``
-which calls ``self._chat`` via ``asyncio.gather``; flag-on routes through
-a Send-dispatch triad (``draft_dispatch`` → N × ``draft_worker_node`` →
-``draft_reduce_node``) where each worker awaits the module-level
-``CHAT_APP`` so xray expands the chat subgraph under each worker. Also
-covers partial failure, reduce ordering, and xray subgraph expansion.
+The draft site routes through a Send-dispatch triad
+(``draft_dispatch`` → N × ``draft_worker_node`` → ``draft_reduce_node``)
+where each worker awaits the module-level ``CHAT_APP`` so xray expands
+the chat subgraph under each worker. Also covers partial failure,
+reduce ordering, and xray subgraph expansion.
 """
 
 # pylint: disable=protected-access
@@ -32,16 +31,13 @@ pytestmark = pytest.mark.agent
 _AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
 
-def _build_agent(
-    use_chat_subgraph: bool,
-) -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` with the chat-subgraph flag set."""
+def _build_agent() -> DeepResearchAgent:
+    """Construct a ``DeepResearchAgent`` for the draft fan-out."""
     config = ReviewConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
             # Pin USE_KNOWLEDGE_SUBGRAPH False so the retrieve site keeps
             # its legacy ``retrieve_node`` and the test focuses on the
-            # draft fan-out wiring under ``USE_CHAT_SUBGRAPH``.
+            # draft fan-out wiring.
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )
@@ -57,52 +53,13 @@ def _ok_chat_response(text: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: ``draft_node`` still gathers via ``self._chat``.
-# ---------------------------------------------------------------------------
-
-
-def test_draft_node_flag_off_graph_keeps_legacy_node() -> None:
-    """Flag-off compiled graph has ``draft_node`` and no Send triad."""
-    agent = _build_agent(use_chat_subgraph=False)
-    node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
-    assert "draft_node" in node_keys
-    assert "draft_dispatch" not in node_keys
-    assert "draft_worker_node" not in node_keys
-    assert "draft_reduce_node" not in node_keys
-
-
-async def test_draft_node_flag_off_invokes_self_chat_via_gather(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``draft_node`` calls ``self._chat`` once per dimension."""
-    agent = _build_agent(use_chat_subgraph=False)
-    fake_chat = AsyncMock(
-        side_effect=[_ok_chat_response("A"), _ok_chat_response("B")]
-    )
-    monkeypatch.setattr(agent, "_chat", fake_chat)
-    state = cast(
-        DeepResearchState,
-        {
-            "dimension_params": [
-                {"subtopic": "alpha", "knowledge": "k0"},
-                {"subtopic": "beta", "knowledge": "k1"},
-            ],
-        },
-    )
-    result = await agent.draft_node(state)
-
-    assert result["draft_contents"] == ["A", "B"]
-    assert fake_chat.await_count == 2
-
-
-# ---------------------------------------------------------------------------
-# Flag-on prepare node returns empty delta.
+# Prepare node returns empty delta.
 # ---------------------------------------------------------------------------
 
 
 async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
     """``draft_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -122,7 +79,7 @@ async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_draft_tasks_returns_n_sends() -> None:
     """``route_draft_tasks`` returns one Send per dimension_params entry."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     params = [
         {"subtopic": "photosynthesis", "knowledge": "snippet-0"},
         {"subtopic": "chlorophyll", "knowledge": "snippet-1"},
@@ -163,7 +120,7 @@ async def test_draft_worker_node_success_writes_indexed_result(
         )
     )
     monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -196,7 +153,7 @@ async def test_draft_worker_node_exception_writes_sentinel_and_failure(
         ainvoke=AsyncMock(side_effect=RuntimeError("chat timeout"))
     )
     monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -233,7 +190,7 @@ async def test_draft_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``draft_contents`` ordering regardless of the
     order concurrent workers completed.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     # Supply results out-of-order (task 1 arrives before task 0).
     state = cast(
         DeepResearchState,
@@ -258,7 +215,7 @@ async def test_draft_reduce_node_partial_failure_keeps_n_entries() -> None:
     does not skip it, so downstream ``review_node`` still receives a slot
     for every dimension.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -289,7 +246,7 @@ def test_compiled_graph_flag_on_has_send_triad() -> None:
     discover the chat subgraph; the prefixed form is the success
     signal.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "draft_dispatch" in node_keys
     assert any(
@@ -316,7 +273,7 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     The presence of any ``draft_worker_node:`` prefixed key is the
     xray success signal.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("draft_worker_node:") for key in node_keys

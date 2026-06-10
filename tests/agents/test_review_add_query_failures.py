@@ -32,14 +32,13 @@ pytestmark = pytest.mark.agent
 def _build_agent() -> DeepResearchAgent:
     """Construct a ``DeepResearchAgent`` for ``_feedback_rag`` probes.
 
-    Pins ``USE_CHAT_SUBGRAPH`` / ``USE_KNOWLEDGE_SUBGRAPH`` off so the
-    agent constructor does not eagerly assemble the chat or knowledge
-    subgraph; the tests target ``_feedback_rag`` directly without
-    invoking the compiled LangGraph workflow.
+    Pins ``USE_KNOWLEDGE_SUBGRAPH`` off so the agent constructor does
+    not eagerly assemble the knowledge subgraph; the tests target
+    ``_feedback_rag`` directly without invoking the compiled LangGraph
+    workflow.
     """
     config = ReviewConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": False,
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )

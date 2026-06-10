@@ -11,6 +11,7 @@ returns no <result> match.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -21,7 +22,7 @@ pytestmark = pytest.mark.agent
 
 
 def _region_chat_response(content: str) -> dict[str, Any]:
-    """Return a minimal phyto_chat-shaped payload with the given content.
+    """Return a minimal chat-completion payload with the given content.
 
     Args:
         content: Assistant message content to embed in the fake response.
@@ -46,17 +47,25 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
     """
     captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
-        """Return a fake region code response.
+    async def fake_chat_ainvoke(chat_input: dict[str, Any]) -> dict[str, Any]:
+        """Return a fake chat-subgraph state with a region code response.
 
         Args:
-            **kwargs: phyto_chat keyword arguments (ignored).
+            chat_input: ``ChatInput`` mapping forwarded by the wrapper
+                (captured for inspection).
 
         Returns:
-            Fake chat completion carrying a <result>...</result> payload.
+            ``ChatOutput``-shaped state whose ``response`` carries a
+            <result>...</result> chat completion payload.
         """
-        captured["chat"] = kwargs
-        return _region_chat_response("<result>110000|110100|110101</result>")
+        captured["chat"] = chat_input
+        return {
+            "response": _region_chat_response(
+                "<result>110000|110100|110101</result>"
+            )
+        }
+
+    fake_chat_app = SimpleNamespace(ainvoke=fake_chat_ainvoke)
 
     def fake_load_text_file(path: str) -> str:
         """Capture the requested region-code file path and return JSON.
@@ -143,17 +152,17 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
         captured["submit"] = kwargs
         return {"task_id": "vci-task-123"}
 
-    # Pin the legacy paths the rest of this test mocks: with both
-    # default-True flags the wrapper would route through the chat
-    # subgraph + ``submit_analyst_via_subgraph`` and skip the
-    # ``phyto_chat`` / ``submit`` mocks installed below.
-    monkeypatch.setattr(
-        environment_agent.ENVIRONMENT_CONFIG, "USE_CHAT_SUBGRAPH", False
-    )
+    # Pin ``USE_ANALYST_SUBGRAPH=False`` so the analyst submission
+    # routes through the wrapper-namespace ``submit`` this test mocks
+    # rather than ``submit_analyst_via_subgraph``. Region-code
+    # extraction always runs through the compiled chat subgraph, so
+    # ``_cached_chat_app`` is stubbed below to drive that path.
     monkeypatch.setattr(
         environment_agent.ENVIRONMENT_CONFIG, "USE_ANALYST_SUBGRAPH", False
     )
-    monkeypatch.setattr(environment_agent, "phyto_chat", fake_phyto_chat)
+    monkeypatch.setattr(
+        environment_agent, "_cached_chat_app", lambda: fake_chat_app
+    )
     monkeypatch.setattr(
         environment_agent, "load_text_file", fake_load_text_file
     )
@@ -196,17 +205,20 @@ async def test_region_vci_analysis_returns_none_task_when_codes_missing(
         None after the early-return assertion passes.
     """
 
-    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
-        """Return a chat response missing the expected <result> tag.
+    async def fake_chat_ainvoke(chat_input: dict[str, Any]) -> dict[str, Any]:
+        """Return a chat-subgraph state missing the expected <result> tag.
 
         Args:
-            **kwargs: phyto_chat keyword arguments captured for inspection.
+            chat_input: ``ChatInput`` mapping forwarded by the wrapper.
 
         Returns:
-            Fake chat completion whose content has no <result>...</result>.
+            ``ChatOutput``-shaped state whose ``response`` content has no
+            <result>...</result> match.
         """
-        assert "user_query" in kwargs
-        return _region_chat_response("no parseable result here")
+        assert "user_query" in chat_input
+        return {"response": _region_chat_response("no parseable result here")}
+
+    fake_chat_app = SimpleNamespace(ainvoke=fake_chat_ainvoke)
 
     def fake_load_text_file(path: str) -> str:
         """Return an empty JSON object for any region-code file lookup.
@@ -240,9 +252,8 @@ async def test_region_vci_analysis_returns_none_task_when_codes_missing(
         return f"prompt:{prompt_path}"
 
     monkeypatch.setattr(
-        environment_agent.ENVIRONMENT_CONFIG, "USE_CHAT_SUBGRAPH", False
+        environment_agent, "_cached_chat_app", lambda: fake_chat_app
     )
-    monkeypatch.setattr(environment_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(
         environment_agent, "load_text_file", fake_load_text_file
     )

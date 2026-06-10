@@ -2,14 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``AnalystAgent`` chat invocations.
+"""Tests for ``AnalystAgent`` chat invocations.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy nine-node form
-where each of the five chat nodes (``parse_query`` / ``data_select`` /
-``plan`` / ``check`` / ``tool_extract``) calls ``phyto_chat``
-directly; flag-on routes through prep + post pairs surrounding a
-single shared chat node registered via ``add_node`` from the
-``agents/shared/chat_subgraph`` factory.
+Each of the five chat sites (``parse_query`` / ``data_select`` /
+``plan`` / ``check`` / ``tool_extract``) routes through prep + post
+pairs surrounding a single shared chat node registered via
+``add_node`` from the ``agents/shared/chat_subgraph`` factory.
 """
 
 from __future__ import annotations
@@ -25,219 +23,30 @@ from mcp_server_phytomni.agents.analyst.state import AnalystState
 from mcp_server_phytomni.config.defaults import AnalystConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
-from ._subgraph_branch_fakes import install_chat_subgraph_mocks
-
 pytestmark = pytest.mark.agent
 
-_ANALYST_MODULE = "mcp_server_phytomni.agents.analyst.graph"
 
+def _build_agent() -> AnalystAgent:
+    """Construct an ``AnalystAgent`` with the default analyst config.
 
-def _build_agent(use_subgraph: bool) -> AnalystAgent:
-    """Construct an ``AnalystAgent`` with ``USE_CHAT_SUBGRAPH`` set.
-
-    Uses ``model_copy`` to flip the flag on the inherited
-    ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment, mirroring the
-    ``_build_agent`` shape used by the knowledge-subgraph tests.
+    The chat subgraph is now unconditional, so the constructor needs
+    no flag override; this mirrors the ``_build_agent`` shape used by
+    the knowledge-subgraph tests.
     """
-    config = AnalystConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": use_subgraph}
-    )
     return AnalystAgent(
-        analyst_config=config,
+        analyst_config=AnalystConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: each chat node still awaits ``phyto_chat`` directly.
-# ---------------------------------------------------------------------------
-
-
-def _parse_query_legacy_response() -> dict:
-    """Return the chat payload the legacy ``parse_query_node`` parses."""
-    body = json.dumps(
-        {
-            "goal_description": "study photosynthesis pathway",
-            "data_list": json.dumps({"obs://input.fa": "fasta"}),
-            "plan": "",
-        }
-    )
-    return {"choices": [{"message": {"content": body}}]}
-
-
-async def test_parse_query_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``parse_query_node`` calls ``phyto_chat`` directly."""
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_ANALYST_MODULE,
-        legacy_response=_parse_query_legacy_response(),
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = cast(
-        AnalystState,
-        {
-            "goal_description": None,
-            "data_list": {},
-            "query": "Analyse photosynthesis",
-        },
-    )
-    result = await agent.parse_query_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert result["goal_description"] == "study photosynthesis pathway"
-    assert result["data_list"] == {"obs://input.fa": "fasta"}
-
-
-async def test_data_select_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``data_select_node`` calls ``phyto_chat`` directly."""
-    selected_payload = json.dumps(
-        {"selected_data": {"obs://auto.fa": "fasta"}}
-    )
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_ANALYST_MODULE,
-        legacy_response={
-            "choices": [{"message": {"content": selected_payload}}]
-        },
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = cast(
-        AnalystState,
-        {
-            "goal_description": "study photosynthesis pathway",
-            "data_list": {"obs://user.fa": "fasta"},
-        },
-    )
-    result = await agent.data_select_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert result["data_list"] == {
-        "obs://user.fa": "fasta",
-        "obs://auto.fa": "fasta",
-    }
-
-
-async def test_plan_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``plan_node`` calls ``phyto_chat`` directly."""
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_ANALYST_MODULE,
-        legacy_response={
-            "choices": [
-                {"message": {"content": "1. run trimmomatic\n2. assemble"}}
-            ]
-        },
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = cast(
-        AnalystState,
-        {
-            "goal_description": "assemble transcriptome",
-            "method_context": {
-                "retrieve_context": "retr",
-                "upload_context": "",
-            },
-            "plan_feedback": None,
-            "obs_file_list": [],
-            "plan_retries": 0,
-        },
-    )
-    result = await agent.plan_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert result["plan"] == "1. run trimmomatic\n2. assemble"
-    assert result["plan_retries"] == 1
-    assert result["plan_feedback"] is None
-
-
-async def test_check_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``check_node`` calls ``phyto_chat`` directly."""
-    critic_payload = json.dumps(
-        {"decision": "APPROVED", "score": 9, "feedback": "looks good"}
-    )
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_ANALYST_MODULE,
-        legacy_response={
-            "choices": [{"message": {"content": critic_payload}}]
-        },
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = cast(
-        AnalystState,
-        {
-            "goal_description": "assemble transcriptome",
-            "data_list": {},
-            "method_context": {
-                "retrieve_context": "retr",
-                "upload_context": "",
-            },
-            "plan": "1. run trimmomatic\n2. assemble",
-            "plan_retries": 1,
-            "is_preset_plan": False,
-        },
-    )
-    result = await agent.check_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert result == {"plan_feedback": "APPROVED"}
-
-
-async def test_tool_extract_node_flag_off_awaits_phyto_chat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-off ``tool_extract_node`` calls ``phyto_chat`` directly."""
-    extract_payload = json.dumps({"tools": ["trimmomatic", "trinity"]})
-    legacy_mock, fake_chat_app = install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_ANALYST_MODULE,
-        legacy_response={
-            "choices": [{"message": {"content": extract_payload}}]
-        },
-        subgraph_response=None,
-    )
-
-    agent = _build_agent(use_subgraph=False)
-    state = cast(
-        AnalystState,
-        {"plan": "1. run trimmomatic\n2. assemble with trinity"},
-    )
-    result = await agent.tool_extract_node(state)
-
-    legacy_mock.assert_awaited_once()
-    fake_chat_app.ainvoke.assert_not_awaited()
-    assert result == {"extracted_tools": ["trimmomatic", "trinity"]}
-
-
-# ---------------------------------------------------------------------------
-# Flag-on prep nodes stage ``chat_payload`` + ``pending_post``.
+# Prep nodes stage ``chat_payload`` + ``pending_post``.
 # ---------------------------------------------------------------------------
 
 
 async def test_parse_query_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for parse_query."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -262,7 +71,7 @@ async def test_parse_query_prep_node_stages_payload() -> None:
 
 async def test_parse_query_prep_node_early_exits_when_goal_set() -> None:
     """Prep node skips chat when ``goal_description`` is already set."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -283,7 +92,7 @@ async def test_parse_query_prep_node_early_exits_when_goal_set() -> None:
 
 async def test_data_select_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for data_select."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -304,7 +113,7 @@ async def test_data_select_prep_node_stages_payload() -> None:
 
 async def test_plan_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for plan."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -333,7 +142,7 @@ async def test_plan_prep_node_stages_payload() -> None:
 
 async def test_check_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for check."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -360,7 +169,7 @@ async def test_check_prep_node_stages_payload() -> None:
 
 async def test_check_prep_node_auto_approves_preset_plan() -> None:
     """Prep node auto-approves when preset plan + no method_context."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -377,7 +186,7 @@ async def test_check_prep_node_auto_approves_preset_plan() -> None:
 
 async def test_tool_extract_prep_node_stages_payload() -> None:
     """Prep node stages payload + pending_post for tool_extract."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {"plan": "1. run trimmomatic\n2. assemble with trinity"},
@@ -394,13 +203,13 @@ async def test_tool_extract_prep_node_stages_payload() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Flag-on post nodes parse ``state['chat_response']`` into the legacy delta.
+# Post nodes parse ``state['chat_response']`` into the legacy delta.
 # ---------------------------------------------------------------------------
 
 
 async def test_parse_query_post_node_parses_chat_response() -> None:
     """Post node parses ``chat_response`` into the parse_query delta."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     body = json.dumps(
         {
             "goal_description": "study photosynthesis pathway",
@@ -423,7 +232,7 @@ async def test_parse_query_post_node_parses_chat_response() -> None:
 
 async def test_parse_query_post_node_noops_on_skip() -> None:
     """Post node returns ``{}`` when prep took the early-return path."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {"chat_payload": None},
@@ -435,7 +244,7 @@ async def test_parse_query_post_node_noops_on_skip() -> None:
 
 async def test_data_select_post_node_parses_chat_response() -> None:
     """Post node merges selected data into the existing ``data_list``."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     selected = json.dumps({"selected_data": {"obs://auto.fa": "fasta"}})
     state = cast(
         AnalystState,
@@ -454,7 +263,7 @@ async def test_data_select_post_node_parses_chat_response() -> None:
 
 async def test_plan_post_node_parses_chat_response() -> None:
     """Post node lifts plan content from the chat response."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -473,7 +282,7 @@ async def test_plan_post_node_parses_chat_response() -> None:
 
 async def test_check_post_node_parses_chat_response() -> None:
     """Post node parses the critic decision into ``plan_feedback``."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     critic_payload = json.dumps(
         {"decision": "APPROVED", "score": 9, "feedback": "ok"}
     )
@@ -494,7 +303,7 @@ async def test_check_post_node_parses_chat_response() -> None:
 
 async def test_check_post_node_noops_on_skip() -> None:
     """Post node returns ``{}`` when prep took the auto-approve path."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {"chat_payload": None},
@@ -506,7 +315,7 @@ async def test_check_post_node_noops_on_skip() -> None:
 
 async def test_tool_extract_post_node_parses_chat_response() -> None:
     """Post node lifts ``tools`` from the chat response."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     extract_payload = json.dumps({"tools": ["trimmomatic", "trinity"]})
     state = cast(
         AnalystState,
@@ -540,7 +349,7 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     hid the subgraph behind another closure and the render reverted
     to an opaque box.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
 
@@ -552,7 +361,7 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
 
 async def test_parse_query_post_node_parses_json_code_fence() -> None:
     """Post node extracts JSON from a ```json ... ``` fenced block."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     body = json.dumps(
         {
             "goal_description": "study drought tolerance",
@@ -592,7 +401,7 @@ async def test_data_select_prep_node_raises_on_species_load_failure(
 
     _module = "mcp_server_phytomni.agents.analyst.graph_chat_subgraph"
     monkeypatch.setattr(f"{_module}.load_species_data", _raise)
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -614,7 +423,7 @@ async def test_data_select_post_node_uses_whole_response_when_key_absent() -> (
     None
 ):
     """Post node uses entire parsed JSON when ``selected_data`` absent."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     # The LLM returns just the dict directly, not wrapped in "selected_data"
     direct_payload = json.dumps({"obs://auto.fa": "fasta"})
     state = cast(
@@ -636,7 +445,7 @@ async def test_data_select_post_node_uses_whole_response_when_key_absent() -> (
 
 async def test_data_select_post_node_raises_on_json_decode_error() -> None:
     """Post node raises McpError when the LLM content is not parseable JSON."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -662,7 +471,7 @@ async def test_data_select_post_node_returns_unchanged_on_empty_response() -> (
     None
 ):
     """Post node returns data_list unchanged when chat response is empty."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -682,7 +491,7 @@ async def test_data_select_post_node_returns_unchanged_on_empty_response() -> (
 
 async def test_plan_prep_node_uses_retrieve_file_feedback_template() -> None:
     """Prep picks ``analysis_retrieve_file_feedback``: feedback + files."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -713,7 +522,7 @@ async def test_plan_prep_node_uses_retrieve_file_feedback_template() -> None:
 
 async def test_plan_prep_node_retrieve_file_template_no_feedback() -> None:
     """Prep uses ``analysis_retrieve_file``: obs files present, no feedback."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -742,7 +551,7 @@ async def test_plan_prep_node_retrieve_file_template_no_feedback() -> None:
 
 async def test_plan_prep_node_uses_retrieve_feedback_no_obs_files() -> None:
     """Prep uses ``analysis_retrieve_feedback``: feedback present, no files."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -771,7 +580,7 @@ async def test_plan_prep_node_uses_retrieve_feedback_no_obs_files() -> None:
 
 async def test_plan_post_node_raises_mcp_error_when_no_content() -> None:
     """Post node raises McpError when LLM response has no usable content."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -785,7 +594,7 @@ async def test_plan_post_node_raises_mcp_error_when_no_content() -> None:
 
 async def test_plan_post_node_raises_mcp_error_on_empty_content() -> None:
     """Post node raises McpError when LLM message content is empty string."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {
@@ -804,7 +613,7 @@ async def test_plan_post_node_raises_mcp_error_on_empty_content() -> None:
 
 async def test_check_post_node_parses_json_code_fence() -> None:
     """Post node extracts JSON from a fenced critic response."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     body = json.dumps(
         {"decision": "APPROVED", "score": 8, "feedback": "looks great"}
     )
@@ -831,7 +640,7 @@ async def test_check_post_node_parses_json_code_fence() -> None:
 
 async def test_check_post_node_handles_json_decode_error_gracefully() -> None:
     """Post node sets score=0/REJECTED when JSON parse fails."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     # Return invalid JSON so the except branch fires
     state = cast(
         AnalystState,
@@ -860,7 +669,6 @@ async def test_check_post_node_approves_exhausted_retries_zero_min_score() -> (
     """Post node returns APPROVED: retries exhausted, min_score=0."""
     config = AnalystConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": True,
             "MAX_RETRIES": 1,
             "PLAN_MIN_SCORE": 0,
         }
@@ -898,7 +706,6 @@ async def test_check_post_node_raises_exhausted_retries_with_min_score() -> (
     """Post node raises McpError: retries exhausted, min_score > 0."""
     config = AnalystConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": True,
             "MAX_RETRIES": 1,
             "PLAN_MIN_SCORE": 7,
         }
@@ -933,7 +740,7 @@ async def test_check_post_node_returns_feedback_rejected_retries_remain() -> (
     None
 ):
     """Post node returns plain feedback: rejected, retries remain."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     critic_payload = json.dumps(
         {"decision": "REJECTED", "score": 4, "feedback": "add more steps"}
     )
@@ -959,7 +766,7 @@ async def test_check_post_node_returns_feedback_rejected_retries_remain() -> (
 
 async def test_tool_extract_post_node_parses_json_code_fence() -> None:
     """Post node extracts tool list from a ```json ... ``` fenced response."""
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     body = json.dumps({"tools": ["bwa", "samtools"]})
     fenced_content = f"```json\n{body}\n```"
     state = cast(
@@ -982,7 +789,7 @@ async def test_tool_extract_post_node_uses_default_on_empty_response() -> None:
     ``content`` stays as ``"{}"``; ``result["tools"]`` then raises
     ``KeyError`` — the expected behavior with no LLM output.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         AnalystState,
         {

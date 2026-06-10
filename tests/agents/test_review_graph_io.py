@@ -4,10 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """IO contract tests for DeepResearchAgent (review) subgraph.
 
-Pins the public ``DeepResearchInput`` / ``DeepResearchOutput``
-shape and confirms the compiled subgraph carries no conditional
-branches (review is a linear seven-node pipeline). Reflective for
-the schema parts; smoke for the topology.
+Pins the public ``DeepResearchInput`` / ``DeepResearchOutput`` shape
+and the full ``DeepResearchState`` legacy field set. Reflective for
+the schema parts.
 """
 
 from __future__ import annotations
@@ -16,15 +15,11 @@ from typing import get_type_hints
 
 import pytest
 
-from mcp_server_phytomni.agents.review import (
-    DeepResearchAgent,
-    DeepResearchState,
-)
+from mcp_server_phytomni.agents.review import DeepResearchState
 from mcp_server_phytomni.agents.review.state import (
     DeepResearchInput,
     DeepResearchOutput,
 )
-from mcp_server_phytomni.config.defaults import ReviewConfig
 
 pytestmark = pytest.mark.agent
 
@@ -89,28 +84,3 @@ def test_review_state_carries_full_legacy_field_set() -> None:
         "final_response",
     }
     assert set(get_type_hints(DeepResearchState).keys()) >= expected
-
-
-def test_review_subgraph_compiles_with_no_conditional_branches() -> None:
-    """DeepResearchAgent compiles into a linear seven-node pipeline.
-
-    Pins the absence of conditional routing: plan → retrieve →
-    draft → review → revise → summary → post_process is a single
-    edge chain. A future refactor adding branches surfaces here
-    before downstream consumers notice.
-    """
-    config = ReviewConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
-    )
-    agent = DeepResearchAgent(review_config=config)
-    assert set(agent.app.builder.branches.keys()) == set()
-    nodes = {n.id for n in agent.app.get_graph().nodes.values()}
-    assert {
-        "plan_node",
-        "retrieve_node",
-        "draft_node",
-        "review_node",
-        "revise_node",
-        "summary_node",
-        "post_process_node",
-    } <= nodes

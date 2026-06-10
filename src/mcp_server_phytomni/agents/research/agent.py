@@ -46,7 +46,7 @@ from ..analyst.agent import (
     ANALYST_SENSITIVE_FIELD_MAP,
     AnalystAgent,
 )
-from ..chat.service import _cached_chat_app, phyto_chat
+from ..chat.service import _cached_chat_app
 from ..shared.analysis import (
     AnalysisStateSpec,
     capture_analysis_result,
@@ -247,39 +247,17 @@ class InSilicoResearchAgents:
                 {"paper_text": user_query},
             )
 
-        if self.in_silico_config.USE_CHAT_SUBGRAPH:
-            chat_kwargs_bag = build_chat_kwargs_for(
-                self.in_silico_config,
-                self.sensitive_config,
-                response_format=_RESEARCH_GOALS_RESPONSE_FORMAT,
+        chat_kwargs_bag = build_chat_kwargs_for(
+            self.in_silico_config,
+            self.sensitive_config,
+            response_format=_RESEARCH_GOALS_RESPONSE_FORMAT,
+        )
+        chat_output = await _cached_chat_app().ainvoke(
+            build_chat_input(
+                user_query=user_query, chat_kwargs=chat_kwargs_bag
             )
-            chat_output = await _cached_chat_app().ainvoke(
-                build_chat_input(
-                    user_query=user_query, chat_kwargs=chat_kwargs_bag
-                )
-            )
-            phyto_response = extract_chat_response(chat_output)
-        else:
-            phyto_response = await phyto_chat(
-                user_query=user_query,
-                prompt_file=self.in_silico_config.PROMPT_FILE,
-                prompt_path=self.in_silico_config.PROMPT_PATH,
-                api_key=self.sensitive_config.API_KEY.get_secret_value(),
-                base_url=self.sensitive_config.BASE_URL,
-                model=self.sensitive_config.MODEL_ID,
-                frequency_penalty=self.in_silico_config.FREQUENCY_PENALTY,
-                n=self.in_silico_config.N,
-                presence_penalty=self.in_silico_config.PRESENCE_PENALTY,
-                reasoning_effort=self.in_silico_config.REASONING_EFFORT,
-                response_format=_RESEARCH_GOALS_RESPONSE_FORMAT,
-                stream=self.in_silico_config.STREAM,
-                temperature=self.in_silico_config.TEMPERATURE,
-                top_p=self.in_silico_config.TOP_P,
-                user=self.in_silico_config.USER,
-                timeout=self.in_silico_config.TIMEOUT,
-                retriable_codes=self.in_silico_config.RETRIABLE_CODES,
-                max_retries=self.in_silico_config.MAX_RETRIES,
-            )
+        )
+        phyto_response = extract_chat_response(chat_output)
         if not phyto_response:
             return []
         return loads(phyto_response["choices"][0]["message"]["content"])

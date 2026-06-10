@@ -28,7 +28,7 @@ from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
-from ..chat.service import _cached_chat_app, phyto_chat
+from ..chat.service import _cached_chat_app
 from .formatting import SPECIES_CODE_MAP
 
 if TYPE_CHECKING:
@@ -305,36 +305,29 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
     async def _dispatch_chat(
         self: Any, user_query: str
     ) -> dict[str, Any] | None:
-        """Dispatch one chat call via either phyto_chat or the chat subgraph.
+        """Dispatch one chat call via the shared chat subgraph.
 
         Owns the chat-call seam shared by every report node body
         (experiment / protocol / discussion / summary / follow_up).
-        When ``USE_CHAT_SUBGRAPH=False`` (the production default until
-        the global flag flip), routes through the legacy
-        ``phyto_chat`` helper. When True, invokes the cached chat
-        compiled app with the shared ``chat_adapters`` IO mappers,
-        keeping the response in the historical chat-completion
-        envelope so callers stay agnostic to the dispatch route.
+        Invokes the cached chat compiled app with the shared
+        ``chat_adapters`` IO mappers, keeping the response in the
+        historical chat-completion envelope so callers stay agnostic
+        to the dispatch route.
 
         Args:
             user_query: Prompt body to send to the chat backend.
 
         Returns:
-            Chat completion dict matching the historical phyto_chat
+            Chat completion dict matching the historical chat-completion
             return shape (``{"choices": [...]}``).
         """
         chat_kwargs_bag = self._chat_kwargs()
-        if self.deep_genome_config.USE_CHAT_SUBGRAPH:
-            chat_output = await _cached_chat_app().ainvoke(
-                build_chat_input(
-                    user_query=user_query, chat_kwargs=chat_kwargs_bag
-                )
+        chat_output = await _cached_chat_app().ainvoke(
+            build_chat_input(
+                user_query=user_query, chat_kwargs=chat_kwargs_bag
             )
-            return extract_chat_response(chat_output)
-        return await phyto_chat(
-            user_query=user_query,
-            **chat_kwargs_bag,
         )
+        return extract_chat_response(chat_output)
 
     async def _run_report_synthesizer(self: Any, state: DeepGenomeState):
         """Generate the report after all analysis branches finish."""

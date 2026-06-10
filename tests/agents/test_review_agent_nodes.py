@@ -5,30 +5,23 @@
 """Unit tests for the DeepResearchAgent class methods on agent.py.
 
 Direct tests for ``_chat`` (LLM kwarg threading + response_format
-override branch) and ``draft_node`` (per-dimension parallel chat fan-out
-with BaseException fallback). The mixin nodes (plan/retrieve/review/
+override branch). The per-dimension draft fan-out (``draft_dispatch`` →
+``draft_worker_node`` → ``draft_reduce_node``) is covered by
+test_review_draft_fan_out; the mixin nodes (plan/retrieve/review/
 revise/summary/post_process) are covered by their per-mixin test files;
 the wrapper review_agent_function is covered by test_wrapper_smoke.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Union, cast
+from typing import Any, Dict, Union
 
 import pytest
 
 from mcp_server_phytomni.agents.review import agent as review_agent
-from mcp_server_phytomni.agents.review.agent import (
-    DeepResearchAgent,
-    DeepResearchState,
-)
+from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 
 pytestmark = pytest.mark.agent
-
-
-def _agent() -> DeepResearchAgent:
-    """Build a DeepResearchAgent with conftest-injected dummy credentials."""
-    return DeepResearchAgent()
 
 
 class _AgentProbe(DeepResearchAgent):
@@ -108,119 +101,3 @@ async def test_chat_uses_response_format_override_when_provided(
     await _AgentProbe().chat("hi", response_format_override=schema_override)
 
     assert captured["response_format"] == schema_override
-
-
-async def test_draft_node_runs_one_chat_per_dimension(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """draft_node fans out to _chat per dimension and packs draft_contents.
-
-    Stubs the agent's own ``_chat`` so the test exercises ``draft_node``
-    in isolation from the LLM kwarg threading already pinned above.
-    Also stubs ``get_prompt`` so the prompt path is observable without
-    the real ``.prompts.yaml`` resolver.
-    """
-    agent = _agent()
-    prompt_paths: list[str] = []
-    chat_prompts: list[str] = []
-
-    def fake_get_prompt(
-        _prompt_file: str, prompt_path: str, params: Dict[str, Any]
-    ) -> str:
-        prompt_paths.append(prompt_path)
-        return f"PROMPT::{params['subtopic']}::{params['knowledge']}"
-
-    async def fake_chat(
-        prompt: str, response_format_override: Any = None
-    ) -> Dict[str, Any]:
-        del response_format_override
-        chat_prompts.append(prompt)
-        return {
-            "choices": [{"message": {"content": f"draft#{len(chat_prompts)}"}}]
-        }
-
-    monkeypatch.setattr(review_agent, "get_prompt", fake_get_prompt)
-    monkeypatch.setattr(agent, "_chat", fake_chat)
-
-    state: Dict[str, Any] = {
-        "dimension_params": [
-            {"subtopic": "Genetics", "knowledge": "k1"},
-            {"subtopic": "Physiology", "knowledge": "k2"},
-            {"subtopic": "Breeding", "knowledge": "k3"},
-        ],
-    }
-
-    result = await agent.draft_node(cast(DeepResearchState, state))
-
-    assert result == {
-        "draft_contents": ["draft#1", "draft#2", "draft#3"],
-    }
-    assert prompt_paths == [
-        "user/deep_research_dimension",
-        "user/deep_research_dimension",
-        "user/deep_research_dimension",
-    ]
-    assert chat_prompts == [
-        "PROMPT::Genetics::k1",
-        "PROMPT::Physiology::k2",
-        "PROMPT::Breeding::k3",
-    ]
-
-
-async def test_draft_node_substitutes_empty_string_on_chat_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A per-dimension chat exception yields an empty draft slot, not a raise.
-
-    Pins the ``return_exceptions=True`` + ``isinstance(result, BaseException)``
-    -> '' fallback path. Without this the gather raise would propagate
-    and bring down the whole review run on a single transient hiccup.
-    """
-    agent = _agent()
-    call_index = {"n": 0}
-
-    async def fake_chat(prompt: str, response_format_override: Any = None):
-        del prompt, response_format_override
-        call_index["n"] += 1
-        if call_index["n"] == 2:
-            raise RuntimeError("transient backend hiccup")
-        return {
-            "choices": [{"message": {"content": f"draft#{call_index['n']}"}}]
-        }
-
-    monkeypatch.setattr(review_agent, "get_prompt", lambda *_a, **_k: "PROMPT")
-    monkeypatch.setattr(agent, "_chat", fake_chat)
-
-    state: Dict[str, Any] = {
-        "dimension_params": [
-            {"subtopic": "A", "knowledge": "kA"},
-            {"subtopic": "B", "knowledge": "kB"},
-            {"subtopic": "C", "knowledge": "kC"},
-        ],
-    }
-
-    result = await agent.draft_node(cast(DeepResearchState, state))
-
-    assert result == {"draft_contents": ["draft#1", "", "draft#3"]}
-
-
-async def test_draft_node_returns_empty_list_when_no_dimensions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Zero dimensions yields an empty draft list with no chat calls."""
-    agent = _agent()
-    chat_calls: list[str] = []
-
-    async def fake_chat(prompt: str, response_format_override: Any = None):
-        del response_format_override
-        chat_calls.append(prompt)
-        return {}
-
-    monkeypatch.setattr(agent, "_chat", fake_chat)
-
-    result = await agent.draft_node(
-        cast(DeepResearchState, {"dimension_params": []})
-    )
-
-    assert result == {"draft_contents": []}
-    assert not chat_calls

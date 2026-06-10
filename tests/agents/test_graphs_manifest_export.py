@@ -267,27 +267,33 @@ def test_export_real_data_subgraph_node_set() -> None:
 
 
 def test_export_real_analyst_subgraph_node_set() -> None:
-    """Real AnalystAgent export matches the documented nine-node graph.
+    """Real AnalystAgent export covers the chat-subgraph node set.
 
-    Pins the analyst subgraph's legacy single-node manifest shape
-    so the docs section in ``docs/agent-graphs.md`` and the
-    compiled graph stay in sync. Pinned against the explicit
-    flag-off config because the default flipped to True (which
-    wires the chat / knowledge structural mounts that rename
-    several of the legacy nodes).
+    Pins the analyst subgraph's structural chat-mount shape so the
+    docs section in ``docs/agent-graphs.md`` and the compiled graph
+    stay in sync. ``USE_KNOWLEDGE_SUBGRAPH=False`` keeps the single
+    ``method_retrieve_node`` so this set isolates the chat split:
+    each chat site becomes a prep + post pair around the shared
+    ``chat`` node.
     """
     config = AnalystConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+        update={"USE_KNOWLEDGE_SUBGRAPH": False}
     )
     manifest = export_manifest(AnalystAgent(analyst_config=config).app)
     names = {node.name for node in manifest.nodes}
     documented = {
-        "parse_query_node",
-        "data_select_node",
+        "parse_query_prep_node",
+        "parse_query_post_node",
+        "data_select_prep_node",
+        "data_select_post_node",
         "method_retrieve_node",
-        "plan_node",
-        "check_node",
-        "tool_extract_node",
+        "plan_prep_node",
+        "plan_post_node",
+        "check_prep_node",
+        "check_post_node",
+        "tool_extract_prep_node",
+        "tool_extract_post_node",
+        "chat",
         "tool_retrieve_node",
         "submit_node",
         "pooling_node",

@@ -2,11 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Flag-branch tests for target_taxids' chat-subgraph dispatch.
+"""Chat-subgraph dispatch tests for ``target_taxids``.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy ``phyto_chat``
-call; flag-on routes through ``_cached_chat_app().ainvoke`` with the
-shared ``chat_adapters`` IO mappers.
+``target_taxids`` routes its taxonomy-extraction chat call through the
+compiled chat subgraph (``_cached_chat_app().ainvoke``) with the shared
+``chat_adapters`` IO mappers; these tests pin that the parsed
+``target_spa_list`` response drives the returned sentinel.
 """
 
 from __future__ import annotations
@@ -28,41 +29,13 @@ def _content(text: str) -> dict[str, object]:
     return {"choices": [{"message": {"content": text}}]}
 
 
-async def test_target_taxids_uses_legacy_when_flag_off(
+async def test_target_taxids_routes_through_chat_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default flag-off path awaits the legacy ``phyto_chat`` directly."""
-    monkeypatch.setattr(
-        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", False
-    )
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
+    """The chat extraction delegates to the compiled chat subgraph."""
+    _legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
         monkeypatch,
         _EVO_MODULE,
-        legacy_response=_content('{"target_spa_list": ["All"]}'),
-        subgraph_response={"choices": [{"message": {"content": ""}}]},
-    )
-    monkeypatch.setattr(
-        evolution_agent, "get_prompt", lambda *_a, **_kw: "prompt-stub"
-    )
-
-    result = await target_taxids("Find Arabidopsis homologs", {})
-
-    assert result == "All"
-    legacy_mock.assert_awaited_once()
-    subgraph_app_mock.ainvoke.assert_not_awaited()
-
-
-async def test_target_taxids_uses_subgraph_when_flag_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag-on path delegates to the compiled chat subgraph."""
-    monkeypatch.setattr(
-        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", True
-    )
-    legacy_mock, subgraph_app_mock = install_chat_branch_mocks(
-        monkeypatch,
-        _EVO_MODULE,
-        legacy_response=_content('{"target_spa_list": ["wrong"]}'),
         subgraph_response={
             "response": _content('{"target_spa_list": ["All"]}')
         },
@@ -75,4 +48,3 @@ async def test_target_taxids_uses_subgraph_when_flag_on(
 
     assert result == "All"
     subgraph_app_mock.ainvoke.assert_awaited_once()
-    legacy_mock.assert_not_awaited()

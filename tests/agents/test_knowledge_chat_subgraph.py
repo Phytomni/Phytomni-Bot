@@ -2,13 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``KnowledgeAgent`` chat invocations.
+"""Tests for ``KnowledgeAgent`` chat-subgraph invocations.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy single-node
-form where ``generate_node`` / ``follow_up_node`` call ``phyto_chat``
-directly; flag-on routes through prep + post pairs surrounding a
-single shared chat node registered via ``add_node`` from the
-``agents/shared/chat_subgraph`` factory.
+The ``generate`` and ``follow_up`` chat calls route through prep +
+post pairs surrounding a single shared chat node registered via
+``add_node`` from the ``agents/shared/chat_subgraph`` factory.
 """
 
 from __future__ import annotations
@@ -37,19 +35,14 @@ _CHAT_COMPLETION_RESPONSE = {
 }
 
 
-def _build_agent(use_subgraph: bool) -> KnowledgeAgent:
-    """Construct a ``KnowledgeAgent`` with ``USE_CHAT_SUBGRAPH`` set.
+def _build_agent() -> KnowledgeAgent:
+    """Construct a ``KnowledgeAgent`` for the chat-subgraph path.
 
-    Uses ``model_copy`` to flip the flag on the inherited
-    ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment, mirroring the
-    ``build_branch_agent`` shape used by the analyst-subgraph tests.
+    Mirrors the ``build_branch_agent`` shape used by the
+    analyst-subgraph tests; the chat subgraph is always mounted.
     """
-    config = KnowledgeConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": use_subgraph}
-    )
     return KnowledgeAgent(
-        knowledge_config=config,
+        knowledge_config=KnowledgeConfig(),
         sensitive_config=SensitiveConfig.load(),
     )
 
@@ -111,7 +104,7 @@ async def test_generate_prep_node_builds_chat_payload_and_pending_post() -> (
     ``pending_post`` sentinel the after-chat router reads to branch
     back to ``generate_post_node``. No chat call happens here.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     result = await agent.generate_prep_node(_minimal_generate_state())
 
     assert result["pending_post"] == "generate_post_node"
@@ -134,7 +127,7 @@ async def test_generate_post_node_merges_doc_list_into_chat_response() -> None:
     follow-up node can read ``main_response`` and a terminal seam
     can read ``final_response``.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         KnowledgeState,
         {
@@ -161,7 +154,7 @@ async def test_follow_up_prep_node_builds_chat_payload_and_pending_post() -> (
     so the after-chat router returns to the follow-up parser instead
     of the generate post node.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     result = await agent.follow_up_prep_node(_minimal_follow_up_state())
 
     assert result["pending_post"] == "follow_up_post_node"
@@ -184,7 +177,7 @@ async def test_follow_up_post_node_parses_and_merges_follow_up_questions() -> (
     top-level ``follow_up_questions`` delta and the in-place mutated
     primary-message dict so downstream readers see a consistent view.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     primary_response = {
         "choices": [{"message": {"content": "primary answer body"}}]
     }
@@ -247,7 +240,7 @@ async def test_compiled_graph_flag_on_routes_through_shared_chat(
     # original ``_build_graph`` call captures the stub instead of
     # the real backend-hitting bound method.
     monkeypatch.setattr(KnowledgeAgent, "retrieve_node", fake_retrieve_node)
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     initial_input = cast(
         KnowledgeInput,
         {
@@ -287,6 +280,6 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     hid the subgraph behind another closure and the render reverted
     to an opaque box.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)

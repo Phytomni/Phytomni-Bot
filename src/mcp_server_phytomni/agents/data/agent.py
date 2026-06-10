@@ -186,8 +186,8 @@ class DataAgent:
         around a per-instance compiled ``knowledge`` node. The chat
         post node reads ``chat_response``; the knowledge post node
         reads ``knowledge_response`` selected by a router on
-        ``pending_post_knowledge``. The legacy single-node forms
-        retired when ``USE_CHAT_SUBGRAPH`` default flipped to True.
+        ``pending_post_knowledge``. The chat site is always mounted as
+        the prep + post pair around the shared chat node.
         """
         workflow = StateGraph(
             state_schema=DataState,

@@ -12,7 +12,9 @@ returns no response and the wrapper short-circuits.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -36,25 +38,18 @@ async def test_evo_test_analysis_with_all_species_submits_task(
     """
     captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
-        """Return a chat response whose target list is the All sentinel.
-
-        Args:
-            **kwargs: phyto_chat keyword arguments captured for inspection.
-
-        Returns:
-            Fake chat completion encoding target_spa_list=["All"].
-        """
-        captured["chat"] = kwargs
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": '{"target_spa_list": ["All"]}',
-                    }
+    chat_completion = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"target_spa_list": ["All"]}',
                 }
-            ]
-        }
+            }
+        ]
+    }
+    fake_chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(return_value={"response": chat_completion})
+    )
 
     def fake_get_prompt(
         prompt_file: str,
@@ -128,17 +123,17 @@ async def test_evo_test_analysis_with_all_species_submits_task(
         captured["submit"] = kwargs
         return {"task_id": "evo-task-456"}
 
-    # Pin the legacy paths the rest of this test mocks: with both
-    # default-True flags the wrapper would route through the chat
-    # subgraph + ``submit_analyst_via_subgraph`` and skip the
-    # ``phyto_chat`` / ``submit`` mocks installed below.
-    monkeypatch.setattr(
-        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", False
-    )
+    # The taxonomy-extraction chat call always routes through the
+    # compiled chat subgraph, so stub ``_cached_chat_app().ainvoke``.
+    # Pin the legacy analyst-submit path (``USE_ANALYST_SUBGRAPH=False``)
+    # the rest of this test mocks: the flag-on branch would route through
+    # ``submit_analyst_via_subgraph`` and skip the ``submit`` mock below.
     monkeypatch.setattr(
         evolution_agent.DEEP_GENOME_CONFIG, "USE_ANALYST_SUBGRAPH", False
     )
-    monkeypatch.setattr(evolution_agent, "phyto_chat", fake_phyto_chat)
+    monkeypatch.setattr(
+        evolution_agent, "_cached_chat_app", lambda: fake_chat_app
+    )
     monkeypatch.setattr(evolution_agent, "get_prompt", fake_get_prompt)
     monkeypatch.setattr(evolution_agent, "get_data_list", fake_get_data_list)
     monkeypatch.setattr(
@@ -177,7 +172,7 @@ async def test_evo_test_analysis_with_all_species_submits_task(
 async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify evo_test_analysis short-circuits when phyto_chat returns None.
+    """Verify evo_test_analysis short-circuits when the chat returns None.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace the chat
@@ -187,17 +182,9 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
         None after the early-return assertion passes.
     """
 
-    async def fake_phyto_chat(**kwargs: Any) -> None:
-        """Return None to trigger the _target_taxids early-return path.
-
-        Args:
-            **kwargs: phyto_chat keyword arguments captured for inspection.
-
-        Returns:
-            None, simulating a failed or skipped chat completion.
-        """
-        assert "user_query" in kwargs
-        return None
+    fake_chat_app = SimpleNamespace(
+        ainvoke=AsyncMock(return_value={"response": None})
+    )
 
     def fake_get_prompt(
         prompt_file: str,
@@ -219,9 +206,8 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
         return f"prompt:{prompt_path}"
 
     monkeypatch.setattr(
-        evolution_agent.DEEP_GENOME_CONFIG, "USE_CHAT_SUBGRAPH", False
+        evolution_agent, "_cached_chat_app", lambda: fake_chat_app
     )
-    monkeypatch.setattr(evolution_agent, "phyto_chat", fake_phyto_chat)
     monkeypatch.setattr(evolution_agent, "get_prompt", fake_get_prompt)
 
     result = await evolution_agent.evo_test_analysis(
@@ -231,6 +217,8 @@ async def test_evo_test_analysis_returns_none_task_when_chat_returns_none(
     )
 
     assert result == {"evolution_agents_task": None}
+    chat_input = fake_chat_app.ainvoke.await_args.args[0]
+    assert "user_query" in chat_input
 
 
 async def test_find_spa_taxids_uses_async_httpx_factory(

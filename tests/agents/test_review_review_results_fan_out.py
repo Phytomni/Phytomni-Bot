@@ -2,13 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for the ``DeepResearchAgent`` review_results fan-out.
+"""Tests for the ``DeepResearchAgent`` review_results fan-out.
 
-Flag-off keeps the legacy ``review_node`` gather; flag-on routes through
-``review_results_dispatch`` → N × ``review_results_worker_node`` →
-``review_results_reduce_node`` whose workers await ``CHAT_APP`` so xray
-expands the chat subgraph under each worker. Also covers partial failure
-with the empty-JSON sentinel, reduce ordering, and xray expansion.
+The review_results site routes through ``review_results_dispatch`` →
+N × ``review_results_worker_node`` → ``review_results_reduce_node``
+whose workers await ``CHAT_APP`` so xray expands the chat subgraph under
+each worker. Also covers partial failure with the empty-JSON sentinel,
+reduce ordering, and xray expansion.
 """
 
 # pylint: disable=protected-access
@@ -31,16 +31,13 @@ pytestmark = pytest.mark.agent
 _AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
 
-def _build_agent(
-    use_chat_subgraph: bool,
-) -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` with the chat-subgraph flag set."""
+def _build_agent() -> DeepResearchAgent:
+    """Construct a ``DeepResearchAgent`` for the review_results fan-out."""
     config = ReviewConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
             # Pin USE_KNOWLEDGE_SUBGRAPH False so the retrieve site keeps
             # its legacy ``retrieve_node`` and the test focuses on the
-            # review_results fan-out wiring under ``USE_CHAT_SUBGRAPH``.
+            # review_results fan-out wiring.
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )
@@ -56,28 +53,13 @@ def _ok_chat_response(text: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: ``review_node`` still gathers via ``self._chat``.
-# ---------------------------------------------------------------------------
-
-
-def test_review_results_node_flag_off_graph_keeps_legacy_node() -> None:
-    """Flag-off compiled graph has ``review_node`` and no Send triad."""
-    agent = _build_agent(use_chat_subgraph=False)
-    node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
-    assert "review_node" in node_keys
-    assert "review_results_dispatch" not in node_keys
-    assert "review_results_worker_node" not in node_keys
-    assert "review_results_reduce_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
-# Flag-on prepare node returns empty delta.
+# Prepare node returns empty delta.
 # ---------------------------------------------------------------------------
 
 
 async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
     """``review_results_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -96,7 +78,7 @@ async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_review_results_tasks_returns_n_sends() -> None:
     """``route_review_results_tasks`` returns one Send per draft entry."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
     drafts = ["draft-A", "draft-B", "draft-C"]
     state = cast(
@@ -139,7 +121,7 @@ async def test_review_results_worker_node_success_writes_indexed_result(
         )
     )
     monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -177,7 +159,7 @@ async def test_review_results_worker_exception_writes_sentinel_and_failure(
         ainvoke=AsyncMock(side_effect=RuntimeError("chat timeout"))
     )
     monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -213,7 +195,7 @@ async def test_review_results_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``review_contents`` ordering regardless of the
     order concurrent workers completed.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     # Supply results out-of-order (task 1 arrives before task 0).
     state = cast(
         DeepResearchState,
@@ -239,7 +221,7 @@ async def test_review_results_reduce_keeps_partial_failure_sentinel() -> None:
     sentinel slot must travel through reduce without being skipped or
     rewritten.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -260,36 +242,12 @@ async def test_review_results_reduce_keeps_partial_failure_sentinel() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Flag-branch: ``_chat_app`` lifecycle parity check (mirror of draft sibling).
-# ---------------------------------------------------------------------------
-
-
-def test_chat_app_built_only_when_flag_on() -> None:
-    """The compiled chat fan-out exists only under ``USE_CHAT_SUBGRAPH``.
-
-    The agent does not stash the chat subgraph on ``self``; instead the
-    module-level :data:`CHAT_APP` is wired into each worker. Pin the
-    flag-on / flag-off graph shapes so a regression that loses the
-    Send triad surfaces here rather than only at runtime.
-    """
-    agent_off = _build_agent(use_chat_subgraph=False)
-    off_keys = set(agent_off.app.get_graph(xray=True).nodes.keys())
-    assert "review_node" in off_keys
-    assert "review_results_dispatch" not in off_keys
-
-    agent_on = _build_agent(use_chat_subgraph=True)
-    on_keys = set(agent_on.app.get_graph(xray=True).nodes.keys())
-    assert "review_results_dispatch" in on_keys
-    assert "review_node" not in on_keys
-
-
-# ---------------------------------------------------------------------------
-# Structural: flag-on graph has Send triad with xray-expanded worker key.
+# Structural: compiled graph has Send triad with xray-expanded worker key.
 # ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_flag_on_has_review_results_send_triad() -> None:
-    """Flag-on graph has ``review_results_dispatch`` and reduce nodes.
+    """Compiled graph has ``review_results_dispatch`` and reduce nodes.
 
     ``review_results_worker_node`` awaits the module-level ``CHAT_APP``
     (a ``CompiledStateGraph``), so LangGraph's xray render REPLACES the
@@ -298,7 +256,7 @@ def test_compiled_graph_flag_on_has_review_results_send_triad() -> None:
     NOT discover the chat subgraph; the prefixed form is the success
     signal.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "review_results_dispatch" in node_keys
     assert any(
@@ -327,7 +285,7 @@ def test_compiled_graph_xray_expands_chat_under_review_results_worker() -> (
     own name).  The presence of any ``review_results_worker_node:``
     prefixed key is the xray success signal.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("review_results_worker_node:") for key in node_keys

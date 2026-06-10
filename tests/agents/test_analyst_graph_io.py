@@ -104,9 +104,8 @@ def test_analyst_state_carries_full_field_union() -> None:
     The ``error_detail`` field is additive and surfaces only on the
     ``failure_state`` path. The three ``chat_payload`` /
     ``chat_response`` / ``pending_post`` keys are additive too and
-    used only when ``USE_CHAT_SUBGRAPH`` routes through the prep +
-    post split surrounding the shared chat node. The three
-    ``knowledge_payload`` / ``knowledge_response`` /
+    used by the prep + post split surrounding the shared chat node.
+    The three ``knowledge_payload`` / ``knowledge_response`` /
     ``pending_post_knowledge`` keys mirror that pair for the
     ``USE_KNOWLEDGE_SUBGRAPH`` wire surrounding the shared knowledge
     node.
@@ -153,28 +152,32 @@ def test_analyst_agents_state_is_analyst_state_alias() -> None:
     assert AnalystAgentsState is AnalystState
 
 
-def test_analyst_subgraph_exposes_five_conditional_sources() -> None:
-    """Compiled analyst graph records all five conditional routers.
+def test_analyst_subgraph_exposes_conditional_sources() -> None:
+    """Compiled analyst graph records every conditional router.
 
-    Pins the post-IO-schema topology: ``parse_query_node``,
-    ``data_select_node``, ``check_node``, ``submit_node``, and
-    ``pooling_node`` each register an ``add_conditional_edges``
-    branch. Reaching this assertion also proves the 3-schema
-    ``StateGraph`` form compiled — a mismatched ``input_schema`` /
-    ``output_schema`` would raise during ``AnalystAgent()`` before
-    ``branches`` could be inspected. A future refactor that
-    collapses one of these branches surfaces here before manifest
-    export.
+    Pins the chat-subgraph topology (``USE_KNOWLEDGE_SUBGRAPH=False``):
+    ``parse_query_prep_node`` / ``chat`` / ``parse_query_post_node`` /
+    ``data_select_post_node`` / ``check_prep_node`` /
+    ``check_post_node`` / ``submit_node`` / ``pooling_node`` each
+    register an ``add_conditional_edges`` branch. Reaching this
+    assertion also proves the 3-schema ``StateGraph`` form compiled —
+    a mismatched ``input_schema`` / ``output_schema`` would raise
+    during ``AnalystAgent()`` before ``branches`` could be inspected.
+    A future refactor that collapses one of these branches surfaces
+    here before manifest export.
     """
     config = AnalystConfig().model_copy(
-        update={"USE_CHAT_SUBGRAPH": False, "USE_KNOWLEDGE_SUBGRAPH": False}
+        update={"USE_KNOWLEDGE_SUBGRAPH": False}
     )
     agent = AnalystAgent(analyst_config=config)
     branches = set(agent.app.builder.branches.keys())
     assert branches == {
-        "parse_query_node",
-        "data_select_node",
-        "check_node",
+        "parse_query_prep_node",
+        "chat",
+        "parse_query_post_node",
+        "data_select_post_node",
+        "check_prep_node",
+        "check_post_node",
         "submit_node",
         "pooling_node",
     }

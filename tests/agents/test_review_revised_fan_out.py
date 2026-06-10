@@ -2,14 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for the ``DeepResearchAgent`` revised fan-out.
+"""Tests for the ``DeepResearchAgent`` revised fan-out.
 
-Flag-off keeps the legacy ``revise_node`` gather; flag-on routes through
-``revised_dispatch`` → N × ``revised_worker_node`` →
-``revised_reduce_node`` whose workers call ``self._feedback_rag``.
-Also covers the original-draft fallback when a worker writes the empty
-sentinel, the dual mirror-write of ``revised_contents`` and
-``revised_reports``, reduce ordering, and xray expansion.
+The revised site routes through ``revised_dispatch`` →
+N × ``revised_worker_node`` → ``revised_reduce_node`` whose workers call
+``self._feedback_rag``. Also covers the original-draft fallback when a
+worker writes the empty sentinel, the dual mirror-write of
+``revised_contents`` and ``revised_reports``, reduce ordering, and xray
+expansion.
 """
 
 # pylint: disable=protected-access
@@ -30,16 +30,13 @@ from mcp_server_phytomni.config.settings import SensitiveConfig
 pytestmark = pytest.mark.agent
 
 
-def _build_agent(
-    use_chat_subgraph: bool,
-) -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` with the chat-subgraph flag set."""
+def _build_agent() -> DeepResearchAgent:
+    """Construct a ``DeepResearchAgent`` for the revised fan-out."""
     config = ReviewConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
             # Pin USE_KNOWLEDGE_SUBGRAPH False so the retrieve site keeps
             # its legacy ``retrieve_node`` and the test focuses on the
-            # revised fan-out wiring under ``USE_CHAT_SUBGRAPH``.
+            # revised fan-out wiring.
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )
@@ -50,28 +47,13 @@ def _build_agent(
 
 
 # ---------------------------------------------------------------------------
-# Flag-off legacy: ``revise_node`` still gathers via ``_feedback_rag``.
-# ---------------------------------------------------------------------------
-
-
-def test_revised_node_flag_off_graph_keeps_legacy_node() -> None:
-    """Flag-off compiled graph has ``revise_node`` and no Send triad."""
-    agent = _build_agent(use_chat_subgraph=False)
-    node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
-    assert "revise_node" in node_keys
-    assert "revised_dispatch" not in node_keys
-    assert "revised_worker_node" not in node_keys
-    assert "revised_reduce_node" not in node_keys
-
-
-# ---------------------------------------------------------------------------
 # Flag-on prepare node returns empty delta.
 # ---------------------------------------------------------------------------
 
 
 async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
     """``revised_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -92,7 +74,7 @@ async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_revised_tasks_returns_n_sends() -> None:
     """``route_revised_tasks`` returns one Send per dimension entry."""
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
     drafts = ["draft-A", "draft-B", "draft-C"]
     reviews = ["{}", '{"has_critical_gaps": true}', "{}"]
@@ -145,7 +127,7 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
         }
     )
     monkeypatch.setattr(DeepResearchAgent, "_feedback_rag", fake_feedback_rag)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -191,7 +173,7 @@ async def test_revised_worker_node_exception_writes_sentinel_and_failure(
         side_effect=RuntimeError("supplementary retrieval timeout")
     )
     monkeypatch.setattr(DeepResearchAgent, "_feedback_rag", fake_feedback_rag)
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -229,7 +211,7 @@ async def test_revised_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``revised_contents`` and ``revised_reports``
     ordering regardless of the order concurrent workers completed.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     # Supply results out-of-order (task 2 arrives first).
     state = cast(
         DeepResearchState,
@@ -263,7 +245,7 @@ async def test_revised_reduce_node_falls_back_to_original_draft_on_empty() -> (
     lines 159-165: a failed dimension surfaces its prior draft so the
     summary node still sees a non-empty subsection for that slot.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -302,7 +284,7 @@ async def test_revised_reduce_node_mirror_writes_revised_reports() -> None:
     the new reduce node must keep emitting both ``subtopic`` and
     ``revised_report`` per dimension entry.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DeepResearchState,
         {
@@ -328,36 +310,12 @@ async def test_revised_reduce_node_mirror_writes_revised_reports() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Flag-branch: chat-subgraph lifecycle parity check.
-# ---------------------------------------------------------------------------
-
-
-def test_chat_app_built_only_when_flag_on() -> None:
-    """The compiled chat fan-out exists only under ``USE_CHAT_SUBGRAPH``.
-
-    The agent does not stash the chat subgraph on ``self``; instead the
-    module-level :data:`CHAT_APP` is wired into each worker. Pin the
-    flag-on / flag-off graph shapes so a regression that loses the
-    revised Send triad surfaces here rather than only at runtime.
-    """
-    agent_off = _build_agent(use_chat_subgraph=False)
-    off_keys = set(agent_off.app.get_graph(xray=True).nodes.keys())
-    assert "revise_node" in off_keys
-    assert "revised_dispatch" not in off_keys
-
-    agent_on = _build_agent(use_chat_subgraph=True)
-    on_keys = set(agent_on.app.get_graph(xray=True).nodes.keys())
-    assert "revised_dispatch" in on_keys
-    assert "revise_node" not in on_keys
-
-
-# ---------------------------------------------------------------------------
-# Structural: flag-on graph has Send triad with xray-expanded worker key.
+# Structural: compiled graph has Send triad with xray-expanded worker key.
 # ---------------------------------------------------------------------------
 
 
 def test_compiled_graph_flag_on_has_revised_send_triad() -> None:
-    """Flag-on graph has ``revised_dispatch`` and the reduce node.
+    """Compiled graph has ``revised_dispatch`` and the reduce node.
 
     The legacy ``revise_node`` body called ``self._feedback_rag``, which
     in turn awaits ``self._chat`` and ``self.ka.arun`` — no compiled
@@ -366,7 +324,7 @@ def test_compiled_graph_flag_on_has_revised_send_triad() -> None:
     and the flat worker key so a regression that loses either surfaces
     here.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "revised_dispatch" in node_keys
     assert "revised_worker_node" in node_keys
@@ -388,7 +346,7 @@ def test_compiled_graph_xray_expands_chat_under_revised_worker() -> None:
     worker continues to expose its xray-expanded chat subgraph so
     the broader render is unaffected by the revised triad insertion.
     """
-    agent = _build_agent(use_chat_subgraph=True)
+    agent = _build_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("review_results_worker_node:") for key in node_keys

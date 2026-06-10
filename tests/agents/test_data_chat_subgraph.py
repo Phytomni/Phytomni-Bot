@@ -2,12 +2,10 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Dual-path tests for ``DataAgent`` chat invocations.
+"""Tests for ``DataAgent`` chat invocations through the chat subgraph.
 
-Pins ``USE_CHAT_SUBGRAPH``: flag-off keeps the legacy single-node
-form where ``rewrite_node`` calls ``phyto_chat`` directly; flag-on
-routes through a prep + post pair surrounding a single shared chat
-node registered via ``add_node`` from the
+The rewrite chat site routes through a prep + post pair surrounding a
+single shared chat node registered via ``add_node`` from the
 ``agents/shared/chat_subgraph`` factory.
 """
 
@@ -38,20 +36,18 @@ _CHAT_COMPLETION_RESPONSE = {
 }
 
 
-def _build_agent(use_subgraph: bool) -> DataAgent:
-    """Construct a ``DataAgent`` with ``USE_CHAT_SUBGRAPH`` set.
+def _build_agent() -> DataAgent:
+    """Construct a ``DataAgent`` with the chat subgraph mounted.
 
-    Uses ``model_copy`` to flip the flag on the inherited
-    ``ServerConfig`` field without tripping pylint ``C0103`` on a
-    direct UPPERCASE attribute assignment, mirroring the
-    ``_build_agent`` shape used by the knowledge-subgraph tests.
-    Pins ``USE_KNOWLEDGE_SUBGRAPH=False`` so the test isolates the
-    chat-subgraph branch from the orthogonal knowledge-subgraph
-    structural mount the production default now wires.
+    Uses ``model_copy`` to set the inherited ``ServerConfig`` field
+    without tripping pylint ``C0103`` on a direct UPPERCASE attribute
+    assignment, mirroring the ``_build_agent`` shape used by the
+    knowledge-subgraph tests. Pins ``USE_KNOWLEDGE_SUBGRAPH=False`` so
+    the test isolates the chat-subgraph mount from the orthogonal
+    knowledge-subgraph structural mount the production default wires.
     """
     config = DataConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": use_subgraph,
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )
@@ -84,7 +80,7 @@ async def test_rewrite_prep_node_builds_chat_payload() -> None:
     needs no ``pending_post`` sentinel because the after-chat edge
     is unconditional.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     result = await agent.rewrite_prep_node(_minimal_rewrite_state())
 
     chat_payload = result["chat_payload"]
@@ -102,7 +98,7 @@ async def test_rewrite_post_node_extracts_rewrite_query() -> None:
     from ``state['chat_response']`` (written by the shared chat node)
     instead of awaiting a fresh ``phyto_chat`` call.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     state = cast(
         DataAgentState,
         {
@@ -124,7 +120,7 @@ async def test_rewrite_post_node_raises_on_empty_chat_response() -> None:
     same ``McpError`` the legacy ``rewrite_node`` raised so the
     failure mode stays observable across both graph shapes.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     empty_state = cast(DataAgentState, {})
     with pytest.raises(McpError):
         await agent.rewrite_post_node(empty_state)
@@ -134,10 +130,10 @@ async def test_rewrite_post_node_raises_on_empty_chat_response() -> None:
         await agent.rewrite_post_node(no_choices_state)
 
 
-async def test_compiled_graph_flag_on_routes_through_shared_chat(
+async def test_compiled_graph_routes_through_shared_chat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Compiled flag-on graph awaits the shared chat subgraph.
+    """Compiled graph awaits the shared chat subgraph.
 
     End-to-end exercise of the prep + chat + post split: the
     compiled graph routes the rewrite chat call through the single
@@ -183,7 +179,7 @@ async def test_compiled_graph_flag_on_routes_through_shared_chat(
     # the real backend-hitting bound methods.
     monkeypatch.setattr(DataAgent, "retrieve_node", fake_retrieve_node)
     monkeypatch.setattr(DataAgent, "search_node", fake_search_node)
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     initial_input = cast(
         DataInput,
         {
@@ -208,8 +204,8 @@ async def test_compiled_graph_flag_on_routes_through_shared_chat(
     }
 
 
-def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
-    """Flag-on graph exposes the shared chat subgraph to ``xray``.
+def test_compiled_graph_xray_expands_chat_subgraph() -> None:
+    """Compiled graph exposes the shared chat subgraph to ``xray``.
 
     Structural check: ``StateGraph.get_graph(xray=True)`` walks the
     compiled graph and inlines any node whose body closes over a
@@ -222,6 +218,6 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     hid the subgraph behind another closure and the render reverted
     to an opaque box.
     """
-    agent = _build_agent(use_subgraph=True)
+    agent = _build_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
     assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)

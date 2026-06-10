@@ -25,7 +25,7 @@ from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
-from ..chat.service import _cached_chat_app, phyto_chat
+from ..chat.service import _cached_chat_app
 from ..shared.analysis_storage import create_output_dir, get_data_list
 from ..shared.options import (
     SubmitKwargsSpec,
@@ -45,7 +45,6 @@ __all__ = [
     "get_data_list",
     "get_prompt",
     "load_text_file",
-    "phyto_chat",
     "region_vci_analysis",
     "submit",
 ]
@@ -88,16 +87,10 @@ async def environment_region_codes(
         {"json_dict": region_info, "query": query},
     )
     chat_kwargs_bag = environment_chat_kwargs(kwargs)
-    if ENVIRONMENT_CONFIG.USE_CHAT_SUBGRAPH:
-        chat_output = await _cached_chat_app().ainvoke(
-            build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
-        )
-        phyto_response = extract_chat_response(chat_output)
-    else:
-        phyto_response = await phyto_chat(
-            user_query=prompt,
-            **chat_kwargs_bag,
-        )
+    chat_output = await _cached_chat_app().ainvoke(
+        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
+    )
+    phyto_response = extract_chat_response(chat_output)
     if not phyto_response:
         return None
     content = phyto_response["choices"][0]["message"]["content"]

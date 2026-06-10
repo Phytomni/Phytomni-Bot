@@ -6,9 +6,8 @@
 
 Pins ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
 ``retrieve_node`` which calls ``ka.arun`` via ``asyncio.gather``;
-flag-on (behind ``USE_CHAT_SUBGRAPH=True``) routes through a
-Send-dispatch triad (``retrieve_dispatch`` → N ×
-``retrieve_worker_node`` → ``retrieve_reduce_node``). Also covers
+flag-on routes through a Send-dispatch triad (``retrieve_dispatch`` →
+N × ``retrieve_worker_node`` → ``retrieve_reduce_node``). Also covers
 partial failure, reduce ordering, and xray subgraph expansion.
 """
 
@@ -77,21 +76,18 @@ def _build_agent(
     use_knowledge_subgraph: bool,
     *,
     monkeypatch: pytest.MonkeyPatch | None = None,
-    use_chat_subgraph: bool = True,
 ) -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` with the specified flag combination.
+    """Construct a ``DeepResearchAgent`` with the specified flag.
 
-    ``USE_CHAT_SUBGRAPH=True`` is the prerequisite for
-    ``USE_KNOWLEDGE_SUBGRAPH`` to have any effect (the Send-based fan-out
-    only wires into ``_wire_chat_subgraph``). The default here mirrors
-    the intended production pairing.
+    The Send-based knowledge fan-out wires into ``_wire_chat_subgraph``,
+    so ``USE_KNOWLEDGE_SUBGRAPH`` toggles the retrieve site between the
+    legacy ``retrieve_node`` and the Send-dispatch triad.
     """
     if use_knowledge_subgraph and monkeypatch is not None:
         _install_fake_knowledge_app(monkeypatch)
     config = ReviewConfig().model_copy(
         update={
             "USE_KNOWLEDGE_SUBGRAPH": use_knowledge_subgraph,
-            "USE_CHAT_SUBGRAPH": use_chat_subgraph,
         }
     )
     return DeepResearchAgent(
@@ -316,7 +312,6 @@ def test_knowledge_app_built_only_when_flag_on(
         review_config=ReviewConfig().model_copy(
             update={
                 "USE_KNOWLEDGE_SUBGRAPH": True,
-                "USE_CHAT_SUBGRAPH": True,
             }
         ),
         sensitive_config=SensitiveConfig.load(),

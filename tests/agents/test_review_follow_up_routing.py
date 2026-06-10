@@ -30,15 +30,13 @@ pytestmark = pytest.mark.agent
 
 
 def _build_agent() -> DeepResearchAgent:
-    """Construct a flag-on ``DeepResearchAgent`` for prep-node assertions.
+    """Construct a ``DeepResearchAgent`` for prep-node assertions.
 
-    Forces ``USE_CHAT_SUBGRAPH=True`` so the prep / route helpers stage
-    a ``chat_payload`` carrying the explicit ``with_follow_up`` value
-    rather than running the legacy direct-``phyto_chat`` path.
+    The prep / route helpers stage a ``chat_payload`` carrying the
+    explicit ``with_follow_up`` value for the shared chat subgraph.
     """
     config = ReviewConfig().model_copy(
         update={
-            "USE_CHAT_SUBGRAPH": True,
             "USE_KNOWLEDGE_SUBGRAPH": False,
         }
     )

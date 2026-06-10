@@ -13,7 +13,6 @@ mixins live in their own modules; pipeline helpers live in
 pipeline.py-style siblings.
 """
 
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -151,15 +150,7 @@ class DeepResearchAgent(
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two shapes based on ``USE_CHAT_SUBGRAPH``:
-
-        Flag-off (default): preserves the legacy seven-node linear
-        pipeline (``plan_node`` → ``retrieve_node`` → ``draft_node`` →
-        ``review_node`` → ``revise_node`` → ``summary_node`` →
-        ``post_process_node`` → END). Each node calls ``self._chat``
-        directly via the inherited ``_chat`` helper.
-
-        Flag-on: replaces the three single-shot chat sites
+        Replaces the three single-shot chat sites
         (``plan_query`` / ``summary`` / ``follow_up``) with prep + post
         pairs surrounding a single shared ``chat`` node registered via
         :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper`,
@@ -190,41 +181,9 @@ class DeepResearchAgent(
             output_schema=DeepResearchOutput,
         )
 
-        if self.review_config.USE_CHAT_SUBGRAPH:
-            self._wire_chat_subgraph(workflow)
-        else:
-            self._wire_legacy(workflow)
+        self._wire_chat_subgraph(workflow)
 
         return workflow.compile(checkpointer=self.checkpointer)
-
-    def _wire_legacy(self, workflow: StateGraph) -> None:
-        """Register the legacy seven-node linear pipeline on ``workflow``.
-
-        Preserves the flag-off behavior exactly as it existed before
-        the ``USE_CHAT_SUBGRAPH`` dual-path split. Each single-shot
-        chat site calls ``self._chat`` directly through the inherited
-        helper.
-
-        Args:
-            workflow: Uncompiled ``StateGraph`` to register nodes and
-                edges on.
-        """
-        workflow.add_node("plan_node", self.plan_node)
-        workflow.add_node("retrieve_node", self.retrieve_node)
-        workflow.add_node("draft_node", self.draft_node)
-        workflow.add_node("review_node", self.review_node)
-        workflow.add_node("revise_node", self.revise_node)
-        workflow.add_node("summary_node", self.summary_node)
-        workflow.add_node("post_process_node", self.post_process_node)
-
-        workflow.add_edge(START, "plan_node")
-        workflow.add_edge("plan_node", "retrieve_node")
-        workflow.add_edge("retrieve_node", "draft_node")
-        workflow.add_edge("draft_node", "review_node")
-        workflow.add_edge("review_node", "revise_node")
-        workflow.add_edge("revise_node", "summary_node")
-        workflow.add_edge("summary_node", "post_process_node")
-        workflow.add_edge("post_process_node", END)
 
     def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
         """Register the prep + post + shared chat form on ``workflow``.
@@ -413,39 +372,6 @@ class DeepResearchAgent(
             retriable_codes=self.review_config.RETRIABLE_CODES,
             max_retries=self.review_config.MAX_RETRIES,
         )
-
-    async def draft_node(self, state: DeepResearchState):
-        """Create one draft subsection per dimension.
-
-        Args:
-            state: Current workflow state with per-dimension prompt params.
-
-        Returns:
-            State update containing one draft string per dimension.
-        """
-        draft_tasks = [
-            self._chat(
-                get_prompt(
-                    self.review_config.PROMPT_FILE,
-                    "user/deep_research_dimension",
-                    param,
-                )
-            )
-            for param in state["dimension_params"]
-        ]
-        draft_results = await asyncio.gather(
-            *draft_tasks, return_exceptions=True
-        )
-        return {
-            "draft_contents": [
-                (
-                    ""
-                    if isinstance(result, BaseException)
-                    else message_content(result)
-                )
-                for result in draft_results
-            ]
-        }
 
     async def draft_prepare_tasks_node(
         self, state: DeepResearchState

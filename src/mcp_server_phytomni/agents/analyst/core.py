@@ -115,20 +115,17 @@ class AnalystAgent(
     def _build_graph(self):
         """Build and compile the LangGraph StateGraph workflow.
 
-        Two flag axes drive the wire shape independently:
-        ``USE_CHAT_SUBGRAPH`` splits each of the five chat sites
-        (``parse_query`` / ``data_select`` / ``plan`` / ``check`` /
-        ``tool_extract``) into a prep + post pair surrounding a shared
-        ``chat`` node mounted via ``make_chat_node_wrapper``;
-        ``USE_KNOWLEDGE_SUBGRAPH`` splits the ``method_retrieve`` site
-        into a prep + post pair surrounding a per-instance compiled
-        ``knowledge`` node mounted via ``make_knowledge_node_wrapper``.
-        Each chat post node reads ``chat_response`` set by a router on
-        ``pending_post``; each knowledge post node reads
-        ``knowledge_response`` set by a router on
-        ``pending_post_knowledge``. The two routers use distinct state
-        keys so the cross-product wire (both flags on) keeps the
-        branches independent.
+        Each of the five chat sites (``parse_query`` / ``data_select`` /
+        ``plan`` / ``check`` / ``tool_extract``) is split into a prep +
+        post pair surrounding a shared ``chat`` node mounted via
+        ``make_chat_node_wrapper``. ``USE_KNOWLEDGE_SUBGRAPH`` splits the
+        ``method_retrieve`` site into a prep + post pair surrounding a
+        per-instance compiled ``knowledge`` node mounted via
+        ``make_knowledge_node_wrapper``. Each chat post node reads
+        ``chat_response`` set by a router on ``pending_post``; each
+        knowledge post node reads ``knowledge_response`` set by a router
+        on ``pending_post_knowledge``. The two routers use distinct state
+        keys so the cross-product wire keeps the branches independent.
 
         Wires the analyst pipeline against a three-schema
         ``StateGraph``: ``AnalystState`` for internal node access,
@@ -141,10 +138,7 @@ class AnalystAgent(
             input_schema=AnalystInput,
             output_schema=AnalystOutput,
         )
-        if self.analyst_config.USE_CHAT_SUBGRAPH:
-            self._wire_chat_subgraph(workflow)
-        else:
-            self._wire_legacy(workflow)
+        self._wire_chat_subgraph(workflow)
         return workflow.compile(checkpointer=self.checkpointer)
 
     def _method_retrieve_targets(self) -> tuple[str, str]:
@@ -157,8 +151,8 @@ class AnalystAgent(
         ``method_retrieve_prep_node`` (incoming) and
         ``method_retrieve_post_node`` (outgoing), with the shared
         ``knowledge`` node mounted between them. Returning the pair
-        from one helper lets ``_wire_legacy`` and ``_wire_chat_subgraph``
-        substitute names without duplicating the conditional.
+        from one helper lets ``_wire_chat_subgraph`` substitute names
+        without duplicating the conditional.
         """
         if self.analyst_config.USE_KNOWLEDGE_SUBGRAPH:
             return "method_retrieve_prep_node", "method_retrieve_post_node"
@@ -213,74 +207,6 @@ class AnalystAgent(
             },
         )
 
-    def _wire_legacy(self, workflow: StateGraph) -> None:
-        """Register the legacy form on ``workflow``.
-
-        Each chat node awaits ``phyto_chat`` inline; no shared chat
-        subgraph mount. ``method_retrieve`` site honors
-        ``USE_KNOWLEDGE_SUBGRAPH``: flag-off keeps the legacy
-        ``method_retrieve_node``; flag-on substitutes the
-        prep/knowledge/post triple via
-        ``_register_method_retrieve_nodes`` and routes the surrounding
-        edges through ``_method_retrieve_targets``.
-        """
-        method_in, method_out = self._method_retrieve_targets()
-        workflow.add_node("parse_query_node", self.parse_query_node)
-        workflow.add_node("data_select_node", self.data_select_node)
-        self._register_method_retrieve_nodes(workflow)
-        workflow.add_node("plan_node", self.plan_node)
-        workflow.add_node("check_node", self.check_node)
-        workflow.add_node("tool_extract_node", self.tool_extract_node)
-        workflow.add_node("tool_retrieve_node", self.tool_retrieve_node)
-        workflow.add_node("submit_node", self.submit_node)
-        workflow.add_node("pooling_node", self.pooling_node)
-        workflow.add_edge(START, "parse_query_node")
-        workflow.add_conditional_edges(
-            "parse_query_node",
-            self.route_after_extract,
-            {
-                "data_select_node": "data_select_node",
-                "method_retrieve_node": method_in,
-                "tool_extract_node": "tool_extract_node",
-            },
-        )
-        workflow.add_conditional_edges(
-            "data_select_node",
-            self.route_after_data_select,
-            {
-                "method_retrieve_node": method_in,
-                "tool_extract_node": "tool_extract_node",
-            },
-        )
-        workflow.add_edge(method_out, "plan_node")
-        workflow.add_edge("plan_node", "check_node")
-        workflow.add_conditional_edges(
-            "check_node",
-            self.route_after_check,
-            {
-                "plan_node": "plan_node",
-                "tool_extract_node": "tool_extract_node",
-            },
-        )
-        workflow.add_edge("tool_extract_node", "tool_retrieve_node")
-        workflow.add_edge("tool_retrieve_node", "submit_node")
-        workflow.add_conditional_edges(
-            "submit_node",
-            self.route_after_submit,
-            {
-                "pooling_node": "pooling_node",
-                "__end__": END,
-            },
-        )
-        workflow.add_conditional_edges(
-            "pooling_node",
-            self.route_after_pooling,
-            {
-                "__end__": END,
-                "pooling_node": "pooling_node",
-            },
-        )
-
     def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
         """Register the prep + post + shared chat form on ``workflow``.
 
@@ -296,10 +222,9 @@ class AnalystAgent(
         the early-return cases (``parse_query`` when
         ``goal_description`` is already set; ``check`` when a preset
         plan with no method context auto-approves). The
-        ``method_retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``
-        independently of the chat flag: flag-off keeps the legacy
-        ``method_retrieve_node``; flag-on substitutes the
-        prep/knowledge/post triple via
+        ``method_retrieve`` site honors ``USE_KNOWLEDGE_SUBGRAPH``:
+        flag-off keeps the legacy ``method_retrieve_node``; flag-on
+        substitutes the prep/knowledge/post triple via
         ``_register_method_retrieve_nodes`` and routes the surrounding
         edges through ``_method_retrieve_targets``.
         """

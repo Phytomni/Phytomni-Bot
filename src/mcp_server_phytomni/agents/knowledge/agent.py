@@ -89,16 +89,17 @@ class KnowledgeAgent:
     responses using an LLM. It supports optional file uploads via OBS
     and can generate follow-up questions based on the initial response.
 
-    The workflow graph has two shapes selected by
-    ``USE_CHAT_SUBGRAPH``. Flag-off keeps the four-node form:
+    The workflow graph processes a query through these stages:
         1. process_files_node: Downloads and parses uploaded OBS files.
         2. retrieve_node: Retrieves and reranks documents.
-        3. generate_node: Generates a response using retrieved context.
-        4. follow_up_node: Generates suggested follow-up questions.
+        3. generate prep/post pair: Generates a response using
+           retrieved context.
+        4. follow_up prep/post pair: Generates suggested follow-up
+           questions.
 
-    Flag-on splits the chat calls into prep + post pairs surrounding
-    a single shared ``chat`` node so LangGraph's xray rendering can
-    inline the chat subgraph in the consumer's graph.
+    The chat calls split into prep + post pairs surrounding a single
+    shared ``chat`` node so LangGraph's xray rendering can inline the
+    chat subgraph in the consumer's graph.
 
     Args:
         checkpointer: A LangGraph checkpointer for state persistence.
@@ -135,8 +136,7 @@ class KnowledgeAgent:
         post pairs surrounding a single shared chat node registered
         via ``add_node`` with a conditional router that reads
         ``pending_post`` to direct the chat output back to the
-        correct post node. The legacy single-node form was retired
-        when ``USE_CHAT_SUBGRAPH`` default flipped to True.
+        correct post node.
         """
         workflow = StateGraph(
             state_schema=KnowledgeState,
