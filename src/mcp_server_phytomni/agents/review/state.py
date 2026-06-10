@@ -95,6 +95,12 @@ class DeepResearchState(ParallelDispatchState):
     chat_payload: Optional[Dict[str, Any]]
     chat_response: Optional[Dict[str, Any]]
     pending_post: Optional[str]
+    # Renumbered reference list computed once by ``follow_up_prep_node``
+    # and read by ``follow_up_post_node``. Forwarding it avoids a second
+    # ``_renumber_citations`` pass over the already-renumbered
+    # ``[document:N]`` text, which matches nothing and recovers an empty
+    # ordered list.
+    ordered_doc_list: Optional[List[Dict[str, Any]]]
 
     # === Send-payload transient fields (set ONLY during Send invocation) ===
     subtopic: Optional[str]

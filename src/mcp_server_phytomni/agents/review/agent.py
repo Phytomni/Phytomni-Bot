@@ -773,6 +773,7 @@ class DeepResearchAgent(
             "chat_payload": None,
             "chat_response": None,
             "pending_post": None,
+            "ordered_doc_list": None,
             # Send-payload transient fields
             "subtopic": None,
             "knowledge": None,

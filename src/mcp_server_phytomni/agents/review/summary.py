@@ -178,11 +178,12 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
         Returns:
             State delta with ``summary_content`` updated to the
-            renumbered text, a ``ChatInput`` payload under
+            renumbered text, the ordered reference list under
+            ``ordered_doc_list``, a ``ChatInput`` payload under
             ``chat_payload``, and ``"follow_up_post_node"`` under
             ``pending_post``.
         """
-        formatted_text, _ = _renumber_citations(
+        formatted_text, ordered_doc_list = _renumber_citations(
             state["summary_content"],
             [*state["all_raw_doc_list"], *state["add_doc_list"]],
         )
@@ -204,6 +205,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
         )
         return {
             "summary_content": formatted_text,
+            "ordered_doc_list": ordered_doc_list,
             "chat_payload": chat_payload,
             "pending_post": "follow_up_post_node",
         }
@@ -215,16 +217,18 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
         Mirrors the response-handling half of ``post_process_node`` but
         reads the follow-up answer from ``state['chat_response']``
-        instead of awaiting a fresh ``_chat`` call. Re-runs
-        ``_renumber_citations`` on ``state['summary_content']`` (which
-        ``follow_up_prep_node`` already updated to the renumbered text)
-        to recover the ordered document list for ``final_response``.
+        instead of awaiting a fresh ``_chat`` call. The renumbered text
+        and ordered document list were both produced by
+        ``follow_up_prep_node`` and read straight from state; re-running
+        ``_renumber_citations`` here would see the already-renumbered
+        ``[document:N]`` text (which the citation pattern does not match)
+        and recover an empty list.
 
         Args:
             state: Current workflow state. Reads ``chat_response``
                 (follow-up questions), ``summary_content`` (renumbered
-                formatted text), ``all_raw_doc_list``, ``add_doc_list``,
-                and ``original_user_query``.
+                formatted text), and ``ordered_doc_list`` (the ordered
+                references staged by the prep node).
 
         Returns:
             State delta with ``final_response`` carrying the chat-
@@ -243,12 +247,8 @@ class ReviewSummaryMixin(WorkflowMixinBase):
                 "content"
             ]
         follow_up_list = parse_follow_up_questions(follow_up_content)
-        # summary_content was updated to the renumbered text by prep node;
-        # re-run _renumber_citations to recover the ordered_doc_list.
-        formatted_text, ordered_doc_list = _renumber_citations(
-            state["summary_content"],
-            [*state["all_raw_doc_list"], *state["add_doc_list"]],
-        )
+        formatted_text = state["summary_content"]
+        ordered_doc_list = state.get("ordered_doc_list") or []
         final_response = {
             "choices": [
                 {

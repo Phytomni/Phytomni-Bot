@@ -178,6 +178,65 @@ async def test_follow_up_post_node_parses_chat_response() -> None:
     assert "follow_up_questions" in message
 
 
+async def test_follow_up_prep_to_post_preserves_doc_list() -> None:
+    """Prep computes ``ordered_doc_list`` once; post reads it from state.
+
+    Regression for the double-``_renumber_citations`` bug: prep
+    renumbers ``summary_content`` to ``[document:N]`` and forwards the
+    ordered references under ``ordered_doc_list``. If post re-ran
+    ``_renumber_citations`` on the already-renumbered text it would
+    recover an empty list (the citation pattern does not match
+    ``[document:N]``), silently dropping every reference from
+    ``final_response``. Drives the wired prep -> post sequence with
+    NON-EMPTY doc lists, which the other follow_up tests omit.
+    """
+    agent = _build_agent()
+    prep_state = cast(
+        DeepResearchState,
+        {
+            "original_user_query": "Photosynthesis",
+            "summary_content": "Finding A [document 001] and B [S1-001].",
+            "all_raw_doc_list": [
+                {"doc_id": "document 001", "title": "Paper A"}
+            ],
+            "add_doc_list": [
+                {"doc_id": "add document S1-001", "title": "Supp B"}
+            ],
+        },
+    )
+    prep = await agent.follow_up_prep_node(prep_state)
+
+    assert prep["summary_content"] == (
+        "Finding A [document:1] and B [document:2]."
+    )
+    assert [doc["title"] for doc in prep["ordered_doc_list"]] == [
+        "Paper A",
+        "Supp B",
+    ]
+
+    post_state = cast(
+        DeepResearchState,
+        {
+            **prep_state,
+            **prep,
+            "chat_response": {
+                "choices": [
+                    {"message": {"content": '["How is light captured?"]'}}
+                ]
+            },
+        },
+    )
+    result = await agent.follow_up_post_node(post_state)
+
+    message = result["final_response"]["choices"][0]["message"]
+    assert [doc["title"] for doc in message["doc_list"]] == [
+        "Paper A",
+        "Supp B",
+    ]
+    assert "[document:1]" in message["content"]
+    assert message["follow_up_questions"] == ["How is light captured?"]
+
+
 # ---------------------------------------------------------------------------
 # Structural xray check: shared chat subgraph is mounted once.
 # ---------------------------------------------------------------------------
