@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from langgraph.types import Send
 
 from ...common.prompts import get_prompt
-from ...common.responses import message_content
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...graphs.review_to_knowledge_adapters import (
     build_review_knowledge_input,
@@ -70,72 +69,6 @@ class RetrievalAccumulator:
 
 class ReviewPlanningMixin(WorkflowMixinBase):
     """Planning and retrieval nodes for the deep research workflow."""
-
-    async def plan_node(self: Any, state: DeepResearchState):
-        """Process uploaded files and decompose the topic into dimensions.
-
-        Args:
-            state: Current workflow state containing the original query and
-                optional uploaded OBS files.
-
-        Returns:
-            State updates containing expanded query text, upload context, token
-            length, and planned research dimensions.
-        """
-        user_query = state["original_user_query"]
-        total_length = 0
-        upload_context = ""
-
-        if state["obs_file_list"]:
-            upload_context, total_length = await download_upload_context(
-                state["obs_file_list"],
-                self.review_config,
-                self.sensitive_config,
-            )
-            user_query = get_prompt(
-                self.review_config.PROMPT_FILE,
-                "user/deep_research_query_file",
-                {
-                    "upload_context": upload_context,
-                    "user_query": user_query,
-                },
-            )
-        else:
-            user_query = get_prompt(
-                self.review_config.PROMPT_FILE,
-                "user/deep_research_query",
-                {"user_query": user_query},
-            )
-
-        query_response = await self._chat(
-            user_query,
-            {
-                "type": "json_schema",
-                "json_schema": {
-                    "type": "object",
-                    "properties": {
-                        "Research_dimensions": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        }
-                    },
-                    "required": ["Research_dimensions"],
-                },
-            },
-        )
-        dimensions_json = _extract_json_object(message_content(query_response))
-        dimensions = dimensions_json.get("Research_dimensions", [])
-        if not isinstance(dimensions, list) or not dimensions:
-            raise ValueError("Invalid research dimensions from phyto_chat")
-
-        return {
-            "user_query": user_query,
-            "upload_context": upload_context,
-            "total_length": total_length,
-            "research_dimensions": [
-                str(dimension) for dimension in dimensions[:4]
-            ],
-        }
 
     async def plan_query_prep_node(
         self: Any, state: DeepResearchState
