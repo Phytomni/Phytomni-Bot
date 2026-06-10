@@ -39,7 +39,16 @@ AGENT_PATH_PREFIX = "src/mcp_server_phytomni/agents/"
 MODULE_FLOORS: Dict[str, int] = {
     "src/mcp_server_phytomni/agents/deep_genome/report.py": 23,
     "src/mcp_server_phytomni/agents/chat/graph.py": 30,
-    "src/mcp_server_phytomni/agents/analyst/graph.py": 42,
+    # Recalibrated 42->33: the six unwired legacy monolithic nodes
+    # (parse_query / data_select / method_retrieve / plan / check /
+    # tool_extract) were deleted; their tests moved onto the wired
+    # prep/post nodes in graph_chat_subgraph.py /
+    # graph_knowledge_subgraph.py (covered there). graph.py now holds
+    # only the I/O-heavy tool_retrieve_node + submit_node, so its
+    # offline-measured coverage mechanically dropped to 33.91%. Coverage
+    # did not regress (it moved with the tests); ratchet back toward
+    # TARGET as the submit-pipeline nodes gain offline coverage.
+    "src/mcp_server_phytomni/agents/analyst/graph.py": 33,
     "src/mcp_server_phytomni/agents/review/report.py": 42,
     "src/mcp_server_phytomni/agents/data/agent.py": 96,
     "src/mcp_server_phytomni/agents/knowledge/agent.py": 41,
