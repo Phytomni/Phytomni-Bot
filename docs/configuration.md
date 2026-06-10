@@ -169,47 +169,26 @@ procedures and `docs/http-api.md` *Relay* for the route contracts.
 Function caches stay on local disk even when obsfs is available because
 SQLite over a network filesystem can deadlock under WAL locking.
 
-## Agent Composition Variables
+## Agent Composition
 
-| Variable                                                     | Default | Purpose                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PHYTOMNI_USE_ANALYST_SUBGRAPH` / `USE_ANALYST_SUBGRAPH`     | `true`  | Routes dispatcher analyst submissions through the compiled analyst subgraph entry point (`analyst_agent.app.ainvoke(AnalystInput, …)`). Set to `false` via env override only to revert to the legacy `analyst_agent.arun(…)` direct call; the production flag-off code path was retired so an env override leaves the flag-off branch uncovered by tests.                       |
-| `PHYTOMNI_USE_CHAT_SUBGRAPH` / `USE_CHAT_SUBGRAPH`           | `true`  | Routes consumer-agent chat calls through the compiled chat subgraph via `adapter_node`. Set to `false` via env override only to revert to the legacy `phyto_chat` function; the legacy `*_node` bodies in knowledge / data agents were removed when the default flipped so an env override leaves the flag-off code path uncovered by tests.                                    |
-| `PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH` / `USE_KNOWLEDGE_SUBGRAPH` | `true`  | Routes consumer-agent (analyst / data / review / brief_gene / deep_genome) `retrieve_node` through the `KnowledgeAgent` compiled subgraph via `adapter_node`. Set to `false` via env override only to revert to legacy inline `multi_retrieve` / `retrieve` helpers; review's Send-dispatch retrieve triad is gated on `USE_CHAT_SUBGRAPH=true`.                                |
-| `PHYTOMNI_USE_EVOLUTION_SUBGRAPH` / `USE_EVOLUTION_SUBGRAPH` | `true`  | Routes the deep_genome dispatch's `evolution_analysis` branch through the module-level `evolution_analysis_for_gene` producer wrapper (itself dispatching through `submit_analyst_via_subgraph`). Set to `false` via env override only to revert to inline analyst request assembly. Lives on `DeepGenomeConfig` because no sibling agent dispatches `evolution_analysis`.      |
-| `PHYTOMNI_USE_DESIGN_SUBGRAPH` / `USE_DESIGN_SUBGRAPH`       | `true`  | Routes the deep_genome dispatch's `protein_structure_analysis` and `promoter_analysis` branches through the module-level `protein_structure_for_gene` / `promoter_design_for_gene` producer wrappers. Set to `false` via env override only to revert to inline analyst request assembly. Lives on `DeepGenomeConfig` for the same single-consumer reason as the evolution flag. |
+Consumer agents compose their building-block subgraphs unconditionally —
+there are no opt-in flags. Chat calls route through the compiled chat
+subgraph, retrieval through the `KnowledgeAgent` compiled subgraph, and
+dispatcher analyst submissions through the analyst subgraph entry point
+(`analyst_agent.app.ainvoke(AnalystInput, …)`); the dispatcher calls
+`prepare_analyst_dispatch_context` first so the analyst and the
+downstream `capture_analysis_result` consumer share the same
+`RunIdentity`, OBS output directory, and LangGraph `thread_id`. The
+deep_genome dispatcher routes its `evolution_analysis`,
+`protein_structure_analysis`, and `promoter_analysis` tasks to the
+module-level producer wrappers (`evolution_analysis_for_gene` /
+`protein_structure_for_gene` / `promoter_design_for_gene`).
 
-The flag lives on `AnalystConfig` and is therefore inherited by every
-dispatcher subclass (`DigitalDesignConfig`, `GeneNetworkConfig`,
-`InSilicoResearchConfig`, `EnvironmentConfig`, `DeepGenomeConfig`). Both
-dispatch paths share the same `RunIdentity`, OBS output directory, and
-LangGraph `thread_id` because both call
-`prepare_analyst_dispatch_context` before invoking the analyst, so the
-flag only changes the analyst entry point — not the IO contract the
-downstream `capture_analysis_result` consumer reads. Production
-deployments should leave the flag `false` until they have validated the
-subgraph composition end to end; the legacy direct-`arun` path remains
-the default and is unaffected when the flag is unset.
-
-`PHYTOMNI_USE_CHAT_SUBGRAPH` follows the same opt-in convention. It lives
-on `ServerConfig` so every consumer agent config (knowledge / data /
-analyst / review / brief_gene / design / network / research / environment
-/ evolution / deep_genome) inherits the same default-`false` switch, and
-production deployments should leave it unset until the chat-subgraph
-composition has been validated end to end against the legacy direct
-`phyto_chat` call path.
-
-`PHYTOMNI_USE_KNOWLEDGE_SUBGRAPH` follows the same opt-in convention. It
-lives on `ServerConfig` so every consumer agent config (analyst / data /
-review) inherits the same default-`false` switch, and production
-deployments should leave it unset until the knowledge-subgraph
-composition has been validated end to end against the legacy inline
-`multi_retrieve` / `retrieve` call path. For review the flag is gated on
-`USE_CHAT_SUBGRAPH=true`: the Send-dispatch retrieve triad is wired only
-inside `_wire_chat_subgraph`, so a deployment that flips
-`USE_KNOWLEDGE_SUBGRAPH=true` without also flipping
-`USE_CHAT_SUBGRAPH=true` falls back to review's legacy
-`asyncio.gather(ka.arun(...))` retrieve path.
+The former `USE_CHAT_SUBGRAPH` / `USE_KNOWLEDGE_SUBGRAPH` /
+`USE_ANALYST_SUBGRAPH` / `USE_EVOLUTION_SUBGRAPH` / `USE_DESIGN_SUBGRAPH`
+opt-in flags and their legacy flag-off code paths have been removed; the
+subgraph composition is now the only path and no env override exists for
+it.
 
 ## Network and TLS Variables
 

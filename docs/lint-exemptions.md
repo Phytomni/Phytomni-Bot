@@ -606,18 +606,18 @@ codebase, in nine clusters:
    `submit_analyst_analysis` and `agents/deep_genome/dispatch.py`'s
    `_run_analyst_node` historically built the same
    `analyst_agent.arun(query=None, goal_description=..., preset_data_list=..., preset_plan=..., output_dir=..., compute_resource=...)`
-   call. Step 6.5 retires the dispatch-side inline call: deep_genome's
-   `_submit_analysis_task` now branches on `USE_ANALYST_SUBGRAPH` and
-   routes through `submit_analyst_via_subgraph` (flag-on) or
-   `submit_analyst_analysis` (flag-off, the shared legacy fallback)
-   with `is_polling=True`. The bare arun-kwargs block exists only
-   inside `submit_analyst_analysis` now, so the cross-file mirror is
-   gone. The catalog entry stays as a historical record so future
-   readers can trace the closure without diff-archaeology.
+   call. The dispatch-side inline call was retired: deep_genome's
+   `_submit_analysis_task` routes through `submit_analyst_via_subgraph`
+   with `is_polling=True` (the `USE_ANALYST_SUBGRAPH` flag-off
+   fallback to `submit_analyst_analysis` was later removed with the
+   flag). The bare arun-kwargs block exists only inside
+   `submit_analyst_analysis` now, so the cross-file mirror is gone.
+   The catalog entry stays as a historical record so future readers
+   can trace the closure without diff-archaeology.
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 110`). The catalog header count above
+`RULE_BASELINES["R0801"] = 108`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
@@ -640,29 +640,28 @@ rule; the baseline script runs its own pylint without the disable
 and counts the violations against the pinned baseline. A new R0801
 violation pushes the count past the baseline, the baseline script
 exits 1, and the gate fails until the author either resolves the
-duplicate or explicitly bumps the baseline in the same diff.
+duplicate or explicitly bumps the baseline in the same diff. The two
+most recent ratchets after 110 were 112 (resolver shared-helper
+extraction into `agents/shared/bga_delegation.py`) and 108 (removing
+the five `USE_*_SUBGRAPH` flags collapsed the chat-fallback and
+dispatch request-dict flag-off mirror clusters below
+`min-similar-lines=4`).
 
 **Why refactor is net-negative for cluster 1**: the analyst fan-out
 wrappers' parallel signatures are by design — they map onto one
 backend with one canonical signature. Collapsing them into a generic
 helper would obscure the per-wrapper public contract.
 
-1. **Env/evo USE_CHAT_SUBGRAPH branch mirror** (2 occurrences, added
-   2026-06-07). `agents/environment/agent.py:[91:103]` and
-   `agents/evolution/agent.py:[152:164]` share the same chat-call
-   branch (build_chat_input → \_cached_chat_app().ainvoke →
-   extract_chat_response vs phyto_chat fallback) wrapping their
-   chat_kwargs bag. The mirror is intentional: env and evo are
-   parallel free-function agents and their chat-extraction sites
-   stay structurally aligned with the Step 6.1 single-node chat
-   wiring pattern. Extracting a shared `dispatch_chat_via_flag`
-   helper would erase the per-agent config naming (ENVIRONMENT_CONFIG
-   vs DEEP_GENOME_CONFIG) at the call site, making future audits of
-   "which consumer flipped USE_CHAT_SUBGRAPH" require an extra hop.
-   **Sunset condition**: when Step 6.6 default-flips
-   USE_CHAT_SUBGRAPH to True and the legacy `phyto_chat` branches
-   collapse to env-override fallbacks, both call sites shrink to a
-   3-line block that falls below `min-similar-lines=4`.
+1. **Env/evo chat branch mirror** (added 2026-06-07, **CLOSED
+   2026-06-11** by the `USE_CHAT_SUBGRAPH` flag removal).
+   `agents/environment/agent.py` and `agents/evolution/agent.py`
+   previously shared a chat-call branch (build_chat_input →
+   \_cached_chat_app().ainvoke → extract_chat_response vs a
+   `phyto_chat` fallback) wrapping their chat_kwargs bag. Removing
+   the chat-subgraph flag deleted the `phyto_chat` fallback, so both
+   call sites shrank to a 3-line block below `min-similar-lines=4`
+   and the cluster no longer fires. The catalog entry stays as a
+   historical record.
 1. **Module-level analyst dispatch request-dict mirror**
    (added 2026-06-07, expanded by Step 6.5 producer wrappers).
    Originally `agents/environment/graph.py:[180:187]` ↔
@@ -674,10 +673,11 @@ helper would obscure the per-wrapper public contract.
    `agents/design/agent.py:_submit_design_analysis` (consumed by
    `protein_structure_for_gene` and `promoter_design_for_gene`),
    and `agents/deep_genome/dispatch.py:_submit_analysis_task` (the
-   cluster-#9 sunset commit). All seven sites build the same dict
-   shape because `submit_analyst_via_subgraph` /
-   `submit_analyst_analysis` are the canonical chokepoints and the
-   dict shape is the contract. A shared `build_analyst_request`
+   cluster-#9 sunset commit). The sites build the same dict shape
+   because `submit_analyst_via_subgraph` is the canonical chokepoint
+   (the `submit_analyst_analysis` flag-off branches were removed with
+   the `USE_ANALYST_SUBGRAPH` flag) and the dict shape is the
+   contract. A shared `build_analyst_request`
    helper would erase the `target_id` semantics each consumer
    assigns (region-codes concat for env, gene_id for evo / design /
    deep_genome). The Phase 5a design / network sites in

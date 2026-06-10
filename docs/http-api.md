@@ -542,7 +542,6 @@ pointing to the full document in `raw.phytomni_state.<key>`.
 
 ### ReviewAgent degraded-mode metadata
 
-Under `USE_CHAT_SUBGRAPH=true` and/or `USE_KNOWLEDGE_SUBGRAPH=true`,
 ReviewAgent's per-dimension fan-out workers may fail independently
 (transient backend errors, rate limits, etc.). On all-success runs,
 `formatted.metadata` is empty (`{}`) as it has been. On runs where

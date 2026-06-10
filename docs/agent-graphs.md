@@ -315,26 +315,27 @@ Part 3 report synthesis chain.
 
 The graph compiles into nine nodes:
 
-| Node                 | Role                                                                                                                                                                                                                                                                                                                 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `knowledge_node`     | M11 brief_gene mount — fans out BI annotation + homology + interaction fetching that used to live in the deleted `data_node`, writes the four preamble sections.                                                                                                                                                     |
-| `prepare_tasks_node` | Materialises the per-gene analysis task list from the rewritten user query and the species code.                                                                                                                                                                                                                     |
-| `analyst_node`       | Send-dispatched worker: routes the three transferred analysis types (`evolution_analysis` / `protein_structure_analysis` / `promoter_analysis`) to module-level producer wrappers when their flags are on, the remaining 12 to `submit_analyst_via_subgraph` (USE_ANALYST_SUBGRAPH on) or `submit_analyst_analysis`. |
-| `synthesize_node`    | Barrier that waits for the analyst fan-out to drain, then triggers the experiment-loop.                                                                                                                                                                                                                              |
-| `experiment_node`    | Loops over recommended experiments (also routes back to itself per Send) to keep building the experiment list.                                                                                                                                                                                                       |
-| `protocol_node`      | Calls `_dispatch_knowledge_retrieve` per experiment to retrieve protocol sections (legacy `knowledge_agent.arun` flag-off; compiled knowledge subgraph flag-on).                                                                                                                                                     |
-| `discussion_node`    | Calls `_dispatch_chat` to generate the discussion section from the part-1 + part-2 content.                                                                                                                                                                                                                          |
-| `summary_node`       | Calls `_dispatch_chat` to generate the summary section from the introduction + part-1 + part-2 + part-4 stack.                                                                                                                                                                                                       |
-| `follow_up_node`     | Calls `_dispatch_chat` to generate the follow-up question list from the assembled final report.                                                                                                                                                                                                                      |
+| Node                 | Role                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `knowledge_node`     | M11 brief_gene mount — fans out BI annotation + homology + interaction fetching that used to live in the deleted `data_node`, writes the four preamble sections.                                                                         |
+| `prepare_tasks_node` | Materialises the per-gene analysis task list from the rewritten user query and the species code.                                                                                                                                         |
+| `analyst_node`       | Send-dispatched worker: routes the three transferred analysis types (`evolution_analysis` / `protein_structure_analysis` / `promoter_analysis`) to module-level producer wrappers and the remaining 12 to `submit_analyst_via_subgraph`. |
+| `synthesize_node`    | Barrier that waits for the analyst fan-out to drain, then triggers the experiment-loop.                                                                                                                                                  |
+| `experiment_node`    | Loops over recommended experiments (also routes back to itself per Send) to keep building the experiment list.                                                                                                                           |
+| `protocol_node`      | Calls `_dispatch_knowledge_retrieve` per experiment to retrieve protocol sections through the compiled knowledge subgraph.                                                                                                               |
+| `discussion_node`    | Calls `_dispatch_chat` to generate the discussion section from the part-1 + part-2 content.                                                                                                                                              |
+| `summary_node`       | Calls `_dispatch_chat` to generate the summary section from the introduction + part-1 + part-2 + part-4 stack.                                                                                                                           |
+| `follow_up_node`     | Calls `_dispatch_chat` to generate the follow-up question list from the assembled final report.                                                                                                                                          |
 
 The four `_dispatch_*` helpers on `DeepGenomeReportMixin` own the
-flag-branch seams: `_dispatch_chat` (used by the experiment /
-discussion / summary / follow-up nodes) honors `USE_CHAT_SUBGRAPH`;
-`_dispatch_knowledge_retrieve` (used by the protocol node) honors
-`USE_KNOWLEDGE_SUBGRAPH`. `_submit_analysis_task` on
-`DeepGenomeDispatchMixin` owns the analyst-side seam and honors
-`USE_EVOLUTION_SUBGRAPH` / `USE_DESIGN_SUBGRAPH` /
-`USE_ANALYST_SUBGRAPH` in order.
+chat / knowledge seams: `_dispatch_chat` (used by the experiment /
+discussion / summary / follow-up nodes) routes through the compiled
+chat subgraph; `_dispatch_knowledge_retrieve` (used by the protocol
+node) routes through the compiled knowledge subgraph.
+`_submit_analysis_task` on `DeepGenomeDispatchMixin` owns the
+analyst-side seam, routing the three transferred analysis types to
+their producer wrappers and the rest through
+`submit_analyst_via_subgraph`.
 
 ## Nested Checkpoints
 
