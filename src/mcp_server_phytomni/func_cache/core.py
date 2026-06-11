@@ -390,12 +390,12 @@ class CacheRuntime:
             cache_key: Cache key whose lock should be released.
 
         Returns:
-            None. Cleanup failures are ignored.
+            None. Cleanup failures are logged and ignored.
         """
         try:
             self.lock_manager.release(self.key_builder.func_id, cache_key)
-        except CacheError:
-            pass
+        except CacheError as exc:
+            _log_warning(f"Failed to release lock, ignoring: {exc}")
 
     async def release_lock_async(self, cache_key: str, owner: str) -> None:
         """Release an async lock, ignoring cleanup failures.
@@ -405,14 +405,14 @@ class CacheRuntime:
             owner: Explicit lock owner used during acquisition.
 
         Returns:
-            None. Cleanup failures are ignored.
+            None. Cleanup failures are logged and ignored.
         """
         try:
             self.lock_manager.release(
                 self.key_builder.func_id, cache_key, owner
             )
-        except CacheError:
-            pass
+        except CacheError as exc:
+            _log_warning(f"Failed to release lock, ignoring: {exc}")
 
     def deserialize_cached(self, cache_key: str, cached: Any):
         """Deserialize cached bytes or remove a corrupted entry.

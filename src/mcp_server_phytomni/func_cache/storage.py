@@ -487,15 +487,19 @@ class Storage:
             raise StorageError(f"Failed to cleanup function locks: {e}") from e
 
     def close(self):
-        """Close the database connection and clean up process locks."""
+        """Close the database connection and clean up process locks.
+
+        Best-effort cleanup: the lock sweep and the connection close both
+        log at WARNING and continue on failure so shutdown never raises.
+        """
         try:
             self.cleanup_process_locks(os.getpid())
-        except StorageError:
-            pass
+        except StorageError as exc:
+            logger.warning("Failed to clean up process locks: %s", exc)
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             try:
                 conn.close()
-            except sqlite3.Error:
-                pass
+            except sqlite3.Error as exc:
+                logger.warning("Failed to close cache connection: %s", exc)
             self._local.conn = None

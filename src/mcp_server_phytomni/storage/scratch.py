@@ -10,6 +10,7 @@ Functions: resolve_scratch_dir.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -21,6 +22,8 @@ from .obs_storage import (
     obsfs_path_for,
 )
 from .path_policy import RunIdentity, task_downloads_key, task_tmp_key
+
+logger = logging.getLogger(__name__)
 
 ScratchKind = Literal["downloads", "tmp"]
 
@@ -56,13 +59,21 @@ def resolve_scratch_dir(
 
     Returns:
         Public OBS path under obsfs when the bucket is mounted; otherwise
-        a string path to a freshly created local scratch directory.
+        a string path to a freshly created local scratch directory. A
+        transient OSError on the obsfs branch is logged at WARNING and
+        also routes to the local fallback.
     """
     if obsfs_bucket_available(target.bucket_name, target.obsfs_mount_root):
         try:
             return _resolve_obsfs_scratch_dir(kind, run_identity, task, target)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "obsfs scratch unavailable for bucket %s at %s; "
+                "falling back to local scratch: %s",
+                target.bucket_name,
+                target.obsfs_mount_root,
+                exc,
+            )
     return _resolve_local_scratch_dir(
         run_identity, task, target.local_fallback
     )

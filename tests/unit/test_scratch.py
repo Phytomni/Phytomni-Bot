@@ -11,6 +11,7 @@ otherwise.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -135,13 +136,15 @@ def test_resolve_scratch_dir_falls_back_to_local_when_bucket_missing(
 def test_resolve_scratch_dir_falls_back_when_obsfs_raises_oserror(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An OSError from the obsfs mkdir routes to the local fallback.
 
     Pins the defensive try/except around _resolve_obsfs_scratch_dir:
     if the obsfs mount disappears mid-call (NFS hiccup, EACCES on the
     parent dir), the resolver must still produce a usable scratch dir
-    on local disk rather than bubble the OSError up to the agent.
+    on local disk rather than bubble the OSError up to the agent, and
+    it must log a WARNING so the silent fallback stays operator-visible.
     """
     bucket = "phytomni"
     (tmp_path / bucket).mkdir()
@@ -151,17 +154,24 @@ def test_resolve_scratch_dir_falls_back_when_obsfs_raises_oserror(
         raise OSError("obsfs unavailable")
 
     monkeypatch.setattr(scratch_module, "_resolve_obsfs_scratch_dir", boom)
+    # configure_logging sets propagate=False on the package logger; re-enable
+    # it through monkeypatch so caplog's root handler sees the WARNING.
+    package_logger = logging.getLogger("mcp_server_phytomni")
+    monkeypatch.setattr(package_logger, "propagate", True)
 
-    result = resolve_scratch_dir(
-        "tmp",
-        _fixed_identity(),
-        "task-three",
-        ScratchTarget(
-            bucket_name=bucket,
-            local_fallback=local_fallback,
-            obsfs_mount_root=tmp_path,
-        ),
-    )
+    with caplog.at_level(
+        logging.WARNING, logger="mcp_server_phytomni.storage.scratch"
+    ):
+        result = resolve_scratch_dir(
+            "tmp",
+            _fixed_identity(),
+            "task-three",
+            ScratchTarget(
+                bucket_name=bucket,
+                local_fallback=local_fallback,
+                obsfs_mount_root=tmp_path,
+            ),
+        )
 
     expected_dir = (
         local_fallback
@@ -170,3 +180,11 @@ def test_resolve_scratch_dir_falls_back_when_obsfs_raises_oserror(
     )
     assert result == str(expected_dir)
     assert expected_dir.is_dir()
+    fallback_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "obsfs scratch unavailable" in record.getMessage()
+    ]
+    assert fallback_warnings, "expected a WARNING about the obsfs fallback"
+    assert bucket in fallback_warnings[0].getMessage()
