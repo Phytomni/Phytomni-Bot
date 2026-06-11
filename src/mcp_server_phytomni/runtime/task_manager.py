@@ -264,14 +264,19 @@ class TaskManager:
     def record(self, submission: Submission) -> None:
         """Upsert one task row from a ``Submission`` spec.
 
-        Performs ``INSERT OR REPLACE`` over every column in the
-        run-scoped schema; a submission without a ``RunContext`` leaves
-        the run-scoped columns ``NULL`` (byte-equivalent to the original
-        4-column write), while the unified run-registry chokepoint
-        passes a populated context so a run's child tasks share
-        ``run_id`` / ``user_id`` / ``agent`` / ``origin`` / timestamps.
-        The optional ``input_fingerprint`` carries the deterministic
-        identity digest that powers ``get_task_by_fingerprint`` dedup.
+        Inserts the row, or on a ``task_id`` conflict updates every
+        run-scoped column from the new write while preserving the
+        existing ``input_fingerprint`` when the new write omits one
+        (``COALESCE``). The dispatch seam writes the fingerprint row
+        first with ``NULL`` run columns; the per-tool recorder later
+        writes the same ``task_id`` with run linkage but no fingerprint,
+        and the ``COALESCE`` stops that second write from erasing the
+        dedup key (the old ``INSERT OR REPLACE`` deleted and reinserted
+        the row, nulling it). A submission without a ``RunContext``
+        still leaves the run-scoped columns ``NULL``; the unified
+        run-registry chokepoint passes a populated context so a run's
+        child tasks share ``run_id`` / ``user_id`` / ``agent`` /
+        ``origin`` / timestamps.
 
         Args:
             submission: The full per-row write spec.
@@ -280,11 +285,24 @@ class TaskManager:
         conn = self._get_connection()
         conn.execute(
             """
-            INSERT OR REPLACE INTO tasks (
+            INSERT INTO tasks (
                 task_id, status, analysis_id, output_dir,
                 run_id, user_id, agent, origin, created_at, updated_at,
                 input_fingerprint
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+                status = excluded.status,
+                analysis_id = excluded.analysis_id,
+                output_dir = excluded.output_dir,
+                run_id = excluded.run_id,
+                user_id = excluded.user_id,
+                agent = excluded.agent,
+                origin = excluded.origin,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                input_fingerprint = COALESCE(
+                    excluded.input_fingerprint, tasks.input_fingerprint
+                )
         """,
             (
                 submission.task_id,

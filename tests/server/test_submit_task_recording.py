@@ -38,7 +38,11 @@ from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
 )
-from mcp_server_phytomni.runtime.task_manager import TaskManager
+from mcp_server_phytomni.runtime.task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+)
 
 pytestmark = pytest.mark.server
 
@@ -114,6 +118,60 @@ async def test_decorator_records_task_run_and_passes_result_through(
         ],
         "artifacts": [],
     }
+
+
+def test_record_upsert_preserves_prior_fingerprint(
+    tasks_db_path: str,
+) -> None:
+    """A later run-linkage write must not erase an earlier fingerprint.
+
+    The dispatch seam writes ``(task_id, fingerprint)`` with NULL run
+    columns; the per-tool recorder later writes the same ``task_id``
+    with a populated run context but NO fingerprint. The COALESCE upsert
+    keeps the seam's fingerprint while still applying the recorder's run
+    id.
+
+    Args:
+        tasks_db_path: Temp registry DB fixture.
+    """
+    mgr = TaskManager(tasks_db_path)
+    # Seam-style write: fingerprint set, run columns NULL.
+    mgr.record(
+        Submission(
+            task_id="T-up",
+            status="submitted",
+            output_dir="/obs/up",
+            input_fingerprint="fp-keep",
+        )
+    )
+    # Recorder-style write: run context set, fingerprint absent.
+    mgr.record(
+        Submission(
+            task_id="T-up",
+            status="submitted",
+            output_dir="/obs/up",
+            run_context=RunContext(
+                run_id="R-1",
+                user_id="anonymous",
+                agent="design",
+                origin="remote",
+                created_at="2026-06-11T00:00:00+00:00",
+                updated_at="2026-06-11T00:00:00+00:00",
+            ),
+        )
+    )
+
+    assert mgr.get_task_by_fingerprint("fp-keep") == {
+        "task_id": "T-up",
+        "status": "submitted",
+        "analysis_id": "",
+        "output_dir": "/obs/up",
+    }
+    with sqlite3.connect(tasks_db_path) as conn:
+        run_id = conn.execute(
+            "SELECT run_id FROM tasks WHERE task_id = ?", ("T-up",)
+        ).fetchone()[0]
+    assert run_id == "R-1"
 
 
 def testrecord_submitted_task_ignores_malformed_results(
