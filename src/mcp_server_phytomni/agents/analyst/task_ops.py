@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from httpx import Timeout
 from mcp.shared.exceptions import McpError
@@ -112,6 +112,41 @@ async def task_status(
             message="Failed to check task status after all retries",
         )
     )
+
+
+async def probe_live_status(task_id: str) -> Optional[str]:
+    """Return the upper-cased remote status, or None on probe failure.
+
+    A single non-blocking ``task_status`` lookup wired to
+    ``ANALYST_CONFIG``, used by the dedup reuse decision. Lives here
+    because ``task_ops`` owns analysis-platform access and is a safe
+    leaf import for both analyst entry points (the top-level wrapper and
+    the dispatch seam) without forming the
+    ``runtime.task_dedup`` import cycle. Returns ``None`` when the
+    platform is unreachable so callers fail safe (resubmit) rather than
+    reuse a task whose live state is unknown.
+
+    Args:
+        task_id: Analysis-platform task id to probe.
+
+    Returns:
+        Upper-cased status string (e.g. ``"SUCCEEDED"``), or ``None`` on
+        an ``McpError`` or a missing status field.
+    """
+    try:
+        live = await task_status(
+            task_id,
+            analysis_url=ANALYST_CONFIG.ANALYSIS_URL,
+            region=ANALYST_CONFIG.ANALYSIS_REGION,
+            timeout=ANALYST_CONFIG.TIMEOUT,
+            retriable_codes=ANALYST_CONFIG.RETRIABLE_CODES,
+            max_retries=ANALYST_CONFIG.MAX_RETRIES,
+        )
+    except McpError:
+        return None
+    if isinstance(live, dict):
+        return str(live.get("status") or "").upper() or None
+    return None
 
 
 async def task_log(
@@ -282,6 +317,7 @@ async def wait_for_completion(
 
 
 __all__ = [
+    "probe_live_status",
     "task_delete",
     "task_log",
     "task_status",

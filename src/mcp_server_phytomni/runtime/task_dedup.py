@@ -6,22 +6,29 @@
 
 Both analyst entry points share this module: the top-level
 ``retrieve_plan_submit`` wrapper and the ``submit_analyst_via_subgraph``
-dispatch seam every sub-agent funnels through. It owns the identity
-digest and the status-column reuse gate.
+dispatch seam every sub-agent funnels through.
 
-Functions: analyst_task_fingerprint, should_reuse_prior_task.
+Functions: analyst_task_fingerprint, should_reuse_prior_task,
+    verify_live_status.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import sqlite3
 from typing import Dict, List, Optional
+
+from .task_manager import TaskManager, resolve_tasks_db_path
 
 __all__ = [
     "analyst_task_fingerprint",
     "should_reuse_prior_task",
+    "verify_live_status",
 ]
+
+logger = logging.getLogger(__name__)
 
 # Statuses (lowercased) that keep a prior row eligible for the cheap
 # column-level reuse gate before any live probe runs.
@@ -36,6 +43,12 @@ _REUSE_STATUSES = frozenset(
         "done",
     }
 )
+
+# Remote analysis-platform live statuses (UPPERCASE) the probe maps to a
+# reuse decision (see agents/analyst/task_ops.wait_for_completion).
+_LIVE_SUCCESS = "SUCCEEDED"
+_LIVE_IN_FLIGHT = frozenset({"RUNNING", "PENDING"})
+_LIVE_DEAD = frozenset({"FAILED", "CANCELLED"})
 
 
 def analyst_task_fingerprint(
@@ -84,3 +97,71 @@ def should_reuse_prior_task(prior_status: str) -> bool:
         True to keep the prior row a reuse candidate; False to resubmit.
     """
     return prior_status.lower() in _REUSE_STATUSES
+
+
+def verify_live_status(
+    prior: Dict[str, str],
+    *,
+    live_status: Optional[str],
+    require_terminal_success: bool,
+) -> bool:
+    """Decide if a prior task is reusable from its probed live status.
+
+    The local ``tasks.status`` column is written once (``"submitted"``)
+    and never advanced, so a dead remote task would otherwise be reused
+    forever. The caller probes the platform via
+    ``agents.analyst.task_ops.probe_live_status`` (kept there to avoid
+    the ``runtime.task_dedup`` import cycle) and passes the upper-cased
+    status here:
+
+    - ``SUCCEEDED`` -> reuse (terminal output ready).
+    - ``RUNNING`` / ``PENDING`` -> reuse only when the caller polls
+      elsewhere (``require_terminal_success`` False); a polling caller
+      (deep_genome) needs a terminal task, so resubmit.
+    - ``FAILED`` / ``CANCELLED`` -> never reuse; write the dead status
+      back to the local row so the SQL dead-status filter self-heals.
+    - ``None`` / unknown status -> resubmit (fail-safe).
+
+    Args:
+        prior: Row dict from ``get_task_by_fingerprint`` carrying at
+            least ``task_id`` / ``status`` / ``analysis_id`` /
+            ``output_dir``.
+        live_status: Upper-cased remote status from
+            ``probe_live_status``, or ``None`` when the probe failed.
+        require_terminal_success: True when the caller needs a terminal
+            task (is_polling), so only ``SUCCEEDED`` is reusable.
+
+    Returns:
+        True to reuse the prior ``task_id``; False to submit fresh.
+    """
+    if live_status == _LIVE_SUCCESS:
+        return True
+    if live_status in _LIVE_IN_FLIGHT:
+        return not require_terminal_success
+    if live_status in _LIVE_DEAD:
+        _write_back_dead(prior)
+    return False
+
+
+def _write_back_dead(prior: Dict[str, str]) -> None:
+    """Persist a confirmed-dead remote status onto the local row.
+
+    Turns the otherwise-inert dead-status SQL filter live so a later
+    identical fingerprint hit is filtered at SQL without another remote
+    probe. Best-effort: a write failure must not break the fresh submit
+    that follows.
+
+    Args:
+        prior: Row dict whose ``task_id`` is flipped to ``"failed"``.
+    """
+    try:
+        TaskManager(resolve_tasks_db_path()).update_task(
+            prior["task_id"],
+            "failed",
+            prior.get("analysis_id", "") or "",
+            prior.get("output_dir", "") or "",
+        )
+    except (sqlite3.Error, OSError):
+        logger.warning(
+            "Failed to write back dead status for %s", prior["task_id"]
+        )
