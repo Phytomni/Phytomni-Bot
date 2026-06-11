@@ -21,10 +21,7 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
 from mcp_server_phytomni.agents.analyst.agent import retrieve_plan_submit
-from mcp_server_phytomni.agents.analyst.submission import (
-    _analyst_task_fingerprint,
-    _should_reuse_prior_task,
-)
+from mcp_server_phytomni.runtime.task_dedup import analyst_task_fingerprint
 from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
@@ -101,47 +98,6 @@ def _patch_submit_agent(
     return calls
 
 
-def test_fingerprint_excludes_compute_resource_and_user_id() -> None:
-    """The fingerprint is anchored on the question + data only."""
-    fp_a = _analyst_task_fingerprint(
-        goal_description="Cluster the leaf RNA-seq replicates",
-        data_list={"/obs/a.fa": "first", "/obs/b.fa": "second"},
-        obs_file_list=["/obs/extra.pdf"],
-    )
-    # Same scientific identity, different dict insertion order and
-    # different obs ordering must yield the same digest.
-    fp_b = _analyst_task_fingerprint(
-        goal_description="Cluster the leaf RNA-seq replicates",
-        data_list={"/obs/b.fa": "second", "/obs/a.fa": "first"},
-        obs_file_list=["/obs/extra.pdf"],
-    )
-    # Changing the question or the data set produces a fresh digest.
-    fp_c = _analyst_task_fingerprint(
-        goal_description="Cluster the root RNA-seq replicates",
-        data_list={"/obs/a.fa": "first", "/obs/b.fa": "second"},
-        obs_file_list=["/obs/extra.pdf"],
-    )
-    assert fp_a == fp_b
-    assert fp_a != fp_c
-
-
-def test_should_reuse_prior_task_classifies_known_states() -> None:
-    """In-flight + succeeded states reuse; unknown falls through."""
-    for status in (
-        "submitted",
-        "running",
-        "pending",
-        "SUCCEEDED",
-        "success",
-        "completed",
-        "Done",
-    ):
-        assert _should_reuse_prior_task(status) is True
-    # Unknown states intentionally fall back to resubmit (fail-safe).
-    assert _should_reuse_prior_task("unknown") is False
-    assert _should_reuse_prior_task("") is False
-
-
 async def test_retrieve_plan_submit_reuses_in_flight_prior(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -153,7 +109,7 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
 
     goal = "Identify SNP signatures in chromosome 1"
     data_list = {"/obs/snp.vcf": "snp calls"}
-    fingerprint = _analyst_task_fingerprint(
+    fingerprint = analyst_task_fingerprint(
         goal_description=goal,
         data_list=data_list,
         obs_file_list=None,
@@ -200,7 +156,7 @@ async def test_retrieve_plan_submit_reuses_succeeded_prior(
 
     goal = "Annotate orthologs across wheat genotypes"
     data_list = {"/obs/orthologs.tsv": "ortholog table"}
-    fingerprint = _analyst_task_fingerprint(
+    fingerprint = analyst_task_fingerprint(
         goal_description=goal,
         data_list=data_list,
         obs_file_list=[],
@@ -248,7 +204,7 @@ async def test_retrieve_plan_submit_resubmits_when_only_prior_failed(
 
     goal = "Compute heritability for height across the panel"
     data_list = {"/obs/panel.csv": "panel"}
-    fingerprint = _analyst_task_fingerprint(
+    fingerprint = analyst_task_fingerprint(
         goal_description=goal,
         data_list=data_list,
         obs_file_list=None,
@@ -291,7 +247,7 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     }
     counter = _patch_submit_agent(monkeypatch, arun_payload)
 
-    other_fingerprint = _analyst_task_fingerprint(
+    other_fingerprint = analyst_task_fingerprint(
         goal_description="Different question entirely",
         data_list={"/obs/other.fa": "other"},
         obs_file_list=None,
@@ -317,22 +273,3 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     # A miss falls through to a real submission, so the passthrough
     # sentinel must be absent on the wrapper's return.
     assert "dedup_hit" not in result
-
-
-def test_fingerprint_is_stable_across_runs() -> None:
-    """The digest is process-stable and uses hashlib (not hash())."""
-    fp_first = _analyst_task_fingerprint(
-        goal_description="Stable digest check",
-        data_list={"/obs/a.fa": "alpha"},
-        obs_file_list=["/obs/extra"],
-    )
-    fp_second = _analyst_task_fingerprint(
-        goal_description="Stable digest check",
-        data_list={"/obs/a.fa": "alpha"},
-        obs_file_list=["/obs/extra"],
-    )
-    assert fp_first == fp_second
-    # SHA-256 hex digest is 64 lower-hex chars; pin it so a future
-    # accidental swap to a salted hash() is caught.
-    assert len(fp_first) == 64
-    assert set(fp_first) <= set("0123456789abcdef")

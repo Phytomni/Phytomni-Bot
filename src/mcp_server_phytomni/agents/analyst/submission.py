@@ -3,19 +3,18 @@
 # Author: maoyc_0316 (maoyc_0316@163.com)
 #         xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Analyst submission wrapper, dedup helpers, and per-call config copies.
+"""Analyst submission wrapper and per-call config copies.
 
-Exports the ``submit`` compatibility wrapper, the input-fingerprint /
-reuse-decision helpers shared with ``retrieve_plan_submit``, and the
-analyst-specific override builders. ``AnalystAgent`` comes from ``.core``
-to keep the import graph acyclic.
+Exports the ``submit`` compatibility wrapper and the analyst-specific
+override builders. The input-fingerprint and reuse-decision helpers now
+live in ``runtime/task_dedup.py`` so both analyst entry points and the
+dispatch seam can share them. ``AnalystAgent`` comes from ``.core`` to
+keep the import graph acyclic.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Literal
 
 from ...config.overrides import (
     copy_config_with_overrides,
@@ -188,79 +187,3 @@ async def submit(
         is_auto_select=enable_auto_select,
         is_polling=False,
     )
-
-
-def _analyst_task_fingerprint(
-    goal_description: str,
-    data_list: Dict[str, str],
-    obs_file_list: Optional[List[str]],
-) -> str:
-    """Return a stable identity digest for one analyst submission.
-
-    Identity is defined by the **user-visible question and its
-    referenced data** only:
-
-    - ``goal_description`` is the research goal verbatim.
-    - ``data_list`` is normalized to a sorted list of ``[path,
-      description]`` pairs so dict insertion order is ignored. The
-      description text is included because two analyses pointing at
-      the same files but asking different sub-questions through
-      descriptions are distinct tasks.
-    - ``obs_file_list`` is sorted so upload order is ignored.
-
-    Compute tier (``compute_resource``) and authenticated user
-    (``user_id``) are intentionally **excluded** so identical
-    scientific questions dedupe across the small/medium/large tiers
-    and across tenants. A user-supplied requirement: the same
-    analysis should reuse a prior remote task even if the new caller
-    asked for a different compute tier or comes from a different
-    user account.
-
-    Args:
-        goal_description: Research goal or analysis objective.
-        data_list: Data files and descriptions for the submission.
-        obs_file_list: Optional OBS files attached to the request.
-
-    Returns:
-        Hex digest string; equal inputs MUST yield equal digests.
-    """
-    canonical = {
-        "goal_description": goal_description,
-        "data_list": sorted(data_list.items()),
-        "obs_file_list": sorted(obs_file_list or []),
-    }
-    encoded = json.dumps(canonical, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _should_reuse_prior_task(prior_status: str) -> bool:
-    """Decide whether a prior task row may short-circuit a fresh submit.
-
-    The user-supplied decision the dedup contract hinges on:
-
-    - **In-flight** (``submitted`` / ``running`` / ``pending``) → reuse
-      avoids launching a duplicate 30min–3h job; the caller polls the
-      already-running remote id.
-    - **Succeeded** (``succeeded`` / ``success`` / ``completed`` /
-      ``done``) → reuse hands the caller the finished output directly.
-    - **Unknown** → fail safe and resubmit; ``get_task_by_fingerprint``
-      already filters out the dead-status set at the SQL layer, so an
-      unrecognized status here is a sign the prior row is in an
-      unexpected state and shouldn't be trusted.
-
-    Args:
-        prior_status: Status string from the tasks registry row.
-
-    Returns:
-        True to short-circuit and return the prior task; False to
-        submit a fresh analysis job.
-    """
-    return prior_status.lower() in {
-        "submitted",
-        "running",
-        "pending",
-        "succeeded",
-        "success",
-        "completed",
-        "done",
-    }

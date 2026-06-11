@@ -318,7 +318,7 @@ class TaskManager:
 
         Args:
             input_fingerprint: Deterministic identity digest produced
-                by the caller (e.g. ``_analyst_task_fingerprint``).
+                by the caller (e.g. ``analyst_task_fingerprint``).
 
         Returns:
             ``{"task_id", "status", "analysis_id", "output_dir"}`` for a

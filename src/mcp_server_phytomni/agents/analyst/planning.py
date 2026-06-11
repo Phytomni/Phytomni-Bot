@@ -16,13 +16,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
-from .submission import (
-    _analyst_task_fingerprint,
-    _build_submit_agent,
-    _shared_arun_kwargs,
-    _should_reuse_prior_task,
+from ...runtime.task_dedup import (
+    analyst_task_fingerprint,
+    should_reuse_prior_task,
 )
+from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
+from .submission import _build_submit_agent, _shared_arun_kwargs
 
 
 async def retrieve_plan_submit(
@@ -36,7 +35,7 @@ async def retrieve_plan_submit(
     Computes an input-identity fingerprint from the stable user-supplied
     inputs and queries ``TaskManager.get_task_by_fingerprint`` before
     launching the LangGraph workflow. If a reusable prior task exists
-    (per ``_should_reuse_prior_task``), the prior ``task_id`` /
+    (per ``should_reuse_prior_task``), the prior ``task_id`` /
     ``output_dir`` are returned without running ``agent.arun``, so a
     duplicate 30min–3h submission collapses into a constant-time lookup.
 
@@ -59,7 +58,7 @@ async def retrieve_plan_submit(
     """
     meta_meta = kwargs.get("meta_meta")
     compute_resource = kwargs.get("compute_resource", "small")
-    fingerprint = _analyst_task_fingerprint(
+    fingerprint = analyst_task_fingerprint(
         goal_description=goal_description,
         data_list=data_list,
         obs_file_list=obs_file_list,
@@ -67,7 +66,7 @@ async def retrieve_plan_submit(
     prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
         fingerprint
     )
-    if prior is not None and _should_reuse_prior_task(prior["status"] or ""):
+    if prior is not None and should_reuse_prior_task(prior["status"] or ""):
         reused: Dict[str, Any] = {
             "task_id": prior["task_id"],
             "output_dir": prior["output_dir"],

@@ -163,7 +163,7 @@ async def test_dedup_hit_treats_blank_prior_status_as_no_reuse(
     """A prior row whose ``status`` is None falls through to fresh submit.
 
     ``retrieve_plan_submit`` coerces ``prior["status"] or ""`` before
-    asking ``_should_reuse_prior_task``; an empty status is unknown and
+    asking ``should_reuse_prior_task``; an empty status is unknown and
     must fail safe to a resubmit.
     """
     _patch_prior(
