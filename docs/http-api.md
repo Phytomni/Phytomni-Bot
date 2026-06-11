@@ -609,6 +609,15 @@ upstream platform is the recovery path). The chokepoint also writes
 the full traceback through `logger.exception` so operators see the
 underlying SQLite or OS error in logs.
 
+Sub-agent analysis submissions (design / network / research / deep_genome
+/ environment / evolution) dedupe transparently at the
+`submit_analyst_via_subgraph` seam rather than through the `id: null`
+shape above. A fingerprint hit returns the prior remote `task_id` in the
+same shape as a fresh submission (no `dedup_hit` signal), after verifying
+the prior task is live or succeeded. A run's `task_ids` may therefore
+reference a task originally launched by an earlier run; the status
+reconciliation path is unchanged.
+
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   -H "Authorization: Bearer ptm_..." \

@@ -195,9 +195,21 @@ not persisted because parameters may contain user queries, uploaded document
 content, or retrieved text.
 
 The cache does not memoize task submission, polling, uploads, or downloads.
-Analyst duplicate submissions reuse the prior remote `task_id` through
-`tasks.input_fingerprint` and `TaskManager.get_task_by_fingerprint`, not
-through `func_cache`.
+Duplicate analysis submissions instead reuse the prior remote `task_id`
+through `tasks.input_fingerprint` and `TaskManager.get_task_by_fingerprint`
+(not through `func_cache`). The shared helpers live in
+`runtime/task_dedup.py` and cover both analyst entry points: the top-level
+`retrieve_plan_submit` wrapper and the `submit_analyst_via_subgraph`
+dispatch seam every sub-agent (design / network / research / deep_genome /
+environment / evolution) funnels through. Because the local `tasks.status`
+column is written once at submit and never advanced, a fingerprint hit is
+verified against the live remote status before reuse
+(`task_ops.probe_live_status` plus `verify_live_status`): a succeeded or
+in-flight task is reused — a polling caller may only reuse a terminal task —
+while a confirmed-dead task is written back to `failed` and resubmitted. The
+seam writes its own fingerprint row at submit time, and `TaskManager.record`
+`COALESCE`s `input_fingerprint` so the per-tool run recorder cannot clobber
+the dedup key on a later write.
 
 `runtime/agent_registry.py` is separate. It reuses in-memory agent instances
 and compiled LangGraph apps for matching non-secret configuration, but it
