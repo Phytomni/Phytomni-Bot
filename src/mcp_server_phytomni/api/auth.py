@@ -350,11 +350,17 @@ class ApiKeyStore:
                 )
         raise _unauthorized()
 
-    def list(self, user_id: Optional[str] = None) -> list[ApiKeyRecord]:
+    def list(
+        self,
+        user_id: Optional[str] = None,
+        active_only: bool = True,
+    ) -> list[ApiKeyRecord]:
         """List stored keys without any secret material.
 
         Args:
             user_id: Optional filter to a single user.
+            active_only: When True (default), exclude revoked and
+                expired keys from the result.
 
         Returns:
             Non-secret key records ordered by creation time.
@@ -363,14 +369,19 @@ class ApiKeyStore:
             "SELECT user_id, name, key_prefix, created_at, revoked_at, "
             "last_used_at, expires_at, scopes FROM api_keys"
         )
-        params: tuple[str, ...] = ()
+        conditions: list[str] = []
+        params: list[str] = []
         if user_id is not None:
-            query += " WHERE user_id = ?"
-            params = (user_id,)
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if active_only:
+            conditions.append("revoked_at IS NULL")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY created_at"
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [
+        records = [
             ApiKeyRecord(
                 user_id=row[0],
                 name=row[1],
@@ -383,6 +394,9 @@ class ApiKeyStore:
             )
             for row in rows
         ]
+        if active_only:
+            records = [r for r in records if r.active]
+        return records
 
     def revoke(self, prefix: str) -> bool:
         """Revoke the active key with the given prefix.
