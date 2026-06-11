@@ -156,6 +156,12 @@ exclude = [
 ]
 pythonVersion = "3.12"
 stubPath = "typings"
+# Resolve imports against the uv-created .venv even when pyright runs bare
+# (no active VIRTUAL_ENV). The gate's ``uv run pyright`` already exports it,
+# but a direct ``pyright src scripts`` would otherwise emit spurious
+# reportMissingImports for every third-party package.
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 minversion = "9.0"
