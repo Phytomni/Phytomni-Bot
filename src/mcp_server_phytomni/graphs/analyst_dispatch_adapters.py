@@ -21,7 +21,15 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from ..agents.analyst.state import AnalystInput
+from ..agents.analyst.task_ops import probe_live_status
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
+from ..runtime.task_dedup import (
+    analyst_task_fingerprint,
+    record_dispatch_submission,
+    should_reuse_prior_task,
+    verify_live_status,
+)
+from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +174,24 @@ async def submit_analyst_via_subgraph(
         ``map_analyst_output_to_dispatch_state`` from the analyst
         subgraph's final state. Missing fields surface as ``None`` so
         failure paths flow through to ``capture_analysis_result``
-        without raising.
+        without raising. On an input-fingerprint dedup hit the same
+        5-key shape is returned (``plan`` / ``tool_usages`` ``None``)
+        so consumers cannot tell a reuse from a fresh submission.
     """
     context = prepare_analyst_dispatch_context(
         config, sensitive_config, request
     )
+    fingerprint = _dispatch_fingerprint(request)
+    reused = await _reuse_prior_dispatch(
+        fingerprint, require_terminal_success=is_polling
+    )
+    if reused is not None:
+        logger.info(
+            "Reusing prior %s task via fingerprint dedup (task_id: %s)",
+            context.analysis_type,
+            reused["task_id"],
+        )
+        return reused
     enriched_request = {**request, "output_dir": context.output_dir}
     analyst_input = map_send_payload_to_analyst_input(
         enriched_request, is_polling=is_polling
@@ -185,9 +206,81 @@ async def submit_analyst_via_subgraph(
         analyst_input, config=runnable_config
     )
     result = map_analyst_output_to_dispatch_state(final_state)
+    task_id = result.get("task_id")
+    if isinstance(task_id, str) and task_id:
+        record_dispatch_submission(
+            task_id, str(result.get("output_dir") or ""), fingerprint
+        )
     logger.info(
         "%s task completed via subgraph (task_id: %s)",
         context.analysis_type,
         result.get("task_id"),
     )
     return result
+
+
+def _dispatch_fingerprint(request: Mapping[str, Any]) -> str:
+    """Return the dedup fingerprint for a dispatch request.
+
+    Sub-tasks carry no uploaded documents, so ``obs_file_list`` is empty
+    and the digest keys on the goal description and data list only —
+    the same formula and namespace as the analyst top-level dedup so a
+    given gene's analysis reuses across both entry points.
+
+    Args:
+        request: Dispatch request with a ``prompt_parts`` 3-tuple of
+            goal description, preset plan meta string, and data list.
+
+    Returns:
+        The ``analyst_task_fingerprint`` digest for the request.
+    """
+    goal_description, _meta, data_list = request["prompt_parts"]
+    return analyst_task_fingerprint(
+        goal_description=goal_description,
+        data_list=data_list,
+        obs_file_list=None,
+    )
+
+
+async def _reuse_prior_dispatch(
+    fingerprint: str,
+    *,
+    require_terminal_success: bool,
+) -> dict[str, Any] | None:
+    """Return a reuse-shaped dispatch result, or None to submit fresh.
+
+    Reads the fingerprint row, applies the cheap status gate, then the
+    live verification (probe + is_polling-aware decision). The reuse
+    dict mirrors ``map_analyst_output_to_dispatch_state``'s 5-key shape
+    (``plan`` / ``tool_usages`` are ``None`` for a reused task) so
+    consumers cannot tell a hit from a miss.
+
+    Args:
+        fingerprint: Identity digest from ``analyst_task_fingerprint``.
+        require_terminal_success: True for a polling caller
+            (deep_genome), which may only reuse a terminal-success task.
+
+    Returns:
+        The reuse dict on a verified-live hit, otherwise ``None``.
+    """
+    prior = TaskManager(resolve_tasks_db_path()).get_task_by_fingerprint(
+        fingerprint
+    )
+    if prior is None:
+        return None
+    if not should_reuse_prior_task(prior["status"] or ""):
+        return None
+    live_status = await probe_live_status(prior["task_id"])
+    if not verify_live_status(
+        prior,
+        live_status=live_status,
+        require_terminal_success=require_terminal_success,
+    ):
+        return None
+    return {
+        "task_id": prior["task_id"],
+        "output_dir": prior["output_dir"],
+        "plan": None,
+        "tool_usages": None,
+        "task_status": prior["status"],
+    }
