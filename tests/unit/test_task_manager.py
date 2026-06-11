@@ -206,6 +206,96 @@ def test_get_task_log_returns_none_for_missing_or_null(
     assert mgr.get_task_log(task_id) is None
 
 
+def test_set_get_task_final_report_roundtrip(tmp_path: Path) -> None:
+    """Verify set/get_task_final_report round-trips the report markdown.
+
+    DeepGenome runs the whole report workflow in the background and
+    writes the assembled markdown to the local row so the poll path
+    (GetTaskStatus / run-aggregate) can surface it. set_task_final_report
+    writes the final_report TEXT column via a targeted UPDATE;
+    get_task_final_report reads it back as the raw markdown string.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the round-trip assertion passes.
+    """
+    mgr = _mgr(tmp_path)
+    task_id = mgr.create_task()
+    markdown = "# Deep Genome Analysis of Os01g0177400\n\nbody\n"
+
+    updated = mgr.set_task_final_report(task_id, markdown)
+    assert updated is True
+
+    assert mgr.get_task_final_report(task_id) == markdown
+
+
+def test_set_task_final_report_survives_update_task(tmp_path: Path) -> None:
+    """The terminal status flip must not wipe a persisted final_report.
+
+    The DeepGenome follow-up node writes final_report while the row is
+    still ``submitted``; the background done-callback later flips status
+    via update_task. update_task only SETs status / analysis_id /
+    output_dir, so a targeted final_report write persists through the
+    status transition.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the persistence assertion passes.
+    """
+    mgr = _mgr(tmp_path)
+    mgr.record_submission("dg-1", "submitted", "/obs/run")
+    mgr.set_task_final_report("dg-1", "REPORT")
+
+    mgr.update_task("dg-1", "succeeded", "", "/obs/run")
+
+    assert mgr.get_task_final_report("dg-1") == "REPORT"
+
+
+def test_set_task_final_report_returns_false_for_unknown_id(
+    tmp_path: Path,
+) -> None:
+    """Verify set_task_final_report returns False for an unknown task_id.
+
+    The UPDATE affects zero rows, so rowcount is 0. The helper surfaces
+    this as False rather than raising so the best-effort follow-up-node
+    write can log and continue instead of crashing the workflow.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the False return assertion passes.
+    """
+    mgr = _mgr(tmp_path)
+    assert mgr.set_task_final_report("does-not-exist", "REPORT") is False
+
+
+def test_get_task_final_report_returns_none_for_missing_or_null(
+    tmp_path: Path,
+) -> None:
+    """Verify get_task_final_report returns None for unknown ids / NULL.
+
+    A task row with final_report = NULL (every non-DeepGenome task, plus
+    rows created before the column existed) must read back as None so the
+    formatter falls back to the status line instead of crashing.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after both None-return assertions pass.
+    """
+    mgr = _mgr(tmp_path)
+    task_id = mgr.create_task()
+
+    assert mgr.get_task_final_report("unknown-id") is None
+    assert mgr.get_task_final_report(task_id) is None
+
+
 def test_init_db_adds_task_log_column_to_legacy_four_column_db(
     tmp_path: Path,
 ) -> None:
@@ -232,6 +322,7 @@ def test_init_db_adds_task_log_column_to_legacy_four_column_db(
     with sqlite3.connect(db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     assert "task_log" in columns
+    assert "final_report" in columns
 
 
 def test_resolve_tasks_db_path_honors_env_override(

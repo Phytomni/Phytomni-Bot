@@ -139,3 +139,9 @@ Use to check a previously submitted async task without blocking. Pass the
 Unrecorded ids return `status: "unknown"`. Known ids return the local
 registry state, output directory, and one live platform status check when
 available.
+
+For a succeeded `DeepGenomeAgent` task, `formatted.answer` carries the
+assembled report markdown (the workflow runs in the background and
+persists its report on the task row); other agents keep the bare
+`Task <id>: <status>` status line and surface their products through
+`metadata.output_dir` / `metadata.artifacts`.

@@ -242,6 +242,82 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
 
 
 @pytest.mark.asyncio
+async def test_reconcile_surfaces_deep_genome_final_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A succeeded DeepGenome child lifts its final_report to the payload.
+
+    DeepGenome's single umbrella child persists the assembled report on
+    its row; reconcile_task carries it through, and the terminal payload
+    surfaces the first non-empty report under ``final_report`` so a
+    client polling /v1/runs/{id} reads the markdown without descending
+    into ``task_results``.
+    """
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-dg", "alice", "deep_genome", "remote"),
+        ("dg-1",),
+    )
+    report_md = "# Deep Genome Analysis of Os01g0177400\n\nbody\n"
+
+    async def fake(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded child carrying the persisted report."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/dg",
+            "final_report": report_md,
+        }
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+
+    record = await registry.reconcile("run-dg", owner="alice")
+
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result is not None
+    assert record.result["final_report"] == report_md
+
+
+@pytest.mark.asyncio
+async def test_reconcile_final_report_none_without_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose children persist no report keeps final_report None.
+
+    Analyst / design / network runs never write final_report, so the
+    terminal payload's ``final_report`` key is present (shape stays
+    stable) but null.
+    """
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-an", "alice", "analyst", "remote"),
+        ("t-1",),
+    )
+
+    async def fake(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded child with no persisted report."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/a",
+            "final_report": None,
+        }
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+
+    record = await registry.reconcile("run-an", owner="alice")
+
+    assert record is not None
+    assert record.result is not None
+    assert record.result["final_report"] is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_propagates_failure_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

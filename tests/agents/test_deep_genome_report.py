@@ -13,6 +13,9 @@ so the assertions stay inside the class hierarchy.
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
+from pathlib import Path
 from typing import Any, Dict, cast
 
 import pytest
@@ -24,6 +27,7 @@ from mcp_server_phytomni.agents.deep_genome.report import (
     _state_gene_string,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
+from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.unit
 
@@ -177,3 +181,165 @@ def test_summary_source_content_defaults_to_analyst_layout_when_unset() -> (
 
     assert "## Recommended experiments" in result
     assert "## Discussion" in result
+
+
+class _FollowUpProbe(DeepGenomeReportMixin):
+    """Report mixin host with a canned chat dispatch + public node proxy.
+
+    The follow-up node calls the shared chat subgraph; the probe stubs
+    ``_dispatch_chat`` so the test stays offline and focuses on the
+    final-report persistence side effect rather than the LLM round-trip.
+    """
+
+    def __init__(self) -> None:
+        """Wire the single config attribute the node reads."""
+        self.deep_genome_config = DeepGenomeConfig()
+
+    async def _dispatch_chat(self, user_query: str) -> Dict[str, Any]:
+        """Return a canned follow-up chat response (JSON-list content)."""
+        del user_query
+        return {"choices": [{"message": {"content": '["Q1?", "Q2?"]'}}]}
+
+    async def run_follow_up_node(
+        self, state: DeepGenomeState
+    ) -> Dict[str, Any]:
+        """Public proxy for ``_run_follow_up_node`` (in-hierarchy access)."""
+        return await self._run_follow_up_node(state)
+
+
+def test_run_follow_up_node_persists_assembled_report_to_task_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The follow-up node writes the assembled markdown to the task row.
+
+    DeepGenome runs in the background and the poll path reads the row, so
+    the last report node must persist the assembled markdown (the same
+    string it writes to disk, including the follow-up section) keyed by
+    ``state['task_id']``. A later ``update_task`` status flip leaves the
+    report intact (targeted column write).
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None after the file + persisted-row assertions pass.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    mgr = TaskManager(db_path)
+    mgr.record_submission("dg-task-1", "submitted", "/obs/run")
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id="dg-task-1",
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+    )
+
+    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert (report_dir / "Os01g0177400_report.md").exists()
+    persisted = mgr.get_task_final_report("dg-task-1")
+    assert persisted is not None
+    assert "# Deep Genome Analysis of Os01g0177400" in persisted
+    assert "## Follow up questions:" in persisted
+    assert "Q1?" in persisted
+    # The status flip after the background run must not wipe the report.
+    mgr.update_task("dg-task-1", "succeeded", "", "/obs/run")
+    assert mgr.get_task_final_report("dg-task-1") == persisted
+    assert out["follow_up_questions"] == ["Q1?", "Q2?"]
+
+
+def test_run_follow_up_node_skips_persist_without_task_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing ``task_id`` must not crash the node's persistence step.
+
+    The persistence write is best-effort: when no umbrella task id is in
+    state (defensive guard), the node still writes the report file and
+    returns its delta without raising.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None after the no-raise + file-written assertions pass.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id=None,
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+    )
+
+    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert (report_dir / "Os01g0177400_report.md").exists()
+    assert out["follow_up_questions"] == ["Q1?", "Q2?"]
+
+
+def test_run_follow_up_node_swallows_persist_db_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A registry write failure must not crash the workflow's last node.
+
+    The report is already on disk; the row-persist is best-effort, so a
+    ``sqlite3.Error`` (WAL / lock) is logged and swallowed and the node
+    still returns its delta. Losing only the poll-surfacing of one run
+    is preferable to flipping a finished workflow to ``failed``.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None after the no-raise + file-written assertions pass.
+    """
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: str(tmp_path / "tasks.db"),
+    )
+
+    class _BoomManager:
+        """TaskManager stand-in whose report write always fails."""
+
+        def __init__(self, _db_path: str) -> None:
+            """Accept the db path and ignore it."""
+
+        def set_task_final_report(self, *_: Any) -> bool:
+            """Raise as a WAL-locked / busy registry would."""
+            raise sqlite3.Error("database is locked")
+
+    monkeypatch.setattr(report_module, "TaskManager", _BoomManager)
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id="dg-boom",
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+    )
+
+    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert (report_dir / "Os01g0177400_report.md").exists()
+    assert out["follow_up_questions"] == ["Q1?", "Q2?"]

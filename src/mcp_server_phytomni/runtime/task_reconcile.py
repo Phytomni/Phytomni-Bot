@@ -40,11 +40,16 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
 
     Returns:
         Dict containing ``task_id`` / ``status`` / ``output_dir`` /
-        ``analysis_id`` / ``live_status``. ``status`` is ``"unknown"``
-        for an unrecorded id and the other fields are empty in that
-        case.
+        ``analysis_id`` / ``live_status`` / ``final_report``. ``status``
+        is ``"unknown"`` for an unrecorded id and the other fields are
+        empty in that case. ``final_report`` carries the assembled
+        markdown DeepGenome persists on the row (``None`` for every
+        other agent and for rows with no report yet), letting the poll
+        formatter and the run-aggregate surface the report without
+        re-running the workflow.
     """
-    row = TaskManager(resolve_tasks_db_path()).get_task(task_id)
+    manager = TaskManager(resolve_tasks_db_path())
+    row = manager.get_task(task_id)
     if row is None:
         return {
             "task_id": task_id,
@@ -52,6 +57,7 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
             "output_dir": "",
             "analysis_id": "",
             "live_status": None,
+            "final_report": None,
         }
     analyst_config = AnalystConfig()
     result: Dict[str, Any] = {
@@ -60,6 +66,7 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         "output_dir": row["output_dir"],
         "analysis_id": row["analysis_id"],
         "live_status": None,
+        "final_report": manager.get_task_final_report(task_id),
     }
     try:
         live = await task_status(

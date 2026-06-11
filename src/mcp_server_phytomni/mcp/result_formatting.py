@@ -660,13 +660,25 @@ def _format_task_status_result(
     carries an ``output_dir``, surface one descriptor; otherwise expose
     an empty list. ``collect_terminal_artifacts`` owns the eligibility
     rule so success vocabulary stays consistent with the run-poll path.
+
+    When the reconciled row carries a ``final_report`` (the assembled
+    markdown DeepGenome persists in the background), that report becomes
+    the answer so a polling client reads the finished report directly;
+    every other agent leaves the field empty and keeps the bare
+    ``Task <id>: <status>`` status line.
     """
     task_id = _string_or_none(content.get("task_id"))
     status = _string_or_none(content.get("status")) or "unknown"
     output_dir = _string_or_none(content.get("output_dir"))
     artifacts = collect_terminal_artifacts([dict(content)])
+    final_report = content.get("final_report")
+    answer = (
+        final_report
+        if isinstance(final_report, str) and final_report
+        else f"Task {task_id or '?'}: {status}"
+    )
     return FormattedToolResult(
-        answer=f"Task {task_id or '?'}: {status}",
+        answer=answer,
         metadata={
             "task_id": task_id,
             "status": status,

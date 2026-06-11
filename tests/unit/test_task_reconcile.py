@@ -2,12 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for reconcile_task_log (runtime/task_reconcile.py).
+"""Tests for reconcile_task / reconcile_task_log (runtime/task_reconcile).
 
-Pin the three reconcile paths: cache hit (immediate return), cache
-miss + remote success (fetch + write + return), and cache miss +
-remote failure (return None, do not propagate the analyst-platform
-5xx).
+Pin the reconcile_task_log three paths (cache hit, cache miss + remote
+success, cache miss + remote failure) plus reconcile_task's
+final_report passthrough: the column the DeepGenome follow-up node
+persists must ride the reconcile dict so the poll formatter and the
+run-aggregate can surface the assembled report.
 """
 
 from __future__ import annotations
@@ -21,7 +22,10 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.runtime.task_manager import TaskManager
-from mcp_server_phytomni.runtime.task_reconcile import reconcile_task_log
+from mcp_server_phytomni.runtime.task_reconcile import (
+    reconcile_task,
+    reconcile_task_log,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -106,6 +110,85 @@ def test_reconcile_task_log_fetches_and_caches_on_miss(
     result = asyncio.run(reconcile_task_log(task_id))
     assert result == fetched
     assert mgr.get_task_log(task_id) == fetched
+
+
+def test_reconcile_task_surfaces_persisted_final_report(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reconcile_task carries the row's final_report through the dict.
+
+    The DeepGenome follow-up node persists the assembled markdown on the
+    local row; reconcile_task is the single seam feeding both the
+    GetTaskStatus formatter and the run-aggregate, so the report must
+    ride its return dict. The live ``task_status`` probe is stubbed to
+    fail so the call degrades to the locally recorded row.
+    """
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record_submission("dg-1", "succeeded", "/obs/run")
+    mgr.set_task_final_report("dg-1", "# Report\n\nbody\n")
+
+    async def _fake_status(_t_id: str, **_: Any) -> dict:
+        raise _fake_analyst_error()
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _fake_status,
+    )
+
+    result = asyncio.run(reconcile_task("dg-1"))
+    assert result["final_report"] == "# Report\n\nbody\n"
+    assert result["status"] == "succeeded"
+
+
+def test_reconcile_task_final_report_none_without_persisted_report(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row with no persisted report carries final_report=None.
+
+    Every non-DeepGenome task leaves the column NULL, so reconcile_task
+    must surface None (not crash, not omit the key) so the formatter
+    falls back to the status line.
+    """
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record_submission("an-1", "running", "/obs/run")
+
+    async def _fake_status(_t_id: str, **_: Any) -> dict:
+        raise _fake_analyst_error()
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _fake_status,
+    )
+
+    result = asyncio.run(reconcile_task("an-1"))
+    assert result["final_report"] is None
+
+
+def test_reconcile_task_unknown_id_includes_final_report_key(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unknown id keeps the final_report key present (value None).
+
+    Shape stability: every reconcile_task return carries the same keys
+    so the run-aggregate and formatter never key-check.
+    """
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    TaskManager(mgr_path)
+
+    result = asyncio.run(reconcile_task("does-not-exist"))
+    assert result["status"] == "unknown"
+    assert result["final_report"] is None
 
 
 def test_reconcile_task_log_returns_none_on_remote_failure(

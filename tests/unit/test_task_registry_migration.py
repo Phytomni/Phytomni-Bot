@@ -37,6 +37,7 @@ _EXPECTED_COLUMNS = {
     "updated_at",
     "input_fingerprint",
     "task_log",
+    "final_report",
 }
 
 

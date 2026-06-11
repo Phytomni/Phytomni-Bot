@@ -660,6 +660,7 @@ def _terminal_payload(
         "task_results": live,
         "live_status": live,
         "artifacts": artifacts,
+        "final_report": _first_final_report(live),
     }
     if status == "succeeded":
         return payload, None
@@ -669,6 +670,21 @@ def _terminal_payload(
         if (row.get("status") or "").lower() in _FAILURE_STATUSES
     ]
     return payload, f"one or more tasks failed: {', '.join(failed)}"
+
+
+def _first_final_report(live: List[Dict[str, Any]]) -> Optional[str]:
+    """Return the first non-empty child ``final_report``, else None.
+
+    DeepGenome's single umbrella child persists the assembled report on
+    its reconciled row; other agents leave it absent. Surfacing the
+    first non-empty value lets /v1/runs/{id} expose the report at the
+    payload top level without the client walking ``task_results``.
+    """
+    for row in live:
+        report = row.get("final_report")
+        if isinstance(report, str) and report:
+            return report
+    return None
 
 
 def _row_to_record(

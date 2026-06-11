@@ -137,7 +137,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT,
     updated_at TEXT,
     input_fingerprint TEXT,
-    task_log TEXT
+    task_log TEXT,
+    final_report TEXT
 )
 """
 
@@ -157,6 +158,7 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
         "ALTER TABLE tasks ADD COLUMN input_fingerprint TEXT",
     ),
     ("task_log", "ALTER TABLE tasks ADD COLUMN task_log TEXT"),
+    ("final_report", "ALTER TABLE tasks ADD COLUMN final_report TEXT"),
 )
 
 # Status values that disqualify a prior row from being reused via
@@ -469,6 +471,62 @@ class TaskManager:
         if row is None or row[0] is None:
             return None
         return json.loads(row[0])
+
+    def set_task_final_report(self, task_id: str, markdown: str) -> bool:
+        """Write the assembled report markdown to the final_report column.
+
+        DeepGenome runs its whole report workflow in the background and
+        writes the finished markdown to the local row so the non-blocking
+        poll path (GetTaskStatus / run-aggregate) can surface it without
+        re-running the workflow. A single targeted ``UPDATE`` (never the
+        ``INSERT OR REPLACE`` ``record`` path) so a later ``update_task``
+        status flip — which SETs only status / analysis_id / output_dir —
+        cannot wipe the report.
+
+        Args:
+            task_id: The task id to update.
+            markdown: The assembled report markdown to persist verbatim.
+
+        Returns:
+            True if a row was updated, False if the task_id is unknown.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "UPDATE tasks SET final_report = ? WHERE task_id = ?",
+                (markdown, task_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_task_final_report(self, task_id: str) -> Optional[str]:
+        """Read the final_report column as a markdown string.
+
+        Returns the persisted report for a task, or None when the task
+        does not exist or the column is NULL (every non-DeepGenome task
+        and any row created before the column shipped). A non-blocking
+        single SELECT — no polling or waiting.
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            The report markdown if present, otherwise None.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT final_report FROM tasks WHERE task_id = ?",
+                (task_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if row is None or row[0] is None:
+            return None
+        return row[0]
 
 
 def resolve_tasks_db_path() -> str:

@@ -136,6 +136,55 @@ def test_get_task_status_unknown_id_returns_unknown_status() -> None:
     assert not result.metadata["artifacts"]
 
 
+def test_get_task_status_surfaces_final_report_as_answer() -> None:
+    """A persisted ``final_report`` becomes the answer markdown.
+
+    DeepGenome runs in the background and persists its assembled report
+    on the task row; reconcile_task carries it into ``final_report``, so
+    the poll formatter surfaces the report markdown as the answer rather
+    than the bare status line. Status and the artifacts descriptor stay
+    in metadata so a polling client still reads the lifecycle fields.
+    """
+    report_md = "# Deep Genome Analysis of Os01g0177400\n\nbody\n"
+    raw = {
+        "task_id": "dg-1",
+        "status": "succeeded",
+        "output_dir": "/obs/run/output",
+        "analysis_id": "",
+        "live_status": None,
+        "final_report": report_md,
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.answer == report_md
+    assert result.metadata["status"] == "succeeded"
+    assert result.metadata["artifacts"] == [
+        {"task_id": "dg-1", "output_dir": "/obs/run/output", "paths": []},
+    ]
+
+
+def test_get_task_status_blank_final_report_keeps_status_line() -> None:
+    """An empty/None ``final_report`` falls back to the status-line answer.
+
+    Every non-DeepGenome task leaves the column NULL; the formatter must
+    not emit an empty answer for those, so it keeps the existing
+    ``Task <id>: <status>`` summary when no report markdown is present.
+    """
+    raw = {
+        "task_id": "an-1",
+        "status": "running",
+        "output_dir": "/obs/run/wip",
+        "analysis_id": "",
+        "live_status": None,
+        "final_report": None,
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.answer == "Task an-1: running"
+
+
 def test_envelope_preserves_raw_provider_fields() -> None:
     """Verify envelope keeps reasoning_content, usage, and unknown keys.
 

@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 from ...common.prompts import get_prompt
 from ...common.responses import (
@@ -25,6 +26,7 @@ from ...common.responses import (
 )
 from ...config.defaults import DeepGenomeConfig
 from ...graphs.chat_adapters import build_chat_input, extract_chat_response
+from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
@@ -667,7 +669,42 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             final_report += "\n"
         with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(final_report)
+        self._persist_final_report(state.get("task_id"), final_report)
         return {
             "final_report": part0145_str,
             "follow_up_questions": follow_up_list,
         }
+
+    @staticmethod
+    def _persist_final_report(
+        task_id: Optional[str], final_report: str
+    ) -> None:
+        """Write the assembled report to the umbrella task row, best-effort.
+
+        DeepGenome runs in the background and returns only a submit
+        handle, so the assembled markdown reaches a polling client only
+        if it is persisted on the local task row here (the last report
+        node). ``set_task_final_report`` is a targeted column write, so a
+        later terminal ``update_task`` status flip leaves it intact. The
+        write is best-effort: a registry hiccup (``sqlite3.Error`` for
+        WAL / lock failures, ``OSError`` for a full disk) is logged and
+        swallowed rather than failing the workflow's final node, since
+        the report is already on disk and only the poll-surfacing is lost.
+
+        Args:
+            task_id: Umbrella task id minted by ``arun``; ``None`` skips
+                the write (defensive guard for state built without it).
+            final_report: Assembled report markdown to persist verbatim.
+        """
+        if not task_id:
+            return
+        try:
+            TaskManager(resolve_tasks_db_path()).set_task_final_report(
+                task_id, final_report
+            )
+        except (sqlite3.Error, OSError) as exc:
+            logger.warning(
+                "DeepGenome failed to persist final_report for %s: %s",
+                task_id,
+                exc,
+            )

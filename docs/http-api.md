@@ -576,6 +576,17 @@ respond `202` with `status: "running"` and `task_ids` listing every child
 task registered by the submit path. Poll `/v1/runs/{run_id}` for live
 status.
 
+`deep_genome` runs the whole report workflow in-process in the
+background, so unlike the other remote agents its terminal product is a
+local markdown report rather than an upstream-platform artifact. The
+last report node persists the assembled markdown on its task row; on a
+succeeded poll the report surfaces in two places: `GetTaskStatus`
+returns it as `formatted.answer` (instead of the bare
+`Task <id>: <status>` status line), and `GET /v1/runs/{run_id}` lifts
+the first child report to `result.final_report` at the payload top level
+(also present per-child under `result.task_results[].final_report`).
+Every other agent leaves `final_report` `null`.
+
 ### Remote agent edge cases: `id: null` / `task_ids: []`
 
 A `202` body can legitimately return `id: null` with `task_ids: []` for
