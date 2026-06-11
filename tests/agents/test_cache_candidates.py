@@ -2,10 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for first-wave low-risk cache integration points.
+"""Tests for cache integration points and idempotence contracts.
 
-Covers config-file cache invalidation, retrieval TTL caches, gene literature
-cache keys, and DeepGenome BI lookup cache behavior.
+Covers config-file change tracking and the retrieval composite caches,
+plus the network-formatting and DeepGenome BI lookup helpers whose
+function-result caches were removed (now pinned as plain idempotence:
+identical inputs return identical results, each call hitting the
+backend).
 """
 
 import json
@@ -78,10 +81,13 @@ def test_get_data_list_tracks_config_file_changes(tmp_path):
     }
 
 
-def test_network_to_string_uses_cache_for_identical_inputs():
-    """Verify network to string uses cache for identical inputs."""
-    network_to_string.cache_clear()
+def test_network_to_string_is_deterministic_for_identical_inputs():
+    """Verify network_to_string returns identical text for identical inputs.
 
+    The function-result cache was removed; this pins the surviving
+    contract that the pure formatter is deterministic, so two identical
+    invocations still produce the same report text.
+    """
     gene_network_list = [("ath", "AT1G01010")]
     species_gene_symbol_dict = {("ath", "AT1G01010"): ["NAC001"]}
     species_gene_anno_dict = {
@@ -120,11 +126,6 @@ def test_network_to_string_uses_cache_for_identical_inputs():
 
     assert first == second
     assert "NAC domain transcription factor" in first
-    assert network_to_string.cache_info() == {
-        "hits": 1,
-        "misses": 1,
-        "count": 1,
-    }
 
 
 async def test_retrieve_uses_composite_cache(monkeypatch):
@@ -451,16 +452,15 @@ async def test_gene_retrieve_is_idempotent_without_composite_cache():
     assert calls["arun"] == 2
 
 
-async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
-    """Verify deep genome gene symbol lookup uses cache.
+async def test_deep_genome_gene_symbol_lookup_hits_bi_each_call(monkeypatch):
+    """Verify each gene symbol lookup hits the BI gateway (cache removed).
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to replace requests.post.
+        monkeypatch: Pytest monkeypatch fixture used to replace the BI helper.
 
     Returns:
-        None after repeated lookup shares one BI request.
+        None after two identical lookups each issue their own BI request.
     """
-    deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     async def fake_helper(*args, **kwargs):
@@ -495,19 +495,22 @@ async def test_deep_genome_gene_symbol_lookup_uses_cache(monkeypatch):
 
     assert set(first) == {"NAC001", "NAC002"}
     assert set(second) == {"NAC001", "NAC002"}
-    assert calls["post"] == 1
+    # The lookup cache was removed, so two identical lookups each issue
+    # their own BI request instead of the second hitting a cache.
+    assert calls["post"] == 2
 
 
-async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
-    """Verify deep genome gene annotation lookup uses cache.
+async def test_deep_genome_gene_annotation_lookup_hits_bi_each_call(
+    monkeypatch,
+):
+    """Verify each annotation lookup hits BI four times (cache removed).
 
     Args:
-        monkeypatch: Pytest monkeypatch fixture used to replace requests.post.
+        monkeypatch: Pytest monkeypatch fixture used to replace the BI helper.
 
     Returns:
-        None after repeated lookup reuses cached annotation rows.
+        None after two identical lookups issue eight BI requests in total.
     """
-    deep_genome_agents.clear_gene_lookup_caches()
     calls = {"post": 0}
 
     async def fake_helper(sql, *, bi_url, headers, retry):
@@ -555,4 +558,6 @@ async def test_deep_genome_gene_annotation_lookup_uses_cache(monkeypatch):
 
     assert first == second
     assert set(first) == {"description", "go", "interpro", "mapman"}
-    assert calls["post"] == 4
+    # Four BI SELECTs per lookup; the cache was removed, so two identical
+    # lookups issue eight requests in total.
+    assert calls["post"] == 8

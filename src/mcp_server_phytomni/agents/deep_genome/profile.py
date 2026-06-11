@@ -21,7 +21,6 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import JsonPostRetry, require_json_object
 from ...config.defaults import DeepGenomeConfig
-from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..shared.sql import bi_query, sql_literal
 
@@ -33,14 +32,6 @@ else:
 logger = logging.getLogger(__name__)
 
 _LOOKUP_CONFIG = DeepGenomeConfig()
-# Gene-id ↔ symbol and gene annotation rows from the BI gateway are
-# reference data: a deploy may push a new build now and then, but the
-# per-gene mappings change on a months-to-years cadence. Reuse the
-# shared long TTL so identical lookups hit the local SQLite cache
-# instead of re-paying the BI gateway roundtrip for ~90 days; operators
-# can drop the entries early via the phytomni-cache CLI when a fresh
-# annotation pipeline lands.
-GENE_LOOKUP_CACHE_TTL = LONG_TTL_SECONDS
 
 
 async def _post_bi_sql(
@@ -101,11 +92,6 @@ async def _post_bi_sql(
     )
 
 
-@func_cache(
-    key_params=["bi_url", "species_code", "gene_id"],
-    ttl=GENE_LOOKUP_CACHE_TTL,
-    exclude_params=["sql_headers"],
-)
 async def _cached_gene_symbol_lookup(
     bi_url: str,
     sql_headers: Dict[str, str],
@@ -113,7 +99,7 @@ async def _cached_gene_symbol_lookup(
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
 ) -> List[str]:
-    """Retrieve and cache gene symbols for one species/gene pair."""
+    """Retrieve gene symbols for one species/gene pair."""
     sql = (
         f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
         f"AND species_code = {sql_literal(species_code)}"
@@ -132,11 +118,6 @@ async def _cached_gene_symbol_lookup(
     return []
 
 
-@func_cache(
-    key_params=["bi_url", "species_code", "gene_id"],
-    ttl=GENE_LOOKUP_CACHE_TTL,
-    exclude_params=["sql_headers"],
-)
 async def _cached_gene_annotation_lookup(
     bi_url: str,
     sql_headers: Dict[str, str],
@@ -144,7 +125,7 @@ async def _cached_gene_annotation_lookup(
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
-    """Retrieve and cache gene annotations for one species/gene pair."""
+    """Retrieve gene annotations for one species/gene pair."""
     gene_literal = sql_literal(gene_id)
     species_literal = sql_literal(species_code)
     sql_list = (
@@ -177,12 +158,6 @@ async def _cached_gene_annotation_lookup(
     if responses[3]["data"]:
         gene_anno_dict.update({"mapman": responses[3]["data"]})
     return gene_anno_dict
-
-
-def clear_gene_lookup_caches() -> None:
-    """Clear cached gene symbol and annotation lookup results."""
-    _cached_gene_symbol_lookup.cache_clear()
-    _cached_gene_annotation_lookup.cache_clear()
 
 
 class DeepGenomeProfileMixin(WorkflowMixinBase):

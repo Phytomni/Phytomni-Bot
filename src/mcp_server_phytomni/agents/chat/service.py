@@ -405,15 +405,7 @@ def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
 @func_cache(
     key_params=[
         "messages",
-        "model",
-        "temperature",
-        "top_p",
-        "frequency_penalty",
-        "presence_penalty",
-        "n",
-        "max_tokens",
         "response_format",
-        "reasoning_effort",
     ],
     ttl=LONG_TTL_SECONDS,
 )

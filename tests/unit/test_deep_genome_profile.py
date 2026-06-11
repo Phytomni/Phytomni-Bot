@@ -20,12 +20,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.agents.deep_genome import profile
-from mcp_server_phytomni.agents.deep_genome.profile import (
-    _cached_gene_annotation_lookup,
-    _cached_gene_symbol_lookup,
-    _post_bi_sql,
-    clear_gene_lookup_caches,
-)
+from mcp_server_phytomni.agents.deep_genome.profile import _post_bi_sql
 
 pytestmark = pytest.mark.unit
 
@@ -149,30 +144,3 @@ async def test_post_bi_sql_raises_mcperror_on_empty_payload(
         await _post_bi_sql("https://bi", {}, "SELECT 1")
 
     assert "no payload" in excinfo.value.error.message
-
-
-def test_clear_gene_lookup_caches_invokes_both_layer_clears(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``clear_gene_lookup_caches`` calls cache_clear on both lookup layers.
-
-    Admin tooling / tests rely on this seam to fully invalidate the
-    in-process gene-id → symbol and gene-id → annotation func_cache
-    layers; if either ``cache_clear`` call drops out, stale BI metadata
-    silently re-uses old gene rows in subsequent agent runs.
-    """
-    calls: list[str] = []
-    monkeypatch.setattr(
-        _cached_gene_symbol_lookup,
-        "cache_clear",
-        lambda: calls.append("symbol"),
-    )
-    monkeypatch.setattr(
-        _cached_gene_annotation_lookup,
-        "cache_clear",
-        lambda: calls.append("annotation"),
-    )
-
-    clear_gene_lookup_caches()
-
-    assert calls == ["symbol", "annotation"]

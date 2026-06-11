@@ -13,7 +13,6 @@ from .agent import (
     DeepGenomeAgentDeps,
     DeepGenomeAgents,
     DeepGenomeState,
-    clear_gene_lookup_caches,
     gene_function,
 )
 from .dispatch import AnalysisDispatchContext, DeepGenomeDispatchMixin
@@ -38,7 +37,6 @@ __all__ = [
     "_cached_gene_annotation_lookup",
     "_cached_gene_symbol_lookup",
     "build_sub_summary",
-    "clear_gene_lookup_caches",
     "gene_function",
     "network_to_string",
 ]

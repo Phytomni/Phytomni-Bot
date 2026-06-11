@@ -281,13 +281,17 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
 async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify identical sampling inputs hit the LLM endpoint once.
+    """Verify the cache keys only on messages and response_format.
+
+    Rotating infra params or sampling knobs (model, temperature, and the
+    rest) reuses the first cached payload; only changing messages or
+    response_format triggers a fresh completion.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to replace AsyncOpenAI.
 
     Returns:
-        None after cache hit assertions pass.
+        None after cache hit/miss assertions pass.
     """
     chat_agents.run_phyto_chat_cached.cache_clear()
     calls = {"create": 0}
@@ -345,13 +349,26 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     assert first == second
     assert calls["create"] == 1
 
-    # Flipping a semantic input (temperature) must miss the cache and
-    # trigger a fresh completion.
+    # temperature, model, and the other sampling knobs are no longer in
+    # the cache key, so flipping temperature hits the first call's cached
+    # payload instead of triggering a fresh completion.
     third = await chat_agents.run_phyto_chat_cached(
         **{**sampling_kwargs, "temperature": 0.9}
     )
 
-    assert third != first
+    assert third == first
+    assert calls["create"] == 1
+
+    # messages and response_format are the only key fields, so changing
+    # the prompt misses the cache and triggers a fresh completion.
+    fourth = await chat_agents.run_phyto_chat_cached(
+        **{
+            **sampling_kwargs,
+            "messages": [{"role": "user", "content": "root growth"}],
+        }
+    )
+
+    assert fourth != first
     assert calls["create"] == 2
 
 

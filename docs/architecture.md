@@ -185,14 +185,13 @@ Current cache scope:
 - Knowledge retrieval across `_multi_retrieve`, `_retrieve_cached`, and
   `_retrieve_scope_docs`.
 - NL2SQL at `agents/data/nl2sql.py:_execute_nl2sql_cached`.
-- DeepGenome BI `gene_id -> symbol` and `gene_id -> annotation` lookups.
-- Static template loads, static metadata reads, and pure local compute such
-  as `network_to_string`.
 
-Remote-primitive entries use `func_cache.LONG_TTL_SECONDS`, currently about
-90 days, because remote LLM/GPU concurrency is scarce. Template and pure
-local caches keep their shorter `ttl=3600`. Rendered prompts are not
-persisted because parameters may contain user queries, uploaded document
+Every cached primitive uses `func_cache.LONG_TTL_SECONDS`, currently about
+90 days, because remote LLM/GPU concurrency is scarce. Local file loads
+(templates, JSON/text metadata) and pure local compute such as
+`network_to_string` are not cached: re-reading a local file or recomputing
+a formatter is cheap relative to the SQLite roundtrip. Rendered prompts are
+not persisted because parameters may contain user queries, uploaded document
 content, or retrieved text.
 
 The cache does not memoize task submission, polling, uploads, or downloads.

@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Template, prompt, and cached file-loading helpers.
+"""Template, prompt, and file-loading helpers.
 
 Functions: load_template, file_cache_fingerprint, load_json_file,
     load_text_file, render_template, get_prompt.
@@ -15,10 +15,6 @@ from typing import Any, Mapping, Optional
 from warnings import warn
 
 from yaml import safe_load
-
-from ..func_cache import func_cache
-
-FILE_CACHE_TTL = 3600
 
 
 def load_template(
@@ -74,17 +70,13 @@ def file_cache_fingerprint(file_path: str) -> tuple[str, int, int]:
     return str(path.resolve()), stat.st_mtime_ns, stat.st_size
 
 
-@func_cache(
-    key_params=["template_file", "template_str", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
 def _load_template_cached(
     template_file: str,
     template_str: Optional[str],
     mtime_ns: int,
     size: int,
 ) -> str:
-    """Load a template string from disk using a file-aware cache key."""
+    """Load a template string from disk."""
     del mtime_ns, size
     with open(template_file, "r", encoding="utf-8") as f:
         data = safe_load(f)
@@ -103,7 +95,7 @@ def _load_template_cached(
 
 
 def load_json_file(file_path: str) -> Any:
-    """Load a JSON file through the shared file-aware cache.
+    """Load a JSON file from disk.
 
     Args:
         file_path: Path to the JSON file to load.
@@ -118,19 +110,15 @@ def load_json_file(file_path: str) -> Any:
     return _load_json_file_cached(cache_path, mtime_ns, size)
 
 
-@func_cache(
-    key_params=["file_path", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
 def _load_json_file_cached(file_path: str, mtime_ns: int, size: int) -> Any:
-    """Load JSON from disk using a file-aware cache key."""
+    """Load JSON from disk."""
     del mtime_ns, size
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def load_text_file(file_path: str) -> str:
-    """Load a text file through the shared file-aware cache.
+    """Load a text file from disk.
 
     Args:
         file_path: Path to the text file to load.
@@ -145,12 +133,8 @@ def load_text_file(file_path: str) -> str:
     return _load_text_file_cached(cache_path, mtime_ns, size)
 
 
-@func_cache(
-    key_params=["file_path", "mtime_ns", "size"],
-    ttl=FILE_CACHE_TTL,
-)
 def _load_text_file_cached(file_path: str, mtime_ns: int, size: int) -> str:
-    """Load text from disk using a file-aware cache key."""
+    """Load text from disk."""
     del mtime_ns, size
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()

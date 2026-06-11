@@ -52,7 +52,6 @@ from .profile import (
     DeepGenomeProfileMixin,
     _cached_gene_annotation_lookup,
     _cached_gene_symbol_lookup,
-    clear_gene_lookup_caches,
 )
 from .report import DeepGenomeReportMixin
 
@@ -62,7 +61,6 @@ DEEP_GENOME_CONFIG = DeepGenomeConfig()
 _manager_cache: Dict[str, Any] = {}
 __all__ = [
     "DeepGenomeAgents",
-    "clear_gene_lookup_caches",
     "gene_function",
     "network_to_string",
     "_cached_gene_annotation_lookup",

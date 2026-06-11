@@ -13,8 +13,6 @@ prompt-ready report text.
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from ...func_cache import func_cache
-
 SPECIES_CODE_MAP = {
     "ach": "kiwi (Actinidia chinensis)",
     "aco": "pineapple (Ananas comosus)",
@@ -208,16 +206,6 @@ def _format_enrichment_summary(
     )
 
 
-@func_cache(
-    key_params=[
-        "gene_network_list",
-        "species_gene_symbol_dict",
-        "species_gene_anno_dict",
-        "network_type",
-        "top_n",
-    ],
-    ttl=3600,
-)
 def network_to_string(
     gene_network_list: list,
     species_gene_symbol_dict: dict,
