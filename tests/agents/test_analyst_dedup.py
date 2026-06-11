@@ -98,6 +98,16 @@ def _patch_submit_agent(
     return calls
 
 
+def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+    """Force ``retrieve_plan_submit``'s live probe to a scripted status."""
+
+    async def fake_probe(task_id: str) -> str:
+        del task_id
+        return status
+
+    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+
+
 async def test_retrieve_plan_submit_reuses_in_flight_prior(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -106,6 +116,7 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
     db = str(tmp_path / "tasks.sqlite")
     _patch_db_path(monkeypatch, db)
     forbid = _forbid_submit_agent(monkeypatch)
+    _stub_probe(monkeypatch, "RUNNING")
 
     goal = "Identify SNP signatures in chromosome 1"
     data_list = {"/obs/snp.vcf": "snp calls"}
@@ -153,6 +164,7 @@ async def test_retrieve_plan_submit_reuses_succeeded_prior(
     db = str(tmp_path / "tasks.sqlite")
     _patch_db_path(monkeypatch, db)
     forbid = _forbid_submit_agent(monkeypatch)
+    _stub_probe(monkeypatch, "SUCCEEDED")
 
     goal = "Annotate orthologs across wheat genotypes"
     data_list = {"/obs/orthologs.tsv": "ortholog table"}
@@ -272,4 +284,44 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     assert result["input_fingerprint"] != other_fingerprint
     # A miss falls through to a real submission, so the passthrough
     # sentinel must be absent on the wrapper's return.
+    assert "dedup_hit" not in result
+
+
+async def test_retrieve_plan_submit_resubmits_when_live_probe_dead(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 'submitted' row whose live status is FAILED must resubmit fresh.
+
+    Pins the staleness fix: the local column says reusable but the live
+    probe says dead, so the wrapper falls through to a fresh agent.arun.
+    """
+    db = str(tmp_path / "tasks.sqlite")
+    _patch_db_path(monkeypatch, db)
+    counter = _patch_submit_agent(
+        monkeypatch, {"task_id": "fresh-live", "output_dir": "/out/live"}
+    )
+    _stub_probe(monkeypatch, "FAILED")
+
+    goal = "Stale-row reuse must be rejected by the live probe"
+    data_list = {"/obs/x.csv": "x"}
+    fingerprint = analyst_task_fingerprint(
+        goal_description=goal, data_list=data_list, obs_file_list=None
+    )
+    _seed_task(
+        db,
+        Submission(
+            task_id="prior-stale",
+            status="submitted",
+            output_dir="/out/stale",
+            input_fingerprint=fingerprint,
+        ),
+    )
+
+    result = await retrieve_plan_submit(
+        goal_description=goal, data_list=data_list
+    )
+
+    assert counter["arun"] == 1
+    assert result["task_id"] == "fresh-live"
     assert "dedup_hit" not in result

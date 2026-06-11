@@ -19,9 +19,11 @@ from typing import Any, Dict, List, Optional
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
     should_reuse_prior_task,
+    verify_live_status,
 )
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from .submission import _build_submit_agent, _shared_arun_kwargs
+from .task_ops import probe_live_status
 
 
 async def retrieve_plan_submit(
@@ -34,10 +36,13 @@ async def retrieve_plan_submit(
 
     Computes an input-identity fingerprint from the stable user-supplied
     inputs and queries ``TaskManager.get_task_by_fingerprint`` before
-    launching the LangGraph workflow. If a reusable prior task exists
-    (per ``should_reuse_prior_task``), the prior ``task_id`` /
-    ``output_dir`` are returned without running ``agent.arun``, so a
-    duplicate 30min–3h submission collapses into a constant-time lookup.
+    launching the LangGraph workflow. A candidate that passes the cheap
+    status gate is then verified against the live remote status (the
+    local ``tasks.status`` column never advances past ``submitted``, so
+    a dead remote task must not be reused). If the prior task is still
+    live or succeeded, its ``task_id`` / ``output_dir`` are returned
+    without running ``agent.arun``, so a duplicate 30min–3h submission
+    collapses into a constant-time lookup.
 
     Args:
         goal_description: Research goal or analysis objective.
@@ -67,17 +72,23 @@ async def retrieve_plan_submit(
         fingerprint
     )
     if prior is not None and should_reuse_prior_task(prior["status"] or ""):
-        reused: Dict[str, Any] = {
-            "task_id": prior["task_id"],
-            "output_dir": prior["output_dir"],
-            "job_name": "",
-            "compute_resource": compute_resource,
-            "input_fingerprint": fingerprint,
-            "dedup_hit": True,
-        }
-        if meta_meta:
-            reused["meta_meta"] = meta_meta
-        return reused
+        live_status = await probe_live_status(prior["task_id"])
+        if verify_live_status(
+            prior,
+            live_status=live_status,
+            require_terminal_success=False,
+        ):
+            reused: Dict[str, Any] = {
+                "task_id": prior["task_id"],
+                "output_dir": prior["output_dir"],
+                "job_name": "",
+                "compute_resource": compute_resource,
+                "input_fingerprint": fingerprint,
+                "dedup_hit": True,
+            }
+            if meta_meta:
+                reused["meta_meta"] = meta_meta
+            return reused
 
     agent, output_dir, compute_resource, thread_id = _build_submit_agent(
         kwargs,

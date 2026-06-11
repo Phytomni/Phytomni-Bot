@@ -85,6 +85,16 @@ def _patch_submit_agent_capturing(
     return captured
 
 
+def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+    """Force ``retrieve_plan_submit``'s live probe to a scripted status."""
+
+    async def fake_probe(task_id: str) -> str:
+        del task_id
+        return status
+
+    monkeypatch.setattr(analyst_planning, "probe_live_status", fake_probe)
+
+
 async def test_dedup_hit_uses_small_compute_resource_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -97,6 +107,7 @@ async def test_dedup_hit_uses_small_compute_resource_default(
             "status": "submitted",
         },
     )
+    _stub_probe(monkeypatch, "RUNNING")
 
     result = await retrieve_plan_submit(
         goal_description="Detect outliers in the heritability scan",
@@ -126,6 +137,7 @@ async def test_dedup_hit_omits_meta_meta_when_caller_omits_it(
             "status": "succeeded",
         },
     )
+    _stub_probe(monkeypatch, "SUCCEEDED")
 
     result = await retrieve_plan_submit(
         goal_description="A",
@@ -147,6 +159,7 @@ async def test_dedup_hit_drops_empty_meta_meta(
             "status": "running",
         },
     )
+    _stub_probe(monkeypatch, "RUNNING")
 
     result = await retrieve_plan_submit(
         goal_description="A",
