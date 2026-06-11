@@ -19,6 +19,7 @@ with the per-task ``thread_id`` ``RunnableConfig``, and the
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -45,6 +46,18 @@ from ._subgraph_branch_fakes import (
 pytestmark = pytest.mark.agent
 
 _DESIGN_MODULE = "mcp_server_phytomni.agents.design.agent"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tasks_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the dedup tasks DB at a per-test tmp file.
+
+    ``submit_analyst_via_subgraph`` now reads and writes the
+    ``input_fingerprint`` dedup row; without isolation these adapter
+    tests would touch the shared ``server_tasks.db`` and a prior run's
+    row would trip the live-status probe (a blocked HTTP call).
+    """
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
 
 
 def _build_agent() -> DigitalDesignAgents:
