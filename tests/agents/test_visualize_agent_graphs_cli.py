@@ -158,3 +158,60 @@ def test_build_default_registry_lists_phase_zero_agents() -> None:
     registry = viz.build_default_registry()
     assert "brief_gene" in registry.names()
     assert "deep_genome" in registry.names()
+
+
+def test_deep_genome_xray3_renders_nested_chat(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``deep_genome --xray 3`` renders despite two reused chat subgraphs.
+
+    deep_genome embeds the knowledge subgraph, whose generate node and
+    retrieve worker each mount the shared chat subgraph. Both surface as
+    a ``chat`` leaf, so the raw ``draw_mermaid`` deduplication raised
+    ``ValueError: Found duplicate subgraph 'chat'``. The disambiguation
+    pass suffixes the second occurrence to ``chat_2`` so the nested
+    composition renders instead of crashing.
+    """
+    viz = _load_script()
+    exit_code = viz.main(["--agent", "deep_genome", "--xray", "3"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "```mermaid" in out
+    assert "subgraph chat\n" in out
+    assert "subgraph chat_2\n" in out
+
+
+def test_analyst_xray2_renders_nested_chat(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``analyst --xray 2`` renders its own chat plus knowledge's chat.
+
+    analyst mounts a chat node directly and embeds the knowledge
+    subgraph, which mounts its own chat. Both share the ``chat`` leaf,
+    which previously aborted the render; the second occurrence is now
+    rewritten to ``chat_2``.
+    """
+    viz = _load_script()
+    exit_code = viz.main(["--agent", "analyst", "--xray", "2"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "subgraph chat\n" in out
+    assert "subgraph chat_2\n" in out
+
+
+def test_knowledge_xray2_keeps_single_chat_untouched(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``knowledge --xray 2`` renders one chat with no spurious rename.
+
+    knowledge mounts the shared chat subgraph exactly once, so no leaf
+    collides and the disambiguation pass must hand the graph back
+    untouched. The render keeps the single ``subgraph chat`` and never
+    invents a ``chat_2`` block, pinning the no-collision passthrough.
+    """
+    viz = _load_script()
+    exit_code = viz.main(["--agent", "knowledge", "--xray", "2"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "subgraph chat\n" in out
+    assert "subgraph chat_2\n" not in out

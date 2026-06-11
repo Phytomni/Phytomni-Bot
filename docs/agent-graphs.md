@@ -57,6 +57,16 @@ renderer. Node names and graph structure leave the host; no business
 data or state values are transmitted. Skip `--png` if even node
 names are sensitive.
 
+**Reused subgraphs at deeper `--xray`**: one shared chat subgraph is
+mounted at several nesting positions (knowledge's generate node and
+its retrieve worker each embed it; analyst and brief_gene add their
+own chat node on top), so `--xray 2` / `--xray 3` expand more than one
+`chat` block. Mermaid refuses two subgraphs that share a leaf name, so
+the renderer suffixes the later occurrences (`chat` -> `chat_2`, ...)
+for the Mermaid and PNG output only. The runtime graph and the
+exported JSON manifests are untouched and keep the original single
+`chat` node name.
+
 ## Chat Subgraph
 
 The chat workflow is the first agent compiled as an atomic-Layer
