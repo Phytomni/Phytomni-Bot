@@ -221,3 +221,24 @@ async def test_subgraph_helper_called_with_is_polling_true(
 
     assert subgraph_mock.await_args is not None
     assert subgraph_mock.await_args.kwargs["is_polling"] is True
+
+
+def test_transferred_types_dropped_from_prompt_maps() -> None:
+    """Producer-owned types leave the prompt / meta / data maps.
+
+    evolution_analysis / protein_structure_analysis / promoter_analysis
+    submit through the evolution and design producer wrappers (the
+    routing tests above), so deep_genome no longer builds their goal,
+    meta, or data-list prompts and the three maps must not list them.
+    Their output-file features stay because deep_genome still downloads
+    and summarizes the producer's results by analysis type.
+    """
+    transferred = {
+        "evolution_analysis",
+        "protein_structure_analysis",
+        "promoter_analysis",
+    }
+    assert transferred.isdisjoint(dispatch_module.ANALYSIS_GOAL_TEMPLATE_MAP)
+    assert transferred.isdisjoint(dispatch_module.ANALYSIS_META_TEMPLATE_MAP)
+    assert transferred.isdisjoint(dispatch_module.ANALYSIS_DATA_LIST_MAP)
+    assert transferred <= set(dispatch_module.ANALYSIS_TARGET_FILE_FEATURE_MAP)

@@ -91,7 +91,7 @@ async def test_request_shape_targets_evolution_analysis(
 
     Pins ``analysis_type='evolution_analysis'``, ``target_id`` =
     gene_id, ``prompt_parts`` is a 3-tuple, ``compute_resource`` =
-    'medium' (per deep_genome dispatch MEDIUM_COMPUTE_ANALYSIS_TYPES).
+    'medium' (hardcoded by the evolution producer wrapper).
     """
     submit_mock = _install_stub_dependencies(monkeypatch)
 

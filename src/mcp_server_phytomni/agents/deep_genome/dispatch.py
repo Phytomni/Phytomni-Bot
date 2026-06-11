@@ -70,12 +70,9 @@ logger = logging.getLogger(__name__)
 # at prompt resolution time in ``_analysis_prompt_parts``.
 
 ANALYSIS_GOAL_TEMPLATE_MAP = {
-    "evolution_analysis": "user/evolution_analysis",
     "haplotypes_analysis": "user/haplotypes_analysis",
     "fst_analysis": "user/fst_analysis",
     "enrichment_analysis": "user/enrichment_analysis",
-    "protein_structure_analysis": "user/structure_analysis",
-    "promoter_analysis": "user/promoter_analysis",
     "gene_expression_tissues": "user/gene_expression_analysis/tissue",
     "gene_expression_cultivars": "user/gene_expression_analysis/cultivar",
     "gene_expression_genotypes": "user/gene_expression_analysis/genotype",
@@ -88,12 +85,9 @@ ANALYSIS_GOAL_TEMPLATE_MAP = {
 }
 
 ANALYSIS_META_TEMPLATE_MAP = {
-    "evolution_analysis": "user/evolution_analysis_meta",
     "haplotypes_analysis": "user/haplotypes_analysis_meta",
     "fst_analysis": "user/fst_analysis_meta",
     "enrichment_analysis": "user/enrichment_analysis_meta",
-    "protein_structure_analysis": "user/structure_analysis_meta",
-    "promoter_analysis": "user/promoter_analysis_meta",
     "gene_expression_tissues": "user/gene_expression_analysis_meta",
     "gene_expression_cultivars": "user/gene_expression_analysis_meta",
     "gene_expression_genotypes": "user/gene_expression_analysis_meta",
@@ -106,12 +100,9 @@ ANALYSIS_META_TEMPLATE_MAP = {
 }
 
 ANALYSIS_DATA_LIST_MAP = {
-    "evolution_analysis": "evolution_analysis",
     "haplotypes_analysis": "haplotypes_analysis",
     "fst_analysis": "fst_analysis",
     "enrichment_analysis": "enrichment_analysis",
-    "protein_structure_analysis": "structure_analysis",
-    "promoter_analysis": "promoter_analysis",
     "gene_expression_tissues": "gene_expression_analysis/tissues",
     "gene_expression_cultivars": "gene_expression_analysis/cultivars",
     "gene_expression_genotypes": "gene_expression_analysis/genotypes",
@@ -141,10 +132,6 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
 }
 
 DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
-MEDIUM_COMPUTE_ANALYSIS_TYPES = {
-    "protein_structure_analysis",
-    "evolution_analysis",
-}
 
 
 class AnalysisDispatchContext(NamedTuple):
@@ -577,7 +564,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         if sub_title:
             data_list = data_list[sub_title]
-        compute_resource = self._get_compute_resource(analysis_type)
+        # The medium-tier analysis types (evolution / protein structure)
+        # moved to the evolution and design producer modules, which set
+        # their own compute tier; every type that still reaches this
+        # dispatcher runs on the small tier.
+        compute_resource = "small"
         return goal_description, data_list, meta, compute_resource
 
     def _ensure_analysis_output_dir(
@@ -722,22 +713,6 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         if local_path.is_dir():
             return str(local_path)
         return None
-
-    def _get_compute_resource(self: Any, analysis_type: str) -> str:
-        """Determine compute resource level based on analysis type.
-
-        Analysis types that require more computational resources are assigned
-        "medium" compute, while others use "small".
-
-        Args:
-            analysis_type: Type of analysis to determine resource level for.
-
-        Returns:
-            String: "medium" or "small" based on analysis type.
-        """
-        if analysis_type in MEDIUM_COMPUTE_ANALYSIS_TYPES:
-            return "medium"
-        return "small"
 
     def _chat_kwargs(self: Any) -> Dict[str, Any]:
         """Return shared Phyto chat kwargs for report nodes."""

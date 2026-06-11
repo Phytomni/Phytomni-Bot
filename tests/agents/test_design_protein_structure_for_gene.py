@@ -84,9 +84,8 @@ async def test_request_shape_targets_protein_structure_analysis(
 ) -> None:
     """Request dict pins protein_structure_analysis at medium compute.
 
-    Compute tier 'medium' matches deep_genome dispatch's
-    ``MEDIUM_COMPUTE_ANALYSIS_TYPES`` membership for
-    ``protein_structure_analysis``.
+    Compute tier 'medium' is hardcoded by the design producer wrapper
+    ``protein_structure_for_gene``.
     """
     submit_mock = _install_stub_dependencies(monkeypatch)
 

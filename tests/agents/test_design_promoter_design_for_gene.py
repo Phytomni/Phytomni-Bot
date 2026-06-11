@@ -84,9 +84,8 @@ async def test_request_shape_targets_promoter_analysis(
 ) -> None:
     """Request dict pins promoter_analysis at small compute tier.
 
-    ``promoter_analysis`` is NOT in deep_genome's
-    ``MEDIUM_COMPUTE_ANALYSIS_TYPES`` set, so compute tier defaults
-    to 'small'.
+    Compute tier 'small' is hardcoded by the design producer wrapper
+    ``promoter_design_for_gene``.
     """
     submit_mock = _install_stub_dependencies(monkeypatch)
 
