@@ -83,7 +83,7 @@ Failed and cancelled rows are ignored so retries still create fresh work.
 
 ## Response Envelope
 
-Every MCP tool and HTTP API response ships as a two-block envelope:
+Every MCP tool and HTTP API response is shaped as a two-block envelope:
 
 - `formatted`: the normalized display view with `answer`,
   `follow_up_questions`, `metadata`, `references`, plus `tabular` for
@@ -95,6 +95,11 @@ Every MCP tool and HTTP API response ships as a two-block envelope:
   `phytomni_state` namespace carrying the agent's LangGraph
   intermediate state (`retrieved_docs`, `gene_id`, `rewrite_query`,
   `research_dimensions`, `plan`, `tool_usages`, ...).
+
+**Default mode**: MCP stdio responses include only the `formatted`
+block; the `raw` block is omitted to reduce response volume. Set
+`PHYTOMNI_DEBUG=1` (or pass the HTTP per-request `debug` flag) to
+include `raw` in every response.
 
 Credential-pattern keys are stripped recursively before `raw` reaches the
 wire. See [MCP Tool Reference](docs/mcp-tools.md) for the per-tool
