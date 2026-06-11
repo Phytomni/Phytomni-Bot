@@ -9,7 +9,7 @@ Both analyst entry points share this module: the top-level
 dispatch seam every sub-agent funnels through.
 
 Functions: analyst_task_fingerprint, should_reuse_prior_task,
-    verify_live_status.
+    verify_live_status, record_dispatch_submission.
 """
 
 from __future__ import annotations
@@ -20,10 +20,11 @@ import logging
 import sqlite3
 from typing import Dict, List, Optional
 
-from .task_manager import TaskManager, resolve_tasks_db_path
+from .task_manager import Submission, TaskManager, resolve_tasks_db_path
 
 __all__ = [
     "analyst_task_fingerprint",
+    "record_dispatch_submission",
     "should_reuse_prior_task",
     "verify_live_status",
 ]
@@ -165,3 +166,36 @@ def _write_back_dead(prior: Dict[str, str]) -> None:
         logger.warning(
             "Failed to write back dead status for %s", prior["task_id"]
         )
+
+
+def record_dispatch_submission(
+    task_id: str,
+    output_dir: str,
+    fingerprint: str,
+) -> None:
+    """Persist a dispatch-seam submission row carrying its dedup key.
+
+    The seam writes its own row (run columns left ``NULL``) so all six
+    dispatch consumers populate ``tasks.input_fingerprint`` uniformly,
+    independent of the per-tool ``records_submission`` recorder whose
+    coverage is uneven (it never extracts deep_genome sub-task ids).
+    Best-effort: a write failure must not break an already-successful
+    remote submission.
+
+    Args:
+        task_id: Remote task id returned by the analyst subgraph.
+        output_dir: Output directory reported by the submission.
+        fingerprint: Deterministic identity digest from
+            ``analyst_task_fingerprint``.
+    """
+    try:
+        TaskManager(resolve_tasks_db_path()).record(
+            Submission(
+                task_id=task_id,
+                status="submitted",
+                output_dir=output_dir,
+                input_fingerprint=fingerprint,
+            )
+        )
+    except (sqlite3.Error, OSError):
+        logger.warning("Failed to persist dispatch dedup row for %s", task_id)

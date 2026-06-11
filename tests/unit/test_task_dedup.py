@@ -236,3 +236,19 @@ async def test_probe_live_status_none_on_mcperror(
     monkeypatch.setattr(task_ops, "task_status", boom)
 
     assert await task_ops.probe_live_status("T-prior") is None
+
+
+def test_record_dispatch_submission_writes_fingerprint_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seam writer persists a queryable fingerprint row."""
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setattr(task_dedup, "resolve_tasks_db_path", lambda: db)
+
+    task_dedup.record_dispatch_submission("T-seam", "/out/seam", "fp-seam")
+
+    found = TaskManager(db).get_task_by_fingerprint("fp-seam")
+    assert found is not None
+    assert found["task_id"] == "T-seam"
+    assert found["output_dir"] == "/out/seam"
+    assert found["status"] == "submitted"
