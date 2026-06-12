@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -80,7 +81,7 @@ class DispatchHarness(DeepGenomeDispatchMixin):
         self.sensitive_config = FakeSensitiveConfig()
 
 
-def test_download_analysis_result_uses_readable_obsfs_dir(
+async def test_download_analysis_result_uses_readable_obsfs_dir(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -124,14 +125,14 @@ def test_download_analysis_result_uses_readable_obsfs_dir(
 
     download_analysis_result = getattr(harness, "_download_analysis_result")
 
-    assert download_analysis_result(
+    assert await download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
         _fixed_run_identity(),
     ) == str(result_dir)
 
 
-def test_download_analysis_result_falls_back_to_sdk_download(
+async def test_download_analysis_result_falls_back_to_sdk_download(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -170,7 +171,7 @@ def test_download_analysis_result_falls_back_to_sdk_download(
 
     download_analysis_result = getattr(harness, "_download_analysis_result")
 
-    result = download_analysis_result(
+    result = await download_analysis_result(
         context,
         "/obs/phytomni/results/GeneA",
         _fixed_run_identity(),
@@ -188,6 +189,82 @@ def test_download_analysis_result_falls_back_to_sdk_download(
         ".summary",
         ".legend",
     ]
+
+
+async def test_download_analysis_result_relay_mode_streams_via_relay(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Relay mode downloads results through the relay, not the OBS SDK."""
+    harness = DispatchHarness(str(tmp_path / "deep-out"))
+    monkeypatch.setattr(
+        deep_genome_dispatch, "relay_mode_enabled", lambda: True
+    )
+    relay_dl = AsyncMock(return_value=["GeneA.png download succeed."])
+    monkeypatch.setattr(
+        deep_genome_dispatch, "download_obs_out_via_relay", relay_dl
+    )
+
+    def fail_sdk(*args: Any, **kwargs: Any):
+        del args, kwargs
+        raise AssertionError("SDK download_obs_out must not run in relay mode")
+
+    monkeypatch.setattr(deep_genome_dispatch, "download_obs_out", fail_sdk)
+
+    context = AnalysisDispatchContext(
+        analysis_type="gene_expression_tissues",
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/phytomni/results/GeneA",
+    )
+    download_analysis_result = getattr(harness, "_download_analysis_result")
+
+    result = await download_analysis_result(
+        context,
+        "/obs/phytomni/results/GeneA",
+        _fixed_run_identity(),
+    )
+
+    scratch_root = (
+        tmp_path / "deep-out" / _FIXED_RUN_ID / "gene_expression_tissues"
+    )
+    assert result == str(scratch_root / "GeneA")
+    assert relay_dl.await_count == 1
+    call = relay_dl.await_args
+    assert call is not None
+    assert call.kwargs["obs_output_path"] == "results/GeneA"
+    assert call.kwargs["download_path"] == str(scratch_root)
+
+
+async def test_download_analysis_result_relay_empty_raises(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Relay mode fails loud when the result set is empty (no silent dir)."""
+    harness = DispatchHarness(str(tmp_path / "deep-out"))
+    monkeypatch.setattr(
+        deep_genome_dispatch, "relay_mode_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        deep_genome_dispatch,
+        "download_obs_out_via_relay",
+        AsyncMock(return_value=[]),
+    )
+
+    context = AnalysisDispatchContext(
+        analysis_type="gene_expression_tissues",
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/phytomni/results/GeneA",
+    )
+    download_analysis_result = getattr(harness, "_download_analysis_result")
+
+    with pytest.raises(RuntimeError, match="no analysis results"):
+        await download_analysis_result(
+            context,
+            "/obs/phytomni/results/GeneA",
+            _fixed_run_identity(),
+        )
 
 
 async def test_bi_json_posts_via_async_factory(

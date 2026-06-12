@@ -30,7 +30,7 @@ from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
-from ..analyst.storage import download_obs_out
+from ..analyst.storage import download_obs_out, download_obs_out_via_relay
 from ..design.agent import (
     promoter_design_for_gene,
     protein_structure_for_gene,
@@ -525,7 +525,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         logger.info("%s task completed (task_id: %s)", analysis_type, task_id)
 
         logger.info("Preparing %s results", analysis_type)
-        results_dir = self._download_analysis_result(
+        results_dir = await self._download_analysis_result(
             context, output_path, run_identity
         )
         return {
@@ -648,7 +648,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 f"AnalystAgent failed: {result.get('error_detail')}"
             )
 
-    def _download_analysis_result(
+    async def _download_analysis_result(
         self: Any,
         context: AnalysisDispatchContext,
         output_path: str,
@@ -676,6 +676,20 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             context.analysis_type,
             DEFAULT_TARGET_FILE_FEATURE,
         )
+        if relay_mode_enabled():
+            statuses = await download_obs_out_via_relay(
+                task_dir=context.gene_id,
+                obs_output_path=obs_output_path,
+                download_path=scratch_root,
+                target_file_feature=target_file_feature,
+                if_download_all=False,
+            )
+            if not statuses:
+                raise RuntimeError(
+                    "relay returned no analysis results for "
+                    f"{obs_output_path}"
+                )
+            return str(local_results_dir)
         try:
             access_key_id, secret_access_key = (
                 self.sensitive_config.obs_credentials()

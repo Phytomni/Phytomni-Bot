@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
@@ -539,14 +540,77 @@ def _is_truncated_listing(file_body: Any) -> bool:
     )
 
 
+def _feature_selected(
+    output_file: str,
+    target_file_feature: Sequence[str],
+    if_download_all: bool,
+) -> bool:
+    """Return whether one listed file matches the download filter."""
+    return if_download_all or any(
+        output_file.endswith(suffix) for suffix in target_file_feature
+    )
+
+
 def _should_download_object(
     output_file: str,
     options: ObsDownloadOptions,
 ) -> bool:
     """Return whether one listed OBS object should be downloaded."""
-    return options.if_download_all or any(
-        output_file.endswith(suffix) for suffix in options.target_file_feature
+    return _feature_selected(
+        output_file,
+        options.target_file_feature,
+        options.if_download_all,
     )
+
+
+async def download_obs_out_via_relay(
+    task_dir: str,
+    obs_output_path: str,
+    *,
+    download_path: str,
+    target_file_feature: Sequence[str],
+    if_download_all: bool,
+) -> list[str]:
+    """Download an analyst output dir through the relay; return status lines.
+
+    Lists the output prefix through the relay and streams each matching
+    object straight to ``download_path/task_dir``. Used in relay mode in
+    place of the obsfs/SDK ``download_obs_out`` generator (the child holds
+    no OBS credentials). Raises if the relay list or a download fails, so
+    a relay child never silently returns an empty result directory.
+
+    Args:
+        task_dir: Local sub-directory name for the downloaded files.
+        obs_output_path: Server-owned OBS output prefix to list.
+        download_path: Local root the task directory is created under.
+        target_file_feature: File suffixes selected when not downloading all.
+        if_download_all: Whether to download every listed object.
+
+    Returns:
+        One status line per downloaded object.
+
+    Raises:
+        McpError: If the relay list or any object download fails.
+    """
+    output_path = _download_output_path(task_dir, download_path)
+    keys = await current_relay_client().get_obs_list(
+        obs_output_path,
+        message="Failed to list analyst results via relay",
+    )
+    statuses: list[str] = []
+    for object_key in keys:
+        output_file = object_key.split("/")[-1]
+        if not _feature_selected(
+            output_file, target_file_feature, if_download_all
+        ):
+            continue
+        await current_relay_client().get_obs_object_to_path(
+            object_key,
+            output_path / output_file,
+            message="Failed to download analyst result via relay",
+        )
+        statuses.append(f"{output_file} download succeed.")
+    return statuses
 
 
 def _download_obs_object(

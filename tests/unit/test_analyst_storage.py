@@ -126,6 +126,67 @@ async def test_upload_analyst_agents_content_relay_mode(monkeypatch):
     assert not no_sdk.called
 
 
+async def test_download_obs_out_via_relay_writes_matching_objects(
+    tmp_path, monkeypatch
+):
+    """Relay download lists the prefix and streams only matching objects."""
+    relay = Mock()
+    relay.get_obs_list = AsyncMock(
+        return_value=[
+            "agent_data/user_data/cust42/runs/x/output/a.png",
+            "agent_data/user_data/cust42/runs/x/output/b.txt",
+        ]
+    )
+
+    async def _to_path(obs_path, destination, *, message):
+        del message
+        Path(destination).write_bytes(b"DATA:" + obs_path.encode())
+
+    relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
+    monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
+
+    written = await analyst_storage.download_obs_out_via_relay(
+        task_dir="cust42",
+        obs_output_path="agent_data/user_data/cust42/runs/x/output/",
+        download_path=str(tmp_path),
+        target_file_feature=(".png",),
+        if_download_all=False,
+    )
+
+    assert (tmp_path / "cust42" / "a.png").exists()
+    assert not (tmp_path / "cust42" / "b.txt").exists()
+    assert any("a.png" in line for line in written)
+    assert relay.get_obs_object_to_path.await_count == 1
+
+
+async def test_download_obs_out_via_relay_downloads_all_when_flagged(
+    tmp_path, monkeypatch
+):
+    """if_download_all bypasses the suffix filter."""
+    relay = Mock()
+    relay.get_obs_list = AsyncMock(
+        return_value=["agent_data/user_data/c/runs/x/output/notes.log"]
+    )
+
+    async def _to_path(obs_path, destination, *, message):
+        del obs_path, message
+        Path(destination).write_bytes(b"x")
+
+    relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
+    monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
+
+    written = await analyst_storage.download_obs_out_via_relay(
+        task_dir="c",
+        obs_output_path="agent_data/user_data/c/runs/x/output/",
+        download_path=str(tmp_path),
+        target_file_feature=(".png",),
+        if_download_all=True,
+    )
+
+    assert (tmp_path / "c" / "notes.log").exists()
+    assert len(written) == 1
+
+
 async def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     """Verify generated metadata content is written through obsfs.
 
