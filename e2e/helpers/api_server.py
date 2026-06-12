@@ -5,10 +5,9 @@
 
 Extracts the subprocess boot, key minting, health-gate, and httpx
 client setup that originally lived inline in ``test_api_http_e2e.py``
-so multi-test smoke scripts (currently
+so both live HTTP e2e tests (``test_api_http_e2e.py`` and
 ``test_concurrent_http_e2e.py``) can spin up the same uvicorn process
-without duplicating ~150 LOC. ``test_api_http_e2e.py`` keeps its own
-inline boot for now; converting it to use this helper is a follow-up.
+without duplicating ~150 LOC.
 
 Public surface:
 
