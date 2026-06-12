@@ -135,6 +135,19 @@ tunables. See [Deployment and Storage](docs/deployment.md) for
 customer-image distribution, OBSFS-first storage, scratch path layout, and
 startup troubleshooting.
 
+### Customer Relay Mode
+
+A relay-mode child Bot (`PHYTOMNI_RELAY_MODE=1`) holds no operator
+endpoints or secrets: it routes every model, retrieval, NL2SQL, BI,
+analysis, task, and OBS call through an operator-hosted relay
+(`/v1/relay/*`) authenticated with a single `ptm_` key, and roots its OBS
+object paths under the operator-assigned `RELAY_USER_ID` tenant namespace
+(the operator's OBS relay confines each key to its own namespace). Copy
+[`config/.env.customer.example`](src/mcp_server_phytomni/config/.env.customer.example)
+to `.env` and fill in only the `PHYTOMNI_RELAY_*` values. The operator
+side is documented in [HTTP API](docs/http-api.md) *Relay* and the
+[runbook](docs/ops/http-api-runbook.md) *Relay Operations*.
+
 ## Demo Data and Live E2E
 
 The repository ships deterministic demo fixtures under

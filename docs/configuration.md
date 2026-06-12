@@ -94,7 +94,11 @@ This fail-fast non-empty validation is normal-mode only. In customer
 relay mode (`PHYTOMNI_RELAY_MODE=1`) the `_require_non_empty_endpoint`
 validator short-circuits, so a relay-mode child Bot boots with all 19
 operator endpoints empty; it instead routes every dependency through the
-upstream relay via `RELAY_BASE_URL` / `RELAY_API_KEY`.
+upstream relay via `RELAY_BASE_URL` / `RELAY_API_KEY`, and roots its OBS
+object paths under the operator-assigned tenant id `RELAY_USER_ID` (which
+must match the user id the operator bound to the relay key, since the
+operator's OBS relay confines each key to its own tenant namespace). See
+`config/.env.customer.example` for the minimal child variable set.
 
 | Variable           | Aliased as                  | Purpose                                                                                                                 |
 | ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -151,16 +155,17 @@ UUIDs*) and operator secrets (see *Encrypted Customer Envelope*) — there
 is no relay-specific secret. Every variable accepts an unprefixed or
 `PHYTOMNI_RELAY_*` alias.
 
-| Variable                         | Default                              | Sensitive? | Purpose                                                                                             |
-| -------------------------------- | ------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------- |
-| `RELAY_ENABLED`                  | `false`                              | no         | Expose `/v1/relay/*`; re-read every request so a disable is an instant kill-switch.                 |
-| `RELAY_AUDIT_DB_PATH`            | `.cache/phytomni/relay_audit.sqlite` | no         | Local relay audit SQLite store; keep on a local disk (WAL deadlocks on network filesystems).        |
-| `RELAY_AUDIT_RETENTION_DAYS`     | `90`                                 | no         | Age in days after which audit rows are eligible for cleanup.                                        |
-| `RELAY_REQUEST_MAX_BYTES`        | `10485760`                           | no         | Max relayed request body in bytes; over-limit returns `413` without buffering the whole body.       |
-| `RELAY_RESPONSE_AUDIT_MAX_BYTES` | `10485760`                           | no         | Max upstream response bytes copied into the audit; the client-facing response is never truncated.   |
-| `RELAY_TIMEOUT_SECONDS`          | `600.0`                              | no         | Per-request upstream timeout and the total wall-clock ceiling for a streamed forward.               |
-| `RELAY_RATE_LIMIT_PER_MIN`       | `60`                                 | no         | Per-key relay request budget per minute (separate from `API_RATE_LIMIT_PER_MIN`); over-limit `429`. |
-| `RELAY_MAX_CONCURRENT_PER_KEY`   | `8`                                  | no         | Max in-flight relay forwards per key; excess returns `503`.                                         |
+| Variable                         | Default                              | Sensitive? | Purpose                                                                                                         |
+| -------------------------------- | ------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `RELAY_ENABLED`                  | `false`                              | no         | Expose `/v1/relay/*`; re-read every request so a disable is an instant kill-switch.                             |
+| `RELAY_AUDIT_DB_PATH`            | `.cache/phytomni/relay_audit.sqlite` | no         | Local relay audit SQLite store; keep on a local disk (WAL deadlocks on network filesystems).                    |
+| `RELAY_AUDIT_RETENTION_DAYS`     | `90`                                 | no         | Age in days after which audit rows are eligible for cleanup.                                                    |
+| `RELAY_REQUEST_MAX_BYTES`        | `10485760`                           | no         | Max relayed request body in bytes; over-limit returns `413` without buffering the whole body.                   |
+| `RELAY_RESPONSE_AUDIT_MAX_BYTES` | `10485760`                           | no         | Max upstream response bytes copied into the audit; the client-facing response is never truncated.               |
+| `RELAY_RESPONSE_MAX_BYTES`       | `1073741824`                         | no         | Max OBS object size the download relay streams back before returning `413`; distinct from the request-body cap. |
+| `RELAY_TIMEOUT_SECONDS`          | `600.0`                              | no         | Per-request upstream timeout and the total wall-clock ceiling for a streamed forward.                           |
+| `RELAY_RATE_LIMIT_PER_MIN`       | `60`                                 | no         | Per-key relay request budget per minute (separate from `API_RATE_LIMIT_PER_MIN`); over-limit `429`.             |
+| `RELAY_MAX_CONCURRENT_PER_KEY`   | `8`                                  | no         | Max in-flight relay forwards per key; excess returns `503`.                                                     |
 
 Rate, concurrency, and retention state are per worker, so the effective
 per-key ceilings scale with the worker count. See

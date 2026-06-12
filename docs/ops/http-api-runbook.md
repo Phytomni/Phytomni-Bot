@@ -163,40 +163,42 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 
-| Method   | Path                                     | Auth  | Operational use                                                                                                        |
-| -------- | ---------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                      |
-| `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                     |
-| `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                            |
-| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                    |
-| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                              |
-| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                               |
-| `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                               |
-| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                        |
-| `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                        |
-| `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                            |
-| `POST`   | `/v1/api-keys`                           | svc   | Mint a per-user `ptm_...` API key (service tok).                                                                       |
-| `GET`    | `/v1/api-keys`                           | svc   | List per-user keys (metadata only).                                                                                    |
-| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revoke the key with the given public prefix.                                                                           |
-| `GET`    | `/v1/relay/audit`                        | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time.                           |
-| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetch relay audit records by request id (service token).                                                               |
-| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                        |
-| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent, Bearer-injected).                                                                         |
-| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent, Bearer-injected).                                                                      |
-| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                                                |
-| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                    |
-| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                      |
-| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                           |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope, static `token`).                                                                                   |
-| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object fetch relay (operator OBS credentials; allowlisted prefixes).                                               |
-| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; allowlisted prefixes).                                                |
-| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                         |
-| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                          |
-| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                  |
-| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                       |
-| `POST`   | `/v1/relay/task/create`                  | relay | Remote task-create relay (envelope, no credential).                                                                    |
-| `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope, no credential).                                                                    |
-| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only). |
+| Method   | Path                                     | Auth  | Operational use                                                                                                                           |
+| -------- | ---------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                                         |
+| `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                                        |
+| `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                               |
+| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                       |
+| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                 |
+| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                  |
+| `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                  |
+| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                           |
+| `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                           |
+| `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                               |
+| `POST`   | `/v1/api-keys`                           | svc   | Mint a per-user `ptm_...` API key (service tok).                                                                                          |
+| `GET`    | `/v1/api-keys`                           | svc   | List per-user keys (metadata only).                                                                                                       |
+| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revoke the key with the given public prefix.                                                                                              |
+| `GET`    | `/v1/relay/audit`                        | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time.                                              |
+| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetch relay audit records by request id (service token).                                                                                  |
+| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                                           |
+| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent, Bearer-injected).                                                                                            |
+| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent, Bearer-injected).                                                                                         |
+| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                                                                   |
+| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                                       |
+| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                                         |
+| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                                              |
+| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope, static `token`).                                                                                                      |
+| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay (operator OBS credentials; streamed under a response-size budget, key confined to the caller tenant namespace). |
+| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; prefix confined to the caller tenant output root).                                       |
+| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay (operator OBS credentials; key confined to the caller tenant namespace).                                          |
+| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay (operator OBS credentials; key confined to the caller tenant namespace).                                             |
+| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                                            |
+| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                                             |
+| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                     |
+| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                          |
+| `POST`   | `/v1/relay/task/create`                  | relay | Remote task-create relay (envelope, no credential).                                                                                       |
+| `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope, no credential).                                                                                       |
+| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                    |
 
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
