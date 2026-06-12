@@ -21,7 +21,10 @@ from typing import Any
 
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
-from .universal_failures import project_universal_failure_metadata
+from .universal_failures import (
+    project_universal_failure_metadata,
+    redact_failure_message,
+)
 
 _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
 
@@ -566,10 +569,17 @@ def _format_in_silico_result(
     # DEPRECATED — derived alias preserved for one-release backward compat.
     # DF-2 removes this after the deprecation window. See TW-2 / TW-3 in
     # .codex/plans/2026-06-02-review-wire-universal-failures.md.
-    legacy_error = (
+    raw_legacy_error = (
         failures_list[-1]["message"]
         if failures_list
         else _string_or_none(content.get("error"))
+    )
+    # Redact like failures[].message so the legacy alias cannot leak a
+    # backend URL or secret that the universal projection already scrubs.
+    legacy_error = (
+        redact_failure_message(raw_legacy_error)
+        if isinstance(raw_legacy_error, str)
+        else raw_legacy_error
     )
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",

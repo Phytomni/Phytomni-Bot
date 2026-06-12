@@ -9,6 +9,9 @@ import pytest
 from mcp_server_phytomni.mcp.result_formatting import (
     project_universal_failure_metadata,
 )
+from mcp_server_phytomni.mcp.universal_failures import (
+    redact_failure_message,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -119,3 +122,55 @@ def test_none_inputs_treated_as_empty() -> None:
         }
     )
     assert result["status"] == "PENDING"
+
+
+def test_redact_failure_message_strips_backend_url() -> None:
+    """A backend URL (host/port/path) is replaced, error text kept."""
+    raw = (
+        "Connection failed for url "
+        "'https://retrieve.internal.phytomni.cn:8443/v1/retrieve?token=abc'"
+    )
+    redacted = redact_failure_message(raw)
+    assert "retrieve.internal.phytomni.cn" not in redacted
+    assert "8443" not in redacted
+    assert "abc" not in redacted
+    assert "<redacted-url>" in redacted
+    assert redacted.startswith("Connection failed for url")
+
+
+def test_redact_failure_message_strips_secret_fragments() -> None:
+    """Bare credential fragments (key=, Bearer) are scrubbed."""
+    raw = "auth error: token=sk-secret-9f8a7b; Authorization: Bearer Zm9vYmF6"
+    redacted = redact_failure_message(raw)
+    assert "sk-secret-9f8a7b" not in redacted
+    assert "Zm9vYmF6" not in redacted
+    assert "<redacted-secret>" in redacted
+
+
+def test_redact_failure_message_leaves_clean_text() -> None:
+    """A message with no URL or secret is returned unchanged."""
+    raw = "ValueError: gene id not found in species index"
+    assert redact_failure_message(raw) == raw
+
+
+def test_projection_redacts_message_in_failures_list() -> None:
+    """The projected failures[].message is redacted, not raw str(exc)."""
+    result = project_universal_failure_metadata(
+        {
+            "task_ids": {},
+            "failures": [
+                {
+                    "task_label": "draft:2",
+                    "message": (
+                        "HTTPStatusError for "
+                        "https://bi.internal.phytomni.cn/api/data"
+                    ),
+                    "kind": "execute",
+                    "traceback_digest": None,
+                }
+            ],
+        }
+    )
+    message = result["failures"][0]["message"]
+    assert "bi.internal.phytomni.cn" not in message
+    assert "<redacted-url>" in message
