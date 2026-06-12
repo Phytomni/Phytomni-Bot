@@ -48,6 +48,7 @@ SKIP_PARTS = {
 }
 ALLOWED_ENV_NAMES = {
     ".env.example",
+    ".env.customer.example",
     ".env.sample",
     ".env.template",
     ".env.encrypted",
