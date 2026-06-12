@@ -41,12 +41,13 @@ else:
     DeepResearchState = Dict[str, Any]
 
 
-# Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:93.
-# Documents the catch surface in one place so a future narrowing of
-# caught exceptions is a single-site edit. Used by the add_query
-# result-walk to surface per-call ``self.ka.arun`` failures as
-# ``FailureRecord`` entries on the universal failures channel.
-_ADD_QUERY_FAILURE_TYPES: tuple[type[BaseException], ...] = (BaseException,)
+# Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:92
+# (``(Exception,)``). Records only ``Exception``-class add_query
+# results as failures; cancellation / shutdown signals
+# (``CancelledError`` / ``KeyboardInterrupt`` — ``BaseException`` but
+# not ``Exception``) propagate instead, handled in
+# ``_collect_add_query_failures``.
+_ADD_QUERY_FAILURE_TYPES: tuple[type[Exception], ...] = (Exception,)
 
 
 def _collect_add_query_failures(
@@ -57,13 +58,21 @@ def _collect_add_query_failures(
 
     Walks the ``return_exceptions=True`` results from the supplementary
     retrieval ``asyncio.gather`` and emits one ``FailureRecord`` per
-    Exception-typed entry. Kept module-level (instead of a mixin
-    method) so ``_feedback_rag`` stays under pylint's local-count
-    threshold and so the failure-walk logic is one ``import``-followed
-    helper away from any future caller.
+    ``Exception``-typed entry. Cancellation-class results
+    (``BaseException`` that is not ``Exception``, e.g.
+    ``asyncio.CancelledError`` or ``KeyboardInterrupt``) are re-raised
+    so shutdown and cancellation propagate instead of being silently
+    converted into degraded review output. Kept module-level (instead
+    of a mixin method) so ``_feedback_rag`` stays under pylint's
+    local-count threshold and so the failure-walk logic is one
+    ``import``-followed helper away from any future caller.
     """
     failures: List[FailureRecord] = []
     for query_idx, result in enumerate(add_query_results):
+        if isinstance(result, BaseException) and not isinstance(
+            result, Exception
+        ):
+            raise result
         if isinstance(result, _ADD_QUERY_FAILURE_TYPES):
             failures.append(
                 FailureRecord(
@@ -135,10 +144,12 @@ class ReviewReportMixin(WorkflowMixinBase):
 
         Per-call ``self.ka.arun`` failures surface as ``FailureRecord``
         entries on the returned ``failures`` list so the universal
-        failures channel records which add_query call failed. The
-        formatter still filters Exception entries at
-        ``_format_supplementary_query`` so the merged supplementary
-        snippet block ignores failed calls exactly as before.
+        failures channel records which add_query call failed.
+        Cancellation-class results propagate (see
+        ``_collect_add_query_failures``); the formatter filters any
+        ``BaseException`` entry at ``_format_supplementary_query`` so the
+        merged supplementary snippet block ignores failed calls exactly
+        as before.
         """
         review_json = _extract_json_object(review_content)
         has_gaps = bool(review_json.get("has_critical_gaps", False))
@@ -239,7 +250,7 @@ class ReviewReportMixin(WorkflowMixinBase):
         format_state: SupplementaryFormatState,
     ) -> str:
         """Format snippets for one supplementary query."""
-        if isinstance(add_result, Exception) or not add_result:
+        if isinstance(add_result, BaseException) or not add_result:
             return ""
 
         counters = format_state.counters

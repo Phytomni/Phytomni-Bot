@@ -16,13 +16,17 @@ contract when no add_query calls are issued.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, List
 
 import pytest
 
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
-from mcp_server_phytomni.agents.review.report import ReviewReportMixin
+from mcp_server_phytomni.agents.review.report import (
+    ReviewReportMixin,
+    _collect_add_query_failures,
+)
 from mcp_server_phytomni.config.defaults import ReviewConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -221,3 +225,26 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
     assert "failures" in result
     assert result["failures"] == []
     assert not arun_calls
+
+
+def test_collect_records_only_exception_results() -> None:
+    """Exception results become FailureRecords; clean results skipped."""
+    results: List[Any] = [[], RuntimeError("boom"), []]
+    failures = _collect_add_query_failures(3, results)
+    assert len(failures) == 1
+    assert failures[0]["task_label"] == "add_query:3:1"
+    assert failures[0]["message"] == "boom"
+    assert failures[0]["kind"] == "execute"
+
+
+def test_collect_reraises_cancellation_class() -> None:
+    """A CancelledError in the results propagates, not degrades.
+
+    ``asyncio.gather(return_exceptions=True)`` can capture a child
+    ``CancelledError`` as a ``BaseException`` result; the walk must
+    re-raise it so cancellation aborts the review instead of being
+    recorded as a normal degraded ``FailureRecord``.
+    """
+    results: List[Any] = [RuntimeError("ok-failure"), asyncio.CancelledError()]
+    with pytest.raises(asyncio.CancelledError):
+        _collect_add_query_failures(0, results)
