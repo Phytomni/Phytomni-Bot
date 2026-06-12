@@ -290,6 +290,15 @@ class ServerConfig(BaseSettings):
             "RELAY_BASE_URL", "PHYTOMNI_RELAY_BASE_URL"
         ),
     )
+    # Operator-assigned tenant id for a relay child. The server-side OBS
+    # relay confines object keys to this tenant's namespace, so the child
+    # roots its OBS paths here (see storage/path_policy.resolve_user_id).
+    RELAY_USER_ID: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "RELAY_USER_ID", "PHYTOMNI_RELAY_USER_ID"
+        ),
+    )
 
     # Deployment-specific endpoints + UUIDs are externalised with
     # empty defaults so a misconfigured customer image fails fast

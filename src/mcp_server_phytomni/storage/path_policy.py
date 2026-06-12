@@ -11,11 +11,14 @@ Functions: resolve_user_id, safe_path_segment, run_root_key, task_root_key,
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from secrets import token_hex
+
+from ..config.relay_mode import relay_mode_enabled
 
 DEFAULT_USER_ID = "anonymous"
 AGENT_DATA_ROOT = "agent_data"
@@ -203,12 +206,25 @@ class RunIdentity:
 def resolve_user_id(user_id: str | None) -> str:
     """Return a safe user ID, falling back to the shared anonymous user.
 
+    In relay mode a configured ``RELAY_USER_ID`` (the operator-assigned
+    tenant id) overrides the passed user id, because the server-side OBS
+    relay confines every object key to ``agent_data/{user_data,uploads}/
+    <key.user_id>/`` and the child must produce keys under that same
+    tenant segment. The env is read directly (like ``relay_mode_enabled``)
+    to avoid building a ``ServerConfig`` in this leaf path helper.
+
     Args:
         user_id: Raw user ID string (None or empty uses 'anonymous').
 
     Returns:
         str: Sanitized user ID string safe for path usage.
     """
+    if relay_mode_enabled():
+        relay_user = os.environ.get(
+            "PHYTOMNI_RELAY_USER_ID"
+        ) or os.environ.get("RELAY_USER_ID")
+        if relay_user:
+            return safe_path_segment(relay_user, DEFAULT_USER_ID)
     return safe_path_segment(user_id or DEFAULT_USER_ID, DEFAULT_USER_ID)
 
 

@@ -99,6 +99,32 @@ def test_resolve_user_id_defaults_to_anonymous():
     assert resolve_user_id("") == DEFAULT_USER_ID
 
 
+def test_resolve_user_id_pins_to_relay_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """In relay mode the configured tenant id overrides the passed user."""
+    monkeypatch.setenv("RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_USER_ID", "cust42")
+
+    assert resolve_user_id("enduser7") == "cust42"
+    ident = RunIdentity.create(user_id="enduser7", scope="analysis")
+    assert ident.user_id == "cust42"
+    assert task_output_key(ident, "t").startswith(
+        "agent_data/user_data/cust42/"
+    )
+
+
+def test_resolve_user_id_ignores_relay_id_in_normal_mode(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Without relay mode the passed user id is used unchanged."""
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.setenv("PHYTOMNI_RELAY_USER_ID", "cust42")
+
+    assert resolve_user_id("enduser7") == "enduser7"
+
+
 @pytest.mark.parametrize(
     "value",
     [
