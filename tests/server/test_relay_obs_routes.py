@@ -90,7 +90,8 @@ async def test_obs_put_object_writes_and_returns_path(
     monkeypatch.setattr(ops_module, "put_object_bytes", fake)
 
     response = await client.put(
-        "/v1/relay/obs/object?path=/obs/phytomni/agent_data/uploads/x.pdf",
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/uploads/customer/r/up/x.pdf",
         headers={"Authorization": f"Bearer {relay_key('obs')}"},
         content=b"file-bytes",
     )
@@ -112,7 +113,8 @@ async def test_obs_get_object_returns_bytes(
     )
 
     response = await client.get(
-        "/v1/relay/obs/object?path=/obs/phytomni/agent_data/out/r.cif",
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/user_data/customer/runs/d/r.cif",
         headers={"Authorization": f"Bearer {relay_key('obs')}"},
     )
 
@@ -221,6 +223,101 @@ async def test_obs_route_requires_obs_scope(
     assert not fake.called
 
 
+async def test_obs_get_rejects_foreign_tenant_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An in-bucket path under another tenant's namespace is a 403."""
+    fake = Mock(return_value=b"x")
+    monkeypatch.setattr(ops_module, "get_object_bytes", fake)
+
+    response = await client.get(
+        "/v1/relay/obs/object"
+        "?path=agent_data/user_data/other-tenant/runs/x/r.cif",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not fake.called
+
+
+async def test_obs_put_accepts_own_tenant_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A path under the caller's own tenant namespace is accepted."""
+    fake = Mock(return_value="agent_data/user_data/customer/runs/x/out.txt")
+    monkeypatch.setattr(ops_module, "put_object_bytes", fake)
+
+    response = await client.put(
+        "/v1/relay/obs/object"
+        "?path=agent_data/user_data/customer/runs/x/out.txt",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+        content=b"hi",
+    )
+
+    assert response.status_code == 200
+    assert fake.called
+
+
+async def test_obs_put_rejects_foreign_tenant_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Writing under another tenant's namespace is a 403, no op call."""
+    fake = Mock(return_value="k")
+    monkeypatch.setattr(ops_module, "put_object_bytes", fake)
+
+    response = await client.put(
+        "/v1/relay/obs/object"
+        "?path=agent_data/user_data/other-tenant/runs/x/out.txt",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+        content=b"hi",
+    )
+
+    assert response.status_code == 403
+    assert not fake.called
+
+
+async def test_obs_dir_rejects_foreign_tenant_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Making a dir marker under another tenant's namespace is a 403."""
+    fake = Mock(return_value="k")
+    monkeypatch.setattr(ops_module, "put_dir_marker", fake)
+
+    response = await client.put(
+        "/v1/relay/obs/dir?path=agent_data/user_data/other-tenant/runs/x/",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not fake.called
+
+
+async def test_obs_list_rejects_foreign_tenant_prefix(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A list prefix under another tenant's output root is a 403."""
+    fake = Mock(return_value=[])
+    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+
+    response = await client.get(
+        "/v1/relay/obs/list?prefix=agent_data/user_data/other-tenant/runs/",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not fake.called
+
+
 async def test_obs_upload_audit_records_metadata_not_binary(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],
@@ -233,7 +330,8 @@ async def test_obs_upload_audit_records_metadata_not_binary(
     secret = b"TOP-SECRET-PLASMID-SEQUENCE"
 
     response = await client.put(
-        "/v1/relay/obs/object?path=/obs/phytomni/agent_data/x",
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/user_data/customer/x",
         headers={"Authorization": f"Bearer {relay_key('obs')}"},
         content=secret,
     )

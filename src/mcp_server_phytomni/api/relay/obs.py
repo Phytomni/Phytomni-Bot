@@ -32,7 +32,7 @@ from ...storage.obs_storage import (
     normalize_obs_object_key,
     obs_path_from_key,
 )
-from ...storage.path_policy import USER_DATA_ROOT
+from ...storage.path_policy import AGENT_DATA_ROOT, USER_DATA_ROOT
 from ..auth import ApiPrincipal
 from .audit import RelayAuditRecord, get_audit_store
 from .deps import read_relay_body, require_relay_access
@@ -97,12 +97,15 @@ def _record_obs_audit(
         _LOGGER.exception("relay obs audit write failed")
 
 
-def _require_output_prefix(bucket: str, prefix: str) -> str:
-    """Return a normalized list prefix confined to the output root.
+def _require_output_prefix(
+    bucket: str, prefix: str, principal: ApiPrincipal
+) -> str:
+    """Return a normalized list prefix confined to the caller's output root.
 
-    The list relay is bound to the server-owned analyst output root
-    (``USER_DATA_ROOT``) so a customer key cannot enumerate arbitrary
-    bucket prefixes; anything else is a 403.
+    The list relay is bound to the caller key's own output namespace
+    (``USER_DATA_ROOT/<user_id>``) so a customer key cannot enumerate
+    another tenant's output dirs in the shared operator bucket, let alone
+    arbitrary bucket prefixes; anything else is a 403.
     """
     try:
         normalized = normalize_obs_object_key(prefix, bucket)
@@ -110,9 +113,37 @@ def _require_output_prefix(bucket: str, prefix: str) -> str:
         raise HTTPException(
             status_code=400, detail="obs prefix outside bucket"
         ) from exc
-    if not normalized.startswith(f"{USER_DATA_ROOT}/"):
+    if not normalized.startswith(f"{USER_DATA_ROOT}/{principal.user_id}/"):
         raise HTTPException(
-            status_code=403, detail="list prefix outside the output root"
+            status_code=403,
+            detail="list prefix outside the tenant output root",
+        )
+    return normalized
+
+
+def _require_tenant_prefix(
+    bucket: str, path: str, principal: ApiPrincipal
+) -> str:
+    """Return a normalized object key confined to the caller's namespace.
+
+    Object read / write / dir relay is bound to the caller key's own
+    tenant namespace under the two real roots (``user_data`` outputs and
+    ``uploads``). Even inside the shared operator bucket a key cannot
+    reach another tenant's objects; anything else is a 403.
+    """
+    try:
+        normalized = normalize_obs_object_key(path, bucket)
+    except ObsPathError as exc:
+        raise HTTPException(
+            status_code=400, detail="obs path outside bucket"
+        ) from exc
+    allowed = (
+        f"{USER_DATA_ROOT}/{principal.user_id}/",
+        f"{AGENT_DATA_ROOT}/uploads/{principal.user_id}/",
+    )
+    if not normalized.startswith(allowed):
+        raise HTTPException(
+            status_code=403, detail="obs path outside tenant namespace"
         )
     return normalized
 
@@ -125,10 +156,11 @@ async def _put_object(
     started, config, server = _begin()
     body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
     path = _require_query(request, "path")
+    safe_key = _require_tenant_prefix(server.BUCKET_NAME, path, principal)
     key = await _run_obs_op(
         obs_relay_ops.put_object_bytes,
         server.BUCKET_NAME,
-        path,
+        safe_key,
         body,
         obs_server=server.OBS_SERVER,
     )
@@ -151,10 +183,11 @@ async def _get_object(
     """Return the bytes of the client-supplied (validated) object key."""
     started, config, server = _begin()
     path = _require_query(request, "path")
+    safe_key = _require_tenant_prefix(server.BUCKET_NAME, path, principal)
     data = await _run_obs_op(
         obs_relay_ops.get_object_bytes,
         server.BUCKET_NAME,
-        path,
+        safe_key,
         obs_server=server.OBS_SERVER,
     )
     _record_obs_audit(
@@ -174,7 +207,7 @@ async def _list_objects(
     """List object keys under an output-root-confined prefix."""
     started, config, server = _begin()
     prefix = _require_output_prefix(
-        server.BUCKET_NAME, _require_query(request, "prefix")
+        server.BUCKET_NAME, _require_query(request, "prefix"), principal
     )
     keys = await _run_obs_op(
         obs_relay_ops.list_object_keys,
@@ -199,10 +232,11 @@ async def _put_dir(
     """Create a zero-byte directory-marker object at the validated key."""
     started, config, server = _begin()
     path = _require_query(request, "path")
+    safe_key = _require_tenant_prefix(server.BUCKET_NAME, path, principal)
     key = await _run_obs_op(
         obs_relay_ops.put_dir_marker,
         server.BUCKET_NAME,
-        path,
+        safe_key,
         obs_server=server.OBS_SERVER,
     )
     _record_obs_audit(
