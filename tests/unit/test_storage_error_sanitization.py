@@ -110,10 +110,10 @@ def test_create_output_dir_sanitizes_sdk_error() -> None:
     _assert_sanitized(exc_info.value)
 
 
-def test_upload_content_sanitizes_sdk_error() -> None:
+async def test_upload_content_sanitizes_sdk_error() -> None:
     """Verify upload_analyst_agents_content sanitizes SDK errors."""
     with pytest.raises(OSError) as exc_info:
-        analyst_storage.upload_analyst_agents_content(
+        await analyst_storage.upload_analyst_agents_content(
             content="payload-body",
             object_name="note.txt",
             obsfs_mount_root=_MISSING_OBSFS_ROOT,

@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -95,7 +95,38 @@ def test_create_output_dir_relay_mode_skips_marker(tmp_path, monkeypatch):
     assert not (tmp_path / "no-mount").exists()
 
 
-def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
+async def test_upload_analyst_agents_content_relay_mode(monkeypatch):
+    """Relay mode forwards the content through the OBS upload relay.
+
+    The OBS SDK is never constructed (the child holds no credentials);
+    the content is PUT through the relay and the bucket-colon path is
+    returned for the submit payload.
+    """
+    monkeypatch.setattr(analyst_storage, "relay_mode_enabled", lambda: True)
+    relay = Mock()
+    relay.put_obs_object = AsyncMock(return_value={"obs_path": "/obs/x"})
+    monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
+    no_sdk = Mock()
+    monkeypatch.setattr(analyst_storage, "ObsClient", no_sdk)
+
+    result = await analyst_storage.upload_analyst_agents_content(
+        '{"ok": true}',
+        "task.yaml",
+        object_key="agent_data/user_data/cust42/runs/d/r/t/tmp/task.yaml",
+        bucket_name="phytomni",
+    )
+
+    assert relay.put_obs_object.await_count == 1
+    sent_path, sent_bytes = relay.put_obs_object.await_args.args
+    assert "cust42" in sent_path
+    assert sent_bytes == b'{"ok": true}'
+    assert result == (
+        "phytomni:/agent_data/user_data/cust42/runs/d/r/t/tmp/task.yaml"
+    )
+    assert not no_sdk.called
+
+
+async def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     """Verify generated metadata content is written through obsfs.
 
     Args:
@@ -103,7 +134,7 @@ def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     """
     root = _obsfs_root(tmp_path)
 
-    result = analyst_storage.upload_analyst_agents_content(
+    result = await analyst_storage.upload_analyst_agents_content(
         '{"ok": true}',
         "submit.json",
         bucket_name="phytomni",
@@ -116,7 +147,7 @@ def test_upload_analyst_agents_content_prefers_obsfs(tmp_path):
     ) == '{"ok": true}'
 
 
-def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
+async def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
     """Verify generated metadata can be written under a run-scoped key.
 
     Args:
@@ -128,7 +159,7 @@ def test_upload_analyst_agents_content_accepts_run_scoped_key(tmp_path):
         "analysis_agents_task/tmp/submit.json"
     )
 
-    result = analyst_storage.upload_analyst_agents_content(
+    result = await analyst_storage.upload_analyst_agents_content(
         '{"ok": true}',
         "submit.json",
         object_key=object_key,
@@ -267,7 +298,7 @@ def test_download_obs_out_prefers_obsfs_and_filters_outputs(tmp_path):
     assert not (tmp_path / "downloads" / "task-1" / "skip.log").exists()
 
 
-def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
+async def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -312,7 +343,7 @@ def test_upload_content_falls_back_to_sdk_when_obsfs_missing(
 
     monkeypatch.setattr(analyst_storage, "ObsClient", FakeObsClient)
 
-    result = analyst_storage.upload_analyst_agents_content(
+    result = await analyst_storage.upload_analyst_agents_content(
         "payload",
         "submit.json",
         bucket_name="phytomni",

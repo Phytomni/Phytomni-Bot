@@ -20,12 +20,15 @@ from typing import Any, Dict, Mapping, Optional
 
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
+from ...common.relay_client import current_relay_client
 from ...config.defaults import AnalystConfig
+from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     bucket_colon_path,
     normalize_obs_object_key,
+    obs_path_from_key,
     obsfs_bucket_available,
     obsfs_path_for,
 )
@@ -204,12 +207,16 @@ def upload_analyst_agents_data(
         )
 
 
-def upload_analyst_agents_content(
+async def upload_analyst_agents_content(
     content: str,
     object_name: str,
     **kwargs: Any,
 ) -> str:
     """Upload generated analyst metadata content to OBS storage.
+
+    In relay mode the content is forwarded through the operator OBS
+    upload relay (the child holds no OBS credentials); otherwise it is
+    written through obsfs with an OBS SDK fallback.
 
     Args:
         content: Text content to write to OBS.
@@ -232,6 +239,13 @@ def upload_analyst_agents_content(
         object_key = normalize_obs_object_key(
             str(object_key), access.bucket_name
         )
+    if relay_mode_enabled():
+        await current_relay_client().put_obs_object(
+            obs_path_from_key(access.bucket_name, object_key),
+            content.encode("utf-8"),
+            message="Failed to upload analyst metadata via relay",
+        )
+        return bucket_colon_path(access.bucket_name, object_key)
     try:
         return _upload_content_obsfs(
             content,

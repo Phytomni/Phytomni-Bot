@@ -143,7 +143,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         """
         run_identity = self._submit_run_identity()
         output_dir = self._submit_output_dir(state, run_identity)
-        obs_task_path, obs_model_path = self._upload_submit_meta(
+        obs_task_path, obs_model_path = await self._upload_submit_meta(
             state,
             output_dir,
             run_identity,
@@ -185,7 +185,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             output_dir,
         )
 
-    def _upload_submit_meta(
+    async def _upload_submit_meta(
         self: Any,
         state: AnalystAgentsState,
         output_dir: str,
@@ -200,7 +200,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             self.sensitive_config.obs_credentials()
         )
         task_object_name = "task.yaml"
-        task_path = upload_analyst_agents_content(
+        task_path = await upload_analyst_agents_content(
             content=self._submit_payload(state, output_dir),
             object_name=task_object_name,
             object_key=task_tmp_key(
@@ -214,7 +214,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             bucket_name=self.analyst_config.BUCKET_NAME,
         )
         model_object_name = "model.yaml"
-        model_path = upload_analyst_agents_content(
+        model_path = await upload_analyst_agents_content(
             content=self._submit_coder_payload(),
             object_name=model_object_name,
             object_key=task_tmp_key(
