@@ -13,6 +13,7 @@ bearer-auth header injection, JSON POST and GET response handling, the
 from __future__ import annotations
 
 import contextlib
+from types import SimpleNamespace
 from typing import Any, cast
 
 import httpx
@@ -78,8 +79,18 @@ class _CapturingClient:
         self.captured = {"method": method, "url": url, **kwargs}
         return self.response
 
+    def stream(self, method: str, url: str, **kwargs: Any) -> Any:
+        """Record a streaming request and replay the canned response."""
+        self.captured = {"method": method, "url": url, **kwargs}
 
-def _patch_client(monkeypatch, response: httpx.Response) -> _CapturingClient:
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield self.response
+
+        return _cm()
+
+
+def _patch_client(monkeypatch, response: Any) -> _CapturingClient:
     """Patch ``relay_client.get_async_client`` to yield a capturing stub."""
     client = _CapturingClient(response)
 
@@ -90,6 +101,16 @@ def _patch_client(monkeypatch, response: httpx.Response) -> _CapturingClient:
 
     monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
     return client
+
+
+def _stream_response(status_code: int, chunks: list[bytes]) -> Any:
+    """Return a stream-shaped response stub with status + aiter_bytes."""
+
+    async def _aiter() -> Any:
+        for chunk in chunks:
+            yield chunk
+
+    return SimpleNamespace(status_code=status_code, aiter_bytes=_aiter)
 
 
 def _response(status: int, body: Any, method: str = "POST") -> httpx.Response:
@@ -296,60 +317,10 @@ async def test_put_obs_dir_puts_marker(monkeypatch):
     assert "v1/relay/obs/dir?" in client_stub.captured["url"]
 
 
-class _StreamResponse:
-    """Streaming response stub yielding canned chunks via aiter_bytes."""
-
-    def __init__(self, status_code: int, chunks: list[bytes]) -> None:
-        self.status_code = status_code
-        self._chunks = chunks
-
-    async def aiter_bytes(self) -> Any:
-        """Yield the canned chunks one at a time."""
-        for chunk in self._chunks:
-            yield chunk
-
-
-class _StreamClient:
-    """Async-context client stub whose ``stream`` replays canned chunks."""
-
-    captured: dict[str, Any] = {}
-
-    def __init__(self, response: _StreamResponse) -> None:
-        self.response = response
-
-    async def __aenter__(self) -> "_StreamClient":
-        return self
-
-    async def __aexit__(self, *_args: Any) -> None:
-        return None
-
-    def stream(self, method: str, url: str, **kwargs: Any) -> Any:
-        """Record the stream request and replay the canned response."""
-        _StreamClient.captured = {"method": method, "url": url, **kwargs}
-
-        @contextlib.asynccontextmanager
-        async def _cm():
-            yield self.response
-
-        return _cm()
-
-
-def _patch_stream_client(monkeypatch, response: _StreamResponse) -> None:
-    """Patch ``get_async_client`` to yield a streaming capturing stub."""
-    client = _StreamClient(response)
-
-    @contextlib.asynccontextmanager
-    async def fake_get_async_client(*, timeout: Any = None, **_kwargs: Any):
-        del timeout, _kwargs
-        yield client
-
-    monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
-
-
 async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
     """The download streams each chunk straight to the destination file."""
-    _patch_stream_client(
-        monkeypatch, _StreamResponse(200, [b"AB", b"C", b"D"])
+    client_stub = _patch_client(
+        monkeypatch, _stream_response(200, [b"AB", b"C", b"D"])
     )
     dest = tmp_path / "r.cif"
 
@@ -360,16 +331,16 @@ async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
     )
 
     assert dest.read_bytes() == b"ABCD"
-    assert _StreamClient.captured["method"] == "GET"
-    assert "v1/relay/obs/object?" in _StreamClient.captured["url"]
-    assert _StreamClient.captured["headers"]["Authorization"] == "Bearer k9"
+    assert client_stub.captured["method"] == "GET"
+    assert "v1/relay/obs/object?" in client_stub.captured["url"]
+    assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
 
 
 async def test_get_obs_object_to_path_raises_on_error_status(
     tmp_path, monkeypatch
 ):
     """A 4xx/5xx upstream status raises McpError, key-free, no file write."""
-    _patch_stream_client(monkeypatch, _StreamResponse(404, [b"nope"]))
+    _patch_client(monkeypatch, _stream_response(404, [b"nope"]))
     dest = tmp_path / "missing.cif"
 
     with pytest.raises(McpError) as excinfo:
