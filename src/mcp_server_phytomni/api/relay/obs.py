@@ -18,10 +18,11 @@ import json
 import logging
 import sqlite3
 import time
+from collections.abc import Iterator
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import Request
 
 from ...config.defaults import ApiConfig, ServerConfig
@@ -180,24 +181,36 @@ async def _get_object(
     request: Request,
     principal: ApiPrincipal = Depends(require_relay_access(_OBS_SERVICE)),
 ) -> Response:
-    """Return the bytes of the client-supplied (validated) object key."""
+    """Stream the client-supplied (validated) object key under a budget."""
     started, config, server = _begin()
     path = _require_query(request, "path")
     safe_key = _require_tenant_prefix(server.BUCKET_NAME, path, principal)
-    data = await _run_obs_op(
-        obs_relay_ops.get_object_bytes,
+    size = await _run_obs_op(
+        obs_relay_ops.object_size,
         server.BUCKET_NAME,
         safe_key,
         obs_server=server.OBS_SERVER,
     )
+    if size > config.RELAY_RESPONSE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="obs object too large")
     _record_obs_audit(
         principal,
         "obs_download",
         started,
-        {"path": path, "bytes": len(data)},
+        {"path": path, "bytes": size},
         db_path=config.RELAY_AUDIT_DB_PATH,
     )
-    return Response(content=data, media_type="application/octet-stream")
+
+    def _stream() -> Iterator[bytes]:
+        yield from obs_relay_ops.iter_object_chunks(
+            server.BUCKET_NAME, safe_key, obs_server=server.OBS_SERVER
+        )
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/octet-stream",
+        headers={"Content-Length": str(size)},
+    )
 
 
 async def _list_objects(

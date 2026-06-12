@@ -14,7 +14,7 @@ bucket, preferring the obsfs mount with an SDK fallback.
 
 from __future__ import annotations
 
-import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -33,10 +33,13 @@ __all__ = [
     "put_object_bytes",
     "put_dir_marker",
     "get_object_bytes",
+    "object_size",
+    "iter_object_chunks",
     "list_object_keys",
 ]
 
 _LIST_MAX_KEYS = 1000
+_DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 
 def _obs_client(obs_server: str) -> ObsClient:
@@ -153,6 +156,117 @@ def put_dir_marker(
     return safe_key
 
 
+def object_size(
+    bucket: str,
+    object_key: str,
+    *,
+    obs_server: str,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> int:
+    """Return the object's byte length for the response-size budget.
+
+    Args:
+        bucket: Source OBS bucket name.
+        object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
+            path; re-validated and normalized before the head request.
+        obs_server: OBS endpoint for the SDK fallback.
+        mount_root: Filesystem root for the obsfs mount.
+
+    Returns:
+        The object's content length in bytes.
+
+    Raises:
+        ObsPathError: If the path escapes the bucket.
+        OSError: If both the obsfs stat and the SDK head fail.
+    """
+    safe_key = normalize_obs_object_key(object_key, bucket)
+
+    def _obsfs() -> int:
+        return obsfs_path_for(safe_key, bucket, mount_root).stat().st_size
+
+    def _sdk() -> int:
+        # The obs SDK ships no reliable type info (pyright marks
+        # getObject's downloadPath required and does not know
+        # getObjectMetadata), so bind the client as Any at the call.
+        client: Any = _obs_client(obs_server)
+        response = client.getObjectMetadata(
+            bucketName=bucket, objectKey=safe_key
+        )
+        _require_ok(response, "head")
+        return int(response.body.contentLength)
+
+    return obsfs_or_sdk(_obsfs, _sdk)
+
+
+def iter_object_chunks(
+    bucket: str,
+    object_key: str,
+    *,
+    obs_server: str,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+    chunk_size: int = _DOWNLOAD_CHUNK_BYTES,
+) -> Iterator[bytes]:
+    """Yield one object's bytes in ``chunk_size`` pieces, never fully buffered.
+
+    The obsfs-vs-SDK branch is decided eagerly (a bucket-availability
+    bool check, not a lazy generator), because ``obsfs_or_sdk`` cannot
+    fall back from a generator whose I/O error only fires on iteration.
+
+    Args:
+        bucket: Source OBS bucket name.
+        object_key: Client-supplied object key or ``/obs/<bucket>/<key>``
+            path; re-validated and normalized before any read.
+        obs_server: OBS endpoint for the SDK fallback.
+        mount_root: Filesystem root for the obsfs mount.
+        chunk_size: Bytes to yield per piece.
+
+    Returns:
+        An iterator over the object's content chunks.
+
+    Raises:
+        ObsPathError: If the path escapes the bucket.
+        OSError: If the SDK read fails.
+    """
+    safe_key = normalize_obs_object_key(object_key, bucket)
+    if obsfs_bucket_available(bucket, mount_root):
+        source = obsfs_path_for(safe_key, bucket, mount_root)
+        if source.is_file():
+            return _iter_file_chunks(source, chunk_size)
+    return _iter_sdk_chunks(bucket, safe_key, obs_server, chunk_size)
+
+
+def _iter_file_chunks(source: Path, chunk_size: int) -> Iterator[bytes]:
+    """Yield a local obsfs file's bytes in ``chunk_size`` pieces."""
+    with source.open("rb") as handle:
+        while True:
+            block = handle.read(chunk_size)
+            if not block:
+                return
+            yield block
+
+
+def _iter_sdk_chunks(
+    bucket: str, safe_key: str, obs_server: str, chunk_size: int
+) -> Iterator[bytes]:
+    """Stream an object through the OBS SDK in ``chunk_size`` pieces."""
+    # Bind as Any: the obs SDK ships no reliable type info, so pyright
+    # wrongly marks getObject's downloadPath as required.
+    client: Any = _obs_client(obs_server)
+    response = client.getObject(
+        bucketName=bucket, objectKey=safe_key, loadStreamInMemory=False
+    )
+    _require_ok(response, "download")
+    stream = response.body.response
+    try:
+        while True:
+            block = stream.read(chunk_size)
+            if not block:
+                return
+            yield block
+    finally:
+        stream.close()
+
+
 def get_object_bytes(
     bucket: str,
     object_key: str,
@@ -160,7 +274,10 @@ def get_object_bytes(
     obs_server: str,
     mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
 ) -> bytes:
-    """Return the bytes of one object by its exact key.
+    """Return one object's full bytes by its exact key (buffered).
+
+    Built on :func:`iter_object_chunks`; callers that can stream should
+    use that primitive instead so a large object is never fully buffered.
 
     Args:
         bucket: Source OBS bucket name.
@@ -176,24 +293,11 @@ def get_object_bytes(
         ObsPathError: If the path escapes the bucket.
         OSError: If both the obsfs read and the SDK fallback fail.
     """
-    safe_key = normalize_obs_object_key(object_key, bucket)
-
-    def _obsfs() -> bytes:
-        return obsfs_path_for(safe_key, bucket, mount_root).read_bytes()
-
-    def _sdk() -> bytes:
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
-            temp_path = handle.name
-        try:
-            response = _obs_client(obs_server).getObject(
-                bucketName=bucket, objectKey=safe_key, downloadPath=temp_path
-            )
-            _require_ok(response, "download")
-            return Path(temp_path).read_bytes()
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
-
-    return obsfs_or_sdk(_obsfs, _sdk)
+    return b"".join(
+        iter_object_chunks(
+            bucket, object_key, obs_server=obs_server, mount_root=mount_root
+        )
+    )
 
 
 def list_object_keys(

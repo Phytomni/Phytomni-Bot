@@ -558,11 +558,40 @@ def _build_fake_obs_client() -> Any:
     between cases.
     """
 
+    class _FakeStreamReader:
+        """Chunked reader stand-in for ``getObject`` stream mode.
+
+        Walks the seeded object bytes in ``read(size)``-sized slices so a
+        relay download test exercises the streaming path without a real
+        OBS connection.
+        """
+
+        def __init__(self, data: bytes) -> None:
+            self._data = data
+            self._pos = 0
+            self.closed = False
+
+        def read(self, size: int = -1) -> bytes:
+            """Return up to ``size`` bytes from the current position."""
+            if size is None or size < 0:
+                chunk = self._data[self._pos :]
+                self._pos = len(self._data)
+                return chunk
+            chunk = self._data[self._pos : self._pos + size]
+            self._pos += len(chunk)
+            return chunk
+
+        def close(self) -> None:
+            """Mark the stream closed (the SDK closes the connection)."""
+            self.closed = True
+
     class _FakeObsClient:
         """Capture-only OBS SDK stand-in for the SDK fallback path.
 
         Supports ``putContent`` (used by the upload write seam),
-        ``getObject`` (writes seeded ``objects`` bytes to ``downloadPath``),
+        ``getObject`` (writes seeded ``objects`` bytes to ``downloadPath``,
+        or streams them through ``body.response`` when loaded out of
+        memory), ``getObjectMetadata`` (reports the seeded byte length),
         and ``listObjects`` (returns seeded ``pages`` in order). Tests seed
         ``objects`` / ``pages`` before exercising the download/list ops.
         """
@@ -579,6 +608,7 @@ def _build_fake_obs_client() -> Any:
             sdk_ops = {
                 "putContent": self._put_content,
                 "getObject": self._get_object,
+                "getObjectMetadata": self._get_object_metadata,
                 "listObjects": self._list_objects,
             }
             if name in sdk_ops:
@@ -599,9 +629,23 @@ def _build_fake_obs_client() -> Any:
             download_path = kwargs.get("downloadPath")
             if download_path:
                 Path(download_path).write_bytes(buffer)
+                return SimpleNamespace(
+                    status=200,
+                    body=SimpleNamespace(buffer=buffer),
+                    requestId="request-id",
+                )
             return SimpleNamespace(
                 status=200,
-                body=SimpleNamespace(buffer=buffer),
+                body=SimpleNamespace(response=_FakeStreamReader(buffer)),
+                requestId="request-id",
+            )
+
+        def _get_object_metadata(self, **kwargs: Any) -> Any:
+            _FakeObsClient.captured["get_object_metadata"] = kwargs
+            buffer = _FakeObsClient.objects.get(kwargs["objectKey"], b"")
+            return SimpleNamespace(
+                status=200,
+                body=SimpleNamespace(contentLength=len(buffer)),
                 requestId="request-id",
             )
 

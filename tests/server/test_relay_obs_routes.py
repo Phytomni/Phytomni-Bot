@@ -102,14 +102,17 @@ async def test_obs_put_object_writes_and_returns_path(
     assert fake.call_args.kwargs["obs_server"]
 
 
-async def test_obs_get_object_returns_bytes(
+async def test_obs_get_object_streams_under_budget(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GET returns the object content as an octet-stream."""
+    """GET streams the object content in chunks as an octet-stream."""
+    monkeypatch.setattr(ops_module, "object_size", Mock(return_value=8))
     monkeypatch.setattr(
-        ops_module, "get_object_bytes", Mock(return_value=b"ATOM 1 N")
+        ops_module,
+        "iter_object_chunks",
+        Mock(return_value=iter([b"ATOM", b" 1 N"])),
     )
 
     response = await client.get(
@@ -121,6 +124,27 @@ async def test_obs_get_object_returns_bytes(
     assert response.status_code == 200
     assert response.content == b"ATOM 1 N"
     assert response.headers["content-type"] == "application/octet-stream"
+
+
+async def test_obs_get_object_rejects_over_budget(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An object larger than the response budget is a 413, never streamed."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_RESPONSE_MAX_BYTES", "16")
+    monkeypatch.setattr(ops_module, "object_size", Mock(return_value=10**6))
+    streamed = Mock(return_value=iter([b"x"]))
+    monkeypatch.setattr(ops_module, "iter_object_chunks", streamed)
+
+    response = await client.get(
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/user_data/customer/runs/d/r.cif",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 413
+    assert not streamed.called
 
 
 async def test_obs_list_returns_keys_under_output_root(
@@ -229,8 +253,8 @@ async def test_obs_get_rejects_foreign_tenant_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An in-bucket path under another tenant's namespace is a 403."""
-    fake = Mock(return_value=b"x")
-    monkeypatch.setattr(ops_module, "get_object_bytes", fake)
+    fake = Mock(return_value=8)
+    monkeypatch.setattr(ops_module, "object_size", fake)
 
     response = await client.get(
         "/v1/relay/obs/object"

@@ -83,12 +83,12 @@ def test_put_dir_marker_sdk_writes_zero_byte_object(
     assert put["content"] is None
 
 
-def test_get_object_bytes_sdk_returns_downloaded_content(
+def test_get_object_bytes_sdk_returns_streamed_content(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     fake_obs_client_factory: Callable[..., Any],
 ) -> None:
-    """SDK getObject downloads the object to a temp path and returns it."""
+    """SDK get_object_bytes streams the object and joins it back to bytes."""
     fake = _seed_fake(monkeypatch, fake_obs_client_factory)
     fake.objects["agent_data/out/result.cif"] = b"ATOM  1  N"
 
@@ -100,7 +100,55 @@ def test_get_object_bytes_sdk_returns_downloaded_content(
     )
 
     assert data == b"ATOM  1  N"
-    assert fake.captured["get_object"]["downloadPath"]
+    # Streams out of memory (no temp-file downloadPath).
+    assert fake.captured["get_object"].get("downloadPath") is None
+    assert fake.captured["get_object"]["loadStreamInMemory"] is False
+
+
+def test_iter_object_chunks_yields_all_bytes_in_pieces(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
+) -> None:
+    """iter_object_chunks streams the object in <= chunk_size pieces."""
+    fake = _seed_fake(monkeypatch, fake_obs_client_factory)
+    fake.objects["agent_data/out/big.bin"] = b"abcdefghij"
+
+    chunks = list(
+        ops.iter_object_chunks(
+            "phytomni",
+            "agent_data/out/big.bin",
+            obs_server="https://obs.example",
+            mount_root=_missing_mount(tmp_path),
+            chunk_size=4,
+        )
+    )
+
+    assert b"".join(chunks) == b"abcdefghij"
+    assert max(len(chunk) for chunk in chunks) <= 4
+    assert len(chunks) >= 3
+
+
+def test_object_size_sdk_returns_content_length(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_obs_client_factory: Callable[..., Any],
+) -> None:
+    """object_size reads the content length via getObjectMetadata."""
+    fake = _seed_fake(monkeypatch, fake_obs_client_factory)
+    fake.objects["agent_data/out/big.bin"] = b"abcdefghij"
+
+    size = ops.object_size(
+        "phytomni",
+        "agent_data/out/big.bin",
+        obs_server="https://obs.example",
+        mount_root=_missing_mount(tmp_path),
+    )
+
+    assert size == 10
+    assert fake.captured["get_object_metadata"]["objectKey"] == (
+        "agent_data/out/big.bin"
+    )
 
 
 def test_list_object_keys_sdk_paginates_and_skips_dirs(
