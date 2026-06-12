@@ -15,9 +15,12 @@ never logged), and reuses the shared retry helpers + get_async_client.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 from urllib.parse import urlencode
 
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 from pydantic import SecretStr
 
 from ..config.defaults import ServerConfig
@@ -215,6 +218,28 @@ class RelayClient:
             headers=self._auth_headers(),
         )
         return await self._request_bytes(request, message)
+
+    async def get_obs_object_to_path(
+        self, obs_path: str, destination: Path, *, message: str
+    ) -> None:
+        """Stream one OBS object through the relay straight to a file.
+
+        Avoids buffering the whole object in memory: the operator relay
+        streams the bytes and the child writes each chunk to disk. Raises
+        a key-free ``McpError`` on a non-2xx status before any file write.
+        """
+        url = self.relay_url("obs/object", {"path": obs_path})
+        async with get_async_client(timeout=self.timeout) as client:
+            async with client.stream(
+                "GET", url, headers=self._auth_headers()
+            ) as response:
+                if response.status_code >= 400:
+                    raise McpError(
+                        ErrorData(code=INTERNAL_ERROR, message=message)
+                    )
+                with destination.open("wb") as sink:
+                    async for chunk in response.aiter_bytes():
+                        sink.write(chunk)
 
     async def get_obs_list(
         self, obs_prefix: str, *, message: str

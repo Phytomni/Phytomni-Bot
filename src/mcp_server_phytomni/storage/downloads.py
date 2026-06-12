@@ -278,12 +278,13 @@ async def _download_obs_file_via_relay(
     obs_file: str,
     context: ObsTransferContext,
 ) -> str:
-    """Download one OBS object through the relay to a local temp file."""
+    """Stream one OBS object through the relay to a local temp file."""
     server_file = _local_download_target(obs_file, context)
-    data = await current_relay_client().get_obs_object(
-        obs_file, message="Failed to download file via relay"
+    await current_relay_client().get_obs_object_to_path(
+        obs_file,
+        Path(server_file),
+        message="Failed to download file via relay",
     )
-    Path(server_file).write_bytes(data)
     return server_file
 
 

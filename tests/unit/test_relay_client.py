@@ -294,3 +294,90 @@ async def test_put_obs_dir_puts_marker(monkeypatch):
     assert result == {"obs_path": "/obs/phytomni/d/"}
     assert client_stub.captured["method"] == "PUT"
     assert "v1/relay/obs/dir?" in client_stub.captured["url"]
+
+
+class _StreamResponse:
+    """Streaming response stub yielding canned chunks via aiter_bytes."""
+
+    def __init__(self, status_code: int, chunks: list[bytes]) -> None:
+        self.status_code = status_code
+        self._chunks = chunks
+
+    async def aiter_bytes(self) -> Any:
+        """Yield the canned chunks one at a time."""
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _StreamClient:
+    """Async-context client stub whose ``stream`` replays canned chunks."""
+
+    captured: dict[str, Any] = {}
+
+    def __init__(self, response: _StreamResponse) -> None:
+        self.response = response
+
+    async def __aenter__(self) -> "_StreamClient":
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+    def stream(self, method: str, url: str, **kwargs: Any) -> Any:
+        """Record the stream request and replay the canned response."""
+        _StreamClient.captured = {"method": method, "url": url, **kwargs}
+
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield self.response
+
+        return _cm()
+
+
+def _patch_stream_client(monkeypatch, response: _StreamResponse) -> None:
+    """Patch ``get_async_client`` to yield a streaming capturing stub."""
+    client = _StreamClient(response)
+
+    @contextlib.asynccontextmanager
+    async def fake_get_async_client(*, timeout: Any = None, **_kwargs: Any):
+        del timeout, _kwargs
+        yield client
+
+    monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
+
+
+async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
+    """The download streams each chunk straight to the destination file."""
+    _patch_stream_client(
+        monkeypatch, _StreamResponse(200, [b"AB", b"C", b"D"])
+    )
+    dest = tmp_path / "r.cif"
+
+    await _client("k9").get_obs_object_to_path(
+        "/obs/phytomni/agent_data/user_data/u/r/r.cif",
+        dest,
+        message="relay download failed",
+    )
+
+    assert dest.read_bytes() == b"ABCD"
+    assert _StreamClient.captured["method"] == "GET"
+    assert "v1/relay/obs/object?" in _StreamClient.captured["url"]
+    assert _StreamClient.captured["headers"]["Authorization"] == "Bearer k9"
+
+
+async def test_get_obs_object_to_path_raises_on_error_status(
+    tmp_path, monkeypatch
+):
+    """A 4xx/5xx upstream status raises McpError, key-free, no file write."""
+    _patch_stream_client(monkeypatch, _StreamResponse(404, [b"nope"]))
+    dest = tmp_path / "missing.cif"
+
+    with pytest.raises(McpError) as excinfo:
+        await _client("super-secret").get_obs_object_to_path(
+            "/obs/phytomni/agent_data/user_data/u/r/r.cif",
+            dest,
+            message="relay download failed",
+        )
+
+    assert "super-secret" not in str(excinfo.value)
+    assert not dest.exists()

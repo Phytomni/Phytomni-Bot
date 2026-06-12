@@ -5,9 +5,9 @@
 """Tests for the relay-mode download branch of ``storage/downloads.py``.
 
 When relay mode is on, ``_resolve_obs_file`` takes a relay fast path:
-``download_obs_file`` fetches the object bytes through the relay and
-writes them to a run-scoped local temp file without instantiating an
-``ObsClient`` or probing the obsfs mount. Normal mode is unaffected.
+``download_obs_file`` streams the object through the relay straight to a
+run-scoped local temp file without instantiating an ``ObsClient`` or
+probing the obsfs mount. Normal mode is unaffected.
 """
 
 from __future__ import annotations
@@ -27,9 +27,16 @@ pytestmark = pytest.mark.unit
 async def test_download_obs_file_uses_relay_in_relay_mode(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Relay mode downloads via the relay to a temp file, no ObsClient."""
+    """Relay mode streams via the relay to a temp file, no ObsClient."""
+
+    async def _stream_to_path(
+        obs_path: str, destination: Path, *, message: str
+    ) -> None:
+        del obs_path, message
+        Path(destination).write_bytes(b"PDF-BYTES")
+
     relay = Mock()
-    relay.get_obs_object = AsyncMock(return_value=b"PDF-BYTES")
+    relay.get_obs_object_to_path = AsyncMock(side_effect=_stream_to_path)
     monkeypatch.setattr(downloads_module, "relay_mode_enabled", lambda: True)
     monkeypatch.setattr(
         downloads_module, "current_relay_client", lambda: relay
@@ -41,7 +48,9 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
         "/obs/phytomni/agent_data/uploads/u/r/up/notes.pdf", str(tmp_path)
     )
 
-    assert relay.get_obs_object.await_count == 1
-    assert relay.get_obs_object.await_args.args[0].endswith("notes.pdf")
+    assert relay.get_obs_object_to_path.await_count == 1
+    assert relay.get_obs_object_to_path.await_args.args[0].endswith(
+        "notes.pdf"
+    )
     assert not no_sdk.called
     assert Path(local_path).read_bytes() == b"PDF-BYTES"
