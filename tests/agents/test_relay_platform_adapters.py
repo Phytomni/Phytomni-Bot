@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst import graph as analyst_graph
 from mcp_server_phytomni.agents.analyst import task_ops
 from mcp_server_phytomni.agents.brief_gene.pipeline import run_bi_api
 from mcp_server_phytomni.agents.data.nl2sql import (
@@ -223,6 +224,44 @@ async def test_task_status_routes_through_relay(monkeypatch):
     assert result == {"status": "running"}
     assert relay.calls[0]["method"] == "GET"
     assert relay.calls[0]["path"] == "analysis/task-9"
+
+
+async def test_analyst_submit_routes_through_relay(monkeypatch):
+    """Relay-mode analyst submit POSTs to /v1/relay/analysis/tasks.
+
+    The submit headers carry no operator IAM token (the relay injects
+    it), and the job is forwarded through the relay rather than posted to
+    the operator ANALYSIS_URL.
+    """
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    relay = _patch_relay(monkeypatch, analyst_graph, {"id": "task-abc"})
+
+    async def _no_token(**_kwargs: Any) -> str:
+        raise AssertionError("get_token must not run in relay mode")
+
+    monkeypatch.setattr(analyst_graph, "get_token", _no_token)
+    mixin = analyst_graph.AnalystGraphMixin
+    submit_headers = getattr(mixin, "_submit_headers")
+    post_submit_job = getattr(mixin, "_post_submit_job")
+
+    headers = await submit_headers(object())
+    assert "X-Auth-Token" not in headers
+    assert headers["Content-Type"] == "application/json"
+
+    result = await post_submit_job(
+        object(),
+        headers,
+        {"job": 1},
+        "job-1",
+        "agent_data/user_data/cust42/runs/x/output/",
+    )
+
+    assert result["task_id"] == "task-abc"
+    assert result["task_status"] == "PENDING"
+    assert result["output_dir"] == "agent_data/user_data/cust42/runs/x/output/"
+    assert relay.calls[0]["method"] == "POST"
+    assert relay.calls[0]["path"] == "analysis/tasks"
+    assert relay.calls[0]["body"] == {"job": 1}
 
 
 async def test_task_log_routes_through_relay_with_task_name_query(monkeypatch):

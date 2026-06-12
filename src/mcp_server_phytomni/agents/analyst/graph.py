@@ -31,6 +31,8 @@ from ...common.http import (
 )
 from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
+from ...common.relay_client import current_relay_client
+from ...config.relay_mode import relay_mode_enabled
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..knowledge.retrieval import retrieve
@@ -296,7 +298,9 @@ class AnalystGraphMixin(WorkflowMixinBase):
         )
 
     async def _submit_headers(self: Any) -> Dict[str, str]:
-        """Return authenticated submit headers."""
+        """Return authenticated submit headers (none minted in relay mode)."""
+        if relay_mode_enabled():
+            return {"Content-Type": "application/json"}
         token = await get_token(
             timeout=self.analyst_config.TIMEOUT,
             region=self.analyst_config.ANALYSIS_REGION,
@@ -362,6 +366,25 @@ class AnalystGraphMixin(WorkflowMixinBase):
         output_dir: str,
     ) -> Dict[str, Any]:
         """Submit the job payload to the analysis platform with retries."""
+        if relay_mode_enabled():
+            payload = await current_relay_client().post_json(
+                "analysis/tasks",
+                json_body=job_data,
+                message="Failed to submit task",
+            )
+            logger.info(
+                "Submit (relay): job_name=%s task_id=%s output_dir=%s "
+                "task_status=RUNNING",
+                job_name,
+                payload["id"],
+                output_dir,
+            )
+            return {
+                "task_id": payload["id"],
+                "task_status": "PENDING",
+                "job_name": job_name,
+                "output_dir": output_dir,
+            }
         timeout = self.analyst_config.TIMEOUT
         max_retries = self.analyst_config.MAX_RETRIES
         client_timeout = Timeout(timeout, connect=timeout)
