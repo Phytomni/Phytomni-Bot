@@ -10,6 +10,7 @@ import pytest
 
 from mcp_server_phytomni.agents.shared.analysis import (
     _compute_traceback_digest,
+    capture_analysis_result,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import (
     capture_workflow_boundary,
@@ -82,3 +83,33 @@ async def test_failure_state_writes_both_error_and_failures() -> None:
     assert result["failures"][0]["task_label"] == "test_label"
     assert result["failures"][0]["kind"] == "execute"
     assert result["completed_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_capture_analysis_result_failure_path_writes_record() -> None:
+    """The production ``capture_analysis_result`` closure (not a
+    hand-rolled facsimile) records ``error`` and a single FailureRecord
+    when the ``submit_call`` raises, preserving prior ``task_ids``.
+    """
+
+    async def failing_submit() -> dict[str, Any]:
+        raise RuntimeError("submit-exploded")
+
+    state = {"task_ids": {"prior": "t-0"}, "task_index": 3}
+    result = await capture_analysis_result(
+        state,
+        "evolution_analysis",
+        failing_submit,
+    )
+
+    assert result["error"] == "submit-exploded"
+    assert result["completed_count"] == 1
+    assert result["task_ids"] == {"prior": "t-0"}
+    assert len(result["failures"]) == 1
+    record = result["failures"][0]
+    assert record["task_label"] == "evolution_analysis"
+    assert record["message"] == "submit-exploded"
+    assert record["kind"] == "execute"
+    assert record["traceback_digest"] is None or (
+        len(record["traceback_digest"]) == 16
+    )
