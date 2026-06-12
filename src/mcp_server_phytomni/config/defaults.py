@@ -757,6 +757,10 @@ class ApiConfig(BaseSettings):
         RELAY_RESPONSE_AUDIT_MAX_BYTES (int): Maximum bytes of an upstream
             response copied into the audit store. The client-facing
             response is never truncated; only the audit copy is capped.
+        RELAY_RESPONSE_MAX_BYTES (int): Maximum size of an OBS object the
+            download relay will stream back before returning 413, so one
+            oversized object cannot exhaust the operator process memory.
+            Distinct from RELAY_REQUEST_MAX_BYTES (request body cap).
         RELAY_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute
             for relay routes, kept distinct from API_RATE_LIMIT_PER_MIN
             because relay calls spend the operator's metered upstream
@@ -830,6 +834,12 @@ class ApiConfig(BaseSettings):
         validation_alias=AliasChoices(
             "RELAY_RESPONSE_AUDIT_MAX_BYTES",
             "PHYTOMNI_RELAY_RESPONSE_AUDIT_MAX_BYTES",
+        ),
+    )
+    RELAY_RESPONSE_MAX_BYTES: int = Field(
+        default=1024 * 1024 * 1024,
+        validation_alias=AliasChoices(
+            "RELAY_RESPONSE_MAX_BYTES", "PHYTOMNI_RELAY_RESPONSE_MAX_BYTES"
         ),
     )
     RELAY_RATE_LIMIT_PER_MIN: int = Field(

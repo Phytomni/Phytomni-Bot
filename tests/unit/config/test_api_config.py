@@ -43,6 +43,7 @@ def test_api_config_defaults() -> None:
     assert config.RELAY_REQUEST_MAX_BYTES == 10_485_760
     assert config.RELAY_TIMEOUT_SECONDS == 600.0
     assert config.RELAY_RESPONSE_AUDIT_MAX_BYTES == 10_485_760
+    assert config.RELAY_RESPONSE_MAX_BYTES == 1024 * 1024 * 1024
     assert config.RELAY_RATE_LIMIT_PER_MIN == 60
     assert config.RELAY_MAX_CONCURRENT_PER_KEY == 8
 
@@ -100,6 +101,7 @@ def test_relay_config_prefixed_env_override(
     monkeypatch.setenv("PHYTOMNI_RELAY_REQUEST_MAX_BYTES", "2048")
     monkeypatch.setenv("PHYTOMNI_RELAY_TIMEOUT_SECONDS", "12.5")
     monkeypatch.setenv("PHYTOMNI_RELAY_RESPONSE_AUDIT_MAX_BYTES", "4096")
+    monkeypatch.setenv("PHYTOMNI_RELAY_RESPONSE_MAX_BYTES", "8192")
     monkeypatch.setenv("PHYTOMNI_RELAY_RATE_LIMIT_PER_MIN", "15")
     monkeypatch.setenv("PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY", "3")
 
@@ -111,6 +113,7 @@ def test_relay_config_prefixed_env_override(
     assert config.RELAY_REQUEST_MAX_BYTES == 2048
     assert config.RELAY_TIMEOUT_SECONDS == 12.5
     assert config.RELAY_RESPONSE_AUDIT_MAX_BYTES == 4096
+    assert config.RELAY_RESPONSE_MAX_BYTES == 8192
     assert config.RELAY_RATE_LIMIT_PER_MIN == 15
     assert config.RELAY_MAX_CONCURRENT_PER_KEY == 3
 
@@ -123,6 +126,7 @@ def test_relay_config_unprefixed_env_override(
     monkeypatch.setenv("RELAY_AUDIT_RETENTION_DAYS", "7")
     monkeypatch.setenv("RELAY_RATE_LIMIT_PER_MIN", "9")
     monkeypatch.setenv("RELAY_MAX_CONCURRENT_PER_KEY", "2")
+    monkeypatch.setenv("RELAY_RESPONSE_MAX_BYTES", "65536")
 
     config = ApiConfig()
 
@@ -130,3 +134,4 @@ def test_relay_config_unprefixed_env_override(
     assert config.RELAY_AUDIT_RETENTION_DAYS == 7
     assert config.RELAY_RATE_LIMIT_PER_MIN == 9
     assert config.RELAY_MAX_CONCURRENT_PER_KEY == 2
+    assert config.RELAY_RESPONSE_MAX_BYTES == 65536
