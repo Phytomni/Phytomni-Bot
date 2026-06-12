@@ -131,15 +131,30 @@ PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS=1200 \
     uv run pytest e2e/test_analyst_agent_e2e.py -v
 ```
 
+Additional knobs read by the polling path:
+
+- `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS` — read timeout budget for the
+  initial async-tool submit call (before polling begins; resolved in
+  `helpers/client.py`).
+- `PHYTOMNI_E2E_TASKS_DB` — path to the `server_tasks.db` that
+  `helpers/polling.py` reads, for when the MCP server runs from a
+  non-default working directory.
+- `PHYTOMNI_E2E_RUN_KA_UPLOAD` — set to `1` to also run the
+  KnowledgeAgent uploaded-document variant; skipped by default because
+  the retrieve→rerank→LLM fan-out with an attached document is
+  backend-bound and can exceed 20-30 min on a degraded tier.
+
 ### HTTP API e2e
 
-`test_api_http_e2e.py` is the one file that does NOT go through the
-stdio MCP client. It boots `phytomni-api` as a real uvicorn subprocess
-on an ephemeral port, mints a per-user key in a throwaway SQLite store
-via `ApiKeyStore`, then drives every cutover-relevant HTTP route over
-real HTTP. Review and BriefGene each block the synchronous endpoint
-~10 min, so the file runs ~20 min and all four model calls run by
-default (no opt-in flag):
+`test_api_http_e2e.py` and `test_concurrent_http_e2e.py` are the two
+files that drive the API over real HTTP instead of the stdio MCP
+client. Both boot `phytomni-api` as a uvicorn subprocess and mint a
+per-session key through the shared `helpers/api_server.py` helper
+(`boot_phytomni_api`, which also runs the health-gate); see "Layout"
+below. `test_api_http_e2e.py` then drives every cutover-relevant HTTP
+route over real HTTP. Review and BriefGene each block the synchronous
+endpoint ~10 min, so the file runs ~20 min and all four model calls run
+by default (no opt-in flag):
 
 ```bash
 PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
@@ -187,12 +202,15 @@ read timeout, default 1200).
 e2e/
 ├── README.md
 ├── pyproject.toml          # local pytest rootdir config
-├── conftest.py             # session client + OBS publish fixtures
+├── conftest.py                  # session client + OBS publish fixtures
 ├── helpers/
-│   ├── assertions.py       # shared keyword/markdown assertions
-│   ├── client.py           # PhytomniMcpClient context manager
-│   ├── obs_publish.py      # per-session demo_data upload
-│   └── polling.py          # async task polling
-├── test_*_e2e.py           # one file per public MCP tool
-└── test_api_http_e2e.py    # live HTTP API (chat surface)
+│   ├── api_server.py            # shared phytomni-api uvicorn boot
+│   ├── assertions.py            # shared keyword/markdown assertions
+│   ├── client.py                # PhytomniMcpClient context manager
+│   ├── obs_publish.py           # per-session demo_data upload
+│   └── polling.py               # async task polling
+├── test_*_e2e.py                # one file per public MCP tool
+├── test_concurrent_client_e2e.py  # five chat-like agents over MCP stdio
+├── test_concurrent_http_e2e.py    # five chat-like agents over HTTP
+└── test_api_http_e2e.py         # live HTTP API (chat surface)
 ```

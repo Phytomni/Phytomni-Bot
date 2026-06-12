@@ -66,7 +66,7 @@ must either refactor or explicitly bump the baseline.
 The codebase enforces the L1 mechanism through two existing structural
 tests:
 
-- `test_global_pylint_disables_blocked` requires that
+- `test_global_pylint_disables_are_not_reintroduced` requires that
   `[tool.pylint."messages control"].disable` stays empty.
 - `test_local_pylint_disables_are_langgraph_boundary_only` scans
   every tracked `.py` file for `# pylint: disable=...` comments and
@@ -85,16 +85,16 @@ does not loosen `max-args` project-wide. A 14-argument function
 would need `# pylint: disable=too-many-arguments` plus an allowlist
 entry plus a catalog section, none of which can be added silently.
 
-**Someone adds a 10th test fake with one public method.** A
+**Someone adds a 19th test fake with one public method.** A
 project-wide `min-public-methods = 1` would silently pass it.
-Counted instead by the L2 ratchet. The current baseline is 9; the
-10th fake pushes the count to 10, the ratchet fails, refactor or
+Counted instead by the L2 ratchet. The current baseline is 18; the
+19th fake pushes the count to 19, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 26th R0801 duplicate-code violation appears.** Default pylint
+**A 96th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 25; the
-26th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 95; the
+96th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -336,9 +336,49 @@ being explicit.
 
 ______________________________________________________________________
 
+### `storage/uploads.py:upload_user_file` — conceptually-atomic OBS upload
+
+**Rule(s)**: R0913 too-many-arguments, R0914 too-many-locals.
+
+**Mechanism**: function-level
+`# pylint: disable=too-many-arguments,too-many-locals` above the
+`upload_user_file` definition. Allowlist entry under
+`src/mcp_server_phytomni/storage/uploads.py`.
+
+**Original error sample**:
+
+```text
+storage/uploads.py: R0913: Too many arguments (upload_user_file)
+storage/uploads.py: R0914: Too many local variables (upload_user_file)
+```
+
+**Why refactor is net-negative**: `upload_user_file` is a single
+conceptually-atomic OBS upload — validate the body, resolve the
+per-user OBS target, then write — and its parameters (`file_bytes`,
+`original_filename`, `user_id`, `request_id`, `max_bytes`, `prefix`,
+`bucket_name`, `obs_server`, `obsfs_mount_root`) are all distinct
+inputs to that one operation. Packaging them into a dataclass would
+add caller boilerplate at every call site without splitting the
+responsibility the function owns.
+
+**Refactor path (if you disagree)**:
+
+1. Introduce an `UploadRequest` dataclass grouping the validation and
+   target-resolution fields.
+1. Update every caller to construct and pass the dataclass.
+
+**Refactor cost**: 1 commit, mechanical, but adds construction
+boilerplate at every call site for no separation-of-concerns gain.
+
+**Sunset condition**: the function's responsibility genuinely splits
+(e.g. validation and storage become independently reusable), at which
+point the parameter set naturally divides across the two functions.
+
+______________________________________________________________________
+
 ### `api/app.py` — FastAPI factory and route handlers
 
-**Rule(s)**: C0302 too-many-lines (1177/1000), R0915
+**Rule(s)**: C0302 too-many-lines (1641/1000), R0915
 too-many-statements (76/50 at line 764), R0913 (8 at 443, 12 at 1093),
 R0914 (20 at 275, 19 at 764, 16 at 1093).
 
@@ -383,7 +423,9 @@ less locally-readable than the current single-file factory.
 **Sunset condition**: the file grows beyond ~1500 lines (at which
 point the readability argument flips), or FastAPI adds a first-class
 "routes module" registration pattern that eliminates the
-re-import-everywhere problem.
+re-import-everywhere problem. The ~1500-line trigger has now been
+reached (the module is 1641 lines), so the split outlined in the
+refactor path above should be re-evaluated.
 
 ______________________________________________________________________
 

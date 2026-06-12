@@ -16,6 +16,17 @@ src/mcp_server_phytomni/
     handlers.py              Runtime handlers and config expansion
     handler_support.py       Reusable handler assembly helpers (kwargs builders)
     result_formatting.py     Tool-response formatter at the dispatch boundary
+  api/
+    app.py                   FastAPI application factory for the HTTP service
+    server.py                uvicorn launcher for the external HTTP API
+    auth.py                  SQLite-backed API key store and inbound auth resolver
+    admin_auth.py            Service-token auth for /v1/api-keys management routes
+    keys.py                  Admin CLI for the per-user API key store
+    openai_mapping.py        OpenAI-compatible chat mapping helpers
+    ratelimit.py             In-process per-key sliding-window rate limiter
+    file_upload.py           Handler for POST /v1/files multipart upload
+    schemas.py               HTTP API request and response schemas
+    relay/                   Credential-injecting customer relay subpackage
   agents/
     chat/                    Chat service workflow
     knowledge/               Retrieval, reranking, and synthesis workflow
@@ -36,6 +47,11 @@ src/mcp_server_phytomni/
       options.py             Shared chat and submit kwargs builders
       parallel_dispatch.py   Shared StateGraph builder for parallel agents
       sql.py                 Shared SQL literal escaping helper
+  graphs/
+    loader.py                Declarative graph manifest loader (Pydantic + allowlist)
+    allowlist.py             Allowed subgraph identifiers for the loader
+    adapters.py              Helpers for embedding compiled subgraphs in parents
+    manifests/               JSON subgraph composition manifests
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
@@ -68,11 +84,14 @@ src/mcp_server_phytomni/
     defaults.py              Non-secret defaults, agent config classes,
                              and Pydantic schemas for static datasets
     settings.py              Environment and secret loading
+    secret_envelope.py       AES-256-GCM envelope for the encrypted .env.encrypted
+    relay_mode.py            Customer relay-mode flag detection (leaf module)
     overrides.py             Wrapper argument to config override helpers
     data_loaders.py          Validated loaders for the static datasets
     .prompts.yaml            Prompt templates
     species_data_list.json   Species metadata
     region_map.json          Region metadata
+    to_ontology.json         Plant Trait Ontology catalog for the network resolver
   func_cache/                SQLite-backed function cache package
 src/mcp_client_phytomni/
   client.py                  PhytomniMcpClient, PhytomniToolRouter, and

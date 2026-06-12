@@ -111,14 +111,26 @@ valid.
 | `KnowledgeOutput` | `retrieved_docs`, `final_response` | —                                                              |
 | `KnowledgeState`  | every legacy field                 | (binary-compatible with `KnowledgeAgentState`)                 |
 
-The graph compiles into four nodes:
+The graph compiles into seven functional nodes (the `generate` and
+`follow_up` calls are each split into a prep + post pair around one
+shared `chat` subgraph node):
 
-| Node                 | Role                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------ |
-| `process_files_node` | Downloads attached OBS files and converts them into a bounded `upload_context` string.     |
-| `retrieve_node`      | Issues `retrieve` + `rerank` against the knowledge repos, populates `retrieved_docs`.      |
-| `generate_node`      | Calls `phyto_chat` with the retrieval context and stores the answer in `final_response`.   |
-| `follow_up_node`     | Runs a second LLM call for follow-up questions and merges them into the assistant message. |
+| Node                  | Role                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `process_files_node`  | Downloads attached OBS files and converts them into a bounded `upload_context` string.                    |
+| `retrieve_node`       | Issues `retrieve` + `rerank` against the knowledge repos, populates `retrieved_docs`.                     |
+| `generate_prep_node`  | Builds the `chat_payload` for the primary generate call and stages the `generate_post_node` sentinel.     |
+| `generate_post_node`  | Merges the retrieved docs into the shared chat response and stores it in `final_response`.                |
+| `follow_up_prep_node` | Builds the `chat_payload` for the follow-up questions call and stages the `follow_up_post_node` sentinel. |
+| `follow_up_post_node` | Parses the follow-up questions and embeds them on the primary assistant message.                          |
+| `chat`                | Mounted chat subgraph reused by both the generate and follow-up sites via the prep/post pairs.            |
+
+Routing is conditional throughout: `__start__` branches to
+`process_files_node` or `retrieve_node`, `retrieve_node` flows to
+`generate_prep_node` or `__end__`, the shared `chat` node's after-router
+returns to `generate_post_node` or `follow_up_post_node`, and
+`generate_post_node` either flows into `follow_up_prep_node` or
+short-circuits to `__end__`.
 
 ## Data Subgraph
 
@@ -136,13 +148,23 @@ for `DataState`.
 | `DataOutput` | `final_response`   | —                                         |
 | `DataState`  | every legacy field | (binary-compatible with `DataAgentState`) |
 
-The graph compiles into three nodes:
+The graph compiles into seven functional nodes (the retrieve site is
+mounted as a prep + post pair around a `knowledge` subgraph node, and
+the rewrite site as a prep + post pair around the shared `chat` node):
 
-| Node            | Role                                                                                              |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| `retrieve_node` | Pulls scenario fragments from the data repo and stores a SQL-rewrite prompt.                      |
-| `rewrite_node`  | Calls `phyto_chat` to convert the scenario prompt + user query into a rewritten NL question.      |
-| `search_node`   | Executes the NL2SQL request through `nl2sql.execute_nl2sql_request` and stores the response dict. |
+| Node                 | Role                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| `retrieve_prep_node` | Stages the `knowledge_payload` and the post-knowledge sentinel; no retrieve call happens here.    |
+| `knowledge`          | Mounted knowledge subgraph that issues the `retrieve` + `rerank` fan-out and writes its response. |
+| `retrieve_post_node` | Formats the retrieved scenario fragments into the `retrieve_prompt` SQL-rewrite prompt.           |
+| `rewrite_prep_node`  | Builds the `chat_payload` from the `retrieve_prompt`.                                             |
+| `chat`               | Mounted chat subgraph that runs the single rewrite completion.                                    |
+| `rewrite_post_node`  | Converts the chat response into the rewritten NL question stored on `rewrite_query`.              |
+| `search_node`        | Executes the NL2SQL request through `nl2sql.execute_nl2sql_request` and stores the response dict. |
+
+`__start__` routes conditionally to `retrieve_prep_node` (when
+`is_rewrite`) or directly to `search_node`; the mounted `knowledge`
+node's one-branch after-router returns to `retrieve_post_node`.
 
 ## Analyst Subgraph
 
@@ -160,20 +182,31 @@ alias for `AnalystState`.
 | `AnalystOutput` | every output field | `surface_keys` + plan / tool / status + observability intermediates + `error_detail`                                                                |
 | `AnalystState`  | every legacy field | (binary-compatible with `AnalystAgentsState`)                                                                                                       |
 
-The graph compiles into nine nodes plus five conditional routers
-(`parse_query` / `data_select` / `check` / `submit` / `pooling`):
+The graph compiles into 17 functional nodes wired with conditional
+routing. Each of the five LLM call sites (`parse_query`, `data_select`,
+`plan`, `check`, `tool_extract`) is split into a prep + post pair around
+one shared `chat` subgraph node, and the `method_retrieve` site is a
+prep + post pair around a mounted `knowledge` subgraph node:
 
-| Node                   | Role                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `parse_query_node`     | Decomposes the user query into goal, data list, and plan slots.                              |
-| `data_select_node`     | Auto-selects data files from the available database when `is_auto_select=True`.              |
-| `method_retrieve_node` | Retrieves methods, SOPs, and literature to build the plan context.                           |
-| `plan_node`            | Generates or revises the analysis plan via `phyto_chat`.                                     |
-| `check_node`           | Critic loop that validates the plan and routes back to `plan_node` until approved or capped. |
-| `tool_extract_node`    | Extracts the required tools from the approved plan.                                          |
-| `tool_retrieve_node`   | Looks up tool usages for the extracted tools.                                                |
-| `submit_node`          | Submits the task to the computation platform and stores `task_id`.                           |
-| `pooling_node`         | Polls task status until terminal when `is_polling=True`; short-circuits to END otherwise.    |
+| Node                        | Role                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `parse_query_prep_node`     | Stages the chat payload for the parse-query call (or short-circuits when the goal is preset).   |
+| `parse_query_post_node`     | Parses the parse-query chat response into goal, data list, and plan slots.                      |
+| `data_select_prep_node`     | Stages the chat payload for the auto-selection call when `is_auto_select=True`.                 |
+| `data_select_post_node`     | Parses the data-selection chat response into the selected data list.                            |
+| `method_retrieve_prep_node` | Stages the knowledge input + post-knowledge sentinel for the method/SOP/literature lookup.      |
+| `knowledge`                 | Mounted knowledge subgraph that runs the `retrieve` + `rerank` fan-out for the plan context.    |
+| `method_retrieve_post_node` | Parses the knowledge response into the `method_context` delta.                                  |
+| `plan_prep_node`            | Stages the chat payload for the plan-generation call.                                           |
+| `plan_post_node`            | Parses the plan chat response into the analysis plan.                                           |
+| `check_prep_node`           | Stages the chat payload for the plan-check call (or auto-approves a preset plan).               |
+| `check_post_node`           | Parses the plan-check response and routes back to `plan_prep_node` until approved or capped.    |
+| `tool_extract_prep_node`    | Stages the chat payload for the tool-extraction call.                                           |
+| `tool_extract_post_node`    | Parses the tool-extraction response into the required tool list.                                |
+| `tool_retrieve_node`        | Looks up tool usages for the extracted tools.                                                   |
+| `submit_node`               | Submits the task to the computation platform and stores `task_id`.                              |
+| `pooling_node`              | Polls task status until terminal when `is_polling=True`; short-circuits to `__end__` otherwise. |
+| `chat`                      | Mounted chat subgraph reused by all five LLM call sites via the prep/post pairs.                |
 
 `graphs/analyst_dispatch_adapters.py` ships
 `map_send_payload_to_analyst_input` and
@@ -198,20 +231,34 @@ alias for `BriefGeneState`.
 | `BriefGeneOutput` | every output field | `gene_id`, `species_code`, `go_string`, `kegg_string`, `interpro_string`, `retrieved_docs`, `final_response`, `follow_up_questions` |
 | `BriefGeneState`  | every legacy field | (binary-compatible with `BriefGeneAgentState`)                                                                                      |
 
-The graph compiles into five nodes plus two conditional routers
-(`query_judge` / `generate`):
+The graph compiles into 10 functional nodes. The retrieve site is a
+Send-dispatched prep/worker/reduce fan-out over the resolved gene
+symbols, and the `generate` and `follow_up` calls are each split into a
+prep + post pair around one shared `chat` subgraph node:
 
-| Node                    | Role                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `query_judge_node`      | Decides whether the user query is a known gene ID; on hit routes to annotation fetch, else direct retrieval. |
-| `fetch_annotation_node` | Pulls GO / KEGG / InterPro annotation strings from the BI endpoint for the resolved gene.                    |
-| `retrieve_node`         | Issues `retrieve` + `rerank` over the literature repos and stores `retrieved_docs`.                          |
-| `generate_node`         | Calls `phyto_chat` with the annotation + retrieval context and stores the answer in `final_response`.        |
-| `follow_up_node`        | Runs a second LLM call for follow-up questions and merges them into the assistant message.                   |
+| Node                       | Role                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `query_judge_node`         | Decides whether the user query is a known gene ID; on hit routes to annotation fetch, else direct retrieval.    |
+| `fetch_annotation_node`    | Pulls GO / KEGG / InterPro annotation strings from the BI endpoint for the resolved gene.                       |
+| `retrieve_prep_tasks_node` | Builds the per-symbol task list and `Send`-dispatches one worker per task.                                      |
+| `retrieve_worker_node`     | Per-symbol worker that invokes the mounted knowledge subgraph and writes an indexed `(task_index, docs)` tuple. |
+| `retrieve_reduce_node`     | Merges, sorts, and caps the per-worker doc lists into `retrieved_docs` plus the `retrieve_context` string.      |
+| `generate_prep_node`       | Builds the `chat_payload` from the annotation + retrieval context and stages the `generate_post_node` sentinel. |
+| `generate_post_node`       | Merges the retrieved docs into the shared chat response and stores it in `final_response`.                      |
+| `follow_up_prep_node`      | Builds the `chat_payload` for the follow-up questions call and stages the `follow_up_post_node` sentinel.       |
+| `follow_up_post_node`      | Parses the follow-up questions and embeds them on the primary assistant message.                                |
+| `chat`                     | Mounted chat subgraph reused by both the generate and follow-up sites via the prep/post pairs.                  |
 
-After `generate_node`, `route_after_generate` inspects
+Routing is conditional at three sites: `query_judge_node` branches to
+`fetch_annotation_node` or straight to the retrieve fan-out,
+`retrieve_prep_tasks_node` `Send`-fans out to `retrieve_worker_node`,
+and the shared `chat` after-router returns to `generate_post_node` or
+`follow_up_post_node` (with `generate_post_node` either flowing into
+`follow_up_prep_node` or short-circuiting to `__end__`).
+
+After `generate_post_node`, `route_after_generate` inspects
 `state["is_follow_up"]` (default `True` inside `arun`) and either
-flows into `follow_up_node` or short-circuits to `END`. Direct
+flows into `follow_up_prep_node` or short-circuits to `END`. Direct
 callers via `BriefGeneAgent.arun` see the legacy follow-up
 behavior; parent graphs mounting brief_gene as a subgraph may set
 `is_follow_up=False` to skip the second LLM hop when they only
@@ -233,23 +280,44 @@ The legacy inline TypedDict is replaced by the same `DeepResearchState` symbol t
 | `DeepResearchOutput` | `final_response`, `summary_content` | —                                                    |
 | `DeepResearchState`  | every legacy field                  | (binary-compatible with the legacy inline TypedDict) |
 
-The graph compiles into seven nodes wired as a linear pipeline:
+The graph compiles into 19 functional nodes. It is a Send-based
+parallel fan-out, not a linear pipeline: the `retrieve`, `draft`,
+`review_results`, and `revised` stages each run as a
+dispatch → worker → reduce triple that `Send`-fans out one worker per
+research dimension. The `plan_query`, `summary`, and `follow_up` LLM
+calls are each split into a prep + post pair around one shared `chat`
+subgraph node:
 
-| Node                | Role                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `plan_node`         | Decomposes the user query into per-dimension research parameters and stores them in `dimension_params`. |
-| `retrieve_node`     | Issues `retrieve` + `rerank` per dimension and merges the raw docs into `all_raw_doc_list`.             |
-| `draft_node`        | Generates per-dimension draft reviews from the retrieved docs via `phyto_chat`.                         |
-| `review_node`       | Reviews each draft for accuracy / completeness and stores the critic notes in `review_contents`.        |
-| `revise_node`       | Revises drafts using the critic notes and may pull additional supporting docs into `add_doc_list`.      |
-| `summary_node`      | Synthesizes the revised reports into the `summary_content` markdown body.                               |
-| `post_process_node` | Wraps `summary_content` into a chat-completions-style `final_response` envelope for the HTTP API.       |
+| Node                         | Role                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `plan_query_prep_node`       | Builds the plan-query `chat_payload` (with file-upload context) and stages the after-chat sentinel.      |
+| `plan_query_post_node`       | Parses the plan-query response into the per-dimension `research_dimensions`.                             |
+| `retrieve_dispatch`          | Split node that `Send`-fans out one retrieve worker per research dimension.                              |
+| `retrieve_worker_node`       | Per-dimension worker that invokes the mounted knowledge subgraph and writes an indexed doc tuple.        |
+| `retrieve_reduce_node`       | Merges the per-dimension docs into `all_raw_doc_list` and the `dimension_params`.                        |
+| `draft_dispatch`             | Split node that `Send`-fans out one draft worker per dimension.                                          |
+| `draft_worker_node`          | Per-dimension worker that drafts a review via the shared chat subgraph and writes an indexed tuple.      |
+| `draft_reduce_node`          | Projects the indexed draft results into `draft_contents`.                                                |
+| `review_results_dispatch`    | Split node that `Send`-fans out one critique worker per dimension.                                       |
+| `review_results_worker_node` | Per-dimension worker that critiques a draft for accuracy / completeness via the shared chat subgraph.    |
+| `review_results_reduce_node` | Projects the indexed critique results into `review_contents`.                                            |
+| `revised_dispatch`           | Split node that `Send`-fans out one revision worker per dimension.                                       |
+| `revised_worker_node`        | Per-dimension worker that revises a draft (via `_feedback_rag`) and may add supporting docs.             |
+| `revised_reduce_node`        | Projects the indexed revised reports into `revised_reports`.                                             |
+| `summary_prep_node`          | Builds the summary-synthesis `chat_payload` from the revised reports and stages the after-chat sentinel. |
+| `summary_post_node`          | Parses the summary response into the `summary_content` markdown body.                                    |
+| `follow_up_prep_node`        | Renumbers citations and builds the follow-up `chat_payload`.                                             |
+| `follow_up_post_node`        | Assembles the `final_response` envelope from the renumbered text plus the follow-up list.                |
+| `chat`                       | Mounted chat subgraph reused by the plan-query, summary, and follow-up sites via the prep/post pairs.    |
 
-Unlike chat / brief_gene, the review subgraph carries no
-conditional routers — every node runs in fixed order. Parent
-graphs that want to short-circuit the trailing summarisation
-should mount review via `adapter_node` with an output mapper that
-ignores `summary_content` rather than pinning a routing flag.
+The four fan-out stages run sequentially
+(`retrieve` → `draft` → `review_results` → `revised`); each
+`dispatch` node uses a conditional `Send` router, and the shared `chat`
+after-router branches back to `plan_query_post_node`,
+`summary_post_node`, or `follow_up_post_node`. Parent graphs that want
+to short-circuit the trailing summarisation should mount review via
+`adapter_node` with an output mapper that ignores `summary_content`
+rather than pinning a routing flag.
 
 ## Environment Subgraph
 

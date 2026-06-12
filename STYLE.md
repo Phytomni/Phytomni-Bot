@@ -117,8 +117,9 @@ README-style prose may wrap the same copyright text across lines.
   docstring, mutable-default, exception, or unused-argument rules.
 - Local waivers must sit beside the compatibility boundary they protect and
   include a short reason when the intent is not obvious.
-- The only current local Pylint waiver is the LangGraph boundary exception
-  listed in `tests/unit/test_style_naming.py`.
+- Current local Pylint waivers are enumerated in the
+  ALLOWED_LOCAL_PYLINT_DISABLES table in `tests/unit/test_style_naming.py` and
+  documented in `docs/lint-exemptions.md`.
 - Test-only style exceptions, such as pytest function docstrings, must remain
   under `tests/`.
 

@@ -90,6 +90,12 @@ raises a `ValidationError` naming the field so an operator sees the
 env-var label they need to set, rather than a downstream `404` /
 `KeyError` at first agent call.
 
+This fail-fast non-empty validation is normal-mode only. In customer
+relay mode (`PHYTOMNI_RELAY_MODE=1`) the `_require_non_empty_endpoint`
+validator short-circuits, so a relay-mode child Bot boots with all 19
+operator endpoints empty; it instead routes every dependency through the
+upstream relay via `RELAY_BASE_URL` / `RELAY_API_KEY`.
+
 | Variable           | Aliased as                  | Purpose                                                                                                                 |
 | ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `TOKEN_URL`        | `PHYTOMNI_TOKEN_URL`        | IAM token-acquisition endpoint (legacy default: `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).                 |
@@ -126,6 +132,8 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 | `PHYTOMNI_TASKS_DB`          | unset                             | no         | Backward-compatible runs/tasks store alias.                                                                         |
 | `API_SERVICE_TOKEN`          | unset                             | yes        | Service-to-service token gating `/v1/api-keys` admin routes; unset disables them with `503 admin path not enabled`. |
 | `PHYTOMNI_API_SERVICE_TOKEN` | unset                             | yes        | Backward-compatible service token alias.                                                                            |
+| `API_UPLOAD_MAX_BYTES`       | `26214400`                        | no         | Per-file ceiling for `POST /v1/files`, in bytes (25 MiB); oversize uploads return `413`.                            |
+| `API_UPLOAD_PREFIX`          | `agent_data/uploads`              | no         | OBS object-key prefix below the bucket root for `POST /v1/files` upload outputs.                                    |
 | `API_REQUEST_TIMEOUT`        | `600.0`                           | no         | Per-request timeout in seconds.                                                                                     |
 | `API_RATE_LIMIT_PER_MIN`     | `120`                             | no         | Per-key request budget per minute; `<= 0` disables.                                                                 |
 | `API_RUN_TTL_OK_HOURS`       | `24`                              | no         | Retention for succeeded runs.                                                                                       |

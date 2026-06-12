@@ -68,8 +68,8 @@ for detailed argument semantics, async behavior, and demo payload links.
 | `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
 | `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                           |
 | `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                  |
-| `DigitalDesignAgent`    | async | `species`, `gene_id`, `obs_file_list`            | Protein and promoter design workflows.                                        |
-| `GeneNetworkAgent`      | async | `species`, `to_id`, `obs_file_list`              | Gene network analysis for species and trait ontology IDs.                     |
+| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | Protein and promoter design workflows.                                        |
+| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | Gene network analysis for species and trait ontology IDs.                     |
 | `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.             |
 
 Async tools submit work to a backend and return a `task_id`. Poll that id

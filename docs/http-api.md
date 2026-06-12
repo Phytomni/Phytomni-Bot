@@ -58,7 +58,7 @@ X-API-Key: ptm_...
 Every response carries an `X-Request-Id`. Errors on native routes use:
 
 ```json
-{"error": {"type": "...", "code": "...", "message": "...", "request_id": "..."}}
+{"error": {"type": "...", "code": 400, "message": "...", "request_id": "..."}}
 ```
 
 Over-budget callers get `429` with `Retry-After`. SSE streaming is
@@ -85,7 +85,7 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revokes the key with the given public prefix.                                                                                                                           |
 | `GET`    | `/v1/relay/audit`                        | svc   | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range.                                                                |
 | `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetches relay audit records by request id (service token).                                                                                                              |
-| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                                                                         |
+| `GET`    | `/v1/relay/healthz`                      | no    | Liveness probe for the relay; no auth, only the relay-enabled guard; returns `{"status": "ok"}` when relay is enabled and `404` when relay is disabled.                 |
 | `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent); injects the operator `Authorization: Bearer` key.                                                                                         |
 | `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent); injects the operator coder Bearer key.                                                                                                 |
 | `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent); injects the operator embed Bearer key (OpenAI shape, OQ-001).                                                                            |
@@ -93,8 +93,10 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope); no operator credential injected.                                                                                                     |
 | `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                                                                                       |
 | `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); injects the static operator `token` (BI token).                                                                                                    |
-| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object fetch relay; downloads an allowlisted OBS object via the operator OBS credentials.                                                                           |
+| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object fetch relay; downloads an in-bucket (path-escape validated, not output-root confined) OBS object via the operator OBS credentials.                           |
 | `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay; enumerates allowlisted OBS prefixes via the operator OBS credentials.                                                                            |
+| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay; writes the request body at the validated key via the operator OBS credentials.                                                                 |
+| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay; creates a zero-byte directory marker at the validated key via the operator OBS credentials.                                                       |
 | `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope); injects the operator IAM `X-Auth-Token` for the analysis region.                                                             |
 | `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.                                                               |
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope); injects IAM `X-Auth-Token` and forwards only the `task_name` query key.                                                             |

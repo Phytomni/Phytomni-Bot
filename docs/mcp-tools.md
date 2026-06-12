@@ -55,8 +55,8 @@ supports a per-request `debug` flag (see
 | `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | [analyst_agent.json](../demo_data/payloads/analyst_agent.json)                       |
 | `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | [deep_genome_agent.json](../demo_data/payloads/deep_genome_agent.json)               |
 | `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | [in_silico_research_agent.json](../demo_data/payloads/in_silico_research_agent.json) |
-| `DigitalDesignAgent`    | async | `species`, `gene_id`, `obs_file_list`            | [digital_design_agent.json](../demo_data/payloads/digital_design_agent.json)         |
-| `GeneNetworkAgent`      | async | `species`, `to_id`, `obs_file_list`              | [gene_network_agent.json](../demo_data/payloads/gene_network_agent.json)             |
+| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | [digital_design_agent.json](../demo_data/payloads/digital_design_agent.json)         |
+| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | [gene_network_agent.json](../demo_data/payloads/gene_network_agent.json)             |
 | `GetTaskStatus`         | sync  | `task_id`                                        | [get_task_status.json](../demo_data/payloads/get_task_status.json)                   |
 
 ## Sync Tools
@@ -119,14 +119,15 @@ analysis tasks against the provided datasets.
 
 ### `DigitalDesignAgent`
 
-Use to submit protein and promoter design analyses for one Latin species
-name plus one `gene_id`. This is a design-task submission tool, not a
-general gene-function explainer.
+Use to submit protein and promoter design analyses for one supported
+three-letter `species_code` plus one `gene_id`. This is a design-task
+submission tool, not a general gene-function explainer.
 
 ### `GeneNetworkAgent`
 
-Use to submit trait-associated gene network analysis for one Latin species
-name plus one Trait Ontology id, formatted like `TO:0000207`.
+Use to submit trait-associated gene network analysis for one supported
+three-letter `species_code` plus one Trait Ontology id, formatted like
+`TO:0000207`.
 
 ## Status Tool
 

@@ -123,8 +123,10 @@ explicitly out of scope for this cutover.
 
 - Status: delivered (pre-existing)
 
-- Evidence: `api/app.py:_invoke_agent_run`; reuses
-  `RunRegistry.reconcile(run_id, owner)` for non-blocking status.
+- Evidence: `api/app.py:_invoke_agent_run` only submits and returns
+  `id` + `task_ids`; the non-blocking status read happens on the
+  `GET /v1/runs/{run_id}` path through
+  `_fetch_owner_run -> RunRegistry.reconcile(run_id, owner)`.
 
 - Curl:
 
