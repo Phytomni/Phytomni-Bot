@@ -560,8 +560,13 @@ the universal failure keys:
   `task_label` is `"<fan_out>:<task_index>"` form (e.g. `"draft:2"`,
   `"retrieve:0"`, `"revised:3"`) for outer-worker failures and
   `"add_query:<dim_idx>:<query_idx>"` form for inner per-query
-  failures inside `_feedback_rag`. `traceback_digest` lives only in
-  `raw.phytomni_state.failures`, never in `formatted.metadata`.
+  failures inside `_feedback_rag`. `message` is redacted before it
+  reaches `formatted.metadata` — backend URLs and secret-like
+  fragments (`token=`, `Bearer ...`) are replaced with placeholders so
+  client metadata never discloses internal endpoints or credentials;
+  the unredacted text survives only in logs and
+  `raw.phytomni_state.failures` under debug. `traceback_digest` lives
+  only in `raw.phytomni_state.failures`, never in `formatted.metadata`.
 
 Clients should branch on `metadata.get("failed_count", 0) > 0` (rather
 than `status == "PARTIAL"`) to detect degraded responses today;
