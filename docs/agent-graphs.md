@@ -386,16 +386,15 @@ The DeepGenome gene-function workflow is registered as
 `deep_genome` in
 [`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app is the project's largest single graph: it
-orchestrates a Part 1 knowledge profile (with a brief_gene mount
-substituting for the legacy `_run_knowledge_agent`), a Part 2
-parallel analyst fan-out across the deep analysis types, and a
-Part 3 report synthesis chain.
+orchestrates a Part 1 brief_gene preamble (the BriefGeneAgent
+mounted as a subgraph), a Part 2 parallel analyst fan-out across
+the deep analysis types, and a Part 3 report synthesis chain.
 
 The graph compiles into nine nodes:
 
 | Node                 | Role                                                                                                                                                                                                                                     |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `knowledge_node`     | M11 brief_gene mount — fans out BI annotation + homology + interaction fetching that used to live in the deleted `data_node`, writes the four preamble sections.                                                                         |
+| `brief_gene_node`    | brief_gene mount — runs the BriefGeneAgent preamble subgraph and projects its rendered answer into the verbatim `preamble` field (only the H1 title is swapped to deep_genome's); the report consumes it as the pre-analysis block.      |
 | `prepare_tasks_node` | Materialises the per-gene analysis task list from the rewritten user query and the species code.                                                                                                                                         |
 | `analyst_node`       | Send-dispatched worker: routes the three transferred analysis types (`evolution_analysis` / `protein_structure_analysis` / `promoter_analysis`) to module-level producer wrappers and the remaining 12 to `submit_analyst_via_subgraph`. |
 | `synthesize_node`    | Barrier that waits for the analyst fan-out to drain, then triggers the experiment-loop.                                                                                                                                                  |

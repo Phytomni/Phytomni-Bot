@@ -87,9 +87,12 @@ retrieval, drafting, critique, revision, and summary. Use
 
 ### `BriefGeneAgent`
 
-Use for concise gene or transcript function reports from BI annotations
-and retrieved literature. It expects a single gene/transcript identifier
-through `user_query` and does not accept uploaded files.
+Use for a rich gene/transcript preamble — an introduction plus a
+`## Gene Profiles` block (Basic Genomic Information bullets and four
+analytical sections) built from BI annotations and retrieved
+literature. It expects a single gene/transcript identifier through
+`user_query` and does not accept uploaded files. DeepGenomeAgents mounts
+this same preamble verbatim above its `## Bioinformatic Analysis` body.
 
 ## Async Tools
 

@@ -58,19 +58,19 @@ For tools that include `obs_file_list`, pass an empty list (`[]`) when no
 document upload is needed. See [MCP Tool Reference](docs/mcp-tools.md)
 for detailed argument semantics, async behavior, and demo payload links.
 
-| Tool                    | Kind  | Required arguments                               | Purpose                                                                       |
-| ----------------------- | ----- | ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                    |
-| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                 |
-| `DataAgent`             | sync  | `user_query`                                     | Natural-language SQL query rewriting and database search.                     |
-| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                    |
-| `BriefGeneAgent`        | sync  | `user_query`                                     | Concise gene function report from BI annotations and literature context.      |
-| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling. |
-| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                           |
-| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                  |
-| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | Protein and promoter design workflows.                                        |
-| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | Gene network analysis for species and trait ontology IDs.                     |
-| `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.             |
+| Tool                    | Kind  | Required arguments                               | Purpose                                                                                                                                           |
+| ----------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                                                                                        |
+| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                                                                                     |
+| `DataAgent`             | sync  | `user_query`                                     | Natural-language SQL query rewriting and database search.                                                                                         |
+| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                                                                                        |
+| `BriefGeneAgent`        | sync  | `user_query`                                     | Rich gene preamble (introduction + Gene Profiles with Basic Genomic Information and four analytical sections) from BI annotations and literature. |
+| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling.                                                                     |
+| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                                                                                               |
+| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                                                                                      |
+| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | Protein and promoter design workflows.                                                                                                            |
+| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | Gene network analysis for species and trait ontology IDs.                                                                                         |
+| `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.                                                                                 |
 
 Async tools submit work to a backend and return a `task_id`. Poll that id
 through `GetTaskStatus`; the lookup is non-blocking and returns
