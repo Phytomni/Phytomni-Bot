@@ -43,14 +43,49 @@ _FOUND_ROW = {
 }
 _EMPTY_ROW = {"message": "ok", "data": []}
 _CHAT_STUB = {"choices": [{"message": {"content": "stub section/intro"}}]}
+_KNOWLEDGE_OUTPUT = {
+    "retrieved_docs": [
+        {"score": 0.9, "content": "stub literature chunk", "doc_id": "1"},
+    ],
+}
+
+
+class _StubKnowledgeApp:
+    """Duck-typed stand-in for the compiled KnowledgeAgent subgraph.
+
+    The preamble graph's retrieve worker only calls ``.ainvoke`` on the
+    mounted knowledge app, which in production fans out real retrieve /
+    rerank / chat HTTP calls. Replacing the whole subgraph here keeps
+    the fan-in test hermetic and deterministic on any machine —
+    independent of func_cache warmth, relay-mode transports, and the
+    ``block_external_http`` fixture's ``.request``-only coverage, which
+    an async ``.send`` / ``loop.create_connection`` path can bypass,
+    letting a real call escape and hang the fan-in.
+    """
+
+    async def ainvoke(
+        self, _knowledge_input: Any, *_args: Any, **_kwargs: Any
+    ) -> dict[str, Any]:
+        """Return a canned ``KnowledgeOutput``-shaped doc list."""
+        return _KNOWLEDGE_OUTPUT
 
 
 def _install_mocks(
     monkeypatch: pytest.MonkeyPatch, *, bi_response: dict[str, Any]
 ) -> None:
-    """Patch every external call the preamble graph makes."""
+    """Patch every external call the preamble graph makes.
+
+    Covers the BI annotation / homology lookups, the section + intro
+    chat completions, AND the mounted knowledge subgraph (the retrieve
+    worker's ``knowledge_app.ainvoke``) so no real HTTP / relay / cache
+    call can escape into the fan-in under test.
+    """
     bi_mock = AsyncMock(return_value=bi_response)
     chat_mock = AsyncMock(return_value=_CHAT_STUB)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.build_knowledge_app",
+        lambda *_args, **_kwargs: _StubKnowledgeApp(),
+    )
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.brief_gene.core.run_bi_api", bi_mock
     )
