@@ -594,6 +594,27 @@ the first child report to `result.final_report` at the payload top level
 (also present per-child under `result.task_results[].final_report`).
 Every other agent leaves `final_report` `null`.
 
+The other remote agents (`analyst`, `research`, `design`, `network`) are
+fire-and-forget: they fan out child tasks and return before the upstream
+results exist, so they never write `final_report`. Instead, the first
+poll that observes the run reach a terminal state assembles a renderable
+answer and an artifact index once, at the settle transition (later polls
+replay the cached terminal record):
+
+- `result.formatted.answer` — a thin markdown summary (task counts, the
+  original query, output directories, and figures), also lifted to the
+  top-level `answer` by `_extract_answer`. It is added only when no child
+  wrote `final_report`, so `deep_genome` keeps its `final_report` surface
+  (the two channels are intentionally distinct pending a unified report).
+- `result.artifacts[].paths` — concrete object paths under each succeeded
+  task's `output_dir` (figures are the image-extension subset), globbed
+  from OBS / obsfs once at settle. Earlier this was always `[]`.
+
+Assembly is best-effort: an OBS listing failure logs a warning and
+leaves that task's `paths` empty (the run still settles as terminal). The
+single-task `GetTaskStatus` surface does not run this run-level assembly,
+so its descriptors keep empty `paths`.
+
 ### Remote agent edge cases: `id: null` / `task_ids: []`
 
 A `202` body can legitimately return `id: null` with `task_ids: []` for
