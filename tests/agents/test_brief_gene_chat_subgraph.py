@@ -2,11 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for BriefGeneAgent's generate + follow_up chat sites.
+"""Tests for BriefGeneAgent's follow_up chat site.
 
-Each site routes through a prep node that stages the chat payload, the
-shared ``chat`` subgraph mount, and a post node, so LangGraph xray can
-inline the compiled chat subgraph in the brief_gene render.
+The preamble graph produces ``final_response`` via the render node, then
+the trailing follow-up hop routes through a prep node that stages the
+chat payload, the shared ``chat`` subgraph mount, and a post node, so
+LangGraph xray can inline the compiled chat subgraph in the render.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def _build_agent() -> BriefGeneAgent:
 
 
 def _gene_found_state() -> BriefGeneAgentState:
-    """Minimal ``gene_found=True`` state covering the prep prompt vars."""
+    """Minimal ``gene_found=True`` state covering the follow-up prompt."""
     return cast(
         BriefGeneAgentState,
         {
@@ -72,169 +73,12 @@ def _gene_found_state() -> BriefGeneAgentState:
     )
 
 
-def _gene_not_found_state() -> BriefGeneAgentState:
-    """Minimal ``gene_found=False`` state covering the no-geneid branch."""
-    base = _gene_found_state()
-    base["gene_found"] = False
-    return base
-
-
 # ---------------------------------------------------------------------------
-# Flag-on prep: stages chat_payload + pending_post.
+# Compile-time node registration + xray expansion of the shared chat mount.
 # ---------------------------------------------------------------------------
 
 
-async def test_generate_prep_node_stages_payload_when_gene_found(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``generate_prep_node`` emits a ChatInput payload for gene_found=True."""
-    install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-
-    agent = _build_agent()
-    state = _gene_found_state()
-    delta = await agent.generate_prep_node(state)
-
-    assert delta["pending_post"] == "generate_post_node"
-    assert "chat_payload" in delta
-    chat_payload = delta["chat_payload"]
-    assert "user_query" in chat_payload
-    assert "chat_kwargs" in chat_payload
-    # ``with_follow_up`` is explicit-False per the brief_gene contract.
-    assert chat_payload["chat_kwargs"]["with_follow_up"] is False
-
-
-async def test_generate_prep_node_stages_payload_when_gene_not_found(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``generate_prep_node`` emits a ChatInput payload (gene not found)."""
-    install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-
-    agent = _build_agent()
-    state = _gene_not_found_state()
-    delta = await agent.generate_prep_node(state)
-
-    assert delta["pending_post"] == "generate_post_node"
-    chat_payload = delta["chat_payload"]
-    # The no-geneid prompt template still produces a user_query string;
-    # the prompt content itself differs but the payload shape stays
-    # bit-equivalent so the shared chat mount treats both branches
-    # uniformly.
-    assert isinstance(chat_payload["user_query"], str)
-    assert chat_payload["chat_kwargs"]["with_follow_up"] is False
-
-
-async def test_generate_prep_node_drift_catch_with_follow_up_false(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Drift catch: ``with_follow_up`` MUST stay False at this site.
-
-    brief_gene generates its own follow-up questions in the separate
-    ``follow_up_node`` step. The chat subgraph router's
-    ``follow_up_node`` branch firing here would cascade an unwanted
-    second follow-up generation on top of the main answer. The
-    ``False`` value is the explicit AF-14 mitigation pattern; this
-    test fails loud if a future refactor accidentally flips it.
-    """
-    install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-
-    agent = _build_agent()
-    state = _gene_found_state()
-    delta = await agent.generate_prep_node(state)
-
-    assert delta["chat_payload"]["chat_kwargs"].get("with_follow_up") is False
-
-
-# ---------------------------------------------------------------------------
-# Flag-on post: parses chat_response into final_response.
-# ---------------------------------------------------------------------------
-
-
-async def test_generate_post_node_parses_chat_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``generate_post_node`` projects chat_response to final_response."""
-    install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-
-    agent = _build_agent()
-    state = _gene_found_state()
-    state["chat_response"] = {
-        "choices": [{"message": {"content": "subgraph answer"}}]
-    }
-    delta = await agent.generate_post_node(state)
-
-    assert "final_response" in delta
-    # ``_attach_metadata`` attaches the retrieved docs onto the final
-    # response payload; the chat-completions content survives the
-    # projection unchanged.
-    final = delta["final_response"]
-    assert "choices" in final
-    assert final["choices"][0]["message"]["content"] == "subgraph answer"
-
-
-async def test_generate_post_node_handles_missing_chat_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``generate_post_node`` falls back to an empty chat-completions shape.
-
-    Preserves the ``phyto_response is None`` fallback the legacy
-    ``generate_node`` already had so downstream ``_attach_metadata``
-    always sees a valid ``{"choices": [{"message": {}}]}`` dict.
-    """
-    install_chat_subgraph_mocks(
-        monkeypatch,
-        module_path=_BRIEF_GENE_MODULE,
-        legacy_response=None,
-        subgraph_response=None,
-    )
-
-    agent = _build_agent()
-    state = _gene_found_state()
-    # No ``chat_response`` key staged: simulates the upstream chat
-    # mount returning a null payload.
-    delta = await agent.generate_post_node(state)
-
-    assert "final_response" in delta
-    assert "choices" in delta["final_response"]
-
-
-# ---------------------------------------------------------------------------
-# Compile-time node registration: flag-off vs flag-on wire shapes.
-# ---------------------------------------------------------------------------
-
-
-def test_compiled_graph_flag_on_uses_prep_chat_post() -> None:
-    """Flag-on graph registers prep + chat + post (no legacy generate)."""
-    agent = _build_agent()
-    nodes = set(agent.app.get_graph(xray=0).nodes.keys())
-
-    assert "generate_prep_node" in nodes
-    assert "generate_post_node" in nodes
-    assert "chat" in nodes
-    # The legacy ``generate_node`` is replaced by the prep/post split.
-    assert "generate_node" not in nodes
-
-
-def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
+def test_compiled_graph_xray_expands_chat_subgraph() -> None:
     """xray=1 surfaces ``chat:``-prefixed keys under the shared mount."""
     agent = _build_agent()
     nodes = list(agent.app.get_graph(xray=1).nodes.keys())
@@ -249,21 +93,20 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
 
 
 # ---------------------------------------------------------------------------
-# follow_up site: flag-off legacy + flag-on prep/post split.
+# follow_up site: prep + shared chat + post split.
 # ---------------------------------------------------------------------------
 
 
-def _state_post_generate() -> BriefGeneAgentState:
-    """State after ``generate_post_node`` has staged a final_response.
+def _state_post_render() -> BriefGeneAgentState:
+    """State after ``render_node`` has staged a final_response.
 
     Pre-populates ``final_response`` with a chat-completions-shaped
-    payload so ``message_content`` returns a non-empty string from
-    both the generate site (what the prep node sees as input) and
-    from ``_attach_metadata`` paths.
+    payload so ``message_content`` returns a non-empty string for the
+    follow-up prep node (which summarizes the rendered preamble).
     """
     state = _gene_found_state()
     state["final_response"] = {
-        "choices": [{"message": {"content": "Brief gene answer goes here."}}]
+        "choices": [{"message": {"content": "Brief gene preamble here."}}]
     }
     return state
 
@@ -280,7 +123,7 @@ async def test_follow_up_prep_node_stages_payload(
     )
 
     agent = _build_agent()
-    state = _state_post_generate()
+    state = _state_post_render()
     delta = await agent.follow_up_prep_node(state)
 
     assert delta["pending_post"] == "follow_up_post_node"
@@ -308,7 +151,7 @@ async def test_follow_up_prep_node_with_follow_up_false_drift_catch(
     )
 
     agent = _build_agent()
-    state = _state_post_generate()
+    state = _state_post_render()
     delta = await agent.follow_up_prep_node(state)
 
     chat_kwargs = delta["chat_payload"]["chat_kwargs"]
@@ -327,7 +170,7 @@ async def test_follow_up_post_node_parses_chat_response(
     )
 
     agent = _build_agent()
-    state = _state_post_generate()
+    state = _state_post_render()
     state["chat_response"] = {
         "choices": [{"message": {"content": "1. What about Q1?\n2. Or Q2?"}}]
     }
@@ -345,8 +188,7 @@ async def test_follow_up_post_node_handles_missing_chat_response(
 ) -> None:
     """``follow_up_post_node`` falls back when chat_response is absent.
 
-    Mirrors the same defensive pattern ``generate_post_node`` uses:
-    a missing or null chat_response should not crash the post node;
+    A missing or null chat_response should not crash the post node;
     ``message_content`` returns "" for an empty dict and
     ``parse_follow_up_questions`` returns an empty list, leaving
     ``follow_up_questions`` as a well-formed empty list.
@@ -359,15 +201,15 @@ async def test_follow_up_post_node_handles_missing_chat_response(
     )
 
     agent = _build_agent()
-    state = _state_post_generate()
+    state = _state_post_render()
     delta = await agent.follow_up_post_node(state)
 
     assert delta["follow_up_questions"] == []
     assert "final_response" in delta
 
 
-def test_compiled_graph_flag_on_uses_follow_up_prep_post() -> None:
-    """Flag-on graph registers prep + post for follow_up (no legacy node)."""
+def test_compiled_graph_uses_follow_up_prep_post() -> None:
+    """The graph registers prep + post for follow_up (no legacy node)."""
     agent = _build_agent()
     nodes = set(agent.app.get_graph(xray=0).nodes.keys())
 

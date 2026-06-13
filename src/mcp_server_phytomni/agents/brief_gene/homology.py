@@ -42,8 +42,21 @@ async def _run_fetch_homology_interactions_node(
         ``ortholog_species_count``, ``paralog_count``,
         ``interaction_count``).
     """
-    gene_id = state["gene_id"]
-    species_code = state["species_code"]
+    gene_id = state.get("gene_id", "")
+    if not gene_id:
+        # The node runs unconditionally off query_judge so the section
+        # fan-in never waits on a branch that may not fire; an
+        # unresolved gene (gene_found=False) has no homology to fetch.
+        return {
+            "orthologs_data": {"gene_list": []},
+            "paralogs_data": {"gene_list": []},
+            "interaction_data": {"gene_list": []},
+            "ortholog_count": 0,
+            "ortholog_species_count": 0,
+            "paralog_count": 0,
+            "interaction_count": 0,
+        }
+    species_code = state.get("species_code", "")
     gene_literal = sql_literal(gene_id)
 
     homology_response = await relay_bi_query(

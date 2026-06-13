@@ -201,16 +201,16 @@ def test_route_after_generate_skips_when_disabled() -> None:
 
 
 def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
-    """Compiled BriefGene graph exposes the chat + retrieve conditionals.
+    """Compiled BriefGene graph exposes the render + retrieve conditionals.
 
     The wired topology has FOUR conditional sources:
 
     * ``query_judge_node`` routes to fetch-annotation vs. direct
       retrieval based on gene_found.
-    * ``chat`` routes back to the correct post node (generate vs.
-      follow_up) via ``make_chat_after_router``.
-    * ``generate_post_node`` routes to the follow_up prep node or END
-      based on the is_follow_up flag.
+    * ``chat`` routes back to the follow_up post node via
+      ``make_chat_after_router``.
+    * ``render_node`` routes to the follow_up prep node or END based
+      on the is_follow_up flag.
     * ``retrieve_prep_tasks_node`` fans out one ``Send`` per staged
       retrieve task via ``route_retrieve_tasks``.
     """
@@ -219,6 +219,41 @@ def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
     assert branches == {
         "query_judge_node",
         "chat",
-        "generate_post_node",
+        "render_node",
         "retrieve_prep_tasks_node",
     }
+
+
+def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
+    """The preamble graph fans out to 4 sections after a parallel fetch.
+
+    query_judge fans to fetch_homology (always) and conditionally to
+    fetch_annotation; retrieve runs after fetch_annotation; each of the
+    four section nodes gates on BOTH retrieve_reduce and fetch_homology
+    before fanning into the introduction; the retired generate/chat
+    answer path is gone.
+    """
+    graph = BriefGeneAgent().app.get_graph()
+    nodes = set(graph.nodes)
+    for node in (
+        "fetch_homology_interactions_node",
+        "section1_node",
+        "section2_node",
+        "section3_node",
+        "section4_node",
+        "introduction_node",
+        "render_node",
+    ):
+        assert node in nodes, f"missing node: {node}"
+    assert "generate_prep_node" not in nodes
+    assert "generate_post_node" not in nodes
+
+    edges = {(edge.source, edge.target) for edge in graph.edges}
+    assert ("query_judge_node", "fetch_homology_interactions_node") in edges
+    assert ("fetch_annotation_node", "retrieve_prep_tasks_node") in edges
+    for index in range(1, 5):
+        section = f"section{index}_node"
+        assert ("retrieve_reduce_node", section) in edges
+        assert ("fetch_homology_interactions_node", section) in edges
+        assert (section, "introduction_node") in edges
+    assert ("introduction_node", "render_node") in edges

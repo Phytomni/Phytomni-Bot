@@ -146,3 +146,27 @@ async def test_fetch_homology_interactions_projects_state_delta() -> None:
     assert delta["ortholog_species_count"] == 2  # ath + zma
     assert delta["paralog_count"] == 1
     assert delta["interaction_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_homology_short_circuits_on_empty_gene_id() -> None:
+    """Empty gene_id (gene not found) returns empty deltas with no BI call.
+
+    The node runs unconditionally off query_judge so the section
+    fan-in never waits on a branch that may not fire; an unresolved
+    gene has no homology to fetch, so it short-circuits to empty
+    counts without issuing the two BI queries.
+    """
+    bi_mock = AsyncMock()
+    with patch(
+        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        new=bi_mock,
+    ):
+        delta = await _run_fetch_homology_interactions_node(
+            cast(Any, {"gene_id": "", "species_code": ""})
+        )
+
+    bi_mock.assert_not_awaited()
+    assert delta["orthologs_data"] == {"gene_list": []}
+    assert delta["paralog_count"] == 0
+    assert delta["interaction_count"] == 0

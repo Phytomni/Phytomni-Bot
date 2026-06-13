@@ -33,7 +33,15 @@ from ..shared.chat_subgraph import (
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.sql import sql_literal
+from .analytical_sections import (
+    _run_section1_node,
+    _run_section2_node,
+    _run_section3_node,
+    _run_section4_node,
+)
 from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
+from .homology import _run_fetch_homology_interactions_node
+from .introduction import _run_introduction_node
 from .pipeline import (
     _alias_counts_delta,
     _annotation_strings_delta,
@@ -44,6 +52,7 @@ from .pipeline import (
     _split_symbols,
     run_bi_api,
 )
+from .render import _render_preamble_node
 from .state import (
     BriefGeneAgentState,
     BriefGeneInput,
@@ -92,41 +101,39 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         self.app = self._build_graph()
 
     def _build_graph(self):
-        """Compile the brief_gene workflow.
+        """Compile the brief_gene preamble workflow.
 
-        ``_wire_chat_subgraph`` splits ``generate_node`` and
-        ``follow_up_node`` into prep + post pairs surrounding a shared
-        ``chat`` subgraph mount so LangGraph's xray rendering can
-        inline the compiled chat subgraph under the brief_gene render.
-        The ``retrieve`` site mounts the Send-dispatch knowledge
-        subgraph triad via ``_register_retrieve_nodes`` /
-        ``_retrieve_targets``.
+        ``_wire_preamble_graph`` builds the rich preamble fan-out: a
+        parallel annotation / homology fetch, four section LLM nodes
+        joined on retrieve + homology, an introduction summary, and a
+        pure-template render that writes ``final_response``. The
+        ``retrieve`` site mounts the Send-dispatch knowledge subgraph
+        triad via ``_register_retrieve_nodes`` / ``_retrieve_targets``;
+        the trailing follow-up hop reuses the shared ``chat`` subgraph.
         """
         workflow = StateGraph(
             state_schema=BriefGeneState,
             input_schema=BriefGeneInput,
             output_schema=BriefGeneOutput,
         )
-        self._wire_chat_subgraph(workflow)
+        self._wire_preamble_graph(workflow)
         return workflow.compile(checkpointer=self.checkpointer)
 
-    def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
-        """Register the prep + post + shared chat form on ``workflow``.
+    def _wire_preamble_graph(self, workflow: StateGraph) -> None:
+        """Register the preamble fan-out graph on ``workflow``.
 
-        Replaces both ``generate_node`` and ``follow_up_node`` with
-        prep + post pairs surrounding a single shared ``chat`` node.
-        The chat node is registered via
-        :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper` so
-        LangGraph's ``xray`` rendering can inline the compiled chat
-        subgraph in the brief_gene render.
-        :func:`~agents.shared.chat_subgraph.make_chat_after_router`
-        reads the ``pending_post`` sentinel each prep node stages to
-        branch back to the correct post node after the chat call. The
-        ``retrieve`` site mounts the Send-dispatch knowledge subgraph
-        triad (delegated via ``_register_retrieve_nodes`` and
-        ``_retrieve_targets``); the combined wire surfaces both
-        ``chat:`` and ``retrieve_worker_node:`` subgraph blocks under
-        xray.
+        ``query_judge_node`` fans out to
+        ``fetch_homology_interactions_node`` (always) and conditionally
+        to ``fetch_annotation_node`` (gene found) or the retrieve triad
+        (gene not found). ``retrieve`` runs after
+        ``fetch_annotation_node`` because the per-symbol literature
+        tasks read its ``gene_id_list``. The four ``section{1-4}_node``
+        gate on BOTH ``retrieve_reduce_node`` and
+        ``fetch_homology_interactions_node`` — both always run, so the
+        fan-in never deadlocks on the gene-not-found path — and fan into
+        ``introduction_node``, which the pure-template ``render_node``
+        follows to write ``final_response``. The trailing follow-up hop
+        reuses the shared ``chat`` subgraph via prep + post nodes.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -135,9 +142,17 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         retrieve_in, retrieve_out = self._retrieve_targets()
         workflow.add_node("query_judge_node", self.query_judge_node)
         workflow.add_node("fetch_annotation_node", self.fetch_annotation_node)
+        workflow.add_node(
+            "fetch_homology_interactions_node",
+            _run_fetch_homology_interactions_node,
+        )
         self._register_retrieve_nodes(workflow)
-        workflow.add_node("generate_prep_node", self.generate_prep_node)
-        workflow.add_node("generate_post_node", self.generate_post_node)
+        workflow.add_node("section1_node", _run_section1_node)
+        workflow.add_node("section2_node", _run_section2_node)
+        workflow.add_node("section3_node", _run_section3_node)
+        workflow.add_node("section4_node", _run_section4_node)
+        workflow.add_node("introduction_node", _run_introduction_node)
+        workflow.add_node("render_node", _render_preamble_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
         workflow.add_node("follow_up_post_node", self.follow_up_post_node)
         workflow.add_node(
@@ -152,6 +167,9 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         )
 
         workflow.add_edge(START, "query_judge_node")
+        workflow.add_edge(
+            "query_judge_node", "fetch_homology_interactions_node"
+        )
         workflow.add_conditional_edges(
             "query_judge_node",
             self.route_after_judge,
@@ -161,23 +179,30 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             },
         )
         workflow.add_edge("fetch_annotation_node", retrieve_in)
-        workflow.add_edge(retrieve_out, "generate_prep_node")
-        workflow.add_edge("generate_prep_node", "chat")
+        for section in (
+            "section1_node",
+            "section2_node",
+            "section3_node",
+            "section4_node",
+        ):
+            workflow.add_edge(retrieve_out, section)
+            workflow.add_edge("fetch_homology_interactions_node", section)
+            workflow.add_edge(section, "introduction_node")
+        workflow.add_edge("introduction_node", "render_node")
+        workflow.add_conditional_edges(
+            "render_node",
+            self.route_after_generate,
+            {
+                "follow_up_node": "follow_up_prep_node",
+                "__end__": END,
+            },
+        )
         workflow.add_edge("follow_up_prep_node", "chat")
         workflow.add_conditional_edges(
             "chat",
             make_chat_after_router(),
             {
-                "generate_post_node": "generate_post_node",
                 "follow_up_post_node": "follow_up_post_node",
-            },
-        )
-        workflow.add_conditional_edges(
-            "generate_post_node",
-            self.route_after_generate,
-            {
-                "follow_up_node": "follow_up_prep_node",
-                "__end__": END,
             },
         )
         workflow.add_edge("follow_up_post_node", END)
@@ -198,7 +223,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
     def route_after_generate(
         self, state: BriefGeneState
     ) -> Literal["follow_up_node", "__end__"]:
-        """Route after generate based on the is_follow_up flag.
+        """Route after render based on the is_follow_up flag.
 
         Mirrors KnowledgeAgent's ``route_after_generate``: parent
         graphs may set ``is_follow_up=False`` via ``BriefGeneInput``
@@ -348,104 +373,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "gene_end": str(structure_row.get("end", "")),
             "gene_strand": str(structure_row.get("strand", "")),
             **_annotation_strings_delta(annotation_responses, structure_row),
-        }
-
-    async def generate_prep_node(
-        self, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
-        """Build the chat payload for the brief gene response generation.
-
-        Mirrors the prompt-building half of ``generate_node``. The
-        actual chat dispatch runs in the shared ``chat`` node mounted
-        by ``_wire_chat_subgraph``; ``generate_post_node`` parses the
-        response into the legacy ``final_response`` delta.
-
-        Args:
-            state: Current workflow state with annotations and
-                retrieval text.
-
-        Returns:
-            State delta with a ``ChatInput`` payload under
-            ``chat_payload`` and the ``pending_post`` sentinel for the
-            after-chat router. ``with_follow_up=False`` is passed
-            explicitly because brief_gene generates its own follow-up
-            questions in the separate ``follow_up_node`` step; the
-            chat subgraph router's ``follow_up_node`` branch would
-            cascade an unwanted second follow-up generation on top of
-            the main answer.
-        """
-        if state["gene_found"]:
-            prompt_vars = {
-                "user_query": state["user_query"],
-                "query_id_type": state["query_id_version"],
-                "gene_id": state["gene_id"],
-                "gene_id_type": state["gene_id_version"],
-                "species": state["species_code"],
-                "species_latin_name": state["species_latin_name"],
-                "species_english_name": state["species_english_name"],
-                "gene_string": "|".join(state["gene_id_list"]),
-                "chromosome": state["gene_chr"],
-                "start": state["gene_start"],
-                "end": state["gene_end"],
-                "strand": state["gene_strand"],
-                "go_terms": state["go_string"],
-                "kegg_annotation": state["kegg_string"],
-                "interpro_terms": state["interpro_string"],
-                "retrieve_results": state["retrieve_context"],
-            }
-            chat_query = get_prompt(
-                self.brief_config.PROMPT_FILE,
-                "user/brief_gene_function",
-                prompt_vars,
-            )
-        else:
-            chat_query = get_prompt(
-                self.brief_config.PROMPT_FILE,
-                "user/brief_gene_function_nogeneid",
-                {
-                    "user_query": state["user_query"],
-                    "retrieve_results": state["retrieve_context"],
-                },
-            )
-
-        chat_kwargs = build_chat_kwargs_for(
-            self.brief_config,
-            self.sensitive_config,
-            with_follow_up=False,
-        )
-        chat_payload = build_chat_input(chat_query, chat_kwargs)
-        return {
-            "chat_payload": chat_payload,
-            "pending_post": "generate_post_node",
-        }
-
-    async def generate_post_node(
-        self, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
-        """Parse the chat response into the brief gene final response.
-
-        Mirrors the response-parsing half of ``generate_node`` but
-        reads the chat response from ``state['chat_response']``
-        instead of awaiting a fresh ``phyto_chat`` call. Preserves the
-        ``phyto_response is None`` fallback that the legacy body uses
-        so downstream ``_attach_metadata`` always sees a valid
-        chat-completions-shaped dict.
-
-        Args:
-            state: Current workflow state. Reads ``chat_response``
-                written by the shared chat node and ``retrieved_docs``
-                staged by ``retrieve_reduce_node``.
-
-        Returns:
-            State delta with ``final_response``.
-        """
-        phyto_response = state.get("chat_response") or {
-            "choices": [{"message": {}}]
-        }
-        return {
-            "final_response": _attach_metadata(
-                phyto_response, state["retrieved_docs"]
-            )
         }
 
     async def follow_up_prep_node(
