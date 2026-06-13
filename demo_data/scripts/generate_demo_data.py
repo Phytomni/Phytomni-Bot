@@ -297,7 +297,10 @@ TOOL_INDEX: Tuple[Dict[str, str], ...] = (
         "name": "BriefGeneAgent",
         "payload": "payloads/brief_gene_agent.json",
         "kind": "sync",
-        "summary": "Concise gene card for Os01g0177400.",
+        "summary": (
+            "Gene profile preamble (introduction + Gene Profiles + four "
+            "analytical sections) for Os01g0177400."
+        ),
     },
     {
         "name": "DeepGenomeAgent",

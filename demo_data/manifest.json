@@ -40,7 +40,7 @@
       "kind": "sync",
       "name": "BriefGeneAgent",
       "payload": "payloads/brief_gene_agent.json",
-      "summary": "Concise gene card for Os01g0177400."
+      "summary": "Gene profile preamble (introduction + Gene Profiles + four analytical sections) for Os01g0177400."
     },
     {
       "kind": "async",

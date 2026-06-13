@@ -17,7 +17,7 @@ working tree stays clean after a rerun.
 | DataAgent | sync | [payloads/data_agent.json](payloads/data_agent.json) | NL2SQL homology lookup for Os01g0177400 in wheat. |
 | AnalystAgent | async | [payloads/analyst_agent.json](payloads/analyst_agent.json) | ATAC-seq peak-calling submission on rice replicates. |
 | ReviewAgent | sync | [payloads/review_agent.json](payloads/review_agent.json) | Multi-section sorghum drought literature review. |
-| BriefGeneAgent | sync | [payloads/brief_gene_agent.json](payloads/brief_gene_agent.json) | Concise gene card for Os01g0177400. |
+| BriefGeneAgent | sync | [payloads/brief_gene_agent.json](payloads/brief_gene_agent.json) | Gene profile preamble (introduction + Gene Profiles + four analytical sections) for Os01g0177400. |
 | DeepGenomeAgent | async | [payloads/deep_genome_agent.json](payloads/deep_genome_agent.json) | Deep gene-function analysis for Os01g0177400 in osa. |
 | InSilicoResearchAgent | async | [payloads/in_silico_research_agent.json](payloads/in_silico_research_agent.json) | Reproducibility tasks decomposed from the brief PDF. |
 | DigitalDesignAgent | async | [payloads/digital_design_agent.json](payloads/digital_design_agent.json) | Protein and promoter design for Os01g0177400. |

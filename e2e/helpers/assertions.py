@@ -189,14 +189,16 @@ def assert_review_answer(answer: str) -> None:
 
 
 def assert_brief_gene_answer(answer: str) -> None:
-    """Assert BriefGeneAgent returned a gene-card for the canonical id.
+    """Assert BriefGeneAgent returned the rich preamble for the canonical id.
 
     Args:
         answer: Raw answer string from BriefGeneAgent.
 
     Raises:
         AssertionError: When the answer is empty, omits the gene id,
-            or lacks every annotation cue.
+            lacks every annotation cue, or is missing the preamble
+            structure (``## Gene Profiles`` + ``### Basic Genomic
+            Information`` + at least one ``### N.`` analytical section).
     """
     assert answer, "BriefGeneAgent answer was empty"
     _assert_no_citation_residue_via_markdown_body(answer)
@@ -208,4 +210,16 @@ def assert_brief_gene_answer(answer: str) -> None:
     assert matched, (
         f"BriefGeneAgent answer lacked every annotation cue "
         f"({ANNOTATION_CUES}); got: {answer!r}"
+    )
+    assert "## Gene Profiles" in answer, (
+        "BriefGeneAgent answer lacked the '## Gene Profiles' preamble "
+        f"header; got: {answer!r}"
+    )
+    assert "### Basic Genomic Information" in answer, (
+        "BriefGeneAgent answer lacked the Basic Genomic Information "
+        f"block; got: {answer!r}"
+    )
+    assert any(f"### {section}." in answer for section in (1, 2, 3, 4)), (
+        "BriefGeneAgent answer lacked any numbered analytical section "
+        f"(### 1.-### 4.); got: {answer!r}"
     )
