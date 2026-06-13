@@ -48,10 +48,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RULE_BASELINES: Dict[str, int] = {
     "R0801": 95,  # duplicate-code: cross-file similar blocks
     # too-few-public-methods: test fake classes + Protocol stubs +
-    # GraphLoader (load + flag-gated __init__ only). Pinned at the count
-    # measured under the installed pylint 4.0.x, which flags one more
-    # single-method class than the 3.x line the prior 17 was set on.
-    "R0903": 18,
+    # GraphLoader (load + flag-gated __init__ only) + the terminal-result
+    # assembly seams (TerminalAnswerContext DTO, ArtifactLister /
+    # AnswerSynthesizer single-method Protocols). Pinned at the count
+    # measured under the installed pylint 4.0.x.
+    "R0903": 20,
 }
 
 
