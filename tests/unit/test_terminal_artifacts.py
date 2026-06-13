@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterator
 
 import pytest
 
@@ -28,6 +29,27 @@ pytestmark = pytest.mark.unit
 def _run(coro):
     """Drive a coroutine to completion in a fresh event loop."""
     return asyncio.run(coro)
+
+
+@pytest.fixture(name="artifacts_caplog")
+def _artifacts_caplog(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[pytest.LogCaptureFixture]:
+    """Capture warnings from the terminal_artifacts logger.
+
+    ``common/logging_config.configure_logging`` sets the package logger
+    ``propagate=False``, so once an earlier suite test triggers it (e.g.
+    via an api/app import) warnings never reach pytest's root-attached
+    caplog. Attaching the caplog handler directly to this module's
+    logger sidesteps the propagation gap; it is removed at teardown.
+    """
+    module_logger = terminal_artifacts.logger
+    module_logger.addHandler(caplog.handler)
+    module_logger.setLevel(logging.WARNING)
+    try:
+        yield caplog
+    finally:
+        module_logger.removeHandler(caplog.handler)
 
 
 def test_collects_succeeded_task_with_output_dir() -> None:
@@ -120,25 +142,26 @@ def test_enumerate_fills_paths_for_succeeded_rows() -> None:
     assert out[2].get("artifact_paths", []) == []  # no output_dir -> skipped
 
 
-def test_enumerate_swallows_lister_errors(caplog) -> None:
+def test_enumerate_swallows_lister_errors(
+    artifacts_caplog: pytest.LogCaptureFixture,
+) -> None:
     """A listing failure degrades to empty paths and logs, never raises."""
     live = [
         {"task_id": "t1", "status": "succeeded", "output_dir": "/obs/p/r1"},
     ]
 
     async def boom(output_dir):
-        raise OSError("obs down")
+        raise OSError(f"obs down for {output_dir}")
 
-    with caplog.at_level(logging.WARNING):
-        out = _run(
-            terminal_artifacts.enumerate_artifact_paths(live, lister=boom)
-        )
+    out = _run(terminal_artifacts.enumerate_artifact_paths(live, lister=boom))
 
     assert out[0]["artifact_paths"] == []
-    assert any("t1" in rec.message for rec in caplog.records)
+    assert any("t1" in rec.message for rec in artifacts_caplog.records)
 
 
-def test_enumerate_caps_and_logs_truncation(caplog) -> None:
+def test_enumerate_caps_and_logs_truncation(
+    artifacts_caplog: pytest.LogCaptureFixture,
+) -> None:
     """Over-cap results are truncated with a non-silent warning."""
     live = [
         {"task_id": "t1", "status": "succeeded", "output_dir": "/obs/p/r1"},
@@ -147,15 +170,14 @@ def test_enumerate_caps_and_logs_truncation(caplog) -> None:
     async def many(output_dir):
         return [f"{output_dir}/f{i}.png" for i in range(5)]
 
-    with caplog.at_level(logging.WARNING):
-        out = _run(
-            terminal_artifacts.enumerate_artifact_paths(
-                live, lister=many, cap=2
-            )
-        )
+    out = _run(
+        terminal_artifacts.enumerate_artifact_paths(live, lister=many, cap=2)
+    )
 
     assert len(out[0]["artifact_paths"]) == 2
-    assert any("truncated" in rec.message.lower() for rec in caplog.records)
+    assert any(
+        "truncated" in rec.message.lower() for rec in artifacts_caplog.records
+    )
 
 
 def test_collect_reads_enumerated_paths() -> None:

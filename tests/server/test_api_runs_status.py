@@ -160,6 +160,17 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
 
     monkeypatch.setattr(run_registry_module, "reconcile_task", fake)
 
+    async def fake_enumerate(live: list, **_kwargs: Any) -> list:
+        """Populate artifact paths without touching OBS at the HTTP layer."""
+        for row in live:
+            if row.get("output_dir"):
+                row["artifact_paths"] = [f"{row['output_dir']}/fig.png"]
+        return live
+
+    monkeypatch.setattr(
+        run_registry_module, "enumerate_artifact_paths", fake_enumerate
+    )
+
     response = await api_client.get(
         "/v1/runs/run-r-1",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -172,9 +183,23 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     assert body["expires_at"] is not None
     # The terminal envelope keeps task_results / live_status pointed at
     # the reconciled blob and exposes one artifacts descriptor per
-    # succeeded child task that carries an output_dir.
+    # succeeded child task, now carrying the globbed object paths.
     assert body["result"]["task_results"] == body["result"]["live_status"]
     assert body["result"]["artifacts"] == [
-        {"task_id": "t-1", "output_dir": "/obs/x", "paths": []},
-        {"task_id": "t-2", "output_dir": "/obs/y", "paths": []},
+        {
+            "task_id": "t-1",
+            "output_dir": "/obs/x",
+            "paths": ["/obs/x/fig.png"],
+        },
+        {
+            "task_id": "t-2",
+            "output_dir": "/obs/y",
+            "paths": ["/obs/y/fig.png"],
+        },
     ]
+    # WO-1 contract: an analyst-class terminal run (no child final_report)
+    # synthesizes a renderable answer that _extract_answer lifts to the
+    # top-level "answer" field chat-ai reads.
+    answer = body["result"]["formatted"]["answer"]
+    assert answer.startswith("**Analysis complete")
+    assert body["answer"] == answer
