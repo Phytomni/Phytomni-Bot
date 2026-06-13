@@ -164,10 +164,10 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
         Returns:
             List of node names to execute. When both flags are True, run
-            knowledge_node, data_node, and prepare_tasks_node.
+            brief_gene_node, data_node, and prepare_tasks_node.
         """
         # M11 (X3b A architecture) — ``data_node`` deleted; brief_gene
-        # mount inside ``knowledge_node`` performs all the BI
+        # mount inside ``brief_gene_node`` performs all the BI
         # annotation + homology + interaction fetching that the
         # legacy ``data_node`` + 3-branch fan-out used to produce.
         # ``use_data_agent`` flag is subsumed by the mount.
@@ -175,8 +175,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "use_analyst_agent", True
         )
         if use_analyst:
-            return ["knowledge_node", "prepare_tasks_node"]
-        return ["knowledge_node"]
+            return ["brief_gene_node", "prepare_tasks_node"]
+        return ["brief_gene_node"]
 
     def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
         """Route back to synthesize_node while waiting for analysis tasks.

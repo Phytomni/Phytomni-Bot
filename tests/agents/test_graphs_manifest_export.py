@@ -351,14 +351,14 @@ def test_export_real_deep_genome_subgraph_node_set() -> None:
     Pins the deep_genome subgraph's manifest shape so the docs
     section in ``docs/agent-graphs.md`` and the compiled graph
     stay in sync. The documented node-name set covers the three
-    phases (Part 1 knowledge + analyst fan-out / Part 2 synthesis +
-    experiment loop / Part 3 protocol → discussion → summary →
-    follow-up) that the report mixin walks.
+    phases (Part 1 brief_gene preamble + analyst fan-out / Part 2
+    synthesis + experiment loop / Part 3 protocol → discussion →
+    summary → follow-up) that the report mixin walks.
     """
     manifest = export_manifest(_build_deep_genome_app())
     names = {node.name for node in manifest.nodes}
     documented = {
-        "knowledge_node",
+        "brief_gene_node",
         "prepare_tasks_node",
         "analyst_node",
         "synthesize_node",

@@ -324,7 +324,7 @@ class DeepGenomeAgents(
         workflow = StateGraph(DeepGenomeState)
 
         # M11 — X3b A architecture topology completion. brief_gene's
-        # mount node (``knowledge_node`` slot) substitutes for the
+        # mount node (``brief_gene_node`` slot) substitutes for the
         # entire preamble pipeline (data_node + orthologs / paralogs /
         # interaction + their annotation sub-summaries + part1_node
         # aggregator + deep_genome's own ``_run_report_introduction``).
@@ -335,7 +335,7 @@ class DeepGenomeAgents(
         # barrier still fires once ``synthesize_node`` adds the
         # analyst-side +1).
         workflow.add_node(
-            "knowledge_node",
+            "brief_gene_node",
             self.make_brief_gene_mount_node(self._agents.brief_gene_app),
         )
 
@@ -352,13 +352,13 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             START,
             self._route_start,
-            ["knowledge_node", "prepare_tasks_node"],
+            ["brief_gene_node", "prepare_tasks_node"],
         )
         # brief_gene mount writes all the preamble fields plus the
         # experiment_completed_branches +1 contribution, so the
         # post-mount path goes directly to experiment_node (which
         # waits for the synthesize_node contribution too).
-        workflow.add_edge("knowledge_node", "experiment_node")
+        workflow.add_edge("brief_gene_node", "experiment_node")
 
         workflow.add_conditional_edges(
             "prepare_tasks_node", self._route_analyst_tasks, ["analyst_node"]
