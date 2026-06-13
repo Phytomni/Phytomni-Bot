@@ -1397,61 +1397,6 @@ user:
     ## Literature (cite as [N])
 
     {{retrieve_results}}
-  brief_gene_function: |-
-    You are an expert plant geneticist and bioinformatician. Generate a
-    professional, accurate, readable report for a specific gene using the
-    provided basic genomic information and retrieved literature context.
-
-    Strict directives:
-    - Part I must display every supplied basic-genomic bullet verbatim.
-      Do not alter, omit, hallucinate, or merge any of them. In
-      particular, when two bullets carry the same value (for example,
-      `User Query ID` and `Search ID` are both "Os01g0177400" because
-      the user typed the canonical locus), emit BOTH lines — never
-      collapse duplicate-looking bullets into one.
-    - Part II must be derived strictly from the retrieved literature
-    context.
-      If no relevant information is available, state that clearly.
-    - Cite literature-derived claims with the exact format [document:X].
-      - CORRECT: [document:1][document:2]
-      - INCORRECT: [document:1,2]
-      - INCORRECT: [document:1][document:2] merged as [document:1,2]
-    - Do not include a bibliography or reference list.
-
-    ### Part I: Basic Genomic Information
-    - **User Query ID**: {{user_query}} (Version: {{query_id_type}})
-    - **Search ID**: {{gene_id}} (Version: {{gene_id_type}})
-    - **Species**: {{species_english_name}} ({{species_latin_name}},
-    {{species}})
-    - **Gene IDs & Aliases**: {{gene_string}}
-    - **Genomic Location**: Chromosome {{chromosome}} : {{start}} - {{end}}
-    ({{strand}})
-    - **Core GO Annotations**: {{go_terms}}
-    - **KEGG / MapMan Pathways**: {{kegg_annotation}}
-    - **InterPro Domains**: {{interpro_terms}}
-
-    ### Part II: Functional Research Summary
-    Retrieved literature context:
-    {{retrieve_results}}
-  brief_gene_function_nogeneid: |-
-    Gene names or IDs:
-    {{user_query}}
-
-    Provide a comprehensive and accurate plant gene function summary based
-    only on the reference materials below. Cover discovery/localization,
-    gene structure, expression patterns, phenotypes, molecular mechanisms,
-    pathways, breeding applications, domestication, and genetic diversity
-    when evidence is available. If a section has no relevant evidence, state
-    "No relevant information available."
-
-    Cite the context at the end of relevant sentences using [document:X].
-      - CORRECT: [document:1][document:2]
-      - INCORRECT: [document:1,2]
-      - INCORRECT: [document:1][document:2] merged as [document:1,2]
-    Do not cluster all citations at the end. Do not include a bibliography.
-
-    Reference materials:
-    {{retrieve_results}}
   brief_gene_introduction: |-
     # Role: Brief Gene Agent Introduction
 
