@@ -225,13 +225,18 @@ def test_brief_gene_subgraph_exposes_conditional_sources() -> None:
 
 
 def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
-    """The preamble graph fans out to 4 sections after a parallel fetch.
+    """The preamble graph fans out to 4 sections after the retrieve reduce.
 
     query_judge fans to fetch_homology (always) and conditionally to
     fetch_annotation; retrieve runs after fetch_annotation; each of the
-    four section nodes gates on BOTH retrieve_reduce and fetch_homology
-    before fanning into the introduction; the retired generate/chat
-    answer path is gone.
+    four section nodes gates ONLY on retrieve_reduce. fetch_homology
+    runs in parallel off query_judge and commits its data to state in an
+    early superstep, well before the deeper retrieve reduce settles, so
+    the sections read homology from state without a direct edge — a
+    homology->section edge would make the fan-in fire once per superstep
+    (shallow homology vs deep retrieve), double-running every section
+    LLM and colliding on the no-reducer final_response channel. The
+    retired generate/chat answer path is gone.
     """
     section_nodes = (
         "section_discovery_node",
@@ -256,6 +261,10 @@ def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
     assert ("fetch_annotation_node", "retrieve_prep_tasks_node") in edges
     for section in section_nodes:
         assert ("retrieve_reduce_node", section) in edges
-        assert ("fetch_homology_interactions_node", section) in edges
+        # Regression guard: sections must NOT gate on fetch_homology.
+        # That cross-superstep edge double-fired the fan-in (each
+        # section + render ran twice), crashing on the no-reducer
+        # final_response channel under the follow-up tail.
+        assert ("fetch_homology_interactions_node", section) not in edges
         assert (section, "introduction_node") in edges
     assert ("introduction_node", "render_node") in edges

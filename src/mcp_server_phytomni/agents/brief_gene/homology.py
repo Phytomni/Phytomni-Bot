@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ..shared.sql import relay_bi_query, sql_literal
+from ..shared.sql import sql_literal
 from .interactions import _homology_gene_lists, _interaction_gene_list
+from .pipeline import run_bi_api
 from .state import BriefGeneAgentState
 
 
@@ -59,13 +60,12 @@ async def _run_fetch_homology_interactions_node(
     species_code = state.get("species_code", "")
     gene_literal = sql_literal(gene_id)
 
-    homology_response = await relay_bi_query(
+    homology_response = await run_bi_api(
         "SELECT query_gene_id, query_species, homology_gene_id, "
         "homology_species "
         f"FROM homology_gene WHERE query_gene_id = {gene_literal}",
-        message="Homology query failed",
     )
-    interaction_response = await relay_bi_query(
+    interaction_response = await run_bi_api(
         "SELECT query_gene_id, query_protein, interact_gene_id, "
         "interact_protein "
         "FROM protein_interaction_col "

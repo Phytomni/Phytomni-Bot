@@ -121,7 +121,7 @@ def test_interaction_gene_list_excludes_self_loop() -> None:
 async def test_fetch_homology_interactions_projects_state_delta() -> None:
     """Node issues 2 BI queries and projects ``orthologs_data`` etc.
 
-    Mock ``relay_bi_query`` to return canned homology + interaction
+    Mock ``run_bi_api`` to return canned homology + interaction
     responses; assert the returned state delta contains the three
     canonical ``gene_list`` dict shapes plus four count fields the
     Basic Information render later consumes.
@@ -129,7 +129,7 @@ async def test_fetch_homology_interactions_projects_state_delta() -> None:
     state = _state()
 
     with patch(
-        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        "mcp_server_phytomni.agents.brief_gene.homology.run_bi_api",
         new=AsyncMock(
             side_effect=[
                 _homology_response(),
@@ -149,6 +149,55 @@ async def test_fetch_homology_interactions_projects_state_delta() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_homology_uses_relay_aware_seam_in_direct_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In non-relay mode the node routes BI calls through the gated seam.
+
+    ``run_bi_api`` (and the ``bi_query`` it wraps) branch on
+    ``relay_mode_enabled()``: direct ``BI_URL`` POST when relay is off,
+    relay route when on. The relay-only ``relay_bi_query`` posts to a
+    scheme-less ``/v1/relay/bi/query`` URL and raises
+    ``httpx.UnsupportedProtocol`` in a direct deployment, so the node
+    must never reach it when relay mode is off.
+    """
+    seen_urls: list[str] = []
+
+    async def fake_bi_query(
+        sql: str, *, bi_url: str, headers: Any, retry: Any
+    ) -> dict[str, Any]:
+        _ = (sql, headers, retry)
+        seen_urls.append(bi_url)
+        return {"data": []}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.pipeline.bi_query",
+        fake_bi_query,
+    )
+
+    async def _forbidden_relay(*args: Any, **kwargs: Any) -> Any:
+        _ = (args, kwargs)
+        raise AssertionError(
+            "homology node used relay_bi_query in non-relay mode"
+        )
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        _forbidden_relay,
+        raising=False,
+    )
+
+    delta = await _run_fetch_homology_interactions_node(cast(Any, _state()))
+
+    assert seen_urls == [
+        "https://example.invalid/bi",
+        "https://example.invalid/bi",
+    ]
+    assert delta["ortholog_count"] == 0
+    assert delta["interaction_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_fetch_homology_short_circuits_on_empty_gene_id() -> None:
     """Empty gene_id (gene not found) returns empty deltas with no BI call.
 
@@ -159,7 +208,7 @@ async def test_fetch_homology_short_circuits_on_empty_gene_id() -> None:
     """
     bi_mock = AsyncMock()
     with patch(
-        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        "mcp_server_phytomni.agents.brief_gene.homology.run_bi_api",
         new=bi_mock,
     ):
         delta = await _run_fetch_homology_interactions_node(

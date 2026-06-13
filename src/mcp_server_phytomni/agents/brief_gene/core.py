@@ -128,12 +128,19 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         (gene not found). ``retrieve`` runs after
         ``fetch_annotation_node`` because the per-symbol literature
         tasks read its ``gene_id_list``. The four ``section{1-4}_node``
-        gate on BOTH ``retrieve_reduce_node`` and
-        ``fetch_homology_interactions_node`` — both always run, so the
-        fan-in never deadlocks on the gene-not-found path — and fan into
+        gate ONLY on ``retrieve_reduce_node`` and fan into
         ``introduction_node``, which the pure-template ``render_node``
-        follows to write ``final_response``. The trailing follow-up hop
-        reuses the shared ``chat`` subgraph via prep + post nodes.
+        follows to write ``final_response``.
+        ``fetch_homology_interactions_node`` runs in parallel and
+        commits its counts to state in an early superstep, well before
+        the deeper retrieve reduce settles, so the sections read
+        homology from state without a direct edge. A homology->section
+        edge would make the fan-in fire once per superstep (shallow
+        homology vs deep retrieve), double-running every section LLM and
+        raising ``InvalidUpdateError`` on the no-reducer
+        ``final_response`` channel under the follow-up tail. The
+        trailing follow-up hop reuses the shared ``chat`` subgraph via
+        prep + post nodes.
 
         Args:
             workflow: Uncompiled ``StateGraph`` to register nodes and
@@ -192,7 +199,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "section_application_node",
         ):
             workflow.add_edge(retrieve_out, section)
-            workflow.add_edge("fetch_homology_interactions_node", section)
             workflow.add_edge(section, "introduction_node")
         workflow.add_edge("introduction_node", "render_node")
         workflow.add_conditional_edges(

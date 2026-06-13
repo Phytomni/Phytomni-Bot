@@ -23,6 +23,8 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
+from ._subgraph_branch_fakes import install_chat_subgraph_mocks
+
 pytestmark = pytest.mark.agent
 
 _FOUND_ROW = {
@@ -90,7 +92,7 @@ def _install_mocks(
         "mcp_server_phytomni.agents.brief_gene.core.run_bi_api", bi_mock
     )
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.brief_gene.homology.relay_bi_query",
+        "mcp_server_phytomni.agents.brief_gene.homology.run_bi_api",
         AsyncMock(return_value=_EMPTY_ROW),
     )
     monkeypatch.setattr(
@@ -125,9 +127,9 @@ async def test_preamble_gene_found_fan_in_completes(
 ) -> None:
     """gene_found path: parallel fetch + 4-section fan-in reaches render.
 
-    The four section nodes gate on BOTH retrieve_reduce and
-    fetch_homology; this asserts that join resolves (no deadlock) and
-    the render writes the full preamble skeleton.
+    The four section nodes gate on retrieve_reduce while fetch_homology
+    runs in parallel off query_judge; this asserts the fan-in resolves
+    (no deadlock) and the render writes the full preamble skeleton.
     """
     _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
 
@@ -155,3 +157,43 @@ async def test_preamble_gene_not_found_fan_in_completes(
     assert content.startswith("# Brief Gene Analysis of")
     assert "## Gene Profiles" in content
     assert "### Basic Genomic Information" in content
+
+
+async def test_preamble_follow_up_tail_fires_render_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """is_follow_up=True must not collide on the final_response channel.
+
+    The four sections gate on retrieve_reduce (a deep superstep) while
+    fetch_homology settles in a shallow one. A homology->section edge
+    would fire the fan-in once per superstep, running every section and
+    render twice; with the follow-up tail active a wave-2 render then
+    collides with the wave-1 follow_up_post on the no-reducer
+    ``final_response`` channel, raising ``InvalidUpdateError``. This
+    drives the FULL graph with the follow-up tail — the arun default
+    that the is_follow_up=False fan-in tests never exercise — so the
+    single-fire fan-in is pinned end to end.
+    """
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    install_chat_subgraph_mocks(
+        monkeypatch,
+        "mcp_server_phytomni.agents.brief_gene.core",
+        legacy_response=_CHAT_STUB,
+        subgraph_response=_CHAT_STUB,
+    )
+    agent = BriefGeneAgent(
+        brief_config=BriefGeneConfig(),
+        sensitive_config=SensitiveConfig.load(),
+    )
+
+    final_state = await asyncio.wait_for(
+        agent.app.ainvoke(
+            {"user_query": "Os01g0177400", "is_follow_up": True},
+            config={"configurable": {"thread_id": "preamble-followup"}},
+        ),
+        timeout=20,
+    )
+
+    content = final_state["final_response"]["choices"][0]["message"]["content"]
+    assert content.startswith("# Brief Gene Analysis of")
+    assert "## Gene Profiles" in content
