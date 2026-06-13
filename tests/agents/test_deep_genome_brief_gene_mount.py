@@ -136,68 +136,42 @@ async def test_brief_gene_mount_writes_literature_under_knowledge() -> None:
     assert literature == [{"title": "doc1"}, {"title": "doc2"}]
 
 
-async def test_brief_gene_mount_projects_section_markdowns() -> None:
-    """Mount writes ``section1-4_markdown`` from brief_gene's preamble.
+async def test_brief_gene_mount_consumes_preamble_verbatim() -> None:
+    """Mount consumes brief_gene's preamble verbatim, swapping only the title.
 
-    M11 (X3b A architecture) — deep_genome's
-    ``_summary_source_content`` consumes the four section markdowns
-    verbatim, so the mount MUST project them into state.
+    deep_genome uses the brief_gene preamble (everything from
+    ``## Gene Profiles`` down) byte-identically; only the H1 title is
+    rewritten from "Brief Gene Analysis" to "Deep Genome Analysis". The
+    dead section / introduction / homology projections are no longer
+    emitted — the preamble carries that content.
     """
+    content = (
+        "# Brief Gene Analysis of AT1G01010\n\n"
+        "Intro paragraph.\n\n"
+        "## Gene Profiles\n\n### Basic Genomic Information\n\nbody"
+    )
     canned = {
         "gene_id": "AT1G01010",
-        "go_string": "GO:0003700",
-        "kegg_string": "ath:AT1G01010",
-        "interpro_string": "IPR036093",
-        "description_string": "transcription factor",
-        "section1_markdown": "### 1. Discovery content",
-        "section2_markdown": "### 2. Cloning content",
-        "section3_markdown": "### 3. Functional content",
-        "section4_markdown": "### 4. Application content",
-        "introduction_report": "Introduction paragraphs.",
-        "retrieved_docs": [{"title": "doc1"}],
-        "orthologs_data": {"gene_list": []},
-        "paralogs_data": {"gene_list": []},
-        "interaction_data": {"gene_list": []},
+        "final_response": {"choices": [{"message": {"content": content}}]},
     }
     fake_app = _build_fake_brief_gene_app(output=canned)
     mount = make_brief_gene_mount_node(fake_app)
-    state = _deep_genome_state()
 
-    delta = await mount(cast(Any, state))
+    delta = await mount(cast(Any, _deep_genome_state()))
 
-    assert delta["section1_markdown"] == "### 1. Discovery content"
-    assert delta["section2_markdown"] == "### 2. Cloning content"
-    assert delta["section3_markdown"] == "### 3. Functional content"
-    assert delta["section4_markdown"] == "### 4. Application content"
-    assert delta["introduction_report"] == "Introduction paragraphs."
-
-
-async def test_brief_gene_mount_projects_homology_data() -> None:
-    """Mount writes orthologs / paralogs / interaction data shapes.
-
-    deep_genome consumer code reads ``state["orthologs_data"]`` etc.
-    after the mount runs (was previously populated by the deleted
-    ``_run_data_agent``); the mount must project these dicts.
-    """
-    canned = {
-        "gene_id": "AT1G01010",
-        "orthologs_data": {"gene_list": [{"homology_gene_id": "X"}]},
-        "paralogs_data": {"gene_list": [{"homology_gene_id": "Y"}]},
-        "interaction_data": {"gene_list": [{"interact_gene_id": "Z"}]},
-    }
-    fake_app = _build_fake_brief_gene_app(output=canned)
-    mount = make_brief_gene_mount_node(fake_app)
-    state = _deep_genome_state()
-
-    delta = await mount(cast(Any, state))
-
-    assert delta["orthologs_data"] == {
-        "gene_list": [{"homology_gene_id": "X"}]
-    }
-    assert delta["paralogs_data"] == {"gene_list": [{"homology_gene_id": "Y"}]}
-    assert delta["interaction_data"] == {
-        "gene_list": [{"interact_gene_id": "Z"}]
-    }
+    assert delta["preamble"] == (
+        "# Deep Genome Analysis of AT1G01010\n\n"
+        "Intro paragraph.\n\n"
+        "## Gene Profiles\n\n### Basic Genomic Information\n\nbody"
+    )
+    for dead in (
+        "section1_markdown",
+        "introduction_report",
+        "orthologs_data",
+        "paralogs_data",
+        "interaction_data",
+    ):
+        assert dead not in delta
 
 
 async def test_brief_gene_mount_writes_experiment_branch_counter() -> None:

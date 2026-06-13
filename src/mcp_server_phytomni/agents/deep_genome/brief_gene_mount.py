@@ -7,9 +7,9 @@
 Hosts ``DeepGenomeBriefGeneMountMixin`` + the
 ``make_brief_gene_mount_node`` factory closure that wires
 ``BriefGeneAgent`` as a structural subgraph inside the deep_genome
-workflow, projecting BriefGeneOutput into deep_genome's nested
-``gene_annotation`` + ``knowledge_context`` shape plus the part1
-barrier increment.
+workflow, projecting BriefGeneOutput into deep_genome's
+``gene_annotation`` + ``knowledge_context`` + verbatim ``preamble``
+plus the experiment barrier increment.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, Dict
 
 from langgraph.graph.state import CompiledStateGraph
 
+from ...common.responses import message_content
+
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
@@ -26,6 +28,26 @@ else:
 
 
 logger = logging.getLogger(__name__)
+
+_BRIEF_TITLE_PREFIX = "# Brief Gene Analysis of"
+
+
+def _deep_genome_preamble(brief_output: Dict[str, Any], gene_id: str) -> str:
+    """Return brief_gene's preamble with the deep_genome H1 title.
+
+    brief_gene renders ``# Brief Gene Analysis of <gene>`` as the first
+    line; deep_genome's report uses the same preamble verbatim from the
+    second line down, so only the H1 title is swapped. A degraded or
+    empty brief_gene answer (no recognised title line) is passed through
+    unchanged.
+    """
+    raw = message_content(brief_output.get("final_response", {}) or {})
+    resolved = str(brief_output.get("gene_id", "") or gene_id)
+    deep_title = f"# Deep Genome Analysis of {resolved}"
+    head, sep, tail = raw.partition("\n")
+    if head.startswith(_BRIEF_TITLE_PREFIX):
+        return f"{deep_title}{sep}{tail}"
+    return raw
 
 
 # Broad exception catch tuple used by the brief_gene mount node.
@@ -67,18 +89,13 @@ def make_brief_gene_mount_node(
 
     Output projection: maps the flat-string annotation fields on
     ``BriefGeneOutput`` into deep_genome's nested
-    ``gene_annotation: dict`` shape (mirroring the keys
-    ``_run_gene_annotation_node`` previously wrote), maps the
-    ``retrieved_docs`` list into the
-    ``knowledge_context: {literature}`` shape that downstream report
-    nodes read, and writes the ``part1_completed_branches: 1``
-    barrier increment so the existing ``_route_part1_barrier``
-    topology stays well-formed. brief_gene's ``final_response`` and
-    ``follow_up_questions`` are not currently mapped into
-    deep_genome's state because no deep_genome report node consumes
-    them yet; a future commit that wires
-    ``_run_report_introduction`` / ``_run_report_summary`` against
-    brief_gene's generated answer would extend this projection.
+    ``gene_annotation: dict`` shape (the experiment / discussion /
+    summary prompts read it), maps ``retrieved_docs`` into the
+    ``knowledge_context: {literature}`` shape, projects brief_gene's
+    rendered answer (``final_response``) into ``preamble`` with the H1
+    title swapped to deep_genome's — the report's verbatim pre-analysis
+    block — and writes ``experiment_completed_branches: 1`` so the
+    experiment_node 2-source barrier still fires.
 
     On brief_gene failure, the closure logs the exception and emits
     an empty annotation / empty literature delta plus the barrier
@@ -130,40 +147,14 @@ def make_brief_gene_mount_node(
                     brief_output.get("retrieved_docs", []) or []
                 ),
             },
-            # M11 — brief_gene now owns the preamble production. The
-            # section markdowns + introduction_report flow verbatim
-            # into deep_genome's report assembly so deep_genome no
-            # longer needs its own _run_report_introduction LLM call
-            # or sub-summary / part1_node LLM calls. M5's
-            # brief_response prefix path is retired in the same
-            # commit (the report assembly now reads
-            # state.introduction_report directly instead of
-            # message_content(brief_response)).
-            "orthologs_data": brief_output.get(
-                "orthologs_data", {"gene_list": []}
-            ),
-            "paralogs_data": brief_output.get(
-                "paralogs_data", {"gene_list": []}
-            ),
-            "interaction_data": brief_output.get(
-                "interaction_data", {"gene_list": []}
-            ),
-            "section1_markdown": str(
-                brief_output.get("section1_markdown", "")
-            ),
-            "section2_markdown": str(
-                brief_output.get("section2_markdown", "")
-            ),
-            "section3_markdown": str(
-                brief_output.get("section3_markdown", "")
-            ),
-            "section4_markdown": str(
-                brief_output.get("section4_markdown", "")
-            ),
-            "introduction_report": str(
-                brief_output.get("introduction_report", "")
-            ),
-            # Preamble convergence — brief_gene mount substitutes for
+            # brief_gene owns the entire preamble: its rendered answer
+            # is the report's pre-analysis block verbatim (only the H1
+            # title is swapped). deep_genome appends its
+            # ``## Bioinformatic Analysis`` body from synthesize_node
+            # onward, so the section / introduction / homology fields
+            # brief_gene uses internally are no longer projected.
+            "preamble": _deep_genome_preamble(brief_output, gene_id),
+            # Preamble convergence — the brief_gene mount substitutes for
             # the legacy 4-branch preamble + part1_node aggregator
             # entirely, so we satisfy the experiment_node barrier
             # contribution that part1_node used to write (the analyst

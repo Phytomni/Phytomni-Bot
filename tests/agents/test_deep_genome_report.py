@@ -5,7 +5,7 @@
 """Unit tests for DeepGenome report-synthesis pure helpers.
 
 Pins the prompt-feeding helpers downstream LLM nodes depend on:
-_state_gene_string at module scope, and _part12_profile /
+_state_gene_string at module scope, and _preamble_and_analysis /
 _experiment_prompt / _summary_source_content on DeepGenomeReportMixin.
 A test-only subclass exposes the protected helpers under public names
 so the assertions stay inside the class hierarchy.
@@ -35,7 +35,7 @@ pytestmark = pytest.mark.unit
 class _ReportProbe(DeepGenomeReportMixin):
     """Test-only mixin host exposing protected helpers via public names.
 
-    The mixin's ``_part12_profile`` / ``_experiment_prompt`` /
+    The mixin's ``_preamble_and_analysis`` / ``_experiment_prompt`` /
     ``_summary_source_content`` helpers are protected because production
     code only calls them from sibling node methods on the same class.
     Tests exercise them through this subclass so the calls stay inside
@@ -46,9 +46,9 @@ class _ReportProbe(DeepGenomeReportMixin):
         """Wire the single config attribute the protected helpers read."""
         self.deep_genome_config = DeepGenomeConfig()
 
-    def part12_profile(self, state: DeepGenomeState) -> str:
-        """Public proxy for ``_part12_profile``."""
-        return self._part12_profile(state)
+    def preamble_and_analysis(self, state: DeepGenomeState) -> str:
+        """Public proxy for ``_preamble_and_analysis``."""
+        return self._preamble_and_analysis(state)
 
     def experiment_prompt(self, state: DeepGenomeState, content: str) -> str:
         """Public proxy for ``_experiment_prompt``."""
@@ -65,9 +65,13 @@ def _state(**overrides: Any) -> DeepGenomeState:
         "gene_id": "Os01g0177400",
         "species_code": "osa",
         "gene_annotation": {"gene_string": "Os01g0177400 (display)"},
-        "part1_report": "part1-body",
-        "synthesize_report": "part2-body",
-        "introduction_report": "intro",
+        "preamble": (
+            "# Deep Genome Analysis of Os01g0177400\n\n"
+            "## Gene Profiles\n\nprofile-body"
+        ),
+        "synthesize_report": (
+            "## Bioinformatic Analysis and Molecular Design\n\nanalysis-body"
+        ),
         "discussion_report": "disc",
         "experiment_report": "exp",
         "protocol_report": "proto",
@@ -92,25 +96,22 @@ def test_state_gene_string_defaults_to_empty_on_missing_annotation() -> None:
     assert _state_gene_string(_state(gene_annotation={})) == ""
 
 
-def test_part12_profile_composes_part1_and_synthesize() -> None:
-    """``_part12_profile`` concatenates the part1 + part2 report bodies."""
-    assert _ReportProbe().part12_profile(_state()) == (
-        "## Gene Profiles\n\npart1-body\n\npart2-body\n\n"
-    )
+def test_preamble_and_analysis_joins_preamble_and_synthesize() -> None:
+    """``_preamble_and_analysis`` joins the preamble + analysis bodies."""
+    state = _state(preamble="PRE", synthesize_report="ANALYSIS")
+    assert _ReportProbe().preamble_and_analysis(state) == "PRE\n\nANALYSIS"
 
 
-def test_part12_profile_coerces_none_synthesize_to_empty() -> None:
-    """A None synthesize_report still produces a well-formed profile.
+def test_preamble_and_analysis_coerces_none_synthesize_to_empty() -> None:
+    """A None synthesize_report still produces a well-formed head.
 
     The dispatch barrier returns {} when analysis branches have not
     completed, which leaves synthesize_report empty/None. The report
     must keep generating instead of templating a literal "None" string.
     """
-    state = _state(synthesize_report=None)
+    state = _state(preamble="PRE", synthesize_report=None)
 
-    assert _ReportProbe().part12_profile(state) == (
-        "## Gene Profiles\n\npart1-body\n\n\n\n"
-    )
+    assert _ReportProbe().preamble_and_analysis(state) == "PRE\n\n"
 
 
 def test_experiment_prompt_threads_state_and_content_to_get_prompt(
@@ -145,8 +146,7 @@ def test_experiment_prompt_threads_state_and_content_to_get_prompt(
 def test_summary_source_content_uses_analyst_layout_by_default() -> None:
     """When use_analyst_agent stays True, all six sections render in order."""
     assert _ReportProbe().summary_source_content(_state()) == (
-        "# Deep Genome Analysis of Os01g0177400\n\n"
-        "intro\n\ncombined\n\n"
+        "combined\n\n"
         "## Recommended experiments\n\n"
         "proto\n\nexp\n\n"
         "## Discussion\n\ndisc\n\n"
@@ -239,6 +239,11 @@ def test_run_follow_up_node_persists_assembled_report_to_task_row(
     state = _state(
         task_id="dg-task-1",
         report_dir=str(report_dir),
+        part12_combined=(
+            "# Deep Genome Analysis of Os01g0177400\n\n"
+            "## Gene Profiles\n\nprofile\n\n"
+            "## Bioinformatic Analysis and Molecular Design\n\nanalysis"
+        ),
         summary_report="conclusion",
         follow_up_questions=[],
     )
@@ -248,6 +253,7 @@ def test_run_follow_up_node_persists_assembled_report_to_task_row(
     assert (report_dir / "Os01g0177400_report.md").exists()
     persisted = mgr.get_task_final_report("dg-task-1")
     assert persisted is not None
+    # The preamble title (carried by part12_combined) reaches the report.
     assert "# Deep Genome Analysis of Os01g0177400" in persisted
     assert "## Follow up questions:" in persisted
     assert "Q1?" in persisted

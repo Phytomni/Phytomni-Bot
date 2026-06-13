@@ -224,28 +224,25 @@ def _state_gene_string(state: "DeepGenomeState") -> str:
 def _assemble_final_report(state: "DeepGenomeState") -> str:
     """Concatenate all report sections into one markdown string.
 
-    Branches on ``use_analyst_agent`` to pick between the full
-    seven-section layout (intro + part12 + recommended experiments
-    + discussion + conclusion) and the analyst-off three-section
-    layout (part12 + discussion + conclusion). Extracted from
-    ``_run_follow_up_node`` to keep that node within pylint's
-    R0914 too-many-locals cap.
+    The ``part12_combined`` head already carries the verbatim brief_gene
+    preamble (title + introduction + ``## Gene Profiles``) followed by
+    the ``## Bioinformatic Analysis`` body, so this only appends the
+    recommended-experiment, discussion, and conclusion sections.
+    Branches on ``use_analyst_agent`` to drop the experiment block on the
+    analyst-off layout. Extracted from ``_run_follow_up_node`` to keep
+    that node within pylint's R0914 too-many-locals cap.
     """
-    gene_id = state["gene_id"]
     use_analyst = state.get("config_params", {}).get("use_analyst_agent", True)
     part12 = state.get("part12_combined") or ""
     discussion = state.get("discussion_report", "")
     summary = state.get("summary_report", "")
     if not use_analyst:
         return (
-            f"# Deep Genome Analysis of {gene_id}\n\n"
             f"{part12}\n\n"
             f"## Discussion\n\n{discussion}\n\n"
             f"## Conclusion and Future Outlook\n\n{summary}\n\n"
         )
     return (
-        f"# Deep Genome Analysis of {gene_id}\n\n"
-        f"{state.get('introduction_report', '')}\n\n"
         f"{part12}\n\n"
         f"## Recommended experiments\n\n"
         f"{state.get('protocol_report', '')}\n\n"
@@ -386,8 +383,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         experiments using LLM. It also retrieves detailed protocols.
 
         Args:
-            state: Current workflow state containing part1_report and
-                synthesize_report.
+            state: Current workflow state containing the verbatim
+                preamble and synthesize_report.
 
         Returns:
             Dict with experiment_report, part12_combined, and
@@ -409,7 +406,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             "designing recommended experiments"
         )
 
-        part12_str = self._part12_profile(state)
+        part12_str = self._preamble_and_analysis(state)
         experiment_response = await self._dispatch_chat(
             self._experiment_prompt(state, part12_str)
         )
@@ -424,11 +421,20 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             "report_triggered": True,
         }
 
-    def _part12_profile(self: Any, state: DeepGenomeState) -> str:
-        """Combine basic and deep analysis profiles for report prompts."""
-        part1_str = state.get("part1_report", "")
-        part2_str = str(state.get("synthesize_report", "") or "")
-        return f"## Gene Profiles\n\n{part1_str}\n\n{part2_str}\n\n"
+    def _preamble_and_analysis(self: Any, state: DeepGenomeState) -> str:
+        """Join the verbatim brief_gene preamble with the analysis body.
+
+        ``preamble`` carries the title + introduction + ``## Gene
+        Profiles`` block (produced by brief_gene); ``synthesize_report``
+        carries the ``## Bioinformatic Analysis and Molecular Design``
+        body. Their concatenation is the report content through the
+        analysis, reused as the prompt context for the experiment /
+        protocol / discussion / summary nodes and as the head of the
+        assembled final report.
+        """
+        preamble = str(state.get("preamble", "") or "")
+        analysis = str(state.get("synthesize_report", "") or "")
+        return f"{preamble}\n\n{analysis}"
 
     def _experiment_prompt(
         self: Any,
@@ -523,7 +529,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             Dict with discussion_report.
         """
         logger.info("Generating discussion")
-        gene_id = state["gene_id"]
         species_code = state["species_code"]
         gene_annotation = state.get("gene_annotation", {})
         gene_string = gene_annotation.get("gene_string", "")
@@ -532,19 +537,18 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             "use_analyst_agent", True
         )
 
-        # Build content string
+        # Build content string. ``part12_str`` (the part12_combined head)
+        # already carries the preamble title + introduction + profiles +
+        # analysis, so only the recommended-experiment block is appended.
         part12_str = state.get("part12_combined") or ""
         if use_analyst:
             protocol_report = state.get("protocol_report", "")
             experiment_report = state.get("experiment_report", "")
-            introduction_report = state.get("introduction_report", "")
-            part0123_str = (
-                f"# Deep Genome Analysis of {gene_id}\n\n"
-                f"{introduction_report}\n\n{part12_str}\n\n"
+            content = (
+                f"{part12_str}\n\n"
                 f"## Recommended experiments\n\n{protocol_report}\n\n"
                 f"{experiment_report}\n\n"
             )
-            content = part0123_str
         else:
             content = part12_str
 
@@ -605,25 +609,19 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
     def _summary_source_content(self: Any, state: DeepGenomeState) -> str:
         """Build the source report content for final summary generation.
 
-        M11 cleanup: the M5-era ``brief_response`` prefix block is
-        removed. brief_gene now writes ``introduction_report``
-        directly to state via the mount IO projection, so this
-        helper reads ``state["introduction_report"]`` as the
-        introduction body (no LLM call here, no message_content
-        unwrap of brief_response).
+        ``part12_combined`` already carries the verbatim brief_gene
+        preamble (title + introduction + ``## Gene Profiles``) plus the
+        analysis body, so this concatenates it with the
+        recommended-experiment and discussion sections without
+        re-emitting a title or introduction.
         """
         part12_str = state.get("part12_combined") or ""
         discussion_report = state.get("discussion_report", "")
-        introduction_report = state.get("introduction_report", "")
         if not state.get("config_params", {}).get("use_analyst_agent", True):
-            # Matches pre-M5 behavior: no intro on the analyst-off path.
-            return (
-                f"{part12_str}\n\n" f"## Discussion\n\n{discussion_report}\n\n"
-            )
+            return f"{part12_str}\n\n## Discussion\n\n{discussion_report}\n\n"
 
         return (
-            f"# Deep Genome Analysis of {state['gene_id']}\n\n"
-            f"{introduction_report}\n\n{part12_str}\n\n"
+            f"{part12_str}\n\n"
             "## Recommended experiments\n\n"
             f"{state.get('protocol_report', '')}\n\n"
             f"{state.get('experiment_report', '')}\n\n"

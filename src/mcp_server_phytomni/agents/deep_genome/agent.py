@@ -134,21 +134,17 @@ class DeepGenomeState(TypedDict):
             MapMan bins.
         skip_synthesize: Flag to skip synthesis node in test mode.
         knowledge_context: Context data from knowledge agent retrieval.
-        orthologs_data: Orthologous gene list with species and gene symbols.
-        paralogs_data: Paralogous gene list with species and gene symbols.
-        interaction_data: Protein interaction gene list with species and
-            symbols.
+        preamble: Verbatim brief_gene preamble (title swapped to
+            deep_genome) — the report's pre-analysis block.
         orthologs_summary: Formatted string summarizing ortholog gene network.
         paralogs_summary: Formatted string summarizing paralog gene network.
         interaction_summary: Formatted string summarizing interaction network.
-        part1_report: Aggregated basic gene network profile report.
         analysis_tasks: Analysis task dictionaries for parallel execution.
         raw_analyst_data: Raw data from analyst tasks.
         analyst_summaries: Processed summaries from analyst tasks.
         synthesize_report: Aggregated deep analysis synthesis report.
         experiment_report: Recommended experiments section.
         protocol_report: Step-by-step experimental protocols section.
-        introduction_report: Report introduction section.
         discussion_report: Report discussion section.
         summary_report: Report summary and conclusion section.
         follow_up_questions: List of suggested follow-up research questions.
@@ -164,13 +160,9 @@ class DeepGenomeState(TypedDict):
     gene_annotation: Dict[str, Any]
     skip_synthesize: bool
     knowledge_context: Dict[str, Any]
-    orthologs_data: Dict[str, Any]
-    paralogs_data: Dict[str, Any]
-    interaction_data: Dict[str, Any]
     orthologs_summary: Optional[str]
     paralogs_summary: Optional[str]
     interaction_summary: Optional[str]
-    part1_report: Optional[str]
     task_submit_sleep: int
     analysis_tasks: List[Dict[str, Any]]
     raw_analyst_data: Annotated[Dict[str, Any], update_dict]
@@ -178,20 +170,14 @@ class DeepGenomeState(TypedDict):
     synthesize_report: Optional[str]
     experiment_report: Optional[str]
     protocol_report: Optional[str]
-    introduction_report: Optional[str]
     discussion_report: Optional[str]
     summary_report: Optional[str]
     follow_up_questions: Optional[List[str]]
-    # M11 — brief_gene now owns the preamble (X3b A architecture).
-    # The mount IO projection (deep_genome/brief_gene_mount.py)
-    # writes these four section markdowns + introduction_report
-    # verbatim from brief_gene's BriefGeneOutput. _summary_source_content
-    # in report.py consumes them directly; the M5-era ``brief_response``
-    # prefix path is removed in the same commit.
-    section1_markdown: str
-    section2_markdown: str
-    section3_markdown: str
-    section4_markdown: str
+    # brief_gene owns the entire preamble: the mount projects its
+    # rendered answer (title swapped to deep_genome) into ``preamble``,
+    # which report.py consumes verbatim as the report's pre-analysis
+    # block.
+    preamble: Optional[str]
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
@@ -343,12 +329,11 @@ class DeepGenomeAgents(
         # interaction + their annotation sub-summaries + part1_node
         # aggregator + deep_genome's own ``_run_report_introduction``).
         # The mount IO projection writes ``gene_annotation`` +
-        # ``knowledge_context`` + ``orthologs_data`` + ``paralogs_data``
-        # + ``interaction_data`` + ``section1-4_markdown`` +
-        # ``introduction_report`` + ``experiment_completed_branches: 1``
-        # (the +1 the legacy ``part1_node`` used to write so the
-        # experiment_node 2-source barrier still fires once
-        # ``synthesize_node`` adds the analyst-side +1).
+        # ``knowledge_context`` + the verbatim ``preamble`` +
+        # ``experiment_completed_branches: 1`` (the +1 the legacy
+        # ``part1_node`` used to write so the experiment_node 2-source
+        # barrier still fires once ``synthesize_node`` adds the
+        # analyst-side +1).
         workflow.add_node(
             "knowledge_node",
             self.make_brief_gene_mount_node(self._agents.brief_gene_app),
@@ -383,8 +368,8 @@ class DeepGenomeAgents(
         )
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
         # The synthesize barrier no longer routes to introduction_node
-        # (deleted — brief_gene mount provides introduction_report
-        # directly); the remaining targets are the synthesize-node
+        # (deleted — brief_gene's preamble already carries the
+        # introduction); the remaining targets are the synthesize-node
         # self-loop while waiting and experiment_node when the
         # analyst-side data is ready.
         workflow.add_conditional_edges(
@@ -399,8 +384,8 @@ class DeepGenomeAgents(
             ["experiment_node", "protocol_node"],
         )
         # protocol → discussion → summary → follow_up (introduction_node
-        # removed; introduction_report comes from mount and is read
-        # directly by _summary_source_content for downstream prompts).
+        # removed; the introduction is part of the verbatim ``preamble``
+        # the mount projects).
         workflow.add_edge("protocol_node", "discussion_node")
         workflow.add_edge("discussion_node", "summary_node")
         workflow.add_edge("summary_node", "follow_up_node")
@@ -451,20 +436,16 @@ class DeepGenomeAgents(
             "part1_completed_branches": 0,
             "experiment_completed_branches": 0,
             "knowledge_context": {},
-            "orthologs_data": {},
-            "paralogs_data": {},
-            "interaction_data": {},
+            "preamble": None,
             "orthologs_summary": None,
             "paralogs_summary": None,
             "interaction_summary": None,
-            "part1_report": None,
             "analysis_tasks": [],
             "raw_analyst_data": {},
             "analyst_summaries": {},
             "synthesize_report": None,
             "experiment_report": None,
             "protocol_report": None,
-            "introduction_report": None,
             "discussion_report": None,
             "summary_report": None,
             "follow_up_questions": [],
