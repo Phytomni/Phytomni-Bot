@@ -20,10 +20,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene.analytical_sections import (
-    _run_section1_node,
-    _run_section2_node,
-    _run_section3_node,
-    _run_section4_node,
+    _run_section_application_node,
+    _run_section_cloning_node,
+    _run_section_discovery_node,
+    _run_section_functional_node,
 )
 
 pytestmark = pytest.mark.agent
@@ -58,7 +58,7 @@ def _mock_chat_response(text: str) -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_section1_node_writes_markdown_and_barrier() -> None:
+async def test_section_discovery_node_writes_markdown_and_barrier() -> None:
     """§1 Discovery node writes section1_markdown + barrier += 1."""
     mock_chat = AsyncMock(
         return_value=_mock_chat_response("### 1. Gene Discovery\n\nContent.")
@@ -67,14 +67,14 @@ async def test_section1_node_writes_markdown_and_barrier() -> None:
         "mcp_server_phytomni.agents.brief_gene.analytical_sections.phyto_chat",
         new=mock_chat,
     ):
-        delta = await _run_section1_node(cast(Any, _state()))
+        delta = await _run_section_discovery_node(cast(Any, _state()))
 
     assert delta["section1_markdown"].startswith("### 1. Gene Discovery")
     assert delta["gene_profile_completed_branches"] == 1
 
 
 @pytest.mark.asyncio
-async def test_section2_node_writes_markdown_and_barrier() -> None:
+async def test_section_cloning_node_writes_markdown_and_barrier() -> None:
     """§2 Cloning node writes section2_markdown + barrier += 1."""
     mock_chat = AsyncMock(
         return_value=_mock_chat_response("### 2. Gene Cloning\n\nContent.")
@@ -83,14 +83,14 @@ async def test_section2_node_writes_markdown_and_barrier() -> None:
         "mcp_server_phytomni.agents.brief_gene.analytical_sections.phyto_chat",
         new=mock_chat,
     ):
-        delta = await _run_section2_node(cast(Any, _state()))
+        delta = await _run_section_cloning_node(cast(Any, _state()))
 
     assert delta["section2_markdown"].startswith("### 2. Gene Cloning")
     assert delta["gene_profile_completed_branches"] == 1
 
 
 @pytest.mark.asyncio
-async def test_section3_node_writes_markdown_and_barrier() -> None:
+async def test_section_functional_node_writes_markdown_and_barrier() -> None:
     """§3 Functional node writes section3_markdown + barrier += 1."""
     mock_chat = AsyncMock(
         return_value=_mock_chat_response(
@@ -101,14 +101,14 @@ async def test_section3_node_writes_markdown_and_barrier() -> None:
         "mcp_server_phytomni.agents.brief_gene.analytical_sections.phyto_chat",
         new=mock_chat,
     ):
-        delta = await _run_section3_node(cast(Any, _state()))
+        delta = await _run_section_functional_node(cast(Any, _state()))
 
     assert delta["section3_markdown"].startswith("### 3. Functional Analysis")
     assert delta["gene_profile_completed_branches"] == 1
 
 
 @pytest.mark.asyncio
-async def test_section4_node_writes_markdown_and_barrier() -> None:
+async def test_section_application_node_writes_markdown_and_barrier() -> None:
     """§4 Application node writes section4_markdown + barrier += 1."""
     mock_chat = AsyncMock(
         return_value=_mock_chat_response(
@@ -119,7 +119,7 @@ async def test_section4_node_writes_markdown_and_barrier() -> None:
         "mcp_server_phytomni.agents.brief_gene.analytical_sections.phyto_chat",
         new=mock_chat,
     ):
-        delta = await _run_section4_node(cast(Any, _state()))
+        delta = await _run_section_application_node(cast(Any, _state()))
 
     assert delta["section4_markdown"].startswith(
         "### 4. Application and Evolutionary"
@@ -142,7 +142,7 @@ async def test_section_nodes_pass_homology_context_into_prompt() -> None:
         "mcp_server_phytomni.agents.brief_gene.analytical_sections.phyto_chat",
         new=mock_chat,
     ):
-        await _run_section1_node(cast(Any, _state()))
+        await _run_section_discovery_node(cast(Any, _state()))
 
     rendered_query = mock_chat.call_args.kwargs.get("user_query", "")
     # The homology_context line should mention the ortholog count

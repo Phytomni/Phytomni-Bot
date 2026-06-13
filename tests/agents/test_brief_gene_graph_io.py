@@ -233,14 +233,17 @@ def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
     before fanning into the introduction; the retired generate/chat
     answer path is gone.
     """
+    section_nodes = (
+        "section_discovery_node",
+        "section_cloning_node",
+        "section_functional_node",
+        "section_application_node",
+    )
     graph = BriefGeneAgent().app.get_graph()
     nodes = set(graph.nodes)
     for node in (
         "fetch_homology_interactions_node",
-        "section1_node",
-        "section2_node",
-        "section3_node",
-        "section4_node",
+        *section_nodes,
         "introduction_node",
         "render_node",
     ):
@@ -251,8 +254,7 @@ def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
     edges = {(edge.source, edge.target) for edge in graph.edges}
     assert ("query_judge_node", "fetch_homology_interactions_node") in edges
     assert ("fetch_annotation_node", "retrieve_prep_tasks_node") in edges
-    for index in range(1, 5):
-        section = f"section{index}_node"
+    for section in section_nodes:
         assert ("retrieve_reduce_node", section) in edges
         assert ("fetch_homology_interactions_node", section) in edges
         assert (section, "introduction_node") in edges

@@ -34,10 +34,10 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.sql import sql_literal
 from .analytical_sections import (
-    _run_section1_node,
-    _run_section2_node,
-    _run_section3_node,
-    _run_section4_node,
+    _run_section_application_node,
+    _run_section_cloning_node,
+    _run_section_discovery_node,
+    _run_section_functional_node,
 )
 from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
 from .homology import _run_fetch_homology_interactions_node
@@ -147,10 +147,16 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             _run_fetch_homology_interactions_node,
         )
         self._register_retrieve_nodes(workflow)
-        workflow.add_node("section1_node", _run_section1_node)
-        workflow.add_node("section2_node", _run_section2_node)
-        workflow.add_node("section3_node", _run_section3_node)
-        workflow.add_node("section4_node", _run_section4_node)
+        workflow.add_node(
+            "section_discovery_node", _run_section_discovery_node
+        )
+        workflow.add_node("section_cloning_node", _run_section_cloning_node)
+        workflow.add_node(
+            "section_functional_node", _run_section_functional_node
+        )
+        workflow.add_node(
+            "section_application_node", _run_section_application_node
+        )
         workflow.add_node("introduction_node", _run_introduction_node)
         workflow.add_node("render_node", _render_preamble_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
@@ -180,10 +186,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         )
         workflow.add_edge("fetch_annotation_node", retrieve_in)
         for section in (
-            "section1_node",
-            "section2_node",
-            "section3_node",
-            "section4_node",
+            "section_discovery_node",
+            "section_cloning_node",
+            "section_functional_node",
+            "section_application_node",
         ):
             workflow.add_edge(retrieve_out, section)
             workflow.add_edge("fetch_homology_interactions_node", section)

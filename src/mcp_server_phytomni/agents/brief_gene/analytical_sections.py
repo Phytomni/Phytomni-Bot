@@ -4,11 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Four parallel section LLM nodes for the brief_gene preamble fan-out.
 
-``_run_section{1-4}_node`` each call ``phyto_chat`` with a dedicated
-section prompt (discovery / cloning / functional / application), write
-``section{1-4}_markdown`` to state, and increment
-``gene_profile_completed_branches`` by 1 so the ``_build_graph``
-barrier fires once all four sections complete.
+The four ``_run_section_<role>_node`` functions (discovery / cloning /
+functional / application) each call ``phyto_chat`` with a dedicated
+section prompt, write the matching ordered ``section{1-4}_markdown``
+slot to state, and increment ``gene_profile_completed_branches`` by 1
+so the ``_build_graph`` barrier fires once all four sections complete.
 """
 
 from __future__ import annotations
@@ -78,7 +78,9 @@ async def _call_section_llm(
     return message_content(response)
 
 
-async def _run_section1_node(state: BriefGeneAgentState) -> Dict[str, Any]:
+async def _run_section_discovery_node(
+    state: BriefGeneAgentState,
+) -> Dict[str, Any]:
     """§1 Discovery LLM call.
 
     Writes ``section1_markdown`` (the LLM-produced
@@ -94,7 +96,9 @@ async def _run_section1_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     }
 
 
-async def _run_section2_node(state: BriefGeneAgentState) -> Dict[str, Any]:
+async def _run_section_cloning_node(
+    state: BriefGeneAgentState,
+) -> Dict[str, Any]:
     """§2 Cloning LLM call.
 
     Writes ``section2_markdown`` (the LLM-produced
@@ -109,7 +113,9 @@ async def _run_section2_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     }
 
 
-async def _run_section3_node(state: BriefGeneAgentState) -> Dict[str, Any]:
+async def _run_section_functional_node(
+    state: BriefGeneAgentState,
+) -> Dict[str, Any]:
     """§3 Functional LLM call.
 
     Writes ``section3_markdown`` (the LLM-produced
@@ -124,7 +130,9 @@ async def _run_section3_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     }
 
 
-async def _run_section4_node(state: BriefGeneAgentState) -> Dict[str, Any]:
+async def _run_section_application_node(
+    state: BriefGeneAgentState,
+) -> Dict[str, Any]:
     """§4 Application LLM call.
 
     Writes ``section4_markdown`` (the LLM-produced
