@@ -21,7 +21,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..config.defaults import ApiConfig
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .task_reconcile import reconcile_task
-from .terminal_artifacts import collect_terminal_artifacts
+from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
+from .terminal_artifacts import (
+    ArtifactLister,
+    collect_terminal_artifacts,
+    enumerate_artifact_paths,
+)
 
 __all__ = [
     "RunFilter",
@@ -482,7 +487,11 @@ class RunRegistry:
         return records
 
     async def reconcile(
-        self, run_id: str, *, owner: str
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        lister: Optional[ArtifactLister] = None,
     ) -> Optional[RunRecord]:
         """Refresh a non-terminal run by polling its child tasks.
 
@@ -508,7 +517,28 @@ class RunRegistry:
         new_status = _aggregate_status([row["status"] for row in live])
         if new_status not in _TERMINAL_RUN_STATUSES:
             return self._touch_running(current, new_status)
-        return self._settle_terminal(current, new_status, live)
+        if new_status == "succeeded":
+            live = await enumerate_artifact_paths(live, lister=lister)
+        artifacts = (
+            collect_terminal_artifacts(live)
+            if new_status == "succeeded"
+            else []
+        )
+        answer = await synthesize_terminal_answer(
+            TerminalAnswerContext(
+                agent=current.spec.agent,
+                status=new_status,
+                live=live,
+                artifacts=artifacts,
+                query=current.request_info.query,
+            )
+        )
+        result_payload, error = _terminal_payload(
+            new_status, live, artifacts, answer
+        )
+        return self._settle_terminal(
+            current, new_status, result_payload, error
+        )
 
     def purge_expired(self) -> int:
         """Delete runs whose ``expires_at`` has elapsed and their tasks.
@@ -570,11 +600,11 @@ class RunRegistry:
         self,
         current: RunRecord,
         status: str,
-        live: List[Dict[str, Any]],
+        result_payload: Optional[Dict[str, Any]],
+        error: Optional[str],
     ) -> RunRecord:
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
-        result_payload, error = _terminal_payload(status, live)
         expires_at = _expires_at_for(status, now)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -635,33 +665,34 @@ def _build_list_where(
 
 
 def _terminal_payload(
-    status: str, live: List[Dict[str, Any]]
+    status: str,
+    live: List[Dict[str, Any]],
+    artifacts: List[Dict[str, Any]],
+    answer: str,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Return the (result_payload, error) pair for a terminal run.
 
-    Both branches now ship the same three structured blocks so clients
-    polling /v1/runs/{id} get a uniform shape regardless of terminal
-    direction:
+    Both branches ship the same structured blocks so clients polling
+    /v1/runs/{id} get a uniform shape regardless of terminal direction:
 
     - ``task_results``: the reconciled task rows (the existing field).
     - ``live_status``: the same reconciled rows surfaced under a stable
-      "raw live blob" namespace; future work may decouple a simplified
-      task_results view from the full live blob, so consumers wanting
-      the unredacted view bind to this key now.
-    - ``artifacts``: succeeded-task product index emitted by
-      ``collect_terminal_artifacts``; the field is always present so
-      clients can iterate it without a key-check, but it is empty on
-      the failed branch because failed tasks have no products.
+      "raw live blob" namespace.
+    - ``artifacts``: the caller-supplied succeeded-task product index
+      (empty on the failed branch); always present so clients can
+      iterate it without a key-check.
+    - ``formatted.answer``: the caller-synthesized renderable answer,
+      added only when no child wrote ``final_report`` (so deep_genome,
+      which self-persists a report, keeps its existing surface).
     """
-    artifacts = (
-        collect_terminal_artifacts(live) if status == "succeeded" else []
-    )
     payload: Dict[str, Any] = {
         "task_results": live,
         "live_status": live,
         "artifacts": artifacts,
         "final_report": _first_final_report(live),
     }
+    if payload["final_report"] is None and answer:
+        payload["formatted"] = {"answer": answer}
     if status == "succeeded":
         return payload, None
     failed = [

@@ -71,6 +71,12 @@ def _seed_async_run(
     registry.create_run(spec)
 
 
+async def _empty_lister(output_dir: str) -> list:
+    """No-op artifact lister for reconcile tests (avoids real OBS I/O)."""
+    assert isinstance(output_dir, str)
+    return []
+
+
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     """The registry creates the runs table and shared indices."""
     db = str(tmp_path / "tasks.db")
@@ -225,7 +231,9 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
 
-    record = await registry.reconcile("run-r", owner="alice")
+    record = await registry.reconcile(
+        "run-r", owner="alice", lister=_empty_lister
+    )
 
     assert record is not None
     assert record.status == "succeeded"
@@ -273,12 +281,16 @@ async def test_reconcile_surfaces_deep_genome_final_report(
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
 
-    record = await registry.reconcile("run-dg", owner="alice")
+    record = await registry.reconcile(
+        "run-dg", owner="alice", lister=_empty_lister
+    )
 
     assert record is not None
     assert record.status == "succeeded"
     assert record.result is not None
     assert record.result["final_report"] == report_md
+    # Carve-out: a child final_report suppresses the synthesized answer.
+    assert "formatted" not in record.result
 
 
 @pytest.mark.asyncio
@@ -310,11 +322,15 @@ async def test_reconcile_final_report_none_without_report(
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
 
-    record = await registry.reconcile("run-an", owner="alice")
+    record = await registry.reconcile(
+        "run-an", owner="alice", lister=_empty_lister
+    )
 
     assert record is not None
     assert record.result is not None
     assert record.result["final_report"] is None
+    # With no child report, the synthesized answer fills formatted.answer.
+    assert record.result["formatted"]["answer"]
 
 
 @pytest.mark.asyncio
@@ -433,6 +449,62 @@ def test_list_runs_filters_by_created_after(tmp_path: Path) -> None:
     )
 
     assert [r.spec.run_id for r in listing] == ["run-new"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_assembles_answer_and_paths_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First terminal poll globs + synthesizes; later polls reuse the cache."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-once", "alice", "research", "remote"),
+        ("t-1",),
+    )
+
+    async def fake(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded child with no persisted report."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/p/r1",
+            "final_report": None,
+        }
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+
+    glob_calls = {"n": 0}
+
+    async def counting_lister(output_dir: str) -> list:
+        """Count glob invocations and return a single figure path."""
+        glob_calls["n"] += 1
+        return [f"{output_dir}/fig.png"]
+
+    first = await registry.reconcile(
+        "run-once", owner="alice", lister=counting_lister
+    )
+
+    assert first is not None
+    assert first.status == "succeeded"
+    assert first.result is not None
+    assert first.result["formatted"]["answer"].startswith(
+        "**Analysis complete"
+    )
+    assert first.result["artifacts"][0]["paths"] == ["/obs/p/r1/fig.png"]
+
+    second = await registry.reconcile(
+        "run-once", owner="alice", lister=counting_lister
+    )
+
+    assert second is not None
+    assert second.result is not None
+    assert (
+        second.result["formatted"]["answer"]
+        == first.result["formatted"]["answer"]
+    )
+    assert glob_calls["n"] == 1  # settle-once: not re-globbed
 
 
 def test_list_runs_filters_by_created_before(tmp_path: Path) -> None:
