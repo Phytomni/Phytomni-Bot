@@ -138,7 +138,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TEXT,
     input_fingerprint TEXT,
     task_log TEXT,
-    final_report TEXT
+    final_report TEXT,
+    degraded_reason TEXT
 )
 """
 
@@ -159,6 +160,10 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
     ),
     ("task_log", "ALTER TABLE tasks ADD COLUMN task_log TEXT"),
     ("final_report", "ALTER TABLE tasks ADD COLUMN final_report TEXT"),
+    (
+        "degraded_reason",
+        "ALTER TABLE tasks ADD COLUMN degraded_reason TEXT",
+    ),
 )
 
 # Status values that disqualify a prior row from being reused via
@@ -537,6 +542,63 @@ class TaskManager:
         try:
             cursor = conn.execute(
                 "SELECT final_report FROM tasks WHERE task_id = ?",
+                (task_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if row is None or row[0] is None:
+            return None
+        return row[0]
+
+    def set_task_degraded(self, task_id: str, reason: str) -> bool:
+        """Persist a redacted degraded reason on the task row.
+
+        DeepGenome runs its report workflow in the background; when the
+        brief_gene mount degrades, the final report node writes the
+        redacted reason here so the non-blocking poll path
+        (GetTaskStatus / run-aggregate) can surface ``degraded`` without
+        re-running the workflow. A single targeted ``UPDATE`` (never the
+        ``record`` upsert) so a later ``update_task`` status flip cannot
+        wipe it. The caller redacts before persisting so the stored
+        string is already client-safe.
+
+        Args:
+            task_id: The task id to update.
+            reason: Redacted, client-safe degradation reason.
+
+        Returns:
+            True if a row was updated, False if the task_id is unknown.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "UPDATE tasks SET degraded_reason = ? WHERE task_id = ?",
+                (reason, task_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_task_degraded(self, task_id: str) -> Optional[str]:
+        """Read the degraded reason, or None when the run is healthy.
+
+        Returns the persisted redacted reason for a degraded task, or
+        None when the task does not exist or the column is NULL (every
+        healthy run and every non-DeepGenome task). A non-blocking single
+        SELECT — no polling or waiting.
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            The redacted reason string if degraded, otherwise None.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT degraded_reason FROM tasks WHERE task_id = ?",
                 (task_id,),
             )
             row = cursor.fetchone()
