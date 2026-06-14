@@ -359,11 +359,11 @@ TypedDicts in
 `evo_test_analysis` is now a thin wrapper that delegates to the
 compiled subgraph via `ainvoke_graph`.
 
-| TypedDict         | Required keys                 | Optional keys                                                                     |
-| ----------------- | ----------------------------- | --------------------------------------------------------------------------------- |
-| `EvolutionInput`  | `query`, `species`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`                                           |
-| `EvolutionOutput` | —                             | `evolution_agents_task`                                                           |
-| `EvolutionState`  | `query`, `species`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`, `target_taxids`, `evolution_agents_task` |
+| TypedDict         | Required keys                      | Optional keys                                                                     |
+| ----------------- | ---------------------------------- | --------------------------------------------------------------------------------- |
+| `EvolutionInput`  | `query`, `species_code`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`                                           |
+| `EvolutionOutput` | —                                  | `evolution_agents_task`                                                           |
+| `EvolutionState`  | `query`, `species_code`, `gene_id` | `batch`, `enable_auto_select`, `kwargs`, `target_taxids`, `evolution_agents_task` |
 
 The graph compiles into two nodes wired with one conditional edge:
 
