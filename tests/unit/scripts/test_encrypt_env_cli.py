@@ -159,3 +159,31 @@ def test_cli_rejects_non_utf8_input(tmp_path):
     assert result.returncode == 4
     assert "not UTF-8" in result.stderr
     assert not out.exists()
+
+
+def test_cli_rejects_bom_input(tmp_path):
+    """Verify a UTF-8 BOM input exits with code 4 and a clear message.
+
+    Old Windows editors save "UTF-8" as UTF-8-with-BOM, which decodes
+    cleanly but corrupts the first env key. The CLI must reject it at
+    build time with the same exit code 4 as a non-UTF-8 input.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+    """
+    src = tmp_path / ".env"
+    src.write_bytes(b"\xef\xbb\xbfBASE_URL=x\n")
+    out = tmp_path / ".env.encrypted"
+
+    result = _run(
+        "--input",
+        str(src),
+        "--license-key",
+        LICENSE,
+        "--output",
+        str(out),
+    )
+
+    assert result.returncode == 4
+    assert "BOM" in result.stderr
+    assert not out.exists()

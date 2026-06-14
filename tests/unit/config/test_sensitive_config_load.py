@@ -13,11 +13,17 @@ plaintext-wins-over-encrypted regression.
 import os
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from mcp_server_phytomni.config import (
     SecretEnvelopeError,
     encrypt_env_file,
     settings,
+)
+from mcp_server_phytomni.config.secret_envelope import (
+    MAGIC,
+    VERSION,
+    derive_key,
 )
 
 pytestmark = pytest.mark.unit
@@ -192,6 +198,80 @@ def test_wrong_license_key_propagates(tmp_path, monkeypatch):
     assert not settings.ENV_PATH.exists()
 
     with pytest.raises(SecretEnvelopeError):
+        settings.load_env_file()
+
+
+def _seal_raw_to_file(tmp_path, raw, license_key=LICENSE):
+    """Seal raw bytes into an envelope file, bypassing UTF-8 validation.
+
+    ``encrypt_env_file`` now rejects non-UTF-8 / BOM input, so a test
+    that needs an already-sealed bad-encoding envelope on disk builds
+    the blob directly from raw bytes with a deterministic salt and
+    nonce (mirroring ``_seal_raw_bytes`` in ``test_secret_envelope``).
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        raw: Plaintext bytes to seal verbatim.
+        license_key: License key used to derive the AES key.
+
+    Returns:
+        Path to the written .env.encrypted blob.
+    """
+    salt = b"\x00" * 16
+    nonce = b"\x01" * 12
+    key = derive_key(license_key, salt)
+    sealed = AESGCM(key).encrypt(nonce, raw, None)
+    blob = MAGIC + bytes([VERSION]) + salt + nonce + sealed
+    path = tmp_path / ".env.encrypted"
+    path.write_bytes(blob)
+    return path
+
+
+def test_load_env_file_rejects_sealed_non_utf8(tmp_path, monkeypatch):
+    """Verify load_env_file surfaces a clear error on sealed GBK bytes.
+
+    The customer incident was a startup-time load of a Windows-sealed
+    non-UTF-8 ``.env.encrypted``. A correct-key decrypt must surface a
+    ``SecretEnvelopeError`` naming the encoding rather than leaking a
+    raw ``UnicodeDecodeError`` out of ``load_env_file``.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal_raw_to_file(tmp_path, "BASE_URL=请\n".encode("gbk"))
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
+
+    with pytest.raises(SecretEnvelopeError, match="not UTF-8"):
+        settings.load_env_file()
+
+
+def test_load_env_file_rejects_sealed_bom(tmp_path, monkeypatch):
+    """Verify load_env_file rejects a sealed BOM-prefixed envelope.
+
+    A UTF-8 BOM passes ``bytes.decode('utf-8')`` but silently corrupts
+    the first env key, so the startup loader must reject it explicitly
+    with a clear ``SecretEnvelopeError`` rather than booting with a
+    mangled first variable.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    blob = _seal_raw_to_file(tmp_path, b"\xef\xbb\xbfBASE_URL=x\n")
+    monkeypatch.setattr(settings, "ENCRYPTED_ENV_PATH", blob)
+    monkeypatch.setattr(settings, "ENV_PATH", tmp_path / "absent.env")
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
+    monkeypatch.setenv("PHYTOMNI_LICENSE_KEY", LICENSE)
+    # Precondition: reach the encrypted fallback, not plaintext.
+    assert not settings.ENV_PATH.exists()
+
+    with pytest.raises(SecretEnvelopeError, match="BOM"):
         settings.load_env_file()
 
 
