@@ -17,6 +17,7 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import design_mount
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
@@ -154,6 +155,18 @@ async def test_mount_projects_input_and_finalizes() -> None:
     assert app.captured["input"]["species_code"] == "osa"
     assert out["ok"][0] == "osa"
     assert out["ok"][1] == "g1"
+
+
+def test_deep_genome_graph_registers_design_node() -> None:
+    """The compiled deep_genome graph exposes the design_node.
+
+    Constructed offline the same way ``test_agent_smoke`` builds the
+    agent (``knowledge_agent=None`` / ``analyst_agent=None``); the real
+    ``_build_graph`` runs, so a missing registration fails here.
+    """
+    agents = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
+    nodes = set(agents.app.get_graph().nodes)
+    assert "design_node" in nodes
 
 
 async def test_mount_degrades_on_fault() -> None:

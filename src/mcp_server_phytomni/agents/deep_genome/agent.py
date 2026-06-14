@@ -43,11 +43,13 @@ from ..analyst.agent import (
     AnalystAgent,
 )
 from ..brief_gene.core import BriefGeneAgent
+from ..design.agent import DigitalDesignAgents
 from ..evolution.builder import build_evolution_graph
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
+from .design_mount import make_design_mount_node
 from .dispatch import DeepGenomeDispatchMixin
 from .evolution_mount import make_evolution_mount_node
 from .formatting import network_to_string
@@ -224,6 +226,10 @@ class DeepGenomeAgentDeps(NamedTuple):
             ``DeepGenomeAgents`` populates it via ``_replace`` in
             ``__init__`` so the mount factory closes over a real
             ``CompiledStateGraph`` for xray expansion.
+        design_app: Compiled standalone DigitalDesignAgents subgraph
+            mounted as ``design_node``. ``None`` (default) defers
+            construction; ``DeepGenomeAgents`` populates it via
+            ``_replace`` in ``__init__``.
     """
 
     knowledge_agent: KnowledgeAgent
@@ -231,6 +237,7 @@ class DeepGenomeAgentDeps(NamedTuple):
     brief_gene_app: Any = None
     knowledge_app: Any = None
     evolution_app: Any = None
+    design_app: Any = None
 
 
 class DeepGenomeAgents(
@@ -334,6 +341,7 @@ class DeepGenomeAgents(
             ).app,
             knowledge_app=knowledge_app,
             evolution_app=build_evolution_graph(),
+            design_app=DigitalDesignAgents().app,
         )
         self.app = self._build_graph()
 
@@ -363,6 +371,13 @@ class DeepGenomeAgents(
         # xray-expandable node; ``_route_analyst_tasks`` fans the
         # evolution task here instead of to ``analyst_node``.
         workflow.add_node(
+            "design_node",
+            make_design_mount_node(
+                self._agents.design_app,
+                self.finalize_design_result,
+            ),
+        )
+        workflow.add_node(
             "evolution_node",
             make_evolution_mount_node(
                 self._agents.evolution_app,
@@ -390,13 +405,16 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             "prepare_tasks_node",
             self._route_analyst_tasks,
-            ["analyst_node", "evolution_node"],
+            ["analyst_node", "evolution_node", "design_node"],
         )
         workflow.add_conditional_edges(
             "analyst_node", self._route_after_analyst, [END]
         )
         workflow.add_conditional_edges(
             "evolution_node", self._route_after_analyst, [END]
+        )
+        workflow.add_conditional_edges(
+            "design_node", self._route_after_analyst, [END]
         )
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
         # The synthesize barrier no longer routes to introduction_node
