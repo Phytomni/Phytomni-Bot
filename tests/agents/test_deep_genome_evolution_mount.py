@@ -163,3 +163,51 @@ def test_deep_genome_graph_registers_evolution_node() -> None:
     agents = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
     nodes = set(agents.app.get_graph().nodes)
     assert "evolution_node" in nodes
+
+
+async def test_mount_node_with_real_finalize_projects_summary() -> None:
+    """The mount node + the real finalize compose end to end (faked app).
+
+    Drives ``make_evolution_mount_node`` with the actual
+    ``finalize_evolution_result`` (bound to a stubbed download/summary
+    host) so the EvolutionInput projection and the analyst-branch delta
+    are asserted as one flow.
+    """
+    app = _FakeApp(
+        output={
+            "evolution_agents_task": {
+                "task_id": "t9",
+                "output_dir": "/obs/o",
+                "task_status": "SUCCEEDED",
+            }
+        }
+    )
+    host = _StubDispatch()
+
+    async def _real_finalize(task, state):
+        return await DeepGenomeDispatchMixin.finalize_evolution_result(
+            host, task, state
+        )
+
+    node = evolution_mount.make_evolution_mount_node(
+        cast(CompiledStateGraph, app), _real_finalize
+    )
+    payload: Any = {
+        "species_code": "osa",
+        "target_gene": "g9",
+        "task_index": 1,
+    }
+    out = await node(payload)
+
+    assert app.seen_input == {
+        "query": "g9",
+        "species_code": "osa",
+        "gene_id": "g9",
+        "target_taxids": "All",
+        "is_polling": True,
+    }
+    assert out["analysis_completed_branches"] == 1
+    assert out["raw_analyst_data"]["task_1"]["task_id"] == "t9"
+    assert out["analyst_summaries"]["tree_summary"] == (
+        "evolution_analysis:g9:/obs/o/results"
+    )
