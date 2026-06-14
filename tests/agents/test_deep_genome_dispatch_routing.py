@@ -245,6 +245,27 @@ async def test_subgraph_helper_called_with_is_polling_true(
     assert subgraph_mock.await_args.kwargs["is_polling"] is True
 
 
+async def test_prepare_tasks_includes_protein_structure() -> None:
+    """``_prepare_analysis_tasks`` enumerates a protein-structure task.
+
+    The producer + ``load_protein_structure`` loader already exist; the
+    task was simply never added to the analysis list, so the §Protein
+    Structure section never rendered. ``species_code="ath"`` takes the
+    ``case _`` branch and avoids the BI id-table lookup.
+    """
+    mixin = _build_mixin_instance()
+    state: Any = {"gene_id": "AT1G01010", "species_code": "ath"}
+
+    result = (
+        await dispatch_module.DeepGenomeDispatchMixin._prepare_analysis_tasks(
+            mixin, state
+        )
+    )
+
+    types = {task["analysis_type"] for task in result["analysis_tasks"]}
+    assert "protein_structure_analysis" in types
+
+
 def test_transferred_types_dropped_from_prompt_maps() -> None:
     """Producer-owned types leave the goal / meta prompt maps.
 

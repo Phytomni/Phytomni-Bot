@@ -342,7 +342,7 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
     Pins the SQL-injection fix: a gene id carrying a single quote must
     reach the BI query quote-doubled (via ``sql_literal``), never breaking
     out of its literal, and the osa branch must resolve the v2 id into the
-    expression tasks while emitting all nine analysis tasks.
+    expression tasks while emitting all ten analysis tasks.
     """
     harness = DispatchHarness("/tmp/deep-out")
     recorded: dict[str, Any] = {}
@@ -365,7 +365,7 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
     assert "'Os01''; DROP TABLE id_table; --'" in recorded["sql"]
     assert "= 'Os01'; DROP" not in recorded["sql"]
     tasks = result["analysis_tasks"]
-    assert len(tasks) == 9
+    assert len(tasks) == 10
     tissue = next(
         task
         for task in tasks

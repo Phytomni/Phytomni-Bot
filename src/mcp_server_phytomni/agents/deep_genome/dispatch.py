@@ -436,10 +436,10 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
-        This method prepares 9 analysis tasks for the deep genome analysis
-        phase, including evolution analysis, expression analysis across
+        This method prepares the deep genome analysis tasks: evolution
+        analysis, expression analysis across
         tissues/cultivars/treatments/genotypes, single-cell analysis,
-        promoter analysis, SMEP, and SMOC.
+        promoter analysis, SMEP, SMOC, and protein structure prediction.
 
         Args:
             state: Current workflow state containing gene_id and species_code.
@@ -545,6 +545,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "analysis_type": "smoc_analysis",
                 "compute": "small",
                 "func_name": "smoc_analysis",
+            },
+            {
+                "target_gene": gene_id,
+                "species_code": species_code,
+                "analysis_type": "protein_structure_analysis",
+                "compute": "medium",
+                "func_name": "protein_structure_analysis",
             },
         ]
         return {"analysis_tasks": tasks}
