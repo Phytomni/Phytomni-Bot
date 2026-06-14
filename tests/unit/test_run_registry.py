@@ -26,6 +26,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRequestInfo,
     RunSpec,
     Timestamps,
+    _terminal_payload,
 )
 from mcp_server_phytomni.runtime.task_manager import (
     RunContext,
@@ -722,3 +723,47 @@ def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
     assert record.request_info == RunRequestInfo()
     # The migration is rerun-safe; opening again does not raise.
     RunRegistry(db)
+
+
+def test_terminal_payload_rolls_up_degraded() -> None:
+    """Any degraded child marks the run-aggregate payload degraded."""
+    live = [
+        {
+            "task_id": "t1",
+            "status": "succeeded",
+            "degraded": False,
+            "degraded_reason": None,
+            "final_report": "# r",
+        },
+        {
+            "task_id": "t2",
+            "status": "succeeded",
+            "degraded": True,
+            "degraded_reason": "gene overview unavailable",
+            "final_report": None,
+        },
+    ]
+
+    payload, error = _terminal_payload("succeeded", live, [], "ans")
+
+    assert payload is not None
+    assert payload["degraded"] is True
+    assert error is None
+
+
+def test_terminal_payload_healthy_run_not_degraded() -> None:
+    """All-healthy children leave the run not degraded."""
+    live = [
+        {
+            "task_id": "t1",
+            "status": "succeeded",
+            "degraded": False,
+            "degraded_reason": None,
+            "final_report": "# r",
+        },
+    ]
+
+    payload, _error = _terminal_payload("succeeded", live, [], "ans")
+
+    assert payload is not None
+    assert payload["degraded"] is False

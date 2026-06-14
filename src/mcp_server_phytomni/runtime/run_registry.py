@@ -684,12 +684,16 @@ def _terminal_payload(
     - ``formatted.answer``: the caller-synthesized renderable answer,
       added only when no child wrote ``final_report`` (so deep_genome,
       which self-persists a report, keeps its existing surface).
+    - ``degraded``: True when any reconciled child carries a degraded
+      signal (e.g. a DeepGenome report that lost its gene profile); the
+      per-task ``degraded_reason`` rides ``task_results``.
     """
     payload: Dict[str, Any] = {
         "task_results": live,
         "live_status": live,
         "artifacts": artifacts,
         "final_report": _first_final_report(live),
+        "degraded": _any_degraded(live),
     }
     if payload["final_report"] is None and answer:
         payload["formatted"] = {"answer": answer}
@@ -716,6 +720,17 @@ def _first_final_report(live: List[Dict[str, Any]]) -> Optional[str]:
         if isinstance(report, str) and report:
             return report
     return None
+
+
+def _any_degraded(live: List[Dict[str, Any]]) -> bool:
+    """Return True when any reconciled child task is degraded.
+
+    DeepGenome flags a degraded report (brief_gene mount fault) on its
+    reconciled row; rolling the flag up to the run aggregate lets a
+    client polling /v1/runs/{id} learn a child degraded without walking
+    ``task_results`` (which still carries the per-task ``degraded_reason``).
+    """
+    return any(bool(row.get("degraded")) for row in live)
 
 
 def _row_to_record(
