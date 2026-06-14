@@ -313,6 +313,77 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
         return await capture_workflow_boundary(run_analysis, failure_state)
 
+    async def finalize_evolution_result(
+        self: Any,
+        task: Optional[dict],
+        state: DeepGenomeState,
+    ) -> dict:
+        """Turn a submitted evolution task into an analyst-branch delta.
+
+        Shared tail of the evolution mount node: it runs the same
+        agent-failure check, result download, and ``build_sub_summary``
+        that ``_run_analyst_node`` runs for the generic types, then
+        contributes the ``analysis_completed_branches: 1`` the synthesize
+        barrier counts. ``task`` is ``None`` when taxonomy resolution
+        produced no task; that raises so the mount node's degraded path
+        records a failed branch and the barrier still advances. The
+        species, gene, and Send index are read from ``state`` (the Send
+        payload the mount node received) so the signature stays within
+        the pylint argument budget.
+
+        Args:
+            task: Submitted analyst task dict from the mounted evolution
+                subgraph, or ``None`` when resolution produced no task.
+            state: Send payload carrying ``species_code`` / ``target_gene``
+                / ``task_index``; also passed to the sub-summary builder.
+
+        Returns:
+            Analyst-branch state delta (``raw_analyst_data`` /
+            ``analyst_summaries`` / ``analysis_completed_branches``).
+        """
+        species_code = state["species_code"]
+        gene_id = state["target_gene"]
+        task_index = state.get("task_index")
+        if task is None:
+            raise RuntimeError(
+                "evolution mount produced no task (taxid resolution failed)"
+            )
+        self._raise_if_agent_failed(task)
+        output_path = task.get("output_dir")
+        if not isinstance(output_path, str):
+            raise RuntimeError("evolution mount returned no output directory")
+        run_identity = RunIdentity.create(
+            user_id=self.deep_genome_config.USER_ID,
+            scope="evolution_analysis",
+        )
+        context = AnalysisDispatchContext(
+            analysis_type="evolution_analysis",
+            species_code=species_code,
+            gene_id=gene_id,
+            output_dir=output_path,
+        )
+        results_dir = await self._download_analysis_result(
+            context, output_path, run_identity
+        )
+        sub_summary = self._generate_sub_summary(
+            analysis_type="evolution_analysis",
+            gene_id=gene_id,
+            state=state,
+            results_dir=results_dir,
+        )
+        return {
+            "raw_analyst_data": {
+                f"task_{task_index}": {
+                    "status": "success",
+                    "analysis_type": "evolution_analysis",
+                    "task_id": task.get("task_id"),
+                    "output_path": output_path,
+                }
+            },
+            "analyst_summaries": sub_summary,
+            "analysis_completed_branches": 1,
+        }
+
     def _generate_sub_summary(
         self: Any,
         analysis_type: str,
