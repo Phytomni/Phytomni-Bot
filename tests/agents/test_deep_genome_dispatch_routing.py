@@ -135,7 +135,11 @@ async def test_evolution_analysis_routes_to_wrapper(
     )
 
     assert result["task_id"] == "evo-id"
-    wrappers["evolution_analysis_for_gene"].assert_awaited_once()
+    wrappers["evolution_analysis_for_gene"].assert_awaited_once_with(
+        species_code="ath",
+        gene_id="AT1G01010",
+        output_dir="/obs/run/out",
+    )
     subgraph_mock.assert_not_awaited()
 
 
@@ -154,7 +158,11 @@ async def test_protein_structure_routes_to_wrapper(
     )
 
     assert result["task_id"] == "struct-id"
-    wrappers["protein_structure_for_gene"].assert_awaited_once()
+    wrappers["protein_structure_for_gene"].assert_awaited_once_with(
+        species_code="ath",
+        gene_id="AT1G01010",
+        output_dir="/obs/run/out",
+    )
     subgraph_mock.assert_not_awaited()
 
 
@@ -173,7 +181,11 @@ async def test_promoter_routes_to_wrapper(
     )
 
     assert result["task_id"] == "prom-id"
-    wrappers["promoter_design_for_gene"].assert_awaited_once()
+    wrappers["promoter_design_for_gene"].assert_awaited_once_with(
+        species_code="ath",
+        gene_id="AT1G01010",
+        output_dir="/obs/run/out",
+    )
     subgraph_mock.assert_not_awaited()
 
 
