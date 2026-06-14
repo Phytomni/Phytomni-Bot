@@ -49,7 +49,7 @@ from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
-from .evolution_mount import DeepGenomeEvolutionMountMixin
+from .evolution_mount import make_evolution_mount_node
 from .formatting import network_to_string
 from .profile import (
     DeepGenomeProfileMixin,
@@ -235,7 +235,6 @@ class DeepGenomeAgentDeps(NamedTuple):
 
 class DeepGenomeAgents(
     DeepGenomeBriefGeneMountMixin,
-    DeepGenomeEvolutionMountMixin,
     DeepGenomeDispatchMixin,
     DeepGenomeProfileMixin,
     DeepGenomeReportMixin,
@@ -365,7 +364,7 @@ class DeepGenomeAgents(
         # evolution task here instead of to ``analyst_node``.
         workflow.add_node(
             "evolution_node",
-            self.make_evolution_mount_node(
+            make_evolution_mount_node(
                 self._agents.evolution_app,
                 self.finalize_evolution_result,
             ),

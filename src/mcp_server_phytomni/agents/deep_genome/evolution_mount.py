@@ -3,9 +3,9 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Evolution subgraph mount adapter for DeepGenomeAgents.
 
-Hosts ``DeepGenomeEvolutionMountMixin`` and the
-``make_evolution_mount_node`` factory closure that wires the standalone
-evolution graph (``build_evolution_graph``) as a structural subgraph:
+Hosts the ``make_evolution_mount_node`` factory closure that wires the
+standalone evolution graph (``build_evolution_graph``) as a structural
+subgraph:
 the closure captures the compiled app for xray expansion, projects the
 Send payload into ``EvolutionInput`` (scope ``"All"``, polling on), and
 hands the submitted task to a shared finalize callback.
@@ -132,21 +132,3 @@ def make_evolution_mount_node(
             return _degraded_evolution_delta(task_index, exc)
 
     return _evolution_mount
-
-
-class DeepGenomeEvolutionMountMixin:
-    """Factory exposure for DeepGenomeAgents to mount the evolution graph.
-
-    Surfaces ``make_evolution_mount_node`` as a method so
-    ``DeepGenomeAgents._build_graph`` looks the factory up via ``self``,
-    matching the MRO indirection the other deep_genome mount mixins use.
-    """
-
-    def make_evolution_mount_node(
-        self: Any,
-        evolution_app: CompiledStateGraph,
-        finalize_fn: FinalizeFn,
-    ) -> Any:
-        """Return a node body mounting the evolution graph under this host."""
-        del self
-        return make_evolution_mount_node(evolution_app, finalize_fn)
