@@ -103,3 +103,43 @@ async def test_request_shape_targets_protein_structure_analysis(
     assert len(request["prompt_parts"]) == 3
     assert request["compute_resource"] == "medium"
     assert call_args.kwargs["is_polling"] is True
+
+
+async def test_resolves_real_structure_data_list_for_real_species(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AF-001 regression: translate analysis_type to the real JSON key.
+
+    ``get_data_list`` is left UNMOCKED so it hits the bundled
+    ``species_data_list.json``. Without the analysis_type ->
+    data-list-key translation the lookup raises
+    ``KeyError('Analysis type not found: protein_structure_analysis')``;
+    the real key is ``structure_analysis``.
+    """
+    monkeypatch.setattr(
+        design_agent, "get_prompt", lambda *_a, **_kw: "prompt-stub"
+    )
+    monkeypatch.setattr(
+        design_agent, "AnalystAgent", lambda **_kw: "analyst-agent-stub"
+    )
+    submit_mock = AsyncMock(
+        return_value={
+            "task_id": "structure-task-id",
+            "output_dir": "obs://run/structure-out",
+            "task_status": "SUCCEEDED",
+        }
+    )
+    monkeypatch.setattr(
+        design_agent, "submit_analyst_via_subgraph", submit_mock
+    )
+
+    await protein_structure_for_gene(
+        species_code="osa",
+        gene_id="Os01g0177400",
+    )
+
+    call_args = submit_mock.await_args
+    assert call_args is not None
+    request = call_args.args[3]
+    data_list = request["prompt_parts"][2]
+    assert data_list, "expected a non-empty real data list from the JSON"

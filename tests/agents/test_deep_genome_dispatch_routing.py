@@ -236,14 +236,18 @@ async def test_subgraph_helper_called_with_is_polling_true(
 
 
 def test_transferred_types_dropped_from_prompt_maps() -> None:
-    """Producer-owned types leave the prompt / meta / data maps.
+    """Producer-owned types leave the goal / meta prompt maps.
 
     evolution_analysis / protein_structure_analysis / promoter_analysis
     submit through the evolution and design producer wrappers (the
-    routing tests above), so deep_genome no longer builds their goal,
-    meta, or data-list prompts and the three maps must not list them.
-    Their output-file features stay because deep_genome still downloads
-    and summarizes the producer's results by analysis type.
+    routing tests above), so deep_genome no longer builds their goal or
+    meta prompts and those two maps must not list them. The shared
+    ANALYSIS_DATA_LIST_MAP still keeps protein_structure_analysis (its
+    data lives under a non-identity key, structure_analysis, that the
+    producer reuses via resolve_data_list_key); evolution and promoter
+    are identity lookups and need no entry. Output-file features stay
+    because deep_genome still downloads and summarizes the producer's
+    results by analysis type.
     """
     transferred = {
         "evolution_analysis",
@@ -252,5 +256,15 @@ def test_transferred_types_dropped_from_prompt_maps() -> None:
     }
     assert transferred.isdisjoint(dispatch_module.ANALYSIS_GOAL_TEMPLATE_MAP)
     assert transferred.isdisjoint(dispatch_module.ANALYSIS_META_TEMPLATE_MAP)
-    assert transferred.isdisjoint(dispatch_module.ANALYSIS_DATA_LIST_MAP)
+    # protein_structure_analysis is the one transferred type whose data
+    # lives under a DIFFERENT key (structure_analysis), so it stays in
+    # the shared ANALYSIS_DATA_LIST_MAP translation table; evolution and
+    # promoter are identity lookups and need no entry.
+    assert {"evolution_analysis", "promoter_analysis"}.isdisjoint(
+        dispatch_module.ANALYSIS_DATA_LIST_MAP
+    )
+    assert (
+        dispatch_module.ANALYSIS_DATA_LIST_MAP["protein_structure_analysis"]
+        == "structure_analysis"
+    )
     assert transferred <= set(dispatch_module.ANALYSIS_TARGET_FILE_FEATURE_MAP)

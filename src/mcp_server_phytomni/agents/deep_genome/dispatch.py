@@ -37,6 +37,7 @@ from ..design.agent import (
 )
 from ..evolution.agent import evolution_analysis_for_gene
 from ..shared.analysis_storage import (
+    ANALYSIS_DATA_LIST_MAP,
     ensure_run_output_dir,
     get_data_list,
 )
@@ -97,20 +98,6 @@ ANALYSIS_META_TEMPLATE_MAP = {
     "smoc_analysis": "user/smoc_analysis_meta",
     "epic_analysis": "user/epic_analysis_meta",
     "gene_expression_analysis": "user/gene_expression_analysis_meta",
-}
-
-ANALYSIS_DATA_LIST_MAP = {
-    "haplotypes_analysis": "haplotypes_analysis",
-    "fst_analysis": "fst_analysis",
-    "enrichment_analysis": "enrichment_analysis",
-    "gene_expression_tissues": "gene_expression_analysis/tissues",
-    "gene_expression_cultivars": "gene_expression_analysis/cultivars",
-    "gene_expression_genotypes": "gene_expression_analysis/genotypes",
-    "gene_expression_treatments": "gene_expression_analysis/treatments",
-    "single_cell_analysis": "single_cell_analysis",
-    "smep_analysis": "promoter_analysis",
-    "smoc_analysis": "promoter_analysis",
-    "epic_analysis": "promoter_analysis",
 }
 
 ANALYSIS_TARGET_FILE_FEATURE_MAP = {

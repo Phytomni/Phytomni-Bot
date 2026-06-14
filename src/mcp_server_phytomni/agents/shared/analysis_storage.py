@@ -31,10 +31,12 @@ from ...storage.obs_storage import (
 from ...storage.path_policy import RunIdentity, task_output_key
 
 __all__ = [
+    "ANALYSIS_DATA_LIST_MAP",
     "ObsAccessOptions",
     "create_output_dir",
     "ensure_run_output_dir",
     "get_data_list",
+    "resolve_data_list_key",
 ]
 
 logger = logging.getLogger(__name__)
@@ -112,6 +114,61 @@ def _get_data_list_cached(
     except KeyError as exc:
         raise KeyError(f"Species not found: {species}") from exc
     return data_list
+
+
+ANALYSIS_DATA_LIST_MAP: Dict[str, str] = {
+    "haplotypes_analysis": "haplotypes_analysis",
+    "fst_analysis": "fst_analysis",
+    "enrichment_analysis": "enrichment_analysis",
+    "gene_expression_tissues": "gene_expression_analysis/tissues",
+    "gene_expression_cultivars": "gene_expression_analysis/cultivars",
+    "gene_expression_genotypes": "gene_expression_analysis/genotypes",
+    "gene_expression_treatments": "gene_expression_analysis/treatments",
+    "single_cell_analysis": "single_cell_analysis",
+    "smep_analysis": "promoter_analysis",
+    "smoc_analysis": "promoter_analysis",
+    "epic_analysis": "promoter_analysis",
+    # Producer-extracted type whose prepared data lives under a
+    # DIFFERENT key: the analysis_type identity stays
+    # "protein_structure_analysis" (request dict / target-file map /
+    # summary loader) but species_data_list.json keys it under
+    # "structure_analysis".
+    "protein_structure_analysis": "structure_analysis",
+}
+
+
+def resolve_data_list_key(analysis_type: str) -> str:
+    """Map a producer ``analysis_type`` to its species_data_list.json key.
+
+    Identity by default; restores the non-identity translation the
+    pre-extraction deep_genome ``ANALYSIS_DATA_LIST_MAP`` performed
+    (e.g. ``protein_structure_analysis`` -> ``structure_analysis``).
+
+    The producer dispatch path (``design.agent._submit_design_analysis``)
+    has no sub-title handling -- only
+    ``deep_genome.dispatch._analysis_prompt_parts`` splits a
+    ``"key/subkey"`` data path on ``"/"``. A ``"/"`` in the resolved
+    value would make the producer silently fetch the wrong data, so we
+    raise instead of returning it.
+
+    Args:
+        analysis_type: The producer analysis-type identity.
+
+    Returns:
+        The species_data_list.json top-level key to look up.
+
+    Raises:
+        ValueError: If the resolved key contains ``"/"`` (a sub-keyed
+            data path the producer path cannot index).
+    """
+    resolved = ANALYSIS_DATA_LIST_MAP.get(analysis_type, analysis_type)
+    if "/" in resolved:
+        raise ValueError(
+            f"resolve_data_list_key: {analysis_type!r} resolves to "
+            f"sub-keyed path {resolved!r}; the producer path cannot "
+            "index sub-titles."
+        )
+    return resolved
 
 
 def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:

@@ -41,7 +41,7 @@ from ..shared.analysis import (
     route_analysis_tasks,
     run_analysis_graph,
 )
-from ..shared.analysis_storage import get_data_list
+from ..shared.analysis_storage import get_data_list, resolve_data_list_key
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
@@ -406,7 +406,7 @@ async def _submit_design_analysis(
     meta = get_prompt(DIGITAL_DESIGN_CONFIG.PROMPT_FILE, spec.meta_path)
     data_list = get_data_list(
         DIGITAL_DESIGN_CONFIG.DEEPGENOME_DATA,
-        spec.analysis_type,
+        resolve_data_list_key(spec.analysis_type),
         species_code,
     )
     request = {
