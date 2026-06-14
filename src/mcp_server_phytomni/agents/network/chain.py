@@ -55,12 +55,13 @@ _GENE_ID_HEADER_CANDIDATES: Final[tuple[str, ...]] = (
     "Gene",
 )
 
-# Hand-maintained mapping from the network agent's "Latin name in
-# lowercase with spaces" form (the ``species`` schema in
-# ``mcp/schemas.py:424-443``) to the deepgenome agent's three-letter
-# ``species_code`` (the description of ``mcp/schemas.py:178-249``).
-# Sync source: ``mcp/schemas.py:178-249``. When the schema description
-# gains or removes entries, mirror the change here.
+# Hand-maintained mapping from a Latin species name in lowercase with
+# spaces to the three-letter ``species_code`` used across the network /
+# deepgenome agents. This is the chain's own Python-entry convenience;
+# the MCP schemas expose ``species_code`` directly. Sync source: the
+# ``species_code`` descriptions on ``GeneNetworkAgent`` and
+# ``DeepGenomeAgent`` in ``mcp/schemas.py``. When those schema
+# descriptions gain or remove entries, mirror the change here.
 SPECIES_TO_CODE: Final[Mapping[str, str]] = {
     "actinidia chinensis": "ach",
     "ananas comosus": "aco",
@@ -478,9 +479,10 @@ async def network_to_deep_genome_chain(
         )
 
     forwarded_kwargs = _filter_chain_kwargs(kwargs)
+    species_code = SPECIES_TO_CODE[species]
 
     network_envelope = await network_analysis(
-        species=species,
+        species_code=species_code,
         to_id=to_id,
         user_id=user_id,
         batch=batch,
@@ -504,7 +506,6 @@ async def network_to_deep_genome_chain(
     if not gene_ids:
         logger.warning("network chain parsed 0 gene IDs from %s", csv_path)
 
-    species_code = SPECIES_TO_CODE[species]
     coros = [
         gene_function(
             species_code=species_code,
