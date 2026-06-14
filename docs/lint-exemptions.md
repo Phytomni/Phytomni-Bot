@@ -527,9 +527,9 @@ exemption is project-wide-conditional instead of per-file.
 
 ______________________________________________________________________
 
-### Test fakes and Protocol stubs — too-few-public-methods (20 occurrences)
+### Test fakes and Protocol stubs — too-few-public-methods (21 occurrences)
 
-**Rule(s)**: R0903 too-few-public-methods (1/2). 20 occurrences (the
+**Rule(s)**: R0903 too-few-public-methods (1/2). 21 occurrences (the
 authoritative count is enforced by `check_pylint_baseline.py`; a
 representative sample below):
 
@@ -545,9 +545,10 @@ representative sample below):
 - `src/mcp_server_phytomni/agents/shared/fan_out.py:43` (`TaskBuilder` Protocol)
 - `src/mcp_server_phytomni/runtime/terminal_answer.py` (`TerminalAnswerContext` DTO + `AnswerSynthesizer` Protocol)
 - `src/mcp_server_phytomni/runtime/terminal_artifacts.py` (`ArtifactLister` Protocol)
+- `tests/agents/test_brief_gene_preamble_workflow.py:55` (`_StubKnowledgeApp` preamble fan-in test stub)
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 20`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 21`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its

@@ -50,9 +50,10 @@ RULE_BASELINES: Dict[str, int] = {
     # too-few-public-methods: test fake classes + Protocol stubs +
     # GraphLoader (load + flag-gated __init__ only) + the terminal-result
     # assembly seams (TerminalAnswerContext DTO, ArtifactLister /
-    # AnswerSynthesizer single-method Protocols). Pinned at the count
-    # measured under the installed pylint 4.0.x.
-    "R0903": 20,
+    # AnswerSynthesizer single-method Protocols) + the brief_gene preamble
+    # fan-in test stub (_StubKnowledgeApp). Pinned at the count measured
+    # under the installed pylint 4.0.x.
+    "R0903": 21,
 }
 
 
