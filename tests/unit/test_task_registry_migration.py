@@ -38,6 +38,7 @@ _EXPECTED_COLUMNS = {
     "input_fingerprint",
     "task_log",
     "final_report",
+    "degraded_reason",
 }
 
 
