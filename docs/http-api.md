@@ -594,6 +594,17 @@ the first child report to `result.final_report` at the payload top level
 (also present per-child under `result.task_results[].final_report`).
 Every other agent leaves `final_report` `null`.
 
+A `deep_genome` report whose brief_gene gene-profile step degraded
+mid-run still settles as `succeeded` but flags the gap: the report
+markdown carries a visible "Gene profile unavailable" banner, and the
+poll surface adds machine-readable keys — `GetTaskStatus` exposes
+`formatted.metadata.degraded` (bool) and
+`formatted.metadata.degraded_reason` (a redacted string, or `null`),
+while `GET /v1/runs/{run_id}` exposes `result.degraded` (true when any
+child degraded; the per-task `degraded_reason` rides
+`result.task_results[]`). Healthy and non-`deep_genome` rows read
+`degraded: false` / `degraded_reason: null`.
+
 The other remote agents (`analyst`, `research`, `design`, `network`) are
 fire-and-forget: they fan out child tasks and return before the upstream
 results exist, so they never write `final_report`. Instead, the first
