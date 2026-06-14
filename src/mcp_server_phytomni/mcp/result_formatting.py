@@ -676,6 +676,11 @@ def _format_task_status_result(
     the answer so a polling client reads the finished report directly;
     every other agent leaves the field empty and keeps the bare
     ``Task <id>: <status>`` status line.
+
+    A ``degraded`` flag plus the already-redacted ``degraded_reason``
+    surface a background report that finished but lost its brief_gene
+    gene profile; healthy and non-DeepGenome rows read ``False`` /
+    ``None``.
     """
     task_id = _string_or_none(content.get("task_id"))
     status = _string_or_none(content.get("status")) or "unknown"
@@ -696,6 +701,8 @@ def _format_task_status_result(
             "analysis_id": _string_or_none(content.get("analysis_id")),
             "live_status": content.get("live_status"),
             "artifacts": artifacts,
+            "degraded": bool(content.get("degraded")),
+            "degraded_reason": _string_or_none(content.get("degraded_reason")),
         },
     )
 

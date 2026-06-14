@@ -185,6 +185,48 @@ def test_get_task_status_blank_final_report_keeps_status_line() -> None:
     assert result.answer == "Task an-1: running"
 
 
+def test_get_task_status_surfaces_degraded_metadata() -> None:
+    """A degraded reconcile row surfaces degraded + reason in metadata.
+
+    DeepGenome persists a redacted reason on the row when its brief_gene
+    mount degraded; reconcile threads it here, and the formatter exposes
+    it as default-mode metadata so a polling client learns the report
+    finished without its gene profile.
+    """
+    raw = {
+        "task_id": "dg-1",
+        "status": "succeeded",
+        "output_dir": "/obs/x",
+        "analysis_id": "a",
+        "live_status": None,
+        "final_report": "# Deep Genome Analysis",
+        "degraded": True,
+        "degraded_reason": "gene overview unavailable",
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.metadata["degraded"] is True
+    assert result.metadata["degraded_reason"] == "gene overview unavailable"
+
+
+def test_get_task_status_healthy_row_is_not_degraded() -> None:
+    """A row without degraded keys defaults to degraded False / None."""
+    raw = {
+        "task_id": "t1",
+        "status": "succeeded",
+        "output_dir": "/obs/x",
+        "analysis_id": "a",
+        "live_status": None,
+        "final_report": None,
+    }
+
+    result = format_tool_result("GetTaskStatus", raw)
+
+    assert result.metadata["degraded"] is False
+    assert result.metadata["degraded_reason"] is None
+
+
 def test_envelope_preserves_raw_provider_fields() -> None:
     """Verify envelope keeps reasoning_content, usage, and unknown keys.
 
