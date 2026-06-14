@@ -4479,6 +4479,100 @@ user:
             $meme_results_folder/meme.txt --is_png True --output_dir
             $out_dir
             Note: this task summary_type must be motif and is_png is True
+  promoter_design_analysis: |-
+    Please help me to design {{gene_id}} promoter.
+  promoter_design_analysis_meta: |-
+    Note1: you need to using epic environment (conda activate epic);
+    step1, get the promoter sequence for the gene using grep;
+    step2, designing the gene promoter sequences; (cp -r $design_result_dir
+    $output_dir)
+    step3, get the designed promoter sequences using get_promoter_design.py
+    scripts; (conda activate epic)
+    step4, using smep to predict modifications for designed promoters; (conda
+    activate epic)
+    step5, using smoc to predict chromatin accessibility for designed
+    promoters. (conda activate epic)
+    <get_promoter_design>
+        Tool_Usage:
+            usage: get_promoter_design.py [-h] [--input_fasta INPUT_FASTA]
+            [--gene_id GENE_ID] [--cape_file CAPE_FILE] [--output_dir
+            OUTPUT_DIR] [--top TOP]
+
+            options:
+                -h, --help            show this help message and exit
+                --input_fasta INPUT_FASTA
+                                        Wild-type promoter FASTA file.
+                --gene_id GENE_ID     The gene id of promoter sequence.
+                --cape_file CAPE_FILE
+                                        Promoter Site Mutation CAPE Score
+                                        Results.
+                --output_dir OUTPUT_DIR
+                                        The output dir.
+                --top TOP             Number of top output mutation sequences.
+
+        Tool_Usage_Example:
+            conda activate epic && pip install pandas -i
+            https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python
+            get_promoter_design.py --input_fasta $wt_promoter_file --gene_id
+            $gene_id --cape_file $output/$gene_id/aggregate.bedGraph
+            --output_dir $output_dir
+        Note:
+            The output promoter design results are located in the copied folder
+            under the filename aggregate.bedGraph.
+            Finnally, you will get $top files in $output_dir, file_name is
+            ${gene_id}_mut_top1.fa - ${gene_id}_mut_top${top}.fa, and you will
+            predict this design promoter file using smep and smoc;
+    </get_promoter_design>
+    <smep>
+        Tool_Usage:
+            perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I
+            $fasta_file -O /$output_dir/$out_file -T
+            $epigenetic_modification_type
+            $epigenetic_modification_type:
+                1. 5mC
+                2. 6mA
+                3. m6A
+                4. H3K27me3
+                5. H3K4me3
+                6. H3K9ac
+            Note1: When you run the script, you must be under the path
+            /opt/health/epic_models/smep/
+            Note2: The fasta_file must be saved under the path
+            /opt/health/epic_models/smep/
+            Note3: out_file You can specify files in any path
+
+        Tool_Usage_Example:
+            question: please help me to predict the 5mC modification of A gene
+            prompter
+            commond_line: conda activate epic && cp A_gene_prompter.fa
+            /opt/health/epic_models/smep && cd /opt/health/epic_models/smep &&
+            perl smep_prediction_py3.5.pl -I A_gene_prompter.fa -O
+            /$output_dir/A_gene_prompter_5mC.out -T 5mC
+    </smep>
+    <smoc>
+        Tool_Usage:
+            python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py
+            --input $input_fasta --model
+            /opt/health/epic_models/smoc/model/$model_type --output $out_dir
+            --threshold 0.8 --window_size 800
+                $model_type:
+                1. Best_model_9311CK.h5: Wild-type chromatin accessibility of
+                variety 9311
+                2. Best_model_9311HS.h5: Chromatin accessibility in the
+                heat-excited state of variety 9311
+                3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of
+                variety NIP
+                4. Best_model_NIPHS.h5: Chromatin accessibility in the
+                heat-excited state of variety NIP
+
+        Tool_Usage_Example:
+            question: please help me to predict the wild-type chromatin
+            accessibility of Oryza sativa Os12g0263100 gene prompter in 9311.
+            commond_line: conda activate epic && python
+            /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input
+            $input_fasta --model
+            /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./
+    </smoc>
   protein_design_analysis: |-
     You are a bioinformatician specialized in the field of protein design
     based on evolution information and you are well versed in various task
