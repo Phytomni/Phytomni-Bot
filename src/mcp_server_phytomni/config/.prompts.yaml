@@ -2765,6 +2765,114 @@ user:
             --target_genes_file $analysis_gene_list --out_dir $output_dir
             --top_genes $top_num_gene --pvalue_cutoff 0.01
     </usage_example>
+  evolution_agents_analysis: |-
+    You are a bioinformatician specialized in the field of evolutions and you
+    are well versed in various task analysis in the field of evolutions, next,
+    you will generate a task plan and complete the task analysis based on the
+    data that we have provided you with, now your task goal is: Please perform
+    phylogenetic and evolutionary analyses for gene {{gene_id}}, the target
+    taxid is {{target_taxid}}
+  evolution_agents_meta: |-
+    Note1: You don't need to build nr database index;
+    Note2: You need to install diamond software using conda;
+    Note3: if target taxid is All, the taxonlist parameter for diamond is not
+    required.
+    Note4: if target taxid is not All, the taxonlist parameter for diamond is a
+    ','-separated list of taxids.
+    step1, Find Gene's Protein Sequence using grep;
+    step2, Sequence alignment using diamond blastp to find top40 sequence to
+    target species if target taxid is not all, using -t 16 paramter and
+    --tmpdir $tmp paramter(conda install diamond -c bioconda);
+    step3, Extract the sequence ids from the blast result using awk;
+    step4, Extract the matched sequences from the database using seqkit(conda
+    install seqkit -c bioconda);
+    step5, Append protein sequences of unknown function to the end of the
+    matched sequences file;
+    step6, Multiple sequence alignment using clustalw2(conda install clustalw
+    -c bioconda);
+    step7, Constructing the phylogenetic tree using fasttree(conda install
+    fasttree -c bioconda);
+    step8, Plot the phylogenetic tree using plot_tree.py;
+    step9, Summary the tree result using summary_all.py(conda activate af3 &&
+    pip install openai -i
+    https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple);
+    step12, Searching for conserved domains of protein using hmmscan;
+    step13, Change domain results to markdown format using domain2markdown.py;
+    step14, Summary the domain result using summary_all.py.
+    <change example>
+        Tool_Usage:
+            usage: domain2markdown.py [-h] [--domain_file DOMAIN_FILE]
+            [--output_dir OUTPUT_DIR] [--gene_id GENE_ID]
+
+            options:
+            -h, --help            show this help message and exit
+            --domain_file DOMAIN_FILE
+                                    the domain file for hmmer softwore
+            --output_dir OUTPUT_DIR
+                                    the output folder
+            --gene_id GENE_ID     the tree for gene id
+        Tool_Example:
+            conda activate af3 && python domain2markdown.py --input
+            $output_dir/$domain_file --out_dir $out_dir --gene_id $gene_id
+    </change example>
+    <plot example>
+        Tool_Usage:
+            usage: plot_tree.py [-h] [--tree_file TREE_FILE] [--output_dir
+            OUTPUT_DIR] [--gene_id GENE_ID]
+
+            options:
+            -h, --help            show this help message and exit
+            --tree_file TREE_FILE
+                                    the tree file as nwk format
+            --output_dir OUTPUT_DIR
+                                    the output folder
+            --gene_id GENE_ID     the tree for gene id
+        Tool_Example:
+            conda activate af3 && pip install pycirclize biopython -i
+            https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python
+            plot_tree.py --input $output_dir/$tree_file --out_dir $out_dir
+            --gene_id $gene_id
+        Note: using this script, you will get the ${gene_id}_tree.png figure,
+        and you will using this figure to generate the summary results.
+    </plot example>
+    <summary example>
+        Tool Usage:
+            usage: summary_all.py [-h] [--gene_id GENE_ID] [--summary_file
+            SUMMARY_FILE] [--summary_type SUMMARY_TYPE] [--annotation
+            ANNOTATION] [--is_png IS_PNG] [--output_dir OUTPUT_DIR]
+
+            options:
+                -h, --help            show this help message and exit
+                --gene_id GENE_ID     Summary Gene ID.
+                --summary_file SUMMARY_FILE
+                                        The file requiring summarization.
+                --summary_type SUMMARY_TYPE
+                                        Types of Summary Documents.
+                --annotation ANNOTATION
+                                        Data annotation file corresponding to
+                                        the documents requiring summarization.
+                --is_png IS_PNG       Is the summary document in PNG format
+                --output_dir OUTPUT_DIR
+                                        Output Path for Summary Results.
+
+        Tool Usage example:
+            1. summary tree:
+                conda activate af3 && pip install openai -i
+                https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python
+                summary_all.py --gene_id ${gene_id} --summary_file
+                $output_dir/${gene_id}_tree.png --summary_type tree
+                --annotation $output_dir/$tree_file --is_png True --output_dir
+                $out_dir
+                Note: this task summary_type must be tree and is_png is True
+            1. summary domain:
+                conda activate af3 && pip install openai -i
+                https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple && python
+                summary_all.py --gene_id ${gene_id} --summary_file
+                $output_dir/$domain_file --summary_type domain --is_png False
+                --output_dir $out_dir
+                Note: this task summary_type must be domain, is_png is False
+                and do not pass the annotation parameter.
+    </summary example>
   evolution_analysis: |-
     You are a bioinformatician specialized in the field of evolutions and
     you are well versed in various task analysis in the field of evolutions,
