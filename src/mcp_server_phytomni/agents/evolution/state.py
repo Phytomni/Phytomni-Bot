@@ -35,6 +35,12 @@ class EvolutionInput(TypedDict, total=False):
             run-scoped directory.
         enable_auto_select: When ``True`` the AnalystAgent may
             auto-select tools at submission time.
+        is_polling: When ``True`` the analyst submission blocks until the
+            task reaches a terminal state (deep_genome's mount sets this);
+            defaults to ``False`` for the submit-only external surface.
+        target_taxids: Pre-resolved taxonomy scope. When set (truthy) the
+            chat extraction is skipped and this value passes straight to
+            the submit node; deep_genome's mount pins ``"All"``.
         kwargs: Flat dict of chat / submit / OBS overrides forwarded
             to the chat extraction and analyst submission helpers.
     """
@@ -44,6 +50,8 @@ class EvolutionInput(TypedDict, total=False):
     gene_id: Required[str]
     batch: bool
     enable_auto_select: bool
+    is_polling: bool
+    target_taxids: str
     kwargs: dict[str, Any]
 
 
@@ -74,6 +82,7 @@ class EvolutionState(TypedDict, total=False):
     gene_id: Required[str]
     batch: bool
     enable_auto_select: bool
+    is_polling: bool
     kwargs: dict[str, Any]
     target_taxids: Optional[str]
     evolution_agents_task: Optional[dict[str, Any]]

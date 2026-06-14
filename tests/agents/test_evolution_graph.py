@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.agents.evolution import graph as evolution_graph
 from mcp_server_phytomni.agents.evolution.builder import (
     build_evolution_graph,
 )
@@ -149,3 +150,102 @@ def test_route_after_resolve_short_circuits_when_taxids_none() -> None:
         "target_taxids": None,
     }
     assert route_after_resolve(state) == "__end__"
+
+
+async def test_resolve_passes_through_presupplied_taxids(monkeypatch) -> None:
+    """A pre-supplied target_taxids short-circuits the chat extraction.
+
+    deep_genome's mount pins the scope to ``"All"`` rather than running
+    the NL chat extraction (it has no query). A truthy pre-supplied value
+    must pass straight through; the extraction helper must not run.
+    """
+
+    async def _must_not_call(*_args, **_kwargs):
+        raise AssertionError("target_taxids must not run on passthrough")
+
+    monkeypatch.setattr(evolution_graph, "target_taxids", _must_not_call)
+
+    out = await evolution_graph.resolve_target_taxids_node(
+        {
+            "query": "ignored",
+            "species_code": "osa",
+            "gene_id": "g1",
+            "target_taxids": "All",
+        }
+    )
+
+    assert out == {"target_taxids": "All"}
+
+
+async def test_resolve_runs_extraction_when_taxids_absent(
+    monkeypatch,
+) -> None:
+    """With no pre-supplied taxids the node runs the chat extraction.
+
+    Pins the external surface: when the input carries no taxids the
+    node still delegates to the chat-based extraction helper.
+    """
+
+    async def _fake_extract(query, _kwargs):
+        assert query == "evo query"
+        return "999"
+
+    monkeypatch.setattr(evolution_graph, "target_taxids", _fake_extract)
+
+    out = await evolution_graph.resolve_target_taxids_node(
+        {
+            "query": "evo query",
+            "species_code": "osa",
+            "gene_id": "g1",
+            "kwargs": {},
+        }
+    )
+
+    assert out == {"target_taxids": "999"}
+
+
+async def test_submit_threads_is_polling(monkeypatch) -> None:
+    """submit_evolution_task_node forwards state['is_polling'] downstream.
+
+    deep_genome's mount sets ``is_polling=True`` so the analyst submission
+    blocks and the report can read results synchronously; the external
+    surface leaves it unset (False).
+    """
+    captured: dict = {}
+
+    async def _fake_via_subgraph(
+        _inputs, *, user_id, gene_id, submit_kwargs, is_polling
+    ):
+        del user_id, gene_id, submit_kwargs
+        captured["is_polling"] = is_polling
+        return {"task_id": "t1", "output_dir": "/out"}
+
+    monkeypatch.setattr(
+        evolution_graph, "_submit_evolution_via_subgraph", _fake_via_subgraph
+    )
+    monkeypatch.setattr(
+        evolution_graph, "evolution_submit_kwargs", lambda *a, **k: {}
+    )
+    monkeypatch.setattr(
+        evolution_graph.agent, "get_prompt", lambda *a, **k: "p"
+    )
+    monkeypatch.setattr(
+        evolution_graph.agent, "get_data_list", lambda *a, **k: {}
+    )
+
+    out = await evolution_graph.submit_evolution_task_node(
+        {
+            "query": "g1",
+            "species_code": "osa",
+            "gene_id": "g1",
+            "target_taxids": "All",
+            "is_polling": True,
+            "batch": True,
+            "kwargs": {},
+        }
+    )
+
+    assert captured["is_polling"] is True
+    assert out == {
+        "evolution_agents_task": {"task_id": "t1", "output_dir": "/out"}
+    }

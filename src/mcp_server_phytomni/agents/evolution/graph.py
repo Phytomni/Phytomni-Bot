@@ -49,14 +49,21 @@ async def resolve_target_taxids_node(
 ) -> Dict[str, Any]:
     """Resolve target taxonomy ids for the evolution query.
 
-    Delegates to :func:`agents.evolution.agent.target_taxids` so the
-    chat extraction and per-species taxonomy lookup stay in one
-    place. Returns the comma-joined taxids string (or the ``"All"``
-    sentinel); the conditional router downstream branches on
-    whether the value is ``None``. Always sets
-    ``evolution_agents_task`` on the failure path so the schema-
-    filtered output keeps a consistent shape across both branches.
+    A consumer (e.g. deep_genome) may pre-supply ``target_taxids`` in the
+    input to pin the taxonomic scope without an NL query; a truthy
+    pre-supplied value passes through unchanged and skips the chat
+    extraction. Otherwise this delegates to
+    :func:`agents.evolution.agent.target_taxids` so the chat extraction
+    and per-species taxonomy lookup stay in one place, returning the
+    comma-joined taxids string (or the ``"All"`` sentinel); the
+    conditional router downstream branches on whether the value is
+    ``None``. Always sets ``evolution_agents_task`` on the failure path
+    so the schema-filtered output keeps a consistent shape across both
+    branches.
     """
+    presupplied = state.get("target_taxids")
+    if presupplied:
+        return {"target_taxids": presupplied}
     taxids = await target_taxids(state["query"], state.get("kwargs") or {})
     if taxids is None:
         return {"target_taxids": None, "evolution_agents_task": None}
@@ -115,6 +122,7 @@ async def submit_evolution_task_node(
         user_id=user_id,
         gene_id=gene_id,
         submit_kwargs=evolution_submit_kwargs(kwargs, enable_auto_select),
+        is_polling=state.get("is_polling", False),
     )
     return {"evolution_agents_task": evo_task}
 
@@ -125,6 +133,7 @@ async def _submit_evolution_via_subgraph(
     user_id: Any,
     gene_id: str,
     submit_kwargs: Dict[str, Any],
+    is_polling: bool = False,
 ) -> Dict[str, Any]:
     """Dispatch the evolution analysis task through the analyst subgraph.
 
@@ -149,6 +158,9 @@ async def _submit_evolution_via_subgraph(
         submit_kwargs: The same kwargs ``evolution_submit_kwargs``
             forwards into ``analyst.submit`` on the legacy path; the
             cache labels and ``compute_resource`` derive from them.
+        is_polling: When ``True`` the analyst submission blocks until the
+            task reaches a terminal state; defaults to ``False`` for the
+            submit-only external surface.
 
     Returns:
         Dispatch state dict (``task_id`` / ``output_dir`` / ``plan`` /
@@ -182,7 +194,7 @@ async def _submit_evolution_via_subgraph(
         DEEP_GENOME_CONFIG,
         get_sensitive_config(),
         request,
-        is_polling=False,
+        is_polling=is_polling,
     )
 
 
