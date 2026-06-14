@@ -5,10 +5,10 @@
 
 Cited-agent prompts must declare their citation policy via
 ``## Citation Rules`` + a citable corpus under ``## Literature``;
-prompts also receiving structural data add ``## Structural
-Annotations``. Pure JSON critics (``deep_research_review``) and
-citation-preserving synthesizers (``deep_research_summary``) are
-intentionally outside the parametrization.
+prompts also receiving structural data add ``## Annotation Data``.
+Pure JSON critics (``deep_research_review``) and citation-preserving
+synthesizers (``deep_research_summary``) are intentionally outside
+the parametrization.
 """
 
 from __future__ import annotations
@@ -39,20 +39,31 @@ ALIGN_A_PROMPTS_LITERATURE_ONLY = (
 
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_WITH_STRUCTURAL)
 def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
-    """Section + intro prompts split Structural Annotations from Literature."""
+    """Section + intro prompts split annotation data from Literature."""
     body = get_prompt(PROMPT_FILE, f"user/{name}", {})
     assert (
         "## Citation Rules" in body
     ), f"{name} missing `## Citation Rules` header"
-    assert "## Structural Annotations" in body, (
-        f"{name} missing `## Structural Annotations` header — "
-        f"required by Align-A so the LLM does not bracket-cite GO / "
-        f"InterPro / Gene Structure / Homology context fields"
+    assert "## Annotation Data" in body, (
+        f"{name} missing `## Annotation Data` header — required by "
+        f"Align-A so the LLM does not bracket-cite GO / InterPro / "
+        f"Gene Structure / Homology context fields"
+    )
+    assert "Structural Annotations" not in body, (
+        f"{name} reintroduced the `Structural Annotations` name the "
+        f"LLM echoed as a `[Structural Annotations]` pseudo-citation; "
+        f"the annotation data section must not carry a bracket-citable "
+        f"name"
     )
     assert "## Literature" in body, f"{name} missing `## Literature` header"
-    assert "[document:X] verbatim" not in body, (
-        f"{name} still carries the legacy `[document:X] verbatim` "
-        f"rule — Align-A says cite as `[N]` only"
+    assert "[document:N]" in body, (
+        f"{name} no longer instructs the [document:N] citation form the "
+        f"repo uses internally (the post-processor renders [N] to the "
+        f"client)"
+    )
+    assert "[document:X]" not in body, (
+        f"{name} carries the placeholder [document:X] form — N must be a "
+        f"real document number"
     )
     assert "## Reference Materials" not in body, (
         f"{name} still carries the legacy `## Reference Materials` "
@@ -63,19 +74,24 @@ def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
 
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_LITERATURE_ONLY)
 def test_literature_only_prompt_uses_align_a(name: str) -> None:
-    """Knowledge / Review prompts declare Align-A citation form.
+    """Knowledge / Review prompts declare the citation form.
 
     These prompts (retrieval / retrieval_file / deep_research_report)
     receive a retrieve_results blob in ``[document N begin] ... [document
-    N end]`` shape and must instruct the LLM to cite as ``[N]`` only.
-    Any lingering ``[document:X]`` instruction text invites the LLM to
-    drift to the colon-prefixed form (which Task 1's widened regex
-    now captures, but the prompt should still pin the convention).
+    N end]`` shape and instruct the LLM to cite as ``[document:N]`` (the
+    repo-internal form that aligns with that input); the post-processor
+    deduplicates, sorts, and renumbers every marker to ``[N]`` for the
+    client. The placeholder ``[document:X]`` form must never appear — N
+    must always be a real document number.
     """
     body = get_prompt(PROMPT_FILE, f"user/{name}", {})
+    assert "[document:N]" in body, (
+        f"{name} no longer instructs the [document:N] citation form the "
+        f"repo uses internally"
+    )
     assert "[document:X]" not in body, (
-        f"{name} still references `[document:X]` form in its rules "
-        f"— Align-A says cite as `[N]` only"
+        f"{name} carries the placeholder [document:X] form — N must be a "
+        f"real document number"
     )
 
 
