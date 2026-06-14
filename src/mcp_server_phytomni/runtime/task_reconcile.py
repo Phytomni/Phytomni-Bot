@@ -46,7 +46,9 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         markdown DeepGenome persists on the row (``None`` for every
         other agent and for rows with no report yet), letting the poll
         formatter and the run-aggregate surface the report without
-        re-running the workflow.
+        re-running the workflow. ``degraded`` / ``degraded_reason``
+        carry the persisted (already-redacted) degradation reason or
+        ``None`` so both poll surfaces can flag a degraded report.
     """
     manager = TaskManager(resolve_tasks_db_path())
     row = manager.get_task(task_id)
@@ -58,8 +60,11 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
             "analysis_id": "",
             "live_status": None,
             "final_report": None,
+            "degraded": False,
+            "degraded_reason": None,
         }
     analyst_config = AnalystConfig()
+    degraded_reason = manager.get_task_degraded(task_id)
     result: Dict[str, Any] = {
         "task_id": task_id,
         "status": row["status"],
@@ -67,6 +72,8 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         "analysis_id": row["analysis_id"],
         "live_status": None,
         "final_report": manager.get_task_final_report(task_id),
+        "degraded": degraded_reason is not None,
+        "degraded_reason": degraded_reason,
     }
     try:
         live = await task_status(
