@@ -524,12 +524,12 @@ TTL or an out-of-band sweep removes them.
 
 Common failures:
 
-| Error                                | Meaning                                                      | Fix                                                      |
-| ------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------- |
-| `SecretEnvelopeError`                | Wrong license key or damaged `.env.encrypted`.               | Verify `PHYTOMNI_LICENSE_KEY` or redeliver the envelope. |
-| `RuntimeError` resolving environment | No plaintext `.env`, no encrypted envelope, no testing mode. | Provide one supported config source.                     |
-| `PermissionError` on SQLite path     | Store directory is not writable.                             | Fix permissions or configure absolute store paths.       |
-| `OSError: [Errno 98]`                | Port already bound.                                          | Free the port or change `API_PORT`.                      |
+| Error                                | Meaning                                                                                           | Fix                                                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SecretEnvelopeError`                | Wrong license key, damaged `.env.encrypted`, or an envelope sealed from a non-UTF-8 / BOM `.env`. | Verify `PHYTOMNI_LICENSE_KEY`; if the message names a UTF-8 / BOM problem, rebuild the envelope from a UTF-8 (no-BOM) source. Otherwise redeliver the envelope. |
+| `RuntimeError` resolving environment | No plaintext `.env`, no encrypted envelope, no testing mode.                                      | Provide one supported config source.                                                                                                                            |
+| `PermissionError` on SQLite path     | Store directory is not writable.                                                                  | Fix permissions or configure absolute store paths.                                                                                                              |
+| `OSError: [Errno 98]`                | Port already bound.                                                                               | Free the port or change `API_PORT`.                                                                                                                             |
 
 If `/readyz` returns 200 but authenticated endpoints return 500, inspect
 stderr or `journalctl -u phytomni-api` and escalate with the request id from

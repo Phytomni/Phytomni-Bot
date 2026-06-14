@@ -38,6 +38,14 @@ python scripts/encrypt_env.py \
   --output src/mcp_server_phytomni/config/.env.encrypted
 ```
 
+The input `.env` must be valid UTF-8 **without** a byte-order mark (BOM).
+`encrypt_env.py` rejects GBK / ANSI / BOM-encoded input with a clear error
+and exit code `4`, so a mis-encoded source file (common on Chinese Windows
+build hosts) cannot be sealed into an image — where it would otherwise
+surface as a cryptic `UnicodeDecodeError` at customer startup. See
+[configuration.md](configuration.md#encrypted-customer-envelope) for the
+full encoding contract.
+
 The output is an AES-256-GCM blob with `PHYBOT01` magic and a
 PBKDF2-derived key. Bake `.env.encrypted` into the customer's image, never
 the plaintext `.env`.
@@ -110,6 +118,9 @@ enumerates the accepted provisioning paths:
 1. A plaintext `config/.env`: local developer path.
 1. A license key plus `.env.encrypted`: customer-image fallback.
 
-A wrong `PHYTOMNI_LICENSE_KEY` or corrupted envelope raises
-`SecretEnvelopeError` and aborts startup rather than booting with empty
-secrets.
+A wrong `PHYTOMNI_LICENSE_KEY`, a corrupted envelope, or an envelope sealed
+from a non-UTF-8 / BOM-prefixed `.env` raises `SecretEnvelopeError` and
+aborts startup rather than booting with empty or mangled secrets. The
+encoding case is the build-side foot-gun the `encrypt_env.py` UTF-8 guard
+prevents for new artifacts; an already-shipped bad envelope must be rebuilt
+from a UTF-8 (no-BOM) source.
