@@ -349,3 +349,71 @@ def test_run_follow_up_node_swallows_persist_db_error(
 
     assert (report_dir / "Os01g0177400_report.md").exists()
     assert out["follow_up_questions"] == ["Q1?", "Q2?"]
+
+
+def test_run_follow_up_node_persists_degraded_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failures channel persists a redacted degraded reason on the row.
+
+    When the brief_gene mount degraded earlier in the run, ``failures``
+    carries a record; the final report node must redact its message and
+    write it to the umbrella task row so the poll surface can flag
+    ``degraded``. A backend URL in the message is scrubbed before persist.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    mgr = TaskManager(db_path)
+    mgr.record_submission("dg-deg-1", "submitted", "/obs/run")
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id="dg-deg-1",
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+        failures=[
+            {
+                "task_label": "brief_gene_preamble",
+                "message": "boom at https://bi.internal:9000/q",
+                "kind": "execute",
+                "traceback_digest": None,
+            }
+        ],
+    )
+
+    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert mgr.get_task_degraded("dg-deg-1") == "boom at <redacted-url>"
+
+
+def test_run_follow_up_node_no_degraded_for_healthy_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run with no failures leaves degraded_reason NULL (no false hit)."""
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    mgr = TaskManager(db_path)
+    mgr.record_submission("dg-ok-1", "submitted", "/obs/run")
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id="dg-ok-1",
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+    )
+
+    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert mgr.get_task_degraded("dg-ok-1") is None

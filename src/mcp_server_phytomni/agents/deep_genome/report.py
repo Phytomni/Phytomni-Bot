@@ -31,6 +31,7 @@ from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import _cached_chat_app
+from ..shared.parallel_dispatch import redact_failure_message
 from .formatting import SPECIES_CODE_MAP
 
 if TYPE_CHECKING:
@@ -668,6 +669,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         with open(results_path, "w", encoding="utf-8") as fo:
             fo.write(final_report)
         self._persist_final_report(state.get("task_id"), final_report)
+        self._persist_degraded(state.get("task_id"), state)
         return {
             "final_report": part0145_str,
             "follow_up_questions": follow_up_list,
@@ -703,6 +705,38 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         except (sqlite3.Error, OSError) as exc:
             logger.warning(
                 "DeepGenome failed to persist final_report for %s: %s",
+                task_id,
+                exc,
+            )
+
+    @staticmethod
+    def _persist_degraded(
+        task_id: Optional[str], state: DeepGenomeState
+    ) -> None:
+        """Persist a redacted degraded reason when a node failed.
+
+        Reads the ``failures`` channel; when non-empty, redacts the
+        first record's message and writes it to the umbrella task row so
+        the poll surface can flag ``degraded``. Best-effort like
+        ``_persist_final_report``: a registry hiccup (``sqlite3.Error``
+        for WAL / lock, ``OSError`` for a full disk) is logged and
+        swallowed rather than failing the workflow's final node.
+
+        Args:
+            task_id: Umbrella task id minted by ``arun``; ``None`` skips.
+            state: Final workflow state; ``failures`` drives the write.
+        """
+        failures = state.get("failures") or []
+        if not task_id or not failures:
+            return
+        reason = redact_failure_message(str(failures[0]["message"]))
+        try:
+            TaskManager(resolve_tasks_db_path()).set_task_degraded(
+                task_id, reason
+            )
+        except (sqlite3.Error, OSError) as exc:
+            logger.warning(
+                "DeepGenome failed to persist degraded reason for %s: %s",
                 task_id,
                 exc,
             )
