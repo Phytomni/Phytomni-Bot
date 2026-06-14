@@ -13,7 +13,7 @@ operator.or_ for task_ids.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import pytest
 
@@ -21,6 +21,7 @@ from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
+    _DispatchOptions,
 )
 from mcp_server_phytomni.agents.shared.parallel_dispatch import (
     keep_last_error,
@@ -80,7 +81,7 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
         analysis_type: str,
         species_code: str,
         gene_id: str,
-        output_dir: Optional[str] = None,
+        options: _DispatchOptions = _DispatchOptions(),
     ) -> dict[str, Any]:
         """Record the dispatched analysis type and return a fake result.
 
@@ -88,14 +89,15 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
             analysis_type: Design analysis type forwarded by the worker.
             species_code: Species code forwarded by the worker.
             gene_id: Gene id forwarded by the worker.
-            output_dir: Output directory forwarded by the worker.
+            options: Output directory + polling flag forwarded by the
+                worker.
 
         Returns:
             Deterministic task payload echoing ``analysis_type``.
         """
         assert species_code == "ath"
         assert gene_id == "AT1G01010"
-        assert output_dir == "/tmp/design-out"
+        assert options.output_dir == "/tmp/design-out"
         dispatched.append(analysis_type)
         return {
             "task_id": f"task-{analysis_type}",
@@ -190,7 +192,7 @@ async def test_design_state_reduction_handles_dual_failure(
         analysis_type: str,
         species_code: str,
         gene_id: str,
-        output_dir: Optional[str] = None,
+        options: _DispatchOptions = _DispatchOptions(),
     ) -> dict[str, Any]:
         """Fail every dispatched design task deterministically.
 
@@ -198,14 +200,14 @@ async def test_design_state_reduction_handles_dual_failure(
             analysis_type: Design analysis label for the failing task.
             species_code: Species code forwarded by the dispatcher.
             gene_id: Target gene identifier forwarded by the dispatcher.
-            output_dir: Optional output directory (unused).
+            options: Output directory + polling flag (unused).
 
         Raises:
             RuntimeError: Always, tagged with the analysis type.
         """
         assert species_code == "osa"
         assert gene_id == "Os01g0177400"
-        _ = output_dir
+        _ = options
         raise RuntimeError(f"boom {analysis_type}")
 
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)

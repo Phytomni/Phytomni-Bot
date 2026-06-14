@@ -67,6 +67,25 @@ DIGITAL_DESIGN_TEMPLATE_PATHS = {
 }
 
 
+class _DispatchOptions(NamedTuple):
+    """Per-call dispatch options for one design analysis submission.
+
+    Bundles the optional output directory and the polling flag so
+    ``_dispatch_and_wait_analysis`` stays within the pylint
+    ``too-many-arguments`` budget while still threading the
+    consumer-supplied ``is_polling`` (deep_genome mounts pass ``True``;
+    the external submit-only flow keeps the ``False`` default).
+
+    Attributes:
+        output_dir: Optional pre-allocated output directory path.
+        is_polling: Whether the analyst graph blocks until the submitted
+            task reaches a terminal state.
+    """
+
+    output_dir: Optional[str] = None
+    is_polling: bool = False
+
+
 class DigitalDesignState(ParallelDispatchState):
     """State schema for the digital design workflow.
 
@@ -82,6 +101,9 @@ class DigitalDesignState(ParallelDispatchState):
         user_id: User identifier.
         batch: Whether this is batch processing.
         output_dir: Output directory path for results.
+        is_polling: Whether each design submission blocks until the task
+            reaches a terminal state. ``False`` (default) keeps the
+            external submit-only flow; a deep_genome mount passes ``True``.
         design_tasks: List of design tasks to be executed.
         task_index: Current task index in parallel execution via Send API.
         task_ids: Mapping of task names to their corresponding task IDs.
@@ -94,6 +116,7 @@ class DigitalDesignState(ParallelDispatchState):
     user_id: str
     batch: bool
     output_dir: Optional[str]
+    is_polling: bool
     design_task_result: Annotated[List[Dict[str, Any]], operator.add]
     design_tasks: List[Dict[str, Any]]  # List of design tasks
 
@@ -179,7 +202,7 @@ class DigitalDesignAgents:
         analysis_type: str,
         species_code: str,
         gene_id: str,
-        output_dir: Optional[str] = None,
+        options: _DispatchOptions = _DispatchOptions(),
     ) -> dict:
         """Submit task using AnalystAgent and wait for completion.
 
@@ -187,7 +210,7 @@ class DigitalDesignAgents:
             analysis_type: Type of design analysis.
             species_code: Three-letter species code (e.g., "ath").
             gene_id: Target gene identifier.
-            output_dir: Optional output directory path.
+            options: Output directory + polling flag for this submission.
 
         Returns:
             Dict containing task_id and output_dir.
@@ -200,7 +223,7 @@ class DigitalDesignAgents:
         request = {
             "analysis_type": analysis_type,
             "target_id": gene_id,
-            "output_dir": output_dir,
+            "output_dir": options.output_dir,
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": self._get_compute_resource(analysis_type),
         }
@@ -209,7 +232,7 @@ class DigitalDesignAgents:
             self.digital_design_config,
             self.sensitive_config,
             request,
-            is_polling=False,
+            is_polling=options.is_polling,
         )
 
     def _analysis_prompt_parts(
@@ -283,11 +306,26 @@ class DigitalDesignAgents:
             gene_id,
         )
 
+        is_polling = bool(state.get("is_polling", False))
+
+        async def _dispatch(
+            a_type: str,
+            species: str,
+            gene: str,
+            out_dir: Optional[str],
+        ) -> dict:
+            return await self._dispatch_and_wait_analysis(
+                a_type,
+                species,
+                gene,
+                _DispatchOptions(output_dir=out_dir, is_polling=is_polling),
+            )
+
         return await capture_dispatched_analysis(
             state,
             analysis_type,
             "gene_id",
-            self._dispatch_and_wait_analysis,
+            _dispatch,
             ("design_task_result", "design_task_result"),
         )
 

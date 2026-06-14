@@ -29,6 +29,7 @@ import pytest
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
+    _DispatchOptions,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
@@ -88,7 +89,7 @@ async def test_dispatch_uses_subgraph_submit(
         analysis_type="protein_design_analysis",
         species_code="ath",
         gene_id="AT1G01010",
-        output_dir="/tmp/design-out",
+        options=_DispatchOptions(output_dir="/tmp/design-out"),
     )
 
     assert_branch_taken(result, legacy_mock, subgraph_mock, subgraph=True)
