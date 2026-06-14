@@ -45,6 +45,7 @@ from ..analyst.agent import (
 from ..brief_gene.core import BriefGeneAgent
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
+from ..shared.parallel_dispatch import FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
 from .formatting import network_to_string
@@ -151,6 +152,8 @@ class DeepGenomeState(TypedDict):
         part1_completed_branches: Counter for part1 barrier (target: 4)
         analysis_completed_branches: Counter for the analysis barrier.
         experiment_completed_branches: Counter for the experiment barrier.
+        failures: Recoverable per-node failures (e.g. a brief_gene mount
+            fault) used to surface a degraded report signal.
         report_triggered: Boolean to prevent duplicate report node execution.
     """
 
@@ -181,6 +184,11 @@ class DeepGenomeState(TypedDict):
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
+    # General failure channel: a node that catches a recoverable fault
+    # appends a FailureRecord here (operator.add merges concurrent
+    # writes) so the report node can persist a degraded signal. The
+    # brief_gene mount is the only producer today.
+    failures: Annotated[List[FailureRecord], operator.add]
     report_triggered: bool
     target_gene: str
     species: str

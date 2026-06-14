@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from langgraph.graph.state import CompiledStateGraph
 
 from ...common.responses import message_content
+from ..shared.parallel_dispatch import FailureRecord
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -57,6 +58,59 @@ def _deep_genome_preamble(brief_output: Dict[str, Any], gene_id: str) -> str:
 # the catch scope. Matches the W0718 mitigation pattern other consumer
 # agents use (analyst / review / brief_gene).
 _BRIEF_GENE_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
+
+
+_DEGRADED_BANNER = (
+    "> ⚠️ **Gene profile unavailable** — the gene-overview step did "
+    "not complete\n> for this run, so the introduction and gene-profile "
+    "section are omitted.\n> The bioinformatic analysis below proceeded "
+    "without them."
+)
+
+
+def _degraded_preamble_banner(gene_id: str) -> str:
+    """Return a titled preamble carrying a visible degradation banner.
+
+    Used when the brief_gene mount catches a fault: the report still
+    gets an H1 title plus a blockquote that flags the missing profile,
+    so a human reading the persisted markdown sees the degradation
+    rather than a headless document.
+    """
+    return f"# Deep Genome Analysis of {gene_id}\n\n{_DEGRADED_BANNER}"
+
+
+def _degraded_mount_delta(gene_id: str, exc: BaseException) -> Dict[str, Any]:
+    """Return the deep_genome state delta for a failed brief_gene mount.
+
+    Carries a ``FailureRecord`` on the ``failures`` channel (machine
+    signal), a banner ``preamble`` (human signal), an empty but
+    well-formed annotation / literature delta, and the experiment
+    barrier increment so the workflow advances past the part1 barrier
+    instead of wedging. ``traceback_digest`` is ``None``: a single mount
+    record needs no cross-record correlation, and ``logger.exception``
+    already records the full traceback.
+    """
+    return {
+        "failures": [
+            FailureRecord(
+                task_label="brief_gene_preamble",
+                message=str(exc),
+                kind="execute",
+                traceback_digest=None,
+            )
+        ],
+        "gene_annotation": {
+            "gene_string": gene_id,
+            "description": "",
+            "go": "",
+            "interpro": "",
+            "mapman": "",
+            "gene_structure": "",
+        },
+        "knowledge_context": {"literature": []},
+        "preamble": _degraded_preamble_banner(gene_id),
+        "experiment_completed_branches": 1,
+    }
 
 
 def make_brief_gene_mount_node(
@@ -97,10 +151,12 @@ def make_brief_gene_mount_node(
     block — and writes ``experiment_completed_branches: 1`` so the
     experiment_node 2-source barrier still fires.
 
-    On brief_gene failure, the closure logs the exception and emits
-    an empty annotation / empty literature delta plus the barrier
-    increment so the deep_genome workflow continues past the part1
-    barrier rather than wedging on a transient brief_gene fault.
+    On brief_gene failure, the closure logs the exception and returns a
+    degraded delta (a ``FailureRecord`` on the ``failures`` channel, a
+    visible banner ``preamble``, and an empty annotation / literature
+    delta) plus the barrier increment, so the deep_genome workflow
+    continues past the part1 barrier rather than wedging on a transient
+    brief_gene fault while still flagging the missing gene profile.
 
     Args:
         brief_gene_app: Compiled BriefGeneAgent subgraph for this
@@ -121,14 +177,14 @@ def make_brief_gene_mount_node(
             brief_output: Dict[str, Any] = await brief_gene_app.ainvoke(
                 brief_input
             )
-        except _BRIEF_GENE_MOUNT_CAUGHT:
+        except _BRIEF_GENE_MOUNT_CAUGHT as exc:
             logger.exception(
-                "brief_gene mount failed for gene_id=%s; emitting "
-                "empty annotation + literature so deep_genome part1 "
-                "barrier still advances",
+                "brief_gene mount failed for gene_id=%s; emitting a "
+                "degraded preamble + FailureRecord so the part1 barrier "
+                "advances and the report flags the missing gene profile",
                 gene_id,
             )
-            brief_output = {}
+            return _degraded_mount_delta(gene_id, exc)
 
         gene_string = str(brief_output.get("gene_id", "") or gene_id)
         return {

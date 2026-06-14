@@ -280,6 +280,35 @@ async def test_brief_gene_mount_fallback_on_brief_gene_exception() -> None:
     # M11 — Experiment-side barrier counter still emitted so the
     # downstream experiment_node 2-source barrier advances.
     assert delta["experiment_completed_branches"] == 1
+    # Degraded signal — machine-readable FailureRecord on the new
+    # ``failures`` channel so the report node can persist it.
+    failures = delta["failures"]
+    assert len(failures) == 1
+    record = failures[0]
+    assert record["task_label"] == "brief_gene_preamble"
+    assert record["kind"] == "execute"
+    assert "brief_gene exploded" in record["message"]
+    # Human-readable banner — the report's pre-analysis block now carries
+    # a titled degradation notice instead of an empty string.
+    preamble = delta["preamble"]
+    assert preamble.startswith("# Deep Genome Analysis of AT1G01010")
+    assert "Gene profile unavailable" in preamble
+
+
+async def test_brief_gene_mount_success_emits_no_failures() -> None:
+    """A successful mount writes no ``failures`` and no banner.
+
+    Guards against a false-positive degraded signal: the happy path must
+    leave the ``failures`` channel untouched so a healthy run never
+    surfaces ``degraded: true``.
+    """
+    fake_app = _build_fake_brief_gene_app()
+    mount = make_brief_gene_mount_node(fake_app)
+
+    delta = await mount(cast(Any, _deep_genome_state()))
+
+    assert "failures" not in delta or delta["failures"] == []
+    assert "Gene profile unavailable" not in delta["preamble"]
 
 
 # ---------------------------------------------------------------------------
