@@ -11,43 +11,9 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.runtime import task_reconcile
+from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.unit
-
-
-class _UnknownManager:
-    """Stand-in TaskManager whose row lookup always misses."""
-
-    def __init__(self, _db: str) -> None:
-        pass
-
-    def get_task(self, _task_id: str) -> None:
-        """Always miss the row lookup."""
-        return None
-
-
-class _DegradedManager:
-    """Stand-in TaskManager returning a degraded recorded row."""
-
-    def __init__(self, _db: str) -> None:
-        pass
-
-    def get_task(self, _task_id: str) -> dict[str, str]:
-        """Return a recorded succeeded row."""
-        return {
-            "task_id": "dg-1",
-            "status": "succeeded",
-            "analysis_id": "a",
-            "output_dir": "/obs/x",
-        }
-
-    def get_task_final_report(self, _task_id: str) -> str:
-        """Return a canned report markdown."""
-        return "# report"
-
-    def get_task_degraded(self, _task_id: str) -> str:
-        """Return a degraded reason."""
-        return "gene overview unavailable"
 
 
 async def _benign_status(*_args: Any, **_kwargs: Any) -> dict[str, str]:
@@ -56,13 +22,17 @@ async def _benign_status(*_args: Any, **_kwargs: Any) -> dict[str, str]:
 
 
 async def test_reconcile_unknown_task_is_not_degraded(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An unknown id reconciles to a non-degraded row."""
-    monkeypatch.setattr(task_reconcile, "TaskManager", _UnknownManager)
-    monkeypatch.setattr(
-        task_reconcile, "resolve_tasks_db_path", lambda: ":memory:"
-    )
+    """An unknown id reconciles to a non-degraded row.
+
+    A real (empty) registry is enough: ``reconcile_task`` finds no row
+    and returns early, before any live-status probe, so no stub is
+    needed.
+    """
+    db = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(task_reconcile, "resolve_tasks_db_path", lambda: db)
+    TaskManager(db)  # create the schema; no row for the queried id
 
     result = await task_reconcile.reconcile_task("nope")
 
@@ -71,14 +41,20 @@ async def test_reconcile_unknown_task_is_not_degraded(
 
 
 async def test_reconcile_surfaces_degraded_reason(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A degraded row reconciles to degraded True + the reason."""
-    monkeypatch.setattr(task_reconcile, "TaskManager", _DegradedManager)
-    monkeypatch.setattr(
-        task_reconcile, "resolve_tasks_db_path", lambda: ":memory:"
-    )
+    """A degraded row reconciles to degraded True + the reason.
+
+    Drives the real persist→reconcile round trip: ``set_task_degraded``
+    writes the reason and ``reconcile_task`` reads it back. The live
+    status probe is stubbed so the success path runs offline.
+    """
+    db = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(task_reconcile, "resolve_tasks_db_path", lambda: db)
     monkeypatch.setattr(task_reconcile, "task_status", _benign_status)
+    mgr = TaskManager(db)
+    mgr.record_submission("dg-1", "succeeded", "/obs/x")
+    mgr.set_task_degraded("dg-1", "gene overview unavailable")
 
     result = await task_reconcile.reconcile_task("dg-1")
 
