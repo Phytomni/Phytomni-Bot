@@ -402,6 +402,21 @@ IMAGE_SUMMARY_SPECS = (
         legend_key="smoc_legend",
         missing_summary="",
     ),
+    # §8.2 Artificial Intelligence Design (protein). The design task
+    # produces psap_scores.png and a summary_all.py --summary_type
+    # protein_design summary/legend; the file names follow the motif
+    # convention ({gene_id}_<summary_type>.summary/.legend).
+    ImageSummarySpec(
+        analysis_type="protein_design_analysis",
+        image_pattern="psap_scores.png",
+        image_key="protein_path",
+        summary_pattern="{gene_id}_protein_design.summary",
+        summary_key="protein_summary",
+        legend_pattern="{gene_id}_protein_design.legend",
+        legend_key="protein_legend",
+        fixed_summary=True,
+        fixed_legend=True,
+    ),
 )
 
 
