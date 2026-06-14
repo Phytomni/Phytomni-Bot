@@ -35,7 +35,6 @@ from ..design.agent import (
     promoter_design_for_gene,
     protein_structure_for_gene,
 )
-from ..evolution.agent import evolution_analysis_for_gene
 from ..shared.analysis_storage import (
     ANALYSIS_DATA_LIST_MAP,
     ensure_run_output_dir,
@@ -198,7 +197,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         return END
 
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
-        """Dispatch analysis tasks in parallel using Send API.
+        """Dispatch analysis tasks in parallel using the Send API.
+
+        The evolution task fans to the dedicated ``evolution_node`` (the
+        mounted standalone evolution subgraph); every other task fans to
+        the generic ``analyst_node``. Evolution stays an entry in
+        ``analysis_tasks`` so the synthesize barrier's ``total_expected``
+        count is unchanged.
 
         Args:
             state: Current workflow state containing analysis_tasks.
@@ -207,14 +212,24 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             List of Send objects for dynamic task dispatch.
         """
         sleep_time = state.get("task_submit_sleep", 10)
-        tasks = state.get("analysis_tasks", [])
-        return [
-            Send(
-                "analyst_node",
-                {"task_index": i, "task_submit_sleep": i * sleep_time, **task},
+        sends = []
+        for i, task in enumerate(state.get("analysis_tasks", [])):
+            node = (
+                "evolution_node"
+                if task.get("analysis_type") == "evolution_analysis"
+                else "analyst_node"
             )
-            for i, task in enumerate(tasks)
-        ]
+            sends.append(
+                Send(
+                    node,
+                    {
+                        "task_index": i,
+                        "task_submit_sleep": i * sleep_time,
+                        **task,
+                    },
+                )
+            )
+        return sends
 
     def _route_after_analyst(self: Any, state: DeepGenomeState):
         """Signal to end Send instance execution.
@@ -650,24 +665,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     ) -> dict:
         """Submit one resolved analysis task to AnalystAgent.
 
-        For the three analysis types transferred to the evolution /
-        design modules (Step 6.5), branch on the matching
-        ``DeepGenomeConfig`` flag and dispatch through the producer
+        For the two design analysis types (protein_structure /
+        promoter), dispatch through the matching design producer
         wrapper. For the remaining types, build the request dict and
         route through ``submit_analyst_via_subgraph``. The shared
         helper internally mints its own run identity via
         ``prepare_analyst_dispatch_context`` so the per-call
         ``run_identity`` argument the caller used to thread through
-        has retired.
+        has retired. Evolution is no longer dispatched here; it routes
+        to the mounted ``evolution_node``.
         """
         analysis_type = context.analysis_type
         config = self.deep_genome_config
-        if analysis_type == "evolution_analysis":
-            return await evolution_analysis_for_gene(
-                species_code=context.species_code,
-                gene_id=context.gene_id,
-                output_dir=context.output_dir,
-            )
         if analysis_type == "protein_structure_analysis":
             return await protein_structure_for_gene(
                 species_code=context.species_code,

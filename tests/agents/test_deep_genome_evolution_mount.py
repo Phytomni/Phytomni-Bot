@@ -16,6 +16,7 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import evolution_mount
+from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
@@ -150,3 +151,15 @@ async def test_mount_degrades_on_fault() -> None:
     assert out["analysis_completed_branches"] == 1
     assert out["failures"][0]["task_label"] == "evolution_analysis"
     assert out["raw_analyst_data"]["task_2"]["status"] == "failed"
+
+
+def test_deep_genome_graph_registers_evolution_node() -> None:
+    """The compiled deep_genome graph exposes the evolution_node.
+
+    Constructed offline the same way ``test_agent_smoke`` builds the
+    agent (``knowledge_agent=None`` / ``analyst_agent=None``); the real
+    ``_build_graph`` runs, so a missing registration fails here.
+    """
+    agents = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
+    nodes = set(agents.app.get_graph().nodes)
+    assert "evolution_node" in nodes

@@ -43,11 +43,13 @@ from ..analyst.agent import (
     AnalystAgent,
 )
 from ..brief_gene.core import BriefGeneAgent
+from ..evolution.builder import build_evolution_graph
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .dispatch import DeepGenomeDispatchMixin
+from .evolution_mount import DeepGenomeEvolutionMountMixin
 from .formatting import network_to_string
 from .profile import (
     DeepGenomeProfileMixin,
@@ -217,16 +219,23 @@ class DeepGenomeAgentDeps(NamedTuple):
             ``None`` (default) defers construction to the consuming
             code path; ``DeepGenomeAgents`` populates it via
             ``_replace`` in ``__init__``.
+        evolution_app: Compiled standalone evolution subgraph mounted as
+            ``evolution_node``. ``None`` (default) defers construction;
+            ``DeepGenomeAgents`` populates it via ``_replace`` in
+            ``__init__`` so the mount factory closes over a real
+            ``CompiledStateGraph`` for xray expansion.
     """
 
     knowledge_agent: KnowledgeAgent
     analyst_agent: AnalystAgent
     brief_gene_app: Any = None
     knowledge_app: Any = None
+    evolution_app: Any = None
 
 
 class DeepGenomeAgents(
     DeepGenomeBriefGeneMountMixin,
+    DeepGenomeEvolutionMountMixin,
     DeepGenomeDispatchMixin,
     DeepGenomeProfileMixin,
     DeepGenomeReportMixin,
@@ -325,6 +334,7 @@ class DeepGenomeAgents(
                 knowledge_agent=self._agents.knowledge_agent,
             ).app,
             knowledge_app=knowledge_app,
+            evolution_app=build_evolution_graph(),
         )
         self.app = self._build_graph()
 
@@ -350,6 +360,16 @@ class DeepGenomeAgents(
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
         workflow.add_node("analyst_node", self._run_analyst_node)
+        # Evolution mounts the standalone evolution graph as its own
+        # xray-expandable node; ``_route_analyst_tasks`` fans the
+        # evolution task here instead of to ``analyst_node``.
+        workflow.add_node(
+            "evolution_node",
+            self.make_evolution_mount_node(
+                self._agents.evolution_app,
+                self.finalize_evolution_result,
+            ),
+        )
 
         workflow.add_node("experiment_node", self._run_report_experiment)
         workflow.add_node("protocol_node", self._run_report_protocol)
@@ -369,10 +389,15 @@ class DeepGenomeAgents(
         workflow.add_edge("brief_gene_node", "experiment_node")
 
         workflow.add_conditional_edges(
-            "prepare_tasks_node", self._route_analyst_tasks, ["analyst_node"]
+            "prepare_tasks_node",
+            self._route_analyst_tasks,
+            ["analyst_node", "evolution_node"],
         )
         workflow.add_conditional_edges(
             "analyst_node", self._route_after_analyst, [END]
+        )
+        workflow.add_conditional_edges(
+            "evolution_node", self._route_after_analyst, [END]
         )
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
         # The synthesize barrier no longer routes to introduction_node

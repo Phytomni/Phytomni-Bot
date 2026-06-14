@@ -4,10 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Routing tests for the deep_genome producer-wrapper reroute.
 
-Pins ``DeepGenomeDispatchMixin._submit_analysis_task`` routing:
-``evolution_analysis`` tasks call ``evolution_analysis_for_gene``;
-``protein_structure_analysis`` / ``promoter_analysis`` tasks call the
-matching design module wrappers. Non-transferred analysis types route
+Pins ``DeepGenomeDispatchMixin`` routing: ``evolution_analysis`` fans to
+the mounted ``evolution_node``; ``protein_structure_analysis`` /
+``promoter_analysis`` tasks call the matching design module wrappers
+inside ``_submit_analysis_task``. Non-transferred analysis types route
 through ``submit_analyst_via_subgraph``.
 """
 
@@ -91,15 +91,13 @@ def _install_shared_helper_mock(
 def _install_wrapper_mocks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, AsyncMock]:
-    """Patch the 3 module-level producer wrappers on the dispatch module."""
+    """Patch the 2 module-level design producer wrappers on dispatch.
+
+    Evolution is no longer a producer-wrapper branch inside
+    ``_submit_analysis_task``; it is routed to the mounted
+    ``evolution_node`` instead, so only the two design wrappers remain.
+    """
     mocks = {
-        "evolution_analysis_for_gene": AsyncMock(
-            return_value={
-                "task_id": "evo-id",
-                "output_dir": "/obs/evo",
-                "task_status": "SUCCEEDED",
-            }
-        ),
         "protein_structure_for_gene": AsyncMock(
             return_value={
                 "task_id": "struct-id",
@@ -120,27 +118,39 @@ def _install_wrapper_mocks(
     return mocks
 
 
-async def test_evolution_analysis_routes_to_wrapper(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``evolution_analysis`` routes to evolution_analysis_for_gene."""
-    mixin = _build_mixin_instance()
-    wrappers = _install_wrapper_mocks(monkeypatch)
-    subgraph_mock = _install_shared_helper_mock(monkeypatch)
+def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
+    """The evolution task fans to evolution_node; others to analyst_node.
 
-    result = (
-        await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-            mixin, _context("evolution_analysis")
-        )
+    Evolution stays an entry in ``analysis_tasks`` (so the synthesize
+    barrier's ``total_expected`` count is unchanged) but routes to the
+    dedicated mounted ``evolution_node`` rather than the generic
+    ``analyst_node``.
+    """
+    state: Any = {
+        "task_submit_sleep": 0,
+        "analysis_tasks": [
+            {
+                "analysis_type": "evolution_analysis",
+                "target_gene": "g1",
+                "species_code": "osa",
+            },
+            {
+                "analysis_type": "single_cell_analysis",
+                "target_gene": "g1",
+                "species_code": "osa",
+            },
+        ],
+    }
+
+    sends = dispatch_module.DeepGenomeDispatchMixin._route_analyst_tasks(
+        object(), state
     )
 
-    assert result["task_id"] == "evo-id"
-    wrappers["evolution_analysis_for_gene"].assert_awaited_once_with(
-        species_code="ath",
-        gene_id="AT1G01010",
-        output_dir="/obs/run/out",
-    )
-    subgraph_mock.assert_not_awaited()
+    targets = {send.node for send in sends}
+    assert targets == {"evolution_node", "analyst_node"}
+    evo = next(send for send in sends if send.node == "evolution_node")
+    assert evo.arg["analysis_type"] == "evolution_analysis"
+    assert evo.arg["task_index"] == 0
 
 
 async def test_protein_structure_routes_to_wrapper(
