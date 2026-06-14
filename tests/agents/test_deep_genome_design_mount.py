@@ -17,8 +17,95 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import design_mount
+from mcp_server_phytomni.agents.deep_genome.dispatch import (
+    DeepGenomeDispatchMixin,
+)
 
 pytestmark = pytest.mark.agent
+
+
+def _stub_host() -> Any:
+    """Return a host stub exposing the dispatch helpers finalize uses.
+
+    A ``SimpleNamespace`` rather than a class keeps the test free of a
+    single-public-method stand-in (the canonical R0903 source), matching
+    how the evolution-mount test builds its mixin host. ``downloaded``
+    records the output dirs the finalize actually fetched.
+    """
+    downloaded: list[str] = []
+
+    def _raise_if_agent_failed(result: dict) -> None:
+        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
+            raise RuntimeError("agent failed")
+
+    async def _download_analysis_result(
+        _context: Any, output_path: str, _run_identity: Any
+    ) -> str:
+        downloaded.append(output_path)
+        return f"{output_path}/results"
+
+    def _generate_sub_summary(
+        *,
+        analysis_type: str,
+        gene_id: str,
+        state: Any,
+        results_dir: Any = None,
+    ) -> dict:
+        del state
+        return {"protein_summary": f"{analysis_type}:{gene_id}:{results_dir}"}
+
+    return SimpleNamespace(
+        deep_genome_config=SimpleNamespace(USER_ID="u"),
+        _raise_if_agent_failed=_raise_if_agent_failed,
+        _download_analysis_result=_download_analysis_result,
+        _generate_sub_summary=_generate_sub_summary,
+        downloaded=downloaded,
+    )
+
+
+async def test_finalize_summarizes_protein_design_only() -> None:
+    """Finalize downloads + summarizes only the protein-design task.
+
+    The mounted graph returns both design tasks; §8.1 promoter rendering
+    is deferred, so finalize correlates the ``protein_design`` task id,
+    downloads only it, and contributes the single barrier branch.
+    """
+    host = _stub_host()
+    design_output = {
+        "task_ids": {"protein_design": "p1", "promoter_design": "m1"},
+        "design_task_result": [
+            {
+                "task_id": "p1",
+                "output_dir": "/obs/p",
+                "task_status": "SUCCEEDED",
+            },
+            {
+                "task_id": "m1",
+                "output_dir": "/obs/m",
+                "task_status": "SUCCEEDED",
+            },
+        ],
+    }
+    state: Any = {
+        "species_code": "osa",
+        "target_gene": "g1",
+        "task_index": 6,
+    }
+
+    delta = await DeepGenomeDispatchMixin.finalize_design_result(
+        host, design_output=design_output, state=state
+    )
+
+    assert delta["analysis_completed_branches"] == 1
+    assert delta["raw_analyst_data"]["task_6"]["task_id"] == "p1"
+    assert delta["raw_analyst_data"]["task_6"]["analysis_type"] == (
+        "digital_design"
+    )
+    assert delta["analyst_summaries"]["protein_summary"].startswith(
+        "protein_design_analysis:g1:"
+    )
+    # Only the protein-design task is downloaded; promoter is deferred.
+    assert host.downloaded == ["/obs/p"]
 
 
 def _fake_app(output: Any = None, boom: bool = False) -> Any:

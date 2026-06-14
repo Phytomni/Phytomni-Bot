@@ -199,11 +199,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
         """Dispatch analysis tasks in parallel using the Send API.
 
-        The evolution task fans to the dedicated ``evolution_node`` (the
-        mounted standalone evolution subgraph); every other task fans to
-        the generic ``analyst_node``. Evolution stays an entry in
-        ``analysis_tasks`` so the synthesize barrier's ``total_expected``
-        count is unchanged.
+        The evolution task fans to the dedicated ``evolution_node`` and
+        the digital_design task to the mounted ``design_node`` (both
+        mounted standalone subgraphs); every other task fans to the
+        generic ``analyst_node``. Both stay entries in ``analysis_tasks``
+        so the synthesize barrier's ``total_expected`` count is unchanged.
 
         Args:
             state: Current workflow state containing analysis_tasks.
@@ -214,11 +214,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         sleep_time = state.get("task_submit_sleep", 10)
         sends = []
         for i, task in enumerate(state.get("analysis_tasks", [])):
-            node = (
-                "evolution_node"
-                if task.get("analysis_type") == "evolution_analysis"
-                else "analyst_node"
-            )
+            analysis_type = task.get("analysis_type")
+            if analysis_type == "evolution_analysis":
+                node = "evolution_node"
+            elif analysis_type == "digital_design":
+                node = "design_node"
+            else:
+                node = "analyst_node"
             sends.append(
                 Send(
                     node,
@@ -399,6 +401,77 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "analysis_completed_branches": 1,
         }
 
+    async def finalize_design_result(
+        self: Any,
+        design_output: dict,
+        state: DeepGenomeState,
+    ) -> dict:
+        """Light §8.2 from the mounted design graph's protein-design task.
+
+        Correlates the ``protein_design`` task id to its result entry,
+        downloads it, and builds the protein-design sub-summary. The
+        promoter-design task is submitted but NOT summarized here -- its
+        §8.1 rendering is a tracked follow-up (the restored protocol emits
+        no summary artifact yet). Contributes the single barrier branch.
+
+        Args:
+            design_output: Final state of the mounted DigitalDesignAgents
+                graph (``task_ids`` + ``design_task_result``).
+            state: Send payload carrying ``species_code`` / ``target_gene``
+                / ``task_index``; also passed to the sub-summary builder.
+
+        Returns:
+            Analyst-branch state delta (``raw_analyst_data`` /
+            ``analyst_summaries`` / ``analysis_completed_branches``).
+        """
+        species_code = state["species_code"]
+        gene_id = state["target_gene"]
+        task_index = state.get("task_index")
+        task_ids = design_output.get("task_ids", {})
+        protein_id = task_ids.get("protein_design")
+        results = design_output.get("design_task_result", [])
+        protein_task = next(
+            (t for t in results if str(t.get("task_id")) == str(protein_id)),
+            None,
+        )
+        if protein_task is None:
+            raise RuntimeError("design mount produced no protein-design task")
+        self._raise_if_agent_failed(protein_task)
+        output_path = protein_task.get("output_dir")
+        if not isinstance(output_path, str):
+            raise RuntimeError("design mount returned no output directory")
+        run_identity = RunIdentity.create(
+            user_id=self.deep_genome_config.USER_ID,
+            scope="protein_design_analysis",
+        )
+        context = AnalysisDispatchContext(
+            analysis_type="protein_design_analysis",
+            species_code=species_code,
+            gene_id=gene_id,
+            output_dir=output_path,
+        )
+        results_dir = await self._download_analysis_result(
+            context, output_path, run_identity
+        )
+        sub_summary = self._generate_sub_summary(
+            analysis_type="protein_design_analysis",
+            gene_id=gene_id,
+            state=state,
+            results_dir=results_dir,
+        )
+        return {
+            "raw_analyst_data": {
+                f"task_{task_index}": {
+                    "status": "success",
+                    "analysis_type": "digital_design",
+                    "task_id": protein_task.get("task_id"),
+                    "output_path": output_path,
+                }
+            },
+            "analyst_summaries": sub_summary,
+            "analysis_completed_branches": 1,
+        }
+
     def _generate_sub_summary(
         self: Any,
         analysis_type: str,
@@ -439,7 +512,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         This method prepares the deep genome analysis tasks: evolution
         analysis, expression analysis across
         tissues/cultivars/treatments/genotypes, single-cell analysis,
-        promoter analysis, SMEP, SMOC, and protein structure prediction.
+        promoter analysis, SMEP, SMOC, protein structure prediction, and
+        digital design (mounted via design_node).
 
         Args:
             state: Current workflow state containing gene_id and species_code.
@@ -552,6 +626,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "analysis_type": "protein_structure_analysis",
                 "compute": "medium",
                 "func_name": "protein_structure_analysis",
+            },
+            {
+                "target_gene": gene_id,
+                "species_code": species_code,
+                "analysis_type": "digital_design",
+                "compute": "medium",
+                "func_name": "digital_design",
             },
         ]
         return {"analysis_tasks": tasks}

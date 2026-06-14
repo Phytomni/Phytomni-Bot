@@ -153,6 +153,35 @@ def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
     assert evo.arg["task_index"] == 0
 
 
+def test_route_analyst_tasks_sends_design_to_design_node() -> None:
+    """The digital_design task fans to the mounted ``design_node``."""
+    state: Any = {
+        "task_submit_sleep": 0,
+        "analysis_tasks": [
+            {
+                "analysis_type": "digital_design",
+                "target_gene": "g1",
+                "species_code": "osa",
+            },
+            {
+                "analysis_type": "single_cell_analysis",
+                "target_gene": "g1",
+                "species_code": "osa",
+            },
+        ],
+    }
+
+    sends = dispatch_module.DeepGenomeDispatchMixin._route_analyst_tasks(
+        object(), state
+    )
+
+    targets = {send.node for send in sends}
+    assert targets == {"design_node", "analyst_node"}
+    design = next(send for send in sends if send.node == "design_node")
+    assert design.arg["analysis_type"] == "digital_design"
+    assert design.arg["task_index"] == 0
+
+
 async def test_protein_structure_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
