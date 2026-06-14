@@ -12,9 +12,10 @@ Lives in its own module so :mod:`result_formatting` stays under the
 1000-line module size budget enforced by pylint C0302.
 """
 
-import re
 from collections.abc import Mapping
 from typing import Any, Literal
+
+from ..agents.shared.parallel_dispatch import redact_failure_message
 
 __all__ = [
     "project_universal_failure_metadata",
@@ -22,37 +23,6 @@ __all__ = [
 ]
 
 _UniversalStatus = Literal["SUCCESS", "PARTIAL", "FAILED", "PENDING"]
-
-_URL_RE = re.compile(r"\b[a-z][a-z0-9+.\-]*://\S+", re.IGNORECASE)
-# Secret-bearing fragments ``str(exc)`` can carry: a credential keyword
-# joined to its value by ``=`` / ``:`` (``token=...``, ``api_key: ...``)
-# or a ``Bearer <token>`` authorization preamble.
-_SECRET_RE = re.compile(
-    r"(?i)\b(?:api[_-]?key|access[_-]?token|token|secret|password|passwd|"
-    r"authorization)\s*[=:]\s*\S+"
-)
-_BEARER_RE = re.compile(r"(?i)\bbearer\s+[\w.\-]+")
-
-
-def redact_failure_message(message: str) -> str:
-    """Strip URLs and secret-like fragments from a failure message.
-
-    ``FailureRecord.message`` is ``str(exc)`` from a worker exception and
-    reaches ``formatted.metadata.failures[].message`` on the HTTP and MCP
-    surfaces. Backend HTTP errors (httpx) embed the request URL — internal
-    hostnames, ports, and paths — and a credential can ride in a query
-    parameter or an ``Authorization`` fragment. Redact both so client-
-    facing metadata never discloses internal endpoints or secrets; the
-    unredacted text stays only in logs and ``raw.phytomni_state`` under
-    debug. The redaction keeps the surrounding error text so the failure
-    stays diagnosable (``"Connection failed for <redacted-url>"``).
-    """
-    redacted = _URL_RE.sub("<redacted-url>", message)
-    # ``Bearer <token>`` first: the keyword pass below would otherwise
-    # consume only ``Bearer`` after ``Authorization:`` and leave the token.
-    redacted = _BEARER_RE.sub("<redacted-secret>", redacted)
-    redacted = _SECRET_RE.sub("<redacted-secret>", redacted)
-    return redacted
 
 
 def project_universal_failure_metadata(
