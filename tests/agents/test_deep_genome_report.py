@@ -392,6 +392,47 @@ def test_run_follow_up_node_persists_degraded_reason(
     assert mgr.get_task_degraded("dg-deg-1") == "boom at <redacted-url>"
 
 
+def test_persist_degraded_uses_literature_degraded_when_no_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Literature-only degradation persists a degraded reason, no failure.
+
+    When the brief_gene mount succeeds overall but rolls up per-symbol
+    ``literature_degraded`` records (and no ``failures``), the final
+    report node must still persist a status-independent degraded reason
+    listing the sorted unique symbols.
+    """
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    mgr = TaskManager(db_path)
+    mgr.record_submission("dg-lit-1", "submitted", "/obs/run")
+
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(
+        task_id="dg-lit-1",
+        report_dir=str(report_dir),
+        summary_report="conclusion",
+        follow_up_questions=[],
+        failures=[],
+        literature_degraded=[
+            {"task_label": "OsB", "message": "boom"},
+            {"task_label": "OsA", "message": "boom"},
+        ],
+    )
+
+    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
+
+    assert (
+        mgr.get_task_degraded("dg-lit-1")
+        == "literature retrieval degraded for: OsA, OsB"
+    )
+
+
 def test_run_follow_up_node_no_degraded_for_healthy_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

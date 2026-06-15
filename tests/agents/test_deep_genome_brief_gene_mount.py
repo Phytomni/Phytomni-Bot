@@ -40,6 +40,7 @@ class _FakeBriefGeneState(TypedDict, total=False):
     description_string: str
     retrieved_docs: list[dict[str, Any]]
     final_response: dict[str, Any]
+    literature_degraded: list[dict[str, Any]]
     # M11 — preamble fan-out fields the brief_gene mount projects to
     # deep_genome state.
     gene_structure_string: str
@@ -309,6 +310,34 @@ async def test_brief_gene_mount_success_emits_no_failures() -> None:
 
     assert "failures" not in delta or delta["failures"] == []
     assert "Gene profile unavailable" not in delta["preamble"]
+
+
+async def test_mount_success_rolls_up_literature_degraded() -> None:
+    """The mount carries brief_gene's literature_degraded onto deep_genome.
+
+    A successful brief_gene mount can still surface recoverable
+    per-symbol literature degradations on its ``literature_degraded``
+    channel; the mount must roll those onto deep_genome state so the
+    final report node can persist the status-independent degraded signal.
+    """
+    canned = {
+        "gene_id": "AT1G01010",
+        "go_string": "",
+        "kegg_string": "",
+        "interpro_string": "",
+        "description_string": "",
+        "retrieved_docs": [],
+        "literature_degraded": [{"task_label": "OsCAB1", "message": "boom"}],
+    }
+    mount = make_brief_gene_mount_node(
+        _build_fake_brief_gene_app(output=canned)
+    )
+
+    delta = await mount(cast(Any, _deep_genome_state()))
+
+    assert delta["literature_degraded"] == [
+        {"task_label": "OsCAB1", "message": "boom"}
+    ]
 
 
 # ---------------------------------------------------------------------------

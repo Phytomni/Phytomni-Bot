@@ -216,6 +216,7 @@ def make_brief_gene_mount_node(
             # contribution that part1_node used to write (the analyst
             # synthesize_node contributes the other +1).
             "experiment_completed_branches": 1,
+            "literature_degraded": brief_output.get("literature_degraded", []),
         }
 
     return _brief_gene_mount

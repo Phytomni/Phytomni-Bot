@@ -31,7 +31,10 @@ from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import _cached_chat_app
-from ..shared.parallel_dispatch import redact_failure_message
+from ..shared.parallel_dispatch import (
+    degraded_labels,
+    redact_failure_message,
+)
 from .formatting import SPECIES_CODE_MAP
 
 if TYPE_CHECKING:
@@ -717,19 +720,28 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         Reads the ``failures`` channel; when non-empty, redacts the
         first record's message and writes it to the umbrella task row so
-        the poll surface can flag ``degraded``. Best-effort like
-        ``_persist_final_report``: a registry hiccup (``sqlite3.Error``
-        for WAL / lock, ``OSError`` for a full disk) is logged and
-        swallowed rather than failing the workflow's final node.
+        the poll surface can flag ``degraded``. When ``failures`` is
+        empty it falls back to the ``literature_degraded`` channel rolled
+        up from the brief_gene mount and persists a reason listing the
+        sorted unique symbols. Best-effort like ``_persist_final_report``:
+        a registry hiccup (``sqlite3.Error`` for WAL / lock, ``OSError``
+        for a full disk) is logged and swallowed rather than failing the
+        workflow's final node.
 
         Args:
             task_id: Umbrella task id minted by ``arun``; ``None`` skips.
             state: Final workflow state; ``failures`` drives the write.
         """
         failures = state.get("failures") or []
-        if not task_id or not failures:
+        degraded = state.get("literature_degraded") or []
+        if not task_id or (not failures and not degraded):
             return
-        reason = redact_failure_message(str(failures[0]["message"]))
+        if failures:
+            reason = redact_failure_message(str(failures[0]["message"]))
+        else:
+            reason = "literature retrieval degraded for: " + ", ".join(
+                degraded_labels(degraded)
+            )
         try:
             TaskManager(resolve_tasks_db_path()).set_task_degraded(
                 task_id, reason

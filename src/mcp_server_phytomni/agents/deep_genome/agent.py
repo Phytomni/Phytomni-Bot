@@ -47,7 +47,7 @@ from ..design.agent import DigitalDesignAgents
 from ..evolution.builder import build_evolution_graph
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
-from ..shared.parallel_dispatch import FailureRecord
+from ..shared.parallel_dispatch import DegradedRecord, FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .design_mount import make_design_mount_node
 from .dispatch import (
@@ -162,6 +162,9 @@ class DeepGenomeState(TypedDict):
         experiment_completed_branches: Counter for the experiment barrier.
         failures: Recoverable per-node failures (e.g. a brief_gene mount
             fault) used to surface a degraded report signal.
+        literature_degraded: Recoverable per-symbol literature retrieve
+            degradations rolled up from the brief_gene mount; drives the
+            status-independent degraded signal without flipping status.
         report_triggered: Boolean to prevent duplicate report node execution.
     """
 
@@ -197,6 +200,10 @@ class DeepGenomeState(TypedDict):
     # writes) so the report node can persist a degraded signal. The
     # brief_gene mount is the only producer today.
     failures: Annotated[List[FailureRecord], operator.add]
+    # Status-independent literature degradation rolled up from the
+    # brief_gene mount. Never feeds project_universal_failure_metadata —
+    # only _persist_degraded's status-independent set_task_degraded path.
+    literature_degraded: Annotated[List[DegradedRecord], operator.add]
     report_triggered: bool
     target_gene: str
     species: str
