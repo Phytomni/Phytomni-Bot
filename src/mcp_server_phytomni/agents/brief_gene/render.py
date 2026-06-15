@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from ..shared.parallel_dispatch import degraded_labels
 from .state import BriefGeneAgentState
 
 
@@ -75,6 +76,25 @@ def _render_basic_genomic_information(state: BriefGeneAgentState) -> str:
     )
 
 
+def _render_degraded_banner(state: BriefGeneAgentState) -> str:
+    """Return a degraded blockquote, or "" when no leg degraded.
+
+    Empty string on the no-degradation path keeps the rendered preamble
+    byte-identical to today, preserving the verbatim-sync invariant the
+    deep_genome mount depends on. The banner lists the gene labels whose
+    literature retrieve leg failed.
+    """
+    records = state.get("literature_degraded") or []
+    if not records:
+        return ""
+    labels = ", ".join(degraded_labels(records))
+    return (
+        "> ⚠️ **Literature retrieval degraded** — could not fetch "
+        f"literature for: {labels}.\n> Sections below may be "
+        "literature-thin for those genes.\n\n"
+    )
+
+
 def _render_preamble_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     """Assemble final_response.content from state fields.
 
@@ -88,6 +108,7 @@ def _render_preamble_node(state: BriefGeneAgentState) -> Dict[str, Any]:
     gene_id = state.get("gene_id") or state.get("user_query", "")
     content = (
         f"# Brief Gene Analysis of {gene_id}\n\n"
+        f"{_render_degraded_banner(state)}"
         f"{state.get('introduction_report', '')}\n\n"
         "## Gene Profiles\n\n"
         f"{_render_basic_genomic_information(state)}\n"

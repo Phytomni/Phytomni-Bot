@@ -69,6 +69,38 @@ def _not_found_state() -> dict[str, Any]:
     }
 
 
+def _degraded_state() -> dict[str, Any]:
+    state = _full_state()
+    state["literature_degraded"] = [
+        {"task_label": "OsCAB1", "message": "boom"},
+        {"task_label": "OsPHYA", "message": "boom"},
+    ]
+    return state
+
+
+def test_render_preamble_literature_degraded_inserts_banner() -> None:
+    """literature_degraded non-empty: banner appears between H1 and intro."""
+    delta = _render_preamble_node(cast(Any, _degraded_state()))
+
+    content = delta["final_response"]["choices"][0]["message"]["content"]
+    assert content.startswith("# Brief Gene Analysis of Os01g0177400")
+    assert "⚠️ **Literature retrieval degraded**" in content
+    assert "OsCAB1, OsPHYA" in content
+    # Banner sits between the H1 and the introduction so the deep_genome
+    # H1-swap (first-line partition) still works and the banner rides
+    # verbatim into the report.
+    assert content.index("⚠️") < content.index("Intro paragraphs here.")
+
+
+def test_render_preamble_happy_path_omits_banner() -> None:
+    """literature_degraded empty/absent: no banner in rendered content."""
+    delta = _render_preamble_node(cast(Any, _full_state()))
+
+    content = delta["final_response"]["choices"][0]["message"]["content"]
+    assert "⚠️" not in content
+    assert "Literature retrieval degraded" not in content
+
+
 def test_render_preamble_happy_path_writes_full_markdown() -> None:
     """gene_found=True: render assembles title + intro + bullets + sections."""
     delta = _render_preamble_node(cast(Any, _full_state()))
