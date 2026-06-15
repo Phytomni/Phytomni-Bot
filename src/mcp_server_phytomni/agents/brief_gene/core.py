@@ -537,6 +537,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             # workers concat per-worker ``(task_index, doc_list)``
             # tuples onto this list via ``operator.add``.
             "retrieve_indexed_results": [],
+            # Seed the status-independent degraded reducer channel so the
+            # TypedDict contract holds at ``arun`` entry; retrieve workers
+            # append ``DegradedRecord`` entries via ``operator.add``.
+            "literature_degraded": [],
         }
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
