@@ -204,7 +204,7 @@ async def test_follow_up_post_node_parses_and_merges_follow_up_questions() -> (
 async def test_compiled_graph_flag_on_routes_through_shared_chat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Compiled flag-on graph awaits the shared chat subgraph twice.
+    """Compiled graph awaits the shared chat subgraph twice.
 
     End-to-end exercise of the prep + chat + post split: the
     compiled graph routes both the generate and follow-up chat calls

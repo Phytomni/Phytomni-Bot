@@ -86,9 +86,9 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_design_helpers.py": {
         "protected-access",
     },
-    # Branch + invocation tests for analyst-subgraph dispatch flag:
+    # Branch + invocation tests for analyst-subgraph dispatch:
     # exercises ``DigitalDesignAgents._dispatch_and_wait_analysis``
-    # directly to assert the flag-on / flag-off routing decision.
+    # directly to assert it dispatches via the analyst subgraph.
     "tests/agents/test_design_analyst_subgraph.py": {
         "protected-access",
     },

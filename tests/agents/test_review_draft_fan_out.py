@@ -224,7 +224,7 @@ async def test_draft_reduce_node_partial_failure_keeps_n_entries() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Structural: flag-on graph has Send triad; flag-off keeps legacy.
+# Structural: the compiled graph mounts the draft Send triad.
 # ---------------------------------------------------------------------------
 
 

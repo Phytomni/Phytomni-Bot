@@ -64,8 +64,8 @@ def _install_fake_knowledge_app(
 ) -> CompiledStateGraph:
     """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
 
-    The flag-on path constructs the per-instance compiled KA subgraph
-    inside ``AnalystAgent.__init__``; tests substitute a tiny compiled
+    ``AnalystAgent.__init__`` always constructs the per-instance
+    compiled KA subgraph; tests substitute a tiny compiled
     subgraph so the structural xray walk discovers it through the
     wrapper's closure free-vars while keeping the test fully offline
     (no real KnowledgeAgent compile, no real retrieve).

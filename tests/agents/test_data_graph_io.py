@@ -80,7 +80,7 @@ def test_data_state_covers_input_and_output_keys() -> None:
     prep/post relay keys (``chat_payload`` / ``chat_response``) and
     the knowledge-subgraph prep/post relay keys
     (``pending_post_knowledge`` / ``knowledge_payload`` /
-    ``knowledge_response``) that the flag-on graph shapes thread
+    ``knowledge_response``) that the compiled graph threads
     between split nodes.
     """
     state_keys = _required(DataState) | _optional(DataState)
