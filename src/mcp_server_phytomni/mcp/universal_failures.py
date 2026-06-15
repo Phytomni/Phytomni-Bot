@@ -15,9 +15,13 @@ Lives in its own module so :mod:`result_formatting` stays under the
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from ..agents.shared.parallel_dispatch import redact_failure_message
+from ..agents.shared.parallel_dispatch import (
+    degraded_labels,
+    redact_failure_message,
+)
 
 __all__ = [
+    "project_degraded_metadata",
     "project_universal_failure_metadata",
     "redact_failure_message",
 ]
@@ -86,4 +90,25 @@ def project_universal_failure_metadata(
             }
             for f in failures
         ],
+    }
+
+
+def project_degraded_metadata(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Project ``literature_degraded`` into a status-independent metadata key.
+
+    Reads only the ``literature_degraded`` channel and never ``failures``,
+    so it cannot affect the PARTIAL/FAILED status computed by
+    :func:`project_universal_failure_metadata`. Returns ``{}`` when there
+    is no degradation, so non-degraded and non-brief_gene cited agents
+    stay at empty metadata.
+    """
+    records = state.get("literature_degraded") or []
+    if not records:
+        return {}
+    return {
+        "degraded": {
+            "reason": "literature_retrieval",
+            "count": len(records),
+            "labels": degraded_labels(records),
+        }
     }

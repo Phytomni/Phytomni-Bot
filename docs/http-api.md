@@ -534,15 +534,15 @@ actually-executed query, plan, or goal list without toggling
 `debug=true`. Full intermediate state remains in
 `raw.phytomni_state` under debug mode; metadata is a curated subset.
 
-| Agent                                         | Default-mode `formatted.metadata` keys                                                     |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                |
-| KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note)                                           |
-| AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields |
-| DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields   |
-| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields                               |
-| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field          |
-| GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                              |
+| Agent                                         | Default-mode `formatted.metadata` keys                                                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                                                  |
+| KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note; BriefGeneAgent adds `degraded` on a recovered literature fault — see below) |
+| AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields                                   |
+| DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields                                     |
+| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields                                                                 |
+| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field                                            |
+| GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                                                                |
 
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.
@@ -582,6 +582,14 @@ sentinel-coexistence pattern (worker writes BOTH the legacy empty-
 string / `"{}"` placeholder AND the `FailureRecord`) lets the original-
 draft fallback in `revised_reduce_node` render a complete review
 answer even on partial failure.
+
+### BriefGeneAgent literature-degraded metadata
+
+- **BriefGeneAgent** (cited): `degraded` (only on a recovered literature
+  retrieve fault) — `{reason: "literature_retrieval", count, labels}`. This is
+  status-independent: it never sets `status` / `failures`, so a literature-thin
+  answer stays a success. A user-visible `⚠️ Literature retrieval degraded`
+  banner also rides `message.content`.
 
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
 respond `202` with `status: "running"` and `task_ids` listing every child

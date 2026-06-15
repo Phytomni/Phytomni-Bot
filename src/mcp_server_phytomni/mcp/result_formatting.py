@@ -22,6 +22,7 @@ from typing import Any
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 from .universal_failures import (
+    project_degraded_metadata,
     project_universal_failure_metadata,
     redact_failure_message,
 )
@@ -305,6 +306,7 @@ def _format_cited_message_result(
         if state.get("failures")
         else {}
     )
+    metadata.update(project_degraded_metadata(state))
     doc_list = _doc_list(message)
     if not doc_list:
         return FormattedToolResult(

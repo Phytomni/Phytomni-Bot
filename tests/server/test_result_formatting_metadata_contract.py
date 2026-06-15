@@ -333,3 +333,39 @@ def test_cited_agents_metadata_degraded_exposes_failures() -> None:
     )
     assert "traceback_digest" not in metadata["failures"][0]
     assert result.answer == "Evidence [1]."
+
+
+def test_brief_gene_metadata_literature_degraded_exposes_degraded_key() -> (
+    None
+):
+    """brief_gene literature degradation surfaces ``degraded`` only.
+
+    The ``literature_degraded`` channel must produce the ``degraded``
+    metadata key WITHOUT the universal status keys, because it never
+    feeds the ``failures`` channel — a literature-thin run with no remote
+    failure must not report PARTIAL/FAILED.
+    """
+    degraded_state = {
+        "final_response": {
+            "choices": [
+                {"message": {"role": "assistant", "content": "answer"}}
+            ]
+        },
+        "literature_degraded": [
+            {"task_label": "OsCAB1", "message": "boom"},
+        ],
+    }
+    payload = {
+        "choices": [{"message": {"role": "assistant", "content": "answer"}}],
+        "phytomni_state": degraded_state,
+    }
+    result = format_tool_result("BriefGeneAgent", payload)
+    metadata = dict(result.metadata)
+    assert set(metadata.keys()) == {"degraded"}
+    assert metadata["degraded"] == {
+        "reason": "literature_retrieval",
+        "count": 1,
+        "labels": ["OsCAB1"],
+    }
+    assert "status" not in metadata
+    assert "failures" not in metadata
