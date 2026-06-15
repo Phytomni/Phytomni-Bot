@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Iterator
+from typing import Any, Callable, Dict, Iterator
 
 import pytest
 
@@ -101,6 +101,38 @@ async def test_resolver_returns_typed_result_for_valid_to_id(
     # the LLM call carries a substantial user_query that includes a
     # representative catalog line.
     assert "TO:0000207 | plant height" in captured["kwargs"]["user_query"]
+
+
+async def test_resolver_warns_but_accepts_unsupported_species(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+    attach_resolver_caplog: Callable[[str], pytest.LogCaptureFixture],
+    assert_unsupported_species_warning: Callable[..., None],
+) -> None:
+    """A non-blank species_code outside the data map warns, not rejects.
+
+    The ``to_id`` stays catalog-validated; only the ``species_code``
+    dimension is warn-but-accept, matching the deprecated-TO-id
+    precedent in the same resolver.
+    """
+    caplog = attach_resolver_caplog(_RESOLVER_LOGGER_NAME)
+
+    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+        return _make_response({"to_id": "TO:0000207", "species_code": "zzz"})
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with caplog.at_level(logging.WARNING):
+        result = await resolve_network_user_query(
+            "some obscure trait",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert result.to_id == "TO:0000207"
+    assert result.species_code == "zzz"
+    assert_unsupported_species_warning(caplog.records, "zzz")
 
 
 async def test_resolver_picks_top_confidence_among_candidates(

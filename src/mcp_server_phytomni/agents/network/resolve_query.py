@@ -26,6 +26,7 @@ from ...config.defaults import GeneNetworkConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
+from ..shared.species_catalog import warn_if_unsupported_species
 from .to_ontology import (
     DEPRECATED_UPSTREAM_STATUS,
     format_to_ontology_for_prompt,
@@ -198,6 +199,8 @@ async def resolve_network_user_query(
             "species_code could not be determined from query: "
             f"'{raw_query}'"
         )
+
+    warn_if_unsupported_species(_LOGGER, species_code, raw_query)
 
     candidates = _normalize_candidates(
         payload.get("to_id"),

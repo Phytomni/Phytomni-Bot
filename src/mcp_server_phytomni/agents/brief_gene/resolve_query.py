@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
+from ..shared.species_catalog import warn_if_unsupported_species
 
 __all__ = [
     "BriefGeneIdCandidate",
@@ -32,6 +34,8 @@ __all__ = [
     "BriefGeneResolveResult",
     "resolve_brief_gene_user_query",
 ]
+
+_LOGGER = logging.getLogger(__name__)
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/brief_gene_resolve_gene_id"
 _RESOLVER_USER_PROMPT_PATH = "user/brief_gene_resolve_gene_id"
@@ -184,6 +188,8 @@ async def resolve_brief_gene_user_query(
             "species_code could not be determined from query: "
             f"'{raw_query}'"
         )
+
+    warn_if_unsupported_species(_LOGGER, species_code, raw_query)
 
     candidates = _normalize_candidates(
         payload.get("gene_id"),

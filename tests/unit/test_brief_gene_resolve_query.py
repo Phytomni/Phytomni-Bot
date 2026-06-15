@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, List
+import logging
+from typing import Any, Callable, Dict, List
 
 import pytest
 
@@ -21,6 +22,8 @@ from mcp_server_phytomni.agents.brief_gene.resolve_query import (
 from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+
+_RESOLVER_LOGGER_NAME = "mcp_server_phytomni.agents.brief_gene.resolve_query"
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +75,39 @@ async def test_resolver_returns_typed_result_for_single_id(
             species_code="ath",
         )
     ]
+
+
+async def test_resolver_warns_but_accepts_unsupported_species(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+    attach_resolver_caplog: Callable[[str], pytest.LogCaptureFixture],
+    assert_unsupported_species_warning: Callable[..., None],
+) -> None:
+    """A non-blank species_code outside the data map warns, not rejects.
+
+    Mirrors the network resolver's warn-but-accept handling of
+    upstream-deprecated TO ids: the resolution still returns so a
+    steered-but-imperfect LLM species choice does not hard-fail, but a
+    WARNING surfaces the likely downstream data miss for operators.
+    """
+    brief_config, sensitive_config = configs
+    caplog = attach_resolver_caplog(_RESOLVER_LOGGER_NAME)
+
+    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+        return _make_response({"gene_id": "GENE1", "species_code": "zzz"})
+
+    monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
+
+    with caplog.at_level(logging.WARNING):
+        result = await resolve_brief_gene_user_query(
+            "some obscure organism gene",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert result.species_code == "zzz"
+    assert result.gene_id == "GENE1"
+    assert_unsupported_species_warning(caplog.records, "zzz")
 
 
 async def test_resolver_selects_top_confidence_candidate(

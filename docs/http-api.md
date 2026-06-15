@@ -447,9 +447,12 @@ Both flags share the same misuse / failure contract:
   `deep_genome`, `design`, and `network` slugs because their agent
   schemas require the field; failed species determination never
   silently falls through to a Pydantic ValidationError. A non-blank
-  `species_code` is not validated against a fixed catalog — the schema
-  accepts any three-letter string, so a mismatched code surfaces
-  downstream, not at the resolver.
+  `species_code` is **not** rejected against a fixed catalog — the
+  schema accepts any three-letter string — but one outside the bundled
+  species data map is logged at `WARNING` (with the code and the query)
+  and the request proceeds, mirroring the resolver's warn-but-accept
+  handling of upstream-deprecated TO ids. The mismatched code then
+  surfaces at the downstream analysis rather than at the resolver.
 - The native runs path pops `resolve_gene_id` / `resolve_to_id` and
   `user_query` from `arguments` before forwarding so each agent's
   Pydantic schema never sees the resolver-flag keys.
