@@ -3,7 +3,7 @@
     {
       "conditional": true,
       "source": "__start__",
-      "target": "knowledge_node"
+      "target": "brief_gene_node"
     },
     {
       "conditional": true,
@@ -11,14 +11,24 @@
       "target": "prepare_tasks_node"
     },
     {
+      "conditional": false,
+      "source": "brief_gene_node",
+      "target": "experiment_node"
+    },
+    {
       "conditional": true,
-      "source": "analyst_node",
+      "source": "design_node",
       "target": "__end__"
     },
     {
       "conditional": false,
       "source": "discussion_node",
       "target": "summary_node"
+    },
+    {
+      "conditional": true,
+      "source": "evolution_node",
+      "target": "__end__"
     },
     {
       "conditional": true,
@@ -31,14 +41,79 @@
       "target": "protocol_node"
     },
     {
-      "conditional": false,
-      "source": "knowledge_node",
-      "target": "experiment_node"
+      "conditional": true,
+      "source": "gene_expression_cultivars_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "gene_expression_genotypes_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "gene_expression_tissues_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "gene_expression_treatments_node",
+      "target": "__end__"
     },
     {
       "conditional": true,
       "source": "prepare_tasks_node",
-      "target": "analyst_node"
+      "target": "design_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "evolution_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "gene_expression_cultivars_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "gene_expression_genotypes_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "gene_expression_tissues_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "gene_expression_treatments_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "promoter_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "protein_structure_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "single_cell_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "smep_node"
+    },
+    {
+      "conditional": true,
+      "source": "prepare_tasks_node",
+      "target": "smoc_node"
     },
     {
       "conditional": false,
@@ -46,9 +121,34 @@
       "target": "synthesize_node"
     },
     {
+      "conditional": true,
+      "source": "promoter_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "protein_structure_node",
+      "target": "__end__"
+    },
+    {
       "conditional": false,
       "source": "protocol_node",
       "target": "discussion_node"
+    },
+    {
+      "conditional": true,
+      "source": "single_cell_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "smep_node",
+      "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "smoc_node",
+      "target": "__end__"
     },
     {
       "conditional": false,
@@ -83,7 +183,7 @@
     },
     {
       "kind": "node",
-      "name": "knowledge_node"
+      "name": "brief_gene_node"
     },
     {
       "kind": "node",
@@ -95,7 +195,47 @@
     },
     {
       "kind": "node",
-      "name": "analyst_node"
+      "name": "gene_expression_tissues_node"
+    },
+    {
+      "kind": "node",
+      "name": "gene_expression_cultivars_node"
+    },
+    {
+      "kind": "node",
+      "name": "gene_expression_treatments_node"
+    },
+    {
+      "kind": "node",
+      "name": "gene_expression_genotypes_node"
+    },
+    {
+      "kind": "node",
+      "name": "single_cell_node"
+    },
+    {
+      "kind": "node",
+      "name": "promoter_node"
+    },
+    {
+      "kind": "node",
+      "name": "smep_node"
+    },
+    {
+      "kind": "node",
+      "name": "smoc_node"
+    },
+    {
+      "kind": "node",
+      "name": "protein_structure_node"
+    },
+    {
+      "kind": "node",
+      "name": "design_node"
+    },
+    {
+      "kind": "node",
+      "name": "evolution_node"
     },
     {
       "kind": "node",
