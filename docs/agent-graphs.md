@@ -390,29 +390,38 @@ orchestrates a Part 1 brief_gene preamble (the BriefGeneAgent
 mounted as a subgraph), a Part 2 parallel analyst fan-out across
 the deep analysis types, and a Part 3 report synthesis chain.
 
-The graph compiles into nine nodes:
+The graph compiles into nineteen nodes (plus `__start__` / `__end__`):
 
-| Node                 | Role                                                                                                                                                                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `brief_gene_node`    | brief_gene mount — runs the BriefGeneAgent preamble subgraph and projects its rendered answer into the verbatim `preamble` field (only the H1 title is swapped to deep_genome's); the report consumes it as the pre-analysis block.      |
-| `prepare_tasks_node` | Materialises the per-gene analysis task list from the rewritten user query and the species code.                                                                                                                                         |
-| `analyst_node`       | Send-dispatched worker: routes the three transferred analysis types (`evolution_analysis` / `protein_structure_analysis` / `promoter_analysis`) to module-level producer wrappers and the remaining 12 to `submit_analyst_via_subgraph`. |
-| `synthesize_node`    | Barrier that waits for the analyst fan-out to drain, then triggers the experiment-loop.                                                                                                                                                  |
-| `experiment_node`    | Loops over recommended experiments (also routes back to itself per Send) to keep building the experiment list.                                                                                                                           |
-| `protocol_node`      | Calls `_dispatch_knowledge_retrieve` per experiment to retrieve protocol sections through the compiled knowledge subgraph.                                                                                                               |
-| `discussion_node`    | Calls `_dispatch_chat` to generate the discussion section from the part-1 + part-2 content.                                                                                                                                              |
-| `summary_node`       | Calls `_dispatch_chat` to generate the summary section from the introduction + part-1 + part-2 + part-4 stack.                                                                                                                           |
-| `follow_up_node`     | Calls `_dispatch_chat` to generate the follow-up question list from the assembled final report.                                                                                                                                          |
+| Node                              | Role                                                                                                                                                                                                                                |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brief_gene_node`                 | brief_gene mount — runs the BriefGeneAgent preamble subgraph and projects its rendered answer into the verbatim `preamble` field (only the H1 title is swapped to deep_genome's); the report consumes it as the pre-analysis block. |
+| `prepare_tasks_node`              | Materialises the eleven per-gene analysis tasks from the gene id + species code, then fans them out via `Send`.                                                                                                                     |
+| `gene_expression_tissues_node`    | Send-dispatched worker (`_run_analyst_node`): submits the tissue-axis gene-expression analysis via `submit_analyst_via_subgraph`, awaits completion, and contributes one synthesize-barrier branch.                                 |
+| `gene_expression_cultivars_node`  | Same worker for the cultivar-axis gene-expression analysis.                                                                                                                                                                         |
+| `gene_expression_treatments_node` | Same worker for the treatment-axis gene-expression analysis.                                                                                                                                                                        |
+| `gene_expression_genotypes_node`  | Same worker for the genotype-axis gene-expression analysis.                                                                                                                                                                         |
+| `single_cell_node`                | Same worker for the single-cell analysis.                                                                                                                                                                                           |
+| `promoter_node`                   | Same worker for the promoter (motif) analysis.                                                                                                                                                                                      |
+| `smep_node`                       | Same worker for the SMEP analysis.                                                                                                                                                                                                  |
+| `smoc_node`                       | Same worker for the SMOC analysis.                                                                                                                                                                                                  |
+| `protein_structure_node`          | Same worker for the protein-structure prediction (lights report §protein_structure).                                                                                                                                                |
+| `evolution_node`                  | Mounted standalone evolution subgraph (single source of truth): runs the taxid-scoped `evolution_agents_analysis`; `finalize_evolution_result` folds it into the analyst fan-out.                                                   |
+| `design_node`                     | Mounted standalone DigitalDesignAgents subgraph: runs the generative protein/promoter design tasks; `finalize_design_result` lights report §8.2 from the protein-design task.                                                       |
+| `synthesize_node`                 | Barrier that waits for the analyst fan-out to drain (`analysis_completed_branches == len(analysis_tasks)`), then triggers the experiment loop.                                                                                      |
+| `experiment_node`                 | Loops over recommended experiments (also routes back to itself per Send) to keep building the experiment list.                                                                                                                      |
+| `protocol_node`                   | Calls `_dispatch_knowledge_retrieve` per experiment to retrieve protocol sections through the compiled knowledge subgraph.                                                                                                          |
+| `discussion_node`                 | Calls `_dispatch_chat` to generate the discussion section from the part-1 + part-2 content.                                                                                                                                         |
+| `summary_node`                    | Calls `_dispatch_chat` to generate the summary section from the introduction + part-1 + part-2 + part-4 stack.                                                                                                                      |
+| `follow_up_node`                  | Calls `_dispatch_chat` to generate the follow-up question list from the assembled final report.                                                                                                                                     |
 
 The four `_dispatch_*` helpers on `DeepGenomeReportMixin` own the
 chat / knowledge seams: `_dispatch_chat` (used by the experiment /
 discussion / summary / follow-up nodes) routes through the compiled
 chat subgraph; `_dispatch_knowledge_retrieve` (used by the protocol
-node) routes through the compiled knowledge subgraph.
-`_submit_analysis_task` on `DeepGenomeDispatchMixin` owns the
-analyst-side seam, routing the three transferred analysis types to
-their producer wrappers and the rest through
-`submit_analyst_via_subgraph`.
+node) routes through the compiled knowledge subgraph. Each generic
+analysis type fans out to its own named worker node (all reusing
+`_run_analyst_node` → `submit_analyst_via_subgraph`); `evolution_node`
+and `design_node` mount the standalone evolution / design subgraphs.
 
 ## Nested Checkpoints
 
