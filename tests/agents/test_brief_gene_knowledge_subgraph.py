@@ -14,6 +14,7 @@ dedicated KnowledgeAgent subgraph invocation.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TypedDict, cast
 
 import pytest
@@ -236,8 +237,9 @@ async def test_retrieve_worker_factory_success_path(
 
 async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Worker on knowledge-app exception writes ``(task_index, [])``."""
+    """Worker on exception writes ``(task_index, [])`` AND logs loudly."""
 
     async def _raising_ainvoke(_input: Any) -> Any:
         raise RuntimeError("boom")
@@ -257,10 +259,14 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
     state = _gene_found_state()
     state["task_index"] = 7
     state["knowledge_input"] = {"user_query": "ignored"}
-    delta = await worker(state)
+    with caplog.at_level(logging.ERROR):
+        delta = await worker(state)
 
     # Loud empty sentinel attributable to the specific failed task.
     assert delta["retrieve_indexed_results"] == [(7, [])]
+    # The caught failure is logged loudly, not silently swallowed.
+    assert "brief_gene retrieve worker failed: task_index=7" in caplog.text
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

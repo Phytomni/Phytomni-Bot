@@ -14,6 +14,7 @@ mirrors the analyst-side mixin pattern in
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, cast
 
 from langgraph.graph import StateGraph
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 else:
     BriefGeneAgentState = Dict[str, Any]
 
+
+logger = logging.getLogger(__name__)
 
 # Broad exception catch tuple used by the Send-dispatched retrieve
 # worker factory. Module-level constant lifts the pylint
@@ -221,6 +224,10 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "retrieve_indexed_results": [(task_index, docs)],
                 }
             except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT:
+                logger.exception(
+                    "brief_gene retrieve worker failed: task_index=%s",
+                    task_index,
+                )
                 return {
                     "retrieve_indexed_results": [(task_index, [])],
                 }
