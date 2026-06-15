@@ -479,12 +479,17 @@ curl -fsS -H "Authorization: Bearer $KEY" \
   -d '{"arguments":{"user_query":"rice TPR6 function","resolve_gene_id":true}}'
 ```
 
-The flag is BriefGene-only. Sending it to any other model or slug
-returns `400` with `error.message` naming `BriefGene`. Resolver
-failures (blank input, empty candidates, non-JSON LLM output) also
-return `400` and the response body's `error.message` carries the
-resolver reason for ticket triage. On success the response `metadata`
-includes `original_query`, `resolved_gene_id`, and `resolve_gene_id: true` so support can confirm which canonical id BriefGene actually saw.
+On `/v1/chat/completions` the flag is BriefGene-only — sending it with
+any other `model` returns `400`. On the native `/v1/agents/{slug}/runs`
+path `resolve_gene_id` also serves the `deep_genome` and `design` slugs
+(where it injects `species_code` alongside `gene_id`); an ineligible
+slug still returns `400` naming the resolver reason. Resolver failures
+(blank input, empty candidates, non-JSON LLM output) also return `400`
+and the response body's `error.message` carries the resolver reason for
+ticket triage. On success the response `metadata` includes
+`original_query`, `resolved_gene_id`, `resolved_species_code`, and
+`resolve_gene_id: true` so support can confirm which canonical id and
+species BriefGene actually saw.
 
 The resolver adds one shared-cache LLM call per unique free-form query,
 so heavy unsupervised opt-in does add LLM cost; the `~90d` `phyto_chat`

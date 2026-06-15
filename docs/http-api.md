@@ -443,11 +443,13 @@ Both flags share the same misuse / failure contract:
   output, timeout, hallucinated TO id outside the catalog) return
   `400` carrying the resolver reason in `error.message`; failed
   resolutions never silently fall through to a raw user_query call.
-- A blank `species_code` from the LLM (or one outside the supported
-  catalog) returns `400` for the `deep_genome`, `design`, and
-  `network` slugs because their agent schemas require the field;
-  failed species determination never silently falls through to a
-  Pydantic ValidationError.
+- A blank `species_code` from the LLM returns `400` for the
+  `deep_genome`, `design`, and `network` slugs because their agent
+  schemas require the field; failed species determination never
+  silently falls through to a Pydantic ValidationError. A non-blank
+  `species_code` is not validated against a fixed catalog — the schema
+  accepts any three-letter string, so a mismatched code surfaces
+  downstream, not at the resolver.
 - The native runs path pops `resolve_gene_id` / `resolve_to_id` and
   `user_query` from `arguments` before forwarding so each agent's
   Pydantic schema never sees the resolver-flag keys.
