@@ -29,6 +29,8 @@ from typing import (
     TypedDict,
 )
 
+from ..shared.parallel_dispatch import DegradedRecord
+
 
 class BriefGeneInput(TypedDict, total=False):
     """Request fields a parent graph supplies when mounting brief_gene.
@@ -170,6 +172,7 @@ class BriefGeneState(TypedDict):
     # registered via ``make_knowledge_node_wrapper``.
     retrieve_tasks: NotRequired[List[Dict[str, Any]]]
     task_index: NotRequired[int]
+    task_label: NotRequired[str]
     knowledge_input: NotRequired[Dict[str, Any]]
     knowledge_payload: NotRequired[Dict[str, Any]]
     pending_post_knowledge: NotRequired[str]
@@ -177,6 +180,12 @@ class BriefGeneState(TypedDict):
     retrieve_indexed_results: Annotated[
         List[Tuple[int, List[Dict[str, Any]]]], operator.add
     ]
+    # Status-independent degraded channel: a retrieve worker that recovers
+    # from a per-symbol retrieve fault appends a DegradedRecord here
+    # (operator.add merges concurrent legs). Never feeds the PARTIAL/FAILED
+    # status projection — only the render banner and the ``degraded``
+    # metadata key.
+    literature_degraded: Annotated[List[DegradedRecord], operator.add]
 
 
 BriefGeneAgentState = BriefGeneState

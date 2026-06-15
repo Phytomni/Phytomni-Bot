@@ -17,10 +17,12 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 __all__ = [
+    "DegradedRecord",
     "FailureRecord",
     "ParallelDispatchSpec",
     "ParallelDispatchState",
     "build_parallel_dispatch_graph",
+    "degraded_labels",
     "keep_last_error",
     "redact_failure_message",
 ]
@@ -49,6 +51,24 @@ class FailureRecord(TypedDict):
     message: str
     kind: Literal["dispatch", "execute", "render"]
     traceback_digest: Optional[str]
+
+
+class DegradedRecord(TypedDict):
+    """One non-fatal degradation a worker recovered from.
+
+    Distinct from :class:`FailureRecord`: rides a separate
+    ``literature_degraded`` channel that never feeds the PARTIAL/FAILED
+    status projection, only the status-independent ``degraded`` surface.
+
+    Fields:
+        task_label: The query term (gene symbol) whose retrieve leg
+            degraded.
+        message: ``redact_failure_message(str(exc))`` of the recovered
+            exception.
+    """
+
+    task_label: str
+    message: str
 
 
 def keep_last_error(
@@ -102,6 +122,16 @@ def redact_failure_message(message: str) -> str:
     redacted = _BEARER_RE.sub("<redacted-secret>", redacted)
     redacted = _SECRET_RE.sub("<redacted-secret>", redacted)
     return redacted
+
+
+def degraded_labels(records: List[DegradedRecord]) -> List[str]:
+    """Return the sorted unique task labels from degraded records.
+
+    Shared by the brief_gene ``degraded`` metadata projection and the
+    deep_genome degraded-reason assembly so the label-list formatting
+    lives once (keeps the two off the duplicate-code guard).
+    """
+    return sorted({record["task_label"] for record in records})
 
 
 class ParallelDispatchState(TypedDict):

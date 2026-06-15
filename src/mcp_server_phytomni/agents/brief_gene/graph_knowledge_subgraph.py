@@ -25,6 +25,7 @@ from ...graphs.brief_gene_to_knowledge_adapters import (
     build_brief_gene_knowledge_input,
     extract_brief_gene_knowledge_response,
 )
+from ..shared.parallel_dispatch import DegradedRecord, redact_failure_message
 from .pipeline import _dedupe, _format_docs
 
 if TYPE_CHECKING:
@@ -130,6 +131,7 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "knowledge_input": build_brief_gene_knowledge_input(
                         f"{species}\n{symbol}"
                     ),
+                    "task_label": symbol,
                 }
                 for symbol in query_terms
             ]
@@ -139,6 +141,7 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "knowledge_input": build_brief_gene_knowledge_input(
                         state["user_query"]
                     ),
+                    "task_label": state["user_query"],
                 }
             ]
         return {"retrieve_tasks": tasks}
@@ -173,6 +176,7 @@ class BriefGeneKnowledgeSubgraphMixin:
                     **state,
                     "task_index": index,
                     "knowledge_input": task["knowledge_input"],
+                    "task_label": task["task_label"],
                 },
             )
             for index, task in enumerate(retrieve_tasks)
@@ -223,13 +227,19 @@ class BriefGeneKnowledgeSubgraphMixin:
                 return {
                     "retrieve_indexed_results": [(task_index, docs)],
                 }
-            except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT:
+            except _BRIEF_GENE_RETRIEVE_WORKER_CAUGHT as exc:
                 logger.exception(
                     "brief_gene retrieve worker failed: task_index=%s",
                     task_index,
                 )
                 return {
                     "retrieve_indexed_results": [(task_index, [])],
+                    "literature_degraded": [
+                        DegradedRecord(
+                            task_label=cast(str, state.get("task_label", "")),
+                            message=redact_failure_message(str(exc)),
+                        )
+                    ],
                 }
 
         return _retrieve_worker

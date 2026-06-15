@@ -199,7 +199,8 @@ def test_route_retrieve_tasks_emits_one_send_per_task(
     agent = _build_agent(monkeypatch=monkeypatch)
     state = _gene_found_state()
     state["retrieve_tasks"] = [
-        {"knowledge_input": {"user_query": f"q{i}"}} for i in range(3)
+        {"knowledge_input": {"user_query": f"q{i}"}, "task_label": f"gene{i}"}
+        for i in range(3)
     ]
     sends = agent.route_retrieve_tasks(state)
 
@@ -258,6 +259,7 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
 
     state = _gene_found_state()
     state["task_index"] = 7
+    state["task_label"] = "OsTEST"
     state["knowledge_input"] = {"user_query": "ignored"}
     with caplog.at_level(logging.ERROR):
         delta = await worker(state)
@@ -267,6 +269,11 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
     # The caught failure is logged loudly, not silently swallowed.
     assert "brief_gene retrieve worker failed: task_index=7" in caplog.text
     assert any(r.levelno >= logging.ERROR for r in caplog.records)
+    # The recovered fault also records a status-independent degraded entry
+    # naming the failed leg's gene label, with a redacted message.
+    assert delta["literature_degraded"] == [
+        {"task_label": "OsTEST", "message": "boom"}
+    ]
 
 
 # ---------------------------------------------------------------------------
