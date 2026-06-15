@@ -169,6 +169,29 @@ def test_deep_genome_graph_registers_design_node() -> None:
     assert "design_node" in nodes
 
 
+def test_deep_genome_graph_registers_nine_generic_nodes() -> None:
+    """The compiled graph exposes the nine per-type generic nodes.
+
+    SP3 split the single ``analyst_node`` into one named node per generic
+    analysis_type; the old ``analyst_node`` is gone.
+    """
+    agents = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
+    nodes = set(agents.app.get_graph().nodes)
+    expected = {
+        "gene_expression_tissues_node",
+        "gene_expression_cultivars_node",
+        "gene_expression_treatments_node",
+        "gene_expression_genotypes_node",
+        "single_cell_node",
+        "promoter_node",
+        "smep_node",
+        "smoc_node",
+        "protein_structure_node",
+    }
+    assert expected <= nodes
+    assert "analyst_node" not in nodes
+
+
 async def test_mount_degrades_on_fault() -> None:
     """A subgraph fault yields a FailureRecord + failed branch, not a raise."""
     app = _fake_app(boom=True)

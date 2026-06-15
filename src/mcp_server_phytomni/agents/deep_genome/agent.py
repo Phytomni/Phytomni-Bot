@@ -50,7 +50,11 @@ from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import FailureRecord
 from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
 from .design_mount import make_design_mount_node
-from .dispatch import DeepGenomeDispatchMixin
+from .dispatch import (
+    GENERIC_ANALYSIS_NODE_TYPES,
+    DeepGenomeDispatchMixin,
+    _analyst_node_name,
+)
 from .evolution_mount import make_evolution_mount_node
 from .formatting import network_to_string
 from .profile import (
@@ -366,7 +370,10 @@ class DeepGenomeAgents(
 
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
-        workflow.add_node("analyst_node", self._run_analyst_node)
+        for analysis_type in GENERIC_ANALYSIS_NODE_TYPES:
+            workflow.add_node(
+                _analyst_node_name(analysis_type), self._run_analyst_node
+            )
         # Evolution mounts the standalone evolution graph as its own
         # xray-expandable node; ``_route_analyst_tasks`` fans the
         # evolution task here instead of to ``analyst_node``.
@@ -405,11 +412,18 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             "prepare_tasks_node",
             self._route_analyst_tasks,
-            ["analyst_node", "evolution_node", "design_node"],
+            [
+                _analyst_node_name(analysis_type)
+                for analysis_type in GENERIC_ANALYSIS_NODE_TYPES
+            ]
+            + ["evolution_node", "design_node"],
         )
-        workflow.add_conditional_edges(
-            "analyst_node", self._route_after_analyst, [END]
-        )
+        for analysis_type in GENERIC_ANALYSIS_NODE_TYPES:
+            workflow.add_conditional_edges(
+                _analyst_node_name(analysis_type),
+                self._route_after_analyst,
+                [END],
+            )
         workflow.add_conditional_edges(
             "evolution_node", self._route_after_analyst, [END]
         )

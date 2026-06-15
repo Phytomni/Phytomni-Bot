@@ -147,7 +147,7 @@ def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
     )
 
     targets = {send.node for send in sends}
-    assert targets == {"evolution_node", "analyst_node"}
+    assert targets == {"evolution_node", "single_cell_node"}
     evo = next(send for send in sends if send.node == "evolution_node")
     assert evo.arg["analysis_type"] == "evolution_analysis"
     assert evo.arg["task_index"] == 0
@@ -176,10 +176,36 @@ def test_route_analyst_tasks_sends_design_to_design_node() -> None:
     )
 
     targets = {send.node for send in sends}
-    assert targets == {"design_node", "analyst_node"}
+    assert targets == {"design_node", "single_cell_node"}
     design = next(send for send in sends if send.node == "design_node")
     assert design.arg["analysis_type"] == "digital_design"
     assert design.arg["task_index"] == 0
+
+
+def test_route_analyst_tasks_sends_each_generic_to_its_own_node() -> None:
+    """Each generic analysis_type fans to its deterministic named node."""
+    state: Any = {
+        "task_submit_sleep": 0,
+        "analysis_tasks": [
+            {
+                "analysis_type": analysis_type,
+                "target_gene": "g1",
+                "species_code": "osa",
+            }
+            for analysis_type in dispatch_module.GENERIC_ANALYSIS_NODE_TYPES
+        ],
+    }
+
+    sends = dispatch_module.DeepGenomeDispatchMixin._route_analyst_tasks(
+        object(), state
+    )
+
+    by_type = {send.arg["analysis_type"]: send.node for send in sends}
+    assert by_type == {
+        analysis_type: dispatch_module._analyst_node_name(analysis_type)
+        for analysis_type in dispatch_module.GENERIC_ANALYSIS_NODE_TYPES
+    }
+    assert "analyst_node" not in {send.node for send in sends}
 
 
 async def test_protein_structure_routes_to_wrapper(

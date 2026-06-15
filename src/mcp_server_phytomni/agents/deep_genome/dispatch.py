@@ -253,7 +253,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             elif analysis_type == "digital_design":
                 node = "design_node"
             else:
-                node = "analyst_node"
+                node = _analyst_node_name(str(analysis_type))
             sends.append(
                 Send(
                     node,
