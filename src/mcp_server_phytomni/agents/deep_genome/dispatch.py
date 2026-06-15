@@ -120,6 +120,39 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
 DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
 
 
+# The nine generic analysis types that fan out to per-type worker
+# nodes (one LangGraph node each, all running ``_run_analyst_node``).
+# ``evolution_analysis`` and ``digital_design`` are excluded — they
+# mount standalone subgraphs (``evolution_node`` / ``design_node``) and
+# keep explicit special-cases in ``_route_analyst_tasks``.
+GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = (
+    "gene_expression_tissues",
+    "gene_expression_cultivars",
+    "gene_expression_treatments",
+    "gene_expression_genotypes",
+    "single_cell_analysis",
+    "promoter_analysis",
+    "smep_analysis",
+    "smoc_analysis",
+    "protein_structure_analysis",
+)
+
+
+def _analyst_node_name(analysis_type: str) -> str:
+    """Map a generic ``analysis_type`` to its LangGraph node name.
+
+    Deterministic: strip a trailing ``_analysis`` and append ``_node``
+    (``smep_analysis`` -> ``smep_node``; ``gene_expression_tissues`` ->
+    ``gene_expression_tissues_node``). Yields nine distinct names for
+    :data:`GENERIC_ANALYSIS_NODE_TYPES`. It also maps
+    ``evolution_analysis`` -> ``evolution_node`` (the SP1 mount), but
+    ``digital_design`` has no ``_analysis`` suffix and keeps its explicit
+    ``design_node`` special-case in
+    :meth:`DeepGenomeDispatchMixin._route_analyst_tasks`.
+    """
+    return analysis_type.removesuffix("_analysis") + "_node"
+
+
 class AnalysisDispatchContext(NamedTuple):
     """Resolved request context for one deep analysis task.
 

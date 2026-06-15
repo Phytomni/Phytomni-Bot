@@ -23,8 +23,10 @@ from mcp_server_phytomni.agents.deep_genome import (
     dispatch as deep_genome_dispatch,
 )
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
+    GENERIC_ANALYSIS_NODE_TYPES,
     AnalysisDispatchContext,
     DeepGenomeDispatchMixin,
+    _analyst_node_name,
 )
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
@@ -372,3 +374,52 @@ async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
         if task["analysis_type"] == "gene_expression_tissues"
     )
     assert tissue["target_gene"] == "LOC_Os01g012345"
+
+
+def test_analyst_node_name_maps_nine_generics_to_distinct_nodes() -> None:
+    """The deterministic node-name rule covers all nine generics.
+
+    ``analysis_type.removesuffix("_analysis") + "_node"`` must yield a
+    distinct node name for every generic type and match the documented
+    mapping (e.g. ``smep_analysis`` -> ``smep_node``).
+    """
+    expected = {
+        "gene_expression_tissues": "gene_expression_tissues_node",
+        "gene_expression_cultivars": "gene_expression_cultivars_node",
+        "gene_expression_treatments": "gene_expression_treatments_node",
+        "gene_expression_genotypes": "gene_expression_genotypes_node",
+        "single_cell_analysis": "single_cell_node",
+        "promoter_analysis": "promoter_node",
+        "smep_analysis": "smep_node",
+        "smoc_analysis": "smoc_node",
+        "protein_structure_analysis": "protein_structure_node",
+    }
+    assert set(GENERIC_ANALYSIS_NODE_TYPES) == set(expected)
+    names = [_analyst_node_name(t) for t in GENERIC_ANALYSIS_NODE_TYPES]
+    assert names == [expected[t] for t in GENERIC_ANALYSIS_NODE_TYPES]
+    assert len(set(names)) == len(GENERIC_ANALYSIS_NODE_TYPES)
+
+
+async def test_prepare_analysis_tasks_generic_types_match_node_constant() -> (
+    None
+):
+    """Every non-mount prepared task has a registered generic node.
+
+    Guards against a future task added to ``_prepare_analysis_tasks``
+    without a matching ``GENERIC_ANALYSIS_NODE_TYPES`` entry (which would
+    route to an unregistered node at runtime). The two mount types are
+    excluded.
+    """
+    harness = DispatchHarness("/tmp/deep-out")
+
+    async def _fake_bi_json(sql: str) -> dict[str, Any]:
+        del sql
+        return {"data": [{"msu_gene_id": "LOC_Os01g012345"}]}
+
+    setattr(harness, "_bi_json", _fake_bi_json)
+    prepare = getattr(harness, "_prepare_analysis_tasks")
+    result = await prepare({"gene_id": "Os01g012345", "species_code": "osa"})
+
+    prepared = {task["analysis_type"] for task in result["analysis_tasks"]}
+    mounts = {"evolution_analysis", "digital_design"}
+    assert prepared - mounts == set(GENERIC_ANALYSIS_NODE_TYPES)
