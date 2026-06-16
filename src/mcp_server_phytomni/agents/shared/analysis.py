@@ -226,6 +226,7 @@ def ensure_analysis_output_dir(
     analysis_type: str,
     output_dir: str | None,
     run_identity: RunIdentity | None = None,
+    **kwargs: Any,
 ) -> str:
     """Return an existing or newly created analysis output directory.
 
@@ -235,6 +236,9 @@ def ensure_analysis_output_dir(
         analysis_type: Analysis workflow name used in generated paths.
         output_dir: Existing output directory to reuse when provided.
         run_identity: Optional run identity for deterministic path building.
+        **kwargs: Optional ``fingerprint`` override forwarded to
+            ``create_output_dir``; when set it routes the created dir to
+            the tenant-neutral shared key.
 
     Returns:
         Existing ``output_dir`` or the newly created OBS output directory.
@@ -254,6 +258,7 @@ def ensure_analysis_output_dir(
         obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         run_identity=identity,
+        fingerprint=kwargs.get("fingerprint"),
     )
 
 

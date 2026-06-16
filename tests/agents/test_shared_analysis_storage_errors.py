@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+import mcp_server_phytomni.agents.shared.analysis_storage as st
 from mcp_server_phytomni.agents.shared.analysis_storage import (
     _get_data_list_cached,
     _obs_error_message,
@@ -94,6 +95,31 @@ def test_ensure_run_output_dir_reuses_preset_dir() -> None:
     )
 
     assert result == preset
+
+
+def test_create_output_dir_uses_shared_key_when_fingerprint_given(
+    monkeypatch,
+) -> None:
+    """A fingerprint routes the output dir to the content-addressed root."""
+    captured = {}
+
+    def _fake_obsfs(
+        output_dir: str, bucket_name: str, obsfs_mount_root: str
+    ) -> str:
+        del obsfs_mount_root
+        captured["key"] = output_dir
+        return f"/obs/{bucket_name}/{output_dir}"
+
+    monkeypatch.setattr(st, "_create_output_dir_obsfs", _fake_obsfs)
+    monkeypatch.setattr(st, "relay_mode_enabled", lambda: False)
+
+    st.create_output_dir(
+        user_id="bob",
+        task="analyst_task",
+        bucket_name="phytomni",
+        fingerprint="f" * 64,
+    )
+    assert captured["key"] == f"agent_data/shared/{'f' * 64}/output/"
 
 
 def test_obs_error_message_lists_request_id_code_and_message() -> None:

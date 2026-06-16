@@ -28,7 +28,11 @@ from ...storage.obs_storage import (
     obsfs_bucket_available,
     obsfs_path_for,
 )
-from ...storage.path_policy import RunIdentity, task_output_key
+from ...storage.path_policy import (
+    RunIdentity,
+    shared_output_key,
+    task_output_key,
+)
 
 __all__ = [
     "ANALYSIS_DATA_LIST_MAP",
@@ -178,7 +182,10 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
         user_id: User id used in the generated run-scoped path.
         task: Task label used as the output directory scope.
         **kwargs: Optional OBS credentials, endpoint, bucket,
-            obsfs_mount_root, and run_identity overrides.
+            obsfs_mount_root, run_identity, and fingerprint overrides.
+            When ``fingerprint`` is supplied the output dir routes to the
+            tenant-neutral content-addressed key instead of the
+            user-scoped run path.
 
     Returns:
         OBS path for the created output directory.
@@ -202,7 +209,11 @@ def create_output_dir(user_id: str, task: str, **kwargs: Any) -> str:
     run_identity = kwargs.get("run_identity")
     if not isinstance(run_identity, RunIdentity):
         run_identity = RunIdentity.create(user_id=user_id, scope=task)
-    output_dir = task_output_key(run_identity, task)
+    fingerprint = kwargs.get("fingerprint")
+    if fingerprint:
+        output_dir = shared_output_key(fingerprint)
+    else:
+        output_dir = task_output_key(run_identity, task)
     if relay_mode_enabled():
         # OBS has a flat namespace, so the zero-byte directory marker is
         # cosmetic: the remote analysis platform creates the path when it
@@ -235,6 +246,7 @@ def ensure_run_output_dir(
     task: str,
     run_identity: RunIdentity,
     output_dir: str | None = None,
+    **kwargs: Any,
 ) -> str:
     """Return an existing output dir or create one under a run identity.
 
@@ -244,6 +256,9 @@ def ensure_run_output_dir(
         task: Task label used as the output directory scope.
         run_identity: Run identity used for path construction.
         output_dir: Existing output directory to reuse when provided.
+        **kwargs: Optional ``fingerprint`` override forwarded to
+            ``create_output_dir``; when set it routes the created dir to
+            the tenant-neutral shared key.
 
     Returns:
         Existing ``output_dir`` or a newly created OBS output directory.
@@ -262,6 +277,7 @@ def ensure_run_output_dir(
         obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         run_identity=run_identity,
+        fingerprint=kwargs.get("fingerprint"),
     )
 
 
