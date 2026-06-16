@@ -12,22 +12,32 @@ in the shared chat node, so the tests feed the verdict through
 ``chat_response`` and drive the wired prep/post methods directly.
 """
 
+# pylint: disable=protected-access
+# Test file exercises the analyst graph-mixin's internal helper
+# ``_submit_output_dir`` directly; pylint W0212 is suppressed at file
+# scope because the unit test must reach the smallest sub-operation
+# that forwards the fingerprint. See ``docs/lint-exemptions.md``.
+
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
 
+import mcp_server_phytomni.agents.analyst.graph as analyst_graph
 from mcp_server_phytomni.agents.analyst import (
     graph_chat_subgraph as analyst_chat,
 )
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgentsState
+from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.agents.analyst.graph_chat_subgraph import (
     AnalystChatSubgraphMixin,
 )
 from mcp_server_phytomni.config.defaults import AnalystConfig
+from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 from tests.agents._analyst_fakes import fake_analyst_sensitive_config
 
 pytestmark = pytest.mark.agent
@@ -211,3 +221,50 @@ async def test_check_post_node_treats_malformed_json_as_rejected() -> None:
     )
 
     assert result == {"plan_feedback": ""}
+
+
+def test_submit_output_dir_forwards_input_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_submit_output_dir`` passes ``input_fingerprint`` to
+    ``ensure_run_output_dir`` so the created directory routes to the
+    content-addressed shared key rather than a per-run user-scoped path.
+
+    A fingerprint in state is the integration point between the dedup
+    pipeline (which computes it in ``retrieve_plan_submit``) and the OBS
+    directory creator (which routes on it in ``create_output_dir``).
+    """
+    captured: Dict[str, Any] = {}
+
+    def _fake_ensure(
+        config: Any,
+        sensitive_config: Any,
+        task: str,
+        run_identity: Any,
+        output_dir: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        del config, sensitive_config, task, run_identity, output_dir
+        captured["fingerprint"] = kwargs.get("fingerprint")
+        return "/obs/phytomni/agent_data/shared/fp/output/"
+
+    monkeypatch.setattr(analyst_graph, "ensure_run_output_dir", _fake_ensure)
+
+    config = AnalystConfig()
+    fake_self = SimpleNamespace(
+        analyst_config=config,
+        sensitive_config=fake_analyst_sensitive_config(),
+    )
+    run_identity = RunIdentity(
+        user_id="alice",
+        run_id=IdFactory().new_id("run", "analysis_agents_task"),
+        created_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+    )
+    state = cast(
+        AnalystAgentsState,
+        {"input_fingerprint": "f" * 64, "output_dir": ""},
+    )
+
+    AnalystGraphMixin._submit_output_dir(fake_self, state, run_identity)
+
+    assert captured["fingerprint"] == "f" * 64

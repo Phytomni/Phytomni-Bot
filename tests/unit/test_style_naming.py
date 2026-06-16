@@ -178,6 +178,13 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_review_follow_up_routing.py": {
         "protected-access",
     },
+    # Test for ``AnalystGraphMixin._submit_output_dir`` — asserts the
+    # fingerprint from state is forwarded to ``ensure_run_output_dir``
+    # so the output dir routes to the content-addressed shared key.
+    # Same protected-helper coverage seam as the design/network siblings.
+    "tests/agents/test_analyst_graph_nodes.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",

@@ -177,12 +177,14 @@ class AnalystGraphMixin(WorkflowMixinBase):
         output_dir = str(state.get("output_dir") or "")
         if not self.analyst_config.CREATE_DIR:
             return output_dir
+        fingerprint = state.get("input_fingerprint") or ""
         return ensure_run_output_dir(
             self.analyst_config,
             self.sensitive_config,
             "analysis_agents_task",
             run_identity,
             output_dir,
+            fingerprint=fingerprint,
         )
 
     async def _upload_submit_meta(

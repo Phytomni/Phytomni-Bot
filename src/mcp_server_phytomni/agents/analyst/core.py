@@ -501,6 +501,7 @@ class AnalystAgent(
         else:
             obs_file_list = list(obs_file_list)
 
+        input_fingerprint = kwargs.get("input_fingerprint") or ""
         initial_state = {
             "query": query,
             "goal_description": kwargs.get("goal_description"),
@@ -521,6 +522,7 @@ class AnalystAgent(
             "is_polling": kwargs.get("is_polling", True),
             "is_auto_select": kwargs.get("is_auto_select", True),
             "is_preset_plan": kwargs.get("is_preset_plan", False),
+            "input_fingerprint": input_fingerprint,
         }
 
         async def run_graph() -> dict[str, Any]:

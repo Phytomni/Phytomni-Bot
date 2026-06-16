@@ -17,7 +17,7 @@ with the legacy ``AnalystAgentsState`` alias.
 # class-definition time, so future annotations would silently drop
 # every ``Required[]`` marker on ``AnalystInput``.
 
-from typing import Any, Dict, List, Optional, Required, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Required, TypedDict
 
 
 class AnalystInput(TypedDict, total=False):
@@ -117,6 +117,7 @@ class AnalystState(TypedDict):
     pending_post_knowledge: Optional[str]
     knowledge_payload: Optional[Dict[str, Any]]
     knowledge_response: Optional[Dict[str, Any]]
+    input_fingerprint: NotRequired[str]
 
 
 AnalystAgentsState = AnalystState

@@ -107,6 +107,7 @@ async def retrieve_plan_submit(
         thread_id=thread_id,
         is_auto_select=True,
         is_polling=False,
+        input_fingerprint=fingerprint,
     )
     if meta_meta:
         result["meta_meta"] = meta_meta

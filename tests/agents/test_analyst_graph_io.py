@@ -169,6 +169,7 @@ def test_analyst_state_carries_full_field_union() -> None:
         "pending_post_knowledge",
         "knowledge_payload",
         "knowledge_response",
+        "input_fingerprint",
     }
     assert set(get_type_hints(AnalystState).keys()) == expected
 
