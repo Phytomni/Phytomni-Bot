@@ -4,21 +4,29 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for analyst dispatch IO adapters.
 
-Pins ``map_send_payload_to_analyst_input`` against the kwargs
-``submit_analyst_analysis`` already forwards to ``AnalystAgent.arun``
-and ``map_analyst_output_to_dispatch_state`` against the dict shape
-``capture_analysis_result`` reads through ``task_result.get(...)``.
+Pins ``map_send_payload_to_analyst_input`` and
+``map_analyst_output_to_dispatch_state`` against the dispatch contract.
+Also covers the fingerprint-threading fix so
+``prepare_analyst_dispatch_context`` receives the fingerprint before
+creating the output directory.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
 import pytest
 
+import mcp_server_phytomni.agents.shared.analysis as _analysis_mod
 from mcp_server_phytomni.agents.analyst.state import AnalystInput
+from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
     map_analyst_output_to_dispatch_state,
     map_send_payload_to_analyst_input,
 )
+from mcp_server_phytomni.runtime.task_dedup import analyst_task_fingerprint
 
 pytestmark = pytest.mark.agent
 
@@ -255,3 +263,98 @@ def test_map_round_trip_preserves_dispatch_shape() -> None:
     state_update = map_analyst_output_to_dispatch_state(final_state)
     assert state_update["task_id"] == "task-round-trip"
     assert state_update["output_dir"] == payload["output_dir"]
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint-threading integration test
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_request() -> dict[str, Any]:
+    """Return a minimal dispatch request for fingerprint-threading tests."""
+    return {
+        "analysis_type": "design_analysis",
+        "target_id": "AT1G01010",
+        "prompt_parts": (
+            "Design a promoter for AT1G01010.",
+            "preset-plan-meta",
+            {"/obs/data.fa": "fasta"},
+        ),
+        "compute_resource": "small",
+    }
+
+
+def _submitting_agent_fp(task_id: str) -> SimpleNamespace:
+    """An analyst_agent whose app.ainvoke returns a scripted final state."""
+
+    async def ainvoke(state: Any, config: Any) -> dict[str, Any]:
+        del state, config
+        return {
+            "task_id": task_id,
+            "output_dir": "/obs/shared/fp/output",
+            "plan": "p",
+            "tool_usages": "t",
+            "task_status": "SUBMITTED",
+        }
+
+    return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
+
+
+async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dispatch seam computes the fingerprint before creating the dir.
+
+    ``submit_analyst_via_subgraph`` must pass the dispatch fingerprint
+    into ``prepare_analyst_dispatch_context`` so that
+    ``ensure_analysis_output_dir`` routes the directory to the shared
+    content-addressed key rather than a per-run user-scoped path.
+
+    Seam: monkeypatch ``ensure_analysis_output_dir`` on the
+    ``agents.shared.analysis`` module to capture the ``fingerprint``
+    kwarg; run the real ``prepare_analyst_dispatch_context`` (not
+    stubbed); assert the captured fingerprint matches the expected
+    ``analyst_task_fingerprint`` digest for the request.
+    """
+    db = str(tmp_path / "tasks.sqlite")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+
+    captured: dict[str, Any] = {}
+
+    def fake_ensure_output_dir(
+        _config: Any,
+        _sensitive_config: Any,
+        _analysis_type: str,
+        _output_dir: str | None,
+        _run_identity: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        captured["fingerprint"] = kwargs.get("fingerprint")
+        return "/obs/shared/captured/output"
+
+    monkeypatch.setattr(
+        _analysis_mod, "ensure_analysis_output_dir", fake_ensure_output_dir
+    )
+
+    config = SimpleNamespace(USER_ID="user-fp-test")
+    sensitive_config = object()
+    request = _dispatch_request()
+
+    await ada.submit_analyst_via_subgraph(
+        _submitting_agent_fp("T-fp"),
+        config,
+        sensitive_config,
+        request,
+        is_polling=False,
+    )
+
+    goal_description, _meta, data_list = request["prompt_parts"]
+    expected_fp = analyst_task_fingerprint(
+        goal_description=goal_description,
+        data_list=data_list,
+        obs_file_list=None,
+    )
+    assert (
+        "fingerprint" in captured
+    ), "ensure_analysis_output_dir was not called or captured no fingerprint"
+    assert captured["fingerprint"] == expected_fp

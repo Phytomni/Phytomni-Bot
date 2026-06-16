@@ -51,7 +51,7 @@ def _patch_context(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         ada,
         "prepare_analyst_dispatch_context",
-        lambda config, sensitive, request: SimpleNamespace(
+        lambda config, sensitive, request, fp=None: SimpleNamespace(
             analysis_type="evolution_analysis",
             target_id="AT1G01010",
             output_dir="/obs/out",

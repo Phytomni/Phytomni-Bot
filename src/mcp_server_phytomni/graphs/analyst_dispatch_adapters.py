@@ -178,10 +178,10 @@ async def submit_analyst_via_subgraph(
         5-key shape is returned (``plan`` / ``tool_usages`` ``None``)
         so consumers cannot tell a reuse from a fresh submission.
     """
-    context = prepare_analyst_dispatch_context(
-        config, sensitive_config, request
-    )
     fingerprint = _dispatch_fingerprint(request)
+    context = prepare_analyst_dispatch_context(
+        config, sensitive_config, request, fingerprint
+    )
     reused = await _reuse_prior_dispatch(
         fingerprint, require_terminal_success=is_polling
     )

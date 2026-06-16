@@ -111,6 +111,7 @@ def prepare_analyst_dispatch_context(
     config: Any,
     sensitive_config: Any,
     request: Mapping[str, Any],
+    fingerprint: Optional[str] = None,
 ) -> AnalystDispatchContext:
     """Resolve the dispatch context shared by both analyst entry points.
 
@@ -128,6 +129,10 @@ def prepare_analyst_dispatch_context(
             ``ensure_analysis_output_dir`` for OBS credentials.
         request: Prepared request mapping with ``analysis_type`` /
             ``target_id`` / optional ``output_dir``.
+        fingerprint: Optional input-identity digest forwarded to
+            ``ensure_analysis_output_dir`` so the output directory
+            routes to the tenant-neutral shared key rather than the
+            per-run user-scoped path.
 
     Returns:
         An ``AnalystDispatchContext`` capturing the resolved labels,
@@ -145,6 +150,7 @@ def prepare_analyst_dispatch_context(
         analysis_type,
         request.get("output_dir"),
         run_identity,
+        fingerprint=fingerprint,
     )
     thread_id = run_identity.scoped_id("thread", target_id, analysis_type)
     return AnalystDispatchContext(
