@@ -459,3 +459,48 @@ async def test_obs_upload_audit_records_metadata_not_binary(
     blob = (obs_rows[0].request_body or "") + (obs_rows[0].response_body or "")
     assert secret.decode() not in blob
     assert str(len(secret)) in blob
+
+
+async def test_obs_list_rejects_bare_shared_root(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bare shared root is a 403 — no fingerprint enumeration.
+
+    Allowing ``agent_data/shared/`` without a fingerprint segment would let
+    any caller list every tenant's results, defeating the possession-of-
+    fingerprint model. The guard requires a full 64-hex fingerprint.
+    """
+    fake = Mock(return_value=[])
+    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+
+    response = await client.get(
+        "/v1/relay/obs/list?prefix=agent_data/shared/",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not fake.called
+
+
+async def test_obs_get_object_rejects_non_fingerprint_shared_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shared path without a full 64-hex fingerprint is a 403."""
+    size = Mock(return_value=8)
+    chunks = Mock(return_value=iter([b"x"]))
+    monkeypatch.setattr(ops_module, "object_size", size)
+    monkeypatch.setattr(ops_module, "iter_object_chunks", chunks)
+
+    response = await client.get(
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/shared/not-a-fingerprint/r.cif",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not size.called
+    assert not chunks.called

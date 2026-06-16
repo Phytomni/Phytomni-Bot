@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 import time
 from collections.abc import Iterator
@@ -42,6 +43,16 @@ __all__ = ["add_obs_routes"]
 
 _OBS_SERVICE = "obs"
 _LOGGER = logging.getLogger(__name__)
+
+# A content-addressed shared path must carry a FULL sha256 fingerprint
+# segment (64 lowercase hex) plus something after it. Anchoring on the
+# fingerprint (not the bare ``shared/`` prefix) keeps the possession-of-
+# fingerprint model intact: a caller cannot list the bare shared root to
+# enumerate other tenants' fingerprints, only read a path whose
+# (unguessable) fingerprint it already possesses.
+_SHARED_FP_RE = re.compile(
+    rf"^{re.escape(AGENT_DATA_ROOT)}/shared/[0-9a-f]{{64}}/"
+)
 
 
 def _require_query(request: Request, key: str) -> str:
@@ -108,8 +119,10 @@ def _require_output_prefix(
     another tenant's output dirs in the shared operator bucket, let alone
     arbitrary bucket prefixes; anything else is a 403.
 
-    The content-addressed shared root (``AGENT_DATA_ROOT/shared/``) is also
-    permitted on a possession-of-fingerprint basis: a sha256 fingerprint is
+    A content-addressed shared path (``AGENT_DATA_ROOT/shared/<64-hex>/``)
+    is also permitted on a possession-of-fingerprint basis: the path must
+    carry a full sha256 fingerprint segment — the bare shared root is
+    rejected so a caller cannot enumerate it — and the fingerprint is
     unguessable, so a caller that knows it already proved possession of the
     inputs that produced it.
     """
@@ -119,11 +132,10 @@ def _require_output_prefix(
         raise HTTPException(
             status_code=400, detail="obs prefix outside bucket"
         ) from exc
-    allowed = (
-        f"{USER_DATA_ROOT}/{principal.user_id}/",
-        f"{AGENT_DATA_ROOT}/shared/",
-    )
-    if not normalized.startswith(allowed):
+    user_prefix = f"{USER_DATA_ROOT}/{principal.user_id}/"
+    if not (
+        normalized.startswith(user_prefix) or _SHARED_FP_RE.match(normalized)
+    ):
         raise HTTPException(
             status_code=403,
             detail="list prefix outside the tenant output root",
@@ -141,8 +153,10 @@ def _require_tenant_prefix(
     ``uploads``). Even inside the shared operator bucket a key cannot
     reach another tenant's objects; anything else is a 403.
 
-    The content-addressed shared root (``AGENT_DATA_ROOT/shared/``) is also
-    permitted on a possession-of-fingerprint basis: a sha256 fingerprint is
+    A content-addressed shared path (``AGENT_DATA_ROOT/shared/<64-hex>/``)
+    is also permitted on a possession-of-fingerprint basis: the path must
+    carry a full sha256 fingerprint segment — the bare shared root is
+    rejected so a caller cannot enumerate it — and the fingerprint is
     unguessable, so a caller that knows it already proved possession of the
     inputs that produced it.
     """
@@ -155,9 +169,8 @@ def _require_tenant_prefix(
     allowed = (
         f"{USER_DATA_ROOT}/{principal.user_id}/",
         f"{AGENT_DATA_ROOT}/uploads/{principal.user_id}/",
-        f"{AGENT_DATA_ROOT}/shared/",
     )
-    if not normalized.startswith(allowed):
+    if not (normalized.startswith(allowed) or _SHARED_FP_RE.match(normalized)):
         raise HTTPException(
             status_code=403, detail="obs path outside tenant namespace"
         )
