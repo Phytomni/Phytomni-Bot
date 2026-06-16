@@ -39,6 +39,7 @@ _EXPECTED_COLUMNS = {
     "task_log",
     "final_report",
     "degraded_reason",
+    "source_task_id",
 }
 
 

@@ -139,7 +139,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     input_fingerprint TEXT,
     task_log TEXT,
     final_report TEXT,
-    degraded_reason TEXT
+    degraded_reason TEXT,
+    source_task_id TEXT
 )
 """
 
@@ -163,6 +164,10 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
     (
         "degraded_reason",
         "ALTER TABLE tasks ADD COLUMN degraded_reason TEXT",
+    ),
+    (
+        "source_task_id",
+        "ALTER TABLE tasks ADD COLUMN source_task_id TEXT",
     ),
 )
 
