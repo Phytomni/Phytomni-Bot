@@ -131,7 +131,6 @@ ANALYSIS_DATA_LIST_MAP: Dict[str, str] = {
     "single_cell_analysis": "single_cell_analysis",
     "smep_analysis": "promoter_analysis",
     "smoc_analysis": "promoter_analysis",
-    "epic_analysis": "promoter_analysis",
     # Producer-extracted type whose prepared data lives under a
     # DIFFERENT key: the analysis_type identity stays
     # "protein_structure_analysis" (request dict / target-file map /

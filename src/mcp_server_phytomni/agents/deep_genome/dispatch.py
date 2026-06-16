@@ -50,25 +50,6 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# epic_analysis is intentionally kept registered in all four lookup
-# maps below (goal template / meta template / data list / target file
-# feature) but is NOT enumerated by ``prepare_tasks_node`` so the
-# dispatcher never instantiates it. Activation requires three
-# coordinated changes that must land in one commit:
-#   1. Add ``user/epic_analysis`` and ``user/epic_analysis_meta`` keys
-#      to ``config/.prompts.yaml`` with real EPIC tool spec (conda
-#      env, model paths, run script args). SMEP/SMOC are sibling
-#      templates and use the ``epic`` conda env, but EPIC's
-#      umbrella shape is different — do not synthesise content from
-#      siblings.
-#   2. Insert an ``{"analysis_type": "epic_analysis", ...}`` task entry
-#      into ``prepare_tasks_node`` alongside the existing 9 tasks.
-#   3. Confirm the integration team's EPIC tool is reachable from the
-#      compute env the analyst plan executes in.
-# Until then the registration is latent: any caller that adds an
-# epic_analysis task without the above coordination raises KeyError
-# at prompt resolution time in ``_analysis_prompt_parts``.
-
 ANALYSIS_GOAL_TEMPLATE_MAP = {
     "haplotypes_analysis": "user/haplotypes_analysis",
     "fst_analysis": "user/fst_analysis",
@@ -80,7 +61,6 @@ ANALYSIS_GOAL_TEMPLATE_MAP = {
     "single_cell_analysis": "user/single_cell_analysis",
     "smep_analysis": "user/smep_analysis",
     "smoc_analysis": "user/smoc_analysis",
-    "epic_analysis": "user/epic_analysis",
     "gene_expression_analysis": "user/gene_expression_analysis",
 }
 
@@ -95,7 +75,6 @@ ANALYSIS_META_TEMPLATE_MAP = {
     "single_cell_analysis": "user/single_cell_analysis_meta",
     "smep_analysis": "user/smep_analysis_meta",
     "smoc_analysis": "user/smoc_analysis_meta",
-    "epic_analysis": "user/epic_analysis_meta",
     "gene_expression_analysis": "user/gene_expression_analysis_meta",
 }
 
@@ -113,7 +92,6 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
     "single_cell_analysis": [".png", ".summary", ".legend"],
     "smep_analysis": [".png", ".summary", ".legend"],
     "smoc_analysis": [".png", ".summary", ".legend"],
-    "epic_analysis": [".png", ".summary", ".legend"],
     "gene_expression_analysis": [".png", ".summary", ".legend"],
 }
 
