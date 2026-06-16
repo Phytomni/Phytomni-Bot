@@ -103,10 +103,15 @@ research goal plus input datasets. `data_list` maps complete OBS dataset
 paths to descriptions of their role, format, organism, condition, and
 intended analysis use.
 
-Identical submissions are deduplicated by fingerprint over
-`goal_description`, `data_list`, and `obs_file_list`. In-flight or
-succeeded matches reuse the prior `task_id`; failed and cancelled rows do
-not block a fresh submission.
+Identical submissions are deduplicated by a content fingerprint over
+`goal_description`, `data_list`, and `obs_file_list`. The shared
+`runtime/task_dedup.py` helpers cover both this top-level path and the
+dispatch seam that the other async analysis tools (`DigitalDesignAgent`,
+`GeneNetworkAgent`, `InSilicoResearchAgent`, `DeepGenomeAgent`) funnel
+through. A fingerprint hit is verified against the live remote status before
+reuse: an in-flight or succeeded match reuses the prior `task_id`, while a
+failed or cancelled task is written back and resubmitted (a polling caller
+reuses only a terminal-success task).
 
 ### `DeepGenomeAgent`
 

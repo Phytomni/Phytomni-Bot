@@ -76,10 +76,15 @@ Async tools submit work to a backend and return a `task_id`. Poll that id
 through `GetTaskStatus`; the lookup is non-blocking and returns
 `status: "unknown"` for an unrecorded id.
 
-`AnalystAgent` also deduplicates identical submissions. It hashes
-`(goal_description, data_list, obs_file_list)` and reuses a prior in-flight
-or succeeded task instead of submitting the same scientific question again.
-Failed and cancelled rows are ignored so retries still create fresh work.
+Identical analysis submissions are deduplicated by a content fingerprint
+over `(goal_description, data_list, obs_file_list)`. The shared
+`runtime/task_dedup.py` helpers cover both the top-level `AnalystAgent` and
+the dispatch seam that `DigitalDesignAgent`, `GeneNetworkAgent`,
+`InSilicoResearchAgent`, and `DeepGenomeAgent` analysis submissions funnel
+through, so a re-submitted question reuses the prior remote task instead of
+launching a duplicate. A fingerprint hit is verified against the live remote
+status before reuse: an in-flight or succeeded task is reused, while a failed
+or cancelled task is written back and resubmitted.
 
 ## Response Envelope
 
