@@ -21,7 +21,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from mcp_server_phytomni.runtime.task_manager import TaskManager
+from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
 from mcp_server_phytomni.runtime.task_reconcile import (
     reconcile_task,
     reconcile_task_log,
@@ -219,3 +219,79 @@ def test_reconcile_task_log_returns_none_on_remote_failure(
     assert asyncio.run(reconcile_task_log(task_id)) is None
     # Nothing was cached — the row still has task_log = NULL.
     assert mgr.get_task_log(task_id) is None
+
+
+def test_reconcile_task_probes_source_task_id_when_present(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reconcile_task probes the remote id for a caller-owned dedup row.
+
+    A content-addressed dedup hit mints a caller-owned row whose
+    source_task_id holds the prior tenant's remote task id. The live
+    status probe must ask the analysis platform about the remote id
+    (which it knows) rather than the caller's local id (which it never
+    minted). A wrong probe returns "unknown" from a valid platform and
+    silently mis-reports the run status to the caller.
+    """
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="T-local",
+            status="submitted",
+            output_dir="/obs/run",
+            source_task_id="R-remote",
+        )
+    )
+
+    probed_ids: list[str] = []
+
+    async def _capturing_status(t_id: str, **_: Any) -> dict:
+        probed_ids.append(t_id)
+        return {"status": "running"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _capturing_status,
+    )
+
+    asyncio.run(reconcile_task("T-local"))
+    assert probed_ids == [
+        "R-remote"
+    ], f"Expected probe of 'R-remote', got {probed_ids}"
+
+
+def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """reconcile_task probes its own task_id when source_task_id is None.
+
+    A normal (non-dedup) analyst row has no source_task_id pointer, so
+    the live status probe must fall back to the row's own task_id —
+    the same id that the analysis platform received at submission time.
+    """
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record_submission("T-own", "submitted", "/obs/run")
+
+    probed_ids: list[str] = []
+
+    async def _capturing_status(t_id: str, **_: Any) -> dict:
+        probed_ids.append(t_id)
+        return {"status": "running"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _capturing_status,
+    )
+
+    asyncio.run(reconcile_task("T-own"))
+    assert probed_ids == [
+        "T-own"
+    ], f"Expected probe of 'T-own', got {probed_ids}"

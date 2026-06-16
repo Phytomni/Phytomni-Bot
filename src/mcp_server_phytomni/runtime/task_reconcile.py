@@ -75,9 +75,10 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         "degraded": degraded_reason is not None,
         "degraded_reason": degraded_reason,
     }
+    probe_id = row["source_task_id"] or task_id
     try:
         live = await task_status(
-            task_id,
+            probe_id,
             analysis_url=analyst_config.ANALYSIS_URL,
             region=analyst_config.ANALYSIS_REGION,
             timeout=analyst_config.TIMEOUT,
