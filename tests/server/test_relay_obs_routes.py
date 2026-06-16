@@ -373,6 +373,67 @@ async def test_obs_list_rejects_foreign_tenant_prefix(
     assert not fake.called
 
 
+_SHARED_FP = "a" * 64  # 64-hex content-addressed fingerprint
+_SHARED_PREFIX = f"agent_data/shared/{_SHARED_FP}/output/"
+
+
+async def test_obs_get_object_allows_shared_content_addressed_read(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET on agent_data/shared/<fp>/output/... is allowed (possession-of-fp).
+
+    Any authenticated caller that knows a sha256 fingerprint already proved
+    possession of the inputs that produced it, so the shared result root is
+    open to any valid relay key, not just the submitting tenant.
+    """
+    monkeypatch.setattr(ops_module, "object_size", Mock(return_value=12))
+    monkeypatch.setattr(
+        ops_module,
+        "iter_object_chunks",
+        Mock(return_value=iter([b"ATOM RECORD"])),
+    )
+
+    response = await client.get(
+        f"/v1/relay/obs/object" f"?path=/obs/phytomni/{_SHARED_PREFIX}r.cif",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"ATOM RECORD"
+
+
+async def test_obs_list_allows_shared_prefix(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """List on agent_data/shared/<fp>/output/ is allowed (possession-of-fp).
+
+    A caller that holds the fingerprint may enumerate the shared result root
+    to discover which output files are available for download.
+    """
+    fake = Mock(
+        return_value=[
+            f"{_SHARED_PREFIX}result.md",
+            f"{_SHARED_PREFIX}plot.png",
+        ]
+    )
+    monkeypatch.setattr(ops_module, "list_object_keys", fake)
+
+    response = await client.get(
+        f"/v1/relay/obs/list?prefix={_SHARED_PREFIX}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["keys"] == [
+        f"{_SHARED_PREFIX}result.md",
+        f"{_SHARED_PREFIX}plot.png",
+    ]
+
+
 async def test_obs_upload_audit_records_metadata_not_binary(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],

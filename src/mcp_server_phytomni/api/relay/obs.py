@@ -107,6 +107,11 @@ def _require_output_prefix(
     (``USER_DATA_ROOT/<user_id>``) so a customer key cannot enumerate
     another tenant's output dirs in the shared operator bucket, let alone
     arbitrary bucket prefixes; anything else is a 403.
+
+    The content-addressed shared root (``AGENT_DATA_ROOT/shared/``) is also
+    permitted on a possession-of-fingerprint basis: a sha256 fingerprint is
+    unguessable, so a caller that knows it already proved possession of the
+    inputs that produced it.
     """
     try:
         normalized = normalize_obs_object_key(prefix, bucket)
@@ -114,7 +119,11 @@ def _require_output_prefix(
         raise HTTPException(
             status_code=400, detail="obs prefix outside bucket"
         ) from exc
-    if not normalized.startswith(f"{USER_DATA_ROOT}/{principal.user_id}/"):
+    allowed = (
+        f"{USER_DATA_ROOT}/{principal.user_id}/",
+        f"{AGENT_DATA_ROOT}/shared/",
+    )
+    if not normalized.startswith(allowed):
         raise HTTPException(
             status_code=403,
             detail="list prefix outside the tenant output root",
@@ -131,6 +140,11 @@ def _require_tenant_prefix(
     tenant namespace under the two real roots (``user_data`` outputs and
     ``uploads``). Even inside the shared operator bucket a key cannot
     reach another tenant's objects; anything else is a 403.
+
+    The content-addressed shared root (``AGENT_DATA_ROOT/shared/``) is also
+    permitted on a possession-of-fingerprint basis: a sha256 fingerprint is
+    unguessable, so a caller that knows it already proved possession of the
+    inputs that produced it.
     """
     try:
         normalized = normalize_obs_object_key(path, bucket)
@@ -141,6 +155,7 @@ def _require_tenant_prefix(
     allowed = (
         f"{USER_DATA_ROOT}/{principal.user_id}/",
         f"{AGENT_DATA_ROOT}/uploads/{principal.user_id}/",
+        f"{AGENT_DATA_ROOT}/shared/",
     )
     if not normalized.startswith(allowed):
         raise HTTPException(
