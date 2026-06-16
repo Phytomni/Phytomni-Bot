@@ -233,15 +233,25 @@ the dedup key on a later write.
 The fingerprint is content-keyed and intentionally tenant-agnostic
 (`goal_description` + `data_list` + `obs_file_list`, never the authenticated
 user), so an identical question dedupes across tenants — a deliberate cache
-objective. A reuse hit can therefore return a prior submitter's `output_dir`.
-That stays tenant-safe at the read boundary: the customer-facing OBS relay
-confines every object read and list to the caller key's own
-`user_data/<user_id>/` namespace (`_require_tenant_prefix` /
-`_require_output_prefix`, a 403 otherwise), and child paths are pinned via
-`RELAY_USER_ID`. The reused `output_dir` is thus an inert path string across
-tenants — its bytes are unreachable without the original namespace — and a
-cross-tenant hit additionally requires the caller to already hold byte-
-identical inputs, since `data_list` and `obs_file_list` are part of the key.
+objective. Results are written to the tenant-neutral key
+`agent_data/shared/<fingerprint>/output/` (via
+`storage/path_policy.shared_output_key`), so no submitter's `user_id` appears
+in the path and a cross-tenant reuse never exposes a prior caller's namespace.
+
+A dedup hit does not hand the caller the prior tenant's `task_id`. Instead it
+mints a fresh caller-owned task id (and a corresponding run row) and records it
+with `tasks.source_task_id` holding the prior tenant's remote task id.
+`source_task_id` is used server-side only by `runtime/task_reconcile.py: reconcile_task` to probe live status (`probe_id = row["source_task_id"] or task_id`); it is never returned to the client. The caller therefore receives
+their own run id and task id at HTTP 202, exactly like a fresh submission —
+there is no `dedup_hit`/`id=null` passthrough for reuse on this path.
+
+The OBS relay grants read access to `agent_data/shared/<fp>/` only when the
+path carries a full 64-hex SHA-256 fingerprint segment (enforced by a compiled
+regex in `_require_tenant_prefix` / `_require_output_prefix`). The bare
+`agent_data/shared/` root is rejected, so a caller cannot enumerate other
+tenants' fingerprints. A 64-hex fingerprint is unguessable, so possession of it
+proves possession of the inputs that produced the result — no per-user segment
+is required for this access class.
 
 `runtime/agent_registry.py` is separate. It reuses in-memory agent instances
 and compiled LangGraph apps for matching non-secret configuration, but it

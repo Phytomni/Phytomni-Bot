@@ -149,27 +149,23 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     issue from logs, and (2) sets the ``recorder_degraded`` request
     contextvar so the HTTP layer can surface the degraded-tracking
     state to the client rather than letting it look like a legitimate
-    dedup-hit ``id=None`` / ``task_ids=[]`` passthrough.
+    degraded-tracking ``id=None`` / ``task_ids=[]`` fallback.
 
     The chokepoint binds the freshly-minted ``run_id`` to the request
     contextvar **only after** every child task row has been written,
     so a half-failed record never surfaces a run id without its task
     ids — the HTTP layer then sees ``current_run_id() is None`` and
     returns ``(None, [])``. The companion ``current_recorder_degraded``
-    flag disambiguates this case from the legitimate dedup-hit
-    passthrough described below.
+    flag marks this as a persistence failure so the HTTP body includes
+    ``degraded_tracking: True``; that is the ONLY path that produces
+    ``id=null`` in the response.
 
-    A wrapper return carrying ``dedup_hit=True`` is a transparent
-    passthrough for a duplicate submission: the prior caller already
-    owns the task row through their own run, so minting a fresh run
-    and ``INSERT OR REPLACE`` of the task row here would overwrite the
-    prior ``run_id`` and orphan the original aggregate
-    (``RunRegistry.list_runs`` would return the prior run with empty
-    ``task_ids`` and the HTTP ``GET /v1/runs/{prior}`` aggregate would
-    stay pinned at ``running``). The chokepoint therefore bails out
-    before any registry mutation when it sees the sentinel; the second
-    caller still receives the prior ``task_id`` and reads status
-    through it directly.
+    The ``if result.get("dedup_hit") is True: return`` guard below is
+    a defensive early-exit: no production wrapper currently sets this
+    sentinel (analyst reuse now mints a caller-owned row and records it
+    normally), but the guard is preserved so any future wrapper that
+    does signal ``dedup_hit`` is handled safely without accidentally
+    overwriting a prior run's registry rows.
 
     The MCP tool's return dict is *not* mutated (no ``run_id`` is
     surfaced to the client) so the existing stdio MCP contract stays

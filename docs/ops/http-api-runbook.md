@@ -437,8 +437,8 @@ sqlite3 "$API_TASKS_DB_PATH" \
 
 ### Analyst Returned `id: null`
 
-This is expected when Analyst detects a duplicate submission fingerprint
-for an in-flight or succeeded task. The response includes:
+This shape now indicates a **local registry write failure**, not a dedup hit.
+The response body carries `"degraded_tracking": true`:
 
 ```json
 {
@@ -447,15 +447,19 @@ for an in-flight or succeeded task. The response includes:
   "agent": "analyst",
   "status": "running",
   "task_ids": [],
-  "result": {
-    "dedup_hit": true,
-    "task_id": "T-original-task-id"
-  }
+  "degraded_tracking": true,
+  "result": { ... }
 }
 ```
 
-The client should poll `result.task_id`. If `id` is `null` without
-`result.dedup_hit == true`, retry the request and escalate if it repeats.
+The remote task was accepted by the analysis platform but the local SQLite
+registry write failed (check server logs for the `sqlite3.Error` / `OSError`
+traceback). The task is live upstream; use the analysis platform's own task
+listing to locate it, or wait for a reconcile pass.
+
+Duplicate submissions are now handled transparently: a fingerprint match mints
+a fresh caller-owned task id and returns a normal `202` body with a valid `id`
+and `task_ids`. Clients no longer need to handle a `dedup_hit` field.
 
 ### BriefGene Answer Is Generic Or Hits `nogeneid`
 

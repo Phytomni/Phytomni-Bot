@@ -645,11 +645,10 @@ A `202` body can legitimately return `id: null` with `task_ids: []` for
 two reasons. Both produce the same identity-empty shape, so clients
 distinguish them through the extra signals described here:
 
-| Cause                       | `id`   | `task_ids` | Body extras                                     | `result` extras                                                 | Client follow-up                                                                                                |
-| --------------------------- | ------ | ---------- | ----------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Healthy submission          | `str`  | `[…]`      | —                                               | per-agent payload                                               | Poll `/v1/runs/{id}` for status.                                                                                |
-| Analyst dedup-hit           | `null` | `[]`       | —                                               | `result.task_id` (prior caller's id) + `result.dedup_hit: true` | Poll the prior task id directly (it is reachable through `/v1/runs` listings or the prior caller's run id).     |
-| Local registry write failed | `null` | `[]`       | `degraded_tracking: true` at the body top level | per-agent payload (the remote submission did succeed)           | Treat the remote run as in-flight but not locally tracked; operators should reconcile from the upstream system. |
+| Cause                       | `id`   | `task_ids` | Body extras                                     | `result` extras                                       | Client follow-up                                                                                                |
+| --------------------------- | ------ | ---------- | ----------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Healthy submission          | `str`  | `[…]`      | —                                               | per-agent payload                                     | Poll `/v1/runs/{id}` for status.                                                                                |
+| Local registry write failed | `null` | `[]`       | `degraded_tracking: true` at the body top level | per-agent payload (the remote submission did succeed) | Treat the remote run as in-flight but not locally tracked; operators should reconcile from the upstream system. |
 
 The `degraded_tracking: true` body field is added only when the local
 SQLite chokepoint (`runtime.submit_recorder.record_submitted_task`) hit
@@ -661,14 +660,22 @@ upstream platform is the recovery path). The chokepoint also writes
 the full traceback through `logger.exception` so operators see the
 underlying SQLite or OS error in logs.
 
-Sub-agent analysis submissions (design / network / research / deep_genome
-/ environment / evolution) dedupe transparently at the
-`submit_analyst_via_subgraph` seam rather than through the `id: null`
-shape above. A fingerprint hit returns the prior remote `task_id` in the
-same shape as a fresh submission (no `dedup_hit` signal), after verifying
-the prior task is live or succeeded. A run's `task_ids` may therefore
-reference a task originally launched by an earlier run; the status
-reconciliation path is unchanged.
+Analysis submissions (both the top-level analyst path and the
+`submit_analyst_via_subgraph` seam that design / network / research /
+deep_genome / environment / evolution funnel through) deduplicate on a
+content fingerprint over `goal_description`, `data_list`, and
+`obs_file_list`. Results are written to the tenant-neutral key
+`agent_data/shared/<fingerprint>/output/`. A fingerprint hit mints a
+fresh caller-owned task id (stored in the local `tasks` table with
+`source_task_id` pointing at the prior tenant's remote task id), records
+the caller's own run, and returns the caller's own `id` and `task_ids` at
+HTTP 202 — exactly the same shape as a fresh submission. The
+`source_task_id` is used server-side only by `reconcile_task` to probe
+live status; it is never returned to the client. A run's `task_ids` may
+therefore reference a task originally launched by an earlier run (possibly
+from another tenant), but the reconciliation path is unchanged: the caller
+polls their own run id and reaches the shared result at the neutral output
+path.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
@@ -739,16 +746,16 @@ with exponential backoff bounded between `2s` and `30s`, for example
 The endpoint is cheap after terminal state because the cached `result_json`
 is returned without re-polling the analysis platform.
 
-## Analyst Dedup-hit Passthrough
+## Analyst Dedup and Content-addressed Storage
 
-`POST /v1/agents/analyst/runs` may return `202` with `id=null` and
-`task_ids=[]` when the submission fingerprint matches a prior in-flight or
-succeeded task. The submit path skips a fresh registry write so the prior
-caller's `run_id` stays authoritative.
-
-The prior `task_id` is still surfaced under `result["task_id"]` together
-with `result["dedup_hit"]: true`. Clients should poll the prior task through
-that id instead of `/v1/runs/{run_id}`.
+Analysis submissions use a content-addressed store. The fingerprint is computed
+over `goal_description`, `data_list`, and `obs_file_list` (never the caller's
+identity), and results are written to the tenant-neutral path
+`agent_data/shared/<fingerprint>/output/`. A fingerprint hit always mints a
+fresh caller-owned run and task id rather than returning a prior submitter's
+ids. The `(id=null, task_ids=[])` body shape no longer arises from a dedup
+hit; it occurs only when the local registry write fails (see the
+`degraded_tracking` case above).
 
 ## Retention and Correlation
 

@@ -623,13 +623,12 @@ async def _invoke_agent_run(
     consume it directly; remote clients can read the raw payload for
     additional context but should track the run by ``id`` and
     ``task_ids`` since those are uniformly populated for every
-    remote agent regardless of formatter shape, **except** on an
-    analyst dedup-hit passthrough: when ``result["dedup_hit"]`` is
-    ``True`` the chokepoint deliberately skips the registry write
-    so the prior caller's run id stays authoritative, and this
-    endpoint returns ``id=null`` with ``task_ids=[]`` while the
-    prior ``task_id`` remains available under ``result["task_id"]``
-    for the caller to poll directly.
+    remote agent. Analysis dedup hits also return the caller's own
+    run id and fresh task id at 202 (the reuse mints a caller-owned
+    row recorded through the normal chokepoint path); the only case
+    where ``id=null`` / ``task_ids=[]`` is returned is when the
+    local registry write fails and ``degraded_tracking: True`` is
+    added to the body.
 
     Args:
         agent: Public agent alias (e.g. ``"chat"``).
@@ -736,17 +735,13 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
     Returns:
         ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
         ``task_ids`` is empty when the chokepoint did not bind a
-        run id — either because the registry write failed midway
-        (see ``runtime.submit_recorder.record_submitted_task``) or
-        because the wrapper returned an analyst dedup-hit
-        passthrough that intentionally skipped the write to preserve
-        the prior caller's run id. Callers distinguish the two via
-        ``current_recorder_degraded()``: ``True`` is the silent
-        persistence-failure case and the surrounding
-        ``_invoke_agent_run`` body adds ``degraded_tracking: True``;
-        ``False`` plus ``result["dedup_hit"] is True`` is the
-        transparent passthrough whose prior ``task_id`` is in
-        ``result["task_id"]``.
+        run id. This arises only when the registry write failed
+        midway (see ``runtime.submit_recorder.record_submitted_task``
+        and ``current_recorder_degraded()``); ``_invoke_agent_run``
+        then adds ``degraded_tracking: True`` to the HTTP body.
+        Analysis dedup hits no longer produce this shape: a reuse
+        mints a caller-owned row through the normal chokepoint path
+        and binds a fresh ``run_id`` before returning.
     """
     run_id = current_run_id()
     if run_id is None:

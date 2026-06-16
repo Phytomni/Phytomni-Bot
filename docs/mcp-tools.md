@@ -109,9 +109,12 @@ Identical submissions are deduplicated by a content fingerprint over
 dispatch seam that the other async analysis tools (`DigitalDesignAgent`,
 `GeneNetworkAgent`, `InSilicoResearchAgent`, `DeepGenomeAgent`) funnel
 through. A fingerprint hit is verified against the live remote status before
-reuse: an in-flight or succeeded match reuses the prior `task_id`, while a
+reuse: an in-flight or succeeded match reuses the prior remote task, while a
 failed or cancelled task is written back and resubmitted (a polling caller
-reuses only a terminal-success task).
+reuses only a terminal-success task). Results are content-addressed under
+`agent_data/shared/<fingerprint>/output/` — no submitter's identity is in the
+path — and a reuse always returns the caller's own fresh task id rather than
+the prior submitter's.
 
 ### `DeepGenomeAgent`
 
