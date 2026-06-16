@@ -25,6 +25,7 @@ from ..agents.analyst.task_ops import probe_live_status
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
+    mint_caller_owned_task_id,
     record_dispatch_submission,
     should_reuse_prior_task,
     verify_live_status,
@@ -175,8 +176,10 @@ async def submit_analyst_via_subgraph(
         subgraph's final state. Missing fields surface as ``None`` so
         failure paths flow through to ``capture_analysis_result``
         without raising. On an input-fingerprint dedup hit the same
-        5-key shape is returned (``plan`` / ``tool_usages`` ``None``)
-        so consumers cannot tell a reuse from a fresh submission.
+        shape is returned (``plan`` / ``tool_usages`` ``None``) but the
+        ``task_id`` is a fresh caller-owned id and ``source_task_id``
+        carries the prior tenant's remote id; the seam persists a
+        caller-owned task row so the reuse caller polls a row they own.
     """
     fingerprint = _dispatch_fingerprint(request)
     context = prepare_analyst_dispatch_context(
@@ -187,9 +190,17 @@ async def submit_analyst_via_subgraph(
     )
     if reused is not None:
         logger.info(
-            "Reusing prior %s task via fingerprint dedup (task_id: %s)",
+            "Reusing prior %s task via fingerprint dedup "
+            "(caller task_id: %s, source_task_id: %s)",
             context.analysis_type,
             reused["task_id"],
+            reused["source_task_id"],
+        )
+        record_dispatch_submission(
+            str(reused["task_id"]),
+            str(reused["output_dir"] or ""),
+            fingerprint,
+            source_task_id=str(reused["source_task_id"]),
         )
         return reused
     enriched_request = {**request, "output_dir": context.output_dir}
@@ -252,8 +263,11 @@ async def _reuse_prior_dispatch(
     Reads the fingerprint row, applies the cheap status gate, then the
     live verification (probe + is_polling-aware decision). The reuse
     dict mirrors ``map_analyst_output_to_dispatch_state``'s 5-key shape
-    (``plan`` / ``tool_usages`` are ``None`` for a reused task) so
-    consumers cannot tell a hit from a miss.
+    (``plan`` / ``tool_usages`` are ``None`` for a reused task) plus a
+    ``source_task_id`` pointing at the prior tenant's remote id. The
+    surfaced ``task_id`` is a fresh caller-owned id (never the prior
+    tenant's), so a reuse caller polls a row they own while the prior
+    remote task remains the live-status source.
 
     Args:
         fingerprint: Identity digest from ``analyst_task_fingerprint``.
@@ -278,9 +292,10 @@ async def _reuse_prior_dispatch(
     ):
         return None
     return {
-        "task_id": prior["task_id"],
+        "task_id": mint_caller_owned_task_id("analyst"),
         "output_dir": prior["output_dir"],
         "plan": None,
         "tool_usages": None,
         "task_status": prior["status"],
+        "source_task_id": prior["task_id"],
     }

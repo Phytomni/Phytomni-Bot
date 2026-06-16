@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
+    mint_caller_owned_task_id,
     should_reuse_prior_task,
     verify_live_status,
 )
@@ -54,12 +55,12 @@ async def retrieve_plan_submit(
     Returns:
         AnalystAgent result payload, optionally augmented with
         ``meta_meta``. Always includes ``input_fingerprint`` so the
-        submit chokepoint can persist the dedup key on the new task row
-        (or carries the prior row's identity on a reuse hit). The reuse
-        branch also sets ``dedup_hit=True`` so downstream chokepoints
-        can detect a transparent passthrough and skip the registry
-        write that would otherwise overwrite the prior row's ``run_id``
-        with a freshly minted one and orphan the original run.
+        submit chokepoint can persist the dedup key on the new task row.
+        On a reuse hit the wrapper mints a fresh caller-owned
+        ``task_id`` (never the prior tenant's id) and carries the prior
+        remote id under ``source_task_id`` for the server-side
+        live-status probe, so the caller polls a row they own while the
+        prior remote task stays the data source.
     """
     meta_meta = kwargs.get("meta_meta")
     compute_resource = kwargs.get("compute_resource", "small")
@@ -78,13 +79,14 @@ async def retrieve_plan_submit(
             live_status=live_status,
             require_terminal_success=False,
         ):
+            fresh = mint_caller_owned_task_id("analyst")
             reused: Dict[str, Any] = {
-                "task_id": prior["task_id"],
+                "task_id": fresh,
                 "output_dir": prior["output_dir"],
                 "job_name": "",
                 "compute_resource": compute_resource,
                 "input_fingerprint": fingerprint,
-                "dedup_hit": True,
+                "source_task_id": prior["task_id"],
             }
             if meta_meta:
                 reused["meta_meta"] = meta_meta

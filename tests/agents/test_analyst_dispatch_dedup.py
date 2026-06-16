@@ -139,7 +139,12 @@ def _seed_and_probe(
 async def test_seam_reuses_live_running_when_not_polling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """is_polling=False reuses an in-flight prior (no ainvoke)."""
+    """is_polling=False reuses an in-flight prior (no ainvoke).
+
+    The caller receives their OWN freshly-minted task id (never the
+    prior tenant's ``T-prior``); the prior remote id rides
+    ``source_task_id`` for the server-side live-status probe.
+    """
     db = str(tmp_path / "tasks.sqlite")
     _seed(db, "T-prior", "submitted", _fingerprint())
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
@@ -154,8 +159,41 @@ async def test_seam_reuses_live_running_when_not_polling(
         is_polling=False,
     )
 
-    assert result["task_id"] == "T-prior"
+    assert result["task_id"] != "T-prior"
+    assert result["source_task_id"] == "T-prior"
     assert result["plan"] is None
+
+
+async def test_hit_returns_caller_owned_task_id_with_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verified-live hit hands the caller a fresh, caller-owned row.
+
+    The reuse result must surface a fresh task id distinct from the
+    prior tenant's ``T-prior``, keep the prior id under
+    ``source_task_id``, and persist a caller-owned task row whose
+    ``source_task_id`` column points back at the prior remote task.
+    """
+    db = _seed_and_probe(
+        tmp_path,
+        monkeypatch,
+        prior_status="submitted",
+        live_status="RUNNING",
+    )
+
+    result = await ada.submit_analyst_via_subgraph(
+        _no_submit_agent(),
+        object(),
+        object(),
+        _request(),
+        is_polling=False,
+    )
+
+    assert result["task_id"] != "T-prior"
+    assert result["source_task_id"] == "T-prior"
+    row = TaskManager(db).get_task(result["task_id"])
+    assert row is not None
+    assert row["source_task_id"] == "T-prior"
 
 
 async def test_seam_resubmits_running_prior_when_polling(

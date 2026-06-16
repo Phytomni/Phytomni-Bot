@@ -118,7 +118,11 @@ async def test_dedup_hit_uses_small_compute_resource_default(
     # The reuse branch always returns an empty job_name literal so the
     # HTTP layer can't accidentally surface a stale submission label.
     assert result["job_name"] == ""
-    assert result["dedup_hit"] is True
+    # The reuse hit is caller-owned: a fresh task id with the prior
+    # remote id kept under source_task_id, and no dedup sentinel.
+    assert result["task_id"] != "prior-1"
+    assert result["source_task_id"] == "prior-1"
+    assert "dedup_hit" not in result
 
 
 async def test_dedup_hit_omits_meta_meta_when_caller_omits_it(

@@ -142,17 +142,21 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
         meta_meta={"caller": "pytest"},
     )
 
-    assert result["task_id"] == "prior-running"
+    # A reuse hit hands the caller a fresh, caller-owned task id (never
+    # the prior tenant's), with the prior remote id kept under
+    # source_task_id for the server-side live-status probe.
+    assert result["task_id"] != "prior-running"
+    assert result["source_task_id"] == "prior-running"
     assert result["output_dir"] == "/out/prior"
     assert result["input_fingerprint"] == fingerprint
     # compute_resource echoes back the caller's tier even though the
     # fingerprint ignores it.
     assert result["compute_resource"] == "large"
     assert result["meta_meta"] == {"caller": "pytest"}
-    # A reuse hit MUST carry the passthrough sentinel so the submit
-    # chokepoint can skip the registry write that would otherwise
-    # overwrite the prior task row's run_id and orphan its run.
-    assert result["dedup_hit"] is True
+    # No dedup sentinel: the submit chokepoint now mints a caller-owned
+    # run and records the caller's own task row, so the passthrough flag
+    # is gone entirely.
+    assert "dedup_hit" not in result
     assert forbid["build"] == 0
 
 
@@ -190,12 +194,12 @@ async def test_retrieve_plan_submit_reuses_succeeded_prior(
         obs_file_list=[],
     )
 
-    assert result["task_id"] == "prior-done"
+    # Succeeded-prior reuse is also caller-owned: a fresh task id with
+    # the prior remote id kept under source_task_id.
+    assert result["task_id"] != "prior-done"
+    assert result["source_task_id"] == "prior-done"
     assert result["output_dir"] == "/out/done"
-    # Succeeded-prior reuse is also a transparent passthrough, so the
-    # same dedup_hit sentinel flows through. The chokepoint then skips
-    # the registry write for the same orphan-prevention reason.
-    assert result["dedup_hit"] is True
+    assert "dedup_hit" not in result
     assert forbid["build"] == 0
 
 

@@ -20,10 +20,12 @@ import logging
 import sqlite3
 from typing import Dict, List, Optional
 
+from ..storage.path_policy import IdFactory
 from .task_manager import Submission, TaskManager, resolve_tasks_db_path
 
 __all__ = [
     "analyst_task_fingerprint",
+    "mint_caller_owned_task_id",
     "record_dispatch_submission",
     "should_reuse_prior_task",
     "verify_live_status",
@@ -168,10 +170,27 @@ def _write_back_dead(prior: Dict[str, str]) -> None:
         )
 
 
+def mint_caller_owned_task_id(agent: str) -> str:
+    """Return a fresh caller-owned task id for a dedup-reuse result.
+
+    A dedup hit must never hand the caller the prior tenant's task id;
+    the caller polls this fresh id, and the prior remote id is kept
+    server-side as ``source_task_id`` for the live-status probe.
+
+    Args:
+        agent: Public agent alias recorded in the readable id segment.
+
+    Returns:
+        A fresh ``IdFactory`` task id distinct from any prior tenant's.
+    """
+    return IdFactory().new_id("task", agent)
+
+
 def record_dispatch_submission(
     task_id: str,
     output_dir: str,
     fingerprint: str,
+    source_task_id: Optional[str] = None,
 ) -> None:
     """Persist a dispatch-seam submission row carrying its dedup key.
 
@@ -183,10 +202,14 @@ def record_dispatch_submission(
     remote submission.
 
     Args:
-        task_id: Remote task id returned by the analyst subgraph.
+        task_id: Remote task id returned by the analyst subgraph, or the
+            caller-owned id minted on a dedup reuse.
         output_dir: Output directory reported by the submission.
         fingerprint: Deterministic identity digest from
             ``analyst_task_fingerprint``.
+        source_task_id: On a dedup reuse, the prior tenant's remote task
+            id kept server-side for the live-status probe; ``None`` on a
+            fresh submission.
     """
     try:
         TaskManager(resolve_tasks_db_path()).record(
@@ -195,6 +218,7 @@ def record_dispatch_submission(
                 status="submitted",
                 output_dir=output_dir,
                 input_fingerprint=fingerprint,
+                source_task_id=source_task_id,
             )
         )
     except (sqlite3.Error, OSError):

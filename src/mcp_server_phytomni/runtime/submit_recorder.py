@@ -44,16 +44,18 @@ __all__ = [
 
 def extract_task_submissions(
     result: Mapping[str, Any], agent: str
-) -> Tuple[Tuple[str, str, Optional[str]], ...]:
-    """Extract per-task identity triples by per-agent wrapper shape.
+) -> Tuple[Tuple[str, str, Optional[str], Optional[str]], ...]:
+    """Extract per-task identity tuples by per-agent wrapper shape.
 
     Each public submit wrapper returns task identity in its own shape,
     so the chokepoint dispatches by agent slug rather than guessing:
 
     - ``analyst`` / ``deep_genome``: ``task_id`` at the top level (with
       ``output_dir`` alongside). Analyst additionally carries
-      ``input_fingerprint`` for the duplicate-submission dedup contract;
-      other agents leave the slot ``None``.
+      ``input_fingerprint`` for the duplicate-submission dedup contract
+      and, on a content-addressed dedup reuse, a ``source_task_id``
+      pointing at the prior tenant's remote task id; other agents leave
+      both slots ``None``.
     - ``research``: a ``task_ids`` dict mapping research-goal names to
       task ids; the top-level ``output_dir`` is shared across children.
     - ``network``: nested under ``network_task`` (``task_id`` +
@@ -67,21 +69,28 @@ def extract_task_submissions(
         agent: Public agent alias (e.g. ``"analyst"``).
 
     Returns:
-        Tuple of ``(task_id, output_dir, input_fingerprint)`` triples;
-        empty when nothing recognizable is present so the caller skips
-        writing. ``input_fingerprint`` is ``None`` for agents that do
+        Tuple of ``(task_id, output_dir, input_fingerprint,
+        source_task_id)`` tuples; empty when nothing recognizable is
+        present so the caller skips writing. ``input_fingerprint`` and
+        ``source_task_id`` are ``None`` for agents / submissions that do
         not participate in the dedup contract.
     """
-    pairs: list[tuple[str, str, Optional[str]]] = []
+    pairs: list[tuple[str, str, Optional[str], Optional[str]]] = []
     if agent in ("analyst", "deep_genome"):
         task_id = result.get("task_id")
         if isinstance(task_id, str) and task_id:
             fingerprint = result.get("input_fingerprint")
+            source_task_id = result.get("source_task_id")
             pairs.append(
                 (
                     task_id,
                     str(result.get("output_dir") or ""),
                     fingerprint if isinstance(fingerprint, str) else None,
+                    (
+                        source_task_id
+                        if isinstance(source_task_id, str)
+                        else None
+                    ),
                 )
             )
     elif agent == "research":
@@ -89,7 +98,7 @@ def extract_task_submissions(
         if isinstance(mapping, Mapping):
             shared_output = str(result.get("output_dir") or "")
             pairs.extend(
-                (str(value), shared_output, None)
+                (str(value), shared_output, None, None)
                 for value in mapping.values()
                 if isinstance(value, str) and value
             )
@@ -102,6 +111,7 @@ def extract_task_submissions(
                     (
                         task_id,
                         str(nested.get("output_dir") or ""),
+                        None,
                         None,
                     )
                 )
@@ -117,6 +127,7 @@ def extract_task_submissions(
                         (
                             task_id,
                             str(nested.get("output_dir") or ""),
+                            None,
                             None,
                         )
                     )
@@ -192,7 +203,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
             "status": "submitted",
             "output_dir": output_dir,
         }
-        for task_id, output_dir, _input_fingerprint in submissions
+        for task_id, output_dir, _fingerprint, _source in submissions
     ]
     initial_result: Dict[str, Any] = {
         "task_results": initial_task_rows,
@@ -210,7 +221,12 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
             outcome=RunOutcome(result=initial_result),
         )
         manager = TaskManager(db_path)
-        for task_id, output_dir, input_fingerprint in submissions:
+        for (
+            task_id,
+            output_dir,
+            input_fingerprint,
+            source_task_id,
+        ) in submissions:
             manager.record(
                 Submission(
                     task_id=task_id,
@@ -225,6 +241,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                         updated_at=now,
                     ),
                     input_fingerprint=input_fingerprint,
+                    source_task_id=source_task_id,
                 )
             )
         bind_run_id(run_id)
