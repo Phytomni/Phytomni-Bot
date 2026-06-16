@@ -230,6 +230,19 @@ seam writes its own fingerprint row at submit time, and `TaskManager.record`
 `COALESCE`s `input_fingerprint` so the per-tool run recorder cannot clobber
 the dedup key on a later write.
 
+The fingerprint is content-keyed and intentionally tenant-agnostic
+(`goal_description` + `data_list` + `obs_file_list`, never the authenticated
+user), so an identical question dedupes across tenants — a deliberate cache
+objective. A reuse hit can therefore return a prior submitter's `output_dir`.
+That stays tenant-safe at the read boundary: the customer-facing OBS relay
+confines every object read and list to the caller key's own
+`user_data/<user_id>/` namespace (`_require_tenant_prefix` /
+`_require_output_prefix`, a 403 otherwise), and child paths are pinned via
+`RELAY_USER_ID`. The reused `output_dir` is thus an inert path string across
+tenants — its bytes are unreachable without the original namespace — and a
+cross-tenant hit additionally requires the caller to already hold byte-
+identical inputs, since `data_list` and `obs_file_list` are part of the key.
+
 `runtime/agent_registry.py` is separate. It reuses in-memory agent instances
 and compiled LangGraph apps for matching non-secret configuration, but it
 does not cache LLM responses, external API responses, task submissions,

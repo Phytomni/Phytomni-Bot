@@ -147,6 +147,37 @@ async def test_obs_get_object_rejects_over_budget(
     assert not streamed.called
 
 
+async def test_obs_get_object_rejects_cross_tenant_output_dir(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dedup-reused output_dir under another tenant is a 403, never read.
+
+    The analyst fingerprint is content-keyed and intentionally tenant-
+    agnostic, so a reuse hit can hand back a prior submitter's
+    ``output_dir``. This pins the guarantee that makes that safe: the
+    relay confines every object read to the caller key's own
+    ``user_data/<user_id>/`` namespace, so a cross-tenant path is
+    rejected before any byte is streamed.
+    """
+    size = Mock(return_value=8)
+    chunks = Mock(return_value=iter([b"secret"]))
+    monkeypatch.setattr(ops_module, "object_size", size)
+    monkeypatch.setattr(ops_module, "iter_object_chunks", chunks)
+
+    response = await client.get(
+        "/v1/relay/obs/object"
+        "?path=/obs/phytomni/agent_data/user_data/other_tenant/runs/d/r.cif",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "obs path outside tenant namespace"
+    assert not size.called
+    assert not chunks.called
+
+
 async def test_obs_list_returns_keys_under_output_root(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],
