@@ -23,6 +23,8 @@ from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.runtime import task_dedup
 from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
 
+from ._analyst_fakes import fake_submitting_agent
+
 pytestmark = pytest.mark.agent
 
 
@@ -60,22 +62,6 @@ def _patch_context(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def _submitting_agent(task_id: str) -> SimpleNamespace:
-    """An analyst_agent whose app.ainvoke returns a scripted final state."""
-
-    async def ainvoke(state: Any, config: Any) -> dict[str, Any]:
-        del state, config
-        return {
-            "task_id": task_id,
-            "output_dir": "/obs/out",
-            "plan": "p",
-            "tool_usages": "t",
-            "task_status": "SUBMITTED",
-        }
-
-    return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
-
-
 async def test_seam_miss_submits_and_writes_fingerprint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -85,7 +71,7 @@ async def test_seam_miss_submits_and_writes_fingerprint(
     _patch_context(monkeypatch)
 
     result = await ada.submit_analyst_via_subgraph(
-        _submitting_agent("T-new"),
+        fake_submitting_agent("T-new"),
         object(),
         object(),
         _request(),
@@ -183,7 +169,7 @@ async def test_seam_resubmits_running_prior_when_polling(
     _stub_probe(monkeypatch, "RUNNING")
 
     result = await ada.submit_analyst_via_subgraph(
-        _submitting_agent("T-fresh"),
+        fake_submitting_agent("T-fresh"),
         object(),
         object(),
         _request(),
@@ -210,7 +196,7 @@ async def test_seam_resubmits_and_writes_back_dead_prior(
     )
 
     result = await ada.submit_analyst_via_subgraph(
-        _submitting_agent("T-fresh"),
+        fake_submitting_agent("T-fresh"),
         object(),
         object(),
         _request(),
@@ -240,7 +226,7 @@ async def test_seam_resubmits_when_live_probe_fails(
     )
 
     result = await ada.submit_analyst_via_subgraph(
-        _submitting_agent("T-after-probe-fail"),
+        fake_submitting_agent("T-after-probe-fail"),
         object(),
         object(),
         _request(),

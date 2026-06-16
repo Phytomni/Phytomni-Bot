@@ -28,6 +28,8 @@ from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
 )
 from mcp_server_phytomni.runtime.task_dedup import analyst_task_fingerprint
 
+from ._analyst_fakes import fake_submitting_agent
+
 pytestmark = pytest.mark.agent
 
 
@@ -284,22 +286,6 @@ def _dispatch_request() -> dict[str, Any]:
     }
 
 
-def _submitting_agent_fp(task_id: str) -> SimpleNamespace:
-    """An analyst_agent whose app.ainvoke returns a scripted final state."""
-
-    async def ainvoke(state: Any, config: Any) -> dict[str, Any]:
-        del state, config
-        return {
-            "task_id": task_id,
-            "output_dir": "/obs/shared/fp/output",
-            "plan": "p",
-            "tool_usages": "t",
-            "task_status": "SUBMITTED",
-        }
-
-    return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
-
-
 async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -341,7 +327,7 @@ async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
     request = _dispatch_request()
 
     await ada.submit_analyst_via_subgraph(
-        _submitting_agent_fp("T-fp"),
+        fake_submitting_agent("T-fp"),
         config,
         sensitive_config,
         request,

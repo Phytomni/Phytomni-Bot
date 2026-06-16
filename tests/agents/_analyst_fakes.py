@@ -14,6 +14,7 @@ keeps the two files from drifting and keeps pylint's R0801 quiet.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 
 def fake_analyst_sensitive_config() -> SimpleNamespace:
@@ -23,3 +24,25 @@ def fake_analyst_sensitive_config() -> SimpleNamespace:
         BASE_URL="http://example.invalid",
         MODEL_ID="model",
     )
+
+
+def fake_submitting_agent(
+    task_id: str, output_dir: str = "/obs/out"
+) -> SimpleNamespace:
+    """Return an analyst_agent whose ``app.ainvoke`` scripts a final state.
+
+    Shared by the dispatch-seam dedup and adapter tests so the scripted
+    submit result lives in one place (keeps pylint's R0801 quiet).
+    """
+
+    async def ainvoke(state: Any, config: Any) -> dict[str, Any]:
+        del state, config
+        return {
+            "task_id": task_id,
+            "output_dir": output_dir,
+            "plan": "p",
+            "tool_usages": "t",
+            "task_status": "SUBMITTED",
+        }
+
+    return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
