@@ -120,14 +120,34 @@ def _no_submit_agent() -> SimpleNamespace:
     return SimpleNamespace(app=SimpleNamespace(ainvoke=ainvoke))
 
 
-def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+def _stub_probe(monkeypatch: pytest.MonkeyPatch, status: str | None) -> None:
     """Force the live probe used by the seam to a scripted status."""
 
-    async def fake_probe(task_id: str) -> str:
+    async def fake_probe(task_id: str) -> str | None:
         del task_id
         return status
 
     monkeypatch.setattr(ada, "probe_live_status", fake_probe)
+
+
+def _seed_and_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    prior_status: str,
+    live_status: str | None,
+) -> str:
+    """Seed one prior fingerprint row and stub the live probe.
+
+    Returns the tasks-db path so a caller can assert a dead-status
+    write-back after the seam runs.
+    """
+    db = str(tmp_path / "tasks.sqlite")
+    _seed(db, "T-prior", prior_status, _fingerprint())
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    _patch_context(monkeypatch)
+    _stub_probe(monkeypatch, live_status)
+    return db
 
 
 async def test_seam_reuses_live_running_when_not_polling(
@@ -171,3 +191,60 @@ async def test_seam_resubmits_running_prior_when_polling(
     )
 
     assert result["task_id"] == "T-fresh"
+
+
+async def test_seam_resubmits_and_writes_back_dead_prior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A FAILED live prior is never reused: resubmit and write it dead.
+
+    The seam shares ``verify_live_status`` with the top-level path, but
+    only the top-level had a dead-prior test; this pins the seam's own
+    resubmit-plus-write-back so the local row self-heals at SQL.
+    """
+    db = _seed_and_probe(
+        tmp_path,
+        monkeypatch,
+        prior_status="submitted",
+        live_status="FAILED",
+    )
+
+    result = await ada.submit_analyst_via_subgraph(
+        _submitting_agent("T-fresh"),
+        object(),
+        object(),
+        _request(),
+        is_polling=False,
+    )
+
+    assert result["task_id"] == "T-fresh"
+    dead = TaskManager(db).get_task("T-prior")
+    assert dead is not None
+    assert dead["status"] == "failed"
+
+
+async def test_seam_resubmits_when_live_probe_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed live probe (``None``) is fail-safe: resubmit, never reuse.
+
+    Only the helper level had a None-probe test; this pins the seam
+    caller's fail-safe so a probe transport error cannot reuse an
+    unverified prior task.
+    """
+    _seed_and_probe(
+        tmp_path,
+        monkeypatch,
+        prior_status="submitted",
+        live_status=None,
+    )
+
+    result = await ada.submit_analyst_via_subgraph(
+        _submitting_agent("T-after-probe-fail"),
+        object(),
+        object(),
+        _request(),
+        is_polling=False,
+    )
+
+    assert result["task_id"] == "T-after-probe-fail"
