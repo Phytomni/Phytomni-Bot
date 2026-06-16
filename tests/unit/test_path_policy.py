@@ -15,12 +15,14 @@ from datetime import datetime, timezone
 import pytest
 
 from mcp_server_phytomni.storage.path_policy import (
+    AGENT_DATA_ROOT,
     DEFAULT_USER_ID,
     IdFactory,
     PathPolicyError,
     RunIdentity,
     resolve_user_id,
     safe_path_segment,
+    shared_output_key,
     task_downloads_key,
     task_output_key,
     task_tmp_key,
@@ -81,6 +83,14 @@ def test_task_downloads_key_uses_shared_run_root_and_safe_segment():
         "20260507T010203Z-workflow-researcher-abcdef01/"
         "ChIP-Seq-Run-01/downloads/"
     )
+
+
+def test_shared_output_key_is_tenant_neutral():
+    """Verify the shared output key omits user and run namespaces."""
+    key = shared_output_key("a" * 64)
+    assert key == f"{AGENT_DATA_ROOT}/shared/{'a' * 64}/output/"
+    assert "user_data" not in key
+    assert "/runs/" not in key
 
 
 def test_id_factory_generates_unique_ids():

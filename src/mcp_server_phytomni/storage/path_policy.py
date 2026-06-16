@@ -6,7 +6,7 @@
 
 Classes: PathPolicyError, IdFactory, RunIdentity.
 Functions: resolve_user_id, safe_path_segment, run_root_key, task_root_key,
-    task_output_key, task_tmp_key, task_downloads_key.
+    task_output_key, shared_output_key, task_tmp_key, task_downloads_key.
 """
 
 from __future__ import annotations
@@ -294,6 +294,23 @@ def task_output_key(identity: RunIdentity, task: str) -> str:
         str: OBS object-key prefix for task output directory.
     """
     return f"{task_root_key(identity, task)}output/"
+
+
+def shared_output_key(fingerprint: str) -> str:
+    """Return the content-addressed OBS output prefix for a fingerprint.
+
+    The path carries no ``user_id`` so an identical analysis dedupes
+    across tenants without leaking the prior submitter's namespace. Read
+    access is gated at the relay by possession of the fingerprint (it is
+    a sha256 of the canonical inputs, so it is unguessable).
+
+    Args:
+        fingerprint: ``analyst_task_fingerprint`` hex digest.
+
+    Returns:
+        str: ``agent_data/shared/<fingerprint>/output/`` object-key prefix.
+    """
+    return f"{AGENT_DATA_ROOT}/shared/{fingerprint}/output/"
 
 
 def task_tmp_key(
