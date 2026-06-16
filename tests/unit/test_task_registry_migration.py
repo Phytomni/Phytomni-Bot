@@ -152,6 +152,7 @@ def test_get_task_return_shape_unchanged(tmp_path: Path) -> None:
         "status": "submitted",
         "analysis_id": "a-1",
         "output_dir": "/out",
+        "source_task_id": None,
     }
 
 

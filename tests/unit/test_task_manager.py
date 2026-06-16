@@ -19,6 +19,7 @@ import pytest
 
 from mcp_server_phytomni.runtime.task_manager import (
     DEFAULT_REMOTE_TASK_TIMEOUT,
+    Submission,
     TaskManager,
     create_task,
     resolve_tasks_db_path,
@@ -72,6 +73,7 @@ def test_create_update_get_roundtrip(tmp_path: Path) -> None:
         "status": "succeeded",
         "analysis_id": "remote-7",
         "output_dir": "/obs/out",
+        "source_task_id": None,
     }
 
 
@@ -129,6 +131,7 @@ def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
         "status": "submitted",
         "analysis_id": "",
         "output_dir": "/obs/run",
+        "source_task_id": None,
     }
 
     mgr.record_submission("local-42", "succeeded", "/obs/run", "rem-9")
@@ -323,6 +326,36 @@ def test_init_db_adds_task_log_column_to_legacy_four_column_db(
         columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     assert "task_log" in columns
     assert "final_report" in columns
+
+
+def test_record_persists_source_task_id(tmp_path: Path) -> None:
+    """Verify record writes source_task_id and get_task returns it.
+
+    Cross-tenant dedup mints a caller-owned row whose source_task_id
+    records the prior tenant's remote task id for live-status probing.
+    The Submission dataclass must accept the optional field, record must
+    persist it (with a COALESCE non-clobber guard on conflict), and
+    get_task must return it so callers can read the cross-tenant pointer.
+
+    Args:
+        tmp_path: Pytest temp directory fixture.
+
+    Returns:
+        None after the source_task_id round-trip assertion passes.
+    """
+    db = str(tmp_path / "t.sqlite")
+    mgr = TaskManager(db)
+    mgr.record(
+        Submission(
+            task_id="T-caller",
+            status="submitted",
+            output_dir="agent_data/shared/fp/output/",
+            source_task_id="R-prior",
+        )
+    )
+    row = mgr.get_task("T-caller")
+    assert row is not None
+    assert row["source_task_id"] == "R-prior"
 
 
 def test_resolve_tasks_db_path_honors_env_override(

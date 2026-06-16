@@ -79,6 +79,7 @@ async def test_decorator_records_task_run_and_passes_result_through(
         "status": "submitted",
         "analysis_id": "",
         "output_dir": "/obs/run",
+        "source_task_id": None,
     }
     with sqlite3.connect(tasks_db_path) as conn:
         row = conn.execute(

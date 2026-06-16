@@ -111,6 +111,11 @@ class Submission:
             ``TaskManager.get_task_by_fingerprint`` to short-circuit a
             duplicate long-running submission and reuse the prior
             remote ``task_id`` instead of launching a fresh job.
+        source_task_id: Optional cross-tenant pointer to the prior
+            tenant's remote task id used for live-status probing on a
+            content-addressed dedup hit. Written once at mint time and
+            never overwritten by a later write that omits it
+            (``COALESCE`` guard in the upsert).
     """
 
     task_id: str
@@ -119,6 +124,7 @@ class Submission:
     analysis_id: str = ""
     run_context: Optional[RunContext] = None
     input_fingerprint: Optional[str] = None
+    source_task_id: Optional[str] = None
 
 
 # Fresh-database schema: ``CREATE TABLE IF NOT EXISTS`` creates all
@@ -298,8 +304,8 @@ class TaskManager:
             INSERT INTO tasks (
                 task_id, status, analysis_id, output_dir,
                 run_id, user_id, agent, origin, created_at, updated_at,
-                input_fingerprint
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                input_fingerprint, source_task_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 status = excluded.status,
                 analysis_id = excluded.analysis_id,
@@ -312,6 +318,9 @@ class TaskManager:
                 updated_at = excluded.updated_at,
                 input_fingerprint = COALESCE(
                     excluded.input_fingerprint, tasks.input_fingerprint
+                ),
+                source_task_id = COALESCE(
+                    excluded.source_task_id, tasks.source_task_id
                 )
         """,
             (
@@ -326,6 +335,7 @@ class TaskManager:
                 ctx.created_at,
                 ctx.updated_at,
                 submission.input_fingerprint,
+                submission.source_task_id,
             ),
         )
         conn.commit()
@@ -424,14 +434,14 @@ class TaskManager:
             task_id: The task id to look up.
 
         Returns:
-            ``{"task_id", "status", "analysis_id", "output_dir"}`` when
-            the row exists, otherwise ``None``.
+            ``{"task_id", "status", "analysis_id", "output_dir",
+            "source_task_id"}`` when the row exists, otherwise ``None``.
         """
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 """
-                SELECT status, analysis_id, output_dir
+                SELECT status, analysis_id, output_dir, source_task_id
                 FROM tasks WHERE task_id = ?
             """,
                 (task_id,),
@@ -446,6 +456,7 @@ class TaskManager:
             "status": row[0],
             "analysis_id": row[1],
             "output_dir": row[2],
+            "source_task_id": row[3],
         }
 
     def set_task_log(self, task_id: str, log_dict: dict) -> bool:
