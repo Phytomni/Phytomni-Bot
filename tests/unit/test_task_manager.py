@@ -296,28 +296,6 @@ def test_get_task_final_report_returns_none_for_missing_or_null(
     assert mgr.get_task_final_report(task_id) is None
 
 
-def test_fingerprint_report_round_trips(tmp_path: Path) -> None:
-    """Verify get/set_fingerprint_report round-trips the report body.
-
-    A fresh key returns None; after a write the body is retrievable;
-    a second write with the same key updates (ON CONFLICT DO UPDATE),
-    not duplicates.
-
-    Args:
-        tmp_path: Pytest temp directory fixture.
-
-    Returns:
-        None after all three assertions pass.
-    """
-    mgr = _mgr(tmp_path)
-
-    assert mgr.get_fingerprint_report("fp1") is None
-    mgr.set_fingerprint_report("fp1", "# report body")
-    assert mgr.get_fingerprint_report("fp1") == "# report body"
-    mgr.set_fingerprint_report("fp1", "# updated")
-    assert mgr.get_fingerprint_report("fp1") == "# updated"
-
-
 def test_init_db_adds_task_log_column_to_legacy_four_column_db(
     tmp_path: Path,
 ) -> None:

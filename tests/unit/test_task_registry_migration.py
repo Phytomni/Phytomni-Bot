@@ -220,29 +220,6 @@ def test_record_submission_with_run_context_writes_all_columns(
     )
 
 
-def test_fingerprint_reports_table_created(tmp_path: Path) -> None:
-    """A fresh database receives the ``fingerprint_reports`` table.
-
-    Content-addressed cross-tenant dedup requires a fingerprint→report
-    store that is independent of the per-tenant ``tasks`` table.
-    """
-    db = str(tmp_path / "t.sqlite")
-
-    TaskManager(db)
-
-    conn = sqlite3.connect(db)
-    try:
-        names = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-    finally:
-        conn.close()
-    assert "fingerprint_reports" in names
-
-
 def test_record_persists_input_fingerprint_column(tmp_path: Path) -> None:
     """A populated ``input_fingerprint`` flows into the new column."""
     db = str(tmp_path / "tasks.sqlite")

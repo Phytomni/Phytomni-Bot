@@ -144,13 +144,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 """
 
-_CREATE_FINGERPRINT_REPORTS_DDL = """
-CREATE TABLE IF NOT EXISTS fingerprint_reports (
-    fingerprint TEXT PRIMARY KEY,
-    report TEXT
-)
-"""
-
 # In-place migration for legacy 4-column databases. SQLite has no
 # ``ADD COLUMN IF NOT EXISTS``, so each ALTER is guarded by a
 # ``PRAGMA table_info(tasks)`` lookup at call time; statements are
@@ -228,7 +221,6 @@ class TaskManager:
         for column, statement in _TASK_ADD_COLUMN_STATEMENTS:
             if column not in existing:
                 conn.execute(statement)
-        conn.execute(_CREATE_FINGERPRINT_REPORTS_DDL)
         conn.commit()
         conn.close()
 
@@ -563,51 +555,6 @@ class TaskManager:
         if row is None or row[0] is None:
             return None
         return row[0]
-
-    def set_fingerprint_report(self, fingerprint: str, report: str) -> None:
-        """Persist the assembled report keyed by input fingerprint.
-
-        Content-addressed so a cross-tenant reuse resolves the report
-        without referencing the original submitter's task row.
-
-        Args:
-            fingerprint: Deterministic digest of the submission inputs.
-            report: Assembled report markdown to persist verbatim.
-        """
-        conn = self._get_connection()
-        try:
-            conn.execute(
-                """
-                INSERT INTO fingerprint_reports (fingerprint, report)
-                VALUES (?, ?)
-                ON CONFLICT(fingerprint) DO UPDATE
-                SET report = excluded.report
-                """,
-                (fingerprint, report),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def get_fingerprint_report(self, fingerprint: str) -> Optional[str]:
-        """Return the fingerprint-keyed report, or None when absent.
-
-        Args:
-            fingerprint: Deterministic digest of the submission inputs.
-
-        Returns:
-            The report markdown if present, otherwise None.
-        """
-        conn = self._get_connection()
-        try:
-            row = conn.execute(
-                "SELECT report FROM fingerprint_reports"
-                " WHERE fingerprint = ?",
-                (fingerprint,),
-            ).fetchone()
-        finally:
-            conn.close()
-        return row[0] if row else None
 
     def set_task_degraded(self, task_id: str, reason: str) -> bool:
         """Persist a redacted degraded reason on the task row.
