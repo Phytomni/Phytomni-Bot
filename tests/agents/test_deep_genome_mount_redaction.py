@@ -18,11 +18,8 @@ import pytest
 from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
     _degraded_mount_delta,
 )
-from mcp_server_phytomni.agents.deep_genome.design_mount import (
-    _degraded_design_delta,
-)
-from mcp_server_phytomni.agents.deep_genome.evolution_mount import (
-    _degraded_evolution_delta,
+from mcp_server_phytomni.agents.deep_genome.mount_common import (
+    degraded_analysis_delta,
 )
 
 pytestmark = pytest.mark.agent
@@ -45,8 +42,14 @@ def _assert_scrubbed(blob: str) -> None:
 @pytest.mark.parametrize(
     ("delta", "raw_key"),
     [
-        (_degraded_evolution_delta(2, _SECRET_EXC), "task_2"),
-        (_degraded_design_delta(3, _SECRET_EXC), "task_3"),
+        (
+            degraded_analysis_delta("evolution_analysis", 2, _SECRET_EXC),
+            "task_2",
+        ),
+        (
+            degraded_analysis_delta("digital_design", 3, _SECRET_EXC),
+            "task_3",
+        ),
     ],
 )
 def test_mount_delta_redacts_message_and_raw_error(

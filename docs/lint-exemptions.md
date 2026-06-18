@@ -91,10 +91,10 @@ Counted instead by the L2 ratchet. The current baseline is 18; the
 19th fake pushes the count to 19, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 96th R0801 duplicate-code violation appears.** Default pylint
+**A 94th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 95; the
-96th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 93; the
+94th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -664,7 +664,7 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 95`). The catalog header count above
+`RULE_BASELINES["R0801"] = 93`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring

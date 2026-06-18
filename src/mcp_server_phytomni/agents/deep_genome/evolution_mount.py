@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from langgraph.graph.state import CompiledStateGraph
 
-from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
+from .mount_common import degraded_analysis_delta
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -40,42 +40,6 @@ FinalizeFn = Callable[
     [Optional[dict], "DeepGenomeState"],
     Awaitable[Dict[str, Any]],
 ]
-
-
-def _degraded_evolution_delta(
-    task_index: Any, exc: BaseException
-) -> Dict[str, Any]:
-    """Return the analyst-branch delta for a failed evolution mount.
-
-    Writes a ``FailureRecord`` to the ``failures`` channel (machine
-    signal) and a failed ``raw_analyst_data`` entry, and still
-    contributes ``analysis_completed_branches: 1`` so the synthesize
-    barrier advances rather than wedging on a transient evolution fault.
-    The exception text is redacted at creation
-    (``redact_failure_message``) so no URL / token / credential rides the
-    message or raw error into the ``raw.phytomni_state`` debug envelope;
-    the unredacted stack stays only in ``logger.exception``.
-    ``traceback_digest`` is ``None``: the log line already records it.
-    """
-    redacted = redact_failure_message(str(exc))
-    return {
-        "failures": [
-            FailureRecord(
-                task_label="evolution_analysis",
-                message=redacted,
-                kind="execute",
-                traceback_digest=None,
-            )
-        ],
-        "raw_analyst_data": {
-            f"task_{task_index}": {
-                "status": "failed",
-                "analysis_type": "evolution_analysis",
-                "error": redacted,
-            }
-        },
-        "analysis_completed_branches": 1,
-    }
 
 
 def make_evolution_mount_node(
@@ -133,6 +97,8 @@ def make_evolution_mount_node(
                 "advances",
                 gene_id,
             )
-            return _degraded_evolution_delta(task_index, exc)
+            return degraded_analysis_delta(
+                "evolution_analysis", task_index, exc
+            )
 
     return _evolution_mount
