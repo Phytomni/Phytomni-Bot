@@ -662,6 +662,15 @@ upstream platform is the recovery path). The chokepoint also writes
 the full traceback through `logger.exception` so operators see the
 underlying SQLite or OS error in logs.
 
+`degraded_tracking` covers the submit-time registry write only. The
+later background finalization writes a `deep_genome` run makes — the
+terminal status update, the assembled `final_report`, and any
+`degraded_reason` — are best-effort: a `sqlite3.Error` / `OSError`
+there is logged and swallowed (never raised) and is **not** surfaced as
+a distinct client signal. A failed finalization write leaves the poll
+surface reading the run as still in flight / not-yet-reported, so
+operators reconcile a missing report or status from the warning log.
+
 Analysis submissions (both the top-level analyst path and the
 `submit_analyst_via_subgraph` seam that design / network / research /
 deep_genome / environment / evolution funnel through) deduplicate on a

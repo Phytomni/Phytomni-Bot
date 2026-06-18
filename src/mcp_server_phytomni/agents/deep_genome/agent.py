@@ -11,7 +11,6 @@ compatibility wrapper used by MCP handlers.
 """
 
 import asyncio
-import contextlib
 import logging
 import operator
 import sqlite3
@@ -604,10 +603,14 @@ class DeepGenomeAgents(
         flip a succeeded run to ``"failed"`` (the prior nested-except
         shape would do this — the outer except caught the SQLite
         exception from the success-side ``update_task`` and then wrote
-        a misleading ``"failed"``). ``contextlib.suppress`` wraps the
-        terminal write for the realistic registry error types
-        (``sqlite3.Error`` for WAL / lock failures, ``OSError`` for
-        full-disk / FS unavailable). Cancellation surfaces as
+        a misleading ``"failed"``). The terminal write is best-effort:
+        a registry error (``sqlite3.Error`` for WAL / lock failures,
+        ``OSError`` for full-disk / FS unavailable) is logged and
+        swallowed, never raised. This finalization write is NOT
+        client-signalled — the submit-path ``degraded_tracking`` flag
+        does not extend here, so a failed terminal write leaves the poll
+        surface reading the run as still in flight (operators reconcile
+        from the warning log). Cancellation surfaces as
         ``asyncio.CancelledError`` on the task and is recorded as
         ``"failed"`` so a polling client never hangs.
 
@@ -635,9 +638,17 @@ class DeepGenomeAgents(
         else:
             status = "succeeded"
 
-        with contextlib.suppress(sqlite3.Error, OSError):
+        try:
             TaskManager(resolve_tasks_db_path()).update_task(
                 umbrella_id, status, "", output_dir
+            )
+        except (sqlite3.Error, OSError) as exc:
+            logger.warning(
+                "DeepGenome failed to persist terminal status %s for "
+                "%s: %s",
+                status,
+                umbrella_id,
+                exc,
             )
 
 
