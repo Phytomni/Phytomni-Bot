@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from langgraph.graph.state import CompiledStateGraph
 
 from ...common.responses import message_content
-from ..shared.parallel_dispatch import FailureRecord
+from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -88,13 +88,15 @@ def _degraded_mount_delta(gene_id: str, exc: BaseException) -> Dict[str, Any]:
     barrier increment so the workflow advances past the part1 barrier
     instead of wedging. ``traceback_digest`` is ``None``: a single mount
     record needs no cross-record correlation, and ``logger.exception``
-    already records the full traceback.
+    already records the full traceback. The message is redacted at
+    creation (``redact_failure_message``) so no secret rides it into the
+    ``raw.phytomni_state`` debug envelope.
     """
     return {
         "failures": [
             FailureRecord(
                 task_label="brief_gene_preamble",
-                message=str(exc),
+                message=redact_failure_message(str(exc)),
                 kind="execute",
                 traceback_digest=None,
             )

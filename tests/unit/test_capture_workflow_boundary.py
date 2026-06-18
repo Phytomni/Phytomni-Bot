@@ -113,3 +113,32 @@ async def test_capture_analysis_result_failure_path_writes_record() -> None:
     assert record["traceback_digest"] is None or (
         len(record["traceback_digest"]) == 16
     )
+
+
+@pytest.mark.asyncio
+async def test_capture_analysis_result_redacts_secret_in_failure() -> None:
+    """A secret-bearing submit fault is scrubbed at creation.
+
+    ``failure_state`` redacts ``str(exc)`` before it lands on the legacy
+    ``error`` field and the FailureRecord ``message`` (the network /
+    design / research raw envelope reads these under debug), so a backend
+    URL, bearer token, or credential fragment never leaves the logs.
+    """
+
+    async def leaking_submit() -> dict[str, Any]:
+        raise RuntimeError(
+            "POST https://host:9000/run?token=deadbeef failed; "
+            "Bearer abc.def123"
+        )
+
+    result = await capture_analysis_result(
+        {"task_ids": {}, "task_index": 1},
+        "design_task_result",
+        leaking_submit,
+    )
+
+    surfaced = (result["error"], result["failures"][0]["message"])
+    assert all("deadbeef" not in text for text in surfaced)
+    assert all("Bearer abc.def123" not in text for text in surfaced)
+    assert all("host:9000" not in text for text in surfaced)
+    assert all("<redacted" in text for text in surfaced)

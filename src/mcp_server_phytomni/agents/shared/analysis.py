@@ -36,7 +36,7 @@ from ..analyst.agent import (
 )
 from .analysis_storage import create_output_dir
 from .intermediate_state import merge_intermediate_state
-from .parallel_dispatch import FailureRecord
+from .parallel_dispatch import FailureRecord, redact_failure_message
 
 logger = logging.getLogger(__name__)
 
@@ -381,9 +381,11 @@ async def capture_analysis_result(
             State updates that record the error and completed dispatch count.
             Writes both the legacy ``error`` field and the new ``failures``
             list so existing readers and new FailureRecord readers both see
-            consistent information.
+            consistent information. The message is redacted at creation so
+            no backend URL / token / credential rides the ``error`` field
+            or the FailureRecord into ``raw.phytomni_state`` under debug.
         """
-        msg = str(exc)
+        msg = redact_failure_message(str(exc))
         task_label = analysis_type or f"task:{state.get('task_index', '?')}"
         return {
             "task_ids": state.get("task_ids", {}),

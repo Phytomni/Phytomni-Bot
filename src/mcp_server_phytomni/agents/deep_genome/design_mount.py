@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Dict
 
 from langgraph.graph.state import CompiledStateGraph
 
-from ..shared.parallel_dispatch import FailureRecord
+from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -50,14 +50,18 @@ def _degraded_design_delta(
     signal) and a failed ``raw_analyst_data`` entry, and still
     contributes ``analysis_completed_branches: 1`` so the synthesize
     barrier advances rather than wedging on a transient design fault.
-    ``traceback_digest`` is ``None``: ``logger.exception`` already
-    records the full stack.
+    The exception text is redacted at creation
+    (``redact_failure_message``) so no URL / token / credential rides the
+    message or raw error into the ``raw.phytomni_state`` debug envelope;
+    the unredacted stack stays only in ``logger.exception``.
+    ``traceback_digest`` is ``None``: the log line already records it.
     """
+    redacted = redact_failure_message(str(exc))
     return {
         "failures": [
             FailureRecord(
                 task_label="digital_design",
-                message=str(exc),
+                message=redacted,
                 kind="execute",
                 traceback_digest=None,
             )
@@ -66,7 +70,7 @@ def _degraded_design_delta(
             f"task_{task_index}": {
                 "status": "failed",
                 "analysis_type": "digital_design",
-                "error": str(exc),
+                "error": redacted,
             }
         },
         "analysis_completed_branches": 1,
