@@ -607,10 +607,12 @@ the first child report to `result.final_report` at the payload top level
 (also present per-child under `result.task_results[].final_report`).
 Every other agent leaves `final_report` `null`.
 
-A `deep_genome` report whose brief_gene gene-profile step degraded
-mid-run still settles as `succeeded` but flags the gap: the report
-markdown carries a visible "Gene profile unavailable" banner, and the
-poll surface adds machine-readable keys — `GetTaskStatus` exposes
+A `deep_genome` report whose mounted sub-analysis degraded mid-run (its
+brief_gene gene-profile, evolution, or digital-design step) still
+settles as `succeeded` but flags the gap: a brief_gene gene-profile
+failure adds a visible "Gene profile unavailable" banner to the report
+markdown, and any degraded branch adds machine-readable keys —
+`GetTaskStatus` exposes
 `formatted.metadata.degraded` (bool) and
 `formatted.metadata.degraded_reason` (a redacted string, or `null`),
 while `GET /v1/runs/{run_id}` exposes `result.degraded` (true when any

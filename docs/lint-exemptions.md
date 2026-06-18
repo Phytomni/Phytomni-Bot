@@ -718,7 +718,9 @@ helper would obscure the per-wrapper public contract.
    new module-level dispatch sites with the same
    (`analysis_type` / `target_id` / `output_dir` / `prompt_parts` /
    `compute_resource`) request dict shape:
-   `agents/evolution/agent.py:evolution_analysis_for_gene`,
+   `agents/evolution/agent.py:evolution_analysis_for_gene` (since
+   retired — evolution now routes through the mounted `evolution_node`
+   subgraph rather than a module-level producer wrapper),
    `agents/design/agent.py:_submit_design_analysis` (consumed by
    `protein_structure_for_gene` and `promoter_design_for_gene`),
    and `agents/deep_genome/dispatch.py:_submit_analysis_task` (the

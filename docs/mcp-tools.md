@@ -158,7 +158,8 @@ persists its report on the task row); other agents keep the bare
 `Task <id>: <status>` status line and surface their products through
 `metadata.output_dir` / `metadata.artifacts`.
 
-A degraded `DeepGenomeAgent` report (its brief_gene gene-profile step
-failed mid-run) keeps surfacing the report but adds `metadata.degraded`
-(bool) and `metadata.degraded_reason` (a redacted string, or `null`);
-healthy and non-DeepGenome rows read `false` / `null`.
+A degraded `DeepGenomeAgent` report (a mounted sub-analysis failed
+mid-run — its brief_gene gene-profile, evolution, or digital-design
+step) keeps surfacing the report but adds `metadata.degraded` (bool) and
+`metadata.degraded_reason` (a redacted string, or `null`); healthy and
+non-DeepGenome rows read `false` / `null`.

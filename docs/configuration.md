@@ -192,10 +192,12 @@ dispatcher analyst submissions through the analyst subgraph entry point
 `prepare_analyst_dispatch_context` first so the analyst and the
 downstream `capture_analysis_result` consumer share the same
 `RunIdentity`, OBS output directory, and LangGraph `thread_id`. The
-deep_genome dispatcher routes its `evolution_analysis`,
-`protein_structure_analysis`, and `promoter_analysis` tasks to the
-module-level producer wrappers (`evolution_analysis_for_gene` /
-`protein_structure_for_gene` / `promoter_design_for_gene`).
+deep_genome dispatcher routes its `protein_structure_analysis` and
+`promoter_analysis` tasks to the module-level producer wrappers
+(`protein_structure_for_gene` / `promoter_design_for_gene`), while
+`evolution_analysis` and `digital_design` mount the standalone evolution
+and DigitalDesign graphs as structural subgraphs (`evolution_node` /
+`design_node`) rather than routing through a producer wrapper.
 
 The former `USE_CHAT_SUBGRAPH` / `USE_KNOWLEDGE_SUBGRAPH` /
 `USE_ANALYST_SUBGRAPH` / `USE_EVOLUTION_SUBGRAPH` / `USE_DESIGN_SUBGRAPH`

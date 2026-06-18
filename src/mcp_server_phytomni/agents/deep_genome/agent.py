@@ -198,7 +198,7 @@ class DeepGenomeState(TypedDict):
     # General failure channel: a node that catches a recoverable fault
     # appends a FailureRecord here (operator.add merges concurrent
     # writes) so the report node can persist a degraded signal. The
-    # brief_gene mount is the only producer today.
+    # brief_gene, evolution, and design mounts each produce records here.
     failures: Annotated[List[FailureRecord], operator.add]
     # Status-independent literature degradation rolled up from the
     # brief_gene mount. Never feeds project_universal_failure_metadata —
@@ -268,10 +268,11 @@ class DeepGenomeAgents(
     1. **Part 1 - Gene Network Profile**: Retrieves orthologs, paralogs, and
        protein interactions; fetches gene annotations; aggregates into a basic
        gene function network report.
-    2. **Part 2 - Deep Analysis**: Executes 9 parallel analysis tasks including
-       evolution analysis, expression analysis across tissues/cultivars/
-       treatments/genotypes, single-cell analysis, promoter analysis, SMEP,
-       and SMOC analysis.
+    2. **Part 2 - Deep Analysis**: Executes 11 parallel analysis tasks
+       including evolution analysis, expression analysis across tissues/
+       cultivars/treatments/genotypes, single-cell analysis, promoter
+       analysis, SMEP and SMOC analysis, protein-structure analysis, and
+       digital (protein) design.
     3. **Part 3 - Report Generation**: Synthesizes experiment recommendations,
        protocols, introduction, discussion, and summary sections.
 
