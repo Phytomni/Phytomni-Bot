@@ -22,7 +22,6 @@ from ..analyst.submission import _build_submit_agent
 from . import agent
 from .agent import (
     DEEP_GENOME_CONFIG,
-    evolution_output_dir,
     evolution_submit_kwargs,
     target_taxids,
 )
@@ -77,15 +76,15 @@ async def submit_evolution_task_node(
 
     Mirrors the post-extraction body of
     :func:`agents.evolution.agent.evo_test_analysis`: builds the
-    goal prompt + data list, materialises the output directory
-    when ``batch=False``, and forwards the submission to the
-    analyst ``submit``. Re-routes ``get_prompt`` / ``get_data_list``
-    / ``submit`` through the ``agent`` module namespace so the
-    existing wrapper-level ``monkeypatch.setattr`` calls still
-    intercept the dependencies.
+    goal prompt + data list and forwards the submission to the
+    analyst ``submit``. The output directory is left for the dispatch
+    seam to create from the input fingerprint (the tenant-neutral
+    shared key), so this node no longer pre-materialises a user-scoped
+    dir. Re-routes ``get_prompt`` / ``get_data_list`` / ``submit``
+    through the ``agent`` module namespace so the existing wrapper-level
+    ``monkeypatch.setattr`` calls still intercept the dependencies.
     """
     kwargs = state.get("kwargs") or {}
-    batch = state.get("batch", False)
     enable_auto_select = state.get("enable_auto_select", False)
     taxids = state.get("target_taxids")
     if taxids is None:
@@ -109,8 +108,6 @@ async def submit_evolution_task_node(
     data_list = agent.get_data_list(
         deepgenome_data, "evolution_analysis", species_code
     )
-    if not batch:
-        output_dir = evolution_output_dir(user_id, kwargs)
     meta = agent.get_prompt(prompt_file, "user/evolution_agents_meta")
     evo_task = await _submit_evolution_via_subgraph(
         _EvolutionSubmitInputs(
