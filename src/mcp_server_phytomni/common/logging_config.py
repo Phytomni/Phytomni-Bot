@@ -18,11 +18,32 @@ import os
 import sys
 from typing import Final
 
+from .redaction import redact_secrets
+
 PHYTOMNI_DEBUG_ENV: Final[str] = "PHYTOMNI_DEBUG"
 _PACKAGE_LOGGER_NAME: Final[str] = "mcp_server_phytomni"
 _LOG_FORMAT: Final[str] = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _HANDLER_SENTINEL: Final[str] = "_phytomni_log_handler"
 _TRUTHY: Final[frozenset[str]] = frozenset({"1", "true", "yes", "on"})
+
+
+class _RedactingFormatter(logging.Formatter):
+    """Formatter that scrubs URLs + secret fragments from emitted output.
+
+    Systemic log redaction: ``redact_secrets`` runs over the fully
+    rendered record -- the formatted message AND any ``exc_info``
+    traceback -- so no bearer token, credential fragment, or internal URL
+    reaches the log stream, even from a ``logger.exception`` whose
+    traceback would otherwise carry the raw exception string. The
+    unredacted text lives only on the in-memory record, never on disk.
+    URLs are redacted wholesale (a query parameter can carry a
+    credential), so operators trade some endpoint detail in logs for the
+    guarantee that no secret leaks.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Render the record, then scrub secrets from the result."""
+        return redact_secrets(super().format(record))
 
 
 def debug_enabled() -> bool:
@@ -52,6 +73,6 @@ def configure_logging() -> None:
 
     handler = logging.StreamHandler(stream=sys.stderr)
     handler.setLevel(level)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    handler.setFormatter(_RedactingFormatter(_LOG_FORMAT))
     setattr(handler, _HANDLER_SENTINEL, True)
     package_logger.addHandler(handler)

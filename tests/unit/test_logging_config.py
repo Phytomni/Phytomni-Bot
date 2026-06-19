@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Iterator
+from typing import Any, Iterator
 
 import pytest
 
 from mcp_server_phytomni.common.logging_config import (
+    _LOG_FORMAT,
     PHYTOMNI_DEBUG_ENV,
+    _RedactingFormatter,
     configure_logging,
     debug_enabled,
 )
@@ -182,3 +184,58 @@ def test_configure_logging_preserves_external_handlers(
 
     assert user_handler in package_logger.handlers
     assert len(_phytomni_handlers(package_logger)) == 1
+
+
+def test_configure_logging_uses_redacting_formatter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The configured handler scrubs secrets via the redacting formatter."""
+    monkeypatch.delenv(PHYTOMNI_DEBUG_ENV, raising=False)
+
+    configure_logging()
+
+    handler = _phytomni_handlers(logging.getLogger(_PACKAGE_LOGGER_NAME))[0]
+    assert isinstance(handler.formatter, _RedactingFormatter)
+
+
+def test_redacting_formatter_scrubs_message_secret() -> None:
+    """A bearer token / internal URL in the message is redacted on emit."""
+    record = logging.LogRecord(
+        name="x",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="auth Bearer abc.def123 to https://internal.host/run?token=sek",
+        args=(),
+        exc_info=None,
+    )
+
+    out = _RedactingFormatter(_LOG_FORMAT).format(record)
+
+    assert "abc.def123" not in out
+    assert "internal.host" not in out
+    assert "sek" not in out
+    assert "<redacted" in out
+
+
+def test_redacting_formatter_scrubs_exception_traceback() -> None:
+    """A secret in a ``logger.exception`` traceback is redacted on emit."""
+    exc_info: Any = None
+    try:
+        raise RuntimeError("token=deadbeef at https://h:9000/x")
+    except RuntimeError:
+        exc_info = sys.exc_info()
+
+    record = logging.LogRecord(
+        name="x",
+        level=logging.ERROR,
+        pathname="",
+        lineno=0,
+        msg="mount failed",
+        args=(),
+        exc_info=exc_info,
+    )
+    out = _RedactingFormatter(_LOG_FORMAT).format(record)
+
+    assert "deadbeef" not in out
+    assert "<redacted" in out

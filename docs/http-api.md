@@ -568,8 +568,10 @@ the universal failure keys:
   failures inside `_feedback_rag`. `message` is redacted before it
   reaches `formatted.metadata` — backend URLs and secret-like
   fragments (`token=`, `Bearer ...`) are replaced with placeholders so
-  client metadata never discloses internal endpoints or credentials;
-  the unredacted text survives only in logs and
+  client metadata never discloses internal endpoints or credentials.
+  All emitted log output is scrubbed by the same redactor (a redacting
+  log formatter on the package handler, including `logger.exception`
+  tracebacks), so the unredacted text survives only in
   `raw.phytomni_state.failures` under debug. `traceback_digest` lives
   only in `raw.phytomni_state.failures`, never in `formatted.metadata`.
 
