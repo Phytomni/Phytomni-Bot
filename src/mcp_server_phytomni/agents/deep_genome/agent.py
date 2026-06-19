@@ -348,16 +348,14 @@ class DeepGenomeAgents(
         )
         # The mounted subgraphs are built with their own module-default
         # config rather than the parent's per-request config/user. This is
-        # intentional and tenant-safe: their analyst submissions route
-        # through submit_analyst_via_subgraph, whose content-addressed
-        # output key (shared_output_key on the input fingerprint) is
-        # tenant-neutral, and the result download uses the parent
-        # deep_genome_config.USER_ID, so output placement cannot diverge or
-        # leak across tenants (covered by a dispatch-context user-neutrality
-        # test). Only the ephemeral LangGraph thread_id carries the mount's
-        # user, and it never addresses stored results — threading
-        # per-request config in here would buy only internal task-row
-        # attribution while risking the cross-tenant dedup model.
+        # tenant-safe because the dispatch seam (ensure_analysis_output_dir)
+        # routes every fingerprinted submission to the content-addressed
+        # shared_output_key, OVERRIDING any user-scoped output_dir the
+        # evolution / generic graphs preset — so all sub-task results land
+        # at the tenant-neutral shared key regardless of the mount's config
+        # or (anonymous) user, and the result download follows the returned
+        # shared dir. Only the ephemeral thread_id carries the mount's user,
+        # and it never addresses stored results.
         self._agents = self._agents._replace(
             brief_gene_app=BriefGeneAgent(
                 knowledge_agent=self._agents.knowledge_agent,

@@ -51,14 +51,25 @@ _DESIGN_MODULE = "mcp_server_phytomni.agents.design.agent"
 
 @pytest.fixture(autouse=True)
 def _isolate_tasks_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point the dedup tasks DB at a per-test tmp file.
+    """Isolate the dedup tasks DB and keep output-dir creation offline.
 
     ``submit_analyst_via_subgraph`` now reads and writes the
     ``input_fingerprint`` dedup row; without isolation these adapter
     tests would touch the shared ``server_tasks.db`` and a prior run's
     row would trip the live-status probe (a blocked HTTP call).
+
+    The dispatch seam also routes every fingerprinted submission through
+    ``create_output_dir`` (a preset ``output_dir`` no longer
+    short-circuits creation -- the fingerprint overrides it), so relay
+    mode is forced on to return the shared content-addressed path without
+    a real OBS round trip.
     """
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.analysis_storage."
+        "relay_mode_enabled",
+        lambda: True,
+    )
 
 
 def _build_agent() -> DigitalDesignAgents:

@@ -236,20 +236,31 @@ def ensure_analysis_output_dir(
 ) -> str:
     """Return an existing or newly created analysis output directory.
 
+    A content-addressed ``fingerprint`` always wins over a preset
+    ``output_dir``: the shared key is the dedup identity, so honouring a
+    caller's user-scoped preset here would silently bypass cross-tenant
+    dedup (and, for the deep_genome evolution mount, scope results to the
+    module-default ``anonymous`` user). A preset ``output_dir``
+    short-circuits creation only when no fingerprint is supplied.
+
     Args:
         config: Public config object with user, OBS server, and bucket fields.
         sensitive_config: Sensitive config object with OBS credentials.
         analysis_type: Analysis workflow name used in generated paths.
-        output_dir: Existing output directory to reuse when provided.
+        output_dir: Existing output directory to reuse when no fingerprint
+            is supplied; ignored when a fingerprint routes to the shared key.
         run_identity: Optional run identity for deterministic path building.
-        **kwargs: Optional ``fingerprint`` override forwarded to
-            ``create_output_dir``; when set it routes the created dir to
-            the tenant-neutral shared key.
+        **kwargs: Optional ``fingerprint``; when set it overrides
+            ``output_dir`` and routes the created dir to the tenant-neutral
+            shared content-addressed key.
 
     Returns:
-        Existing ``output_dir`` or the newly created OBS output directory.
+        The preset ``output_dir`` (no fingerprint), else the newly created
+        OBS output directory (the tenant-neutral shared key when a
+        fingerprint is supplied, otherwise a per-run user-scoped path).
     """
-    if output_dir:
+    fingerprint = kwargs.get("fingerprint")
+    if output_dir and not fingerprint:
         return output_dir
     identity = run_identity or RunIdentity.create(
         user_id=config.USER_ID,
@@ -264,7 +275,7 @@ def ensure_analysis_output_dir(
         obs_server=config.OBS_SERVER,
         bucket_name=config.BUCKET_NAME,
         run_identity=identity,
-        fingerprint=kwargs.get("fingerprint"),
+        fingerprint=fingerprint,
     )
 
 

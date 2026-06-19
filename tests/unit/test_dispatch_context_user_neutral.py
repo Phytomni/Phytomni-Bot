@@ -1,14 +1,14 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""The analyst dispatch context routes output user-neutrally.
+"""The analyst dispatch seam routes output to the tenant-neutral key.
 
-``prepare_analyst_dispatch_context`` derives the output directory from
-the input fingerprint via the content-addressed ``shared_output_key``,
-so a fingerprinted dispatch lands the same tenant-neutral path
-regardless of ``config.USER_ID``. This makes deep_genome's brief_gene /
-evolution / design mounts tenant-safe even though they submit under
-their module-default config rather than the parent's authenticated user.
+``prepare_analyst_dispatch_context`` routes the output directory to the
+content-addressed ``shared_output_key`` whenever a fingerprint is
+supplied -- overriding any preset, user-scoped ``output_dir`` -- so a
+dispatch lands the same tenant-neutral path regardless of
+``config.USER_ID``. This is what makes deep_genome's evolution / design
+mounts tenant-safe even when the graph presets a user-scoped dir.
 """
 
 from __future__ import annotations
@@ -65,3 +65,31 @@ def test_fingerprinted_output_dir_is_identical_across_users(
     # The thread_id is the only user-scoped value and never addresses
     # stored results, so the per-tenant divergence there is benign.
     assert alice.thread_id != bob.thread_id
+
+
+def test_preset_output_dir_is_overridden_by_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A preset user-scoped request output_dir is overridden by the fp.
+
+    The real evolution / generic deep_genome mount path presets a
+    user-scoped ``output_dir`` (e.g. ``user_data/anonymous/...``); the
+    dispatch seam's fingerprint must win so results still land at the
+    tenant-neutral shared key rather than the preset user path.
+    """
+    monkeypatch.setattr(storage_mod, "relay_mode_enabled", lambda: True)
+    preset = "/obs/phytomni/agent_data/user_data/anonymous/runs/r1/output"
+    request = {
+        "analysis_type": "evolution_analysis",
+        "target_id": "g1",
+        "output_dir": preset,
+    }
+
+    ctx = prepare_analyst_dispatch_context(
+        _config("anonymous"), _sensitive(), request, _FINGERPRINT
+    )
+
+    assert ctx.output_dir != preset
+    assert _FINGERPRINT in ctx.output_dir
+    assert "user_data" not in ctx.output_dir
+    assert "anonymous" not in ctx.output_dir
