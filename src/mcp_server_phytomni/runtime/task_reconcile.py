@@ -25,6 +25,26 @@ __all__ = ["reconcile_task", "reconcile_task_log"]
 
 logger = logging.getLogger(__name__)
 
+_NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
+
+
+def _heal_finished_local_workflow(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Self-heal a deep_genome umbrella whose terminal status write failed.
+
+    The deep_genome report node persists ``final_report`` only when the
+    local background workflow reaches its terminal report node (the
+    success path), in a write separate from the done-callback's terminal
+    status write. A row that carries a ``final_report`` while still
+    showing a non-terminal status is therefore a lost finalization write
+    -- surface it as ``succeeded`` rather than leaving the run stuck
+    "running". This never fires for a remote agent task: ``final_report``
+    is ``None`` for every non-deep_genome row.
+    """
+    status = str(result.get("status", "")).lower()
+    if result.get("final_report") and status in _NON_TERMINAL_STATUSES:
+        result["status"] = "succeeded"
+    return result
+
 
 async def reconcile_task(task_id: str) -> Dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
@@ -46,9 +66,13 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         markdown DeepGenome persists on the row (``None`` for every
         other agent and for rows with no report yet), letting the poll
         formatter and the run-aggregate surface the report without
-        re-running the workflow. ``degraded`` / ``degraded_reason``
-        carry the persisted (already-redacted) degradation reason or
-        ``None`` so both poll surfaces can flag a degraded report.
+        re-running the workflow. A deep_genome row still showing a
+        non-terminal status but carrying a ``final_report`` (a lost
+        terminal status write) is surfaced as ``succeeded`` via
+        ``_heal_finished_local_workflow``. ``degraded`` /
+        ``degraded_reason`` carry the persisted (already-redacted)
+        degradation reason or ``None`` so both poll surfaces can flag a
+        degraded report.
     """
     manager = TaskManager(resolve_tasks_db_path())
     row = manager.get_task(task_id)
@@ -86,12 +110,12 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
             max_retries=analyst_config.MAX_RETRIES,
         )
     except McpError:
-        return result
+        return _heal_finished_local_workflow(result)
     result["live_status"] = live
     live_status = live.get("status") if isinstance(live, dict) else None
     if live_status:
         result["status"] = live_status
-    return result
+    return _heal_finished_local_workflow(result)
 
 
 async def reconcile_task_log(task_id: str) -> Optional[Dict[str, Any]]:

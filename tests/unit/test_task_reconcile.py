@@ -43,6 +43,25 @@ def _fake_analyst_error() -> McpError:
     )
 
 
+async def _raise_probe_failure(_t_id: str, **_: Any) -> dict:
+    """Live-probe stub that fails so reconcile uses the local row."""
+    raise _fake_analyst_error()
+
+
+def _install_local_only_reconcile(
+    monkeypatch: pytest.MonkeyPatch, mgr_path: str
+) -> None:
+    """Point reconcile at ``mgr_path`` and fail the live probe."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _raise_probe_failure,
+    )
+
+
 def test_reconcile_task_log_returns_cached_payload_without_remote(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -170,6 +189,38 @@ def test_reconcile_task_final_report_none_without_persisted_report(
 
     result = asyncio.run(reconcile_task("an-1"))
     assert result["final_report"] is None
+
+
+@pytest.mark.parametrize(
+    ("recorded_status", "report", "expected"),
+    [
+        ("running", "# Report\n\nbody\n", "succeeded"),
+        ("running", None, "running"),
+    ],
+)
+def test_reconcile_task_self_heal_on_lost_terminal_write(
+    mgr_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    recorded_status: str,
+    report: str | None,
+    expected: str,
+) -> None:
+    """A persisted final_report heals a stuck row; absence leaves it running.
+
+    The deep_genome done-callback's terminal status write can fail and
+    leave the umbrella showing ``running``. A persisted ``final_report``
+    (the terminal report node ran) reconciles it to ``succeeded``; a row
+    with no report yet stays ``running`` (no false heal mid-execution).
+    """
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    mgr = TaskManager(mgr_path)
+    mgr.record_submission("dg-heal", recorded_status, "/obs/run")
+    if report is not None:
+        mgr.set_task_final_report("dg-heal", report)
+
+    result = asyncio.run(reconcile_task("dg-heal"))
+
+    assert result["status"] == expected
 
 
 def test_reconcile_task_unknown_id_includes_final_report_key(
