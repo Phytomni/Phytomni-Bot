@@ -37,7 +37,6 @@ from ..design.agent import (
 )
 from ..shared.analysis_storage import (
     ANALYSIS_DATA_LIST_MAP,
-    ensure_run_output_dir,
     get_data_list,
 )
 from ..shared.sql import relay_bi_query, sql_literal
@@ -674,16 +673,16 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,
         )
-        resolved_output_dir: str = self._ensure_analysis_output_dir(
-            analysis_type,
-            output_dir,
-            run_identity,
-        )
+        # The dispatch seam (ensure_analysis_output_dir) creates the
+        # tenant-neutral shared dir from the input fingerprint, overriding
+        # any preset, so pre-creating a user-scoped dir here would only
+        # leave an unused marker. Pass the caller's output_dir through
+        # (empty for the generic path) and let the seam create the dir.
         context = AnalysisDispatchContext(
             analysis_type=analysis_type,
             species_code=species_code,
             gene_id=gene_id,
-            output_dir=resolved_output_dir,
+            output_dir=output_dir or "",
         )
         logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
@@ -742,21 +741,6 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         # dispatcher runs on the small tier.
         compute_resource = "small"
         return goal_description, data_list, meta, compute_resource
-
-    def _ensure_analysis_output_dir(
-        self: Any,
-        analysis_type: str,
-        output_dir: Optional[str],
-        run_identity: RunIdentity,
-    ) -> str:
-        """Return an existing or newly created analysis output directory."""
-        return ensure_run_output_dir(
-            self.deep_genome_config,
-            self.sensitive_config,
-            f"{analysis_type}_task",
-            run_identity,
-            output_dir,
-        )
 
     async def _submit_analysis_task(
         self: Any,
