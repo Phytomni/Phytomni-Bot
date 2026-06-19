@@ -425,7 +425,7 @@ async def test_brief_gene_completion(
     api_client: httpx.AsyncClient,
     api_server: ApiServer,
 ) -> None:
-    """``phyto-brief-gene`` returns a gene-card for Os01g0177400.
+    """``phyto-brief-gene`` returns the rich gene preamble for Os01g0177400.
 
     ~10 min: the synchronous endpoint blocks until BriefGene finishes.
 
@@ -459,7 +459,7 @@ async def test_brief_gene_resolve_gene_id_smoke(
     normally fall through to ``user/brief_gene_function_nogeneid``;
     flipping ``resolve_gene_id=true`` should invoke the LLM resolver,
     rewrite ``user_query`` to the canonical locus id, surface the
-    rewrite in ``metadata``, and produce a real gene card.
+    rewrite in ``metadata``, and produce the rich gene preamble.
 
     Args:
         api_client: Bound async HTTP client.

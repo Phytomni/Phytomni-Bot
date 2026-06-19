@@ -5,11 +5,11 @@
 
 Submits the committed ``brief_gene_agent.json`` payload (the single
 rice locus Os01g0177400, Oryza sativa) and asserts the formatted
-answer mentions the gene identifier together with at least one of
-the canonical gene-card
-sections (function/expression/orthology/literature), so the regression
-catches both empty responses and free-form prose that bypassed the
-gene-annotation lookup.
+answer mentions the gene identifier together with the rich preamble
+structure (``## Gene Profiles`` + all four numbered analytical
+sections), so the regression catches empty responses, free-form prose
+that bypassed the gene-annotation lookup, and a silently-dropped
+section node.
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ from .helpers.client import call_tool
 pytestmark = pytest.mark.live
 
 
-async def test_brief_gene_agent_e2e_returns_gene_card(
+async def test_brief_gene_agent_e2e_returns_rich_preamble(
     mcp_client: PhytomniMcpClient,
     load_payload: Callable[[str], Dict[str, Any]],
 ) -> None:
-    """BriefGeneAgent returns a gene-card for Os01g0177400.
+    """BriefGeneAgent returns the rich gene preamble for Os01g0177400.
 
     Args:
         mcp_client: Session-scoped MCP client.

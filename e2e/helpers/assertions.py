@@ -198,7 +198,8 @@ def assert_brief_gene_answer(answer: str) -> None:
         AssertionError: When the answer is empty, omits the gene id,
             lacks every annotation cue, or is missing the preamble
             structure (``## Gene Profiles`` + ``### Basic Genomic
-            Information`` + at least one ``### N.`` analytical section).
+            Information`` + all four ``### 1.``-``### 4.`` analytical
+            sections).
     """
     assert answer, "BriefGeneAgent answer was empty"
     _assert_no_citation_residue_via_markdown_body(answer)
@@ -219,7 +220,9 @@ def assert_brief_gene_answer(answer: str) -> None:
         "BriefGeneAgent answer lacked the Basic Genomic Information "
         f"block; got: {answer!r}"
     )
-    assert any(f"### {section}." in answer for section in (1, 2, 3, 4)), (
-        "BriefGeneAgent answer lacked any numbered analytical section "
-        f"(### 1.-### 4.); got: {answer!r}"
+    missing_sections = [n for n in (1, 2, 3, 4) if f"### {n}." not in answer]
+    assert not missing_sections, (
+        f"BriefGeneAgent answer was missing analytical section(s) "
+        f"{missing_sections} (expected all of ### 1.-### 4.); "
+        f"got: {answer!r}"
     )

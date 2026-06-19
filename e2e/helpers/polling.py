@@ -62,12 +62,16 @@ class TaskState:
             the agent's poller fills it in).
         output_dir: Remote output directory (``"unupdated"`` until the
             agent's poller fills it in).
+        final_report: Assembled report markdown persisted by
+            deep_genome's report node; ``None`` for every other agent
+            and until that node runs.
     """
 
     task_id: str
     status: str
     analysis_id: str
     output_dir: str
+    final_report: Optional[str] = None
 
     @property
     def succeeded(self) -> bool:
@@ -148,11 +152,13 @@ async def _reconciled_task_state(
     status = reconciled.get("status", "unknown")
     if status == "unknown":
         return _read_task_state(resolved_db, task_id)
+    report = reconciled.get("final_report")
     return TaskState(
         task_id=task_id,
         status=str(status),
         analysis_id=str(reconciled.get("analysis_id", "") or ""),
         output_dir=str(reconciled.get("output_dir", "") or ""),
+        final_report=report if isinstance(report, str) else None,
     )
 
 

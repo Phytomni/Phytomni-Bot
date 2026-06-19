@@ -6,9 +6,11 @@
 Submits the deep gene-function analysis for Os01g0177400 in rice
 (Oryza sativa) through the stdio MCP client, polls ``server_tasks.db``
 until the task
-reaches terminal status, and asserts the produced output directory is
-non-empty so the regression catches submissions that succeed in the
-queue but never write artifacts.
+reaches terminal status, and asserts both a non-empty output directory
+and that the persisted report carries the deep-genome title swap plus
+the verbatim brief_gene preamble body, so the regression catches
+submissions that succeed in the queue but never write artifacts or that
+silently drop the mounted preamble.
 """
 
 from __future__ import annotations
@@ -43,4 +45,21 @@ async def test_deep_genome_agent_e2e_polls_to_success(
     assert state.output_dir and state.output_dir != "unupdated", (
         f"DeepGenomeAgent task {state.task_id} succeeded but reported "
         f"no output directory; state={state!r}"
+    )
+    report = state.final_report
+    assert report, (
+        f"DeepGenomeAgent task {state.task_id} succeeded but persisted "
+        f"no final report; state={state!r}"
+    )
+    assert "# Deep Genome Analysis of" in report, (
+        "DeepGenomeAgent report did not swap the brief_gene preamble H1 "
+        f"to the deep-genome title; report head: {report[:200]!r}"
+    )
+    assert "## Gene Profiles" in report, (
+        "DeepGenomeAgent report lacked the verbatim brief_gene "
+        f"'## Gene Profiles' preamble body; report head: {report[:200]!r}"
+    )
+    assert "## Bioinformatic Analysis" in report, (
+        "DeepGenomeAgent report lacked the '## Bioinformatic Analysis' "
+        f"body appended after the preamble; report head: {report[:200]!r}"
     )
