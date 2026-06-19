@@ -54,10 +54,12 @@ class BriefGeneOutput(TypedDict):
     dicts (orthologs / paralogs / interactions), the four section
     LLM markdowns produced by the preamble fan-out, the introduction
     report, literature retrieval docs, the chat-completions-style
-    final response, and follow-up questions. Parent graphs (notably
-    ``deep_genome``) consume the structured section + introduction
-    fields directly to assemble the deep report without re-running
-    any preamble LLM call.
+    final response, and follow-up questions. ``deep_genome`` mounts this
+    graph and consumes the rendered ``final_response`` verbatim as its
+    report preamble (only the H1 title is swapped); the structured
+    ``section{1-4}_markdown`` / ``introduction_report`` fields stay
+    internal to brief_gene's own render and are not projected into the
+    deep report.
     """
 
     gene_id: str
@@ -137,11 +139,12 @@ class BriefGeneState(TypedDict):
     # ``deep_genome``'s mount IO projection so deep_genome skips its
     # own legacy ``_run_report_introduction`` LLM call).
     introduction_report: str
-    # Barrier counter for the 4-parallel section fan-out (replaces
-    # M5-era ``part1_completed_branches``). Each section node writes
-    # ``+1`` via the ``operator.add`` reducer; the routing function
-    # ``_route_gene_profile_barrier`` advances to ``introduction_node``
-    # once the counter reaches 4.
+    # Additive completion tally the four section nodes each bump by
+    # ``+1`` via the ``operator.add`` reducer (replaces the M5-era
+    # ``part1_completed_branches``). The section -> ``introduction_node``
+    # fan-in converges on LangGraph's plain-edge superstep barrier, so no
+    # router reads this counter; it is retained as a per-section
+    # completion signal, not a routing gate.
     gene_profile_completed_branches: Annotated[int, operator.add]
     # Additive optional keys for the chat-subgraph split.
     # ``generate_prep_node`` /
