@@ -225,44 +225,56 @@ TypedDicts in
 and the legacy `BriefGeneAgentState` symbol stays a back-compat
 alias for `BriefGeneState`.
 
-| TypedDict         | Required keys      | Optional keys                                                                                                                       |
-| ----------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `BriefGeneInput`  | `user_query`       | `is_follow_up`                                                                                                                      |
-| `BriefGeneOutput` | every output field | `gene_id`, `species_code`, `go_string`, `kegg_string`, `interpro_string`, `retrieved_docs`, `final_response`, `follow_up_questions` |
-| `BriefGeneState`  | every legacy field | (binary-compatible with `BriefGeneAgentState`)                                                                                      |
+| TypedDict         | Required keys                                                                                                                                                            | Optional keys                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `BriefGeneInput`  | `user_query`                                                                                                                                                             | `is_follow_up`                                                          |
+| `BriefGeneOutput` | every output field (annotation strings, three homology dicts, `section{1-4}_markdown`, `introduction_report`, `retrieved_docs`, `final_response`, `follow_up_questions`) | — (total `TypedDict`; `deep_genome` consumes `final_response` verbatim) |
+| `BriefGeneState`  | every legacy field                                                                                                                                                       | (binary-compatible with `BriefGeneAgentState`)                          |
 
-The graph compiles into 10 functional nodes. The retrieve site is a
-Send-dispatched prep/worker/reduce fan-out over the resolved gene
-symbols, and the `generate` and `follow_up` calls are each split into a
-prep + post pair around one shared `chat` subgraph node:
+The graph compiles into fourteen functional nodes plus a mounted
+`chat` subgraph. The gene profile is built by a **static fan-out**
+(not `Send`): `query_judge_node` fans unconditionally to
+`fetch_homology_interactions_node` and conditionally to
+`fetch_annotation_node` (or straight to retrieval); the four `section_*`
+nodes gate on the single `retrieve_reduce_node` trigger and read the
+homology counts from state. The retrieve site is the only
+`Send`-dispatched fan-out (prep → worker × N → reduce) over the resolved
+gene symbols, and `chat` is now reused only by the follow-up pair:
 
-| Node                       | Role                                                                                                            |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `query_judge_node`         | Decides whether the user query is a known gene ID; on hit routes to annotation fetch, else direct retrieval.    |
-| `fetch_annotation_node`    | Pulls GO / KEGG / InterPro annotation strings from the BI endpoint for the resolved gene.                       |
-| `retrieve_prep_tasks_node` | Builds the per-symbol task list and `Send`-dispatches one worker per task.                                      |
-| `retrieve_worker_node`     | Per-symbol worker that invokes the mounted knowledge subgraph and writes an indexed `(task_index, docs)` tuple. |
-| `retrieve_reduce_node`     | Merges, sorts, and caps the per-worker doc lists into `retrieved_docs` plus the `retrieve_context` string.      |
-| `generate_prep_node`       | Builds the `chat_payload` from the annotation + retrieval context and stages the `generate_post_node` sentinel. |
-| `generate_post_node`       | Merges the retrieved docs into the shared chat response and stores it in `final_response`.                      |
-| `follow_up_prep_node`      | Builds the `chat_payload` for the follow-up questions call and stages the `follow_up_post_node` sentinel.       |
-| `follow_up_post_node`      | Parses the follow-up questions and embeds them on the primary assistant message.                                |
-| `chat`                     | Mounted chat subgraph reused by both the generate and follow-up sites via the prep/post pairs.                  |
+| Node                               | Role                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `query_judge_node`                 | Resolves whether the user query is a known gene ID; on hit routes to annotation fetch, else straight to retrieval.                                           |
+| `fetch_annotation_node`            | Pulls GO / KEGG / InterPro / description annotation strings from the BI endpoint for the resolved gene.                                                      |
+| `fetch_homology_interactions_node` | Runs unconditionally off `query_judge_node`; fetches ortholog / paralog / interaction rows and commits their count summaries to state in an early superstep. |
+| `retrieve_prep_tasks_node`         | Builds the per-symbol task list and `Send`-dispatches one worker per task.                                                                                   |
+| `retrieve_worker_node`             | Per-symbol worker that invokes the mounted knowledge subgraph and writes an indexed `(task_index, docs)` tuple.                                              |
+| `retrieve_reduce_node`             | Merges, sorts, and caps the per-worker doc lists into `retrieved_docs` plus the `retrieve_context` string.                                                   |
+| `section_discovery_node`           | LLM-writes the `### 1.` Gene Discovery section from annotation + literature + homology state.                                                                |
+| `section_cloning_node`             | LLM-writes the `### 2.` Gene Cloning section.                                                                                                                |
+| `section_functional_node`          | LLM-writes the `### 3.` Functional Analysis section.                                                                                                         |
+| `section_application_node`         | LLM-writes the `### 4.` Application and Evolutionary Analysis section.                                                                                       |
+| `introduction_node`                | LLM-writes the introduction report from the Basic Information block and the four section markdowns.                                                          |
+| `render_node`                      | Pure-template node that assembles the title + introduction + `## Gene Profiles` preamble and writes `final_response`.                                        |
+| `follow_up_prep_node`              | Builds the `chat_payload` for the follow-up questions call (only when `is_follow_up`) and stages the post sentinel.                                          |
+| `follow_up_post_node`              | Parses the follow-up questions and embeds them on the primary assistant message.                                                                             |
+| `chat`                             | Mounted chat subgraph; now reused only by the follow-up site via the prep/post pair.                                                                         |
 
-Routing is conditional at three sites: `query_judge_node` branches to
-`fetch_annotation_node` or straight to the retrieve fan-out,
-`retrieve_prep_tasks_node` `Send`-fans out to `retrieve_worker_node`,
-and the shared `chat` after-router returns to `generate_post_node` or
-`follow_up_post_node` (with `generate_post_node` either flowing into
-`follow_up_prep_node` or short-circuiting to `__end__`).
+Routing: `query_judge_node` unconditionally edges to
+`fetch_homology_interactions_node` and conditionally (`route_after_judge`)
+to `fetch_annotation_node` or the retrieve fan-out;
+`retrieve_prep_tasks_node` `Send`-fans out to `retrieve_worker_node`;
+each `section_*` node plain-edges to `introduction_node` (the four-way
+fan-in converges on LangGraph's superstep barrier — there is no explicit
+barrier router); and `introduction_node` edges to `render_node`.
 
-After `generate_post_node`, `route_after_generate` inspects
-`state["is_follow_up"]` (default `True` inside `arun`) and either
-flows into `follow_up_prep_node` or short-circuits to `END`. Direct
-callers via `BriefGeneAgent.arun` see the legacy follow-up
-behavior; parent graphs mounting brief_gene as a subgraph may set
-`is_follow_up=False` to skip the second LLM hop when they only
-need the annotation + retrieval surface.
+After `render_node`, `route_after_generate` inspects
+`state["is_follow_up"]` (default `True` inside `arun`) and either flows
+into `follow_up_prep_node` → `chat` → `follow_up_post_node` or
+short-circuits to `END`. Direct callers via `BriefGeneAgent.arun` see
+the legacy follow-up behavior; a parent graph mounting brief_gene as a
+subgraph sets `is_follow_up=False` to skip the follow-up hop. `deep_genome`
+mounts the compiled app and consumes `render_node`'s rendered answer
+verbatim as its report preamble (only the H1 title is swapped).
 
 ## Review Subgraph
 
