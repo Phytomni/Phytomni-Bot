@@ -14,6 +14,9 @@ only) without deadlocking, and that the render writes a full preamble.
 from __future__ import annotations
 
 import asyncio
+import faulthandler
+from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -131,6 +134,29 @@ def _fail_fast_on_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(httpx.Client, "send", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def _dump_stack_if_hung() -> Iterator[None]:
+    """Auto-capture the blocked frame if the compiled graph wedges.
+
+    This graph passes on this machine across every dependency resolve
+    tried (langgraph 1.2.0 and 1.2.6, anyio 4.13/4.14, default loop and
+    uvloop), yet an independent audit reproduces a hang its environment
+    alone exhibits. ``faulthandler`` arms a watchdog *thread* that dumps
+    every thread's stack after 25s — past this test's own 20s
+    ``wait_for``, before a typical outer ``timeout`` — so the next audit
+    run self-captures the exact blocked ``await`` / ``connect`` frame
+    instead of dying as an opaque ``EXIT=124``. The watchdog runs off
+    the event loop, so it fires even when a synchronous call wedges the
+    loop (which ``wait_for`` cannot then cancel). Cancelled on a fast
+    pass so it never bleeds into a neighbouring test.
+    """
+    faulthandler.dump_traceback_later(25, exit=False)
+    try:
+        yield
+    finally:
+        faulthandler.cancel_dump_traceback_later()
+
+
 async def _run_preamble(user_query: str) -> str:
     """Invoke the compiled graph (no follow-up) and return the content."""
     agent = BriefGeneAgent(
@@ -161,6 +187,44 @@ async def test_preamble_gene_found_fan_in_completes(
     content = await _run_preamble("Os01g0177400")
 
     assert content.startswith("# Brief Gene Analysis of")
+    assert "## Gene Profiles" in content
+    assert "### Basic Genomic Information" in content
+
+
+async def test_preamble_knowledge_exception_renders_degraded_banner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A raising knowledge subgraph degrades the run without failing it.
+
+    Drives the FULL compiled graph with a knowledge mount whose
+    ``ainvoke`` raises, so every per-symbol ``retrieve_worker_node``
+    hits its broad ``except``, keeps the empty sentinel, and appends a
+    ``literature_degraded`` record. The compiled graph must still reach
+    ``render_node`` (degraded != failed, no deadlock) and the rendered
+    ``message.content`` must carry the ``⚠️ Literature retrieval
+    degraded`` banner — the one compiled-graph proof that a mounted
+    subgraph exception reaches the banner, which the node-level render
+    and worker-delta unit tests assert only in isolation.
+    """
+    _install_mocks(monkeypatch, bi_response=_FOUND_ROW)
+    # Re-point the knowledge mount built in ``BriefGeneAgent.__init__``
+    # at a stand-in whose ``ainvoke`` raises, so every per-symbol
+    # retrieve worker hits its broad except (overrides the canned stub
+    # installed above; the later setattr wins).
+    raising_app = SimpleNamespace(
+        ainvoke=AsyncMock(side_effect=RuntimeError("knowledge unavailable"))
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.brief_gene.core.build_knowledge_app",
+        lambda *_args, **_kwargs: raising_app,
+    )
+
+    content = await _run_preamble("Os01g0177400")
+
+    assert content.startswith("# Brief Gene Analysis of")
+    assert "⚠️ **Literature retrieval degraded**" in content
+    # Degraded is status-independent: the full preamble skeleton still
+    # renders rather than collapsing to a failure note.
     assert "## Gene Profiles" in content
     assert "### Basic Genomic Information" in content
 
