@@ -19,6 +19,7 @@ from mcp.shared.exceptions import McpError
 
 from ..agents.analyst.agent import task_log, task_status
 from ..config.defaults import AnalystConfig
+from .live_tasks import is_live_running
 from .task_manager import TaskManager, resolve_tasks_db_path
 
 __all__ = ["reconcile_task", "reconcile_task_log"]
@@ -28,21 +29,37 @@ logger = logging.getLogger(__name__)
 _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 
 
-def _heal_finished_local_workflow(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Self-heal a deep_genome umbrella whose terminal status write failed.
+def _heal_finished_local_workflow(
+    result: Dict[str, Any], *, agent: Optional[str]
+) -> Dict[str, Any]:
+    """Self-heal a deep_genome umbrella whose local workflow has ended.
 
-    The deep_genome report node persists ``final_report`` only when the
-    local background workflow reaches its terminal report node (the
-    success path), in a write separate from the done-callback's terminal
-    status write. A row that carries a ``final_report`` while still
-    showing a non-terminal status is therefore a lost finalization write
-    -- surface it as ``succeeded`` rather than leaving the run stuck
-    "running". This never fires for a remote agent task: ``final_report``
-    is ``None`` for every non-deep_genome row.
+    The umbrella runs as a background task whose terminal status write is
+    best-effort. Two read-time heals recover a row the lost write left
+    non-terminal:
+
+    1. A persisted ``final_report`` means the success-path report node ran
+       -> ``succeeded`` (a lost terminal write on a completed run).
+    2. Otherwise, an ``agent == "deep_genome"`` umbrella that is no longer
+       live (gone from the in-flight registry, or done) died before
+       producing a report (crash-before-report + lost write, or a restart
+       orphan) -> ``failed``.
+
+    The ``agent`` guard keeps the liveness rule off remote child
+    sub-tasks (``agent`` NULL) and other remote agents, which derive their
+    status from the live platform probe. Nothing is written back to the
+    DB; the verdict is re-derived on each poll.
     """
     status = str(result.get("status", "")).lower()
-    if result.get("final_report") and status in _NON_TERMINAL_STATUSES:
+    if status not in _NON_TERMINAL_STATUSES:
+        return result
+    if result.get("final_report"):
         result["status"] = "succeeded"
+        return result
+    if agent == "deep_genome" and not is_live_running(
+        str(result.get("task_id", ""))
+    ):
+        result["status"] = "failed"
     return result
 
 
@@ -110,12 +127,12 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
             max_retries=analyst_config.MAX_RETRIES,
         )
     except McpError:
-        return _heal_finished_local_workflow(result)
+        return _heal_finished_local_workflow(result, agent=row["agent"])
     result["live_status"] = live
     live_status = live.get("status") if isinstance(live, dict) else None
     if live_status:
         result["status"] = live_status
-    return _heal_finished_local_workflow(result)
+    return _heal_finished_local_workflow(result, agent=row["agent"])
 
 
 async def reconcile_task_log(task_id: str) -> Optional[Dict[str, Any]]:

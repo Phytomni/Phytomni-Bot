@@ -15,13 +15,22 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
-from mcp_server_phytomni.runtime.task_manager import Submission, TaskManager
+from mcp_server_phytomni.runtime.live_tasks import (
+    deregister_live_task,
+    register_live_task,
+)
+from mcp_server_phytomni.runtime.task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+)
 from mcp_server_phytomni.runtime.task_reconcile import (
     reconcile_task,
     reconcile_task_log,
@@ -346,3 +355,100 @@ def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
     assert probed_ids == [
         "T-own"
     ], f"Expected probe of 'T-own', got {probed_ids}"
+
+
+def test_reconcile_marks_dead_deep_genome_umbrella_failed(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-live deep_genome umbrella with no report reconciles to failed.
+
+    The umbrella's done-callback terminal write was lost (or the process
+    restarted), so the row is stuck non-terminal with no final_report and
+    the task is gone from the live registry. reconcile must surface it as
+    failed rather than leaving a dead run showing running forever.
+    """
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="dg-dead",
+            status="running",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+
+    result = asyncio.run(reconcile_task("dg-dead"))
+
+    assert result["status"] == "failed"
+
+
+def test_reconcile_leaves_live_deep_genome_umbrella_running(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A still-live umbrella stays running (no false-positive failure)."""
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="dg-live",
+            status="running",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+    register_live_task(
+        "dg-live",
+        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+    )
+    try:
+        result = asyncio.run(reconcile_task("dg-live"))
+        assert result["status"] == "running"
+    finally:
+        deregister_live_task("dg-live")
+
+
+def test_reconcile_report_beats_liveness_for_deep_genome(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A persisted final_report wins over the liveness rule -> succeeded."""
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="dg-rep",
+            status="running",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+    mgr.set_task_final_report("dg-rep", "# Report\n\nbody\n")
+
+    result = asyncio.run(reconcile_task("dg-rep"))
+
+    assert result["status"] == "succeeded"
+
+
+def test_reconcile_never_fails_remote_row_absent_from_registry(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A remote child row (agent NULL) is never failed by the local rule.
+
+    Non-vacuity guard: a remote analyst sub-task is legitimately
+    non-terminal while the platform runs it and is never in the local
+    live registry. The liveness rule must fire ONLY for agent
+    "deep_genome", so this row keeps its submitted status.
+    """
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="child-1",
+            status="submitted",
+            output_dir="/obs/run",
+        )
+    )
+
+    result = asyncio.run(reconcile_task("child-1"))
+
+    assert result["status"] == "submitted"
