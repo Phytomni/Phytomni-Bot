@@ -33,6 +33,10 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.live_tasks import (
+    deregister_live_task,
+    register_live_task,
+)
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ...storage.path_policy import IdFactory
 from ..analyst.agent import (
@@ -583,6 +587,7 @@ class DeepGenomeAgents(
                 output_dir=umbrella_output_dir,
             )
         )
+        register_live_task(umbrella_id, workflow_task)
 
         return {
             "task_id": umbrella_id,
@@ -660,6 +665,8 @@ class DeepGenomeAgents(
                 umbrella_id,
                 exc,
             )
+        finally:
+            deregister_live_task(umbrella_id)
 
 
 async def gene_function(

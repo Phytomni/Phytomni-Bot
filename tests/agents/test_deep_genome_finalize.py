@@ -12,14 +12,20 @@ the submit-path ``degraded_tracking`` flag does not extend to it.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import agent as agent_module
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.runtime.live_tasks import (
+    is_live_running,
+    register_live_task,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -78,3 +84,59 @@ def test_finalize_workflow_logs_and_swallows_terminal_write_error(
 
     assert warned, "a terminal-write failure must be logged"
     assert "dg-fin" in warned[0]
+
+
+def test_finalize_workflow_deregisters_umbrella(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The done-callback removes the umbrella from the live registry."""
+    monkeypatch.setattr(
+        agent_module, "resolve_tasks_db_path", lambda: "ignored.db"
+    )
+    monkeypatch.setattr(
+        agent_module,
+        "TaskManager",
+        lambda _p: SimpleNamespace(update_task=lambda *_a: True),
+    )
+    register_live_task(
+        "dg-dereg",
+        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+    )
+    assert is_live_running("dg-dereg") is True
+    agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
+
+    agent.run_finalize(
+        _succeeded_task(), umbrella_id="dg-dereg", output_dir="/obs/o"
+    )
+
+    assert is_live_running("dg-dereg") is False
+
+
+async def test_arun_registers_umbrella_in_live_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """arun registers the spawned umbrella task under its task_id."""
+    monkeypatch.setattr(
+        agent_module,
+        "resolve_tasks_db_path",
+        lambda: str(tmp_path / "tasks.db"),
+    )
+    captured: dict[str, Any] = {}
+
+    async def _hang(*_args: Any, **_kwargs: Any) -> None:
+        await asyncio.Event().wait()
+
+    def _capture(tid: str, task: Any) -> None:
+        captured[tid] = task
+
+    monkeypatch.setattr(agent_module, "ainvoke_graph", lambda *a, **k: _hang())
+    monkeypatch.setattr(agent_module, "register_live_task", _capture)
+    agent = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
+
+    envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
+    task_id = envelope["task_id"]
+
+    try:
+        assert task_id in captured, "arun must register the umbrella task"
+    finally:
+        captured[task_id].cancel()
