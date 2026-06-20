@@ -403,3 +403,56 @@ async def test_chat_completions_envelope_carries_formatted_and_raw(
     assert body["raw"]["choices"][0]["message"]["content"] == (
         "photosynthesis converts light"
     )
+
+
+async def test_chat_completions_brief_gene_surfaces_literature_degraded(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A literature-degraded brief_gene run surfaces ``degraded`` on route.
+
+    Drives the real ``/v1/chat/completions`` path for ``phyto-brief-gene``
+    with a handler whose ``phytomni_state`` carries a
+    ``literature_degraded`` record, then asserts the **default-mode**
+    ``formatted.metadata.degraded`` block reaches the HTTP body. The
+    cited formatter's degraded projection is pinned at the unit level;
+    this is the one route-level proof that it survives the
+    chat-completions envelope to the API surface, status untouched.
+    """
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return a brief_gene payload with a literature_degraded record."""
+        _ = args
+        return {
+            "choices": [
+                {"message": {"role": "assistant", "content": "gene report"}}
+            ],
+            "phytomni_state": {
+                "literature_degraded": [
+                    {"task_label": "OsCAB1", "message": "boom"}
+                ],
+            },
+        }
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+        fake,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-brief-gene",
+        content="Os01g0177400",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["formatted"]["metadata"]["degraded"] == {
+        "reason": "literature_retrieval",
+        "count": 1,
+        "labels": ["OsCAB1"],
+    }

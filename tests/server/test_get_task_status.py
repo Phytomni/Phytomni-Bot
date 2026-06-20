@@ -119,3 +119,49 @@ async def test_live_failure_degrades_to_recorded(
     assert result["status"] == "submitted"
     assert result["output_dir"] == "/obs/x"
     assert result["live_status"] is None
+
+
+async def test_persisted_degraded_reason_surfaces_on_poll(
+    tasks_db_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A literature-degraded DeepGenome run surfaces ``degraded`` on poll.
+
+    Closes the last hop of the DeepGenome degraded chain: the report
+    node persists a redacted ``degraded_reason`` via ``set_task_degraded``
+    (rolled up from the mounted brief_gene ``literature_degraded``
+    channel), and GetTaskStatus must read it back through
+    ``get_task_degraded`` and expose ``degraded: True`` /
+    ``degraded_reason`` on the poll surface — while the run itself stays
+    a SUCCESS (degraded is status-independent).
+
+    Args:
+        tasks_db_path: Temp registry DB fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None after the poll-surface degraded assertions pass.
+    """
+    manager = TaskManager(tasks_db_path)
+    manager.record_submission("T-deg", "submitted", "/obs/deg")
+    manager.set_task_degraded(
+        "T-deg", "literature retrieval degraded for 2 symbols"
+    )
+
+    async def fake_status(*args: Any, **kwargs: Any) -> Any:
+        """Return a succeeded live status (degraded != failed)."""
+        _ = (args, kwargs)
+        return {"status": "SUCCEEDED"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status", fake_status
+    )
+
+    result = await handle_get_task_status(GetTaskStatus(task_id="T-deg"))
+
+    assert result is not None
+    assert result["status"] == "SUCCEEDED"
+    assert result["degraded"] is True
+    assert (
+        result["degraded_reason"]
+        == "literature retrieval degraded for 2 symbols"
+    )
