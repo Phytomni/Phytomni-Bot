@@ -106,6 +106,7 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
         }
     analyst_config = AnalystConfig()
     degraded_reason = manager.get_task_degraded(task_id)
+    task_agent = manager.get_task_agent(task_id)
     result: Dict[str, Any] = {
         "task_id": task_id,
         "status": row["status"],
@@ -127,12 +128,12 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
             max_retries=analyst_config.MAX_RETRIES,
         )
     except McpError:
-        return _heal_finished_local_workflow(result, agent=row["agent"])
+        return _heal_finished_local_workflow(result, agent=task_agent)
     result["live_status"] = live
     live_status = live.get("status") if isinstance(live, dict) else None
     if live_status:
         result["status"] = live_status
-    return _heal_finished_local_workflow(result, agent=row["agent"])
+    return _heal_finished_local_workflow(result, agent=task_agent)
 
 
 async def reconcile_task_log(task_id: str) -> Optional[Dict[str, Any]]:

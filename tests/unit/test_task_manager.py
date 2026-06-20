@@ -75,7 +75,6 @@ def test_create_update_get_roundtrip(tmp_path: Path) -> None:
         "analysis_id": "remote-7",
         "output_dir": "/obs/out",
         "source_task_id": None,
-        "agent": None,
     }
 
 
@@ -116,8 +115,8 @@ def test_get_task_missing_returns_none(tmp_path: Path) -> None:
     assert _mgr(tmp_path).get_task("does-not-exist") is None
 
 
-def test_get_task_exposes_agent_column(tmp_path: Path) -> None:
-    """get_task surfaces the agent tag so reconcile can discriminate."""
+def test_get_task_agent_returns_tag(tmp_path: Path) -> None:
+    """get_task_agent surfaces the agent tag for reconcile discrimination."""
     mgr = _mgr(tmp_path)
     mgr.record(
         Submission(
@@ -127,9 +126,12 @@ def test_get_task_exposes_agent_column(tmp_path: Path) -> None:
             run_context=RunContext(agent="deep_genome"),
         )
     )
-    row = mgr.get_task("dg-1")
-    assert row is not None
-    assert row["agent"] == "deep_genome"
+    assert mgr.get_task_agent("dg-1") == "deep_genome"
+
+
+def test_get_task_agent_unknown_id_returns_none(tmp_path: Path) -> None:
+    """An unknown id reads back as None, not an error."""
+    assert _mgr(tmp_path).get_task_agent("nope") is None
 
 
 def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
@@ -150,7 +152,6 @@ def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
         "analysis_id": "",
         "output_dir": "/obs/run",
         "source_task_id": None,
-        "agent": None,
     }
 
     mgr.record_submission("local-42", "succeeded", "/obs/run", "rem-9")

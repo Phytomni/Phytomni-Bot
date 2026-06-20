@@ -435,15 +435,13 @@ class TaskManager:
 
         Returns:
             ``{"task_id", "status", "analysis_id", "output_dir",
-            "source_task_id", "agent"}`` when the row exists, otherwise
-            ``None``.
+            "source_task_id"}`` when the row exists, otherwise ``None``.
         """
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 """
-                SELECT status, analysis_id, output_dir, source_task_id,
-                       agent
+                SELECT status, analysis_id, output_dir, source_task_id
                 FROM tasks WHERE task_id = ?
             """,
                 (task_id,),
@@ -459,8 +457,34 @@ class TaskManager:
             "analysis_id": row[1],
             "output_dir": row[2],
             "source_task_id": row[3],
-            "agent": row[4],
         }
+
+    def get_task_agent(self, task_id: str) -> Optional[str]:
+        """Return the recorded ``agent`` tag for ``task_id`` (or None).
+
+        Kept separate from ``get_task`` so the tool-facing ``get_task``
+        response shape stays narrow; the widened run-scoped columns must
+        not leak into the GetTaskStatus surface. ``reconcile_task`` reads
+        the agent through this focused accessor to tell a local
+        deep_genome umbrella row from a remote child sub-task.
+
+        Args:
+            task_id: The task id to look up.
+
+        Returns:
+            The ``agent`` column value, or ``None`` when the row is
+            missing or its agent is unset.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT agent FROM tasks WHERE task_id = ?",
+                (task_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        return row[0] if row is not None else None
 
     def set_task_log(self, task_id: str, log_dict: dict) -> bool:
         """Serialize a dict to JSON and write to the task_log column.
