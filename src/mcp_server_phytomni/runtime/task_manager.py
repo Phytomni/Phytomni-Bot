@@ -435,13 +435,15 @@ class TaskManager:
 
         Returns:
             ``{"task_id", "status", "analysis_id", "output_dir",
-            "source_task_id"}`` when the row exists, otherwise ``None``.
+            "source_task_id", "agent"}`` when the row exists, otherwise
+            ``None``.
         """
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 """
-                SELECT status, analysis_id, output_dir, source_task_id
+                SELECT status, analysis_id, output_dir, source_task_id,
+                       agent
                 FROM tasks WHERE task_id = ?
             """,
                 (task_id,),
@@ -457,6 +459,7 @@ class TaskManager:
             "analysis_id": row[1],
             "output_dir": row[2],
             "source_task_id": row[3],
+            "agent": row[4],
         }
 
     def set_task_log(self, task_id: str, log_dict: dict) -> bool:

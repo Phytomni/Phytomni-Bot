@@ -19,6 +19,7 @@ import pytest
 
 from mcp_server_phytomni.runtime.task_manager import (
     DEFAULT_REMOTE_TASK_TIMEOUT,
+    RunContext,
     Submission,
     TaskManager,
     create_task,
@@ -74,6 +75,7 @@ def test_create_update_get_roundtrip(tmp_path: Path) -> None:
         "analysis_id": "remote-7",
         "output_dir": "/obs/out",
         "source_task_id": None,
+        "agent": None,
     }
 
 
@@ -114,6 +116,22 @@ def test_get_task_missing_returns_none(tmp_path: Path) -> None:
     assert _mgr(tmp_path).get_task("does-not-exist") is None
 
 
+def test_get_task_exposes_agent_column(tmp_path: Path) -> None:
+    """get_task surfaces the agent tag so reconcile can discriminate."""
+    mgr = _mgr(tmp_path)
+    mgr.record(
+        Submission(
+            task_id="dg-1",
+            status="running",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+    row = mgr.get_task("dg-1")
+    assert row is not None
+    assert row["agent"] == "deep_genome"
+
+
 def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
     """Verify record_submission writes then replaces a known id.
 
@@ -132,6 +150,7 @@ def test_record_submission_upserts_known_id(tmp_path: Path) -> None:
         "analysis_id": "",
         "output_dir": "/obs/run",
         "source_task_id": None,
+        "agent": None,
     }
 
     mgr.record_submission("local-42", "succeeded", "/obs/run", "rem-9")
