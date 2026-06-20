@@ -17,6 +17,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
@@ -104,6 +105,30 @@ def _install_mocks(
         "mcp_server_phytomni.agents.brief_gene.introduction.phyto_chat",
         chat_mock,
     )
+
+
+@pytest.fixture(autouse=True)
+def _fail_fast_on_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Convert any un-mocked outbound HTTP into an instant named failure.
+
+    Every external call the preamble workflow makes is mocked above. If a
+    future change or a different environment lets one escape, the autouse
+    ``block_external_http`` fixture only covers the sync ``.request``
+    path, so an async ``AsyncClient.send`` can still reach a real socket
+    and hang the ``asyncio.wait_for(timeout=20)`` fan-in. This guard
+    raises at the ``send`` chokepoint instead, naming the request, so an
+    escaped call surfaces as a fast diagnostic error rather than a 20s
+    timeout (and so it cannot pass by merely fast-failing the socket).
+    """
+
+    def _blocked(_self: Any, request: Any, *_a: Any, **_k: Any) -> Any:
+        raise RuntimeError(
+            "offline preamble test escaped to a live HTTP call "
+            f"({request.method} {request.url}); a mock is missing"
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked)
+    monkeypatch.setattr(httpx.Client, "send", _blocked)
 
 
 async def _run_preamble(user_query: str) -> str:
