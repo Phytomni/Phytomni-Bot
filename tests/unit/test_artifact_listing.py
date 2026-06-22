@@ -77,3 +77,29 @@ def test_obsfs_mounted_but_dir_absent_falls_back_to_sdk(monkeypatch, tmp_path):
     )
 
     assert paths == ["/obs/phytomni/agent_data/u1/run0/fig1.png"]
+
+
+def test_obsfs_enumeration_confines_to_requested_tenant_prefix(tmp_path):
+    """Enumeration is scoped to output_dir's key, not the bucket mount root.
+
+    A run's output_dir resolves to one tenant-scoped key prefix; the
+    recursive walk must return only that run's objects and never a
+    sibling tenant's objects living elsewhere under the same bucket."""
+    bucket = "phytomni"
+    mount_root = tmp_path
+    mine = mount_root / bucket / "agent_data" / "user_data" / "ua" / "run0"
+    mine.mkdir(parents=True)
+    (mine / "mine.png").write_bytes(b"x")
+    sibling = mount_root / bucket / "agent_data" / "user_data" / "ub" / "run9"
+    sibling.mkdir(parents=True)
+    (sibling / "secret.csv").write_text("a,b")
+
+    paths = artifact_listing.list_artifact_paths(
+        f"/obs/{bucket}/agent_data/user_data/ua/run0",
+        bucket_name=bucket,
+        obs_server="https://obs.invalid",
+        mount_root=str(mount_root),
+    )
+
+    assert paths == ["/obs/phytomni/agent_data/user_data/ua/run0/mine.png"]
+    assert all("/ub/" not in path for path in paths)
