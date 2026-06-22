@@ -11,6 +11,7 @@ and the manual cascade in purge_expired.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict
@@ -767,3 +768,71 @@ def test_terminal_payload_healthy_run_not_degraded() -> None:
 
     assert payload is not None
     assert payload["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_reconcile_concurrent_first_polls_are_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two simultaneous first polls assemble twice but settle identically.
+
+    ``reconcile`` has no compare-and-swap: each first poll reads a
+    non-terminal run and runs the glob + synth + settle independently, so
+    the artifact lister fires once per concurrent poll (at-least-once, NOT
+    exactly-once). The guarantee that actually holds is idempotency — the
+    duplicated assembly is pure, so both returned records and the
+    persisted row agree. A gate forces both coroutines past the
+    non-terminal status read before either settles, exercising the race
+    deterministically. (Sequential later polls still short-circuit; see
+    ``test_reconcile_terminal_run_does_not_poll``.)
+    """
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-cc", "alice", "network", "remote"),
+        ("cc-1",),
+    )
+    release = asyncio.Event()
+
+    async def gated(task_id: str) -> Dict[str, Any]:
+        """Hold every poll at the gate, then settle the child succeeded."""
+        await release.wait()
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/cc",
+            "final_report": None,
+        }
+
+    glob_hits = {"n": 0}
+
+    async def counting_lister(output_dir: str) -> list:
+        """Count each glob so the at-least-once behaviour is observable."""
+        glob_hits["n"] += 1
+        return [f"{output_dir}/plot.png"]
+
+    monkeypatch.setattr(run_registry, "reconcile_task", gated)
+
+    first = asyncio.create_task(
+        registry.reconcile("run-cc", owner="alice", lister=counting_lister)
+    )
+    second = asyncio.create_task(
+        registry.reconcile("run-cc", owner="alice", lister=counting_lister)
+    )
+    await asyncio.sleep(0)  # let both reach the gate past the status read
+    release.set()
+    rec1, rec2 = await asyncio.gather(first, second)
+
+    # At-least-once: both first polls did the work (no CAS to dedupe them).
+    assert glob_hits["n"] == 2
+    # ...but idempotent: both returns and the cached row carry one answer.
+    assert rec1 is not None and rec2 is not None
+    assert rec1.status == rec2.status == "succeeded"
+    assert rec1.result is not None and rec2.result is not None
+    settled = rec1.result["formatted"]["answer"]
+    assert rec2.result["formatted"]["answer"] == settled
+    assert rec1.result["artifacts"][0]["paths"] == ["/obs/cc/plot.png"]
+    cached = registry.get_run("run-cc", owner="alice")
+    assert cached is not None and cached.result is not None
+    assert cached.result["formatted"]["answer"] == settled
