@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from mcp_server_phytomni.common.responses import assert_no_citation_residue
 
@@ -226,3 +227,30 @@ def assert_brief_gene_answer(answer: str) -> None:
         f"{missing_sections} (expected all of ### 1.-### 4.); "
         f"got: {answer!r}"
     )
+
+
+def assert_remote_run_terminal_payload(result: dict[str, Any]) -> None:
+    """Assert a terminal remote run carries a renderable answer and paths.
+
+    Fire-and-forget agents (research / design / network / analyst) have no
+    in-process completion stage; the HTTP run-level surface
+    (``GET /v1/runs/{id}``) assembles a thin ``formatted.answer`` and
+    concrete ``artifacts[].paths`` once at the settle transition. This
+    pins both on a result polled to terminal.
+
+    Args:
+        result: The ``result`` object from a terminal ``/v1/runs/{id}``
+            response (``{"formatted": {...}, "artifacts": [...], ...}``).
+
+    Raises:
+        AssertionError: When ``formatted.answer`` is empty or no artifact
+            descriptor carries a non-empty ``paths`` list.
+    """
+    formatted = result.get("formatted") or {}
+    assert formatted.get(
+        "answer"
+    ), f"terminal remote run carried no formatted.answer; got: {result!r}"
+    artifacts = result.get("artifacts") or []
+    assert any(
+        item.get("paths") for item in artifacts
+    ), f"terminal remote run populated no artifact paths; got: {artifacts!r}"
