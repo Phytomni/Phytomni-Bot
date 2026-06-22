@@ -641,7 +641,10 @@ replay the cached terminal record):
 Assembly is best-effort: an OBS listing failure logs a warning and
 leaves that task's `paths` empty (the run still settles as terminal). The
 single-task `GetTaskStatus` surface does not run this run-level assembly,
-so its descriptors keep empty `paths`.
+so its descriptors keep empty `paths`. A succeeded run with empty `paths`
+is therefore an accepted terminal shape, not an error signal — a client
+that needs the objects lists the task's `output_dir` directly (the same
+fallback used before paths were globbed).
 
 ### Remote agent edge cases: `id: null` / `task_ids: []`
 

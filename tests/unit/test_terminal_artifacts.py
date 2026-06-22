@@ -5,9 +5,9 @@
 
 ``collect_terminal_artifacts`` walks the reconciled task_results blob
 that ``_terminal_payload`` produces and emits one artifact descriptor
-per succeeded task that carries an ``output_dir``. Failed tasks and
-succeeded tasks missing an output path are skipped; the ``paths`` field
-is intentionally empty pending an out-of-process glob.
+per succeeded task that carries an ``output_dir``. Its ``paths`` field
+is populated from a prior ``enumerate_artifact_paths`` pass and stays
+empty only when that pass has not run (e.g. ``GetTaskStatus``).
 """
 
 from __future__ import annotations
