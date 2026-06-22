@@ -112,26 +112,50 @@ def _install_mocks(
 
 @pytest.fixture(autouse=True)
 def _fail_fast_on_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Convert any un-mocked outbound HTTP into an instant named failure.
+    """Convert any un-mocked outbound call into an instant named failure.
 
     Every external call the preamble workflow makes is mocked above. If a
-    future change or a different environment lets one escape, the autouse
-    ``block_external_http`` fixture only covers the sync ``.request``
-    path, so an async ``AsyncClient.send`` can still reach a real socket
-    and hang the ``asyncio.wait_for(timeout=20)`` fan-in. This guard
-    raises at the ``send`` chokepoint instead, naming the request, so an
-    escaped call surfaces as a fast diagnostic error rather than a 20s
-    timeout (and so it cannot pass by merely fast-failing the socket).
+    future change or a different environment lets one escape, it must
+    surface as a fast diagnostic error rather than a 20s hang against a
+    real (possibly black-holing) network — a hang ``asyncio.wait_for``
+    cannot cancel once a connect blocks the loop. The autouse
+    ``block_external_http`` fixture covers only ``socket.create_connection``
+    (sync) and ``httpx.*.request``, so THREE async paths can still reach a
+    real socket and hang the fan-in: ``httpx.*.send`` (the low-level send
+    under ``request``), the event loop's ``create_connection``, and DNS via
+    ``getaddrinfo``. Patch all three to raise so no transport — httpx, a
+    relay client, or a raw asyncio connection — can black-hole a poll into
+    the 20s ``wait_for``; an escape surfaces as a named error instead.
     """
 
-    def _blocked(_self: Any, request: Any, *_a: Any, **_k: Any) -> Any:
+    def _blocked_http(_self: Any, request: Any, *_a: Any, **_k: Any) -> Any:
         raise RuntimeError(
             "offline preamble test escaped to a live HTTP call "
             f"({request.method} {request.url}); a mock is missing"
         )
 
-    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked)
-    monkeypatch.setattr(httpx.Client, "send", _blocked)
+    def _blocked_connect(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError(
+            "offline preamble test escaped to a raw async socket "
+            "(loop.create_connection); a mock is missing"
+        )
+
+    def _blocked_dns(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError(
+            "offline preamble test escaped to DNS resolution "
+            "(loop.getaddrinfo); a mock is missing"
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked_http)
+    monkeypatch.setattr(httpx.Client, "send", _blocked_http)
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop,
+        "create_connection",
+        _blocked_connect,
+    )
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop, "getaddrinfo", _blocked_dns
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -140,17 +164,18 @@ def _dump_stack_if_hung() -> Iterator[None]:
 
     This graph passes on this machine across every dependency resolve
     tried (langgraph 1.2.0 and 1.2.6, anyio 4.13/4.14, default loop and
-    uvloop), yet an independent audit reproduces a hang its environment
-    alone exhibits. ``faulthandler`` arms a watchdog *thread* that dumps
-    every thread's stack after 25s — past this test's own 20s
-    ``wait_for``, before a typical outer ``timeout`` — so the next audit
-    run self-captures the exact blocked ``await`` / ``connect`` frame
-    instead of dying as an opaque ``EXIT=124``. The watchdog runs off
-    the event loop, so it fires even when a synchronous call wedges the
-    loop (which ``wait_for`` cannot then cancel). Cancelled on a fast
-    pass so it never bleeds into a neighbouring test.
+    uvloop) and 40 cold-cache reruns, yet independent audits reproduce a
+    hang their environment alone exhibits. ``faulthandler`` arms a
+    watchdog *thread* that dumps every thread's stack after 12s — chosen
+    to fire WHILE the ``await`` is still blocked, INSIDE this test's own
+    20s ``wait_for`` (the prior 25s fired only after ``wait_for`` had
+    already raised ``TimeoutError`` and teardown cancelled it, so it never
+    captured anything). The watchdog runs off the event loop, so it fires
+    even when a synchronous call wedges the loop (which ``wait_for`` cannot
+    then cancel). A fast pass cancels it well before 12s so it never
+    bleeds into a neighbouring test.
     """
-    faulthandler.dump_traceback_later(25, exit=False)
+    faulthandler.dump_traceback_later(12, exit=False)
     try:
         yield
     finally:
