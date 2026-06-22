@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.mcp.result_formatting import format_tool_result
+from mcp_server_phytomni.runtime.run_registry import _terminal_payload
 
 pytestmark = pytest.mark.server
 
@@ -369,3 +370,70 @@ def test_brief_gene_metadata_literature_degraded_exposes_degraded_key() -> (
     }
     assert "status" not in metadata
     assert "failures" not in metadata
+
+
+def test_terminal_payload_contract_analyst_class() -> None:
+    """analyst-class terminal payload pins formatted.answer + artifact paths.
+
+    The carve-out is implemented in ``run_registry._terminal_payload``;
+    this locks it at the file the plan names as its contract home. A
+    succeeded analyst-class run with no child ``final_report`` ships the
+    structured blocks plus a ``formatted.answer`` and per-task ``paths``.
+    """
+    rows = [
+        {
+            "task_id": "net-7",
+            "status": "succeeded",
+            "output_dir": "/obs/phytomni/net7",
+            "final_report": None,
+        }
+    ]
+    products = [
+        {
+            "task_id": "net-7",
+            "output_dir": "/obs/phytomni/net7",
+            "paths": ["/obs/phytomni/net7/network.png"],
+        }
+    ]
+
+    payload, error = _terminal_payload(
+        "succeeded", rows, products, "Analysis complete."
+    )
+
+    assert error is None
+    assert payload is not None
+    assert {
+        "task_results",
+        "live_status",
+        "artifacts",
+        "final_report",
+        "formatted",
+    } <= set(payload)
+    assert payload["formatted"]["answer"] == "Analysis complete."
+    assert payload["artifacts"][0]["paths"] == [
+        "/obs/phytomni/net7/network.png"
+    ]
+    assert payload["final_report"] is None
+
+
+def test_terminal_payload_contract_deep_genome() -> None:
+    """deep_genome terminal payload keeps final_report and omits formatted.
+
+    The dual-channel carve-out: a child ``final_report`` suppresses the
+    synthesized ``formatted`` block so deep_genome keeps its report
+    surface untouched even though an answer string is supplied.
+    """
+    rows = [
+        {
+            "task_id": "dg-7",
+            "status": "succeeded",
+            "output_dir": "/obs/phytomni/dg7",
+            "final_report": "# Deep Genome Analysis",
+        }
+    ]
+
+    payload, _ = _terminal_payload("succeeded", rows, [], "ignored")
+
+    assert payload is not None
+    assert payload["final_report"] == "# Deep Genome Analysis"
+    assert "formatted" not in payload
