@@ -284,7 +284,8 @@ async def _reuse_prior_dispatch(
         return None
     if not should_reuse_prior_task(prior["status"] or ""):
         return None
-    live_status = await probe_live_status(prior["task_id"])
+    source_task_id = prior.get("source_task_id") or prior["task_id"]
+    live_status = await probe_live_status(source_task_id)
     if not verify_live_status(
         prior,
         live_status=live_status,
@@ -297,5 +298,5 @@ async def _reuse_prior_dispatch(
         "plan": None,
         "tool_usages": None,
         "task_status": prior["status"],
-        "source_task_id": prior["task_id"],
+        "source_task_id": source_task_id,
     }

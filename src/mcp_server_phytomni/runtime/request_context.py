@@ -7,9 +7,9 @@
 Functions enumerated in ``__all__``. MCP stdio binds none of these
 (getters return their defaults); the run-id slot carries the submit
 chokepoint's freshly-minted run_id forward to the HTTP response
-builder, and the recorder-degraded slot signals a silent local-
-registry persistence failure so the HTTP body distinguishes it from
-the legitimate analyst dedup-hit ``id=None`` / ``task_ids=[]``.
+builder, and the recorder-degraded slot flags a silent local-registry
+persistence failure — now the only path that emits ``id=None`` /
+``task_ids=[]``, since a dedup hit returns the caller's own run id.
 """
 
 from __future__ import annotations
@@ -96,10 +96,11 @@ def current_recorder_degraded() -> bool:
     remote submission, but it leaves the run un-tracked locally
     (``current_run_id() is None``, ``RunRegistry.get_run`` returns
     ``None``) so a client polling ``GET /v1/runs/{id}`` would see a
-    permanent ``404``. Setting this flag lets the HTTP layer signal
-    the degraded-tracking case explicitly, distinguishing it from
-    the analyst dedup-hit passthrough that also returns
-    ``id=None`` / ``task_ids=[]`` but for a legitimate reason.
+    permanent ``404``. Setting this flag lets the HTTP layer mark the
+    202 body ``degraded_tracking: true`` and emit ``id=None`` /
+    ``task_ids=[]`` deliberately — the only path that now yields that
+    shape, since an analyst dedup hit flows through the normal recorder
+    and returns the caller's own run id and fresh task id.
     """
     return _recorder_degraded.get()
 

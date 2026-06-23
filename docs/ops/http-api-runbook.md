@@ -200,6 +200,14 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope, no credential).                                                                                       |
 | `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                    |
 
+The OBS relay rows confine each object key to the caller's tenant namespace
+(`agent_data/{user_data,uploads}/<user_id>/`), with one read-only exception:
+`GET /v1/relay/obs/object` also serves the content-addressed
+`agent_data/shared/<fingerprint>/` store on a possession-of-fingerprint basis
+(a full 64-hex fingerprint segment is required; the bare shared root is
+rejected to prevent enumeration), so a dedup-reuse caller can fetch a prior
+tenant's shared output without holding that tenant's namespace.
+
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
 

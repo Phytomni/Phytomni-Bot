@@ -196,6 +196,55 @@ async def test_hit_returns_caller_owned_task_id_with_source(
     assert row["source_task_id"] == "T-prior"
 
 
+async def test_seam_reuse_chain_probes_root_remote_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second-generation dedup hit probes the ROOT remote id.
+
+    Seeds the row a prior dedup hit would have written: a caller-owned
+    local ``T-local`` whose ``source_task_id`` points at the original
+    remote ``R-root``. The next reuse must probe ``R-root`` (the live
+    remote task), never ``T-local`` (a caller-owned id with no remote
+    task), and the freshly recorded row must again point at ``R-root``
+    so the dedup chain stays flat instead of breaking on the third
+    identical submission.
+    """
+    db = str(tmp_path / "tasks.sqlite")
+    TaskManager(db).record(
+        Submission(
+            task_id="T-local",
+            status="submitted",
+            output_dir="/obs/prior",
+            input_fingerprint=_fingerprint(),
+            source_task_id="R-root",
+        )
+    )
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", db)
+    _patch_context(monkeypatch)
+
+    probed: list[str] = []
+
+    async def capturing_probe(task_id: str) -> str | None:
+        probed.append(task_id)
+        return "RUNNING"
+
+    monkeypatch.setattr(ada, "probe_live_status", capturing_probe)
+
+    result = await ada.submit_analyst_via_subgraph(
+        _no_submit_agent(),
+        object(),
+        object(),
+        _request(),
+        is_polling=False,
+    )
+
+    assert probed == ["R-root"]
+    assert result["source_task_id"] == "R-root"
+    recorded = TaskManager(db).get_task(result["task_id"])
+    assert recorded is not None
+    assert recorded["source_task_id"] == "R-root"
+
+
 async def test_seam_resubmits_running_prior_when_polling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

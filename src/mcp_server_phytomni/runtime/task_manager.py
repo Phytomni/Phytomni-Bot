@@ -359,16 +359,19 @@ class TaskManager:
                 by the caller (e.g. ``analyst_task_fingerprint``).
 
         Returns:
-            ``{"task_id", "status", "analysis_id", "output_dir"}`` for a
-            reusable prior row, or ``None`` when no non-failed match
-            exists.
+            ``{"task_id", "status", "analysis_id", "output_dir",
+            "source_task_id"}`` for a reusable prior row
+            (``source_task_id`` holds the original remote id on a
+            dedup-reuse row, else ``None``), or ``None`` when no
+            non-failed match exists.
         """
         placeholders = ",".join("?" for _ in _DEAD_TASK_STATUSES)
         conn = self._get_connection()
         try:
             cursor = conn.execute(
                 f"""
-                SELECT task_id, status, analysis_id, output_dir
+                SELECT task_id, status, analysis_id, output_dir,
+                       source_task_id
                 FROM tasks
                 WHERE input_fingerprint = ?
                   AND (
@@ -390,6 +393,7 @@ class TaskManager:
             "status": row[1],
             "analysis_id": row[2],
             "output_dir": row[3],
+            "source_task_id": row[4],
         }
 
     def record_submission(

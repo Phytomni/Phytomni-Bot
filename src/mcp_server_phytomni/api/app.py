@@ -691,11 +691,11 @@ async def _invoke_agent_run(
         # write, so the remote tasks are live (the network call
         # already succeeded) but the local ``runs`` / ``tasks`` rows
         # were not persisted and ``GET /v1/runs/{run_id}`` will 404
-        # until a manual reconcile is run. Without this flag a client
-        # cannot tell the failure case apart from a legitimate
-        # analyst dedup-hit, which also returns ``id=None`` /
-        # ``task_ids=[]`` but for a benign reason and routes the
-        # caller to ``result["task_id"]`` instead.
+        # until a manual reconcile is run. This degraded-tracking flag
+        # is what makes that shape legible: a recorder failure is now
+        # the ONLY path that emits ``id=None`` / ``task_ids=[]``, since
+        # an analyst dedup hit flows through the normal recorder and
+        # returns the caller's own run id and fresh task id.
         if current_recorder_degraded():
             body["degraded_tracking"] = True
         return body, 202

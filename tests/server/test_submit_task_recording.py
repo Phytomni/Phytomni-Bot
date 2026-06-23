@@ -167,6 +167,7 @@ def test_record_upsert_preserves_prior_fingerprint(
         "status": "submitted",
         "analysis_id": "",
         "output_dir": "/obs/up",
+        "source_task_id": None,
     }
     with sqlite3.connect(tasks_db_path) as conn:
         run_id = conn.execute(

@@ -285,6 +285,40 @@ def test_get_task_by_fingerprint_returns_most_recent_non_failed(
         "status": "submitted",
         "analysis_id": "",
         "output_dir": "/out",
+        "source_task_id": None,
+    }
+
+
+def test_get_task_by_fingerprint_surfaces_source_task_id(
+    tmp_path: Path,
+) -> None:
+    """A dedup-hit row's ``source_task_id`` is surfaced for the probe.
+
+    A caller-owned reuse row carries the original remote id in
+    ``source_task_id``; the lookup must return it so a later identical
+    submission probes the live remote task rather than the local
+    caller-owned id.
+    """
+    db = str(tmp_path / "tasks.sqlite")
+    manager = TaskManager(db)
+    manager.record(
+        Submission(
+            task_id="task-local-reuse",
+            status="submitted",
+            output_dir="/out",
+            input_fingerprint="sha-fp-src",
+            source_task_id="task-remote-root",
+        )
+    )
+
+    hit = manager.get_task_by_fingerprint("sha-fp-src")
+
+    assert hit == {
+        "task_id": "task-local-reuse",
+        "status": "submitted",
+        "analysis_id": "",
+        "output_dir": "/out",
+        "source_task_id": "task-remote-root",
     }
 
 

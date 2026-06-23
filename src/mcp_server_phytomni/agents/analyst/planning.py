@@ -73,20 +73,20 @@ async def retrieve_plan_submit(
         fingerprint
     )
     if prior is not None and should_reuse_prior_task(prior["status"] or ""):
-        live_status = await probe_live_status(prior["task_id"])
+        source_task_id = prior.get("source_task_id") or prior["task_id"]
+        live_status = await probe_live_status(source_task_id)
         if verify_live_status(
             prior,
             live_status=live_status,
             require_terminal_success=False,
         ):
-            fresh = mint_caller_owned_task_id("analyst")
             reused: Dict[str, Any] = {
-                "task_id": fresh,
+                "task_id": mint_caller_owned_task_id("analyst"),
                 "output_dir": prior["output_dir"],
                 "job_name": "",
                 "compute_resource": compute_resource,
                 "input_fingerprint": fingerprint,
-                "source_task_id": prior["task_id"],
+                "source_task_id": source_task_id,
             }
             if meta_meta:
                 reused["meta_meta"] = meta_meta
