@@ -623,9 +623,11 @@ class DeepGenomeAgents(
         ``OSError`` for full-disk / FS unavailable) is logged and
         swallowed, never raised. This finalization write is NOT
         client-signalled — the submit-path ``degraded_tracking`` flag
-        does not extend here, so a failed terminal write leaves the poll
-        surface reading the run as still in flight (operators reconcile
-        from the warning log). Cancellation surfaces as
+        does not extend here — but a lost terminal write no longer
+        strands the poll: ``task_reconcile._heal_finished_local_workflow``
+        re-derives the status at read time (``succeeded`` when the row
+        still carries a ``final_report``, else ``failed`` once this
+        umbrella is no longer live). Cancellation surfaces as
         ``asyncio.CancelledError`` on the task and is recorded as
         ``"failed"`` so a polling client never hangs.
 
