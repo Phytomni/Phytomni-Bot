@@ -36,3 +36,19 @@ def test_redact_strips_urls_and_secrets() -> None:
         redact_failure_message("Authorization: Bearer abc.def")
         == "<redacted-secret>"
     )
+
+
+def test_redact_url_query_bearer_concatenation_leaks_no_token() -> None:
+    """A token after a ``...=Bearer `` URL tail must not survive.
+
+    A malformed failure string can splice a request URL whose query ends
+    in ``...=Bearer`` with the token on the far side of a space
+    (``https://h/p?Authorization=Bearer tok``). A URL-first pass lets the
+    greedy ``\\S+`` swallow the URL up to the space and strand the token;
+    the credential passes must run before the URL pass so it never leaks.
+    """
+    scrubbed = redact_failure_message(
+        "https://host/path?Authorization=Bearer abc.def"
+    )
+    assert "abc.def" not in scrubbed
+    assert "<redacted" in scrubbed

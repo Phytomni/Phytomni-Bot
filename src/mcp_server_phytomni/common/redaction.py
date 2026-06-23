@@ -33,17 +33,21 @@ _BEARER_RE: Final = re.compile(r"(?i)\bbearer\s+[\w.\-]+")
 def redact_secrets(text: str) -> str:
     """Strip URLs and secret-like fragments from ``text``.
 
-    Replaces any ``scheme://`` URL with ``<redacted-url>`` and any
-    ``Bearer <token>`` / ``<keyword>=<value>`` credential fragment with
-    ``<redacted-secret>``, keeping the surrounding text so the message
-    stays diagnosable. Used for client-facing failure metadata
+    Replaces any ``Bearer <token>`` / ``<keyword>=<value>`` credential
+    fragment with ``<redacted-secret>`` and any ``scheme://`` URL with
+    ``<redacted-url>``, keeping the surrounding text so the message stays
+    diagnosable. Used for client-facing failure metadata
     (``redact_failure_message``) and, via the package log formatter, for
     every emitted log line so a ``logger.exception`` traceback never
     discloses an internal endpoint or secret.
     """
-    redacted = _URL_RE.sub("<redacted-url>", text)
-    # ``Bearer <token>`` first: the keyword pass below would otherwise
-    # consume only ``Bearer`` after ``Authorization:`` and leave the token.
-    redacted = _BEARER_RE.sub("<redacted-secret>", redacted)
+    # Scrub credential fragments BEFORE the URL pass. The greedy URL
+    # ``\S+`` stops at the first space, so a token spliced onto a URL
+    # query (``https://h/p?Authorization=Bearer <tok>``) would otherwise
+    # let the URL pass swallow ``...=Bearer`` and strand ``<tok>`` after
+    # the space. ``Bearer`` runs before the keyword pass so the token —
+    # not just the ``Bearer`` word after ``Authorization:`` — is scrubbed.
+    redacted = _BEARER_RE.sub("<redacted-secret>", text)
     redacted = _SECRET_RE.sub("<redacted-secret>", redacted)
+    redacted = _URL_RE.sub("<redacted-url>", redacted)
     return redacted
