@@ -435,6 +435,30 @@ analysis type fans out to its own named worker node (all reusing
 `_run_analyst_node` → `submit_analyst_via_subgraph`); `evolution_node`
 and `design_node` mount the standalone evolution / design subgraphs.
 
+**Mount config isolation (intentional, tenant-safe).** The three mounted
+subgraphs — `brief_gene_node`, `evolution_node`, `design_node` — are
+built with their own module-default config, **not** the parent
+`DeepGenomeAgents`' per-request `deep_genome_config` / `sensitive_config`.
+Only `knowledge_app` inherits the parent config; `brief_gene_node` reuses
+the parent `knowledge_agent`, so its retrieve path inherits while its own
+BI / prompt config stays default. This is deliberate, not an oversight:
+credentials resolve from the same process `.env` via
+`get_sensitive_config()`, so module-default equals the parent's secrets
+in any single-operator deployment; and every analyst submission the
+evolution / design mounts make is routed by `ensure_analysis_output_dir`
+to the content-addressed, tenant-neutral `shared_output_key`, overriding
+any user-scoped `output_dir` the mount preset — so sub-task results land
+at a key that carries no `user_id` regardless of the mount's config or
+(anonymous) user. The parent's `USER_ID` scopes only the ephemeral local
+download scratch dir, never a stored object key. The tenant neutrality
+this rests on is pinned by
+[`test_dispatch_context_user_neutral.py`](../tests/unit/test_dispatch_context_user_neutral.py)
+and `test_shared_output_key_is_tenant_neutral`. Threading the parent's
+per-request config into these mounts is therefore **not** a fix to apply
+blindly: it would reintroduce a user-scoped `output_dir` into the mounts
+and make tenant isolation depend on the dispatch-seam override never
+having a gap, where today the mounts simply carry no tenant state to leak.
+
 ## Nested Checkpoints
 
 LangGraph's `parent.add_node("name", child_compiled_app)` pattern
