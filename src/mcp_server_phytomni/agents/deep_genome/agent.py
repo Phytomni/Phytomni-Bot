@@ -70,7 +70,6 @@ from .report import DeepGenomeReportMixin
 logger = logging.getLogger(__name__)
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
-_manager_cache: Dict[str, Any] = {}
 __all__ = [
     "DeepGenomeAgents",
     "gene_function",

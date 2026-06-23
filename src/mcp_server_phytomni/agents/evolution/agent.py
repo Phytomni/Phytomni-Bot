@@ -16,7 +16,7 @@ subgraph via :func:`ainvoke_graph`.
 import importlib
 from functools import lru_cache
 from json import loads
-from typing import Any, Dict, List
+from typing import Any, List
 
 from mcp.shared.exceptions import McpError
 
@@ -40,7 +40,6 @@ from ..shared.options import (
 )
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
-_manager_cache: Dict[str, Any] = {}
 
 __all__ = [
     "DEEP_GENOME_CONFIG",
