@@ -11,6 +11,8 @@ plaintext-wins-over-encrypted regression.
 """
 
 import os
+import subprocess
+import sys
 
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -273,6 +275,93 @@ def test_load_env_file_rejects_sealed_bom(tmp_path, monkeypatch):
 
     with pytest.raises(SecretEnvelopeError, match="BOM"):
         settings.load_env_file()
+
+
+def _bootstrap_in_subprocess(tmp_path, raw):
+    """Re-run the package import bootstrap against a sealed envelope.
+
+    ``mcp_server_phytomni/__init__`` calls ``load_env_file`` inside a
+    ``try/except RuntimeError`` at import time. The envelope paths are
+    fixed module constants with no env override, so the only faithful
+    way to drive the import seam against a sealed blob — without
+    clobbering the real ``config/`` files — is to patch the path
+    constants in a clean subprocess and ``reload`` the package so
+    ``__init__`` re-runs. The first import is neutralised with
+    ``PHYTOMNI_TESTING=1`` (so it cannot touch the real envelope and the
+    test is independent of the host's ``config/`` state); the flag is
+    then removed before the reload so the bootstrap genuinely reaches
+    the encrypted fallback.
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        raw: Plaintext bytes to seal into the envelope under test.
+
+    Returns:
+        The completed subprocess result (returncode + captured stderr).
+    """
+    blob = _seal_raw_to_file(tmp_path, raw)
+    script = (
+        "import importlib, os\n"
+        "os.environ['PHYTOMNI_TESTING'] = '1'\n"
+        "import mcp_server_phytomni.config.settings as s\n"
+        "from pathlib import Path\n"
+        "del os.environ['PHYTOMNI_TESTING']\n"
+        "s.ENV_PATH = Path(os.environ['BOOTSTRAP_ABSENT_ENV'])\n"
+        "s.ENCRYPTED_ENV_PATH = Path(os.environ['BOOTSTRAP_SEALED_BLOB'])\n"
+        "s._ENV_DECRYPT_MEMO['done'] = False\n"
+        "import mcp_server_phytomni\n"
+        "importlib.reload(mcp_server_phytomni)\n"
+    )
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "PHYTOMNI_LICENSE_KEY": LICENSE,
+        "BOOTSTRAP_SEALED_BLOB": str(blob),
+        "BOOTSTRAP_ABSENT_ENV": str(tmp_path / "absent.env"),
+    }
+    if os.environ.get("PYTHONPATH"):
+        clean_env["PYTHONPATH"] = os.environ["PYTHONPATH"]
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_token"),
+    [
+        ("BASE_URL=请\n".encode("gbk"), "not UTF-8"),
+        (b"\xef\xbb\xbfBASE_URL=x\n", "BOM"),
+    ],
+)
+def test_bootstrap_propagates_sealed_bad_encoding(
+    tmp_path, raw, expected_token
+):
+    """Lock that package import refuses to boot on a bad-encoding envelope.
+
+    The customer incident reached a startup-time package import of a
+    Windows-sealed envelope. ``__init__`` catches only ``RuntimeError``,
+    so a sealed non-UTF-8 / BOM envelope raises ``SecretEnvelopeError``
+    — a different exception type — and propagates uncaught, aborting
+    startup rather than booting with empty or mangled secrets. Were the
+    bootstrap ``except`` widened to ``Exception`` the failure would be
+    silently swallowed; this test pins the narrow catch at the import
+    seam (the ``load_env_file`` function itself is covered separately by
+    ``test_load_env_file_rejects_sealed_*``).
+
+    Args:
+        tmp_path: Temporary directory fixture for file I/O.
+        raw: Sealed plaintext bytes for the parametrised encoding case.
+        expected_token: Substring the propagated error must name.
+    """
+    result = _bootstrap_in_subprocess(tmp_path, raw)
+
+    assert result.returncode != 0, result.stderr
+    assert "SecretEnvelopeError" in result.stderr
+    assert expected_token in result.stderr
 
 
 def test_no_source_raises_runtime_error(tmp_path, monkeypatch):
