@@ -3681,5 +3681,10 @@
       "/obs/phytomni/agent_data/scripts/cif2structure_info.py": "A script to get protein 3D structure information.",
       "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file."
     }
+  },
+  "virtual_knockout": {
+    "osa": {
+      "/obs/phytomni/agent_data/scripts/scTenifoldKnk_analysis.R": "A script to predict virtual knockout result for rice gene"
+    }
   }
 }
