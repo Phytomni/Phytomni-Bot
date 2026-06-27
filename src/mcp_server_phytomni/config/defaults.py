@@ -403,6 +403,8 @@ class KnowledgeConfig(ChatConfig):
             discarded.
         RERANK_BATCH_SIZE (int): Batch size for reranking operations, if
             reranking is applied to retrieved documents.
+        RERANK_CONCURRENCY (int): Max concurrent rerank HTTP requests per
+            process event loop. 0 or negative disables throttling.
     """
 
     PAGE_NUM: int = 1
@@ -413,6 +415,15 @@ class KnowledgeConfig(ChatConfig):
     EXTRA_REPO_IDS: Optional[List[str]] = None
     SCORE_THRESHOLD: float = 0
     RERANK_BATCH_SIZE: int = 128
+    RERANK_CONCURRENCY: Annotated[
+        int,
+        Field(
+            default=16,
+            validation_alias=AliasChoices(
+                "RERANK_CONCURRENCY", "PHYTOMNI_RERANK_CONCURRENCY"
+            ),
+        ),
+    ] = 16
 
 
 class DataConfig(KnowledgeConfig):
