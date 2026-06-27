@@ -221,6 +221,23 @@ A missing or unreadable `PHYTOMNI_CA_BUNDLE` path surfaces as the same
 self-signed cluster ingress only — production deployments should ship a
 real CA bundle instead.
 
+## Retrieval Tuning Variables
+
+| Variable                      | Default | Sensitive? | Purpose                                                                                          |
+| ----------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| `PHYTOMNI_RERANK_CONCURRENCY` | `16`    | no         | Max concurrent rerank HTTP requests per process event loop. `0` or negative disables throttling. |
+
+The throttle is process-internal: each running event loop holds its own
+`asyncio.Semaphore`, shared across every rerank-capable agent
+(KnowledgeAgent / ReviewAgent / BriefGeneAgent / DeepGenome) in that
+process. It bounds the rerank fan-out a single `ReviewAgent` run produces
+(research dimensions x repositories x rerank batches) so the rerank
+backend stays in its zero-failure latency region. The MCP stdio process
+and the HTTP API process each keep an independent semaphore; the default
+of `16` is chosen so even both processes saturated (`2 x 16 = 32`) stays
+under the backend's hard-failure knee. Accepts the unprefixed
+`RERANK_CONCURRENCY` or the `PHYTOMNI_RERANK_CONCURRENCY` form.
+
 ## Live E2E Variables
 
 | Variable                                | Default           | Purpose                                                       |
