@@ -9,8 +9,10 @@ This module exposes retrieval option models plus `retrieve`,
 """
 
 import asyncio
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from weakref import WeakKeyDictionary
 
 from httpx import (
     AsyncClient,
@@ -35,6 +37,49 @@ from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
+
+# Per-event-loop rerank concurrency limiter. ``asyncio.Semaphore`` binds
+# to the loop on first use, so a module-level singleton would raise
+# "bound to a different event loop" across the project's MCP serve loop,
+# API lifespan loop, and per-test loops. A WeakKeyDictionary keyed by the
+# running loop hands each loop its own semaphore and auto-evicts the entry
+# when the loop is garbage-collected (no id(loop) reuse trap).
+_RERANK_SEM_STATE: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.Semaphore
+] = WeakKeyDictionary()
+
+
+def _rerank_semaphore() -> Any:
+    """Return the current loop's rerank semaphore, or a nullcontext.
+
+    Reads the deployment-level ``RERANK_CONCURRENCY`` cap from the
+    module-level config. A cap of 0 or less disables throttling and
+    returns ``contextlib.nullcontext()`` so callers can ``async with``
+    it unconditionally.
+
+    Returns:
+        An async context manager: a per-loop ``asyncio.Semaphore`` when
+        throttling is enabled, otherwise a ``nullcontext``.
+    """
+    cap = KNOWLEDGE_CONFIG.RERANK_CONCURRENCY
+    if cap <= 0:
+        return nullcontext()
+    loop = asyncio.get_running_loop()
+    semaphore = _RERANK_SEM_STATE.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(cap)
+        _RERANK_SEM_STATE[loop] = semaphore
+    return semaphore
+
+
+def reset_rerank_semaphore_state() -> None:
+    """Clear the per-loop rerank semaphore registry (test/admin helper)."""
+    _RERANK_SEM_STATE.clear()
+
+
+def rerank_semaphore_state_size() -> int:
+    """Return the count of live per-loop semaphores (test/admin helper)."""
+    return len(_RERANK_SEM_STATE)
 
 
 @dataclass(frozen=True)
@@ -835,33 +880,41 @@ async def _rerank_batch(
     suppresses repeat work whenever the user issues the same query
     again. Keeping a per-batch cache here would only add SQLite
     maintenance load without measurable savings.
+
+    The body runs under the per-loop rerank semaphore so a fan-out (e.g.
+    ReviewAgent across dimensions x repos x batches) cannot overload the
+    rerank backend; ``async with`` releases the permit on the error path
+    too, so a retry-exhausted failure never leaks a slot.
     """
-    body = {
-        "query": user_query,
-        "ranking_order": ["title", "content"],
-        "docs": docs_batch,
-        "top_n": top_n,
-    }
-    if relay_mode_enabled():
-        result = await current_relay_client().post_json(
-            "rerank/rank", json_body=body, message="Failed to rerank"
+    async with _rerank_semaphore():
+        body = {
+            "query": user_query,
+            "ranking_order": ["title", "content"],
+            "docs": docs_batch,
+            "top_n": top_n,
+        }
+        if relay_mode_enabled():
+            result = await current_relay_client().post_json(
+                "rerank/rank", json_body=body, message="Failed to rerank"
+            )
+        else:
+            result = await post_json_with_retries(
+                client,
+                JsonPostRequest(
+                    url=rerank_url,
+                    headers={"Content-Type": "application/json"},
+                    json_body=body,
+                ),
+                JsonPostRetry(
+                    timeout=timeout,
+                    max_retries=max_retries,
+                    retriable_codes=retriable_codes,
+                    message="Failed to rerank",
+                ),
+            )
+        return (
+            result.get("rank_result", []) if isinstance(result, dict) else []
         )
-    else:
-        result = await post_json_with_retries(
-            client,
-            JsonPostRequest(
-                url=rerank_url,
-                headers={"Content-Type": "application/json"},
-                json_body=body,
-            ),
-            JsonPostRetry(
-                timeout=timeout,
-                max_retries=max_retries,
-                retriable_codes=retriable_codes,
-                message="Failed to rerank",
-            ),
-        )
-    return result.get("rank_result", []) if isinstance(result, dict) else []
 
 
 # pylint: enable=too-many-arguments

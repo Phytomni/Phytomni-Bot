@@ -13,22 +13,28 @@ and the multi-layer clear_retrieval_caches admin seam.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import asyncio
+from typing import Any, Dict, List, cast
 
 import pytest
-from httpx import Timeout
+from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
 
+from mcp_server_phytomni.agents.knowledge import retrieval as retrieval_mod
 from mcp_server_phytomni.agents.knowledge.retrieval import (
     _collect_rank_results,
     _list_or_empty,
     _multi_retrieve,
+    _rerank_batch,
     _rerank_docs,
+    _rerank_semaphore,
     _retrieve_cached,
     _retrieve_scope_docs,
     _sorted_merged_docs,
     _timeout,
     clear_retrieval_caches,
+    rerank_semaphore_state_size,
+    reset_rerank_semaphore_state,
 )
 
 pytestmark = pytest.mark.unit
@@ -161,3 +167,94 @@ def test_clear_retrieval_caches_invokes_each_layer(
     clear_retrieval_caches()
 
     assert calls == ["multi", "single", "scope"]
+
+
+async def test_rerank_batch_caps_concurrency_at_config_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_rerank_batch`` never exceeds RERANK_CONCURRENCY in flight.
+
+    Patches the config cap to 4 and the HTTP egress to a slow stub that
+    records the live in-flight count, then fires 20 batches at once and
+    asserts the observed peak never crossed the cap.
+    """
+    monkeypatch.setattr(
+        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 4
+    )
+    reset_rerank_semaphore_state()
+
+    state = {"in_flight": 0, "peak": 0}
+
+    async def fake_post_json_with_retries(_client, _request, _retry):
+        state["in_flight"] += 1
+        state["peak"] = max(state["peak"], state["in_flight"])
+        await asyncio.sleep(0.02)
+        state["in_flight"] -= 1
+        return {"rank_result": [{"id": "x", "score": 1.0}]}
+
+    monkeypatch.setattr(retrieval_mod, "relay_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        retrieval_mod, "post_json_with_retries", fake_post_json_with_retries
+    )
+
+    async def one() -> None:
+        await _rerank_batch(
+            cast(AsyncClient, None),
+            user_query="q",
+            docs_batch=[{"id": "x", "title": "t", "content": "c"}],
+            rerank_url="http://rerank.invalid/rank",
+            top_n=1,
+            timeout=1.0,
+            max_retries=0,
+            retriable_codes=(),
+        )
+
+    await asyncio.gather(*(one() for _ in range(20)))
+
+    assert state["peak"] <= 4, f"peak {state['peak']} exceeded cap 4"
+    assert state["peak"] >= 2, "stub never overlapped; test is vacuous"
+
+
+def test_rerank_semaphore_is_per_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each event loop gets its own semaphore with no cross-loop error.
+
+    A module-level singleton would raise ``RuntimeError: bound to a
+    different event loop`` on the second loop; the per-loop registry
+    must hand each loop a distinct instance.
+    """
+    monkeypatch.setattr(
+        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 4
+    )
+    reset_rerank_semaphore_state()
+
+    seen: list[int] = []
+
+    async def grab() -> None:
+        sem = _rerank_semaphore()
+        async with sem:
+            seen.append(id(sem))
+
+    asyncio.run(grab())
+    asyncio.run(grab())
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1], "two loops shared one semaphore instance"
+
+
+async def test_rerank_semaphore_bypasses_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-positive cap returns a nullcontext (throttling disabled)."""
+    monkeypatch.setattr(
+        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 0
+    )
+    reset_rerank_semaphore_state()
+
+    ctx = _rerank_semaphore()
+
+    assert not isinstance(ctx, asyncio.Semaphore)
+    async with ctx:
+        pass
+    assert rerank_semaphore_state_size() == 0
