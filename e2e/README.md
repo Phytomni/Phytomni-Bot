@@ -196,6 +196,29 @@ Tunables: `PHYTOMNI_E2E_API_STARTUP_SECONDS` (health-gate budget,
 default 120) and `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS` (per-request
 read timeout, default 1200).
 
+### Rerank isolation probe
+
+`test_rerank_probe_e2e.py` isolates the rerank hop of the
+`retrieve → rerank → LLM` chain so a gateway failure (e.g. 502) can be
+pinned on rerank rather than retrieve. It is a deliberate one-layer
+drop from the "enter through `PhytomniMcpClient`" policy (like
+`helpers/polling.py` reading `server_tasks.db` directly): it imports
+`rerank` and feeds it a committed, desensitized pre-rerank `doc_list`
+captured from one real retrieve response
+([`fixtures/rerank_seed_docs.json`](fixtures/rerank_seed_docs.json)),
+so the retrieve hop is replaced by the fixture and only rerank makes a
+live call. It runs in ~1 s:
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+    uv run pytest e2e/test_rerank_probe_e2e.py -v
+```
+
+The fixture keeps only the fields `_rerank_docs` consumes (`chunk_id` /
+`title` / `big_content` || `content`); deployment identifiers are
+stripped, and one doc carries `big_content` so the probe also covers
+the `big_content` precedence branch.
+
 ## Layout
 
 ```text
@@ -203,6 +226,8 @@ e2e/
 ├── README.md
 ├── pyproject.toml          # local pytest rootdir config
 ├── conftest.py                  # session client + OBS publish fixtures
+├── fixtures/                       # committed seed payloads for probes
+│   └── rerank_seed_docs.json    # desensitized pre-rerank doc_list
 ├── helpers/
 │   ├── api_server.py            # shared phytomni-api uvicorn boot
 │   ├── assertions.py            # shared keyword/markdown assertions
@@ -210,6 +235,7 @@ e2e/
 │   ├── obs_publish.py           # per-session demo_data upload
 │   └── polling.py               # async task polling
 ├── test_*_e2e.py                # one file per public MCP tool
+├── test_rerank_probe_e2e.py       # rerank hop isolation (fixture-fed)
 ├── test_concurrent_client_e2e.py  # five chat-like agents over MCP stdio
 ├── test_concurrent_http_e2e.py    # five chat-like agents over HTTP
 └── test_api_http_e2e.py         # live HTTP API (chat surface)
