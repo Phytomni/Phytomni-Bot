@@ -5910,6 +5910,42 @@ user:
     step3, Predict Protein Sturctre using protenix; (conda activate af3)
     step4, Generate Protein 3D Structure Features Using Scripts;(conda
     activate af3).
+  virtual_knockout: |-
+    Please help me predict the effects of a virtual knockout of the rice gene {{gene_id}}.
+  virtual_knockout_meta: |-
+    step1, Predicting the Results of Virtual Gene Knockout in Rice Using the scTenifoldKnk_analysis.R script.(conda activate Renv)
+    <Script Usages>
+      Usage: scTenifoldKnk_analysis.R [options]
+      Options:
+              -i FILE, --input=FILE
+                      Path to Seurat RDS file [required]
+              -o DIR, --output=DIR
+                      Output directory [default: ./scTenifoldKnk_results]
+              -g GENE, --gene=GENE
+                      Target gene to knockout [required]
+              -a ASSAY, --assay=ASSAY
+                      Seurat assay to use [default: RNA]
+              -l LAYER, --layer=LAYER
+                      Data layer to extract [default: counts]
+              --nNet=INT
+                      Number of sub-networks [default: 10]
+              --nCells=INT
+                      Number of cells per sub-network [default: 500]
+              --qc=LOGICAL
+                      Perform QC [default: FALSE]
+              -p FLOAT, --pval=FLOAT
+                      P-value threshold for significance [default: 0.05]
+              --topN=INT
+                      Number of top genes for barplot [default: 20]
+              --width=FLOAT
+                      Plot width in inches [default: 6]
+              --height=FLOAT
+                      Plot height in inches [default: 5]
+              -c INT, --ncores=INT
+                      Number of cores for parallel processing [default: 1]
+              -h, --help
+                      Show this help message and exit
+    </Script Usages>
   tool_extract: |-
     You are a Bioinformatics Tool Extraction Specialist.
     Your objective is to carefully read a provided bioinformatics analysis
