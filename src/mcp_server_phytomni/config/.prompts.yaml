@@ -5946,6 +5946,12 @@ user:
               -h, --help
                       Show this help message and exit
     </Script Usages>
+  deeploc: |-
+    Predict gene {{gene_id}} protein go function based on deeploc2
+  deeploc_meta: |-
+    step1, Find Gene's Protein Sequence using grep;
+    step2, predict protein sublocation using deeploc2.(conda activate
+    deeploc2)
   tool_extract: |-
     You are a Bioinformatics Tool Extraction Specialist.
     Your objective is to carefully read a provided bioinformatics analysis
