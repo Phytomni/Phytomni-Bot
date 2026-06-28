@@ -155,19 +155,17 @@ async def test_fetch_homology_uses_relay_aware_seam_in_direct_mode(
     """In non-relay mode the node routes BI calls through the gated seam.
 
     ``run_bi_api`` (and the ``bi_query`` it wraps) branch on
-    ``relay_mode_enabled()``: direct ``BI_URL`` POST when relay is off,
-    relay route when on. The relay-only ``relay_bi_query`` posts to a
+    ``relay_mode_enabled()``: a direct GaussDB query when relay is off,
+    the relay route when on. The relay-only ``relay_bi_query`` posts to a
     scheme-less ``/v1/relay/bi/query`` URL and raises
     ``httpx.UnsupportedProtocol`` in a direct deployment, so the node
     must never reach it when relay mode is off.
     """
-    seen_urls: list[str] = []
+    seen_sql: list[str] = []
 
-    async def fake_bi_query(
-        sql: str, *, bi_url: str, headers: Any, retry: Any
-    ) -> dict[str, Any]:
-        _ = (sql, headers, retry)
-        seen_urls.append(bi_url)
+    async def fake_bi_query(sql: str, *, retry: Any) -> dict[str, Any]:
+        _ = retry
+        seen_sql.append(sql)
         return {"data": []}
 
     monkeypatch.setattr(
@@ -189,10 +187,7 @@ async def test_fetch_homology_uses_relay_aware_seam_in_direct_mode(
 
     delta = await _run_fetch_homology_interactions_node(cast(Any, _state()))
 
-    assert seen_urls == [
-        "https://example.invalid/bi",
-        "https://example.invalid/bi",
-    ]
+    assert len(seen_sql) == 2
     assert delta["ortholog_count"] == 0
     assert delta["interaction_count"] == 0
 

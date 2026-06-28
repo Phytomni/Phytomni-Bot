@@ -5,25 +5,19 @@
 """Shared SQL escaping + relay helpers for BI queries across agents.
 
 ``sql_literal`` quote-escapes a value for embedding in a BI SQL string
-(the BI backend has no parameterized-query surface). ``bi_query`` is the
-BI-POST seam shared by the deep_genome and brief_gene boundaries: it
-posts to the operator ``BI_URL`` or, in customer relay mode, forwards to
-``/v1/relay/bi/query`` via ``relay_bi_query`` (the relay injects the
-operator ``BI_TOKEN``).
+(GaussDB has no parameterized-query surface here). ``bi_query`` is the
+BI seam shared by the deep_genome and brief_gene boundaries: it runs the
+SQL directly against GaussDB via ``gauss_query`` or, in customer relay
+mode, forwards to ``/v1/relay/bi/query`` via ``relay_bi_query`` (the
+relay injects the operator ``BI_TOKEN``).
 """
 
-from typing import Any, Mapping
+from typing import Any
 
-from httpx import Timeout
-
-from ...common.http import (
-    JsonPostRequest,
-    JsonPostRetry,
-    post_json_with_retries,
-)
-from ...common.httpx_client import get_async_client
+from ...common.http import JsonPostRetry
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
+from .gauss import gauss_query
 
 __all__ = ["bi_query", "relay_bi_query", "sql_literal"]
 
@@ -51,45 +45,25 @@ async def relay_bi_query(sql: str, *, message: str) -> Any:
     )
 
 
-async def bi_query(
-    sql: str,
-    *,
-    bi_url: str,
-    headers: Mapping[str, str],
-    retry: JsonPostRetry,
-) -> Any:
+async def bi_query(sql: str, *, retry: JsonPostRetry) -> Any:
     """Run a BI SQL query, routing through the relay in relay mode.
 
-    The single BI POST seam shared by the brief_gene and deep_genome
+    The single BI seam shared by the brief_gene and deep_genome
     boundaries: in relay mode it forwards to ``/v1/relay/bi/query`` (the
-    relay injects ``BI_TOKEN``); otherwise it posts the standard
-    ``{"sql", "returnType": "json"}`` body to the operator ``bi_url``
-    with the caller's headers and retry policy.
+    operator runs the query server-side); otherwise it runs the SQL
+    directly against GaussDB via ``gauss_query``.
 
     Args:
         sql: The BI SQL statement to execute.
-        bi_url: Operator BI endpoint (ignored in relay mode).
-        headers: Operator request headers incl. the BI token (ignored in
-            relay mode).
-        retry: Retry policy; its ``message`` is reused as the relay
-            error prefix.
+        retry: Retry policy; its ``message`` is reused as the relay error
+            prefix. (The direct GaussDB path has its own error handling.)
 
     Returns:
-        The parsed BI JSON payload.
+        The BI JSON payload (``{"message": "ok", "data": [...]}``).
     """
     if relay_mode_enabled():
         return await relay_bi_query(sql, message=retry.message)
-    client_timeout = Timeout(retry.timeout, connect=retry.timeout)
-    async with get_async_client(timeout=client_timeout) as client:
-        return await post_json_with_retries(
-            client,
-            JsonPostRequest(
-                url=bi_url,
-                headers=dict(headers),
-                json_body={"sql": sql, "returnType": "json"},
-            ),
-            retry,
-        )
+    return await gauss_query(sql)
 
 
 def sql_literal(value: str) -> str:

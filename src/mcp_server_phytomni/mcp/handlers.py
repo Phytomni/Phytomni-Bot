@@ -235,8 +235,6 @@ async def handle_brief_gene_agent(args: BriefGeneAgent) -> HandlerResult:
     runtime = load_handler_runtime()
     return await brief_gene_function(
         user_query=args.user_query,
-        bi_url=brief_config.BI_URL,
-        bi_token=runtime.sensitive.BI_TOKEN.get_secret_value(),
         max_concurrency=brief_config.MAX_CONCURRENCY,
         **chat_kwargs(brief_config, runtime.sensitive),
         **retrieve_kwargs(brief_config),

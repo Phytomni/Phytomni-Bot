@@ -64,13 +64,11 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
     captured: Dict[str, Any] = {}
 
     async def _capture(
-        bi_url: str,
-        sql_headers: Dict[str, str],
         sql: str,
         timeout: float,
     ) -> Dict[str, Any]:
         """Record the SQL and return a minimal symbol payload."""
-        del bi_url, sql_headers, timeout
+        del timeout
         captured["sql"] = sql
         return {"data": [{"symbol": "SYM1"}]}
 
@@ -79,8 +77,6 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
 
     result = asyncio.run(
         symbol_lookup(
-            bi_url="https://bi.example.invalid",
-            sql_headers={},
             species_code="ATH",
             gene_id="o'malley",
         )
@@ -105,13 +101,11 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
     captured: List[str] = []
 
     async def _capture(
-        bi_url: str,
-        sql_headers: Dict[str, str],
         sql: str,
         timeout: float,
     ) -> Dict[str, Any]:
         """Record each annotation SQL and return an empty payload."""
-        del bi_url, sql_headers, timeout
+        del timeout
         captured.append(sql)
         return {"data": []}
 
@@ -120,8 +114,6 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
 
     asyncio.run(
         annotation_lookup(
-            bi_url="https://bi.example.invalid",
-            sql_headers={},
             species_code="bad'species",
             gene_id="bad'gene",
         )

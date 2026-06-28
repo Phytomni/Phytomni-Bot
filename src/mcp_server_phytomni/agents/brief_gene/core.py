@@ -264,8 +264,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         query_response = await run_bi_api(
             "SELECT * FROM id2multispecies "
             f"WHERE query_id = {sql_literal(user_query)}",
-            bi_url=self.brief_config.BI_URL,
-            bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
             timeout=self.brief_config.TIMEOUT,
             retriable_codes=self.brief_config.RETRIABLE_CODES,
             max_retries=self.brief_config.MAX_RETRIES,
@@ -280,8 +278,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             run_bi_api(
                 "SELECT * FROM id2multispecies "
                 f"WHERE query_id = {sql_literal(gene_id)}",
-                bi_url=self.brief_config.BI_URL,
-                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
                 timeout=self.brief_config.TIMEOUT,
                 retriable_codes=self.brief_config.RETRIABLE_CODES,
                 max_retries=self.brief_config.MAX_RETRIES,
@@ -289,8 +285,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             run_bi_api(
                 "SELECT * FROM species "
                 f"WHERE species_code = {sql_literal(species_code)}",
-                bi_url=self.brief_config.BI_URL,
-                bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
                 timeout=self.brief_config.TIMEOUT,
                 retriable_codes=self.brief_config.RETRIABLE_CODES,
                 max_retries=self.brief_config.MAX_RETRIES,
@@ -355,8 +349,6 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             *[
                 run_bi_api(
                     sql,
-                    bi_url=self.brief_config.BI_URL,
-                    bi_token=self.sensitive_config.BI_TOKEN.get_secret_value(),
                     timeout=self.brief_config.TIMEOUT,
                     retriable_codes=self.brief_config.RETRIABLE_CODES,
                     max_retries=self.brief_config.MAX_RETRIES,

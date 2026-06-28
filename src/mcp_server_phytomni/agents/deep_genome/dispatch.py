@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional
 from langgraph.graph import END
 from langgraph.types import Send
 
-from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
@@ -39,7 +38,7 @@ from ..shared.analysis_storage import (
     ANALYSIS_DATA_LIST_MAP,
     get_data_list,
 )
-from ..shared.sql import relay_bi_query, sql_literal
+from ..shared.sql import gauss_query, relay_bi_query, sql_literal
 from .summary import build_sub_summary
 
 if TYPE_CHECKING:
@@ -499,19 +498,10 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         return result.data
 
     async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
-        """Query the BI SQL endpoint and return the parsed JSON payload."""
+        """Query GaussDB and return the parsed JSON payload."""
         if relay_mode_enabled():
             return await relay_bi_query(sql, message="BI query failed")
-        payload = {"sql": sql, "returnType": "json"}
-        bi_timeout = self.deep_genome_config.TIMEOUT
-        async with get_async_client(timeout=bi_timeout) as client:
-            response = await client.post(
-                self.deep_genome_config.BI_URL,
-                json=payload,
-                headers=self._sql_headers,
-                timeout=bi_timeout,
-            )
-        return response.json()
+        return await gauss_query(sql)
 
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.

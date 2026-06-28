@@ -468,7 +468,7 @@ async def test_deep_genome_gene_symbol_lookup_hits_bi_each_call(monkeypatch):
 
         Args:
             *args: Ignored sql positional argument.
-            **kwargs: Ignored bi_url / headers / retry keyword arguments.
+            **kwargs: Ignored retry keyword argument.
 
         Returns:
             Decoded BI payload with symbol rows.
@@ -481,14 +481,10 @@ async def test_deep_genome_gene_symbol_lookup_hits_bi_each_call(monkeypatch):
 
     lookup_symbol = getattr(deep_genome_agents, "_cached_gene_symbol_lookup")
     first = await lookup_symbol(
-        bi_url="https://example.invalid/bi",
-        sql_headers={"token": "secret-one"},
         species_code="ath",
         gene_id="AT1G01010",
     )
     second = await lookup_symbol(
-        bi_url="https://example.invalid/bi",
-        sql_headers={"token": "secret-two"},
         species_code="ath",
         gene_id="AT1G01010",
     )
@@ -513,19 +509,17 @@ async def test_deep_genome_gene_annotation_lookup_hits_bi_each_call(
     """
     calls = {"post": 0}
 
-    async def fake_helper(sql, *, bi_url, headers, retry):
+    async def fake_helper(sql, *, retry):
         """Return fake annotation rows selected by SQL text.
 
         Args:
             sql: BI SQL statement whose text selects the canned rows.
-            bi_url: Ignored operator BI URL.
-            headers: Ignored request headers.
             retry: Ignored retry policy.
 
         Returns:
             Decoded BI payload with annotation rows.
         """
-        del bi_url, headers, retry
+        del retry
         calls["post"] += 1
         if "description" in sql:
             payload = {"data": [{"description": "NAC factor"}]}
@@ -544,14 +538,10 @@ async def test_deep_genome_gene_annotation_lookup_hits_bi_each_call(
         "_cached_gene_annotation_lookup",
     )
     first = await lookup_annotation(
-        bi_url="https://example.invalid/bi",
-        sql_headers={"token": "secret-one"},
         species_code="ath",
         gene_id="AT1G01010",
     )
     second = await lookup_annotation(
-        bi_url="https://example.invalid/bi",
-        sql_headers={"token": "secret-two"},
         species_code="ath",
         gene_id="AT1G01010",
     )

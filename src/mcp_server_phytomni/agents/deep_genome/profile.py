@@ -35,22 +35,17 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 
 
 async def _post_bi_sql(
-    bi_url: str,
-    sql_headers: Dict[str, str],
     sql: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
 ) -> Dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
-    Routes through the shared ``post_json_with_retries`` helper for
-    parity with brief_gene's BI path (transient-transport and
-    retriable-status backoff), then layers a non-JSON guard on top
-    because the helper calls ``response.json()`` with no content-type
-    check of its own.
+    Routes through the shared ``bi_query`` seam (a direct GaussDB query,
+    or the relay route in customer relay mode), then layers a non-JSON
+    guard on top so a 2xx body that is not valid JSON surfaces as a
+    clear ``McpError`` instead of an opaque decode error.
 
     Args:
-        bi_url: BI endpoint URL.
-        sql_headers: HTTP headers (content type and BI token).
         sql: SQL statement to execute.
         timeout: Per-request timeout in seconds.
 
@@ -58,7 +53,7 @@ async def _post_bi_sql(
         The decoded BI JSON payload.
 
     Raises:
-        McpError: If the BI endpoint keeps failing after all retries,
+        McpError: If the BI query keeps failing after all retries,
             returns no payload, or returns a 2xx body that is not valid
             JSON (e.g. an HTML 502/504 gateway page) — surfaced with a
             clear message instead of the opaque ``Expecting value:
@@ -67,8 +62,6 @@ async def _post_bi_sql(
     try:
         data = await bi_query(
             sql,
-            bi_url=bi_url,
-            headers=sql_headers,
             retry=JsonPostRetry(
                 timeout=timeout,
                 max_retries=_LOOKUP_CONFIG.MAX_RETRIES,
@@ -93,8 +86,6 @@ async def _post_bi_sql(
 
 
 async def _cached_gene_symbol_lookup(
-    bi_url: str,
-    sql_headers: Dict[str, str],
     species_code: str,
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
@@ -104,7 +95,7 @@ async def _cached_gene_symbol_lookup(
         f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
         f"AND species_code = {sql_literal(species_code)}"
     )
-    response = await _post_bi_sql(bi_url, sql_headers, sql, timeout)
+    response = await _post_bi_sql(sql, timeout)
     gene_symbol_list: List[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
@@ -119,8 +110,6 @@ async def _cached_gene_symbol_lookup(
 
 
 async def _cached_gene_annotation_lookup(
-    bi_url: str,
-    sql_headers: Dict[str, str],
     species_code: str,
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
@@ -144,10 +133,7 @@ async def _cached_gene_annotation_lookup(
         f"WHERE gene_id = {gene_literal} "
         f"AND species_code = {species_literal}",
     )
-    responses = [
-        await _post_bi_sql(bi_url, sql_headers, sql, timeout)
-        for sql in sql_list
-    ]
+    responses = [await _post_bi_sql(sql, timeout) for sql in sql_list]
     gene_anno_dict: Dict[str, Any] = {}
     if responses[0]["data"]:
         gene_anno_dict.update({"description": responses[0]["data"]})
@@ -207,8 +193,6 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
 
         async def get_gene_symbol() -> List[str]:
             return await _cached_gene_symbol_lookup(
-                bi_url=self.deep_genome_config.BI_URL,
-                sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
                 timeout=self.deep_genome_config.TIMEOUT,
@@ -228,8 +212,6 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
     ):
         async def get_gene_annotation() -> Dict:
             return await _cached_gene_annotation_lookup(
-                bi_url=self.deep_genome_config.BI_URL,
-                sql_headers=self._sql_headers,
                 species_code=species_code,
                 gene_id=gene_id,
                 timeout=self.deep_genome_config.TIMEOUT,

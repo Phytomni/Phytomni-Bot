@@ -324,10 +324,6 @@ class DeepGenomeAgents(
             kwargs.get("sensitive_config") or get_sensitive_config()
         )
         self._figure_index = 1
-        self._sql_headers = {
-            "Content-Type": "application/json",
-            "token": self.sensitive_config.BI_TOKEN.get_secret_value(),
-        }
         # Build a per-instance compiled BriefGeneAgent subgraph so the
         # brief_gene_mount node (registered in ``_build_graph``)
         # closes over a real ``CompiledStateGraph`` and LangGraph's

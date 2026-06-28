@@ -4,11 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Unit tests for the DeepGenome BI SQL helper.
 
-``_post_bi_sql`` now routes through the shared ``bi_query`` helper
-(operator BI POST + relay-mode branch). Pin the surviving A-5
-guarantee: retry exhaustion, a non-2xx status, and an empty payload
-surface as the helper's ``McpError``, and a 2xx non-JSON body still
-surfaces as a clear ``McpError`` rather than an opaque decode error.
+``_post_bi_sql`` routes through the shared ``bi_query`` helper (direct
+GaussDB query + relay-mode branch). Pin the surviving A-5 guarantee:
+retry exhaustion, a non-2xx status, and an empty payload surface as the
+helper's ``McpError``, and a 2xx non-JSON body still surfaces as a clear
+``McpError`` rather than an opaque decode error.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ async def test_post_bi_sql_returns_payload_on_success(
     """
     _patch_helper(monkeypatch, result={"data": []})
 
-    result = await _post_bi_sql("https://bi", {}, "SELECT 1")
+    result = await _post_bi_sql("SELECT 1")
 
     assert result == {"data": []}
 
@@ -100,7 +100,7 @@ async def test_post_bi_sql_propagates_helper_mcperror(
     )
 
     with pytest.raises(McpError) as excinfo:
-        await _post_bi_sql("https://bi", {}, "SELECT 1")
+        await _post_bi_sql("SELECT 1")
 
     assert "BI query failed" in excinfo.value.error.message
 
@@ -122,7 +122,7 @@ async def test_post_bi_sql_raises_mcperror_on_non_json(
     )
 
     with pytest.raises(McpError) as excinfo:
-        await _post_bi_sql("https://bi", {}, "SELECT 1")
+        await _post_bi_sql("SELECT 1")
 
     assert "non-JSON" in excinfo.value.error.message
 
@@ -141,6 +141,6 @@ async def test_post_bi_sql_raises_mcperror_on_empty_payload(
     _patch_helper(monkeypatch, result=None)
 
     with pytest.raises(McpError) as excinfo:
-        await _post_bi_sql("https://bi", {}, "SELECT 1")
+        await _post_bi_sql("SELECT 1")
 
     assert "no payload" in excinfo.value.error.message

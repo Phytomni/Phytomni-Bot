@@ -25,7 +25,6 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...config.defaults import BriefGeneConfig
-from ...config.settings import get_sensitive_config
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.retrieval import clear_retrieval_caches
@@ -317,8 +316,8 @@ async def run_bi_api(
 
     Args:
         query_sql: SQL statement sent to the BI endpoint.
-        **kwargs: Optional bi_url, bi_token, timeout, retriable_codes, and
-            max_retries overrides.
+        **kwargs: Optional timeout, retriable_codes, and max_retries
+            overrides.
 
     Returns:
         BI API JSON payload.
@@ -326,10 +325,6 @@ async def run_bi_api(
     Raises:
         McpError: If the BI API request fails after all retries.
     """
-    bi_url = kwargs.get("bi_url", BRIEF_CONFIG.BI_URL)
-    bi_token = kwargs.get(
-        "bi_token", get_sensitive_config().BI_TOKEN.get_secret_value()
-    )
     timeout = kwargs.get("timeout", BRIEF_CONFIG.TIMEOUT)
     retriable_codes = kwargs.get("retriable_codes")
     max_retries = kwargs.get("max_retries", BRIEF_CONFIG.MAX_RETRIES)
@@ -339,8 +334,6 @@ async def run_bi_api(
         retriable_codes = list(retriable_codes)
     data = await bi_query(
         query_sql,
-        bi_url=bi_url,
-        headers={"Content-Type": "application/json", "token": bi_token},
         retry=JsonPostRetry(
             timeout=timeout,
             max_retries=max_retries,

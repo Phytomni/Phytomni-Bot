@@ -13,7 +13,6 @@ exercise them without a protected-access access expression.
 
 from __future__ import annotations
 
-import contextlib
 import importlib
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -318,9 +317,7 @@ async def test_post_bi_sql_routes_through_relay(monkeypatch):
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     relay = _patch_relay(monkeypatch, shared_sql, {"records": []})
 
-    result = await _post_bi_sql(
-        "https://operator.invalid/bi", {"token": "t"}, "SELECT 3", 1.0
-    )
+    result = await _post_bi_sql("SELECT 3", 1.0)
 
     assert result == {"records": []}
     assert relay.calls[0]["path"] == "bi/query"
@@ -400,30 +397,20 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
     assert relay.calls[0]["query"]["page_size"] == "10"
 
 
-async def test_bi_query_operator_mode_posts_to_bi_url(monkeypatch):
-    """Outside relay mode bi_query posts the SQL body to the operator URL."""
+async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):
+    """Outside relay mode bi_query runs the SQL directly via gauss_query."""
     monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
     monkeypatch.delenv("RELAY_MODE", raising=False)
     captured: dict[str, Any] = {}
 
-    @contextlib.asynccontextmanager
-    async def fake_client(*, timeout: Any = None, **_kwargs: Any):
-        del timeout, _kwargs
-        yield None
+    async def fake_gauss_query(sql: str) -> Any:
+        captured["sql"] = sql
+        return {"message": "ok", "data": [{"x": 9}]}
 
-    async def fake_post(client: Any, request: Any, retry: Any) -> Any:
-        del client, retry
-        captured["url"] = request.url
-        captured["json_body"] = request.json_body
-        return {"rows": []}
-
-    monkeypatch.setattr(shared_sql, "get_async_client", fake_client)
-    monkeypatch.setattr(shared_sql, "post_json_with_retries", fake_post)
+    monkeypatch.setattr(shared_sql, "gauss_query", fake_gauss_query)
 
     result = await shared_sql.bi_query(
         "SELECT 9",
-        bi_url="https://operator.invalid/bi",
-        headers={"token": "t"},
         retry=JsonPostRetry(
             timeout=1.0,
             max_retries=0,
@@ -432,6 +419,5 @@ async def test_bi_query_operator_mode_posts_to_bi_url(monkeypatch):
         ),
     )
 
-    assert result == {"rows": []}
-    assert captured["url"] == "https://operator.invalid/bi"
-    assert captured["json_body"] == {"sql": "SELECT 9", "returnType": "json"}
+    assert result == {"message": "ok", "data": [{"x": 9}]}
+    assert captured["sql"] == "SELECT 9"

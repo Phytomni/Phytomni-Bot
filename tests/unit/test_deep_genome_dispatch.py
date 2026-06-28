@@ -10,13 +10,11 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import (
@@ -269,71 +267,42 @@ async def test_download_analysis_result_relay_empty_raises(
         )
 
 
-async def test_bi_json_posts_via_async_factory(
+async def test_bi_json_runs_gauss_query(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify _bi_json sends the SQL payload via the shared async factory.
+    """Verify _bi_json runs the SQL directly via gauss_query.
 
-    The previous implementation called ``requests.post`` synchronously
-    from inside ``async def _run_data_agent``, blocking the event loop
-    and bypassing the central TLS resolver. This test pins the new
-    async path: the factory is invoked with the configured TIMEOUT,
-    the SQL JSON body and headers reach client.post, and the returned
-    JSON flows back to the caller.
+    The direct (non-relay) branch of ``_bi_json`` now runs the SQL
+    straight against GaussDB through the shared ``gauss_query`` seam
+    instead of POSTing to a BI HTTP endpoint. This pins that the SQL
+    reaches ``gauss_query`` and its decoded payload flows back to the
+    caller.
 
     Args:
         tmp_path: Unused; reserved for harness symmetry.
         monkeypatch: Pytest monkeypatch fixture used to swap the
-            shared HTTP client factory with a recording stub.
+            shared ``gauss_query`` seam with a recording stub.
     """
     del tmp_path
     harness = DispatchHarness("/tmp/deep-out")
-    harness.deep_genome_config = SimpleNamespace(
-        BI_URL="https://bi.example.invalid/query",
-        TIMEOUT=42.0,
-    )
-    # _sql_headers lands on the real agent at __init__ time, not on
-    # this mixin-only harness; setattr injects it just for this test
-    # without forcing a typed subclass.
-    setattr(harness, "_sql_headers", {"X-BI-Token": "stub-token"})
     recorded: dict[str, Any] = {}
-    bi_response = httpx.Response(
-        200, json={"message": "ok", "data": [{"x": 1}]}
+
+    async def fake_gauss_query(sql: str) -> dict[str, Any]:
+        """Record the SQL and return the canned BI payload."""
+        recorded["sql"] = sql
+        return {"message": "ok", "data": [{"x": 1}]}
+
+    monkeypatch.setattr(
+        deep_genome_dispatch, "relay_mode_enabled", lambda: False
     )
-
-    class _PostStub:
-        """One-shot recorder for the BI ``post`` call inside the factory."""
-
-        def __init__(self) -> None:
-            """Initialise the recorder with the canned BI response."""
-            self._response = bi_response
-
-        async def post(self, url: str, **post_kwargs: Any) -> Any:
-            """Stash the URL plus kwargs and return the canned response."""
-            recorded["url"] = url
-            recorded["post_kwargs"] = post_kwargs
-            return self._response
-
-    @asynccontextmanager
-    async def fake_factory(**factory_kwargs: Any):
-        """Yield the recorder so the harness sees a post-capable client."""
-        recorded["factory_kwargs"] = factory_kwargs
-        yield _PostStub()
-
-    monkeypatch.setattr(deep_genome_dispatch, "get_async_client", fake_factory)
+    monkeypatch.setattr(deep_genome_dispatch, "gauss_query", fake_gauss_query)
     bi_json = getattr(harness, "_bi_json")
 
     payload = await bi_json("SELECT 1")
 
     assert payload == {"message": "ok", "data": [{"x": 1}]}
-    assert recorded["factory_kwargs"]["timeout"] == 42.0
-    assert recorded["url"] == "https://bi.example.invalid/query"
-    assert recorded["post_kwargs"]["json"] == {
-        "sql": "SELECT 1",
-        "returnType": "json",
-    }
-    assert recorded["post_kwargs"]["headers"] == {"X-BI-Token": "stub-token"}
+    assert recorded["sql"] == "SELECT 1"
 
 
 async def test_prepare_analysis_tasks_escapes_gene_id_and_builds_tasks() -> (
