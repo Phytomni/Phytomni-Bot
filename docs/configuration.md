@@ -31,7 +31,6 @@ Common variables:
 | `EMBED_URL`         | yes      | Embedding service base URL.                                                                                                                             |
 | `EMBED_MODEL`       | yes      | Embedding model id.                                                                                                                                     |
 | `EMBED_API_KEY`     | yes      | Embedding service API key.                                                                                                                              |
-| `BI_TOKEN`          | no       | DeepGenome BI token; defaults to empty.                                                                                                                 |
 | `GAUSS_DSN`         | yes      | Direct GaussDB DSN for the BI query path. Required outside relay mode; sealed in the encrypted envelope. URL-encode special characters in the password. |
 
 Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
@@ -81,7 +80,7 @@ disk.
 
 ## Deployment Endpoints and UUIDs
 
-Nineteen per-deployment endpoints and repository identifiers that
+Eighteen per-deployment endpoints and repository identifiers that
 used to live as hardcoded defaults in `config/defaults.py` are now
 required-via-env so a customer image never ships with another
 customer's IPs, UUIDs, regional cloud-platform hosts, or workspace
@@ -111,7 +110,6 @@ operator's OBS relay confines each key to its own tenant namespace). See
 | `SPA_FAQ_URL`      | `PHYTOMNI_SPA_FAQ_URL`      | SPA-faq lookup template; expects `{repo_id}` substitution.                                                              |
 | `DATABASE_URL`     | `PHYTOMNI_DATABASE_URL`     | NL-query database endpoint; the legacy default embedded the workspace UUID directly inside the URL path.                |
 | `ANALYSIS_URL`     | `PHYTOMNI_ANALYSIS_URL`     | EI-Health workflow endpoint; the legacy default embedded project and job UUIDs directly inside the URL path.            |
-| `BI_URL`           | `PHYTOMNI_BI_URL`           | BI gene-annotation lookup endpoint used by BriefGeneAgent and DeepGenomeAgent (legacy default: `phytomni.cn/api/data`). |
 | `OBS_SERVER`       | `PHYTOMNI_OBS_SERVER`       | OBS regional host (legacy default: `obs.cn-east-3.myhuaweicloud.com`).                                                  |
 | `REPO_ID`          | `PHYTOMNI_REPO_ID`          | Primary knowledge-repo UUID.                                                                                            |
 | `REPO_ID_DICT`     | `PHYTOMNI_REPO_ID_DICT`     | JSON-string `{ "<repo_uuid>": <token_budget>, ... }`; parsed into a `Dict[str, int]` by pydantic-settings.              |

@@ -562,30 +562,14 @@ class ReviewConfig(KnowledgeConfig):
 class BriefGeneConfig(KnowledgeConfig):
     """Configuration settings for brief gene function reports.
 
-    This agent combines direct BI database annotation lookup with literature
-    retrieval, so it inherits the knowledge retrieval and chat defaults while
-    adding the BI API endpoint.
+    This agent combines direct GaussDB annotation lookup with literature
+    retrieval, so it inherits the knowledge retrieval and chat defaults.
 
     Attributes:
-        BI_URL: BI API endpoint used for direct gene annotation lookup.
         TOP_N: Maximum number of literature retrieval results to keep.
     """
 
-    BI_URL: Annotated[
-        str,
-        Field(
-            default="",
-            validation_alias=AliasChoices("BI_URL", "PHYTOMNI_BI_URL"),
-        ),
-    ] = ""
     TOP_N: int = int(_MAX_TOKENS / 2048)
-
-    # Public BI host required as an env var so every customer image
-    # gets the endpoint from env, not from a hardcoded ``phytomni.cn``
-    # default that would leak across deployments.
-    _validate_bi_url = field_validator("BI_URL", mode="after")(
-        _require_non_empty_endpoint
-    )
 
 
 class GeneNetworkConfig(AnalystConfig):
@@ -612,13 +596,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
-    BI_URL: Annotated[
-        str,
-        Field(
-            default="",
-            validation_alias=AliasChoices("BI_URL", "PHYTOMNI_BI_URL"),
-        ),
-    ] = ""
     CREATE_TASK_URL: Annotated[
         str,
         Field(
@@ -677,7 +654,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
         "SPA_FAQ_URL",
         "PROTOCOL_REPO_ID",
         "SPA_REPO_ID",
-        "BI_URL",
         mode="after",
     )(_require_non_empty_endpoint)
 

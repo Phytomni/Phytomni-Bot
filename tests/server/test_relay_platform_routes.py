@@ -23,7 +23,6 @@ import pytest
 from fastapi import FastAPI
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
-from pydantic import SecretStr
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import forward as forward_module
@@ -48,7 +47,6 @@ def test_platform_config_aggregates_every_endpoint() -> None:
         "RERANK_URL",
         "DATABASE_URL",
         "ANALYSIS_URL",
-        "BI_URL",
         "CREATE_TASK_URL",
         "UPDATE_TASK_URL",
         "ANALYSIS_REGION",
@@ -93,7 +91,7 @@ def _patch_platform(
     monkeypatch.setattr(
         routes_module,
         "get_sensitive_config",
-        lambda: SimpleNamespace(BI_TOKEN=SecretStr("bi-secret")),
+        lambda: SimpleNamespace(),
     )
 
     async def _fake_token(region: object = None) -> str:

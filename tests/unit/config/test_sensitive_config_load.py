@@ -33,7 +33,7 @@ pytestmark = pytest.mark.unit
 LICENSE = "customer-license-key-001"
 MEMO_PATH = "mcp_server_phytomni.config.settings._ENV_DECRYPT_MEMO"
 
-# Every field SensitiveConfig requires (BI_TOKEN has a default).
+# Every field SensitiveConfig requires.
 FULL_ENV = (
     "DOMAIN_NAME=enc-domain\n"
     "USER_NAME=enc-user\n"

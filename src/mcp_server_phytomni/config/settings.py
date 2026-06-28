@@ -188,8 +188,6 @@ class SensitiveConfig(BaseSettings):
         CODER_API_KEY (SecretStr): Encrypted API key for accessing the code
             generation service at `CODER_URL`. `SecretStr` helps prevent
             accidental exposure.
-        BI_TOKEN (SecretStr): Optional token for direct biological database
-            SQL API access. Defaults to empty when not configured.
         GAUSS_DSN (SecretStr): Direct GaussDB connection string
             (postgresql://user:pw@host:port/db?sslmode=require) used by
             agents/shared/gauss.py. Required outside relay mode; a relay
@@ -224,7 +222,6 @@ class SensitiveConfig(BaseSettings):
     CODER_URL: str
     CODER_MODEL: str
     CODER_API_KEY: SecretStr
-    BI_TOKEN: SecretStr = SecretStr("")
     GAUSS_DSN: SecretStr
     EMBED_URL: str
     EMBED_MODEL: str

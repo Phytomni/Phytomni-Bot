@@ -27,6 +27,7 @@ from mcp_server_phytomni.config.defaults import (
     ServerConfig,
 )
 from mcp_server_phytomni.config.relay_mode import relay_mode_enabled
+from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
 
@@ -148,17 +149,6 @@ def test_analyst_config_parses_app_id_json_env(monkeypatch):
         "medium": "tier-m",
         "large": "tier-l",
     }
-
-
-def test_brief_gene_config_missing_bi_url_raises(monkeypatch):
-    """BriefGeneConfig.BI_URL is env-required (legacy default: phytomni.cn)."""
-    monkeypatch.delenv("BI_URL", raising=False)
-    monkeypatch.delenv("PHYTOMNI_BI_URL", raising=False)
-
-    with pytest.raises(ValidationError) as excinfo:
-        BriefGeneConfig()
-
-    assert "BI_URL" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
@@ -326,3 +316,18 @@ def test_brief_gene_and_deep_genome_share_repo_id_dict_source():
     server_repo = ServerConfig().REPO_ID_DICT
     assert brief_repo == deep_repo
     assert brief_repo == server_repo
+
+
+def test_brief_gene_config_has_no_bi_url() -> None:
+    """BI_URL is gone from BriefGeneConfig after the GaussDB cutover."""
+    assert "BI_URL" not in BriefGeneConfig.model_fields.keys()
+
+
+def test_deep_genome_config_has_no_bi_url() -> None:
+    """BI_URL is gone from DeepGenomeConfig after the GaussDB cutover."""
+    assert "BI_URL" not in DeepGenomeConfig.model_fields.keys()
+
+
+def test_sensitive_config_has_no_bi_token() -> None:
+    """BI_TOKEN is gone from SensitiveConfig after the GaussDB cutover."""
+    assert "BI_TOKEN" not in SensitiveConfig.model_fields.keys()

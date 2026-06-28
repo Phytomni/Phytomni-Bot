@@ -94,7 +94,6 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
     "download_path": "DOWNLOAD_PATH",
     "marker": "DOWNLOAD_MARKER",
     "max_keys": "DOWNLOAD_MAX_KEYS",
-    "bi_url": "BI_URL",
     "obs_server": "OBS_SERVER",
     "bucket_name": "BUCKET_NAME",
     "part_size": "PART_SIZE",
@@ -108,7 +107,6 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
 }
 DEEP_GENOME_SECRET_FIELD_MAP = {
     **ANALYST_SECRET_FIELD_MAP,
-    "bi_token": "BI_TOKEN",
 }
 
 
