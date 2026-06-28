@@ -237,6 +237,144 @@ template:
     {{protein_summary}}
 user:
   _partials:
+    brief_gene_data_footer: |-
+      ## Annotation Data (inline reference, not a literature source)
+
+      - Gene description: {{description_string}}
+      - GO annotation: {{go_string}}
+      - InterPro: {{interpro_string}}
+      - KEGG / MapMan: {{kegg_string}}
+      - Gene Structure: {{gene_structure_string}}
+      - Homology context: {{homology_context}}
+
+      ## Literature (cite as [document:N])
+
+      {{retrieve_results}}
+    protenix_usage: |-
+      <proteix usage method>
+          Usage: protenix pred [OPTIONS]
+
+          Run predictions with Protenix using various input formats.
+
+          Args:     input (str): Input JSON file or directory.     out_dir
+          (str):
+          Output directory for results.     seeds (str): Comma-separated
+          seeds.
+          cycle (int): Number of cycles.     step (int): Number of diffusion
+          steps.
+          sample (int): Number of samples.     dtype (str): Data type.
+          model_name
+          (str): Model name.     use_msa (bool): Use MSA.
+          use_default_params
+          (bool): Use default parameters for the model.     trimul_kernel
+          (str):
+          Kernel for triangle multiplicative.     triatt_kernel (str): Kernel
+          for
+          triangle attention.     enable_cache (bool): Enable shared variables
+          cache.
+          enable_fusion (bool): Enable efficient fusion.     enable_tf32
+          (bool):
+          Enable TF32.     msa_server_mode (str): MSA server mode.
+          use_template
+          (bool): Use templates.     use_rna_msa (bool): Use RNA MSA.
+          use_seeds_in_json (bool): Use seeds from JSON.
+          need_atom_confidence
+          (bool): Compute atom-level confidence scores.     kalign_binary_path
+          (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool):
+          Use TFG
+          guidance.     hmmsearch_binary_path (Optional[str]): Path to
+          hmmsearch
+          binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild
+          binary.
+          seqres_database_path (Optional[str]): Path to sequence database.
+          nhmmer_binary_path (Optional[str]): Path to nhmmer binary.
+          hmmalign_binary_path (Optional[str]): Path to hmmalign binary.
+          hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild
+          binary.
+          ntrna_database_path (Optional[str]): NT-RNA database path.
+          rfam_database_path (Optional[str]): Rfam database path.
+          rna_central_database_path (Optional[str]): RNAcentral database path.
+          nhmmer_n_cpu (Optional[int]): Number of CPUs for nhmmer.
+
+        Options:
+          -i, --input TEXT                Input JSON file or directory.
+          [required]
+          -o, --out_dir TEXT              Output directory.  [default:
+          ./output]
+          -s, --seeds TEXT                Seeds (comma-separated).  [default:
+          101]
+          -c, --cycle INTEGER             Pairformer cycle number.  [default:
+          10]
+          -p, --step INTEGER              Diffusion steps.  [default: 200]
+          -e, --sample INTEGER            Number of samples.  [default: 5]
+          -d, --dtype TEXT                Inference dtype.  [default: bf16]
+          -n, --model_name TEXT           Model checkpoint name.  [default:
+                                          protenix_base_default_v1.0.0]
+          --use_msa BOOLEAN               Whether to use MSA for inference.
+          [default:
+                                          True]
+          --use_default_params BOOLEAN    Use recommended default parameters
+          for the
+                                          selected model.  [default: False]
+          --trimul_kernel TEXT            Triangle multiplicative update
+          kernel
+                                          ('cuequivariance' or 'torch').
+                                          [default:
+                                          cuequivariance]
+          --triatt_kernel TEXT            Triangle attention kernel
+          ('triattention',
+                                          'cuequivariance', 'deepspeed', or
+                                          'torch').
+                                          [default: cuequivariance]
+          --enable_cache BOOLEAN          Cache shareable variables in the
+          diffusion
+                                          module.  [default: True]
+          --enable_fusion BOOLEAN         Enable efficient kernel fusion in
+          the
+                                          diffusion transformer.  [default:
+                                          True]
+          --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix
+          multiplications.
+                                          [default: True]
+          --msa_server_mode TEXT          MSA search mode ('protenix' or
+          'colabfold').
+                                          [default: protenix]
+          --use_template BOOLEAN          Use templates (requires
+          templatesPath in
+                                          input JSON).  [default: False]
+          --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path
+          in input
+                                          JSON).  [default: False]
+          --use_seeds_in_json BOOLEAN     Priority to seeds defined in input
+          JSON.
+                                          [default: False]
+          --need_atom_confidence BOOLEAN  Whether to compute atom-level
+          confidence
+                                          scores.  [default: False]
+          --kalign_binary_path TEXT       Path to kalign (searches in PATH if
+          not
+                                          provided).
+          --use_tfg_guidance BOOLEAN      Use Training-Free Guidance (TFG) for
+                                          inference.  [default: False]
+          --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH
+          if not
+                                          provided).
+          --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH
+          if not
+                                          provided).
+          --seqres_database_path TEXT     Path to the sequence database for
+          template
+                                          search.
+          --nhmmer_binary_path TEXT       Path to nhmmer for RNA MSA search.
+          --hmmalign_binary_path TEXT     Path to hmmalign for RNA MSA search.
+          --hmmbuild_rna_binary_path TEXT
+                                          Path to RNA-specific hmmbuild.
+          --ntrna_database_path TEXT      Path to the NT-RNA database.
+          --rfam_database_path TEXT       Path to the Rfam database.
+          --rna_central_database_path TEXT
+                                          Path to the RNAcentral database.
+          --nhmmer_n_cpu INTEGER          Number of CPUs for nhmmer.
+          -h, --help                      Show this message and exit.
     uploaded_files_item: |-
       - **Files uploaded** by the user:
       {{upload_context}}
@@ -1435,18 +1573,7 @@ user:
 
     #### 4.3. Improvement
 
-    ## Annotation Data (inline reference, not a literature source)
-
-    - Gene description: {{description_string}}
-    - GO annotation: {{go_string}}
-    - InterPro: {{interpro_string}}
-    - KEGG / MapMan: {{kegg_string}}
-    - Gene Structure: {{gene_structure_string}}
-    - Homology context: {{homology_context}}
-
-    ## Literature (cite as [document:N])
-
-    {{retrieve_results}}
+    {{> user/_partials/brief_gene_data_footer }}
   brief_gene_section_cloning: |-
     # Role: Plant Genetics Section 2 — Cloning and Structural Analysis
 
@@ -1492,18 +1619,7 @@ user:
 
     #### 2.3. Protein Stability or Enzyme Activity Analysis
 
-    ## Annotation Data (inline reference, not a literature source)
-
-    - Gene description: {{description_string}}
-    - GO annotation: {{go_string}}
-    - InterPro: {{interpro_string}}
-    - KEGG / MapMan: {{kegg_string}}
-    - Gene Structure: {{gene_structure_string}}
-    - Homology context: {{homology_context}}
-
-    ## Literature (cite as [document:N])
-
-    {{retrieve_results}}
+    {{> user/_partials/brief_gene_data_footer }}
   brief_gene_section_discovery: |-
     # Role: Plant Genetics Section 1 — Discovery, Family, and Localization
 
@@ -1545,18 +1661,7 @@ user:
 
     #### 1.2. Genetic Mapping
 
-    ## Annotation Data (inline reference, not a literature source)
-
-    - Gene description: {{description_string}}
-    - GO annotation: {{go_string}}
-    - InterPro: {{interpro_string}}
-    - KEGG / MapMan: {{kegg_string}}
-    - Gene Structure: {{gene_structure_string}}
-    - Homology context: {{homology_context}}
-
-    ## Literature (cite as [document:N])
-
-    {{retrieve_results}}
+    {{> user/_partials/brief_gene_data_footer }}
   brief_gene_section_functional: |-
     # Role: Plant Genetics Section 3 — Functional Analysis
 
@@ -1605,18 +1710,7 @@ user:
 
     #### 3.4. QTL Interactions
 
-    ## Annotation Data (inline reference, not a literature source)
-
-    - Gene description: {{description_string}}
-    - GO annotation: {{go_string}}
-    - InterPro: {{interpro_string}}
-    - KEGG / MapMan: {{kegg_string}}
-    - Gene Structure: {{gene_structure_string}}
-    - Homology context: {{homology_context}}
-
-    ## Literature (cite as [document:N])
-
-    {{retrieve_results}}
+    {{> user/_partials/brief_gene_data_footer }}
   brief_gene_introduction: |-
     # Role: Brief Gene Agent Introduction
 
@@ -4498,130 +4592,7 @@ user:
             --psap_file $out_dir/psap_scores.csv --output_file $json_file
             --top 3
     </generate mutation>
-    <proteix usage method>
-        Usage: protenix pred [OPTIONS]
-
-        Run predictions with Protenix using various input formats.
-
-        Args:     input (str): Input JSON file or directory.     out_dir
-        (str):
-        Output directory for results.     seeds (str): Comma-separated
-        seeds.
-        cycle (int): Number of cycles.     step (int): Number of diffusion
-        steps.
-        sample (int): Number of samples.     dtype (str): Data type.
-        model_name
-        (str): Model name.     use_msa (bool): Use MSA.
-        use_default_params
-        (bool): Use default parameters for the model.     trimul_kernel
-        (str):
-        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel
-        for
-        triangle attention.     enable_cache (bool): Enable shared variables
-        cache.
-        enable_fusion (bool): Enable efficient fusion.     enable_tf32
-        (bool):
-        Enable TF32.     msa_server_mode (str): MSA server mode.
-        use_template
-        (bool): Use templates.     use_rna_msa (bool): Use RNA MSA.
-        use_seeds_in_json (bool): Use seeds from JSON.
-        need_atom_confidence
-        (bool): Compute atom-level confidence scores.     kalign_binary_path
-        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool):
-        Use TFG
-        guidance.     hmmsearch_binary_path (Optional[str]): Path to
-        hmmsearch
-        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild
-        binary.
-        seqres_database_path (Optional[str]): Path to sequence database.
-        nhmmer_binary_path (Optional[str]): Path to nhmmer binary.
-        hmmalign_binary_path (Optional[str]): Path to hmmalign binary.
-        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild
-        binary.
-        ntrna_database_path (Optional[str]): NT-RNA database path.
-        rfam_database_path (Optional[str]): Rfam database path.
-        rna_central_database_path (Optional[str]): RNAcentral database path.
-        nhmmer_n_cpu (Optional[int]): Number of CPUs for nhmmer.
-
-      Options:
-        -i, --input TEXT                Input JSON file or directory.
-        [required]
-        -o, --out_dir TEXT              Output directory.  [default:
-        ./output]
-        -s, --seeds TEXT                Seeds (comma-separated).  [default:
-        101]
-        -c, --cycle INTEGER             Pairformer cycle number.  [default:
-        10]
-        -p, --step INTEGER              Diffusion steps.  [default: 200]
-        -e, --sample INTEGER            Number of samples.  [default: 5]
-        -d, --dtype TEXT                Inference dtype.  [default: bf16]
-        -n, --model_name TEXT           Model checkpoint name.  [default:
-                                        protenix_base_default_v1.0.0]
-        --use_msa BOOLEAN               Whether to use MSA for inference.
-        [default:
-                                        True]
-        --use_default_params BOOLEAN    Use recommended default parameters
-        for the
-                                        selected model.  [default: False]
-        --trimul_kernel TEXT            Triangle multiplicative update
-        kernel
-                                        ('cuequivariance' or 'torch').
-                                        [default:
-                                        cuequivariance]
-        --triatt_kernel TEXT            Triangle attention kernel
-        ('triattention',
-                                        'cuequivariance', 'deepspeed', or
-                                        'torch').
-                                        [default: cuequivariance]
-        --enable_cache BOOLEAN          Cache shareable variables in the
-        diffusion
-                                        module.  [default: True]
-        --enable_fusion BOOLEAN         Enable efficient kernel fusion in
-        the
-                                        diffusion transformer.  [default:
-                                        True]
-        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix
-        multiplications.
-                                        [default: True]
-        --msa_server_mode TEXT          MSA search mode ('protenix' or
-        'colabfold').
-                                        [default: protenix]
-        --use_template BOOLEAN          Use templates (requires
-        templatesPath in
-                                        input JSON).  [default: False]
-        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path
-        in input
-                                        JSON).  [default: False]
-        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input
-        JSON.
-                                        [default: False]
-        --need_atom_confidence BOOLEAN  Whether to compute atom-level
-        confidence
-                                        scores.  [default: False]
-        --kalign_binary_path TEXT       Path to kalign (searches in PATH if
-        not
-                                        provided).
-        --use_tfg_guidance BOOLEAN      Use Training-Free Guidance (TFG) for
-                                        inference.  [default: False]
-        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH
-        if not
-                                        provided).
-        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH
-        if not
-                                        provided).
-        --seqres_database_path TEXT     Path to the sequence database for
-        template
-                                        search.
-        --nhmmer_binary_path TEXT       Path to nhmmer for RNA MSA search.
-        --hmmalign_binary_path TEXT     Path to hmmalign for RNA MSA search.
-        --hmmbuild_rna_binary_path TEXT
-                                        Path to RNA-specific hmmbuild.
-        --ntrna_database_path TEXT      Path to the NT-RNA database.
-        --rfam_database_path TEXT       Path to the Rfam database.
-        --rna_central_database_path TEXT
-                                        Path to the RNAcentral database.
-        --nhmmer_n_cpu INTEGER          Number of CPUs for nhmmer.
-        -h, --help                      Show this message and exit.
+    {{> user/_partials/protenix_usage }}
 
       Tool Usage example:
         protenix pred --input $input_json --out_dir $output_dir
@@ -5046,130 +5017,7 @@ user:
     Note1: You don't need to install protenix software using conda;
     Note2: You need to activate af3 environment;(conda activate af3);
     Note3: protenix commdline softwore usage is as follows:
-    <proteix usage method>
-        Usage: protenix pred [OPTIONS]
-
-        Run predictions with Protenix using various input formats.
-
-        Args:     input (str): Input JSON file or directory.     out_dir
-        (str):
-        Output directory for results.     seeds (str): Comma-separated
-        seeds.
-        cycle (int): Number of cycles.     step (int): Number of diffusion
-        steps.
-        sample (int): Number of samples.     dtype (str): Data type.
-        model_name
-        (str): Model name.     use_msa (bool): Use MSA.
-        use_default_params
-        (bool): Use default parameters for the model.     trimul_kernel
-        (str):
-        Kernel for triangle multiplicative.     triatt_kernel (str): Kernel
-        for
-        triangle attention.     enable_cache (bool): Enable shared variables
-        cache.
-        enable_fusion (bool): Enable efficient fusion.     enable_tf32
-        (bool):
-        Enable TF32.     msa_server_mode (str): MSA server mode.
-        use_template
-        (bool): Use templates.     use_rna_msa (bool): Use RNA MSA.
-        use_seeds_in_json (bool): Use seeds from JSON.
-        need_atom_confidence
-        (bool): Compute atom-level confidence scores.     kalign_binary_path
-        (Optional[str]): Path to kalign binary.     use_tfg_guidance (bool):
-        Use TFG
-        guidance.     hmmsearch_binary_path (Optional[str]): Path to
-        hmmsearch
-        binary.     hmmbuild_binary_path (Optional[str]): Path to hmmbuild
-        binary.
-        seqres_database_path (Optional[str]): Path to sequence database.
-        nhmmer_binary_path (Optional[str]): Path to nhmmer binary.
-        hmmalign_binary_path (Optional[str]): Path to hmmalign binary.
-        hmmbuild_rna_binary_path (Optional[str]): Path to RNA hmmbuild
-        binary.
-        ntrna_database_path (Optional[str]): NT-RNA database path.
-        rfam_database_path (Optional[str]): Rfam database path.
-        rna_central_database_path (Optional[str]): RNAcentral database path.
-        nhmmer_n_cpu (Optional[int]): Number of CPUs for nhmmer.
-
-      Options:
-        -i, --input TEXT                Input JSON file or directory.
-        [required]
-        -o, --out_dir TEXT              Output directory.  [default:
-        ./output]
-        -s, --seeds TEXT                Seeds (comma-separated).  [default:
-        101]
-        -c, --cycle INTEGER             Pairformer cycle number.  [default:
-        10]
-        -p, --step INTEGER              Diffusion steps.  [default: 200]
-        -e, --sample INTEGER            Number of samples.  [default: 5]
-        -d, --dtype TEXT                Inference dtype.  [default: bf16]
-        -n, --model_name TEXT           Model checkpoint name.  [default:
-                                        protenix_base_default_v1.0.0]
-        --use_msa BOOLEAN               Whether to use MSA for inference.
-        [default:
-                                        True]
-        --use_default_params BOOLEAN    Use recommended default parameters
-        for the
-                                        selected model.  [default: False]
-        --trimul_kernel TEXT            Triangle multiplicative update
-        kernel
-                                        ('cuequivariance' or 'torch').
-                                        [default:
-                                        cuequivariance]
-        --triatt_kernel TEXT            Triangle attention kernel
-        ('triattention',
-                                        'cuequivariance', 'deepspeed', or
-                                        'torch').
-                                        [default: cuequivariance]
-        --enable_cache BOOLEAN          Cache shareable variables in the
-        diffusion
-                                        module.  [default: True]
-        --enable_fusion BOOLEAN         Enable efficient kernel fusion in
-        the
-                                        diffusion transformer.  [default:
-                                        True]
-        --enable_tf32 BOOLEAN           Enable TF32 for FP32 matrix
-        multiplications.
-                                        [default: True]
-        --msa_server_mode TEXT          MSA search mode ('protenix' or
-        'colabfold').
-                                        [default: protenix]
-        --use_template BOOLEAN          Use templates (requires
-        templatesPath in
-                                        input JSON).  [default: False]
-        --use_rna_msa BOOLEAN           Use RNA MSA (requires rna_msa_path
-        in input
-                                        JSON).  [default: False]
-        --use_seeds_in_json BOOLEAN     Priority to seeds defined in input
-        JSON.
-                                        [default: False]
-        --need_atom_confidence BOOLEAN  Whether to compute atom-level
-        confidence
-                                        scores.  [default: False]
-        --kalign_binary_path TEXT       Path to kalign (searches in PATH if
-        not
-                                        provided).
-        --use_tfg_guidance BOOLEAN      Use Training-Free Guidance (TFG) for
-                                        inference.  [default: False]
-        --hmmsearch_binary_path TEXT    Path to hmmsearch (searches in PATH
-        if not
-                                        provided).
-        --hmmbuild_binary_path TEXT     Path to hmmbuild (searches in PATH
-        if not
-                                        provided).
-        --seqres_database_path TEXT     Path to the sequence database for
-        template
-                                        search.
-        --nhmmer_binary_path TEXT       Path to nhmmer for RNA MSA search.
-        --hmmalign_binary_path TEXT     Path to hmmalign for RNA MSA search.
-        --hmmbuild_rna_binary_path TEXT
-                                        Path to RNA-specific hmmbuild.
-        --ntrna_database_path TEXT      Path to the NT-RNA database.
-        --rfam_database_path TEXT       Path to the Rfam database.
-        --rna_central_database_path TEXT
-                                        Path to the RNAcentral database.
-        --nhmmer_n_cpu INTEGER          Number of CPUs for nhmmer.
-        -h, --help                      Show this message and exit.
+    {{> user/_partials/protenix_usage }}
     </proteix usage method>
     <usage example>
         protenix pred --input $input_json --out_dir $output_dir
