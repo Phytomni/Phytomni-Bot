@@ -147,6 +147,12 @@ exclude = [
     "\\.venv/",
 ]
 
+# asyncpg ships no type stubs or py.typed marker; pyright resolves it
+# through bundled stubs, but mypy needs an explicit override.
+[[tool.mypy.overrides]]
+module = ["asyncpg", "asyncpg.*"]
+ignore_missing_imports = true
+
 # The demo fixture generator (demo_data/scripts/) is outside the full
 # gate's mypy scope (src tests e2e scripts) but the scoped gate type
 # checks it when it changes; openpyxl + reportlab ship no type stubs.

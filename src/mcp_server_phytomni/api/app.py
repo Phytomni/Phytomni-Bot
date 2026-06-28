@@ -65,6 +65,7 @@ from ..agents.network.resolve_query import (
     GeneNetworkResolveResult,
     resolve_network_user_query,
 )
+from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import (
@@ -1105,6 +1106,7 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         await aclose_shared_client()
+        await aclose_gauss_pool()
 
 
 # pylint: disable=too-many-arguments,too-many-locals,too-many-statements

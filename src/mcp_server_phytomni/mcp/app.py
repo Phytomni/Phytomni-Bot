@@ -21,6 +21,7 @@ from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
 from ..agents.chat.service import stream_phyto_chat_chunks
+from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import ChatConfig
@@ -434,3 +435,4 @@ async def serve() -> None:
             )
     finally:
         await aclose_shared_client()
+        await aclose_gauss_pool()
