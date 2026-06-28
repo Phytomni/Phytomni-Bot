@@ -259,8 +259,6 @@ async def handle_deep_genome_agent(args: DeepGenomeAgent) -> HandlerResult:
         user_id=current_request_user() or deep_genome_config.USER_ID,
         batch=deep_genome_config.BATCH,
         epic_type=deep_genome_config.EPIC_TYPE,
-        create_task_url=deep_genome_config.CREATE_TASK_URL,
-        update_task_url=deep_genome_config.UPDATE_TASK_URL,
         database_url=deep_genome_config.DATABASE_URL,
         workspace_id=deep_genome_config.WORKSPACE_ID,
         subject_id=deep_genome_config.SUBJECT_ID,

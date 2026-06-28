@@ -596,24 +596,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
 
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
-    CREATE_TASK_URL: Annotated[
-        str,
-        Field(
-            default="",
-            validation_alias=AliasChoices(
-                "CREATE_TASK_URL", "PHYTOMNI_CREATE_TASK_URL"
-            ),
-        ),
-    ] = ""
-    UPDATE_TASK_URL: Annotated[
-        str,
-        Field(
-            default="",
-            validation_alias=AliasChoices(
-                "UPDATE_TASK_URL", "PHYTOMNI_UPDATE_TASK_URL"
-            ),
-        ),
-    ] = ""
     BATCH: bool = True
     EPIC_TYPE: str = "6mA"
     PROTOCOL_REPO_ID: Annotated[
@@ -649,8 +631,6 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     # as env vars so a customer image never ships with another
     # tenant's URL or repo id baked in as a default.
     _validate_dg_endpoints = field_validator(
-        "CREATE_TASK_URL",
-        "UPDATE_TASK_URL",
         "SPA_FAQ_URL",
         "PROTOCOL_REPO_ID",
         "SPA_REPO_ID",

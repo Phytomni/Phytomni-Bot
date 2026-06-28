@@ -53,8 +53,6 @@ _TEST_ENV = {
     # call would fail closed instead of leaking to a public endpoint.
     "RETRIEVE_URL": "https://example.invalid/retrieve",
     "RERANK_URL": "https://example.invalid/rerank",
-    "CREATE_TASK_URL": "https://example.invalid/create-task",
-    "UPDATE_TASK_URL": "https://example.invalid/update-task",
     "SPA_FAQ_URL": "https://example.invalid/repos/{repo_id}/faqs",
     # Deployment-specific UUIDs (Phase 14.3.2): empty defaults in
     # config/defaults.py force operators to set per-deployment. Tests

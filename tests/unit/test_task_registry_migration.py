@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.config import defaults as defaults_mod
+from mcp_server_phytomni.runtime import task_manager as task_manager_mod
 from mcp_server_phytomni.runtime.task_manager import (
     RunContext,
     Submission,
@@ -395,3 +397,17 @@ def test_legacy_db_migrates_input_fingerprint_column(
     finally:
         conn.close()
     assert row == (None,)
+
+
+def test_no_module_level_remote_task_functions() -> None:
+    """The dead /nky create_task/update_task module functions are gone."""
+    assert not hasattr(task_manager_mod, "create_task")
+    assert not hasattr(task_manager_mod, "update_task")
+    # The SQLite TaskManager method survives.
+    assert hasattr(task_manager_mod.TaskManager, "update_task")
+
+
+def test_deep_genome_config_has_no_task_urls() -> None:
+    """CREATE_TASK_URL / UPDATE_TASK_URL are removed from the config."""
+    assert "CREATE_TASK_URL" not in defaults_mod.DeepGenomeConfig.model_fields
+    assert "UPDATE_TASK_URL" not in defaults_mod.DeepGenomeConfig.model_fields

@@ -71,8 +71,6 @@ _PLATFORM_RELAYS = (
     ("rerank", "rank", "RERANK_URL", "none", None),
     ("database", "nl2sql", "DATABASE_URL", "iam", None),
     ("analysis", "tasks", "ANALYSIS_URL", "iam", "ANALYSIS_REGION"),
-    ("task", "create", "CREATE_TASK_URL", "none", None),
-    ("task", "update", "UPDATE_TASK_URL", "none", None),
 )
 
 

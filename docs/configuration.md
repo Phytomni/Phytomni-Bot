@@ -80,7 +80,7 @@ disk.
 
 ## Deployment Endpoints and UUIDs
 
-Eighteen per-deployment endpoints and repository identifiers that
+Sixteen per-deployment endpoints and repository identifiers that
 used to live as hardcoded defaults in `config/defaults.py` are now
 required-via-env so a customer image never ships with another
 customer's IPs, UUIDs, regional cloud-platform hosts, or workspace
@@ -92,7 +92,7 @@ env-var label they need to set, rather than a downstream `404` /
 
 This fail-fast non-empty validation is normal-mode only. In customer
 relay mode (`PHYTOMNI_RELAY_MODE=1`) the `_require_non_empty_endpoint`
-validator short-circuits, so a relay-mode child Bot boots with all 19
+validator short-circuits, so a relay-mode child Bot boots with all 16
 operator endpoints empty; it instead routes every dependency through the
 upstream relay via `RELAY_BASE_URL` / `RELAY_API_KEY`, and roots its OBS
 object paths under the operator-assigned tenant id `RELAY_USER_ID` (which
@@ -105,8 +105,6 @@ operator's OBS relay confines each key to its own tenant namespace). See
 | `TOKEN_URL`        | `PHYTOMNI_TOKEN_URL`        | IAM token-acquisition endpoint (legacy default: `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).                 |
 | `RETRIEVE_URL`     | `PHYTOMNI_RETRIEVE_URL`     | Document-retrieval endpoint used by KnowledgeAgent / DataAgent / AnalystAgent.                                          |
 | `RERANK_URL`       | `PHYTOMNI_RERANK_URL`       | Document-reranking endpoint used downstream of `RETRIEVE_URL`.                                                          |
-| `CREATE_TASK_URL`  | `PHYTOMNI_CREATE_TASK_URL`  | DeepGenome remote task-creation endpoint.                                                                               |
-| `UPDATE_TASK_URL`  | `PHYTOMNI_UPDATE_TASK_URL`  | DeepGenome remote task-status update endpoint.                                                                          |
 | `SPA_FAQ_URL`      | `PHYTOMNI_SPA_FAQ_URL`      | SPA-faq lookup template; expects `{repo_id}` substitution.                                                              |
 | `DATABASE_URL`     | `PHYTOMNI_DATABASE_URL`     | NL-query database endpoint; the legacy default embedded the workspace UUID directly inside the URL path.                |
 | `ANALYSIS_URL`     | `PHYTOMNI_ANALYSIS_URL`     | EI-Health workflow endpoint; the legacy default embedded project and job UUIDs directly inside the URL path.            |

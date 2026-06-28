@@ -154,8 +154,6 @@ def test_analyst_config_parses_app_id_json_env(monkeypatch):
 @pytest.mark.parametrize(
     "field",
     [
-        "CREATE_TASK_URL",
-        "UPDATE_TASK_URL",
         "SPA_FAQ_URL",
         "PROTOCOL_REPO_ID",
         "SPA_REPO_ID",
@@ -170,6 +168,12 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
         DeepGenomeConfig()
 
     assert field in str(excinfo.value)
+
+
+def test_deep_genome_config_has_no_task_url_fields():
+    """CREATE_TASK_URL / UPDATE_TASK_URL are removed from DeepGenomeConfig."""
+    assert "CREATE_TASK_URL" not in DeepGenomeConfig.model_fields
+    assert "UPDATE_TASK_URL" not in DeepGenomeConfig.model_fields
 
 
 @pytest.mark.parametrize("env_name", ["RELAY_MODE", "PHYTOMNI_RELAY_MODE"])

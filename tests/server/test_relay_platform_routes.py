@@ -37,7 +37,7 @@ def test_platform_config_aggregates_every_endpoint() -> None:
     """The real config the platform routes read exposes every URL.
 
     The route tests mock DeepGenomeConfig, so this pins that the actual
-    multiple-inheritance config exposes all seven platform URLs plus the
+    multiple-inheritance config exposes all five platform URLs plus the
     analysis region the routes resolve by attribute name.
     """
     config = DeepGenomeConfig()
@@ -47,8 +47,6 @@ def test_platform_config_aggregates_every_endpoint() -> None:
         "RERANK_URL",
         "DATABASE_URL",
         "ANALYSIS_URL",
-        "CREATE_TASK_URL",
-        "UPDATE_TASK_URL",
         "ANALYSIS_REGION",
     ):
         assert getattr(config, attr)
@@ -63,8 +61,6 @@ _PLATFORM_URLS = SimpleNamespace(
     ANALYSIS_URL="https://analysis.test/tasks",
     ANALYSIS_REGION="cn-analysis",
     BI_URL="https://bi.test/query",
-    CREATE_TASK_URL="https://task.test/create",
-    UPDATE_TASK_URL="https://task.test/update",
     SPA_FAQ_URL="http://spa.test/{repo_id}/faq",
 )
 

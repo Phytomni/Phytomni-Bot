@@ -81,8 +81,6 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
     **ANALYST_CONFIG_FIELD_MAP,
     "batch": "BATCH",
     "epic_type": "EPIC_TYPE",
-    "create_task_url": "CREATE_TASK_URL",
-    "update_task_url": "UPDATE_TASK_URL",
     **NL2SQL_CONFIG_FIELD_MAP,
     "prompt_file": "PROMPT_FILE",
     "deepgenome_data": "DEEPGENOME_DATA",

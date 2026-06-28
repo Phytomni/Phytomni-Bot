@@ -85,16 +85,16 @@ does not loosen `max-args` project-wide. A 14-argument function
 would need `# pylint: disable=too-many-arguments` plus an allowlist
 entry plus a catalog section, none of which can be added silently.
 
-**Someone adds a 19th test fake with one public method.** A
+**Someone adds a 21st test fake with one public method.** A
 project-wide `min-public-methods = 1` would silently pass it.
-Counted instead by the L2 ratchet. The current baseline is 18; the
-19th fake pushes the count to 19, the ratchet fails, refactor or
+Counted instead by the L2 ratchet. The current baseline is 20; the
+21st fake pushes the count to 21, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 94th R0801 duplicate-code violation appears.** Default pylint
+**A 93rd R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 93; the
-94th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 92; the
+93rd duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers

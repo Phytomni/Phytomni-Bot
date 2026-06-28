@@ -445,7 +445,7 @@ async def network_to_deep_genome_chain(
             ``access_key_id``, ``secret_access_key``) are passed
             through. MCP-handler-only fields (``dialog_id``,
             ``subject_id``, ``need_insight``, ``epic_type``,
-            ``create_task_url``, ``update_task_url``, ``database_url``,
+            ``database_url``,
             ``workspace_id``) are stripped because this entry is a
             Python-level caller, not an MCP request.
 
@@ -533,8 +533,6 @@ _CHAIN_DROPPED_KWARGS: Final[frozenset[str]] = frozenset(
         "subject_id",
         "need_insight",
         "epic_type",
-        "create_task_url",
-        "update_task_url",
         "database_url",
         "workspace_id",
     }

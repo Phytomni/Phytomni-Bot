@@ -196,8 +196,6 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                                             |
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                     |
 | `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                          |
-| `POST`   | `/v1/relay/task/create`                  | relay | Remote task-create relay (envelope, no credential).                                                                                       |
-| `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope, no credential).                                                                                       |
 | `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                    |
 
 The OBS relay rows confine each object key to the caller's tenant namespace

@@ -4,61 +4,17 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Task manager for SQLite database and remote task server interactions.
 
-Classes: RemoteTaskRequest, RunContext, Submission, TaskManager.
-Functions: create_task (async), update_task (async),
-    resolve_tasks_db_path.
+Classes: RunContext, Submission, TaskManager.
+Functions: resolve_tasks_db_path.
 """
 
 import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
-from httpx import Timeout
-
-from ..common.http import (
-    JsonPostRequest,
-    JsonPostRetry,
-    post_json_with_retries,
-)
-from ..common.httpx_client import get_async_client
-from ..common.relay_client import current_relay_client
 from ..config.defaults import ApiConfig
-from ..config.relay_mode import relay_mode_enabled
-
-DEFAULT_RETRIABLE_CODES = (429, 500, 502, 503, 504)
-
-# Per-request timeout (seconds) for the remote task-manager create/update
-# calls when the caller passes no explicit ``timeout=`` kwarg. Lives at
-# module scope so the value is observable to tests / operators and shares
-# one source of truth between ``create_task`` and ``update_task`` instead
-# of repeating the magic number at each call site.
-DEFAULT_REMOTE_TASK_TIMEOUT = 60
-
-
-@dataclass(frozen=True)
-class RemoteTaskRequest:
-    """Resolved request data for a remote task-manager call.
-
-    Attributes:
-        url: Target URL for the remote task request.
-        data: Dictionary of task data fields.
-        timeout: Request timeout in seconds.
-        retriable_codes: Tuple of HTTP status codes that trigger retry.
-        max_retries: Maximum number of retry attempts.
-        message: Error message prefix for failures.
-        relay_path: Relay route suffix (``task/create`` / ``task/update``)
-            used instead of ``url`` in customer relay mode.
-    """
-
-    url: str
-    data: Dict[str, str]
-    timeout: float
-    retriable_codes: tuple[int, ...]
-    max_retries: int
-    message: str
-    relay_path: str
 
 
 @dataclass(frozen=True)
@@ -128,8 +84,8 @@ class Submission:
 
 
 # Fresh-database schema: ``CREATE TABLE IF NOT EXISTS`` creates all
-# columns in one shot. The original 4 columns stay first so old code
-# paths (``create_task``/``update_task``) keep working unchanged.
+# columns in one shot. The original 4 columns stay first for
+# backward compatibility with pre-existing rows.
 _CREATE_TASKS_DDL = """
 CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,
@@ -668,130 +624,3 @@ def resolve_tasks_db_path() -> str:
         The configured tasks database path.
     """
     return ApiConfig().API_TASKS_DB_PATH
-
-
-async def create_task(
-    url,
-    **kwargs: Any,
-):
-    """Creates a task on a remote server.
-
-    This function sends a POST request to the specified URL to create a new
-    task. It implements a retry mechanism with exponential backoff for
-    transient errors.
-
-    Args:
-        url (str): The URL of the remote server.
-        server_id (str): The ID of the server.
-        server_status (str): The status of the server.
-        tool_name (str): The name of the tool being used.
-        timeout (int, optional): The timeout for the request in seconds.
-                                 Defaults to 60.
-        retriable_codes (List[int], optional): A list of HTTP status codes
-                                               that trigger a retry.
-                                               Defaults to
-                                               [429, 500, 502, 503, 504].
-        max_retries (int, optional): The maximum number of retries.
-                                     Defaults to 5.
-
-    Returns:
-        dict: The JSON response from the server.
-
-    Raises:
-        McpError: If the request fails after all retries.
-    """
-    request = RemoteTaskRequest(
-        url=url,
-        data={
-            "server_id": kwargs["server_id"],
-            "server_status": kwargs["server_status"],
-            "tool_name": kwargs["tool_name"],
-        },
-        timeout=kwargs.get("timeout", DEFAULT_REMOTE_TASK_TIMEOUT),
-        retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
-        max_retries=kwargs.get("max_retries", 5),
-        message="Failed to create task",
-        relay_path="task/create",
-    )
-    return await _post_remote_task(request)
-
-
-async def update_task(
-    url,
-    **kwargs: Any,
-):
-    """Updates a task on a remote server.
-
-    This function sends a POST request to the specified URL to update an
-    existing task. It implements a retry mechanism with exponential backoff
-    for transient errors.
-
-    Args:
-        url (str): The URL of the remote server.
-        server_id (str): The ID of the server.
-        server_status (str): The status of the server.
-        server_file_path (str): The path to the file on the server.
-        tool_result (str): The result of the tool execution.
-        timeout (int, optional): The timeout for the request in seconds.
-                                 Defaults to 60.
-        retriable_codes (List[int], optional): A list of HTTP status codes
-                                               that trigger a retry.
-                                               Defaults to
-                                               [429, 500, 502, 503, 504].
-        max_retries (int, optional): The maximum number of retries.
-                                     Defaults to 5.
-
-    Returns:
-        dict: The JSON response from the server.
-
-    Raises:
-        McpError: If the request fails after all retries.
-    """
-    request = RemoteTaskRequest(
-        url=url,
-        data={
-            "server_id": kwargs["server_id"],
-            "server_status": kwargs["server_status"],
-            "server_file_path": kwargs["server_file_path"],
-            "tool_result": kwargs["tool_result"],
-        },
-        timeout=kwargs.get("timeout", DEFAULT_REMOTE_TASK_TIMEOUT),
-        retriable_codes=_retriable_codes(kwargs.get("retriable_codes")),
-        max_retries=kwargs.get("max_retries", 5),
-        message="Failed to update task",
-        relay_path="task/update",
-    )
-    return await _post_remote_task(request)
-
-
-def _retriable_codes(value: Any) -> tuple[int, ...]:
-    """Return retryable status codes from an override or defaults."""
-    if value is None:
-        return DEFAULT_RETRIABLE_CODES
-    return tuple(value)
-
-
-async def _post_remote_task(request: RemoteTaskRequest):
-    """Post one remote task-manager request with retry handling.
-
-    The local ``server_tasks.db`` registry stays local; only this remote
-    POST path is relayed. In customer relay mode the form body is sent to
-    ``/v1/relay/task/{create,update}`` (an unauthenticated upstream the
-    relay forwards verbatim) instead of the operator task URL.
-    """
-    if relay_mode_enabled():
-        return await current_relay_client().post_data(
-            request.relay_path, data=request.data, message=request.message
-        )
-    client_timeout = Timeout(request.timeout, connect=request.timeout)
-    async with get_async_client(timeout=client_timeout) as client:
-        return await post_json_with_retries(
-            client,
-            JsonPostRequest(url=request.url, data=request.data),
-            JsonPostRetry(
-                timeout=request.timeout,
-                max_retries=request.max_retries,
-                retriable_codes=request.retriable_codes,
-                message=request.message,
-            ),
-        )

@@ -101,8 +101,6 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.                                                                                               |
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope); injects IAM `X-Auth-Token` and forwards only the `task_name` query key.                                                                                             |
 | `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.                                                                                            |
-| `POST`   | `/v1/relay/task/create`                  | relay | Remote task-create relay (envelope); no operator credential injected.                                                                                                                                   |
-| `POST`   | `/v1/relay/task/update`                  | relay | Remote task-update relay (envelope); no operator credential injected.                                                                                                                                   |
 | `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope); validates the repo id, injects the operator IAM `X-Auth-Token`, forwards only `question`/`page_size`/`page_num`, and bypasses the host proxy.                                 |
 
 `GET /v1/agents` returns one row per registered native slug; each
