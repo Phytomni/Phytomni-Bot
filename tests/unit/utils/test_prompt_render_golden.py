@@ -53,11 +53,17 @@ def _render_map():
     Vars are collected from the include-expanded template (what
     ``load_template`` returns) so a body shared via ``{{> partial}}`` still
     renders identically. Marker captures (``#``/``/``/``>`` leaders) are not
-    treated as substitutable variables.
+    treated as substitutable variables. ``user/_partials/*`` bodies are
+    internal include targets, never loaded directly by an agent; their
+    content is already pinned transitively through the hosts that include
+    them, so they are skipped to keep this baseline a snapshot of
+    directly-sent prompts only.
     """
     data = yaml.safe_load(_PROMPT_FILE.read_text(encoding="utf-8"))
     rendered = {}
     for path in _leaf_paths(data):
+        if "/_partials/" in path:
+            continue
         loaded = load_template(str(_PROMPT_FILE), path)
         names = {
             match.group(1).strip()

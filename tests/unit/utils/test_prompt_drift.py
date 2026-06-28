@@ -40,6 +40,12 @@ _PROMPT_FILE = _SRC_ROOT / "config" / ".prompts.yaml"
 # ``_SYNTHESIS_SECTIONS`` struct below rather than this regex.
 _PATH_LITERAL_RE = re.compile(r"""["'](system|template|user)/([\w./]+)["']""")
 
+# ``{{> bucket/path }}`` include references embedded in the prompt YAML
+# itself. ``user/_partials/*`` bodies are shared via these includes rather
+# than loaded by any ``.py`` call site, so harvesting them keeps a partial
+# "referenced" (live) while an unused partial still trips the inverse guard.
+_INCLUDE_REF_RE = re.compile(r"\{\{>\s*([\w./]+)\s*\}\}")
+
 # Leaves intentionally present without a code reference. ``deeploc`` and
 # ``virtual_knockout`` are another contributor's staged-but-unwired prompts
 # (foreign WIP -- do not delete); the rest load through the
@@ -79,9 +85,10 @@ def _referenced_paths() -> set[str]:
     """Collect every prompt path the code can load.
 
     Combines the literal ``"<bucket>/<path>"`` references in source with
-    the imported map values and the report section structs, so paths built
-    via ``f"template/{template_key}"`` or stored only in a dispatch map are
-    covered.
+    the imported map values, the report section structs, and the
+    ``{{> bucket/path }}`` include references in the prompt YAML, so paths
+    built via ``f"template/{template_key}"``, stored only in a dispatch
+    map, or reachable only through a shared partial are all covered.
     """
     paths: set[str] = set()
     for py_file in _SRC_ROOT.rglob("*.py"):
@@ -93,6 +100,8 @@ def _referenced_paths() -> set[str]:
     paths.update(
         f"template/{section.template_key}" for section in _SYNTHESIS_SECTIONS
     )
+    yaml_text = _PROMPT_FILE.read_text(encoding="utf-8")
+    paths.update(_INCLUDE_REF_RE.findall(yaml_text))
     return paths
 
 
