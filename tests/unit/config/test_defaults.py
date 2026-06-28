@@ -172,8 +172,8 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
 
 def test_deep_genome_config_has_no_task_url_fields():
     """CREATE_TASK_URL / UPDATE_TASK_URL are removed from DeepGenomeConfig."""
-    assert "CREATE_TASK_URL" not in DeepGenomeConfig.model_fields
-    assert "UPDATE_TASK_URL" not in DeepGenomeConfig.model_fields
+    assert "CREATE_TASK_URL" not in DeepGenomeConfig.model_fields.keys()
+    assert "UPDATE_TASK_URL" not in DeepGenomeConfig.model_fields.keys()
 
 
 @pytest.mark.parametrize("env_name", ["RELAY_MODE", "PHYTOMNI_RELAY_MODE"])

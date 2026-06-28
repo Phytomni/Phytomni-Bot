@@ -100,24 +100,24 @@ must match the user id the operator bound to the relay key, since the
 operator's OBS relay confines each key to its own tenant namespace). See
 `config/.env.customer.example` for the minimal child variable set.
 
-| Variable           | Aliased as                  | Purpose                                                                                                                 |
-| ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_URL`        | `PHYTOMNI_TOKEN_URL`        | IAM token-acquisition endpoint (legacy default: `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).                 |
-| `RETRIEVE_URL`     | `PHYTOMNI_RETRIEVE_URL`     | Document-retrieval endpoint used by KnowledgeAgent / DataAgent / AnalystAgent.                                          |
-| `RERANK_URL`       | `PHYTOMNI_RERANK_URL`       | Document-reranking endpoint used downstream of `RETRIEVE_URL`.                                                          |
-| `SPA_FAQ_URL`      | `PHYTOMNI_SPA_FAQ_URL`      | SPA-faq lookup template; expects `{repo_id}` substitution.                                                              |
-| `DATABASE_URL`     | `PHYTOMNI_DATABASE_URL`     | NL-query database endpoint; the legacy default embedded the workspace UUID directly inside the URL path.                |
-| `ANALYSIS_URL`     | `PHYTOMNI_ANALYSIS_URL`     | EI-Health workflow endpoint; the legacy default embedded project and job UUIDs directly inside the URL path.            |
-| `OBS_SERVER`       | `PHYTOMNI_OBS_SERVER`       | OBS regional host (legacy default: `obs.cn-east-3.myhuaweicloud.com`).                                                  |
-| `REPO_ID`          | `PHYTOMNI_REPO_ID`          | Primary knowledge-repo UUID.                                                                                            |
-| `REPO_ID_DICT`     | `PHYTOMNI_REPO_ID_DICT`     | JSON-string `{ "<repo_uuid>": <token_budget>, ... }`; parsed into a `Dict[str, int]` by pydantic-settings.              |
-| `WORKSPACE_ID`     | `PHYTOMNI_WORKSPACE_ID`     | Workspace UUID used by NL-query and analysis paths.                                                                     |
-| `SUBJECT_ID`       | `PHYTOMNI_SUBJECT_ID`       | NL-query database subject / schema UUID.                                                                                |
-| `DATA_REPO_ID`     | `PHYTOMNI_DATA_REPO_ID`     | DataAgent retrieval repo UUID.                                                                                          |
-| `TOOL_REPO_ID`     | `PHYTOMNI_TOOL_REPO_ID`     | Analyst tool-retrieval repo UUID.                                                                                       |
-| `PROTOCOL_REPO_ID` | `PHYTOMNI_PROTOCOL_REPO_ID` | DeepGenome protocol-retrieval repo UUID.                                                                                |
-| `SPA_REPO_ID`      | `PHYTOMNI_SPA_REPO_ID`      | DeepGenome SPA-repo UUID feeding into `SPA_FAQ_URL`.                                                                    |
-| `APP_ID`           | `PHYTOMNI_APP_ID`           | JSON-string `{ "small": "<uuid>", "medium": "<uuid>", "large": "<uuid>" }`; analyst compute-tier app-id map.            |
+| Variable           | Aliased as                  | Purpose                                                                                                      |
+| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `TOKEN_URL`        | `PHYTOMNI_TOKEN_URL`        | IAM token-acquisition endpoint (legacy default: `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).      |
+| `RETRIEVE_URL`     | `PHYTOMNI_RETRIEVE_URL`     | Document-retrieval endpoint used by KnowledgeAgent / DataAgent / AnalystAgent.                               |
+| `RERANK_URL`       | `PHYTOMNI_RERANK_URL`       | Document-reranking endpoint used downstream of `RETRIEVE_URL`.                                               |
+| `SPA_FAQ_URL`      | `PHYTOMNI_SPA_FAQ_URL`      | SPA-faq lookup template; expects `{repo_id}` substitution.                                                   |
+| `DATABASE_URL`     | `PHYTOMNI_DATABASE_URL`     | NL-query database endpoint; the legacy default embedded the workspace UUID directly inside the URL path.     |
+| `ANALYSIS_URL`     | `PHYTOMNI_ANALYSIS_URL`     | EI-Health workflow endpoint; the legacy default embedded project and job UUIDs directly inside the URL path. |
+| `OBS_SERVER`       | `PHYTOMNI_OBS_SERVER`       | OBS regional host (legacy default: `obs.cn-east-3.myhuaweicloud.com`).                                       |
+| `REPO_ID`          | `PHYTOMNI_REPO_ID`          | Primary knowledge-repo UUID.                                                                                 |
+| `REPO_ID_DICT`     | `PHYTOMNI_REPO_ID_DICT`     | JSON-string `{ "<repo_uuid>": <token_budget>, ... }`; parsed into a `Dict[str, int]` by pydantic-settings.   |
+| `WORKSPACE_ID`     | `PHYTOMNI_WORKSPACE_ID`     | Workspace UUID used by NL-query and analysis paths.                                                          |
+| `SUBJECT_ID`       | `PHYTOMNI_SUBJECT_ID`       | NL-query database subject / schema UUID.                                                                     |
+| `DATA_REPO_ID`     | `PHYTOMNI_DATA_REPO_ID`     | DataAgent retrieval repo UUID.                                                                               |
+| `TOOL_REPO_ID`     | `PHYTOMNI_TOOL_REPO_ID`     | Analyst tool-retrieval repo UUID.                                                                            |
+| `PROTOCOL_REPO_ID` | `PHYTOMNI_PROTOCOL_REPO_ID` | DeepGenome protocol-retrieval repo UUID.                                                                     |
+| `SPA_REPO_ID`      | `PHYTOMNI_SPA_REPO_ID`      | DeepGenome SPA-repo UUID feeding into `SPA_FAQ_URL`.                                                         |
+| `APP_ID`           | `PHYTOMNI_APP_ID`           | JSON-string `{ "small": "<uuid>", "medium": "<uuid>", "large": "<uuid>" }`; analyst compute-tier app-id map. |
 
 The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` convention so deployments may use the prefixed form when other `PHYTOMNI_*` variables already dominate the runtime environment. The two `Dict`-valued entries (`REPO_ID_DICT` and `APP_ID`) ship as JSON strings (e.g. `PHYTOMNI_REPO_ID_DICT='{"a34b...77b":128,"ec3...b":64}'`, `PHYTOMNI_APP_ID='{"small":"<uuid>","medium":"<uuid>","large":"<uuid>"}'`) so a single env var carries the full map.
 

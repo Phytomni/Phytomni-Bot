@@ -86,7 +86,7 @@ def _patch_platform(
     monkeypatch.setattr(
         routes_module,
         "get_sensitive_config",
-        lambda: SimpleNamespace(),
+        SimpleNamespace,
     )
 
     async def _fake_token(region: object = None) -> str:
