@@ -60,7 +60,6 @@ ANALYSIS_GOAL_TEMPLATE_MAP = {
     "single_cell_analysis": "user/single_cell_analysis",
     "smep_analysis": "user/smep_analysis",
     "smoc_analysis": "user/smoc_analysis",
-    "gene_expression_analysis": "user/gene_expression_analysis",
 }
 
 ANALYSIS_META_TEMPLATE_MAP = {
@@ -74,7 +73,6 @@ ANALYSIS_META_TEMPLATE_MAP = {
     "single_cell_analysis": "user/single_cell_analysis_meta",
     "smep_analysis": "user/smep_analysis_meta",
     "smoc_analysis": "user/smoc_analysis_meta",
-    "gene_expression_analysis": "user/gene_expression_analysis_meta",
 }
 
 ANALYSIS_TARGET_FILE_FEATURE_MAP = {
@@ -91,7 +89,6 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
     "single_cell_analysis": [".png", ".summary", ".legend"],
     "smep_analysis": [".png", ".summary", ".legend"],
     "smoc_analysis": [".png", ".summary", ".legend"],
-    "gene_expression_analysis": [".png", ".summary", ".legend"],
 }
 
 DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
