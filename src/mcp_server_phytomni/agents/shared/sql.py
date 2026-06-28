@@ -9,7 +9,7 @@
 BI seam shared by the deep_genome and brief_gene boundaries: it runs the
 SQL directly against GaussDB via ``gauss_query`` or, in customer relay
 mode, forwards to ``/v1/relay/bi/query`` via ``relay_bi_query`` (the
-relay injects the operator ``BI_TOKEN``).
+operator runs the query server-side; no BI credential is forwarded).
 """
 
 from typing import Any
@@ -26,10 +26,10 @@ async def relay_bi_query(sql: str, *, message: str) -> Any:
     """Run a BI SQL query through the customer relay route.
 
     Posts the standard ``{"sql", "returnType": "json"}`` body to
-    ``/v1/relay/bi/query`` with the relay key. The relay injects the
-    operator ``BI_TOKEN`` (a ``bi``-inject route), so a relay-mode child
-    Bot needs no BI credential of its own. Shared by the brief_gene and
-    deep_genome BI boundaries to keep one relay route + body shape.
+    ``/v1/relay/bi/query`` with the relay key. The relay terminates the
+    query server-side against the operator's GaussDB, so a relay-mode
+    child Bot needs no BI credential of its own. Shared by the brief_gene
+    and deep_genome BI boundaries to keep one relay route + body shape.
 
     Args:
         sql: The BI SQL statement to execute.

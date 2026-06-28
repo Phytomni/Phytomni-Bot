@@ -60,7 +60,6 @@ _PLATFORM_URLS = SimpleNamespace(
     DATABASE_URL="https://db.test/nl2sql",
     ANALYSIS_URL="https://analysis.test/tasks",
     ANALYSIS_REGION="cn-analysis",
-    BI_URL="https://bi.test/query",
     SPA_FAQ_URL="http://spa.test/{repo_id}/faq",
 )
 

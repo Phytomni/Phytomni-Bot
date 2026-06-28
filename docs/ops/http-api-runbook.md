@@ -276,12 +276,13 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   agent routes but are denied (`403`) on relay routes by design.
 - **Per-service upstream auth.** `llm` / `coder` / `embed` inject the
   operator `Authorization: Bearer` key; `database` / `analysis` inject an
-  IAM `X-Auth-Token`; `bi` injects the static `token` (BI token);
-  `retrieve` / `rerank` / `task` inject nothing (their upstreams are
-  currently unauthenticated). The operator's real secrets come from the
-  same `.env` / `.env.encrypted` the rest of the service uses
-  (`API_KEY`, `CODER_API_KEY`, `EMBED_API_KEY`, `BI_TOKEN`, and the IAM
-  user credentials); no relay-specific secret exists.
+  IAM `X-Auth-Token`; `bi` is server-side-terminated (the operator runs
+  `gauss_query` locally — no credential is forwarded to the child);
+  `retrieve` / `rerank` inject nothing (their upstreams are currently
+  unauthenticated). The operator's real secrets come from the same `.env`
+  / `.env.encrypted` the rest of the service uses (`API_KEY`,
+  `CODER_API_KEY`, `EMBED_API_KEY`, and the IAM user credentials); no
+  relay-specific secret exists.
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:
   `GET /v1/relay/audit?service=llm&user_id=<customer>` and
