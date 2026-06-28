@@ -53,6 +53,39 @@ planned and tested.
   SQLite task row ID in `runtime/task_manager.py` is the only allowed
   source-tree exception.
 
+## Prompts
+
+- All prompts live in the single file `config/.prompts.yaml`, loaded by
+  `common/prompts.py:get_prompt(file, "bucket/path", params)`. Bucket roles:
+  `system/*` are LLM system messages, `user/*` are user-role task messages,
+  and `template/*` are client-side report fragments never sent to an LLM.
+- The renderer supports three constructs, applied in this order:
+  - `{{> bucket/path }}` **includes**, resolved at load time against the
+    parsed YAML. Use them to share one body across prompts. Includes recurse
+    behind a cycle guard and a depth cap, and an include that resolves to a
+    dict container (not a leaf string) raises.
+  - `{{#if var}}...{{/if}}` / `{{#unless var}}...{{/unless}}`
+    **conditionals**, resolved at render time before variable substitution.
+    A value is truthy when it is present and non-empty; a dropped branch
+    never warns about variables inside it. Markers absorb surrounding
+    whitespace symmetrically.
+  - `{{var}}` **substitution**. A missing parameter warns and renders as the
+    empty string rather than raising, so optional fields stay safe.
+- Shared bodies live under the `user/_partials/` namespace. Partials are
+  reached only through `{{> }}` includes and are never loaded directly by an
+  agent, so they carry no standalone call site. The drift guard
+  (`tests/unit/utils/test_prompt_drift.py`) harvests include references from
+  the YAML, so a partial reachable through an include counts as live while an
+  unused one still trips the inverse dead-key check.
+- `{{#`, `{{/`, and `{{>` are reserved marker leaders. Literal prose that
+  needs those byte sequences must be rephrased; an unbalanced or stray marker
+  raises rather than rendering silently.
+- A change to a prompt body, an include, or a partial is pinned by the render
+  baseline in `tests/unit/utils/test_prompt_render_golden.py`. Sharing a body
+  via an include must keep that baseline byte-identical; regenerate it
+  intentionally with `PHYTOMNI_REGEN_PROMPT_GOLDEN=1` only for a deliberate
+  wording change, and review the diff.
+
 ## Docstrings
 
 - Public modules, classes, functions, and methods use Google-style docstrings.
