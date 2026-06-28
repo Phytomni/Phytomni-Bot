@@ -47,6 +47,7 @@ _TEST_ENV = {
     "EMBED_MODEL": "pytest-embed-model",
     "EMBED_API_KEY": "pytest-embed-api-key",
     "BI_TOKEN": "pytest-bi-token",
+    "GAUSS_DSN": ("postgresql://u:p@db.invalid:8000/test?sslmode=require"),
     # Deployment-specific endpoints (Phase 14.3.1): empty defaults in
     # config/defaults.py force operators to set these per-deployment.
     # Tests use stable example.invalid hosts so a stray real network

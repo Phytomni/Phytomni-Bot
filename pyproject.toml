@@ -37,6 +37,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
+    "asyncpg>=0.30.0",
     "cryptography>=42.0.0",
     "esdk-obs-python>=3.26.2",
     "fastapi>=0.115.0",

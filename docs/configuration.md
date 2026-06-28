@@ -15,23 +15,24 @@ cp src/mcp_server_phytomni/config/.env.example \
 
 Common variables:
 
-| Variable            | Required | Purpose                                 |
-| ------------------- | -------- | --------------------------------------- |
-| `DOMAIN_NAME`       | yes      | Huawei IAM domain name.                 |
-| `USER_NAME`         | yes      | Huawei IAM user name.                   |
-| `USER_PASSWORD`     | yes      | Huawei IAM password.                    |
-| `ACCESS_KEY_ID`     | yes      | OBS access key id.                      |
-| `SECRET_ACCESS_KEY` | yes      | OBS secret access key.                  |
-| `BASE_URL`          | yes      | Primary LLM base URL.                   |
-| `MODEL_ID`          | yes      | Primary LLM model id.                   |
-| `API_KEY`           | yes      | Primary outbound LLM API key.           |
-| `CODER_URL`         | yes      | Coder model base URL.                   |
-| `CODER_MODEL`       | yes      | Coder model id.                         |
-| `CODER_API_KEY`     | yes      | Coder model API key.                    |
-| `EMBED_URL`         | yes      | Embedding service base URL.             |
-| `EMBED_MODEL`       | yes      | Embedding model id.                     |
-| `EMBED_API_KEY`     | yes      | Embedding service API key.              |
-| `BI_TOKEN`          | no       | DeepGenome BI token; defaults to empty. |
+| Variable            | Required | Purpose                                                                                                                                                 |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN_NAME`       | yes      | Huawei IAM domain name.                                                                                                                                 |
+| `USER_NAME`         | yes      | Huawei IAM user name.                                                                                                                                   |
+| `USER_PASSWORD`     | yes      | Huawei IAM password.                                                                                                                                    |
+| `ACCESS_KEY_ID`     | yes      | OBS access key id.                                                                                                                                      |
+| `SECRET_ACCESS_KEY` | yes      | OBS secret access key.                                                                                                                                  |
+| `BASE_URL`          | yes      | Primary LLM base URL.                                                                                                                                   |
+| `MODEL_ID`          | yes      | Primary LLM model id.                                                                                                                                   |
+| `API_KEY`           | yes      | Primary outbound LLM API key.                                                                                                                           |
+| `CODER_URL`         | yes      | Coder model base URL.                                                                                                                                   |
+| `CODER_MODEL`       | yes      | Coder model id.                                                                                                                                         |
+| `CODER_API_KEY`     | yes      | Coder model API key.                                                                                                                                    |
+| `EMBED_URL`         | yes      | Embedding service base URL.                                                                                                                             |
+| `EMBED_MODEL`       | yes      | Embedding model id.                                                                                                                                     |
+| `EMBED_API_KEY`     | yes      | Embedding service API key.                                                                                                                              |
+| `BI_TOKEN`          | no       | DeepGenome BI token; defaults to empty.                                                                                                                 |
+| `GAUSS_DSN`         | yes      | Direct GaussDB DSN for the BI query path. Required outside relay mode; sealed in the encrypted envelope. URL-encode special characters in the password. |
 
 Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
 compatibility. New local configuration should use `ACCESS_KEY_ID` and
