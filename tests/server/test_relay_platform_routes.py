@@ -5,9 +5,9 @@
 """Tests for the platform-family relay routes (envelope mode).
 
 retrieve/rerank/task inject no operator credential; database/analysis
-inject an IAM X-Auth-Token; bi injects a static token header. All forward
-the body verbatim to a config-resolved URL and map an upstream error to
-the unified envelope.
+inject an IAM X-Auth-Token. The bi route runs gauss_query server-side
+rather than forwarding. All others forward the body verbatim to a
+config-resolved URL and map an upstream error to the unified envelope.
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ from typing import cast
 import httpx
 import pytest
 from fastapi import FastAPI
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 from pydantic import SecretStr
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
@@ -223,28 +225,52 @@ async def test_analysis_route_passes_its_region(
     assert seen[0].headers["x-auth-token"] == "iam-token:cn-analysis"
 
 
-async def test_bi_route_injects_static_token(
+async def test_bi_route_runs_gauss_server_side(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """bi injects the static BI_TOKEN under the lowercase token header."""
-    seen: list[httpx.Request] = []
+    """POST /v1/relay/bi/query runs gauss_query, not an HTTP forward."""
 
-    def handler(req: httpx.Request) -> httpx.Response:
-        seen.append(req)
-        return _ok(req)
+    async def _fake_gauss(_sql: str) -> dict:
+        return {"message": "ok", "data": [{"gene_id": "OsX"}]}
 
-    _patch_platform(monkeypatch, handler)
+    monkeypatch.setattr(routes_module, "gauss_query", _fake_gauss)
+    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
 
-    response = await client.post(
+    resp = await client.post(
         "/v1/relay/bi/query",
         headers={"Authorization": f"Bearer {relay_key('bi')}"},
-        content=b"{}",
+        json={"sql": "SELECT 1"},
     )
 
-    assert response.status_code == 200
-    assert seen[0].headers["token"] == "bi-secret"
+    assert resp.status_code == 200
+    assert resp.json() == {"message": "ok", "data": [{"gene_id": "OsX"}]}
+
+
+async def test_bi_route_sql_error_returns_error_envelope(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A driver McpError from gauss_query maps to the sql-error envelope."""
+
+    async def _bad_gauss(_sql: str) -> dict:
+        raise McpError(
+            ErrorData(code=INTERNAL_ERROR, message="GaussDB query failed")
+        )
+
+    monkeypatch.setattr(routes_module, "gauss_query", _bad_gauss)
+    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
+
+    resp = await client.post(
+        "/v1/relay/bi/query",
+        headers={"Authorization": f"Bearer {relay_key('bi')}"},
+        json={"sql": "SELECT 1"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"message": "sql error", "data": []}
 
 
 async def test_platform_upstream_error_maps_to_status(

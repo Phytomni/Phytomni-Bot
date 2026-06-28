@@ -13,18 +13,23 @@ relay routes, each scope-gated and forwarding through the core.
 
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import Awaitable, Callable
 from typing import Optional
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, Response
+from mcp.shared.exceptions import McpError
 from starlette.requests import Request
 
+from ...agents.shared.gauss import gauss_query
 from ...auth.iam import get_token
 from ...config.defaults import ApiConfig, DeepGenomeConfig
 from ...config.settings import get_sensitive_config
+from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal
-from .audit import get_audit_store
+from .audit import RelayAuditRecord, get_audit_store
 from .deps import (
     read_relay_body,
     relay_enabled_guard,
@@ -59,14 +64,13 @@ _OPENAI_RELAYS = (
 
 # Platform-family relay services (ENVELOPE mode): the configured URL is
 # the POST target verbatim (no path appended). inject kind is one of
-# "none" (upstream is unauthenticated), "iam" (X-Auth-Token via
-# get_token, with the optional region attr), or "bi" (static BI_TOKEN).
+# "none" (upstream is unauthenticated) or "iam" (X-Auth-Token via
+# get_token, with the optional region attr).
 _PLATFORM_RELAYS = (
     ("retrieve", "search", "RETRIEVE_URL", "none", None),
     ("rerank", "rank", "RERANK_URL", "none", None),
     ("database", "nl2sql", "DATABASE_URL", "iam", None),
     ("analysis", "tasks", "ANALYSIS_URL", "iam", "ANALYSIS_REGION"),
-    ("bi", "query", "BI_URL", "bi", None),
     ("task", "create", "CREATE_TASK_URL", "none", None),
     ("task", "update", "UPDATE_TASK_URL", "none", None),
 )
@@ -82,19 +86,11 @@ def _build_platform_inject(
 ) -> RelayInjectionStrategy:
     """Build the per-service injection strategy for a platform route.
 
-    ``none`` injects nothing, ``bi`` injects the static BI_TOKEN under the
-    lowercase ``token`` header, and ``iam`` mints an IAM ``X-Auth-Token``
-    via ``get_token`` (with the service's region when one applies).
+    ``none`` injects nothing; ``iam`` mints an IAM ``X-Auth-Token`` via
+    ``get_token`` (with the service's region when one applies).
     """
     if kind == "none":
         return _relay_no_inject
-    if kind == "bi":
-
-        async def _bi_inject() -> dict[str, str]:
-            token = get_sensitive_config().BI_TOKEN.get_secret_value()
-            return {"token": token}
-
-        return _bi_inject
 
     async def _iam_inject() -> dict[str, str]:
         token = await get_token(region=region) if region else await get_token()
@@ -279,6 +275,47 @@ def _spa_faq_handler() -> Callable[..., Awaitable[Response]]:
     return _handler
 
 
+def _bi_query_handler() -> Callable[..., Awaitable[Response]]:
+    """Build the server-side BI query handler (no HTTP forward).
+
+    Scope-gated on ``relay:bi``, the handler reads ``{"sql": ...}`` under
+    the byte budget, runs it against GaussDB via ``gauss_query``, and
+    returns the envelope. A driver error is converted to the
+    ``{"message": "sql error", "data": []}`` envelope at this HTTP edge
+    (gauss_query raises McpError in-process). Audit records metadata only.
+    """
+
+    async def _handler(
+        request: Request,
+        principal: ApiPrincipal = Depends(require_relay_access("bi")),
+    ) -> Response:
+        started = time.monotonic()
+        config = ApiConfig()
+        body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
+        try:
+            sql = json.loads(body)["sql"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="missing sql") from exc
+        try:
+            payload = await gauss_query(sql)
+        except McpError:
+            payload = {"message": "sql error", "data": []}
+        entry = RelayAuditRecord(
+            request_id=current_request_id() or "",
+            user_id=principal.user_id,
+            key_prefix=principal.key_prefix,
+            service="bi",
+            operation="bi_query",
+            status_code=200,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            request_body=json.dumps({"sql_len": len(sql)}),
+        )
+        get_audit_store(config.RELAY_AUDIT_DB_PATH).record(entry)
+        return JSONResponse(payload)
+
+    return _handler
+
+
 def create_relay_router() -> APIRouter:
     """Build the ``/v1/relay`` router gated by the enable kill-switch.
 
@@ -310,6 +347,8 @@ def create_relay_router() -> APIRouter:
             _platform_relay_handler(name, url_attr, inject_kind, region_attr),
             methods=["POST"],
         )
+
+    router.add_api_route("/bi/query", _bi_query_handler(), methods=["POST"])
 
     # Registered after the literal /analysis/tasks submit route so a POST to
     # it matches the submit, not the {task_id} param route.
