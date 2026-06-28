@@ -70,18 +70,11 @@ _DYNAMIC_SUPPLIERS = frozenset(
 # ``_EMPTY_IMAGE_RE`` pass in ``deep_genome/report.py``.
 _INTENTIONALLY_OPTIONAL = frozenset({"fst_path"})
 
-# Latent unsupplied placeholders surfaced by this guard: their host prompts
-# render the token blank in production today. Pinned (shrink-only) until the
-# behavior fix lands. See the plan's AF-023 / AF-024.
-_KNOWN_UNSUPPLIED_GAPS = frozenset(
-    {
-        # environment/graph.py:96-104 renders vci_analysis without "year".
-        "year",
-        # deep_genome/dispatch.py:707-710 renders the analysis goal with
-        # only {"gene_id": ...}, never "epic_type".
-        "epic_type",
-    }
-)
+# Latent unsupplied placeholders surfaced by this guard would be pinned here
+# (shrink-only) until their behavior fix lands. Currently none: the two it
+# first found -- vci_analysis "year" and smep_analysis "epic_type", both of
+# which rendered blank -- were resolved by dropping the placeholders.
+_KNOWN_UNSUPPLIED_GAPS: frozenset[str] = frozenset()
 
 # Prompts with no production loader (pinned only by an offline fixture), so
 # their placeholders are supplied by a test, not a call site. Mirrors

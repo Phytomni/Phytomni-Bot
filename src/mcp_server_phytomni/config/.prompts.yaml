@@ -2902,7 +2902,7 @@ user:
     vci_analysis: |-
       Please help me to perform vci analysis, the province_code is
       {{province_code}}, the city_code is {{city_code}}, the county_code is
-      {{county_code}}, the target year is {{year}}
+      {{county_code}}
     vci_analysis_meta: |
       Note1: you need to using af3 environment (conda activate af3);
       Note2: you need install geopandas pyproj rioxarray and xarray packages
@@ -4697,7 +4697,7 @@ user:
     you are very good at conducting epigenetic modification prediction
     studies, next, you will generate a task plan and complete the task
     analysis based on the data that we have provided you with, now your task
-    goal is: Please help me to predict the {{epic_type}} modification of
+    goal is: Please help me to predict the modification of
     {{gene_id}} gene prompter.
   smep_analysis_meta: |-
     Note1: You do not need to install any software;
