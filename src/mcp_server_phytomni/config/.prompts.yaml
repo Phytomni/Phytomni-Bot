@@ -2811,6 +2811,11 @@ user:
     conversational
     filler or a "Results" heading.
   enrichment_analysis: |-
+    You are a bioinformatician specialized in the field of functional
+    genomics and you are well versed in gene set enrichment analysis,
+    next, you will generate a task plan and complete the task analysis
+    based on the data that we have provided you with, now your task goal
+    is:
     Please help me to perform gene enrichment analysis based on the list of
     genes I have provided.
   enrichment_analysis_meta: |-
@@ -3504,9 +3509,11 @@ user:
        - Strict Adherence to Format: The output must be exclusively a JSON
        array of strings, with no additional text, explanations, or
        conversational filler.
-       - Objectivity: Base recommendations solely on the provided data and
-       general biological knowledge. Do not make assumptions or introduce
-       external information not supported by the input.
+       - Objectivity: Ground the hypotheses you test in the provided
+       Functional Analysis Content; draw the experimental techniques
+       themselves from established molecular-biology practice. Do not
+       invent gene functions, phenotypes, or claims the input does not
+       support.
        - Conciseness: Provide only the names of the experiments. The value
        is in the expert selection, not in describing each technique.
        - Non-Redundancy: Avoid suggesting multiple experiments that test the
@@ -4171,8 +4178,12 @@ user:
     <User query>
     {{user_query}}
     </User query>
-  haplotypes_analysis: 'Please help me to analyze the haplotype of {{gene_id}}
-    gene'
+  haplotypes_analysis: |-
+    You are a bioinformatician specialized in the field of population
+    genomics and you are well versed in haplotype analysis, next, you
+    will generate a task plan and complete the task analysis based on the
+    data that we have provided you with, now your task goal is:
+    Please help me to analyze the haplotype of {{gene_id}} gene
   haplotypes_analysis_meta: |-
     Note1: you need to using af3 environment(conda activate af3);
     step1, analysis the cds haplotypes information using cp(cp
@@ -4638,8 +4649,13 @@ user:
     execute your tasks according to the defined Workflows, and generate your
     response precisely in the specified OutputFormat. Your sole context is
     the user query and the provided documents. Begin.
-  single_cell_analysis: 'Please plot the expression of the gene {{gene_id}}
-    in different cells.'
+  single_cell_analysis: |-
+    You are a bioinformatician specialized in the field of single-cell
+    transcriptomics and you are well versed in single-cell expression
+    analysis, next, you will generate a task plan and complete the task
+    analysis based on the data that we have provided you with, now your
+    task goal is:
+    Please plot the expression of the gene {{gene_id}} in different cells.
   single_cell_analysis_meta: |-
     step1, plot the gene expression in different tissues using
     the plot script I provided;(conda activate af3);
