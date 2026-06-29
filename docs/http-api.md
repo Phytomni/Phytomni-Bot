@@ -92,7 +92,7 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope); no operator credential injected.                                                                                                                                   |
 | `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope); no operator credential injected.                                                                                                                                     |
 | `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                                                                                                                       |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); injects the static operator `token` (BI token).                                                                                                                                    |
+| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated — the operator runs `gauss_query` against GaussDB, no credential forwarded.                                                                                 |
 | `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay; streams a tenant-namespace-confined object (key re-validated to `agent_data/{user_data,uploads}/<key user id>/`) under a response-size budget, via operator OBS credentials. |
 | `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay; enumerates keys under the caller tenant's output root (`agent_data/user_data/<key user id>/`) via operator OBS credentials.                                                      |
 | `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay; writes the request body at a tenant-namespace-confined key via operator OBS credentials.                                                                                       |
@@ -252,18 +252,18 @@ SSE), the upstream status is read before the streamed response is built
 so an upstream `5xx` is never masked as a `200`, and response headers are
 reduced to an allowlist (`Content-Type` only) so a reflected operator
 credential header cannot leak. Platform-family routes
-(`retrieve` / `rerank` / `database` / `bi` / `analysis` / `task`) are
+(`retrieve` / `rerank` / `database` / `analysis` / `bi`) are
 *envelope*: a `2xx` body is returned as-is and any upstream error is
 mapped to the unified error envelope.
 
 **Per-service upstream credential injected:**
 
-| Service                        | Injected upstream credential                     |
-| ------------------------------ | ------------------------------------------------ |
-| `llm` / `coder` / `embed`      | `Authorization: Bearer <operator key>`           |
-| `database` / `analysis`        | IAM `X-Auth-Token` (minted via `get_token`)      |
-| `bi`                           | static `token: <operator BI token>`              |
-| `retrieve` / `rerank` / `task` | none (the upstream is currently unauthenticated) |
+| Service                   | Injected upstream credential                     |
+| ------------------------- | ------------------------------------------------ |
+| `llm` / `coder` / `embed` | `Authorization: Bearer <operator key>`           |
+| `database` / `analysis`   | IAM `X-Auth-Token` (minted via `get_token`)      |
+| `bi`                      | none — server-side GaussDB termination           |
+| `retrieve` / `rerank`     | none (the upstream is currently unauthenticated) |
 
 **Request and response handling.** The request body is read under a
 streaming byte budget (`RELAY_REQUEST_MAX_BYTES`; over-limit returns

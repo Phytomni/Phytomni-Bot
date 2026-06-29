@@ -187,7 +187,7 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                                       |
 | `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                                         |
 | `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                                              |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope, static `token`).                                                                                                      |
+| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated, no credential forwarded.                                                                     |
 | `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay (operator OBS credentials; streamed under a response-size budget, key confined to the caller tenant namespace). |
 | `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; prefix confined to the caller tenant output root).                                       |
 | `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay (operator OBS credentials; key confined to the caller tenant namespace).                                          |
