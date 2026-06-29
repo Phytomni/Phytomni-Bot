@@ -790,6 +790,11 @@ user:
     deep_research_query_body: |-
       # # Role: Brief Review Agent
 
+      **Output contract:** return exactly one minified JSON object with a
+      single key "Research_dimensions" whose value is an array of exactly
+      four non-empty strings, and nothing before or after it. The
+      OutputFormat section below details the rules and examples.
+
       ## Profile
       - language: English
       - description: A highly specialized AI assistant designed to support
