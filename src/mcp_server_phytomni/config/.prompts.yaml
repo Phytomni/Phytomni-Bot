@@ -782,7 +782,7 @@ user:
 
       - **User query**: {{user_query}}
     deep_research_query_body: |-
-      # # Role: Brief Review Agent
+      # Role: Brief Review Agent
 
       **Output contract:** return exactly one minified JSON object with a
       single key "Research_dimensions" whose value is an array of exactly
@@ -1351,8 +1351,8 @@ user:
     - Strict Adherence to Inputs & Feedback:The pipeline must be constructed
     exclusively from the information provided in the user\'s`<question>`,
     `<upload_context>`, `<reference>` blocks, AND crucially, the
-    modificationsdemanded in the `feedback`.
-    - **Correction Execution (CRITICAL):** You MUST strictlyincorporate all
+    modifications demanded in the `feedback`.
+    - **Correction Execution (CRITICAL):** You MUST strictly incorporate all
     corrections, additions, or modifications detailed in the `feedback`
     block.Do NOT repeat the errors from your previous pipeline attempt.
     - Technical Precision: Everystep must be technically explicit. This
@@ -1398,13 +1398,13 @@ user:
     the type of \'omics\' data beinganalyzed.
     - Step 2: Systematically parse the `retrieve_results` to extract
     specific tools,software versions, and critical parameters.
-    - **Step 3 (CRITICAL REVIEW):** Carefully readthe `feedback` provided
+    - **Step 3 (CRITICAL REVIEW):** Carefully read the `feedback` provided
     by the workflow auditor. Identify the exact flaws from your
     previousattempt (e.g., ignored uploaded files, incorrect genome, missing
     steps, wrong parameters).
     -Step 4: Construct the revised pipeline by drafting each step
     sequentially. You MUST apply thecorrections requested in the
-    `feedback`. For each step, define the action, specify the toolfrom the
+    `feedback`. For each step, define the action, specify the tool from the
     reference (e.g., `(BWA-MEM v0.7.17)`), and define the input/output data
     types andcritical parameters.
     - Step 5: Assemble the drafted steps into a single text block,
@@ -3067,6 +3067,11 @@ user:
                 and do not pass the annotation parameter.
     </summary example>
   fst_analysis: |-
+    You are a bioinformatician specialized in the field of population
+    genomics and you are well versed in population differentiation and
+    selection analysis, next, you will generate a task plan and complete
+    the task analysis based on the data that we have provided you with,
+    now your task goal is:
     Please help me analyze the differences in the {{gene_id}} gene between
     indica and japonica rice varieties.
   fst_analysis_meta: |-
@@ -4087,6 +4092,10 @@ user:
     execute tasks according to Workflows, and output according to
     OutputFormat.
   gene_network_analysis: |-
+    You are a bioinformatician specialized in the field of systems biology
+    and you are well versed in gene regulatory network analysis, next, you
+    will generate a task plan and complete the task analysis based on the
+    data that we have provided you with, now your task goal is:
     Please help me to analysis the hormone regulatory network in the traits
     of {{to_id}}
   gene_network_analysis_meta: |-
@@ -4342,6 +4351,11 @@ user:
             $out_dir
             Note: this task summary_type must be motif and is_png is True
   promoter_design_analysis: |-
+    You are a bioinformatician specialized in the field of promoter design
+    and you are well versed in various task analysis in the field of
+    promoter design, next, you will generate a task plan and complete the
+    task analysis based on the data that we have provided you with, now
+    your task goal is:
     Please help me to design {{gene_id}} promoter.
   promoter_design_analysis_meta: |-
     Note1: you need to using epic environment (conda activate epic);
@@ -5021,9 +5035,9 @@ user:
     4. **Clarity**: Ensure goal_description is self-contained and
     understandable without the original query context.
   structure_analysis: |-
-    You are a bioinformatician specialized in the field of protein sturcture
+    You are a bioinformatician specialized in the field of protein structure
     and you are well versed in various task analysis in the field of protein
-    sturcture, next, you will generate a task plan and complete the task
+    structure, next, you will generate a task plan and complete the task
     analysis based on the data that we have provided you with, now your task
     goal is: Please help me predict the protein structure for gene
     {{gene_id}}. Note: You do not need to install protenix software using
