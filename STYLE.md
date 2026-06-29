@@ -85,6 +85,12 @@ planned and tested.
   via an include must keep that baseline byte-identical; regenerate it
   intentionally with `PHYTOMNI_REGEN_PROMPT_GOLDEN=1` only for a deliberate
   wording change, and review the diff.
+- Every `{{var}}` placeholder must be supplied by a real call site (the
+  renderer blanks a missing one silently). The placeholder-coverage guard
+  (`tests/unit/utils/test_prompt_placeholder_coverage.py`) binds each
+  directly-loaded prompt's placeholders to a known supplier or a
+  documented exception, so a one-sided rename or a stray new placeholder
+  fails loudly instead of rendering blank.
 
 ## Docstrings
 
