@@ -292,7 +292,7 @@ class AnalystChatSubgraphMixin:
                         "upload_context": state["method_context"][
                             "upload_context"
                         ],
-                        "feed_back": state["plan_feedback"],
+                        "feedback": state["plan_feedback"],
                         "raw_plan": state.get("plan", ""),
                         "user_query": state["goal_description"],
                     },
@@ -305,7 +305,7 @@ class AnalystChatSubgraphMixin:
                         "retrieve_results": state["method_context"][
                             "retrieve_context"
                         ],
-                        "feed_back": state["plan_feedback"],
+                        "feedback": state["plan_feedback"],
                         "raw_plan": state.get("plan", ""),
                         "user_query": state["goal_description"],
                     },

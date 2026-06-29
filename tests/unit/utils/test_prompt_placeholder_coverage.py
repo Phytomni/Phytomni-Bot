@@ -8,7 +8,7 @@ The renderer blanks a missing parameter rather than raising, so a
 placeholder no call site supplies degrades silently in production output.
 This guard collects every directly-loaded prompt's placeholders and
 asserts each is supplied by a known call site or a documented exception,
-so a one-sided rename (``feed_back`` renamed in the YAML but not the
+so a one-sided rename (``feedback`` renamed in the YAML but not the
 kwarg) or a stray new placeholder fails loudly instead of blanking.
 """
 
@@ -43,7 +43,7 @@ _INDIRECT_SUPPLIER_MODULES = (
 
 # The named wiring this guard exists to lock; each must stay suppliable.
 _NAMED_LOCKS = frozenset(
-    {"feed_back", "raw_plan", "upload_context", "species_string"}
+    {"feedback", "raw_plan", "upload_context", "species_string"}
 )
 
 # Placeholders supplied through an f-string or subscript key the static

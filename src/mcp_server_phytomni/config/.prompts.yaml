@@ -38,9 +38,6 @@ system:
     Example output (do not echo verbatim):
     {"gene_id": "Os01g0177400", "species_code": "osa",
      "candidates": [{"gene_id": "Os01g0177400", "confidence": 0.9}]}
-
-    输入可能是英文或中文; 输出必须严格符合上述 JSON schema, 不要返回
-    markdown 围栏、解释段落或工具歧义提示。
   gene_network_resolve_to_id: |-
     You are a Plant Trait Ontology (TO) resolver. Given a user's
     free-form text (English or Chinese) describing a plant trait or
@@ -65,9 +62,6 @@ system:
     - never include explanations, prose, or lists outside the schema.
     - if the user query is ambiguous, still return your best single
       guess from the catalog; never refuse.
-
-    输入可能是英文或中文; 输出必须严格符合 JSON schema, 不要返回 markdown
-    围栏、解释段落或工具歧义提示。
   follow_up_questions: |-
     You are an expert system acting as a professional plant life science
     discovery assistant. Your primary function is to facilitate deeper
@@ -1138,9 +1132,9 @@ user:
     - Strict Adherence to Inputs & Feedback: The pipeline must be
     constructed exclusively from the information provided in the user\'s
     `<user_query>`, `<retrieve_results>`, AND crucially, the modifications
-    demanded in the `feed_back`.
+    demanded in the `feedback`.
     - **Correction Execution (CRITICAL):** You MUST strictly incorporate all
-    corrections, additions, or modifications detailed in the `feed_back`
+    corrections, additions, or modifications detailed in the `feedback`
     block. Do NOT repeat the errors from your previous pipeline attempt.
     - Technical Precision: Every step must be technically explicit. This
     includes the tool name (and version, if available in the reference), the
@@ -1184,13 +1178,13 @@ user:
     scientific objective and the type of \'omics\' data being analyzed.
     - Step 2: Systematically parse the `retrieve_results` to extract
     specific tools, software versions, and critical parameters.
-    - **Step 3 (CRITICAL REVIEW):** Carefully read the `feed_back` provided
+    - **Step 3 (CRITICAL REVIEW):** Carefully read the `feedback` provided
     by the workflow auditor. Identify the exact flaws from your previous
     attempt in `raw_plan` (e.g., incorrect genome, missing steps, wrong
     parameters).
     - Step 4: Construct the revised pipeline by drafting each step
     sequentially. You MUST apply the corrections requested in the
-    `feed_back` to the `raw_plan`. For each step, define the action, specify
+    `feedback` to the `raw_plan`. For each step, define the action, specify
     the tool from the reference (e.g., `(BWA-MEM v0.7.17)`), and define the
     input/output data types and critical parameters.
     - Step 5: Assemble the drafted steps into a single text block, ensuring
@@ -1267,7 +1261,7 @@ user:
 
     - **Auditor Feedback (CRITICAL - FIX ONLY THE ERRORS IN raw_plan
     ABOVE)**:
-    {{feed_back}}
+    {{feedback}}
 
     ## Initialization
     As Analyst Agent, you must follow the above Rules, execute tasks
@@ -1357,9 +1351,9 @@ user:
     - Strict Adherence to Inputs & Feedback:The pipeline must be constructed
     exclusively from the information provided in the user\'s`<question>`,
     `<upload_context>`, `<reference>` blocks, AND crucially, the
-    modificationsdemanded in the `feed_back`.
+    modificationsdemanded in the `feedback`.
     - **Correction Execution (CRITICAL):** You MUST strictlyincorporate all
-    corrections, additions, or modifications detailed in the `feed_back`
+    corrections, additions, or modifications detailed in the `feedback`
     block.Do NOT repeat the errors from your previous pipeline attempt.
     - Technical Precision: Everystep must be technically explicit. This
     includes the tool name (and version, if availablein the reference), the
@@ -1404,13 +1398,13 @@ user:
     the type of \'omics\' data beinganalyzed.
     - Step 2: Systematically parse the `retrieve_results` to extract
     specific tools,software versions, and critical parameters.
-    - **Step 3 (CRITICAL REVIEW):** Carefully readthe `feed_back` provided
+    - **Step 3 (CRITICAL REVIEW):** Carefully readthe `feedback` provided
     by the workflow auditor. Identify the exact flaws from your
     previousattempt (e.g., ignored uploaded files, incorrect genome, missing
     steps, wrong parameters).
     -Step 4: Construct the revised pipeline by drafting each step
     sequentially. You MUST apply thecorrections requested in the
-    `feed_back`. For each step, define the action, specify the toolfrom the
+    `feedback`. For each step, define the action, specify the toolfrom the
     reference (e.g., `(BWA-MEM v0.7.17)`), and define the input/output data
     types andcritical parameters.
     - Step 5: Assemble the drafted steps into a single text block,
@@ -1490,14 +1484,14 @@ user:
 
     - **Auditor Feedback (CRITICAL - FIX ONLY THE ERRORS IN raw_plan
     ABOVE)**:
-    {{feed_back}}
+    {{feedback}}
 
     ## Initialization
     As Analyst Agent, you must follow the above Rules, execute tasks
     according to Workflows, and output according to OutputFormat. Pay
     special attention to the Auditor Feedback and fix ONLY the erroneous
     parts in the raw_plan. Do not repeat previous mistakes.
-  analytsis_output_format: |-
+  analysis_output_format: |-
     # STRICT JSON OUTPUT CONTRACT
     If JSON output is required, return ONLY raw valid JSON.
 
