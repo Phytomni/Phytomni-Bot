@@ -171,6 +171,7 @@ Use [CLI Reference](../cli.md) for the complete command reference.
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                       |
 | `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                 |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                  |
+| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                     |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                  |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                           |
 | `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                           |
