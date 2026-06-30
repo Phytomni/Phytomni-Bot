@@ -51,6 +51,7 @@ from .result_formatting import (
     resolve_debug,
 )
 from .schemas import (
+    AGENT_TOOL_DEFINITIONS,
     AnalystAgent,
     BriefGeneAgent,
     ChatAgent,
@@ -392,65 +393,22 @@ async def serve() -> None:
         Returns:
             Tool metadata and JSON schemas for every registered Phytomni tool.
         """
-        return [
+        tools = [
             Tool(
-                name=PhytomniAgents.CHAT_AGENT,
-                description=PhytomniAgents.CHAT_AGENT_DESCRIPTION,
-                inputSchema=ChatAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.KNOWLEDGE_AGENT,
-                description=PhytomniAgents.KNOWLEDGE_AGENT_DESCRIPTION,
-                inputSchema=KnowledgeAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.DATA_AGENT,
-                description=PhytomniAgents.DATA_AGENT_DESCRIPTION,
-                inputSchema=DataAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.ANALYST_AGENT,
-                description=PhytomniAgents.ANALYST_AGENT_DESCRIPTION,
-                inputSchema=AnalystAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.REVIEW_AGENT,
-                description=PhytomniAgents.REVIEW_AGENT_DESCRIPTION,
-                inputSchema=ReviewAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.BRIEF_GENE_AGENT,
-                description=PhytomniAgents.BRIEF_GENE_AGENT_DESCRIPTION,
-                inputSchema=BriefGeneAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.DEEP_GENOME_AGENT,
-                description=PhytomniAgents.DEEP_GENOME_AGENT_DESCRIPTION,
-                inputSchema=DeepGenomeAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.IN_SILICO_RESEARCH_AGENT,
-                description=(
-                    PhytomniAgents.IN_SILICO_RESEARCH_AGENT_DESCRIPTION
-                ),
-                inputSchema=InSilicoResearchAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.DIGITAL_DESIGN_AGENT,
-                description=PhytomniAgents.DIGITAL_DESIGN_AGENT_DESCRIPTION,
-                inputSchema=DigitalDesignAgent.model_json_schema(),
-            ),
-            Tool(
-                name=PhytomniAgents.GENE_NETWORK_AGENT,
-                description=PhytomniAgents.GENE_NETWORK_AGENT_DESCRIPTION,
-                inputSchema=GeneNetworkAgent.model_json_schema(),
-            ),
+                name=name,
+                description=description,
+                inputSchema=model.model_json_schema(),
+            )
+            for name, description, model in AGENT_TOOL_DEFINITIONS
+        ]
+        tools.append(
             Tool(
                 name=PhytomniAgents.GET_TASK_STATUS,
                 description=PhytomniAgents.GET_TASK_STATUS_DESCRIPTION,
                 inputSchema=GetTaskStatus.model_json_schema(),
-            ),
-        ]
+            )
+        )
+        return tools
 
     @server.call_tool()
     async def call_tool(name, arguments: Dict[str, Any]) -> list[TextContent]:
