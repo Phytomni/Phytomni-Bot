@@ -42,6 +42,8 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from mcp.shared.exceptions import McpError
+from mcp.types import INVALID_PARAMS
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -60,6 +62,7 @@ from ..agents.design.resolve_query import (
     DigitalDesignResolveResult,
     resolve_design_user_query,
 )
+from ..agents.expert import select_agent_tool
 from ..agents.network.resolve_query import (
     GeneNetworkResolveError,
     GeneNetworkResolveResult,
@@ -128,6 +131,7 @@ from .schemas import (
     ApiErrorResponse,
     ApiKeyCreateRequest,
     ChatCompletionRequest,
+    ExpertQueryRequest,
     UploadPurpose,
 )
 
@@ -171,6 +175,14 @@ _AGENT_SLUG_TO_TOOL = {
     "research": "InSilicoResearchAgent",
     "design": "DigitalDesignAgent",
     "network": "GeneNetworkAgent",
+}
+
+# Inverse of ``_AGENT_SLUG_TO_TOOL``: the Expert router returns the MCP
+# tool name the LLM selected, which this maps back to the public agent
+# slug ``_invoke_agent_run`` dispatches on. Derived from the forward map
+# so the two cannot drift.
+_TOOL_TO_AGENT_SLUG = {
+    tool: slug for slug, tool in _AGENT_SLUG_TO_TOOL.items()
 }
 
 # Slugs whose handlers submit a remote analysis task and rely on the
@@ -751,6 +763,79 @@ def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
     if record is None:
         return run_id, []
     return run_id, list(record.task_ids)
+
+
+async def _route_expert_query(
+    payload: ExpertQueryRequest, *, debug: bool
+) -> tuple[dict[str, Any], int]:
+    """Autonomously route an Expert query and shape its agent.run body.
+
+    Runs the in-process LLM tool selector, maps the chosen tool name back
+    to its agent slug, injects ``obs_file_list`` only for obs-capable
+    tools, then delegates to ``_invoke_agent_run`` so the resolved slug,
+    formatted envelope, and sync(200)/remote(202) branching all come from
+    the same path as ``POST /v1/agents/{slug}/runs``. When the router
+    selects no tool the query falls back to the chat agent.
+
+    Args:
+        payload: The validated Expert routing request.
+        debug: Whether to keep the raw handler payload in the result.
+
+    Returns:
+        ``(body, status_code)`` — the ``agent.run`` envelope plus its HTTP
+        status, identical in shape to ``_invoke_agent_run``.
+
+    Raises:
+        HTTPException: 400 when ``forced_tool`` is set (unsupported in v1)
+            or the router produced arguments that fail the agent schema;
+            502 when the router selects a tool outside the agent set.
+    """
+    if payload.forced_tool is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="forced_tool is not supported in v1",
+        )
+    selection = await select_agent_tool(payload.user_query, payload.history)
+    request_json = payload.model_dump_json()
+    if selection is None:
+        return await _invoke_agent_run(
+            agent="chat",
+            arguments={
+                "user_query": payload.user_query,
+                "obs_file_list": list(payload.obs_file_list),
+            },
+            dialogue_id=payload.dialogue_id,
+            request_json=request_json,
+            debug=debug,
+        )
+    slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
+    if slug is None:
+        _LOGGER.warning(
+            "Expert router selected an unknown tool: %s",
+            selection.tool_name,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="router selected an unavailable tool",
+        )
+    arguments = dict(selection.arguments)
+    if tool_accepts_obs(selection.tool_name):
+        arguments["obs_file_list"] = list(payload.obs_file_list)
+    try:
+        return await _invoke_agent_run(
+            agent=slug,
+            arguments=arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=request_json,
+            debug=debug,
+        )
+    except McpError as exc:
+        if exc.error.code == INVALID_PARAMS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"router produced invalid arguments for {slug}",
+            ) from exc
+        raise
 
 
 def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
@@ -1475,6 +1560,18 @@ def create_app() -> FastAPI:
             dialogue_id=payload.dialogue_id,
             debug=resolve_debug(payload.debug),
             request_json=payload.model_dump_json(),
+        )
+        return JSONResponse(body, status_code=status_code)
+
+    @app.post("/v1/query/route")
+    async def route_query(
+        payload: ExpertQueryRequest,
+        principal: ApiPrincipal = Depends(require_scope("agents")),
+    ) -> JSONResponse:
+        """Autonomously route a query to an agent and return its run."""
+        del principal
+        body, status_code = await _route_expert_query(
+            payload, debug=resolve_debug(None)
         )
         return JSONResponse(body, status_code=status_code)
 

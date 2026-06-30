@@ -5,9 +5,9 @@
 """HTTP API request and response schemas.
 
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
-    ChatCompletionRequest, AgentRunRequest, ApiKeyCreateRequest,
-    ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
-    ApiKeyDeleteResponse, FileUploadResponse.
+    ChatCompletionRequest, AgentRunRequest, ExpertQueryRequest,
+    ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyRecordResponse,
+    ApiKeyListResponse, ApiKeyDeleteResponse, FileUploadResponse.
 Public aliases: UploadPurpose.
 """
 
@@ -143,6 +143,33 @@ class AgentRunRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
     dialogue_id: Optional[str] = None
     debug: Optional[bool] = None
+
+
+class ExpertQueryRequest(BaseModel):
+    """Body for ``POST /v1/query/route`` (autonomous Expert routing).
+
+    The Web gateway sends a natural-language turn; the Bot picks the right
+    MCP agent with an LLM, dispatches it in-process, and returns the same
+    ``agent.run`` envelope as ``POST /v1/agents/{agent}/runs`` with the
+    resolved agent slug.
+
+    Attributes:
+        user_query: The natural-language user turn to route and answer.
+        history: Prior ``{"role", "content"}`` turns used as routing
+            context only; not forwarded to the dispatched agent.
+        obs_file_list: OBS paths for uploaded attachments, injected into
+            the selected tool's arguments only when its schema accepts
+            them (``tool_accepts_obs``).
+        dialogue_id: Optional chat-ai conversation id recorded on the run.
+        forced_tool: Reserved for pinning an agent inside Expert mode;
+            v1 implements only the ``None`` (pure autonomous) path.
+    """
+
+    user_query: str
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+    obs_file_list: List[str] = Field(default_factory=list)
+    dialogue_id: Optional[str] = None
+    forced_tool: Optional[str] = None
 
 
 class ApiKeyCreateRequest(BaseModel):
