@@ -48,6 +48,20 @@ def _auth(key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+def _stub_tool_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_value: str,
+    payload: dict[str, Any],
+) -> None:
+    """Register a stub handler returning a canned payload for one tool."""
+
+    async def handler(args: Any) -> dict[str, Any]:
+        _ = args
+        return payload
+
+    monkeypatch.setitem(server.TOOL_HANDLERS, tool_value, handler)
+
+
 @pytest.fixture(name="scoped_key_without_agents")
 def _scoped_key_without_agents(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -163,15 +177,10 @@ async def test_route_no_tool_falls_back_to_chat(
     tasks_db_path: str,
 ) -> None:
     """When the router selects no tool the query falls back to chat."""
-
-    async def fake(args: Any) -> dict[str, Any]:
-        _ = args
-        return {"answer": "ok", "doc_list": []}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
+    _stub_tool_handler(
+        monkeypatch,
         server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+        {"answer": "ok", "doc_list": []},
     )
     _patch_select(monkeypatch, None)
 
