@@ -13,8 +13,10 @@ import pytest
 
 from mcp_server_phytomni.mcp.result_formatting import (
     _normalize_citations,
+    _reference_payload,
     build_tool_result_envelope,
     format_tool_result,
+    is_cited_tool,
 )
 
 pytestmark = pytest.mark.server
@@ -910,3 +912,54 @@ def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
     assert text == (
         "Claim [1] also [2] supported [1] cf [2] echoed [1] confirmed [2]."
     )
+
+
+# --- _reference_payload: biblio projection ---
+
+
+def test_reference_payload_projects_biblio_when_present() -> None:
+    """Biblio fields present on doc are forwarded and .pdf is stripped."""
+    doc = {
+        "file_id": "f1",
+        "title": "T.pdf",
+        "au": "Smith J",
+        "so": "Nature",
+        "pm": "999",
+    }
+    payload = _reference_payload(doc)
+    assert payload["file_id"] == "f1"
+    assert payload["title"] == "T"  # .pdf stripped
+    assert payload["au"] == "Smith J"
+    assert payload["so"] == "Nature"
+    assert payload["pm"] == "999"
+
+
+def test_reference_payload_falls_back_to_title_only() -> None:
+    """Doc without biblio fields returns only file_id and title."""
+    assert _reference_payload({"file_id": "f1", "title": "T"}) == {
+        "file_id": "f1",
+        "title": "T",
+    }
+
+
+def test_normalize_citations_carries_biblio_in_order() -> None:
+    """Biblio fields survive _normalize_citations in first-appearance order."""
+    answer = "First [2] then [1]."
+    doc_list = [
+        {"file_id": "a", "title": "A", "au": "AU-A"},
+        {"file_id": "b", "title": "B", "au": "AU-B"},
+    ]
+    new_answer, refs = _normalize_citations(answer, doc_list)
+    assert new_answer == "First [1] then [2]."  # first-appearance renumber
+    assert refs[0]["file_id"] == "b" and refs[0]["au"] == "AU-B"
+    assert refs[1]["file_id"] == "a" and refs[1]["au"] == "AU-A"
+
+
+def test_is_cited_tool() -> None:
+    """is_cited_tool returns True for cited agents and False for others."""
+    assert is_cited_tool("KnowledgeAgent")
+    assert is_cited_tool("ReviewAgent")
+    assert is_cited_tool("BriefGeneAgent")
+    assert is_cited_tool("KnowledgeAgents")  # alias
+    assert not is_cited_tool("DeepGenomeAgent")
+    assert not is_cited_tool("ChatAgent")

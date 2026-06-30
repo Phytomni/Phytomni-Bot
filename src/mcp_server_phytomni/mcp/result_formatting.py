@@ -267,6 +267,14 @@ def _normalize_tool_name(tool_name: str) -> str:
     return aliases.get(tool_name, tool_name)
 
 
+_CITED_TOOLS = frozenset({"KnowledgeAgent", "ReviewAgent", "BriefGeneAgent"})
+
+
+def is_cited_tool(tool_name: str) -> bool:
+    """Return True if the tool routes through the cited formatter."""
+    return _normalize_tool_name(tool_name) in _CITED_TOOLS
+
+
 def _payload_mapping(payload: Any) -> Mapping[str, Any]:
     """Return a mapping payload or an empty mapping for non-objects."""
     return payload if isinstance(payload, Mapping) else {}
@@ -814,13 +822,38 @@ def _document_key(doc: Mapping[str, Any], index: int) -> str:
     return str(doc.get("file_id") or doc.get("title") or index)
 
 
+_REFERENCE_BIBLIO_FIELDS = (
+    "au",
+    "ti",
+    "so",
+    "vl",
+    "bp",
+    "ep",
+    "py",
+    "di",
+    "dl",
+    "pm",
+)
+
+
 def _reference_payload(doc: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return the reference metadata exposed to clients."""
+    """Return the reference metadata exposed to clients.
+
+    Always carries ``file_id`` + ``title``; additionally projects any
+    bibliographic fields (au/ti/so/vl/bp/ep/py/di/dl/pm) the upstream
+    enricher attached, so the client can render a full citation when a
+    record exists. Marker numbering is owned by ``_normalize_citations``.
+    """
     file_id = doc.get("file_id")
     title = str(doc.get("title", ""))
     if title.endswith(".pdf"):
         title = title[:-4]
-    return {"file_id": file_id, "title": title}
+    payload: dict[str, Any] = {"file_id": file_id, "title": title}
+    for key in _REFERENCE_BIBLIO_FIELDS:
+        value = doc.get(key)
+        if value is not None:
+            payload[key] = value
+    return payload
 
 
 def _normalize_compute_resource(value: str | None) -> str | None:
