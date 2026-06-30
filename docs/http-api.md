@@ -307,7 +307,14 @@ and `raw.choices[].message.content` as the normalized answer field.
 Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
 `BriefGeneAgent`) emit plain markdown with inline `[N]` citation markers
 as `message.content` and ship deduplicated citation documents through
-`formatted.references`. The `raw.phytomni_state` namespace carries the
+`formatted.references`. Each `references[]` entry always carries
+`file_id` and `title`. When a bibliographic record exists for a cited
+document, the entry additionally carries `au` (authors), `ti` (rich
+title), `so` (source/journal), `vl` (volume), `bp`/`ep` (begin/end
+page), `py` (year), `di` (DOI id), `dl` (DOI link), and `pm` (PubMed
+id). Fields are additive; clients must treat any of the bibliographic
+keys as optional and keep rendering from `title` when they are absent.
+The `raw.phytomni_state` namespace carries the
 agent's LangGraph intermediate state (retrieved_docs, gene_id,
 rewrite_query, research_dimensions, plan, tool_usages, ...) when the
 agent populated them. `phyto-brief-gene` rejects a non-empty

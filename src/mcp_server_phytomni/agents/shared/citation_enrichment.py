@@ -18,12 +18,16 @@ from mcp.shared.exceptions import McpError
 from ...common.http import JsonPostRetry
 from .sql import bi_query, sql_literal
 
-__all__ = ["enrich_cited_doc_list"]
+__all__ = ["CITATION_BIBLIO_FIELDS", "enrich_cited_doc_list"]
 
 logger = logging.getLogger(__name__)
 
 _CITATION_TABLE = "s_rag_reference_citation"
-_CITATION_COLUMNS = (
+#: Bibliographic fields fetched from s_rag_reference_citation and
+#: projected onto cited document references.  Exported so that the
+#: result-formatting layer can mirror the exact same set without a
+#: second definition.
+CITATION_BIBLIO_FIELDS: tuple[str, ...] = (
     "au",
     "ti",
     "so",
@@ -35,6 +39,7 @@ _CITATION_COLUMNS = (
     "dl",
     "pm",
 )
+_CITATION_COLUMNS = CITATION_BIBLIO_FIELDS
 _RETRY = JsonPostRetry(
     timeout=30.0,
     max_retries=2,

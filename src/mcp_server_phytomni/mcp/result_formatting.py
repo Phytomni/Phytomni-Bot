@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
 from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 from .universal_failures import (
@@ -822,20 +823,6 @@ def _document_key(doc: Mapping[str, Any], index: int) -> str:
     return str(doc.get("file_id") or doc.get("title") or index)
 
 
-_REFERENCE_BIBLIO_FIELDS = (
-    "au",
-    "ti",
-    "so",
-    "vl",
-    "bp",
-    "ep",
-    "py",
-    "di",
-    "dl",
-    "pm",
-)
-
-
 def _reference_payload(doc: Mapping[str, Any]) -> Mapping[str, Any]:
     """Return the reference metadata exposed to clients.
 
@@ -849,7 +836,7 @@ def _reference_payload(doc: Mapping[str, Any]) -> Mapping[str, Any]:
     if title.endswith(".pdf"):
         title = title[:-4]
     payload: dict[str, Any] = {"file_id": file_id, "title": title}
-    for key in _REFERENCE_BIBLIO_FIELDS:
+    for key in CITATION_BIBLIO_FIELDS:
         value = doc.get(key)
         if value is not None:
             payload[key] = value

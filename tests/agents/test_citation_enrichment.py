@@ -68,11 +68,44 @@ async def test_enrich_skips_bi_when_no_file_ids():
     mock.assert_not_awaited()
 
 
+_BAD_RESPONSE = {"message": "error", "data": []}
+_MCP_ERROR = McpError(ErrorData(code=-1, message="x"))
+
+
 @pytest.mark.asyncio
-async def test_enrich_degrades_on_mcp_error():
-    """A McpError from bi_query leaves all docs untouched (silent degrade)."""
+@pytest.mark.parametrize(
+    "mock_side",
+    [
+        pytest.param(
+            {"return_value": _BAD_RESPONSE},
+            id="non_ok_message",
+        ),
+        pytest.param(
+            {"side_effect": _MCP_ERROR},
+            id="mcp_error",
+        ),
+    ],
+)
+async def test_enrich_degrades_to_title_only(mock_side):
+    """bi_query failure leaves all docs untouched (silent degrade).
+
+    Covers two degrade paths: non-ok message envelope and McpError.
+    """
     docs = [{"file_id": "f1", "title": "T"}]
-    boom = AsyncMock(side_effect=McpError(ErrorData(code=-1, message="x")))
-    with patch.object(citation_enrichment, "bi_query", boom):
+    with patch.object(citation_enrichment, "bi_query", AsyncMock(**mock_side)):
         await enrich_cited_doc_list(docs)
     assert docs[0] == {"file_id": "f1", "title": "T"}
+
+
+@pytest.mark.asyncio
+async def test_enrich_skips_non_dict_element_in_doc_list():
+    """A non-MutableMapping element alongside a real doc is skipped safely."""
+    docs: list = ["not-a-dict", {"file_id": "f1", "title": "T"}]
+    with patch.object(
+        citation_enrichment,
+        "bi_query",
+        AsyncMock(return_value=_OK),
+    ):
+        await enrich_cited_doc_list(docs)
+    assert docs[0] == "not-a-dict"
+    assert docs[1]["au"] == "Smith J"
