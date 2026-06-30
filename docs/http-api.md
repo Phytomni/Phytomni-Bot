@@ -76,6 +76,7 @@ with a per-model message (`streaming is not supported for model phyto-knowledge`
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
 | `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                                                                                                              |
+| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                                                                                                                 |
 | `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                                                                                                                   |
@@ -724,6 +725,57 @@ curl -s "http://127.0.0.1:8080/v1/runs?status=succeeded&limit=20" \
 
 Unknown run ids and runs owned by another caller collapse to one `404`
 envelope so callers cannot enumerate other users' run ids.
+
+## Expert Routing
+
+`POST /v1/query/route` runs autonomous routing: an LLM selects the best
+MCP agent for a natural-language query, the selected agent runs
+**in-process**, and the response is the **same `agent.run` envelope** as
+`POST /v1/agents/{agent}/runs` — with `agent` set to the **resolved
+slug** (e.g. `"knowledge"`), never `"expert"`. The selection step reuses
+the operator's main conversation model, so no extra credentials are
+required.
+
+Request body:
+
+```json
+{
+  "user_query": "string (required)",
+  "history": [{"role": "user|assistant", "content": "string"}],
+  "obs_file_list": ["/obs/phytomni/..."],
+  "dialogue_id": "string | null",
+  "forced_tool": null
+}
+```
+
+- `history` is routing context only; it is never forwarded to the
+  dispatched agent.
+- `obs_file_list` is injected into the selected tool's arguments only when
+  that tool accepts attachments (`chat` / `knowledge` / `review`); the LLM
+  fills every other argument from the tool's schema.
+- A sync agent returns `200` with `status="succeeded"`; a remote agent
+  returns `202` with `status="running"` plus `task_ids`, exactly like the
+  native runs path (poll `GET /v1/runs/{id}`). When the model selects no
+  tool the query falls back to the chat agent.
+
+Errors: `forced_tool` is accepted but unsupported in v1 (`400`);
+LLM-extracted arguments that fail the agent schema return `400`; a tool
+outside the agent set returns `502`; missing or insufficient scope returns
+`401` / `403`.
+
+Known limitations (v1): the four structured-input agents (`analyst`,
+`deep_genome`, `design`, `network`) receive best-effort arguments
+extracted by the routing model — `data_list` may be incomplete and a
+gene / species / Trait-Ontology id may be guessed — and obs attachments
+reach only `chat` / `knowledge` / `review`. Invalid extraction surfaces a
+`400` rather than a silent wrong answer.
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/query/route \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"user_query":"Find recent papers on rice drought tolerance genes."}'
+```
 
 ## Response Projection
 
