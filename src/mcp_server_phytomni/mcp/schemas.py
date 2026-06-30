@@ -10,7 +10,7 @@ These schemas are the public JSON-schema surface for MCP clients.
 """
 
 from enum import Enum
-from typing import Annotated, Dict, List
+from typing import Annotated, Any, Dict, List, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -711,3 +711,89 @@ class PhytomniAgents(str, Enum):
         "it returns the recorded status and output_dir merged with one "
         "live platform status check. Submit first, then poll with this."
     )
+
+
+# (tool name, routing description, request model) for every dispatchable
+# agent, in the same order the MCP ``list_tools`` surface emits them. The
+# MCP ``list_tools`` handler and the in-process expert router both derive
+# their tool lists from this single tuple so the two surfaces stay
+# byte-equivalent and a new agent cannot be exposed on one but not the
+# other.
+AGENT_TOOL_DEFINITIONS: Tuple[
+    Tuple[PhytomniAgents, PhytomniAgents, type[BaseModel]], ...
+] = (
+    (
+        PhytomniAgents.CHAT_AGENT,
+        PhytomniAgents.CHAT_AGENT_DESCRIPTION,
+        ChatAgent,
+    ),
+    (
+        PhytomniAgents.KNOWLEDGE_AGENT,
+        PhytomniAgents.KNOWLEDGE_AGENT_DESCRIPTION,
+        KnowledgeAgent,
+    ),
+    (
+        PhytomniAgents.DATA_AGENT,
+        PhytomniAgents.DATA_AGENT_DESCRIPTION,
+        DataAgent,
+    ),
+    (
+        PhytomniAgents.ANALYST_AGENT,
+        PhytomniAgents.ANALYST_AGENT_DESCRIPTION,
+        AnalystAgent,
+    ),
+    (
+        PhytomniAgents.REVIEW_AGENT,
+        PhytomniAgents.REVIEW_AGENT_DESCRIPTION,
+        ReviewAgent,
+    ),
+    (
+        PhytomniAgents.BRIEF_GENE_AGENT,
+        PhytomniAgents.BRIEF_GENE_AGENT_DESCRIPTION,
+        BriefGeneAgent,
+    ),
+    (
+        PhytomniAgents.DEEP_GENOME_AGENT,
+        PhytomniAgents.DEEP_GENOME_AGENT_DESCRIPTION,
+        DeepGenomeAgent,
+    ),
+    (
+        PhytomniAgents.IN_SILICO_RESEARCH_AGENT,
+        PhytomniAgents.IN_SILICO_RESEARCH_AGENT_DESCRIPTION,
+        InSilicoResearchAgent,
+    ),
+    (
+        PhytomniAgents.DIGITAL_DESIGN_AGENT,
+        PhytomniAgents.DIGITAL_DESIGN_AGENT_DESCRIPTION,
+        DigitalDesignAgent,
+    ),
+    (
+        PhytomniAgents.GENE_NETWORK_AGENT,
+        PhytomniAgents.GENE_NETWORK_AGENT_DESCRIPTION,
+        GeneNetworkAgent,
+    ),
+)
+
+
+def agent_openai_tool_specs() -> List[Dict[str, Any]]:
+    """Return the dispatchable agents as OpenAI function-tool dicts.
+
+    Builds one ``{"type": "function", "function": {...}}`` entry per
+    agent in ``AGENT_TOOL_DEFINITIONS`` (GetTaskStatus excluded), shaped
+    to match ``mcp_client_phytomni.client.PhytomniMcpClient.openai_tools``
+    so an in-process router selects tools identically to the stdio client.
+
+    Returns:
+        OpenAI Chat Completions ``tools`` list for autonomous routing.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name.value,
+                "description": description.value,
+                "parameters": model.model_json_schema(),
+            },
+        }
+        for name, description, model in AGENT_TOOL_DEFINITIONS
+    ]
