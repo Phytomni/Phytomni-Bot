@@ -104,6 +104,20 @@ async def test_select_agent_tool_none_without_tool_call(
     assert result is None
 
 
+async def test_select_agent_tool_none_on_empty_choices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty-choices completion degrades to the chat fallback (no crash).
+
+    A 200 from an OpenAI-compatible gateway with an empty ``choices`` list
+    must not IndexError into a generic 500; it is treated as "no tool
+    selected" so the route falls back to the chat agent.
+    """
+    _patch_openai(monkeypatch, SimpleNamespace(choices=[]))
+    result = await select_agent_tool("hello", history=[])
+    assert result is None
+
+
 async def test_select_agent_tool_history_precedes_user_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

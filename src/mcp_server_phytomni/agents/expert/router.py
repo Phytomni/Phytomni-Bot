@@ -93,6 +93,8 @@ async def select_agent_tool(
         tools=cast(Any, agent_openai_tool_specs()),
         tool_choice="auto",
     )
+    if not completion.choices:
+        return None
     message = completion.choices[0].message
     tool_calls = message.tool_calls or []
     if not tool_calls:
