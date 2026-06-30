@@ -236,7 +236,8 @@ def _raw_doc_list(raw: Any) -> list[dict[str, Any]]:
 
     Returns the actual dict objects from
     ``raw['choices'][0]['message']['doc_list']`` so in-place enrichment
-    propagates to the payload the formatter reads.
+    propagates to the payload the formatter reads. Non-dict elements are
+    filtered out, so the returned list may be shorter than ``doc_list``.
     """
     if not isinstance(raw, Mapping):
         return []

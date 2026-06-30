@@ -6,10 +6,10 @@
 
 Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
 ``format_tool_result``, ``build_tool_result_envelope``,
-``project_universal_failure_metadata``, and response-projection helpers
-``resolve_debug`` / ``strip_agent_result`` (``PHYTOMNI_DEBUG=1`` forces
-full payloads). Private helpers normalize citations and
-``_sanitize_raw`` strips credential-pattern keys.
+``project_universal_failure_metadata``, the ``is_cited_tool`` predicate,
+and response-projection helpers ``resolve_debug`` / ``strip_agent_result``
+(``PHYTOMNI_DEBUG=1`` forces full payloads). Private helpers normalize
+citations and ``_sanitize_raw`` strips credential-pattern keys.
 """
 
 import json
