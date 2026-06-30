@@ -68,7 +68,6 @@ async def test_enrich_skips_bi_when_no_file_ids():
     mock.assert_not_awaited()
 
 
-_BAD_RESPONSE = {"message": "error", "data": []}
 _MCP_ERROR = McpError(ErrorData(code=-1, message="x"))
 
 
@@ -77,8 +76,12 @@ _MCP_ERROR = McpError(ErrorData(code=-1, message="x"))
     "mock_side",
     [
         pytest.param(
-            {"return_value": _BAD_RESPONSE},
+            {"return_value": {"message": "error", "data": []}},
             id="non_ok_message",
+        ),
+        pytest.param(
+            {"return_value": {"message": "ok", "data": {"not": "a list"}}},
+            id="data_not_a_list",
         ),
         pytest.param(
             {"side_effect": _MCP_ERROR},
@@ -89,7 +92,7 @@ _MCP_ERROR = McpError(ErrorData(code=-1, message="x"))
 async def test_enrich_degrades_to_title_only(mock_side):
     """bi_query failure leaves all docs untouched (silent degrade).
 
-    Covers two degrade paths: non-ok message envelope and McpError.
+    Covers three degrade paths: non-ok message, non-list data, McpError.
     """
     docs = [{"file_id": "f1", "title": "T"}]
     with patch.object(citation_enrichment, "bi_query", AsyncMock(**mock_side)):
