@@ -12,7 +12,7 @@ stable for existing clients.
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from json import dumps
-from typing import Any, Awaitable, Callable, Dict, cast
+from typing import Any, Awaitable, Callable, Dict, Mapping, Sequence, cast
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -21,6 +21,7 @@ from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
 from ..agents.chat.service import stream_phyto_chat_chunks
+from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
@@ -46,6 +47,7 @@ from .result_formatting import (
     ToolResultEnvelope,
     build_tool_result_envelope,
     format_tool_chunk,
+    is_cited_tool,
     resolve_debug,
 )
 from .schemas import (
@@ -209,9 +211,46 @@ async def invoke_tool_enveloped(
         McpError: If the tool is unknown or arguments fail validation.
     """
     raw = await invoke_tool_raw(name, arguments)
+    await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(
         _tool_name(name), raw, arguments=arguments
     )
+
+
+async def _maybe_enrich_cited(tool_name: str, raw: Any) -> None:
+    """Enrich a cited tool's doc list with bibliographic metadata.
+
+    No-op for non-cited tools or payloads without a doc list; the
+    enricher itself degrades silently on any BI failure.
+    """
+    if not is_cited_tool(tool_name):
+        return
+    docs = _raw_doc_list(raw)
+    if docs:
+        await enrich_cited_doc_list(docs)
+
+
+def _raw_doc_list(raw: Any) -> list[dict[str, Any]]:
+    """Return the cited payload's doc dicts (the live objects).
+
+    Returns the actual dict objects from
+    ``raw['choices'][0]['message']['doc_list']`` so in-place enrichment
+    propagates to the payload the formatter reads.
+    """
+    if not isinstance(raw, Mapping):
+        return []
+    choices = raw.get("choices")
+    if not isinstance(choices, Sequence) or isinstance(choices, str):
+        return []
+    if not choices or not isinstance(choices[0], Mapping):
+        return []
+    message = choices[0].get("message")
+    if not isinstance(message, Mapping):
+        return []
+    docs = message.get("doc_list")
+    if not isinstance(docs, list):
+        return []
+    return [doc for doc in docs if isinstance(doc, dict)]
 
 
 async def invoke_tool_streamed(
