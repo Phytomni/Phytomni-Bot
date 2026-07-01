@@ -476,6 +476,40 @@ Duplicate submissions are now handled transparently: a fingerprint match mints
 a fresh caller-owned task id and returns a normal `202` body with a valid `id`
 and `task_ids`. Clients no longer need to handle a `dedup_hit` field.
 
+### Chat Completion Carries `run_id: null` or `degraded_tracking: true`
+
+A `/v1/chat/completions` response with HTTP 200 can still carry
+`"run_id": null` and `"degraded_tracking": true`. This means the chat
+completion itself succeeded (the customer received a valid answer) but
+the local SQLite registry write (`_record_sync_run`) failed, so the
+run row was not persisted.
+
+```json
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "run_id": null,
+  "degraded_tracking": true,
+  "choices": [ ... ]
+}
+```
+
+Impact: `GET /v1/runs?dialogue_id=...` will **not** return this call,
+and `GET /v1/runs/{run_id}` cannot be used to replay it. The customer
+has the answer, but the run history has a gap.
+
+Check server logs for `sync run bookkeeping write failed for agent <slug>: <ExceptionClass>` (logged at WARNING level by `_record_sync_run`). The
+underlying cause is almost always a `sqlite3.Error` or `OSError` on the
+`server_tasks.db` file — check disk fullness, WAL checkpoint health,
+and file permissions. Once the store is healthy, subsequent calls
+resume writing normally; the lost run row cannot be recovered (it was
+never persisted).
+
+This signal mirrors the remote-agent `degraded_tracking` flag (see
+"Analyst Returned `id: null`" above) but on the sync path. The two
+cases share the same client-side meaning: the remote or local
+operation succeeded, but local bookkeeping did not.
+
 ### BriefGene Answer Is Generic Or Hits `nogeneid`
 
 Clients sometimes report that `phyto-brief-gene` returns a vague answer

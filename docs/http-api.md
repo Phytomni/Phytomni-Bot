@@ -315,6 +315,16 @@ title), `so` (source/journal), `vl` (volume), `bp`/`ep` (begin/end
 page), `py` (year), `di` (DOI id), `dl` (DOI link), and `pm` (PubMed
 id). Fields are additive; clients must treat any of the bibliographic
 keys as optional and keep rendering from `title` when they are absent.
+Every chat completion response also carries a top-level `run_id`: the
+Bot-side run identifier minted by the HTTP layer after the completion
+is produced. It equals the `run_id` returned by
+`GET /v1/runs?dialogue_id=...` for the same dialogue, so clients can
+join chat completions against the runs listing without guessing.
+`run_id` is distinct from `id` (the OpenAI chat completion id or
+provider request id). When the local registry write fails, `run_id` is
+`null` and the response additionally carries
+`degraded_tracking: true` (see "Chat completion persistence
+degradation" in the operations runbook).
 The `raw.phytomni_state` namespace carries the
 agent's LangGraph intermediate state (retrieved_docs, gene_id,
 rewrite_query, research_dimensions, plan, tool_usages, ...) when the
@@ -673,6 +683,13 @@ upstream platform is the recovery path). The chokepoint also writes
 the full traceback through `logger.exception` so operators see the
 underlying SQLite or OS error in logs.
 
+The sync chat path (`/v1/chat/completions`) also emits
+`degraded_tracking: true` with `run_id: null` when its own registry
+write (`_record_sync_run`) fails. The completion itself still returns
+`200` (bookkeeping must never block a successful answer); the flag
+lets clients detect that the run row is absent and `GET /v1/runs`
+will not replay this call.
+
 `degraded_tracking` covers the submit-time registry write only. The
 later background finalization writes a `deep_genome` run makes — the
 terminal status update, the assembled `final_report`, and any
@@ -804,7 +821,8 @@ null provider fields (`refusal`, `annotations`, `audio`,
 
 Kept: `id`, `object`, `created`, `model`, `choices` (with `role`,
 `content`, `reasoning_content`, `tool_calls`, `finish_reason`,
-`index`), `usage` (3 token fields), `formatted` (without `answer`).
+`index`), `usage` (3 token fields), `formatted` (without `answer`),
+`run_id`, and `degraded_tracking` (when present).
 
 ### `/v1/agents/{agent}/runs` and `/v1/runs` default mode
 
