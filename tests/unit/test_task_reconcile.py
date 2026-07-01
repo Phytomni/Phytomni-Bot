@@ -14,6 +14,7 @@ run-aggregate can surface the assembled report.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -358,14 +359,18 @@ def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
 
 
 def test_reconcile_marks_dead_deep_genome_umbrella_failed(
-    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+    mgr_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A non-live deep_genome umbrella with no report reconciles to failed.
 
     The umbrella's done-callback terminal write was lost (or the process
     restarted), so the row is stuck non-terminal with no final_report and
     the task is gone from the live registry. reconcile must surface it as
-    failed rather than leaving a dead run showing running forever.
+    failed rather than leaving a dead run showing running forever, and
+    emit a non-secret server-side breadcrumb naming the dead umbrella so
+    the restart-orphan / lost-write cause is traceable from the logs.
     """
     _install_local_only_reconcile(monkeypatch, mgr_path)
     mgr = TaskManager(mgr_path)
@@ -378,9 +383,12 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
         )
     )
 
-    result = asyncio.run(reconcile_task("dg-dead"))
+    with caplog.at_level(logging.WARNING):
+        result = asyncio.run(reconcile_task("dg-dead"))
 
     assert result["status"] == "failed"
+    assert "dg-dead" in caplog.text
+    assert "surfacing as failed" in caplog.text
 
 
 def test_reconcile_leaves_live_deep_genome_umbrella_running(

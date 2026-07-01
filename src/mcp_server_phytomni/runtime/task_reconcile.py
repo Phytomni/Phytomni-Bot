@@ -48,7 +48,11 @@ def _heal_finished_local_workflow(
     The ``agent`` guard keeps the liveness rule off remote child
     sub-tasks (``agent`` NULL) and other remote agents, which derive their
     status from the live platform probe. Nothing is written back to the
-    DB; the verdict is re-derived on each poll.
+    DB; the verdict is re-derived on each poll. Rule 2 emits a
+    ``logger.warning`` breadcrumb (task id only, non-secret) so the
+    lost-write / restart-orphan cause is traceable server-side; the
+    client-facing note in design spec §7 was descheduled (see the plan
+    Self-Review) to avoid a formatter output-shape change.
     """
     status = str(result.get("status", "")).lower()
     if status not in _NON_TERMINAL_STATUSES:
@@ -59,6 +63,12 @@ def _heal_finished_local_workflow(
     if agent == "deep_genome" and not is_live_running(
         str(result.get("task_id", ""))
     ):
+        logger.warning(
+            "reconcile: deep_genome umbrella %s is non-terminal with no "
+            "final_report and no longer live (lost terminal write or "
+            "restart orphan); surfacing as failed",
+            result.get("task_id", ""),
+        )
         result["status"] = "failed"
     return result
 
