@@ -163,3 +163,12 @@ mid-run — its brief_gene gene-profile, evolution, or digital-design
 step) keeps surfacing the report but adds `metadata.degraded` (bool) and
 `metadata.degraded_reason` (a redacted string, or `null`); healthy and
 non-DeepGenome rows read `false` / `null`.
+
+A `DeepGenomeAgent` umbrella whose background run died without persisting
+a report — a lost best-effort terminal-status write, or a process
+restart that orphaned the in-flight task — reconciles read-time to
+`failed` rather than showing `running` forever. A still-live run keeps
+reading `running`, and a completed run whose only loss was the terminal
+write still reads `succeeded` from its persisted report. This liveness
+check is process-local, so run the API single-worker (see the runbook's
+multi-worker caveat).

@@ -308,6 +308,13 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   state are per worker. With N workers the effective per-key ceilings are
   ×N, so set the limits accordingly or front the relay with a single
   worker until a shared store is added.
+- **Live-task reconciliation is process-local.** The in-flight
+  `deep_genome` umbrella registry (`runtime/live_tasks.py`) that lets
+  `GetTaskStatus` and `GET /v1/runs/{run_id}` tell a live umbrella from a
+  dead one lives in one process's memory. Under multiple workers a poll
+  served by a worker that did not launch the umbrella reads it as dead
+  and can reconcile a still-running run to `failed`. Run the API
+  single-worker (the default) until the registry moves to shared storage.
 
 ## Health Checks
 
