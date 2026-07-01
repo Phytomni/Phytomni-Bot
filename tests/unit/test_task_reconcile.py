@@ -437,26 +437,40 @@ def test_reconcile_report_beats_liveness_for_deep_genome(
     assert result["status"] == "succeeded"
 
 
+@pytest.mark.parametrize(
+    "agent_tag",
+    [None, "analyst", "design", "network", "research"],
+    ids=["null-child", "analyst", "design", "network", "research"],
+)
 def test_reconcile_never_fails_remote_row_absent_from_registry(
-    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+    mgr_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    agent_tag: str | None,
 ) -> None:
-    """A remote child row (agent NULL) is never failed by the local rule.
+    """A non-deep_genome remote row is never failed by the local rule.
 
-    Non-vacuity guard: a remote analyst sub-task is legitimately
-    non-terminal while the platform runs it and is never in the local
-    live registry. The liveness rule must fire ONLY for agent
-    "deep_genome", so this row keeps its submitted status.
+    Non-vacuity guard: a remote analyst sub-task (agent NULL) and the
+    other tagged remote agents (analyst / design / network / research)
+    are legitimately non-terminal while the platform runs them and are
+    never in the local live registry. The liveness rule must fire ONLY
+    for agent "deep_genome", so every non-deep_genome row keeps its
+    non-terminal status. Covers spec §8 "other remote agent -> unchanged"
+    for both the NULL child and the tagged-remote variants; the tagged
+    cases pin the guard against a refactor that excludes only NULL rows
+    (``agent is None``) and would wrongly fail a tagged remote agent.
     """
     _install_local_only_reconcile(monkeypatch, mgr_path)
     mgr = TaskManager(mgr_path)
+    run_context = RunContext(agent=agent_tag) if agent_tag else None
     mgr.record(
         Submission(
-            task_id="child-1",
+            task_id="remote-row",
             status="submitted",
             output_dir="/obs/run",
+            run_context=run_context,
         )
     )
 
-    result = asyncio.run(reconcile_task("child-1"))
+    result = asyncio.run(reconcile_task("remote-row"))
 
     assert result["status"] == "submitted"
