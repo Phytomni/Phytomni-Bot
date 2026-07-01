@@ -1499,8 +1499,9 @@ def create_app() -> FastAPI:
             "raw": envelope.raw,
         }
         agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
+        chat_run_id: Optional[str] = None
         if agent_slug is not None:
-            _record_sync_run(
+            chat_run_id = _record_sync_run(
                 agent=agent_slug,
                 owner=current_request_user() or "anonymous",
                 result=envelope_dict,
@@ -1517,6 +1518,15 @@ def create_app() -> FastAPI:
             envelope.raw,
             payload.model,
         )
+        # Expose the Bot-side run id so Web can join chat completions
+        # against ``GET /v1/runs?dialogue_id=...`` without relying on
+        # the OpenAI ``chatcmpl-*`` provider id. ``None`` means the
+        # registry write failed; surface that explicitly rather than
+        # silently degrading (mirrors the remote-agent
+        # ``degraded_tracking`` signal).
+        completion["run_id"] = chat_run_id
+        if chat_run_id is None and agent_slug is not None:
+            completion["degraded_tracking"] = True
         if not resolve_debug(payload.debug):
             completion = strip_chat_completion(completion)
         return JSONResponse(completion)

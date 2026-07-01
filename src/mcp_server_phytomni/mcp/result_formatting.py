@@ -915,6 +915,8 @@ _CHAT_COMPLETION_KEEP = frozenset(
         "choices",
         "usage",
         "formatted",
+        "run_id",
+        "degraded_tracking",
     }
 )
 _MESSAGE_KEEP = frozenset(

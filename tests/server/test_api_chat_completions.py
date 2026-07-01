@@ -456,3 +456,111 @@ async def test_chat_completions_brief_gene_surfaces_literature_degraded(
         "count": 1,
         "labels": ["OsCAB1"],
     }
+
+
+async def test_chat_completions_exposes_run_id_matching_runs_listing(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Default-mode response carries ``run_id`` equal to the runs listing.
+
+    AF-001 acceptance: the chat completion response's ``run_id`` must
+    equal the row returned by ``GET /v1/runs?dialogue_id=...`` so Web
+    can join on the Bot run id (the OpenAI ``chatcmpl-*`` provider id
+    is NOT the join key).
+    """
+    _stub_chat(monkeypatch, {})
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="what is photosynthesis?",
+        dialogue_id="dlg-join-test",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    completion_run_id = body.get("run_id")
+    assert completion_run_id is not None
+    assert isinstance(completion_run_id, str)
+    assert "-run-chat-" in completion_run_id
+
+    listing_resp = await api_client.get(
+        "/v1/runs",
+        params={"dialogue_id": "dlg-join-test"},
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert listing_resp.status_code == 200
+    listing_data = listing_resp.json()["data"]
+    assert len(listing_data) == 1
+    assert listing_data[0]["run_id"] == completion_run_id
+    # Belt-and-braces: the same run_id is readable directly from the
+    # registry the fixture wired up.
+    record = RunRegistry(tasks_db_path).get_run(completion_run_id, owner="u1")
+    assert record is not None
+    assert record.spec.run_id == completion_run_id
+
+
+async def test_chat_completions_run_id_survives_default_strip(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_id`` is preserved through ``strip_chat_completion``.
+
+    Default (non-debug) mode strips ``raw`` and provider extensions,
+    but ``run_id`` and ``degraded_tracking`` must survive the strip so
+    non-debug clients can still join on the Bot run id.
+    """
+    _stub_chat(monkeypatch, {})
+
+    # Default mode: debug not set (defaults to False).
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="hello",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "run_id" in body
+    assert body["run_id"] is not None
+    # raw must NOT be in default-mode response.
+    assert "raw" not in body
+
+
+async def test_chat_completions_degraded_tracking_on_persistence_failure(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registry write failure surfaces ``degraded_tracking: True``.
+
+    AF-004 acceptance: when ``_record_sync_run`` returns ``None``
+    (SQLite / OS failure), the chat completion still succeeds (HTTP
+    200) but the response advertises ``run_id: null`` and
+    ``degraded_tracking: true`` so the client knows the run row was
+    not persisted. Mirrors the remote-agent ``degraded_tracking``
+    signal.
+    """
+    _stub_chat(monkeypatch, {})
+    monkeypatch.setattr(
+        "mcp_server_phytomni.api.app._record_sync_run",
+        lambda **_: None,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        content="what is photosynthesis?",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] is None
+    assert body["degraded_tracking"] is True
