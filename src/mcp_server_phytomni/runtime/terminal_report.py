@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from ..agents.chat.service import _cached_chat_app
 from ..common.responses import message_content
@@ -21,6 +23,7 @@ from ..graphs.chat_adapters import (
     extract_chat_response,
 )
 from ..storage.downloads import download_obs_file
+from .task_manager import TaskManager, resolve_tasks_db_path
 from .terminal_answer import TerminalAnswerContext
 
 __all__ = [
@@ -29,6 +32,7 @@ __all__ = [
     "TextArtifactSnippet",
     "build_fallback_report",
     "is_terminal_report_agent",
+    "persist_terminal_report",
     "read_obs_text_artifact",
     "read_text_artifact_snippets",
     "select_text_artifact_paths",
@@ -45,6 +49,8 @@ _MAX_BYTES_PER_ARTIFACT = 32_768
 _MAX_TOTAL_PROMPT_CHARS = 120_000
 _SUMMARY_TIMEOUT_SECONDS = 90.0
 _REPORT_TEMP_DIR = "terminal-report"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -367,3 +373,36 @@ async def _summarize_with_chat(prompt: str) -> str:
         build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
     )
     return message_content(extract_chat_response(chat_output))
+
+
+def persist_terminal_report(
+    live: List[Dict[str, Any]],
+    result: TerminalReportResult,
+    *,
+    task_manager: Any | None = None,
+) -> None:
+    """Persist ``result`` on the first task row and patch live state."""
+
+    if not live:
+        return
+    row = live[0]
+    task_id = row.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        return
+    row["final_report"] = result.final_report
+    if result.degraded and result.degraded_reason:
+        row["degraded_reason"] = result.degraded_reason
+    manager = task_manager or TaskManager(resolve_tasks_db_path())
+    try:
+        manager.set_task_final_report(task_id, result.final_report)
+        if result.degraded and result.degraded_reason:
+            manager.set_task_degraded(task_id, result.degraded_reason)
+    except (sqlite3.Error, OSError) as exc:
+        row["degraded_reason"] = (
+            "terminal report persistence failed: " f"{type(exc).__name__}"
+        )
+        logger.warning(
+            "failed to persist terminal report for %s: %s",
+            task_id,
+            exc,
+        )

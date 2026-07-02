@@ -9,9 +9,11 @@ import pytest
 
 from mcp_server_phytomni.runtime.terminal_report import (
     TerminalReportContext,
+    TerminalReportResult,
     TextArtifactSnippet,
     build_fallback_report,
     is_terminal_report_agent,
+    persist_terminal_report,
     read_text_artifact_snippets,
     select_text_artifact_paths,
     synthesize_terminal_report,
@@ -293,3 +295,59 @@ async def test_synthesize_report_falls_back_on_summary_exception() -> None:
     assert result.degraded
     assert result.degraded_reason == "LLM summary failed: OSError"
     assert "# Analyst Final Report" in result.final_report
+
+
+class _FakeTaskManager:
+    """Stand-in TaskManager capturing persistence calls."""
+
+    def __init__(self) -> None:
+        """Initialise empty capture lists."""
+        self.final_reports: list[tuple[str, str]] = []
+        self.degraded: list[tuple[str, str]] = []
+
+    def set_task_final_report(self, task_id: str, markdown: str) -> bool:
+        """Capture the final report write."""
+        self.final_reports.append((task_id, markdown))
+        return True
+
+    def set_task_degraded(self, task_id: str, reason: str) -> bool:
+        """Capture the degraded reason write."""
+        self.degraded.append((task_id, reason))
+        return True
+
+
+def test_persist_terminal_report_updates_first_live_task() -> None:
+    """Persistence patches the live row and calls both TaskManager methods."""
+    live = [{"task_id": "task-1", "status": "succeeded"}]
+    result = build_fallback_report(
+        TerminalReportContext(
+            agent="analyst",
+            status="succeeded",
+            live=live,
+            artifacts=[],
+            query=None,
+        ),
+        reason="LLM summary returned empty content",
+    )
+    manager = _FakeTaskManager()
+
+    persist_terminal_report(live, result, task_manager=manager)
+
+    assert live[0]["final_report"] == result.final_report
+    assert live[0]["degraded_reason"] == "LLM summary returned empty content"
+    assert manager.final_reports == [("task-1", result.final_report)]
+    assert manager.degraded == [
+        ("task-1", "LLM summary returned empty content")
+    ]
+
+
+def test_persist_terminal_report_skips_missing_task_id() -> None:
+    """A row without task_id is left untouched and no DB write fires."""
+    live = [{"status": "succeeded"}]
+    result = TerminalReportResult(final_report="report", answer="answer")
+    manager = _FakeTaskManager()
+
+    persist_terminal_report(live, result, task_manager=manager)
+
+    assert "final_report" not in live[0]
+    assert not manager.final_reports
