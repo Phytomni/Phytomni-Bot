@@ -14,6 +14,7 @@ from mcp_server_phytomni.runtime.terminal_report import (
     is_terminal_report_agent,
     read_text_artifact_snippets,
     select_text_artifact_paths,
+    synthesize_terminal_report,
 )
 
 pytestmark = pytest.mark.unit
@@ -144,11 +145,12 @@ def test_build_fallback_report_handles_empty_artifacts() -> None:
 
 
 async def _fake_reader(path: str) -> str:
-    """Return canned text for the three recognised test paths."""
+    """Return canned text for the recognised test paths."""
     values = {
         "/obs/bucket/a.md": "alpha text",
         "/obs/bucket/b.csv": "bravo text",
         "/obs/bucket/large.txt": "x" * 20,
+        "/obs/bucket/report.md": "report content",
     }
     return values[path]
 
@@ -189,3 +191,105 @@ async def test_read_text_artifact_snippets_records_failed_reads() -> None:
 
     assert [snippet.path for snippet in snippets] == ["/obs/bucket/ok.md"]
     assert skipped == ("/obs/bucket/missing.md",)
+
+
+async def _good_summarizer(prompt: str) -> str:
+    """Return canned markdown when the prompt names the test artifact."""
+    assert "Artifact: /obs/bucket/report.md" in prompt
+    return "# LLM Report\n\nGrounded summary."
+
+
+async def _empty_summarizer(prompt: str) -> str:
+    """Return whitespace to exercise the empty-summary fallback."""
+    assert prompt
+    return "   "
+
+
+async def _raising_summarizer(prompt: str) -> str:
+    """Raise to exercise the exception fallback."""
+    assert prompt
+    raise OSError("model unavailable")
+
+
+async def test_synthesize_terminal_report_uses_llm_report() -> None:
+    """A healthy summarizer produces the primary report surface."""
+    context = TerminalReportContext(
+        agent="research",
+        status="succeeded",
+        live=[{"task_id": "task-1", "status": "succeeded"}],
+        artifacts=[
+            {
+                "task_id": "task-1",
+                "output_dir": "/obs/bucket/out",
+                "paths": ["/obs/bucket/report.md"],
+            }
+        ],
+        query="find candidate genes",
+    )
+
+    result = await synthesize_terminal_report(
+        context,
+        reader=_fake_reader,
+        summarizer=_good_summarizer,
+    )
+
+    assert result.final_report == "# LLM Report\n\nGrounded summary."
+    assert result.answer == "Analysis complete: 1/1 tasks succeeded."
+    assert not result.degraded
+    assert result.selected_paths == ("/obs/bucket/report.md",)
+
+
+async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
+    None
+):
+    """An empty summarizer response triggers the fallback report."""
+    context = TerminalReportContext(
+        agent="design",
+        status="succeeded",
+        live=[{"task_id": "task-1", "status": "succeeded"}],
+        artifacts=[
+            {
+                "task_id": "task-1",
+                "output_dir": "/obs/bucket/out",
+                "paths": ["/obs/bucket/report.md"],
+            }
+        ],
+        query="design primers",
+    )
+
+    result = await synthesize_terminal_report(
+        context,
+        reader=_fake_reader,
+        summarizer=_empty_summarizer,
+    )
+
+    assert result.degraded
+    assert result.degraded_reason == "LLM summary returned empty content"
+    assert "# Digital Design Final Report" in result.final_report
+
+
+async def test_synthesize_report_falls_back_on_summary_exception() -> None:
+    """A summarizer exception triggers the fallback report."""
+    context = TerminalReportContext(
+        agent="analyst",
+        status="succeeded",
+        live=[{"task_id": "task-1", "status": "succeeded"}],
+        artifacts=[
+            {
+                "task_id": "task-1",
+                "output_dir": "/obs/bucket/out",
+                "paths": ["/obs/bucket/report.md"],
+            }
+        ],
+        query="analyze dataset",
+    )
+
+    result = await synthesize_terminal_report(
+        context,
+        reader=_fake_reader,
+        summarizer=_raising_summarizer,
+    )
+
+    assert result.degraded
+    assert result.degraded_reason == "LLM summary failed: OSError"
+    assert "# Analyst Final Report" in result.final_report

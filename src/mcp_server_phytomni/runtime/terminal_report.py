@@ -11,6 +11,15 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Optional
 
+from ..agents.chat.service import _cached_chat_app
+from ..common.responses import message_content
+from ..config.defaults import ChatConfig
+from ..config.settings import SensitiveConfig
+from ..graphs.chat_adapters import (
+    build_chat_input,
+    build_chat_kwargs_for,
+    extract_chat_response,
+)
 from ..storage.downloads import download_obs_file
 from .terminal_answer import TerminalAnswerContext
 
@@ -23,6 +32,7 @@ __all__ = [
     "read_obs_text_artifact",
     "read_text_artifact_snippets",
     "select_text_artifact_paths",
+    "synthesize_terminal_report",
 ]
 
 _TARGET_AGENTS = frozenset({"analyst", "research", "design", "network"})
@@ -245,3 +255,115 @@ async def read_obs_text_artifact(path: str) -> str:
     return await asyncio.to_thread(
         Path(local_path).read_text, encoding="utf-8"
     )
+
+
+ReportSummarizer = Callable[[str], Awaitable[str]]
+
+
+async def synthesize_terminal_report(
+    context: TerminalReportContext,
+    *,
+    reader: ArtifactTextReader = read_obs_text_artifact,
+    summarizer: Optional[ReportSummarizer] = None,
+) -> TerminalReportResult:
+    """Return an LLM-enhanced final report with deterministic fallback."""
+
+    selected_paths = tuple(select_text_artifact_paths(context.artifacts))
+    snippets, skipped_paths = await read_text_artifact_snippets(
+        selected_paths,
+        reader=reader,
+    )
+    all_paths = tuple(_all_artifact_paths(context.artifacts))
+    skipped_all = tuple(
+        path for path in all_paths if path not in selected_paths
+    )
+    combined_skipped = (*skipped_paths, *skipped_all)
+    if not snippets:
+        return build_fallback_report(
+            context,
+            reason="No readable text artifacts were available for LLM summary",
+            selected_paths=selected_paths,
+            skipped_paths=combined_skipped,
+        )
+    prompt = _build_report_prompt(context, snippets)
+    use_summarizer = summarizer or _summarize_with_chat
+    try:
+        report = await asyncio.wait_for(
+            use_summarizer(prompt),
+            timeout=_SUMMARY_TIMEOUT_SECONDS,
+        )
+    except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+        return build_fallback_report(
+            context,
+            reason=f"LLM summary failed: {type(exc).__name__}",
+            selected_paths=selected_paths,
+            skipped_paths=combined_skipped,
+        )
+    report = report.strip()
+    if not report:
+        return build_fallback_report(
+            context,
+            reason="LLM summary returned empty content",
+            selected_paths=selected_paths,
+            skipped_paths=combined_skipped,
+        )
+    return TerminalReportResult(
+        final_report=report,
+        answer=(
+            f"Analysis complete: {_success_count(context.live)}/"
+            f"{len(context.live)} tasks succeeded."
+        ),
+        selected_paths=selected_paths,
+        skipped_paths=combined_skipped,
+    )
+
+
+def _build_report_prompt(
+    context: TerminalReportContext,
+    snippets: Iterable[TextArtifactSnippet],
+) -> str:
+    """Build a grounded prompt for final report generation."""
+
+    lines = [
+        "Generate a concise markdown final report for a completed "
+        "Phytomni remote analysis run.",
+        "",
+        "Ground the report only in the metadata and artifact snippets below. "
+        "If evidence is missing, say so briefly.",
+        "",
+        f"Agent: {context.agent}",
+        f"Status: {context.status}",
+        f"Query: {context.query or 'Not provided'}",
+        f"Tasks succeeded: {_success_count(context.live)}/{len(context.live)}",
+        "",
+        "Artifact snippets:",
+    ]
+    for snippet in snippets:
+        lines.extend(
+            [
+                "",
+                f"Artifact: {snippet.path}",
+                "```text",
+                snippet.content,
+                "```",
+            ]
+        )
+        if snippet.truncated:
+            lines.append("Snippet was truncated by the report assembler.")
+    return "\n".join(lines)
+
+
+async def _summarize_with_chat(prompt: str) -> str:
+    """Generate report markdown through the existing chat subgraph."""
+
+    config = ChatConfig()
+    sensitive = SensitiveConfig.load()
+    chat_kwargs = build_chat_kwargs_for(
+        config,
+        sensitive,
+        with_follow_up=False,
+    )
+    chat_output = await _cached_chat_app().ainvoke(
+        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
+    )
+    return message_content(extract_chat_response(chat_output))
