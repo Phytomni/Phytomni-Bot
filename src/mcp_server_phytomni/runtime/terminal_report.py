@@ -15,6 +15,7 @@ __all__ = [
     "TerminalReportContext",
     "TerminalReportResult",
     "TextArtifactSnippet",
+    "build_fallback_report",
     "is_terminal_report_agent",
     "select_text_artifact_paths",
 ]
@@ -91,3 +92,103 @@ def select_text_artifact_paths(
             if len(selected) >= max_files:
                 return selected
     return selected
+
+
+def build_fallback_report(
+    context: TerminalReportContext,
+    *,
+    reason: Optional[str] = None,
+    selected_paths: tuple[str, ...] = (),
+    skipped_paths: tuple[str, ...] = (),
+) -> TerminalReportResult:
+    """Build a deterministic non-empty report without LLM output."""
+
+    succeeded = _success_count(context.live)
+    total = len(context.live)
+    title = _report_title(context.agent)
+    answer = f"Analysis complete: {succeeded}/{total} tasks succeeded."
+    lines = [
+        f"# {title}",
+        "",
+        "## Summary",
+        "",
+        answer,
+    ]
+    if context.query:
+        lines.extend(["", "## User Query", "", context.query])
+    lines.extend(
+        [
+            "",
+            "## Task Status",
+            "",
+            f"- Agent: `{context.agent}`",
+            f"- Status: `{context.status}`",
+            f"- Tasks: {succeeded}/{total} tasks succeeded",
+        ]
+    )
+    output_dirs = [
+        str(artifact.get("output_dir"))
+        for artifact in context.artifacts
+        if artifact.get("output_dir")
+    ]
+    lines.extend(["", "## Outputs", ""])
+    if output_dirs:
+        lines.extend(f"- `{output_dir}`" for output_dir in output_dirs)
+    else:
+        lines.append("No output directories were reported.")
+    artifact_paths = _all_artifact_paths(context.artifacts)
+    lines.extend(["", "## Artifacts", ""])
+    if artifact_paths:
+        lines.extend(f"- `{path}`" for path in artifact_paths)
+    else:
+        lines.append("No artifact files were reported.")
+    if selected_paths:
+        lines.extend(["", "## Text Artifacts Used", ""])
+        lines.extend(f"- `{path}`" for path in selected_paths)
+    if skipped_paths:
+        lines.extend(["", "## Artifacts Not Summarized", ""])
+        lines.extend(f"- `{path}`" for path in skipped_paths)
+    degraded = bool(reason)
+    if reason:
+        lines.extend(["", "## Report Degradation", "", reason])
+    final_report = "\n".join(lines).strip() + "\n"
+    return TerminalReportResult(
+        final_report=final_report,
+        answer=answer,
+        degraded=degraded,
+        degraded_reason=reason,
+        selected_paths=selected_paths,
+        skipped_paths=skipped_paths,
+    )
+
+
+def _report_title(agent: str) -> str:
+    """Return a human-readable final report heading for ``agent``."""
+    titles = {
+        "analyst": "Analyst Final Report",
+        "research": "In Silico Research Final Report",
+        "design": "Digital Design Final Report",
+        "network": "Network Analysis Final Report",
+    }
+    return titles.get(agent, "Analysis Final Report")
+
+
+def _success_count(live: Iterable[Dict[str, Any]]) -> int:
+    """Count reconciled rows whose status is terminal-success."""
+    return sum(
+        1
+        for row in live
+        if str(row.get("status", "")).lower()
+        in {"succeeded", "success", "completed", "done"}
+    )
+
+
+def _all_artifact_paths(artifacts: Iterable[Dict[str, Any]]) -> list[str]:
+    """Flatten every path across all artifact descriptors."""
+    paths: list[str] = []
+    for artifact in artifacts:
+        artifact_paths = artifact.get("paths", [])
+        if not isinstance(artifact_paths, list):
+            continue
+        paths.extend(path for path in artifact_paths if isinstance(path, str))
+    return paths

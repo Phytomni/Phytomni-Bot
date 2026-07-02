@@ -10,6 +10,7 @@ import pytest
 from mcp_server_phytomni.runtime.terminal_report import (
     TerminalReportContext,
     TextArtifactSnippet,
+    build_fallback_report,
     is_terminal_report_agent,
     select_text_artifact_paths,
 )
@@ -82,3 +83,60 @@ def test_report_context_and_snippet_shapes() -> None:
     assert context.query == "design an sgRNA workflow"
     assert snippet.path.endswith("report.md")
     assert not snippet.truncated
+
+
+def test_build_fallback_report_includes_metadata_and_artifacts() -> None:
+    """Fallback renders metadata, query, paths, and degraded reason."""
+    context = TerminalReportContext(
+        agent="network",
+        status="succeeded",
+        live=[
+            {"task_id": "task-1", "status": "succeeded"},
+            {"task_id": "task-2", "status": "succeeded"},
+        ],
+        artifacts=[
+            {
+                "task_id": "task-1",
+                "output_dir": "/obs/bucket/run-a",
+                "paths": [
+                    "/obs/bucket/run-a/report.md",
+                    "/obs/bucket/run-a/network.svg",
+                ],
+            }
+        ],
+        query="build a co-expression network",
+    )
+
+    result = build_fallback_report(
+        context,
+        reason="LLM summary unavailable",
+        selected_paths=("/obs/bucket/run-a/report.md",),
+        skipped_paths=("/obs/bucket/run-a/network.svg",),
+    )
+
+    assert result.degraded
+    assert result.degraded_reason == "LLM summary unavailable"
+    assert "# Network Analysis Final Report" in result.final_report
+    assert "build a co-expression network" in result.final_report
+    assert "2/2 tasks succeeded" in result.final_report
+    assert "/obs/bucket/run-a/report.md" in result.final_report
+    assert "/obs/bucket/run-a/network.svg" in result.final_report
+    assert result.answer == "Analysis complete: 2/2 tasks succeeded."
+
+
+def test_build_fallback_report_handles_empty_artifacts() -> None:
+    """Empty artifact list yields a healthy report with no-output notice."""
+    context = TerminalReportContext(
+        agent="analyst",
+        status="succeeded",
+        live=[{"task_id": "task-1", "status": "succeeded"}],
+        artifacts=[],
+        query=None,
+    )
+
+    result = build_fallback_report(context)
+
+    assert not result.degraded
+    assert "# Analyst Final Report" in result.final_report
+    assert "No output directories were reported." in result.final_report
+    assert result.answer == "Analysis complete: 1/1 tasks succeeded."
