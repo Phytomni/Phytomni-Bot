@@ -391,6 +391,7 @@ def persist_terminal_report(
         return
     row["final_report"] = result.final_report
     if result.degraded and result.degraded_reason:
+        row["degraded"] = True
         row["degraded_reason"] = result.degraded_reason
     manager = task_manager or TaskManager(resolve_tasks_db_path())
     try:

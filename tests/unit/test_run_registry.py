@@ -942,3 +942,111 @@ async def test_reconcile_terminal_analyst_run_includes_final_report(
     assert manager.get_task_final_report("task-1") == (
         "# Analyst Final Report\n\nLLM summary."
     )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_terminal_report_degraded_reaches_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A degraded terminal report surfaces degraded_reason on the payload."""
+    registry, manager, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-deg", "alice", "design", "remote")
+    _seed_async_run(registry, manager, spec, ("task-1",))
+    registry.update_request_info(
+        "run-deg",
+        owner="alice",
+        request_info=RunRequestInfo(query="design workflow"),
+    )
+
+    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded task row."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/bucket/out",
+        }
+
+    class _DegradedResult:
+        final_report = "# Digital Design Final Report\n\nFallback."
+        answer = "Analysis complete: 1/1 tasks succeeded."
+        degraded = True
+        degraded_reason = "LLM summary returned empty content"
+        selected_paths: tuple = ()
+        skipped_paths: tuple = ()
+
+    async def fake_synthesize(_context: Any) -> Any:
+        """Return a degraded report result."""
+        return _DegradedResult()
+
+    async def fake_lister(output_dir: str) -> list:
+        """Return one artifact path."""
+        return [f"{output_dir}/report.md"]
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        fake_synthesize,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.terminal_report.resolve_tasks_db_path",
+        lambda: manager.db_path,
+    )
+
+    record = await registry.reconcile(
+        "run-deg", owner="alice", lister=fake_lister
+    )
+
+    assert record is not None
+    assert record.result is not None
+    assert record.result["degraded"] is True
+    assert record.result["task_results"][0]["degraded_reason"] == (
+        "LLM summary returned empty content"
+    )
+    assert manager.get_task_degraded("task-1") == (
+        "LLM summary returned empty content"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_non_target_agent_skips_terminal_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-analyst-class agents never invoke terminal report synthesis."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-chat", "alice", "chat", "remote"),
+        ("task-1",),
+    )
+    called = {"n": 0}
+
+    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded task row."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/bucket/out",
+        }
+
+    async def tracking_synthesize(_context: Any) -> Any:
+        """Track that synthesis was invoked (should not happen here)."""
+        called["n"] += 1
+        return _NoReportResult()
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        tracking_synthesize,
+    )
+
+    record = await registry.reconcile(
+        "run-chat", owner="alice", lister=_empty_lister
+    )
+
+    assert record is not None
+    assert called["n"] == 0
+    assert record.result is not None
+    assert record.result["final_report"] is None
