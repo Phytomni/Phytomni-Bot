@@ -197,9 +197,9 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
             "paths": ["/obs/y/fig.png"],
         },
     ]
-    # WO-1 contract: an analyst-class terminal run (no child final_report)
-    # synthesizes a renderable answer that _extract_answer lifts to the
-    # top-level "answer" field chat-ai reads.
+    # WO-1 contract: an analyst-class terminal run synthesizes a terminal
+    # report whose compact answer _extract_answer lifts to the top-level
+    # "answer" field chat-ai reads.
     answer = body["result"]["formatted"]["answer"]
-    assert answer.startswith("**Analysis complete")
+    assert answer == "Analysis complete: 2/2 tasks succeeded."
     assert body["answer"] == answer

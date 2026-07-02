@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
@@ -79,20 +80,21 @@ async def _empty_lister(output_dir: str) -> list:
     return []
 
 
-class _NoReportResult:
-    """Stand-in for a terminal report result that changes nothing."""
+@dataclass(frozen=True)
+class _FakeReportResult:
+    """Shared test double for terminal report results."""
 
-    final_report = ""
-    answer = ""
-    degraded = False
-    degraded_reason = None
+    final_report: str = ""
+    answer: str = ""
+    degraded: bool = False
+    degraded_reason: str | None = None
     selected_paths: tuple = ()
     skipped_paths: tuple = ()
 
 
 async def _no_report_synthesizer(_context: Any) -> Any:
     """Return a no-op result so terminal-report synthesis is neutral."""
-    return _NoReportResult()
+    return _FakeReportResult()
 
 
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
@@ -893,16 +895,10 @@ async def test_reconcile_terminal_analyst_run_includes_final_report(
     ) -> Any:
         """Return a canned report result for the analyst agent."""
         assert context.agent == "analyst"
-
-        class _Result:
-            final_report = "# Analyst Final Report\n\nLLM summary."
-            answer = "Analysis complete: 1/1 tasks succeeded."
-            degraded = False
-            degraded_reason = None
-            selected_paths: tuple = ()
-            skipped_paths: tuple = ()
-
-        return _Result()
+        return _FakeReportResult(
+            final_report="# Analyst Final Report\n\nLLM summary.",
+            answer="Analysis complete: 1/1 tasks succeeded.",
+        )
 
     async def fake_lister(output_dir: str) -> list:
         """Return one artifact path for any output directory."""
@@ -966,17 +962,16 @@ async def test_reconcile_terminal_report_degraded_reaches_payload(
             "output_dir": "/obs/bucket/out",
         }
 
-    class _DegradedResult:
-        final_report = "# Digital Design Final Report\n\nFallback."
-        answer = "Analysis complete: 1/1 tasks succeeded."
-        degraded = True
-        degraded_reason = "LLM summary returned empty content"
-        selected_paths: tuple = ()
-        skipped_paths: tuple = ()
+    _degraded_result = _FakeReportResult(
+        final_report="# Digital Design Final Report\n\nFallback.",
+        answer="Analysis complete: 1/1 tasks succeeded.",
+        degraded=True,
+        degraded_reason="LLM summary returned empty content",
+    )
 
     async def fake_synthesize(_context: Any) -> Any:
         """Return a degraded report result."""
-        return _DegradedResult()
+        return _degraded_result
 
     async def fake_lister(output_dir: str) -> list:
         """Return one artifact path."""
@@ -1033,7 +1028,7 @@ async def test_reconcile_non_target_agent_skips_terminal_report(
     async def tracking_synthesize(_context: Any) -> Any:
         """Track that synthesis was invoked (should not happen here)."""
         called["n"] += 1
-        return _NoReportResult()
+        return _FakeReportResult()
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
     monkeypatch.setattr(

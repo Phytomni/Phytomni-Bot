@@ -638,21 +638,28 @@ child degraded; the per-task `degraded_reason` rides
 `result.task_results[]`). Healthy and non-`deep_genome` rows read
 `degraded: false` / `degraded_reason: null`.
 
-The other remote agents (`analyst`, `research`, `design`, `network`) are
-fire-and-forget: they fan out child tasks and return before the upstream
-results exist, so they never write `final_report`. Instead, the first
-poll that observes the run reach a terminal state assembles a renderable
-answer and an artifact index once, at the settle transition (later polls
-replay the cached terminal record):
+For terminal remote analyst-class runs (`analyst`, `research`, `design`,
+and `network`), a successful response exposes both a long-form report
+and compact display text:
 
-- `result.formatted.answer` — a thin markdown summary (task counts, the
-  original query, output directories, and figures), also lifted to the
-  top-level `answer` by `_extract_answer`. It is added only when no child
-  wrote `final_report`, so `deep_genome` keeps its `final_report` surface
-  (the two channels are intentionally distinct pending a unified report).
-- `result.artifacts[].paths` — concrete object paths under each succeeded
-  task's `output_dir` (figures are the image-extension subset), globbed
-  from OBS / obsfs once at settle. Earlier this was always `[]`.
+- `result.final_report` is the primary markdown report for Web and other
+  clients. It is generated from safe text artifacts (`.md`, `.txt`,
+  `.json`, `.csv`, `.tsv`, `.log`) through the terminal report
+  synthesizer.
+- `result.formatted.answer` is compact renderable text for chat/task
+  summaries and remains available as a fallback surface.
+- `result.artifacts[].paths` contains concrete `/obs/<bucket>/<key>`
+  artifact paths for downloads and galleries. Binary artifacts, PDFs,
+  xlsx files, and images are listed here even when they are not read
+  into the first-version report prompt.
+- `result.degraded` is `true` when report synthesis fell back or skipped
+  material because artifact reading, summarization, or persistence
+  degraded. The task-level `degraded_reason` is included in
+  `result.task_results[]`.
+
+Report synthesis degradation does not change a successfully completed
+remote analysis run to `failed`; clients should render the fallback
+report and expose the degraded signal.
 
 Assembly is best-effort: an OBS listing failure logs a warning and
 leaves that task's `paths` empty (the run still settles as terminal). The
