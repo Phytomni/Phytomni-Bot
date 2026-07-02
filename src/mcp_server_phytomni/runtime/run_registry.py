@@ -27,6 +27,12 @@ from .terminal_artifacts import (
     collect_terminal_artifacts,
     enumerate_artifact_paths,
 )
+from .terminal_report import (
+    TerminalReportContext,
+    is_terminal_report_agent,
+    persist_terminal_report,
+    synthesize_terminal_report,
+)
 
 __all__ = [
     "RunFilter",
@@ -524,6 +530,20 @@ class RunRegistry:
             if new_status == "succeeded"
             else []
         )
+        report_result = None
+        if new_status == "succeeded" and is_terminal_report_agent(
+            current.spec.agent
+        ):
+            report_result = await synthesize_terminal_report(
+                TerminalReportContext(
+                    agent=current.spec.agent,
+                    status=new_status,
+                    live=live,
+                    artifacts=artifacts,
+                    query=current.request_info.query,
+                )
+            )
+            persist_terminal_report(live, report_result)
         answer = await synthesize_terminal_answer(
             TerminalAnswerContext(
                 agent=current.spec.agent,
@@ -533,6 +553,8 @@ class RunRegistry:
                 query=current.request_info.query,
             )
         )
+        if report_result is not None and report_result.answer:
+            answer = report_result.answer
         result_payload, error = _terminal_payload(
             new_status, live, artifacts, answer
         )
@@ -682,8 +704,8 @@ def _terminal_payload(
       (empty on the failed branch); always present so clients can
       iterate it without a key-check.
     - ``formatted.answer``: the caller-synthesized renderable answer,
-      added only when no child wrote ``final_report`` (so deep_genome,
-      which self-persists a report, keeps its existing surface).
+      always present when the caller provides one so clients see a
+      compact display surface alongside the long-form ``final_report``.
     - ``degraded``: True when any reconciled child carries a degraded
       signal (e.g. a DeepGenome report that lost its gene profile); the
       per-task ``degraded_reason`` rides ``task_results``.
@@ -695,7 +717,7 @@ def _terminal_payload(
         "final_report": _first_final_report(live),
         "degraded": _any_degraded(live),
     }
-    if payload["final_report"] is None and answer:
+    if answer:
         payload["formatted"] = {"answer": answer}
     if status == "succeeded":
         return payload, None

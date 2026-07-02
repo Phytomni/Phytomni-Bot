@@ -417,11 +417,11 @@ def test_terminal_payload_contract_analyst_class() -> None:
 
 
 def test_terminal_payload_contract_deep_genome() -> None:
-    """deep_genome terminal payload keeps final_report and omits formatted.
+    """deep_genome terminal payload surfaces both final_report and answer.
 
-    The dual-channel carve-out: a child ``final_report`` suppresses the
-    synthesized ``formatted`` block so deep_genome keeps its report
-    surface untouched even though an answer string is supplied.
+    formatted.answer is always present when the caller provides one,
+    so deep_genome exposes the compact display text alongside the
+    long-form report markdown.
     """
     rows = [
         {
@@ -432,8 +432,8 @@ def test_terminal_payload_contract_deep_genome() -> None:
         }
     ]
 
-    payload, _ = _terminal_payload("succeeded", rows, [], "ignored")
+    payload, _ = _terminal_payload("succeeded", rows, [], "compact answer")
 
     assert payload is not None
     assert payload["final_report"] == "# Deep Genome Analysis"
-    assert "formatted" not in payload
+    assert payload["formatted"]["answer"] == "compact answer"

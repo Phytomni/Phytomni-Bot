@@ -79,6 +79,22 @@ async def _empty_lister(output_dir: str) -> list:
     return []
 
 
+class _NoReportResult:
+    """Stand-in for a terminal report result that changes nothing."""
+
+    final_report = ""
+    answer = ""
+    degraded = False
+    degraded_reason = None
+    selected_paths: tuple = ()
+    skipped_paths: tuple = ()
+
+
+async def _no_report_synthesizer(_context: Any) -> Any:
+    """Return a no-op result so terminal-report synthesis is neutral."""
+    return _NoReportResult()
+
+
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     """The registry creates the runs table and shared indices."""
     db = str(tmp_path / "tasks.db")
@@ -291,8 +307,10 @@ async def test_reconcile_surfaces_deep_genome_final_report(
     assert record.status == "succeeded"
     assert record.result is not None
     assert record.result["final_report"] == report_md
-    # Carve-out: a child final_report suppresses the synthesized answer.
-    assert "formatted" not in record.result
+    # formatted.answer is always present when the synthesizer emits one,
+    # even alongside a child final_report.
+    assert "formatted" in record.result
+    assert record.result["formatted"]["answer"]
 
 
 @pytest.mark.asyncio
@@ -323,6 +341,11 @@ async def test_reconcile_final_report_none_without_report(
         }
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        _no_report_synthesizer,
+    )
 
     record = await registry.reconcile(
         "run-an", owner="alice", lister=_empty_lister
@@ -476,6 +499,11 @@ async def test_reconcile_assembles_answer_and_paths_once(
         }
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        _no_report_synthesizer,
+    )
 
     glob_calls = {"n": 0}
 
@@ -836,3 +864,81 @@ async def test_reconcile_concurrent_first_polls_are_idempotent(
     cached = registry.get_run("run-cc", owner="alice")
     assert cached is not None and cached.result is not None
     assert cached.result["formatted"]["answer"] == settled
+
+
+@pytest.mark.asyncio
+async def test_reconcile_terminal_analyst_run_includes_final_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Analyst-class reconcile persists a final_report on the payload."""
+    registry, manager, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-tr", "alice", "analyst", "remote")
+    _seed_async_run(registry, manager, spec, ("task-1",))
+    registry.update_request_info(
+        "run-tr",
+        owner="alice",
+        request_info=RunRequestInfo(query="summarize this run"),
+    )
+
+    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+        """Return a succeeded task with the expected output_dir."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/bucket/out",
+        }
+
+    async def fake_synthesize_terminal_report(
+        context: Any,
+    ) -> Any:
+        """Return a canned report result for the analyst agent."""
+        assert context.agent == "analyst"
+
+        class _Result:
+            final_report = "# Analyst Final Report\n\nLLM summary."
+            answer = "Analysis complete: 1/1 tasks succeeded."
+            degraded = False
+            degraded_reason = None
+            selected_paths: tuple = ()
+            skipped_paths: tuple = ()
+
+        return _Result()
+
+    async def fake_lister(output_dir: str) -> list:
+        """Return one artifact path for any output directory."""
+        return [f"{output_dir}/report.md"]
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        fake_synthesize_terminal_report,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.terminal_report.resolve_tasks_db_path",
+        lambda: manager.db_path,
+    )
+
+    record = await registry.reconcile(
+        "run-tr", owner="alice", lister=fake_lister
+    )
+
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result is not None
+    assert record.result["final_report"] == (
+        "# Analyst Final Report\n\nLLM summary."
+    )
+    assert record.result["formatted"]["answer"] == (
+        "Analysis complete: 1/1 tasks succeeded."
+    )
+    assert record.result["artifacts"] == [
+        {
+            "task_id": "task-1",
+            "output_dir": "/obs/bucket/out",
+            "paths": ["/obs/bucket/out/report.md"],
+        }
+    ]
+    assert manager.get_task_final_report("task-1") == (
+        "# Analyst Final Report\n\nLLM summary."
+    )
