@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Optional
 
+from ..storage.downloads import download_obs_file
 from .terminal_answer import TerminalAnswerContext
 
 __all__ = [
@@ -17,6 +20,8 @@ __all__ = [
     "TextArtifactSnippet",
     "build_fallback_report",
     "is_terminal_report_agent",
+    "read_obs_text_artifact",
+    "read_text_artifact_snippets",
     "select_text_artifact_paths",
 ]
 
@@ -192,3 +197,51 @@ def _all_artifact_paths(artifacts: Iterable[Dict[str, Any]]) -> list[str]:
             continue
         paths.extend(path for path in artifact_paths if isinstance(path, str))
     return paths
+
+
+ArtifactTextReader = Callable[[str], Awaitable[str]]
+
+
+async def read_text_artifact_snippets(
+    paths: Iterable[str],
+    *,
+    reader: ArtifactTextReader,
+    max_bytes_per_artifact: int = _MAX_BYTES_PER_ARTIFACT,
+    max_total_chars: int = _MAX_TOTAL_PROMPT_CHARS,
+) -> tuple[tuple[TextArtifactSnippet, ...], tuple[str, ...]]:
+    """Read capped snippets from selected text artifact paths."""
+
+    snippets: list[TextArtifactSnippet] = []
+    skipped: list[str] = []
+    remaining = max_total_chars
+    for path in paths:
+        if remaining <= 0:
+            skipped.append(path)
+            continue
+        try:
+            content = await reader(path)
+        except (OSError, UnicodeDecodeError, ValueError):
+            skipped.append(path)
+            continue
+        capped = content[:max_bytes_per_artifact]
+        if len(capped) > remaining:
+            capped = capped[:remaining]
+        truncated = len(capped) < len(content)
+        snippets.append(
+            TextArtifactSnippet(
+                path=path,
+                content=capped,
+                truncated=truncated,
+            )
+        )
+        remaining -= len(capped)
+    return tuple(snippets), tuple(skipped)
+
+
+async def read_obs_text_artifact(path: str) -> str:
+    """Resolve one OBS artifact path and read it as UTF-8 text."""
+
+    local_path = await download_obs_file(path, _REPORT_TEMP_DIR)
+    return await asyncio.to_thread(
+        Path(local_path).read_text, encoding="utf-8"
+    )

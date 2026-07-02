@@ -12,6 +12,7 @@ from mcp_server_phytomni.runtime.terminal_report import (
     TextArtifactSnippet,
     build_fallback_report,
     is_terminal_report_agent,
+    read_text_artifact_snippets,
     select_text_artifact_paths,
 )
 
@@ -140,3 +141,51 @@ def test_build_fallback_report_handles_empty_artifacts() -> None:
     assert "# Analyst Final Report" in result.final_report
     assert "No output directories were reported." in result.final_report
     assert result.answer == "Analysis complete: 1/1 tasks succeeded."
+
+
+async def _fake_reader(path: str) -> str:
+    """Return canned text for the three recognised test paths."""
+    values = {
+        "/obs/bucket/a.md": "alpha text",
+        "/obs/bucket/b.csv": "bravo text",
+        "/obs/bucket/large.txt": "x" * 20,
+    }
+    return values[path]
+
+
+async def _partly_failing_reader(path: str) -> str:
+    """Raise for the sentinel missing path; return text otherwise."""
+    if path.endswith("missing.md"):
+        raise OSError("missing")
+    return "readable"
+
+
+async def test_read_text_artifact_snippets_applies_caps() -> None:
+    """Per-artifact byte cap and total char cap are both enforced."""
+    snippets, skipped = await read_text_artifact_snippets(
+        ["/obs/bucket/a.md", "/obs/bucket/large.txt"],
+        reader=_fake_reader,
+        max_bytes_per_artifact=5,
+        max_total_chars=12,
+    )
+
+    assert [snippet.path for snippet in snippets] == [
+        "/obs/bucket/a.md",
+        "/obs/bucket/large.txt",
+    ]
+    assert snippets[0].content == "alpha"
+    assert snippets[0].truncated
+    assert snippets[1].content == "xxxxx"
+    assert snippets[1].truncated
+    assert skipped == ()
+
+
+async def test_read_text_artifact_snippets_records_failed_reads() -> None:
+    """A read-time OSError lands the path on skipped, not snippets."""
+    snippets, skipped = await read_text_artifact_snippets(
+        ["/obs/bucket/ok.md", "/obs/bucket/missing.md"],
+        reader=_partly_failing_reader,
+    )
+
+    assert [snippet.path for snippet in snippets] == ["/obs/bucket/ok.md"]
+    assert skipped == ("/obs/bucket/missing.md",)
