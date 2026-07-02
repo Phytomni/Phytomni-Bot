@@ -40,6 +40,13 @@ async def test_get_run_logs_returns_reconciled_task_logs(
 ) -> None:
     """A run with tasks returns reconciled logs for each task."""
     registry = RunRegistry(tasks_db_path)
+    # Use a terminal status so ``RunRegistry.reconcile`` short-circuits
+    # at the terminal-status guard and never probes live task status —
+    # a non-terminal run would call ``reconcile_task`` per child, which
+    # escapes to a real ``task_status`` HTTP call and hangs the offline
+    # test (``block_external_http`` covers ``request`` but the
+    # ``api_client`` fixture restores it for ASGI transport, leaving
+    # the low-level ``send`` unguarded).
     registry.create_run(
         RunSpec(
             run_id="run-logs-1",
@@ -47,7 +54,7 @@ async def test_get_run_logs_returns_reconciled_task_logs(
             agent="analyst",
             origin="remote",
         ),
-        outcome=RunOutcome(status="running"),
+        outcome=RunOutcome(status="succeeded"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(
@@ -206,6 +213,8 @@ async def test_get_run_logs_debug_includes_raw(
 ) -> None:
     """Passing debug=true includes raw fields in task logs."""
     registry = RunRegistry(tasks_db_path)
+    # Terminal status — see test_get_run_logs_returns_reconciled_task_logs
+    # for why a non-terminal run would hang the offline test.
     registry.create_run(
         RunSpec(
             run_id="run-debug-1",
@@ -213,7 +222,7 @@ async def test_get_run_logs_debug_includes_raw(
             agent="analyst",
             origin="remote",
         ),
-        outcome=RunOutcome(status="running"),
+        outcome=RunOutcome(status="succeeded"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(
@@ -274,7 +283,7 @@ async def test_get_run_logs_foreign_owner_is_404(
             agent="analyst",
             origin="remote",
         ),
-        outcome=RunOutcome(status="running"),
+        outcome=RunOutcome(status="succeeded"),
     )
 
     response = await api_client.get(
@@ -292,6 +301,8 @@ async def test_get_run_logs_cache_reuse(
 ) -> None:
     """Repeated calls reuse cached logs without re-polling."""
     registry = RunRegistry(tasks_db_path)
+    # Terminal status — see test_get_run_logs_returns_reconciled_task_logs
+    # for why a non-terminal run would hang the offline test.
     registry.create_run(
         RunSpec(
             run_id="run-cache-1",
@@ -299,7 +310,7 @@ async def test_get_run_logs_cache_reuse(
             agent="analyst",
             origin="remote",
         ),
-        outcome=RunOutcome(status="running"),
+        outcome=RunOutcome(status="succeeded"),
     )
     manager = TaskManager(tasks_db_path)
     manager.record(
