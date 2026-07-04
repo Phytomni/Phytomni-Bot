@@ -303,62 +303,63 @@ def _stream_chat_completion(
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Wrap ``invoke_tool_streamed`` + SSE shaper + run-record finalize.
+    """Wrap ``invoke_tool_streamed`` + SSE shaper + two-stage run write.
 
     The wrapper is an async generator: each emitted SSE line forwards
-    immediately to the client (no buffering), and once the upstream
-    stream drains (or aborts) the run record is written exactly once
-    from the ``finally`` block. The recorded ``result`` carries
-    stream-mode markers rather than the aggregated response content
-    — buffering the entire stream just to populate the record would
+    immediately to the client (no buffering). The run row is written
+    twice: a ``running`` row before the first frame so ``RunStarted``
+    carries a real, persisted registry id, then a terminal
+    ``succeeded``/``failed`` settle from the ``finally`` block keyed
+    on whether the stream actually reached ``RunFinished``. A client
+    that disconnects right after ``RunFinished`` still settles
+    succeeded — the answer was produced regardless of whether the
+    socket stayed open to see it. The settled ``result`` carries
+    stream-mode markers rather than the aggregated response content —
+    buffering the entire stream just to populate the record would
     defeat the primitive's per-chunk design and ties recorded volume
-    to LLM output size for no caller benefit. The ``completed`` flag
-    distinguishes a normal drain from a client-disconnect / mid-stream
-    error so the run-history view can surface partial calls.
+    to LLM output size for no caller benefit.
 
     Auth, rate-limit, request-id, and OBS argument prep all happen
     before this helper is called, mirroring the non-stream branch.
-
-    The ``run_id`` minted here is a temporary placeholder: it is not
-    yet persisted before the stream starts, so a client that
-    disconnects mid-stream cannot look it up via ``GET /v1/runs``.
-    A follow-up restructures this into the two-stage run write.
     """
     agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
+    owner = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent_slug or "chat")
-    raw_chunks = invoke_tool_streamed(
+    request_info = RunRequestInfo(
+        dialogue_id=payload.dialogue_id,
+        query=user_query,
+        tool_name=tool_name,
+        model=payload.model,
+        request_json=payload.model_dump_json(),
+    )
+    # Stage 1: pre-mint + write running so RunStarted carries the real
+    # registry id instead of an unpersisted placeholder.
+    if agent_slug is not None:
+        _create_running_stream_run(run_id, agent_slug, owner, request_info)
+    events = invoke_tool_streamed(
         tool_name,
         arguments,
         run_id=run_id,
         dialogue_id=payload.dialogue_id,
     )
-    sse_lines = to_chat_completion_chunks(raw_chunks, payload.model)
-    owner = current_request_user() or "anonymous"
+    sse_lines = to_chat_completion_chunks(events, payload.model)
 
     async def _wrapped() -> AsyncIterator[str]:
-        completed = False
+        """Forward each SSE line, then settle the run from ``finally``."""
+        reached_finish = False
         try:
             async for line in sse_lines:
+                if "event: RunFinished\n" in line:
+                    reached_finish = True
                 yield line
-            completed = True
         finally:
+            # Stage 2: settle terminal keyed on reaching RunFinished,
+            # not on connection close.
             if agent_slug is not None:
-                _record_sync_run(
-                    agent=agent_slug,
-                    owner=owner,
-                    result={
-                        "formatted": {"answer": "[streamed]"},
-                        "raw": None,
-                        "stream": True,
-                        "completed": completed,
-                    },
-                    request_info=RunRequestInfo(
-                        dialogue_id=payload.dialogue_id,
-                        query=user_query,
-                        tool_name=tool_name,
-                        model=payload.model,
-                        request_json=payload.model_dump_json(),
-                    ),
+                _settle_stream_run(
+                    run_id,
+                    owner,
+                    "succeeded" if reached_finish else "failed",
                 )
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
@@ -1000,6 +1001,85 @@ def _record_sync_run(
         return None
     _purge_expired_runs_best_effort()
     return run_id
+
+
+def _create_running_stream_run(
+    run_id: str, agent: str, owner: str, request_info: RunRequestInfo
+) -> None:
+    """Write the initial running row for a streaming run (stage 1).
+
+    Best-effort: a SQLite / OS failure is swallowed so a bookkeeping
+    miss never blocks the stream. The RunStarted frame still carries
+    the minted id; the row simply may not exist for later polling.
+
+    Args:
+        run_id: Registry run id pre-minted by the caller.
+        agent: Public agent alias (e.g. ``"chat"``).
+        owner: Authenticated user id (``"anonymous"`` for stdio).
+        request_info: Per-request metadata captured at the HTTP
+            boundary.
+    """
+    try:
+        RunRegistry(resolve_tasks_db_path()).create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=owner,
+                agent=agent,
+                origin="local",
+            ),
+            outcome=RunOutcome(status="running"),
+            request_info=request_info,
+        )
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "stream run create failed for %s: %s",
+            agent,
+            exc.__class__.__name__,
+        )
+
+
+def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
+    """Settle a streaming run to a terminal status (stage 2).
+
+    Reuses ``create_run`` with INSERT OR REPLACE semantics to overwrite
+    the running row with the terminal status + stream marker result.
+    Best-effort, mirroring the stage-1 swallow: a read/write failure
+    never propagates back to the already-closed response stream.
+
+    Args:
+        run_id: Registry run id pre-minted for this stream.
+        owner: Authenticated user id used for the owner-scoped lookup.
+        status: Terminal status to write (``"succeeded"``/``"failed"``).
+    """
+    try:
+        registry = RunRegistry(resolve_tasks_db_path())
+        record = registry.get_run(run_id, owner=owner)
+        if record is None:
+            return
+        registry.create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=owner,
+                agent=record.spec.agent,
+                origin="local",
+            ),
+            outcome=RunOutcome(
+                status=status,
+                result={
+                    "formatted": {"answer": "[streamed]"},
+                    "raw": None,
+                    "stream": True,
+                },
+            ),
+            request_info=record.request_info,
+        )
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "stream run settle failed for %s: %s",
+            run_id,
+            exc.__class__.__name__,
+        )
+    _purge_expired_runs_best_effort()
 
 
 def _stamp_remote_request_info(
