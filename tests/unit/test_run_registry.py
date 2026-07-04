@@ -698,6 +698,58 @@ def test_update_request_info_enforces_owner_isolation(
     assert record.request_info.query is None
 
 
+def test_settle_run_preserves_created_at(tmp_path: Path) -> None:
+    """settle_run updates status/result in place without touching created_at.
+
+    Pins the fix for the streaming-settle regression: unlike
+    ``create_run``'s INSERT OR REPLACE (which stamps ``now`` into both
+    created_at and updated_at), settle_run is a targeted UPDATE that
+    must leave created_at untouched while still advancing updated_at
+    and stamping a terminal expires_at.
+    """
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-settle-1", "alice", "chat", "local")
+    registry.create_run(spec, outcome=RunOutcome(status="running"))
+    before = registry.get_run("run-settle-1", owner="alice")
+    assert before is not None
+    created_at = before.timestamps.created_at
+    updated_at_before = before.timestamps.updated_at
+    assert before.timestamps.expires_at is None
+
+    updated = registry.settle_run(
+        "run-settle-1",
+        owner="alice",
+        status="succeeded",
+        result={"answer": "done"},
+    )
+
+    assert updated is True
+    record = registry.get_run("run-settle-1", owner="alice")
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result == {"answer": "done"}
+    assert record.timestamps.created_at == created_at
+    assert record.timestamps.updated_at >= updated_at_before
+    assert record.timestamps.expires_at is not None
+
+
+def test_settle_run_enforces_owner_isolation(tmp_path: Path) -> None:
+    """A foreign-owner settle_run call returns False and changes nothing."""
+    registry, _, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-settle-2", "alice", "chat", "local")
+    registry.create_run(spec, outcome=RunOutcome(status="running"))
+    before = registry.get_run("run-settle-2", owner="alice")
+    assert before is not None
+
+    updated = registry.settle_run(
+        "run-settle-2", owner="bob", status="succeeded"
+    )
+
+    assert updated is False
+    after = registry.get_run("run-settle-2", owner="alice")
+    assert after == before
+
+
 def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
     """An old database without request-info columns migrates cleanly."""
     db = str(tmp_path / "legacy.db")

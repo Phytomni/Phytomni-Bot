@@ -14,6 +14,7 @@ once the response drains.
 
 from __future__ import annotations
 
+import json
 from typing import Any, AsyncIterator, Callable, Dict, List
 
 import httpx
@@ -41,6 +42,14 @@ def _patch_chat_stream(
             yield payload
 
     monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", fake_stream)
+
+
+def _extract_run_started_id(body: str) -> str:
+    """Return the ``run_id`` embedded in the SSE body's RunStarted frame."""
+    marker = "event: RunStarted\ndata: "
+    start = body.index(marker) + len(marker)
+    end = body.index("\n", start)
+    return str(json.loads(body[start:end])["run_id"])
 
 
 async def test_stream_phyto_chat_emits_agui_frames(
@@ -123,6 +132,15 @@ async def test_stream_run_settles_succeeded_after_finish(
     queries through ``GET /v1/runs`` must surface exactly one row for
     the call, carrying the request-scoped ``dialogue_id`` and the
     ``origin="local"`` stamp sync agents use.
+
+    Also cross-checks two settle-path contracts: the ``run_id`` carried
+    by the opening ``RunStarted`` SSE frame is the same id the registry
+    persisted (not a placeholder unrelated to the polled row), and the
+    settled row's ``created_at`` was never advanced past its own
+    ``updated_at`` — the regression this test guards settled the run
+    via ``create_run``'s INSERT OR REPLACE, which stamps ``now`` into
+    both columns and would otherwise let a stale ``created_at`` slip
+    past ``updated_at`` on a slow settle.
     """
     _patch_chat_stream(
         monkeypatch,
@@ -140,6 +158,7 @@ async def test_stream_run_settles_succeeded_after_finish(
     )
 
     assert response.status_code == 200
+    started_run_id = _extract_run_started_id(response.text)
     registry = RunRegistry(db_path=tasks_db_path)
     # issued_api_key fixture binds the key to user "u1"; the request
     # context resolves the owner from the authenticated principal.
@@ -153,3 +172,5 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert record.status == "succeeded"
     assert record.request_info.dialogue_id == "dlg-s1"
     assert record.spec.origin == "local"
+    assert record.spec.run_id == started_run_id
+    assert record.timestamps.created_at <= record.timestamps.updated_at

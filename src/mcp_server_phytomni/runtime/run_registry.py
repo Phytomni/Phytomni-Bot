@@ -406,6 +406,57 @@ class RunRegistry:
             )
             return cursor.rowcount > 0
 
+    def settle_run(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        status: str,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> bool:
+        """Settle an owned run to a terminal status in place.
+
+        Unlike ``create_run``'s INSERT OR REPLACE, this is a targeted
+        UPDATE that preserves ``created_at`` (and every request-info
+        column), mirroring the ``_settle_terminal`` idiom used by the
+        reconcile path. The terminal TTL is stamped the same way.
+
+        Args:
+            run_id: Run id to settle.
+            owner: Required user id; a foreign-owned row is a no-op.
+            status: Terminal status ("succeeded" / "failed").
+            result: Optional terminal result payload (JSON-encoded).
+            error: Optional terminal error message.
+
+        Returns:
+            True when an owned row was updated, False otherwise.
+        """
+        now = _now_iso()
+        expires_at = _expires_at_for(status, now)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs SET
+                    status = ?,
+                    result_json = ?,
+                    error = ?,
+                    updated_at = ?,
+                    expires_at = ?
+                WHERE run_id = ? AND user_id = ?
+                """,
+                (
+                    status,
+                    json.dumps(result) if result is not None else None,
+                    error,
+                    now,
+                    expires_at,
+                    run_id,
+                    owner,
+                ),
+            )
+            return cursor.rowcount > 0
+
     def get_run(self, run_id: str, *, owner: str) -> Optional[RunRecord]:
         """Return the run owned by ``owner`` or ``None``.
 

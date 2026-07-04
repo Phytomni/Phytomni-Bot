@@ -1041,10 +1041,10 @@ def _create_running_stream_run(
 def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
     """Settle a streaming run to a terminal status (stage 2).
 
-    Reuses ``create_run`` with INSERT OR REPLACE semantics to overwrite
-    the running row with the terminal status + stream marker result.
-    Best-effort, mirroring the stage-1 swallow: a read/write failure
-    never propagates back to the already-closed response stream.
+    Targeted owner-scoped UPDATE via ``RunRegistry.settle_run`` so the
+    original ``created_at`` and request-info columns survive; a missing
+    or foreign row is a silent no-op. Best-effort, mirroring the
+    stage-1 swallow — bookkeeping must never break the stream.
 
     Args:
         run_id: Registry run id pre-minted for this stream.
@@ -1052,26 +1052,15 @@ def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
         status: Terminal status to write (``"succeeded"``/``"failed"``).
     """
     try:
-        registry = RunRegistry(resolve_tasks_db_path())
-        record = registry.get_run(run_id, owner=owner)
-        if record is None:
-            return
-        registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent=record.spec.agent,
-                origin="local",
-            ),
-            outcome=RunOutcome(
-                status=status,
-                result={
-                    "formatted": {"answer": "[streamed]"},
-                    "raw": None,
-                    "stream": True,
-                },
-            ),
-            request_info=record.request_info,
+        RunRegistry(resolve_tasks_db_path()).settle_run(
+            run_id,
+            owner=owner,
+            status=status,
+            result={
+                "formatted": {"answer": "[streamed]"},
+                "raw": None,
+                "stream": True,
+            },
         )
     except (sqlite3.Error, OSError) as exc:
         _LOGGER.warning(
