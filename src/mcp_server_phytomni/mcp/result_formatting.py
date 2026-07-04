@@ -102,6 +102,97 @@ class FormattedToolChunk:
     payload: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class AguiEvent:
+    """One AG-UI SSE event frame.
+
+    Carries the three heterogeneous frame kinds the streaming seam
+    emits (P0 token deltas, P1 stage events, terminal text / custom
+    blocks) under one type so the SSE shaper renders any of them
+    uniformly. ``data`` already embeds a redundant ``"type"`` key so
+    Web can parse without relying on the ``event:`` line.
+
+    Attributes:
+        type: AG-UI event type (e.g. ``"RunStarted"``).
+        data: The event payload, including its own ``"type"`` key.
+    """
+
+    type: str
+    data: Mapping[str, Any]
+
+
+def run_started(run_id: str, dialogue_id: str | None) -> AguiEvent:
+    """Return the opening ``RunStarted`` frame carrying the registry id."""
+    return AguiEvent(
+        type="RunStarted",
+        data={
+            "type": "RunStarted",
+            "run_id": run_id,
+            "dialogue_id": dialogue_id,
+        },
+    )
+
+
+def text_message_start(message_id: str) -> AguiEvent:
+    """Return the ``TextMessageStart`` frame opening one assistant message."""
+    return AguiEvent(
+        type="TextMessageStart",
+        data={"type": "TextMessageStart", "message_id": message_id},
+    )
+
+
+def text_message_content(message_id: str, delta: str) -> AguiEvent:
+    """Return one ``TextMessageContent`` delta frame."""
+    return AguiEvent(
+        type="TextMessageContent",
+        data={
+            "type": "TextMessageContent",
+            "message_id": message_id,
+            "delta": delta,
+        },
+    )
+
+
+def text_message_end(message_id: str) -> AguiEvent:
+    """Return the ``TextMessageEnd`` frame closing one assistant message."""
+    return AguiEvent(
+        type="TextMessageEnd",
+        data={"type": "TextMessageEnd", "message_id": message_id},
+    )
+
+
+def run_finished(run_id: str) -> AguiEvent:
+    """Return the terminal ``RunFinished`` frame."""
+    return AguiEvent(
+        type="RunFinished",
+        data={"type": "RunFinished", "run_id": run_id},
+    )
+
+
+def run_error(code: str, message: str) -> AguiEvent:
+    """Return a ``RunError`` frame with a stable code and safe message."""
+    return AguiEvent(
+        type="RunError",
+        data={"type": "RunError", "code": code, "message": message},
+    )
+
+
+def step_started(step_name: str) -> AguiEvent:
+    """Return a ``StepStarted`` frame naming one semantic stage."""
+    return AguiEvent(
+        type="StepStarted",
+        data={"type": "StepStarted", "step_name": step_name},
+    )
+
+
+def custom(name: str, value: Any) -> AguiEvent:
+    """Return a ``Custom`` profile frame (e.g. phyto.references)."""
+    return AguiEvent(
+        type="Custom",
+        data={"type": "Custom", "name": name, "value": value},
+    )
+
+
 def format_tool_chunk(payload: Mapping[str, Any]) -> FormattedToolChunk:
     """Wrap one streamed chunk payload in a :class:`FormattedToolChunk`.
 
