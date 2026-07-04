@@ -9,11 +9,13 @@ to the domain-specific tool handler layer while keeping public tool names
 stable for existing clients.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from json import dumps
 from typing import Any, Awaitable, Callable, Dict, Mapping, Sequence, cast
 
+from httpx import ConnectError, TimeoutException
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import McpError
@@ -25,6 +27,7 @@ from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
+from ..common.redaction import redact_secrets
 from ..config.defaults import ChatConfig
 from ..storage.path_policy import IdFactory
 from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
@@ -49,6 +52,7 @@ from .result_formatting import (
     build_tool_result_envelope,
     is_cited_tool,
     resolve_debug,
+    run_error,
     run_finished,
     run_started,
     text_message_content,
@@ -70,6 +74,8 @@ from .schemas import (
     PhytomniAgents,
     ReviewAgent,
 )
+
+logger = logging.getLogger(__name__)
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
@@ -317,14 +323,19 @@ async def invoke_tool_streamed(
         yield run_started(run_id, dialogue_id)
         message_id = IdFactory().new_id("msg")
         started = False
-        async for chunk in _stream_chat_agent(cast(ChatAgent, args)):
-            delta = _chunk_content_delta(chunk)
-            if not delta:
-                continue
-            if not started:
-                yield text_message_start(message_id)
-                started = True
-            yield text_message_content(message_id, delta)
+        try:
+            async for chunk in _stream_chat_agent(cast(ChatAgent, args)):
+                delta = _chunk_content_delta(chunk)
+                if not delta:
+                    continue
+                if not started:
+                    yield text_message_start(message_id)
+                    started = True
+                yield text_message_content(message_id, delta)
+        except (McpError, ConnectError, TimeoutException) as exc:
+            logger.exception("chat stream failed mid-flight")
+            yield run_error("agent_execution_failed", redact_secrets(str(exc)))
+            return
         if started:
             yield text_message_end(message_id)
         yield run_finished(run_id)

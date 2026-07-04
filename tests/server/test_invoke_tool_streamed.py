@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Dict, List
 
 import pytest
 from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -254,6 +255,37 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
 
     assert "streaming not supported" in str(excinfo.value)
     assert tool_name in str(excinfo.value)
+
+
+async def test_chat_stream_emits_run_error_on_midstream_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A raise after opening yields RunError, not an unhandled crash."""
+
+    async def boom(**_kwargs):
+        yield {"choices": [{"delta": {"content": "Hi"}}]}
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message="upstream 502 at https://secret.internal",
+            )
+        )
+
+    monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", boom)
+
+    events = [
+        e
+        async for e in mcp_app.invoke_tool_streamed(
+            "ChatAgent",
+            {"user_query": "x", "obs_file_list": []},
+            run_id="run-e",
+            dialogue_id=None,
+        )
+    ]
+    assert events[-1].type == "RunError"
+    assert events[-1].data["code"] == "agent_execution_failed"
+    assert "secret.internal" not in events[-1].data["message"]
+    assert "RunFinished" not in [e.type for e in events]
 
 
 def test_format_tool_chunk_preserves_payload_verbatim() -> None:
