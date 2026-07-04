@@ -14,6 +14,7 @@ and the multi-layer clear_retrieval_caches admin seam.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import fields
 from typing import Any, Dict, List, cast
 
 import pytest
@@ -22,6 +23,7 @@ from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.knowledge import retrieval as retrieval_mod
 from mcp_server_phytomni.agents.knowledge.retrieval import (
+    RerankOptions,
     _collect_rank_results,
     _list_or_empty,
     _multi_retrieve,
@@ -36,6 +38,7 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     rerank_semaphore_state_size,
     reset_rerank_semaphore_state,
 )
+from mcp_server_phytomni.config.overrides import RETRIEVAL_CONFIG_FIELD_MAP
 
 pytestmark = pytest.mark.unit
 
@@ -169,17 +172,17 @@ def test_clear_retrieval_caches_invokes_each_layer(
     assert calls == ["multi", "single", "scope"]
 
 
-async def test_rerank_batch_caps_concurrency_at_config_value(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_rerank_batch`` never exceeds RERANK_CONCURRENCY in flight.
+async def _fire_rerank_fan_out(
+    monkeypatch: pytest.MonkeyPatch, *, cap: int, calls: int
+) -> int:
+    """Fire ``calls`` concurrent ``_rerank_batch`` requests under ``cap``.
 
-    Patches the config cap to 4 and the HTTP egress to a slow stub that
-    records the live in-flight count, then fires 20 batches at once and
-    asserts the observed peak never crossed the cap.
+    Patches the config cap and the direct HTTP egress with a slow stub
+    that tracks the live in-flight count, then returns the observed
+    peak so callers can assert throttled and unthrottled behavior.
     """
     monkeypatch.setattr(
-        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", 4
+        retrieval_mod.KNOWLEDGE_CONFIG, "RERANK_CONCURRENCY", cap
     )
     reset_rerank_semaphore_state()
 
@@ -209,10 +212,38 @@ async def test_rerank_batch_caps_concurrency_at_config_value(
             retriable_codes=(),
         )
 
-    await asyncio.gather(*(one() for _ in range(20)))
+    await asyncio.gather(*(one() for _ in range(calls)))
+    return state["peak"]
 
-    assert state["peak"] <= 4, f"peak {state['peak']} exceeded cap 4"
-    assert state["peak"] >= 2, "stub never overlapped; test is vacuous"
+
+async def test_rerank_batch_caps_concurrency_at_config_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_rerank_batch`` never exceeds RERANK_CONCURRENCY in flight.
+
+    Patches the config cap to 4 and the HTTP egress to a slow stub that
+    records the live in-flight count, then fires 20 batches at once and
+    asserts the observed peak never crossed the cap.
+    """
+    peak = await _fire_rerank_fan_out(monkeypatch, cap=4, calls=20)
+
+    assert peak <= 4, f"peak {peak} exceeded cap 4"
+    assert peak >= 2, "stub never overlapped; test is vacuous"
+
+
+async def test_rerank_batch_full_fan_out_when_cap_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cap of 0 means unthrottled: the peak equals the full fan-out.
+
+    The sentinel test below proves the bypass mechanism (a nullcontext
+    is handed out); this pins the promised behavior itself — with the
+    cap disabled, 20 concurrent ``_rerank_batch`` calls are all in
+    flight at once, so no residual throttle sits on the egress path.
+    """
+    peak = await _fire_rerank_fan_out(monkeypatch, cap=0, calls=20)
+
+    assert peak == 20, f"peak {peak} != 20; disabled path is throttled"
 
 
 def test_rerank_semaphore_is_per_event_loop(
@@ -258,3 +289,19 @@ async def test_rerank_semaphore_bypasses_when_disabled(
     async with ctx:
         pass
     assert rerank_semaphore_state_size() == 0
+
+
+def test_rerank_concurrency_is_not_a_per_call_override() -> None:
+    """RERANK_CONCURRENCY stays a deployment-level knob only.
+
+    A per-loop singleton semaphore can only honor the first caller's
+    value, so a per-call override would silently no-op for later
+    callers. Pin the field out of the wrapper override map and the
+    per-call ``RerankOptions`` surface so an accidental future wiring
+    fails here instead of shipping that trap.
+    """
+    assert "rerank_concurrency" not in RETRIEVAL_CONFIG_FIELD_MAP
+    assert "RERANK_CONCURRENCY" not in RETRIEVAL_CONFIG_FIELD_MAP.values()
+    assert "rerank_concurrency" not in {
+        field.name for field in fields(RerankOptions)
+    }
