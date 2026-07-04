@@ -4,10 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the ``invoke_tool_streamed`` MCP streaming seam.
 
-Pins chunk wrapping without provider-payload mutation, early McpError
-responses for unknown tools and malformed ChatAgent arguments, and
-``NotImplementedError`` for registered tools that do not support
-streaming.
+Pins the AG-UI event sequence (``RunStarted``..``RunFinished``)
+wrapping the chat token stream, early McpError responses for unknown
+tools and malformed ChatAgent arguments, and ``NotImplementedError``
+for registered tools that do not support streaming.
 """
 
 from __future__ import annotations
@@ -20,7 +20,11 @@ import pytest
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.mcp import app as mcp_app
-from mcp_server_phytomni.mcp.result_formatting import FormattedToolChunk
+from mcp_server_phytomni.mcp.result_formatting import (
+    AguiEvent,
+    FormattedToolChunk,
+    format_tool_chunk,
+)
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 
 pytestmark = pytest.mark.server
@@ -35,11 +39,9 @@ def _chat_payload(demo_data_dir: Path) -> Dict[str, Any]:
     )
 
 
-async def _drain(
-    stream: AsyncIterator[FormattedToolChunk],
-) -> List[FormattedToolChunk]:
-    """Collect every emitted chunk so tests can assert against the list."""
-    return [chunk async for chunk in stream]
+async def _drain(stream: AsyncIterator[AguiEvent]) -> List[AguiEvent]:
+    """Collect every emitted event so tests can assert against the list."""
+    return [event async for event in stream]
 
 
 def _patch_stream(
@@ -68,16 +70,53 @@ def _patch_stream(
     return captured
 
 
-async def test_invoke_tool_streamed_wraps_chunks_in_formatted_tool_chunk(
+async def test_chat_stream_emits_six_event_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ChatAgent streaming yields RunStarted..RunFinished around deltas."""
+
+    async def fake_stream(**_kwargs):
+        yield {"choices": [{"delta": {"content": "Hel"}}]}
+        yield {
+            "choices": [{"delta": {"content": "lo"}, "finish_reason": "stop"}]
+        }
+
+    monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", fake_stream)
+
+    events = [
+        e
+        async for e in mcp_app.invoke_tool_streamed(
+            "ChatAgent",
+            {"user_query": "hi", "obs_file_list": []},
+            run_id="run-x",
+            dialogue_id="dlg-x",
+        )
+    ]
+    types = [e.type for e in events]
+    assert types == [
+        "RunStarted",
+        "TextMessageStart",
+        "TextMessageContent",
+        "TextMessageContent",
+        "TextMessageEnd",
+        "RunFinished",
+    ]
+    assert events[0].data["run_id"] == "run-x"
+    assert events[2].data["delta"] == "Hel"
+    assert events[-1].data["run_id"] == "run-x"
+
+
+async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each upstream chunk reaches the caller as a frozen FormattedToolChunk.
+    """The chat handler's standard kwargs reach the streaming primitive.
 
-    Pins the wire shape the SSE shaper in Step 5.3 consumes: every
-    yielded item is a :class:`FormattedToolChunk` whose ``payload``
-    is the exact dict the streaming primitive produced, with unknown
-    provider fields (``custom``) intact.
+    Pins the wire shape the SSE shaper in ``api/openai_mapping.py``
+    consumes: content deltas surface as ``TextMessageContent`` events
+    in provider order, and the chat handler's standard kwargs
+    (``chat_kwargs`` + ``obs_kwargs`` spread) reach
+    ``stream_phyto_chat_chunks`` unchanged.
     """
     # Literals chosen distinct from tests/agents/test_chat_agent_streaming.py
     # so the two test files do not register as an R0801 duplicate block —
@@ -93,14 +132,19 @@ async def test_invoke_tool_streamed_wraps_chunks_in_formatted_tool_chunk(
     ]
     captured = _patch_stream(monkeypatch, payloads)
 
-    chunks = await _drain(
+    events = await _drain(
         mcp_app.invoke_tool_streamed(
-            PhytomniAgents.CHAT_AGENT.value, _chat_payload(demo_data_dir)
+            PhytomniAgents.CHAT_AGENT.value,
+            _chat_payload(demo_data_dir),
+            run_id="run-1",
+            dialogue_id=None,
         )
     )
 
-    assert [c.payload for c in chunks] == payloads
-    assert all(isinstance(c, FormattedToolChunk) for c in chunks)
+    deltas = [
+        e.data["delta"] for e in events if e.type == "TextMessageContent"
+    ]
+    assert deltas == ["A", "B"]
     # The chat handler's standard kwargs reach the primitive: user_query
     # came from the demo payload, plus chat_kwargs + obs_kwargs spread.
     assert captured[0]["user_query"].startswith(
@@ -124,7 +168,10 @@ async def test_invoke_tool_streamed_raises_mcperror_for_unknown_tool(
     _patch_stream(monkeypatch, [])
 
     stream = mcp_app.invoke_tool_streamed(
-        "NoSuchAgent", {"user_query": "hi", "obs_file_list": []}
+        "NoSuchAgent",
+        {"user_query": "hi", "obs_file_list": []},
+        run_id="run-1",
+        dialogue_id=None,
     )
 
     with pytest.raises(McpError) as excinfo:
@@ -146,7 +193,10 @@ async def test_invoke_tool_streamed_raises_mcperror_on_validation_error(
     _patch_stream(monkeypatch, [])
 
     stream = mcp_app.invoke_tool_streamed(
-        PhytomniAgents.CHAT_AGENT.value, {"obs_file_list": []}
+        PhytomniAgents.CHAT_AGENT.value,
+        {"obs_file_list": []},
+        run_id="run-1",
+        dialogue_id=None,
     )
 
     with pytest.raises(McpError) as excinfo:
@@ -192,7 +242,12 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
         PhytomniAgents.BRIEF_GENE_AGENT.value: {"user_query": "AT1G01010"},
         PhytomniAgents.GET_TASK_STATUS.value: {"task_id": "t-1"},
     }
-    stream = mcp_app.invoke_tool_streamed(tool_name, args_by_tool[tool_name])
+    stream = mcp_app.invoke_tool_streamed(
+        tool_name,
+        args_by_tool[tool_name],
+        run_id="run-1",
+        dialogue_id=None,
+    )
 
     with pytest.raises(NotImplementedError) as excinfo:
         await _drain(stream)
@@ -204,13 +259,14 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
 def test_format_tool_chunk_preserves_payload_verbatim() -> None:
     """``format_tool_chunk`` wraps the dict without copying or mutating it.
 
-    Pins the FormattedToolChunk contract: the chunk's ``payload``
-    field is the same mapping object the caller supplied, so unknown
-    vendor extensions and reasoning fields survive untouched on their
-    way to the SSE shaper.
+    ``invoke_tool_streamed`` no longer calls ``format_tool_chunk``
+    (its yields are now ``AguiEvent`` frames), but the primitive
+    itself is still a valid public helper on
+    ``mcp.result_formatting``, so its wrapping contract stays pinned
+    directly against that module.
     """
     payload = {"id": "c1", "vendor_extension": [1, 2, 3]}
-    chunk = mcp_app.format_tool_chunk(payload)
+    chunk = format_tool_chunk(payload)
 
     assert isinstance(chunk, FormattedToolChunk)
     assert chunk.payload is payload

@@ -318,10 +318,21 @@ def _stream_chat_completion(
 
     Auth, rate-limit, request-id, and OBS argument prep all happen
     before this helper is called, mirroring the non-stream branch.
+
+    The ``run_id`` minted here is a temporary placeholder: it is not
+    yet persisted before the stream starts, so a client that
+    disconnects mid-stream cannot look it up via ``GET /v1/runs``.
+    A follow-up restructures this into the two-stage run write.
     """
-    raw_chunks = invoke_tool_streamed(tool_name, arguments)
-    sse_lines = to_chat_completion_chunks(raw_chunks, payload.model)
     agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
+    run_id = IdFactory().new_id("run", agent_slug or "chat")
+    raw_chunks = invoke_tool_streamed(
+        tool_name,
+        arguments,
+        run_id=run_id,
+        dialogue_id=payload.dialogue_id,
+    )
+    sse_lines = to_chat_completion_chunks(raw_chunks, payload.model)
     owner = current_request_user() or "anonymous"
 
     async def _wrapped() -> AsyncIterator[str]:

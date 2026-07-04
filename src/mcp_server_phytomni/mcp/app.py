@@ -26,6 +26,7 @@ from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import ChatConfig
+from ..storage.path_policy import IdFactory
 from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
 from .handlers import (
     handle_analyst_agent,
@@ -42,13 +43,17 @@ from .handlers import (
     scratch_server_dir,
 )
 from .result_formatting import (
-    FormattedToolChunk,
+    AguiEvent,
     FormattedToolResult,
     ToolResultEnvelope,
     build_tool_result_envelope,
-    format_tool_chunk,
     is_cited_tool,
     resolve_debug,
+    run_finished,
+    run_started,
+    text_message_content,
+    text_message_end,
+    text_message_start,
 )
 from .schemas import (
     AGENT_TOOL_DEFINITIONS,
@@ -256,9 +261,13 @@ def _raw_doc_list(raw: Any) -> list[dict[str, Any]]:
 
 
 async def invoke_tool_streamed(
-    name: Any, arguments: Dict[str, Any]
-) -> AsyncIterator[FormattedToolChunk]:
-    """Stream a tool's response chunk-by-chunk through a typed seam.
+    name: Any,
+    arguments: Dict[str, Any],
+    *,
+    run_id: str,
+    dialogue_id: str | None,
+) -> AsyncIterator[AguiEvent]:
+    """Stream a tool's response as AG-UI event frames through a typed seam.
 
     Fourth invocation seam, parallel to :func:`invoke_tool_raw` /
     :func:`invoke_tool_formatted` / :func:`invoke_tool_enveloped`.
@@ -277,11 +286,16 @@ async def invoke_tool_streamed(
     Args:
         name: Raw tool name supplied by the caller.
         arguments: JSON object passed to the selected tool.
+        run_id: Registry run id carried on ``RunStarted``/``RunFinished``.
+        dialogue_id: Optional chat-ai conversation id carried on
+            ``RunStarted``.
 
     Yields:
-        :class:`FormattedToolChunk` per provider chunk; the chunk's
-        ``payload`` is one OpenAI ``chat.completion.chunk`` dict with
-        unknown provider fields intact for downstream SSE shaping.
+        ``RunStarted``, then a ``TextMessageStart`` /
+        ``TextMessageContent`` / ``TextMessageEnd`` sequence around
+        the provider's content deltas, then ``RunFinished``.
+        ``TextMessageStart`` fires only once a non-empty delta
+        arrives, so empty keep-alive chunks never open a message.
 
     Raises:
         McpError: When the tool name is unknown or schema validation
@@ -300,10 +314,32 @@ async def invoke_tool_streamed(
             _format_validation_error(tool_name, exc)
         ) from exc
     if tool_name == PhytomniAgents.CHAT_AGENT.value:
+        yield run_started(run_id, dialogue_id)
+        message_id = IdFactory().new_id("msg")
+        started = False
         async for chunk in _stream_chat_agent(cast(ChatAgent, args)):
-            yield format_tool_chunk(chunk)
+            delta = _chunk_content_delta(chunk)
+            if not delta:
+                continue
+            if not started:
+                yield text_message_start(message_id)
+                started = True
+            yield text_message_content(message_id, delta)
+        if started:
+            yield text_message_end(message_id)
+        yield run_finished(run_id)
         return
     raise NotImplementedError(f"streaming not supported for tool {tool_name}")
+
+
+def _chunk_content_delta(chunk: Mapping[str, Any]) -> str:
+    """Return the assistant content delta from one provider chunk."""
+    choices = chunk.get("choices") or []
+    if not choices:
+        return ""
+    delta = choices[0].get("delta") or {}
+    content = delta.get("content")
+    return content if isinstance(content, str) else ""
 
 
 async def _stream_chat_agent(
