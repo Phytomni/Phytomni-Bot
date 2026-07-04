@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Mapping, Optional, Sequence
 
-from ..mcp.result_formatting import FormattedToolChunk
+from ..mcp.result_formatting import AguiEvent
 from ..storage.path_policy import IdFactory
 
 __all__ = [
@@ -186,44 +186,41 @@ def to_chat_completion(
 
 
 async def to_chat_completion_chunks(
-    stream: AsyncIterator[FormattedToolChunk], model: str
+    stream: AsyncIterator[AguiEvent], model: str
 ) -> AsyncIterator[str]:
-    """Shape a ``FormattedToolChunk`` stream into OpenAI SSE event lines.
+    """Shape an ``AguiEvent`` stream into AG-UI SSE frames.
 
-    Each upstream chunk becomes one ``data: {...}\\n\\n`` line carrying
-    the canonical OpenAI ``chat.completion.chunk`` JSON. After the
-    upstream iterator drains, a final ``data: [DONE]\\n\\n`` signals
-    stream end so clients close their EventSource without timing out.
+    Each upstream event becomes one ``event: <Type>\\n`` line followed
+    by a ``data: {...}\\n\\n`` line carrying the event's JSON payload.
+    After the upstream iterator drains, a final ``data: [DONE]\\n\\n``
+    signals stream end so clients close their EventSource without
+    timing out.
 
-    The shaper makes two minimal projections on each payload:
+    AG-UI frames do not carry an OpenAI ``model`` field — the
+    requested model id is not echoed onto any frame, per spec §3.2.
+    ``model`` stays a parameter because callers pass it uniformly
+    alongside the non-streaming shaper, but this shaper does not
+    project it anywhere.
 
-    1. ``object`` is filled with ``"chat.completion.chunk"`` when the
-       provider omitted it, so OpenAI-compatible clients see the
-       canonical event type on every line.
-    1. ``model`` is overridden with the requested model id, mirroring
-       :func:`to_chat_completion`'s consistency rule — the request
-       model name surfaces to the client even if the upstream
-       provider returned a different routing slug.
-
-    Unknown vendor fields (``reasoning_content``, ``tool_calls``,
-    extensions) survive untouched on every line. The shaper is a
-    pure projection — it does not mutate the input
-    :class:`FormattedToolChunk` (the chunk is frozen anyway) and
-    does not buffer; emits each line as it pulls one chunk.
+    The event's ``data`` mapping already embeds a redundant ``"type"``
+    key (see :class:`AguiEvent`), so clients can parse the event kind
+    without relying on the ``event:`` line.
 
     Args:
-        stream: Async iterator of ``FormattedToolChunk`` produced by
+        stream: Async iterator of ``AguiEvent`` produced by
             ``invoke_tool_streamed``.
-        model: The requested model id, echoed into each line's
-            ``model`` field.
+        model: The requested model id; unused by AG-UI framing but
+            kept in the signature for parity with ``to_chat_completion``.
 
     Yields:
-        One ``data: {...}\\n\\n`` line per upstream chunk, then a
-        terminal ``data: [DONE]\\n\\n``.
+        One ``event: <Type>\\ndata: {...}\\n\\n`` frame per upstream
+        event, then a terminal ``data: [DONE]\\n\\n``.
     """
-    async for chunk in stream:
-        payload = dict(chunk.payload)
-        payload.setdefault("object", "chat.completion.chunk")
-        payload["model"] = model
-        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    del model
+    async for event in stream:
+        payload = dict(event.data)
+        yield (
+            f"event: {event.type}\n"
+            f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        )
     yield "data: [DONE]\n\n"
