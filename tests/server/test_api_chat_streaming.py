@@ -15,12 +15,22 @@ once the response drains.
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Callable, Dict, List
+from collections.abc import AsyncGenerator
+from typing import Any, AsyncIterator, Callable, Dict, List, cast
 
 import httpx
 import pytest
 
+from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api.app import _stream_chat_completion
+from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.mcp.result_formatting import (
+    run_finished,
+    run_started,
+    text_message_content,
+)
+from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
@@ -174,3 +184,96 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert record.spec.origin == "local"
     assert record.spec.run_id == started_run_id
     assert record.timestamps.created_at <= record.timestamps.updated_at
+
+
+async def _drive_stream_until(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stop_after_finish: bool,
+) -> str | None:
+    """Drive ``_stream_chat_completion``'s generator then ``aclose`` early.
+
+    Patches the producer to a deterministic ``AguiEvent`` sequence,
+    drives the ``StreamingResponse`` body iterator to just after (or
+    just before) the ``RunFinished`` frame, aborts via ``aclose`` to
+    simulate a client disconnect, and returns the settled run status
+    read back from the registry.
+
+    Args:
+        tasks_db_path: Temp SQLite path the handlers resolve to.
+        monkeypatch: Pytest monkeypatch fixture.
+        stop_after_finish: When True, consume through the
+            ``RunFinished`` line before aborting; when False, abort at
+            the first ``TextMessageContent`` line, before
+            ``RunFinished`` is ever produced.
+
+    Returns:
+        The settled run's status, or None when no row was created.
+    """
+    captured: dict[str, str] = {}
+
+    async def fake_streamed(
+        _tool_name: Any,
+        _arguments: Dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        """Yield a fixed RunStarted/TextMessageContent/RunFinished run."""
+        captured["run_id"] = run_id
+        yield run_started(run_id, dialogue_id)
+        yield text_message_content("m-d", "Hi")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "invoke_tool_streamed", fake_streamed)
+
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="hi")],
+        stream=True,
+        dialogue_id="dlg-p2s4",
+    )
+    with request_context("u1", "req-p2s4"):
+        response = _stream_chat_completion(
+            tool_name="ChatAgent",
+            arguments={"user_query": "hi", "obs_file_list": []},
+            payload=payload,
+            user_query="hi",
+        )
+        body = cast(AsyncGenerator[str, None], response.body_iterator)
+        async for line in body:
+            if not stop_after_finish and "event: TextMessageContent\n" in line:
+                await body.aclose()
+                break
+            if stop_after_finish and "event: RunFinished\n" in line:
+                await body.aclose()
+                break
+        else:
+            await body.aclose()
+        run_id = captured["run_id"]
+    registry = RunRegistry(db_path=tasks_db_path)
+    record = registry.get_run(run_id, owner="u1")
+    return record.status if record is not None else None
+
+
+async def test_stream_run_succeeds_when_client_disconnects_after_finish(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disconnect AFTER RunFinished still settles the run succeeded."""
+    status = await _drive_stream_until(
+        tasks_db_path, monkeypatch, stop_after_finish=True
+    )
+    assert status == "succeeded"
+
+
+async def test_stream_run_fails_when_client_disconnects_before_finish(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disconnect BEFORE RunFinished settles the run failed."""
+    status = await _drive_stream_until(
+        tasks_db_path, monkeypatch, stop_after_finish=False
+    )
+    assert status == "failed"
