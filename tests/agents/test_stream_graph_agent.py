@@ -7,8 +7,8 @@
 Drives ``_stream_graph_agent`` with a fake compiled-graph ``astream``
 (no real LangGraph, no real LLM) and pins the deduped stage-event
 sequence: ``RunStarted`` -> whitelisted, deduped ``StepStarted``
-frames -> ``RunFinished``. Terminal answer/reference projection is
-added in a follow-up task; this file covers stage events only.
+frames -> terminal ``TextMessage``/``Custom`` projection ->
+``RunFinished``.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, Dict, Mapping, Tuple
 import httpx
 import pytest
 
+from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.app import _stream_graph_agent
 
 pytestmark = pytest.mark.agent
@@ -191,3 +192,72 @@ async def test_graph_stream_off_whitelist_agent_emits_no_step_started() -> (
 
     types = [e.type for e in events]
     assert types == ["RunStarted", "RunFinished"]
+
+
+async def test_terminal_events_carry_answer_and_custom(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminal projection emits one-shot TextMessage + Custom frames.
+
+    ``tool_name="KnowledgeAgent"`` is a cited tool, so the real
+    enrichment path (``_maybe_enrich_cited`` -> ``enrich_cited_doc_list``
+    -> ``bi_query``) would otherwise fire a live BI call; stub it so the
+    test stays offline while still exercising the envelope projection.
+    """
+
+    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
+        """Skip bibliographic enrichment in the offline test."""
+
+    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
+
+    class FakeApp:
+        """Fake compiled graph yielding one stage update, one terminal."""
+
+        async def astream(
+            self, _state: Mapping[str, Any], stream_mode: list[str]
+        ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
+            """Yield one stage update then a terminal ``values`` chunk."""
+            assert stream_mode == ["updates", "values"]
+            yield ("updates", {"retrieve_node": {}})
+            yield (
+                "values",
+                {
+                    "final_response": {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": "Rice [1].",
+                                    "doc_list": [
+                                        {"file_id": "f1", "title": "T1"}
+                                    ],
+                                    "follow_up_questions": ["next?"],
+                                }
+                            }
+                        ]
+                    }
+                },
+            )
+
+    events = [
+        e
+        async for e in _stream_graph_agent(
+            FakeApp(),
+            {},
+            "KnowledgeAgent",
+            "KnowledgeAgent",
+            run_id="r",
+            dialogue_id="d",
+        )
+    ]
+    types = [e.type for e in events]
+    assert "TextMessageStart" in types
+    tmc = [e for e in events if e.type == "TextMessageContent"]
+    assert len(tmc) == 1  # one-shot, not sliced (spec D4)
+    assert "Rice" in tmc[0].data["delta"]
+    customs = {
+        e.data["name"]: e.data["value"] for e in events if e.type == "Custom"
+    }
+    assert "phyto.references" in customs
+    assert customs["phyto.follow_up"] == ["next?"]
+    # ordering: RunFinished is last
+    assert types[-1] == "RunFinished"

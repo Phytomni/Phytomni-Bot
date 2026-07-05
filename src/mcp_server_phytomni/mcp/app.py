@@ -35,6 +35,7 @@ from pydantic import BaseModel, ValidationError
 from ..agents.chat.service import stream_phyto_chat_chunks
 from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
+from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..common.redaction import redact_secrets
@@ -60,6 +61,7 @@ from .result_formatting import (
     FormattedToolResult,
     ToolResultEnvelope,
     build_tool_result_envelope,
+    custom,
     is_cited_tool,
     resolve_debug,
     run_error,
@@ -376,6 +378,48 @@ class _StreamRunMeta(TypedDict):
     dialogue_id: str | None
 
 
+async def _terminal_graph_events(
+    tool_name: str, final_state: Mapping[str, Any] | None
+) -> AsyncIterator[AguiEvent]:
+    """Project the final graph state into terminal AG-UI frames.
+
+    Mirrors the blocking cited path: runs the same ``_maybe_enrich_cited``
+    bibliographic enrichment, then reuses ``build_tool_result_envelope``
+    so the streamed terminal answer carries the same fields as the
+    blocking response -- one one-shot TextMessage for the answer, plus
+    Custom frames for references and follow-up questions.
+
+    Args:
+        tool_name: Public MCP tool name driving envelope formatting.
+        final_state: The compiled graph's last ``values`` chunk, or
+            ``None`` when the astream loop produced no terminal state.
+
+    Yields:
+        ``TextMessageStart``/``TextMessageContent``/``TextMessageEnd``
+        around the formatted answer (only when non-empty), then
+        ``Custom`` frames for references and follow-up questions
+        (each only when non-empty).
+    """
+    if final_state is None:
+        return
+    merged = merge_intermediate_state(dict(final_state))
+    await _maybe_enrich_cited(tool_name, merged)
+    envelope = build_tool_result_envelope(tool_name, merged)
+    formatted = envelope.formatted
+    message_id = IdFactory().new_id("msg")
+    if formatted.answer:
+        yield text_message_start(message_id)
+        yield text_message_content(message_id, formatted.answer)
+        yield text_message_end(message_id)
+    if formatted.references:
+        yield custom(
+            "phyto.references",
+            {"doc_list": [dict(ref) for ref in formatted.references]},
+        )
+    if formatted.follow_up_questions:
+        yield custom("phyto.follow_up", list(formatted.follow_up_questions))
+
+
 async def _stream_graph_agent(
     app: Any,
     initial_state: Mapping[str, Any],
@@ -383,15 +427,15 @@ async def _stream_graph_agent(
     tool_name: str,
     **run_meta: Unpack[_StreamRunMeta],
 ) -> AsyncIterator[AguiEvent]:
-    """Drive a compiled graph, emitting deduped stage events.
+    """Drive a compiled graph, emitting stage events then a terminal answer.
 
-    P3.S3 inserts the terminal answer/reference projection between the
-    astream loop and ``run_finished``; this task emits only the stage
-    frames so the primitive is independently testable without a
-    half-built terminal stub. ``final_state`` is captured now so P3.S3's
-    insertion needs no signature change.
+    Walks ``app.astream`` in ``["updates", "values"]`` mode, projecting
+    whitelisted node updates to deduped ``StepStarted`` frames while
+    capturing the latest ``values`` chunk as the graph's final state.
+    Once the astream loop is exhausted, the captured state is projected
+    into terminal answer/reference frames through
+    :func:`_terminal_graph_events` before ``RunFinished`` closes the run.
     """
-    del tool_name  # Consumed by the terminal projection added in P3.S3.
     run_id = run_meta["run_id"]
     dialogue_id = run_meta["dialogue_id"]
     yield run_started(run_id, dialogue_id)
@@ -408,7 +452,8 @@ async def _stream_graph_agent(
                     yield step_started(phase)
         elif mode == "values":
             final_state = chunk
-    del final_state  # Wired into the terminal projection in P3.S3.
+    async for event in _terminal_graph_events(tool_name, final_state):
+        yield event
     yield run_finished(run_id)
 
 
