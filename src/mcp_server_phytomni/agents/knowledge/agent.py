@@ -73,6 +73,7 @@ KNOWLEDGE_SECRET_FIELD_MAP = {
 }
 __all__ = [
     "KnowledgeAgent",
+    "knowledge_stream_target",
     "multi_retrieve",
     "multi_retrieve_generate",
     "rerank",
@@ -534,6 +535,50 @@ class KnowledgeAgent:
             return "follow_up_node"
         return "__end__"
 
+    def initial_state(
+        self,
+        user_query: str,
+        *,
+        obs_file_list: Optional[List[str]] = None,
+        repo_id_dict: Optional[Dict[str, int]] = None,
+        is_generate: bool = True,
+        is_follow_up: bool = True,
+    ) -> Dict[str, Any]:
+        """Build the graph's initial state dict from wrapper arguments.
+
+        Factored out of :meth:`arun` so the streaming seam can seed the
+        same 11-field state the blocking path invokes the graph with,
+        without re-inlining the literal. The returned shape is
+        byte-identical to the dict ``arun`` previously built inline.
+        Public (not underscore-private) so the module-level
+        ``knowledge_stream_target`` accessor can reuse it without a
+        protected-member access.
+
+        Args:
+            user_query: The user's natural language query.
+            obs_file_list: Optional OBS file paths to upload; ``None``
+                becomes an empty list.
+            repo_id_dict: Optional repo-id to page-size mapping.
+            is_generate: Whether to generate a response after retrieval.
+            is_follow_up: Whether to generate follow-up questions.
+
+        Returns:
+            The initial LangGraph state dict.
+        """
+        return {
+            "user_query": user_query,
+            "obs_file_list": obs_file_list or [],
+            "repo_id_dict": repo_id_dict,
+            "upload_context": "",
+            "retrieved_docs": [],
+            "retrieve_context": "",
+            "main_response": {},
+            "is_generate": is_generate,
+            "is_follow_up": is_follow_up,
+            "follow_up_questions": [],
+            "final_response": {},
+        }
+
     async def arun(
         self,
         user_query: str,
@@ -563,19 +608,13 @@ class KnowledgeAgent:
         repo_id_dict = kwargs.get("repo_id_dict")
         is_generate = kwargs.get("is_generate", True)
         is_follow_up = kwargs.get("is_follow_up", True)
-        initial_state = {
-            "user_query": user_query,
-            "obs_file_list": obs_file_list or [],
-            "repo_id_dict": repo_id_dict,
-            "upload_context": "",
-            "retrieved_docs": [],
-            "retrieve_context": "",
-            "main_response": {},
-            "is_generate": is_generate,
-            "is_follow_up": is_follow_up,
-            "follow_up_questions": [],
-            "final_response": {},
-        }
+        initial_state = self.initial_state(
+            user_query,
+            obs_file_list=obs_file_list,
+            repo_id_dict=repo_id_dict,
+            is_generate=is_generate,
+            is_follow_up=is_follow_up,
+        )
 
         final_state = await ainvoke_graph(
             self.app,
@@ -647,6 +686,44 @@ async def multi_retrieve_generate(
         repo_id_dict=repo_id_dict,
         is_generate=is_generate,
         is_follow_up=is_follow_up,
+    )
+
+
+def knowledge_stream_target(
+    user_query: str,
+    obs_file_list: Optional[List[str]] = None,
+) -> tuple[Any, Dict[str, Any]]:
+    """Return the cached KnowledgeAgent app + seeded streaming state.
+
+    Acquires the SAME cached agent ``multi_retrieve_generate`` uses with
+    DEFAULT config (no overrides), so a streaming request shares one
+    compiled graph instance with a no-override blocking call. Streaming
+    always wants the generated answer plus follow-ups, so ``repo_id_dict``
+    stays ``None`` and ``is_generate`` / ``is_follow_up`` default ``True``
+    — the exact shape a no-override ``multi_retrieve_generate`` seeds.
+
+    Args:
+        user_query: The user's natural language query.
+        obs_file_list: Optional OBS file paths to combine with retrieval.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict.
+    """
+    config = _knowledge_config_with_overrides()
+    sensitive = _knowledge_sensitive_config_with_overrides()
+    agent = get_cached_agent(
+        "KnowledgeAgent",
+        lambda: KnowledgeAgent(
+            knowledge_config=config,
+            sensitive_config=sensitive,
+        ),
+        agent_fingerprint_values(
+            knowledge_config=config,
+            sensitive_config=sensitive,
+        ),
+    )
+    return agent.app, agent.initial_state(
+        user_query, obs_file_list=obs_file_list
     )
 
 

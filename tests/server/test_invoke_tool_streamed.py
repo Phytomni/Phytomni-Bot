@@ -210,8 +210,6 @@ async def test_invoke_tool_streamed_raises_mcperror_on_validation_error(
 @pytest.mark.parametrize(
     "tool_name",
     [
-        PhytomniAgents.KNOWLEDGE_AGENT.value,
-        PhytomniAgents.REVIEW_AGENT.value,
         PhytomniAgents.BRIEF_GENE_AGENT.value,
         PhytomniAgents.GET_TASK_STATUS.value,
     ],
@@ -219,27 +217,21 @@ async def test_invoke_tool_streamed_raises_mcperror_on_validation_error(
 async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
-    """Every non-ChatAgent registered tool raises NotImplementedError.
+    """A registered non-streaming tool raises NotImplementedError.
 
-    Pins the v1 streaming scope: only ChatAgent is wired. Other tools
-    must surface a clear "streaming not supported" signal instead of
-    a silent empty stream — Step 5.4's per-model gate at the HTTP
-    layer trusts this contract to translate into a 400 for non-chat
-    models, and a regression that silently no-ops here would make the
-    HTTP gate return 200-with-empty-body for those models.
+    Pins the current streaming scope: ChatAgent token-streams and
+    KnowledgeAgent / ReviewAgent drive their compiled graphs through
+    ``_stream_graph_agent``; every other registered tool (BriefGene,
+    GetTaskStatus) must surface a clear "streaming not supported"
+    signal instead of a silent empty stream — the per-model gate at
+    the HTTP layer trusts this contract to translate into a 400 for
+    those models, and a regression that silently no-ops here would
+    make the HTTP gate return 200-with-empty-body for them.
     """
     _patch_stream(monkeypatch, [])
     # Use arguments valid against the chosen tool's schema so the
     # raise fires at the dispatch branch, not Pydantic validation.
     args_by_tool: Dict[str, Dict[str, Any]] = {
-        PhytomniAgents.KNOWLEDGE_AGENT.value: {
-            "user_query": "hi",
-            "obs_file_list": [],
-        },
-        PhytomniAgents.REVIEW_AGENT.value: {
-            "user_query": "hi",
-            "obs_file_list": [],
-        },
         PhytomniAgents.BRIEF_GENE_AGENT.value: {"user_query": "AT1G01010"},
         PhytomniAgents.GET_TASK_STATUS.value: {"task_id": "t-1"},
     }

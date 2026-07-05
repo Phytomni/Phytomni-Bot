@@ -60,15 +60,16 @@ _RESOLVE_GENE_ID_CAPABLE_TOOLS = {
 # the proposed id against it before returning.
 _RESOLVE_TO_ID_CAPABLE_TOOLS = {"GeneNetworkAgent"}
 
-# Tools that support SSE streaming via ``invoke_tool_streamed``. v1
-# wires only ChatAgent — the other chat-like models (knowledge /
-# review / brief-gene) either need full-document retrieval state or
-# return a structured single answer, both of which would surface as
-# a single trailing chunk rather than a token stream. Adding a model
-# here without also implementing its streaming primitive in
-# ``invoke_tool_streamed`` would surface as a 500
-# (``NotImplementedError``) at request time; keep this set narrow.
-_STREAM_CAPABLE_TOOLS = {"ChatAgent"}
+# Tools that support SSE streaming via ``invoke_tool_streamed``.
+# ChatAgent token-streams provider deltas; KnowledgeAgent / ReviewAgent
+# drive their compiled graphs through the ``_stream_graph_agent``
+# primitive, emitting stage ``StepStarted`` frames then a one-shot
+# terminal answer + citations. BriefGene / DataAgent stay out of this
+# set: adding a model here without also implementing its streaming
+# primitive in ``invoke_tool_streamed`` would surface as a 500
+# (``NotImplementedError``) at request time, so keep this set aligned
+# with the seam's implemented branches.
+_STREAM_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
 
 def tool_for_model(model: str) -> Optional[str]:

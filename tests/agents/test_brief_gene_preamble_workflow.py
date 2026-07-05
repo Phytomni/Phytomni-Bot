@@ -20,13 +20,13 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
+from ._network_escape import install_network_escape_guard
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
 pytestmark = pytest.mark.agent
@@ -114,48 +114,13 @@ def _install_mocks(
 def _fail_fast_on_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
     """Convert any un-mocked outbound call into an instant named failure.
 
-    Every external call the preamble workflow makes is mocked above. If a
-    future change or a different environment lets one escape, it must
-    surface as a fast diagnostic error rather than a 20s hang against a
-    real (possibly black-holing) network — a hang ``asyncio.wait_for``
-    cannot cancel once a connect blocks the loop. The autouse
-    ``block_external_http`` fixture covers only ``socket.create_connection``
-    (sync) and ``httpx.*.request``, so THREE async paths can still reach a
-    real socket and hang the fan-in: ``httpx.*.send`` (the low-level send
-    under ``request``), the event loop's ``create_connection``, and DNS via
-    ``getaddrinfo``. Patch all three to raise so no transport — httpx, a
-    relay client, or a raw asyncio connection — can black-hole a poll into
-    the 20s ``wait_for``; an escape surfaces as a named error instead.
+    The shared ``install_network_escape_guard`` patches the three async
+    paths the repo-root ``block_external_http`` fixture leaves open
+    (``httpx.*.send``, the loop's ``create_connection``, and
+    ``getaddrinfo``); see ``tests/agents/_network_escape.py`` for the
+    full rationale.
     """
-
-    def _blocked_http(_self: Any, request: Any, *_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline preamble test escaped to a live HTTP call "
-            f"({request.method} {request.url}); a mock is missing"
-        )
-
-    def _blocked_connect(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline preamble test escaped to a raw async socket "
-            "(loop.create_connection); a mock is missing"
-        )
-
-    def _blocked_dns(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline preamble test escaped to DNS resolution "
-            "(loop.getaddrinfo); a mock is missing"
-        )
-
-    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked_http)
-    monkeypatch.setattr(httpx.Client, "send", _blocked_http)
-    monkeypatch.setattr(
-        asyncio.base_events.BaseEventLoop,
-        "create_connection",
-        _blocked_connect,
-    )
-    monkeypatch.setattr(
-        asyncio.base_events.BaseEventLoop, "getaddrinfo", _blocked_dns
-    )
+    install_network_escape_guard(monkeypatch, label="preamble")
 
 
 @pytest.fixture(autouse=True)

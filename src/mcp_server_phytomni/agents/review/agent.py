@@ -730,22 +730,27 @@ class DeepResearchAgent(
             for i in range(len(dimensions))
         ]
 
-    async def arun(
+    def initial_state(
         self,
         user_query: str,
         obs_file_list: Optional[List[str]] = None,
-        thread_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute the DeepResearchAgent workflow.
+    ) -> DeepResearchState:
+        """Build the graph's initial state dict from wrapper arguments.
+
+        Factored out of :meth:`arun` so the streaming seam can seed the
+        same ~40-field state the blocking path invokes the graph with,
+        without re-inlining the literal. The returned shape is
+        byte-identical to the dict ``arun`` previously built inline.
+        Public (not underscore-private) so the module-level
+        ``review_stream_target`` accessor can reuse it without a
+        protected-member access.
 
         Args:
-            user_query: Research question to expand into a literature review.
-            obs_file_list: Optional OBS files to include as source context.
-            thread_id: Optional LangGraph checkpoint thread id.
+            user_query: Research question to expand into a review.
+            obs_file_list: Optional OBS files to include as context.
 
         Returns:
-            Chat-completions-style final response payload with review text,
-            ordered references, and follow-up questions.
+            The initial ``DeepResearchState`` dict.
         """
         initial_state: DeepResearchState = {
             "original_user_query": user_query,
@@ -793,6 +798,26 @@ class DeepResearchAgent(
             # Fan-out final ordered outputs
             "revised_contents": [],
         }
+        return initial_state
+
+    async def arun(
+        self,
+        user_query: str,
+        obs_file_list: Optional[List[str]] = None,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute the DeepResearchAgent workflow.
+
+        Args:
+            user_query: Research question to expand into a literature review.
+            obs_file_list: Optional OBS files to include as source context.
+            thread_id: Optional LangGraph checkpoint thread id.
+
+        Returns:
+            Chat-completions-style final response payload with review text,
+            ordered references, and follow-up questions.
+        """
+        initial_state = self.initial_state(user_query, obs_file_list)
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
@@ -845,3 +870,52 @@ async def review_agent_function(
         user_query=user_query,
         obs_file_list=obs_file_list or [],
     )
+
+
+def review_stream_target(
+    user_query: str,
+    obs_file_list: Optional[List[str]] = None,
+) -> tuple[Any, DeepResearchState]:
+    """Return the cached DeepResearchAgent app + seeded streaming state.
+
+    Mirrors ``review_agent_function``'s acquisition EXACTLY (same
+    no-override config copies and the same ``knowledge_agent`` kwarg)
+    so the registry fingerprint — and thus the cached instance — is
+    identical to a no-override ``review_agent_function`` call. That
+    lets a streaming request share one compiled graph with the
+    blocking path.
+
+    Args:
+        user_query: Research question to expand into a literature review.
+        obs_file_list: Optional OBS files to include as source context.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict.
+    """
+    review_config = copy_config_with_overrides(
+        REVIEW_CONFIG,
+        {},
+        REVIEW_CONFIG_FIELD_MAP,
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        get_sensitive_config(),
+        {},
+        field_map=REVIEW_SENSITIVE_FIELD_MAP,
+        secret_field_map=REVIEW_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "DeepResearchAgent",
+        lambda: DeepResearchAgent(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=review_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    return agent.app, agent.initial_state(user_query, obs_file_list)

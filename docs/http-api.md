@@ -62,9 +62,10 @@ Every response carries an `X-Request-Id`. Errors on native routes use:
 ```
 
 Over-budget callers get `429` with `Retry-After`. SSE streaming is
-supported only on streaming-capable chat models — `phyto-chat` in
-v1; every other chat-like model with `stream: true` returns `400`
-with a per-model message (`streaming is not supported for model phyto-knowledge`, etc.). See the SSE Streaming section below.
+supported only on streaming-capable chat models — `phyto-chat`,
+`phyto-knowledge`, and `phyto-review`; every other chat-like model
+with `stream: true` returns `400` with a per-model message
+(`streaming is not supported for model phyto-brief-gene`, etc.). See the SSE Streaming section below.
 
 ## Endpoints
 
@@ -345,17 +346,26 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
 `POST /v1/chat/completions` accepts an optional boolean `stream`.
 Default is `false`. When `true`, the response switches from a single
 JSON `chat.completion` envelope to an OpenAI-compatible
-`text/event-stream` carrying one
-`data: {chat.completion.chunk JSON}\n\n` line per provider chunk and
-a terminating `data: [DONE]\n\n` so the client closes its
+`text/event-stream`. For `phyto-chat` each frame carries one
+`data: {chat.completion.chunk JSON}\n\n` line per provider chunk;
+for `phyto-knowledge` / `phyto-review` the stream carries AG-UI event
+frames (`event: RunStarted`, one `event: StepStarted` per graph stage,
+a one-shot `event: TextMessageContent` answer, `event: Custom`
+reference / follow-up frames, then `event: RunFinished`). Both shapes
+end with a terminating `data: [DONE]\n\n` so the client closes its
 `EventSource` on the first match instead of waiting for the read
 timeout.
 
-v1 wires streaming only on `phyto-chat`. Every other chat-like model
-(`phyto-knowledge`, `phyto-review`, `phyto-brief-gene`) returns `400`
-with `streaming is not supported for model <name>` so clients see a
-clear per-model signal instead of a silent fallback. The
-streaming-capable set is maintained in
+Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
+`phyto-review`: ChatAgent token-streams provider deltas, while
+KnowledgeAgent / ReviewAgent drive their compiled graphs through the
+`_stream_graph_agent` primitive (stage `StepStarted` frames then a
+terminal answer + citations). `phyto-brief-gene` returns a structured
+single answer with no stage graph, so it stays non-streaming and a
+`stream: true` request returns `400` with
+`streaming is not supported for model <name>` — a clear per-model
+signal instead of a silent fallback. The streaming-capable set is
+maintained in
 `src/mcp_server_phytomni/api/openai_mapping.py:_STREAM_CAPABLE_TOOLS`.
 
 `resolve_gene_id=true` + `stream=true` is unreachable by

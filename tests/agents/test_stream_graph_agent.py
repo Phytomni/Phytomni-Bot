@@ -13,98 +13,96 @@ frames -> terminal ``TextMessage``/``Custom`` projection ->
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, AsyncIterator, Dict, Mapping, Tuple
 
-import httpx
 import pytest
 
-from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.app import _stream_graph_agent
+
+from ._network_escape import install_network_escape_guard
 
 pytestmark = pytest.mark.agent
 
 
 @pytest.fixture(autouse=True)
-def _fail_fast_on_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fail_fast_on_network_escape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Convert any un-mocked outbound call into an instant named failure.
 
     ``_stream_graph_agent`` is driven with a fake ``astream`` here, so
-    no real graph or network call should ever fire. The autouse
-    ``block_external_http`` fixture (repo root ``conftest.py``) covers
-    only ``socket.create_connection`` (sync) and ``httpx.*.request``,
-    so THREE async paths could still reach a real socket and hang a
-    test: ``httpx.*.send`` (the low-level send under ``request``),
-    the event loop's ``create_connection``, and DNS via
-    ``getaddrinfo``. Patch all three to raise so a future regression
-    that lets the primitive reach outward surfaces as a named error
-    instead of a hang, mirroring
-    ``tests/agents/test_brief_gene_preamble_workflow.py``.
+    no real graph or network call should ever fire. The shared
+    ``install_network_escape_guard`` patches the three async paths the
+    repo-root ``block_external_http`` fixture leaves open (``httpx.*.send``,
+    the loop's ``create_connection``, and ``getaddrinfo``); see the
+    helper module for the full rationale.
+    """
+    install_network_escape_guard(monkeypatch, label="stream")
+
+
+# Canned ``(mode, chunk)`` sequence for the dedup / whitelist tests: two
+# ``retrieve_node`` updates (the repeat must not re-emit a StepStarted),
+# one off-whitelist worker node (must emit no StepStarted), one
+# ``generate_post_node`` update, then a terminal ``values`` chunk.
+_KNOWLEDGE_STAGE_YIELDS: list[Tuple[str, Dict[str, Any]]] = [
+    ("updates", {"retrieve_node": {}}),
+    ("updates", {"retrieve_node": {}}),
+    ("updates", {"retrieve_worker_node": {}}),
+    ("updates", {"generate_post_node": {}}),
+    (
+        "values",
+        {
+            "final_response": {
+                "choices": [{"message": {"content": "answer", "doc_list": []}}]
+            }
+        },
+    ),
+]
+
+
+class FakeStreamApp:
+    """Fake compiled graph yielding a canned ``(mode, chunk)`` sequence.
+
+    One parameterized fake backs every ``_stream_graph_agent`` test: the
+    yield sequence is injected, and an optional ``record_config`` flag
+    captures the ``config`` astream received so the thread_id test can
+    assert it. Two public methods (``astream`` + ``configurable``) keep
+    this off the R0903 single-public-method baseline; the
+    ``configurable`` body returns the whole sub-dict (rather than the
+    thread_id directly) so it stays distinct from the api-layer
+    streaming fake's ``thread_id`` accessor and does not register as an
+    R0801 duplicate block.
     """
 
-    def _blocked_http(_self: Any, request: Any, *_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline stream test escaped to a live HTTP call "
-            f"({request.method} {request.url}); a mock is missing"
-        )
+    def __init__(
+        self,
+        yields: list[Tuple[str, Dict[str, Any]]],
+        *,
+        record_config: bool = False,
+    ) -> None:
+        """Store the canned yield sequence and capture mode."""
+        self._yields = list(yields)
+        self._record = record_config
+        self.seen: Mapping[str, Any] | None = None
 
-    def _blocked_connect(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline stream test escaped to a raw async socket "
-            "(loop.create_connection); a mock is missing"
-        )
-
-    def _blocked_dns(*_a: Any, **_k: Any) -> Any:
-        raise RuntimeError(
-            "offline stream test escaped to DNS resolution "
-            "(loop.getaddrinfo); a mock is missing"
-        )
-
-    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked_http)
-    monkeypatch.setattr(httpx.Client, "send", _blocked_http)
-    monkeypatch.setattr(
-        asyncio.base_events.BaseEventLoop,
-        "create_connection",
-        _blocked_connect,
-    )
-    monkeypatch.setattr(
-        asyncio.base_events.BaseEventLoop, "getaddrinfo", _blocked_dns
-    )
-
-
-class FakeKnowledgeStreamApp:
-    """Fake compiled graph yielding canned ``(mode, chunk)`` tuples.
-
-    Mirrors the real LangGraph ``Pregel.astream`` yield shape for a
-    list ``stream_mode`` (``(mode, payload)`` per
-    ``langgraph.pregel.main``): two ``updates`` chunks map to the
-    ``KnowledgeAgent`` whitelist (``retrieve_node`` ->
-    ``retrieving``, ``generate_post_node`` -> ``generating``), one
-    ``updates`` chunk repeats ``retrieve_node`` to prove dedup, one
-    ``updates`` chunk names an off-whitelist worker node that must
-    produce no ``StepStarted``, and a final ``values`` chunk carries
-    the graph's terminal state.
-    """
+    def configurable(self) -> dict[str, Any]:
+        """Return the ``configurable`` sub-dict astream received."""
+        seen = self.seen or {}
+        sub = seen.get("configurable")
+        return dict(sub) if isinstance(sub, Mapping) else {}
 
     async def astream(
-        self, _state: Mapping[str, Any], stream_mode: list[str]
+        self,
+        _state: Mapping[str, Any],
+        stream_mode: list[str],
+        config: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
-        """Yield canned stage updates then one terminal values chunk."""
+        """Assert modes, optionally capture config, yield the canned seq."""
         assert stream_mode == ["updates", "values"]
-        yield ("updates", {"retrieve_node": {}})
-        yield ("updates", {"retrieve_node": {}})  # repeat: must not re-emit
-        yield ("updates", {"retrieve_worker_node": {}})  # off-whitelist
-        yield ("updates", {"generate_post_node": {}})
-        yield (
-            "values",
-            {
-                "final_response": {
-                    "choices": [
-                        {"message": {"content": "answer", "doc_list": []}}
-                    ]
-                }
-            },
-        )
+        if self._record:
+            self.seen = config
+        for mode, chunk in self._yields:
+            yield mode, chunk
 
 
 async def test_graph_stream_dedups_stage_events() -> None:
@@ -118,7 +116,7 @@ async def test_graph_stream_dedups_stage_events() -> None:
     events = [
         e
         async for e in _stream_graph_agent(
-            FakeKnowledgeStreamApp(),
+            FakeStreamApp(_KNOWLEDGE_STAGE_YIELDS),
             {},
             "KnowledgeAgent",
             "KnowledgeAgent",
@@ -140,7 +138,7 @@ async def test_graph_stream_carries_run_and_dialogue_ids() -> None:
     events = [
         e
         async for e in _stream_graph_agent(
-            FakeKnowledgeStreamApp(),
+            FakeStreamApp(_KNOWLEDGE_STAGE_YIELDS),
             {},
             "KnowledgeAgent",
             "KnowledgeAgent",
@@ -165,23 +163,16 @@ async def test_graph_stream_off_whitelist_agent_emits_no_step_started() -> (
     agent, so the stage loop must fold away entirely while the
     envelope (``RunStarted`` .. ``RunFinished``) still emits.
     """
-
-    class FakeChatLikeApp:
-        """Fake app streaming the same nodes under an unmapped agent."""
-
-        async def astream(
-            self, _state: Mapping[str, Any], stream_mode: list[str]
-        ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
-            """Yield the same node names, now under an unmapped agent."""
-            assert stream_mode == ["updates", "values"]
-            yield ("updates", {"retrieve_node": {}})
-            yield ("updates", {"generate_post_node": {}})
-            yield ("values", {"final_response": {}})
-
     events = [
         e
         async for e in _stream_graph_agent(
-            FakeChatLikeApp(),
+            FakeStreamApp(
+                [
+                    ("updates", {"retrieve_node": {}}),
+                    ("updates", {"generate_post_node": {}}),
+                    ("values", {"final_response": {}}),
+                ]
+            ),
             {},
             "ChatAgent",  # not in streaming_phases._PHASE_MAP
             "ChatAgent",
@@ -208,40 +199,39 @@ async def test_terminal_events_carry_answer_and_custom(
     async def _no_enrich(_tool_name: str, _raw: Any) -> None:
         """Skip bibliographic enrichment in the offline test."""
 
-    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
-
-    class FakeApp:
-        """Fake compiled graph yielding one stage update, one terminal."""
-
-        async def astream(
-            self, _state: Mapping[str, Any], stream_mode: list[str]
-        ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
-            """Yield one stage update then a terminal ``values`` chunk."""
-            assert stream_mode == ["updates", "values"]
-            yield ("updates", {"retrieve_node": {}})
-            yield (
-                "values",
-                {
-                    "final_response": {
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": "Rice [1].",
-                                    "doc_list": [
-                                        {"file_id": "f1", "title": "T1"}
-                                    ],
-                                    "follow_up_questions": ["next?"],
-                                }
-                            }
-                        ]
-                    }
-                },
-            )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.mcp.app._maybe_enrich_cited", _no_enrich
+    )
 
     events = [
         e
         async for e in _stream_graph_agent(
-            FakeApp(),
+            FakeStreamApp(
+                [
+                    ("updates", {"retrieve_node": {}}),
+                    (
+                        "values",
+                        {
+                            "final_response": {
+                                "choices": [
+                                    {
+                                        "message": {
+                                            "content": "Rice [1].",
+                                            "doc_list": [
+                                                {
+                                                    "file_id": "f1",
+                                                    "title": "T1",
+                                                }
+                                            ],
+                                            "follow_up_questions": ["next?"],
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                    ),
+                ]
+            ),
             {},
             "KnowledgeAgent",
             "KnowledgeAgent",
@@ -261,3 +251,38 @@ async def test_terminal_events_carry_answer_and_custom(
     assert customs["phyto.follow_up"] == ["next?"]
     # ordering: RunFinished is last
     assert types[-1] == "RunFinished"
+
+
+async def test_graph_stream_passes_thread_id_config_to_astream() -> None:
+    """astream receives a config carrying the run's non-empty thread_id.
+
+    Pins Step 0 at the unit layer: ``_stream_graph_agent`` must pass
+    ``config=build_runnable_config(run_id)`` to ``app.astream`` because
+    the real Knowledge/Review graphs compile with a checkpointer and
+    LangGraph raises ``ValueError`` on a checkpointer graph invoked
+    without ``configurable.thread_id``. The fake records the config and
+    the test asserts the thread_id equals the caller's run id.
+    """
+    fake_app = FakeStreamApp(
+        [
+            ("updates", {"retrieve_node": {}}),
+            ("values", {"final_response": {}}),
+        ],
+        record_config=True,
+    )
+    events = [
+        e
+        async for e in _stream_graph_agent(
+            fake_app,
+            {},
+            "KnowledgeAgent",
+            "KnowledgeAgent",
+            run_id="run-cfg-1",
+            dialogue_id="d",
+        )
+    ]
+
+    assert fake_app.seen is not None
+    assert fake_app.configurable().get("thread_id") == "run-cfg-1"
+    assert events[0].type == "RunStarted"
+    assert events[-1].type == "RunFinished"

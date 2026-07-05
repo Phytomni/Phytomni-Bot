@@ -33,6 +33,8 @@ from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
 from ..agents.chat.service import stream_phyto_chat_chunks
+from ..agents.knowledge.agent import knowledge_stream_target
+from ..agents.review.agent import review_stream_target
 from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
@@ -40,6 +42,7 @@ from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..common.redaction import redact_secrets
 from ..config.defaults import ChatConfig
+from ..runtime.langgraph_runner import build_runnable_config
 from ..storage.path_policy import IdFactory
 from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
 from .handlers import (
@@ -291,11 +294,14 @@ async def invoke_tool_streamed(
 
     Fourth invocation seam, parallel to :func:`invoke_tool_raw` /
     :func:`invoke_tool_formatted` / :func:`invoke_tool_enveloped`.
-    v1 wires only :class:`ChatAgent` to
-    :func:`stream_phyto_chat_chunks`; every other registered tool
-    raises :class:`NotImplementedError` so callers receive a clear
-    "streaming not supported for X" signal instead of a silent
-    fallback to non-streaming aggregation.
+    :class:`ChatAgent` token-streams provider deltas via
+    :func:`stream_phyto_chat_chunks`; :class:`KnowledgeAgent` and
+    :class:`ReviewAgent` drive their compiled graphs through
+    :func:`_stream_graph_agent`, emitting stage ``StepStarted`` frames
+    then a one-shot terminal answer plus citation ``Custom`` frames.
+    Every other registered tool raises :class:`NotImplementedError` so
+    callers receive a clear "streaming not supported for X" signal
+    instead of a silent fallback to non-streaming aggregation.
 
     The function is an async generator — argument validation,
     unknown-tool detection, and the not-implemented branch all raise
@@ -321,7 +327,8 @@ async def invoke_tool_streamed(
         McpError: When the tool name is unknown or schema validation
             fails (mirrors :func:`invoke_tool_raw`).
         NotImplementedError: When the tool is registered but lacks a
-            streaming primitive (every tool except ChatAgent in v1).
+            streaming primitive (every tool except ChatAgent /
+            KnowledgeAgent / ReviewAgent).
     """
     tool_name = _tool_name(name)
     model = TOOL_ARGUMENT_MODELS.get(tool_name)
@@ -354,7 +361,53 @@ async def invoke_tool_streamed(
             yield text_message_end(message_id)
         yield run_finished(run_id)
         return
+    if tool_name in {
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        PhytomniAgents.REVIEW_AGENT.value,
+    }:
+        app, initial_state = _build_graph_stream_target(tool_name, args)
+        async for event in _stream_graph_agent(
+            app,
+            initial_state,
+            tool_name,
+            tool_name,
+            run_id=run_id,
+            dialogue_id=dialogue_id,
+        ):
+            yield event
+        return
     raise NotImplementedError(f"streaming not supported for tool {tool_name}")
+
+
+def _build_graph_stream_target(
+    tool_name: str, args: BaseModel
+) -> tuple[Any, Mapping[str, Any]]:
+    """Acquire the cached compiled app + seeded state for a graph agent.
+
+    Dispatches on ``tool_name`` to the co-located per-agent stream-target
+    accessor (``knowledge_stream_target`` / ``review_stream_target``),
+    each of which acquires the SAME cached agent its blocking wrapper
+    uses with default config and returns ``(app, initial_state)``. Both
+    request schemas expose only ``user_query`` + ``obs_file_list``.
+
+    Args:
+        tool_name: Public MCP tool name (KnowledgeAgent or ReviewAgent).
+        args: The validated request schema for that tool.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict.
+    """
+    if tool_name == PhytomniAgents.KNOWLEDGE_AGENT.value:
+        knowledge_args = cast(KnowledgeAgent, args)
+        return knowledge_stream_target(
+            knowledge_args.user_query,
+            obs_file_list=knowledge_args.obs_file_list,
+        )
+    review_args = cast(ReviewAgent, args)
+    return review_stream_target(
+        review_args.user_query,
+        obs_file_list=review_args.obs_file_list,
+    )
 
 
 class _StreamRunMeta(TypedDict):
@@ -442,7 +495,9 @@ async def _stream_graph_agent(
     seen_phases: set[str] = set()
     final_state: Mapping[str, Any] | None = None
     async for mode, chunk in app.astream(
-        initial_state, stream_mode=["updates", "values"]
+        initial_state,
+        stream_mode=["updates", "values"],
+        config=build_runnable_config(run_id),
     ):
         if mode == "updates":
             for node_name in chunk:

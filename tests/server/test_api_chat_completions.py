@@ -97,7 +97,7 @@ async def test_chat_completions_requires_auth(
 
 @pytest.mark.parametrize(
     "model",
-    ["phyto-knowledge", "phyto-review", "phyto-brief-gene"],
+    ["phyto-brief-gene"],
 )
 async def test_chat_completions_rejects_stream_on_non_chat_models(
     api_client: httpx.AsyncClient,
@@ -105,14 +105,16 @@ async def test_chat_completions_rejects_stream_on_non_chat_models(
     chat_completion: Callable[..., Any],
     model: str,
 ) -> None:
-    """Non-chat models with ``stream=true`` must surface a per-model 400.
+    """A non-streaming model with ``stream=true`` surfaces a per-model 400.
 
-    Per-model gate (Phase 5 Step 5.4): only ``phyto-chat`` is wired
-    to ``invoke_tool_streamed`` in v1 — the streaming-capable model
-    set lives in ``openai_mapping._STREAM_CAPABLE_TOOLS``. Other
-    chat-like models keep the historical 400 but the message now
-    carries the offending model id so clients know which model they
-    asked to stream.
+    Per-model gate: ChatAgent token-streams and KnowledgeAgent /
+    ReviewAgent drive their compiled graphs through
+    ``invoke_tool_streamed``, so the streaming-capable model set in
+    ``openai_mapping._STREAM_CAPABLE_TOOLS`` now covers ``phyto-chat`` /
+    ``phyto-knowledge`` / ``phyto-review``. ``phyto-brief-gene`` returns
+    a structured single answer with no stage graph, so it stays out of
+    the set and keeps the historical 400 — the message carries the
+    offending model id so clients know which model they asked to stream.
     """
     response = await chat_completion(
         api_client, issued_api_key, model=model, stream=True
