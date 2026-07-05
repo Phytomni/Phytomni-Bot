@@ -13,7 +13,17 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from json import dumps
-from typing import Any, Awaitable, Callable, Dict, Mapping, Sequence, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Mapping,
+    Sequence,
+    TypedDict,
+    Unpack,
+    cast,
+)
 
 from httpx import ConnectError, TimeoutException
 from mcp.server import Server
@@ -55,6 +65,7 @@ from .result_formatting import (
     run_error,
     run_finished,
     run_started,
+    step_started,
     text_message_content,
     text_message_end,
     text_message_start,
@@ -74,6 +85,7 @@ from .schemas import (
     PhytomniAgents,
     ReviewAgent,
 )
+from .streaming_phases import phase_for
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +353,63 @@ async def invoke_tool_streamed(
         yield run_finished(run_id)
         return
     raise NotImplementedError(f"streaming not supported for tool {tool_name}")
+
+
+class _StreamRunMeta(TypedDict):
+    """Run-identity keywords threaded through a graph streaming call.
+
+    Bundles ``run_id`` and ``dialogue_id`` — the same pair
+    :func:`run_started` takes positionally — behind one ``**run_meta:
+    Unpack[_StreamRunMeta]`` parameter so
+    :func:`_stream_graph_agent`'s declared parameter count stays under
+    the project's ``max-args`` limit. mypy/pyright still enforce both
+    keys by name at every call site exactly as keyword-only parameters
+    would; only the count pylint sees changes.
+
+    Fields:
+        run_id: Registry run id carried on ``RunStarted``/``RunFinished``.
+        dialogue_id: Optional chat-ai conversation id carried on
+            ``RunStarted``.
+    """
+
+    run_id: str
+    dialogue_id: str | None
+
+
+async def _stream_graph_agent(
+    app: Any,
+    initial_state: Mapping[str, Any],
+    agent_name: str,
+    tool_name: str,
+    **run_meta: Unpack[_StreamRunMeta],
+) -> AsyncIterator[AguiEvent]:
+    """Drive a compiled graph, emitting deduped stage events.
+
+    P3.S3 inserts the terminal answer/reference projection between the
+    astream loop and ``run_finished``; this task emits only the stage
+    frames so the primitive is independently testable without a
+    half-built terminal stub. ``final_state`` is captured now so P3.S3's
+    insertion needs no signature change.
+    """
+    del tool_name  # Consumed by the terminal projection added in P3.S3.
+    run_id = run_meta["run_id"]
+    dialogue_id = run_meta["dialogue_id"]
+    yield run_started(run_id, dialogue_id)
+    seen_phases: set[str] = set()
+    final_state: Mapping[str, Any] | None = None
+    async for mode, chunk in app.astream(
+        initial_state, stream_mode=["updates", "values"]
+    ):
+        if mode == "updates":
+            for node_name in chunk:
+                phase = phase_for(agent_name, node_name)
+                if phase and phase not in seen_phases:
+                    seen_phases.add(phase)
+                    yield step_started(phase)
+        elif mode == "values":
+            final_state = chunk
+    del final_state  # Wired into the terminal projection in P3.S3.
+    yield run_finished(run_id)
 
 
 def _chunk_content_delta(chunk: Mapping[str, Any]) -> str:
