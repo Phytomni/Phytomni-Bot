@@ -205,6 +205,12 @@ markers = [
     "integration: tests that may require configured external services.",
     "network: tests that may perform real network, OBS, or LLM calls.",
 ]
+filterwarnings = [
+    "error",
+    # Third-party obs SDK triggers this at import time
+    # (obs/client.py:376), outside this repo's control.
+    "ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
@@ -215,6 +221,11 @@ source = ["mcp_server_phytomni", "mcp_client_phytomni"]
 fail_under = 80
 show_missing = true
 skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
 
 [tool.coverage.xml]
 output = "coverage.xml"

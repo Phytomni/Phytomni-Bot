@@ -89,6 +89,11 @@ def test_pytest_coverage_reporting_is_configured_for_ci():
         "fail_under": 80,
         "show_missing": True,
         "skip_covered": False,
+        "exclude_also": [
+            "if TYPE_CHECKING:",
+            "if __name__ == .__main__.:",
+            "raise NotImplementedError",
+        ],
     }
     assert coverage_config["xml"] == {"output": "coverage.xml"}
 

@@ -95,6 +95,17 @@ async def _send_retry_request(
     """Send one HTTP request using the common retry payload."""
     method = request.method.upper()
     headers = dict(request.headers or {})
+    # httpx deprecated ``data=<bytes|str>`` for raw content in favour of
+    # ``content=<bytes|str>``; route non-Mapping bodies (raw bytes) to
+    # ``content`` and keep Mapping bodies (form data) on ``data`` so the
+    # deprecation warning stays silent under filterwarnings=error.
+    raw = request.data
+    if isinstance(raw, (bytes, str)):
+        content: Any = raw
+        form_data: Any = None
+    else:
+        content = None
+        form_data = raw
     if method == "GET":
         return await client.get(
             request.url,
@@ -105,7 +116,8 @@ async def _send_retry_request(
         return await client.post(
             request.url,
             json=request.json_body,
-            data=request.data,
+            content=content,
+            data=form_data,
             headers=headers,
             timeout=timeout,
         )
@@ -113,7 +125,8 @@ async def _send_retry_request(
         method,
         request.url,
         json=request.json_body,
-        data=request.data,
+        content=content,
+        data=form_data,
         headers=headers,
         timeout=timeout,
     )

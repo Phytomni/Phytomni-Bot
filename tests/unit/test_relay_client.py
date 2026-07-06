@@ -258,7 +258,7 @@ async def test_put_obs_object_puts_bytes_with_path_query(monkeypatch):
     assert client_stub.captured["method"] == "PUT"
     assert "v1/relay/obs/object?" in client_stub.captured["url"]
     assert "path=" in client_stub.captured["url"]
-    assert client_stub.captured["data"] == b"file-bytes"
+    assert client_stub.captured["content"] == b"file-bytes"
     assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
 
 

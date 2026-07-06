@@ -29,10 +29,11 @@ Install the optional extras before running::
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterable, Mapping
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Tuple
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from openpyxl import Workbook
@@ -42,7 +43,7 @@ from reportlab.pdfgen.canvas import Canvas
 
 DEMO_ROOT = Path(__file__).resolve().parent.parent
 DEMO_OBS_PREFIX = "/obs/phytomni/demo"
-FIXED_TIMESTAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
+FIXED_TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 FIXED_ZIP_DATE_TIME = (2026, 1, 1, 0, 0, 0)
 FIXED_W3CDTF = "2026-01-01T00:00:00Z"
 FOOTPRINT_LIMIT_BYTES = 100_000
@@ -66,14 +67,14 @@ CORE_PROPERTIES_XML = (
     f' xsi:type="dcterms:W3CDTF">{FIXED_W3CDTF}</dcterms:modified>'
     "<cp:lastModifiedBy>phytomni-demo</cp:lastModifiedBy>"
     "</cp:coreProperties>"
-).encode("utf-8")
+).encode()
 
 
 # ---------------------------------------------------------------------------
 # Payload definitions (one per public MCP tool name in mcp/schemas.py)
 # ---------------------------------------------------------------------------
 
-PAYLOADS: Dict[str, Dict[str, Any]] = {
+PAYLOADS: dict[str, dict[str, Any]] = {
     "chat_agent.json": {
         "obs_file_list": [],
         "user_query": (
@@ -241,7 +242,7 @@ MGRGRVELKRIENKINRQVTFAKRRNGLLKKAYELSVLCDAEVALIIFSS
 """
 
 
-METADATA_HEADER: List[str] = [
+METADATA_HEADER: list[str] = [
     "sample_id",
     "species",
     "tissue",
@@ -249,7 +250,7 @@ METADATA_HEADER: List[str] = [
     "biological_replicate",
 ]
 
-METADATA_ROWS: List[List[Any]] = [
+METADATA_ROWS: list[list[Any]] = [
     ["S001", "Arabidopsis thaliana", "leaf", "control", 1],
     ["S002", "Arabidopsis thaliana", "leaf", "drought", 1],
     ["S003", "Oryza sativa", "leaf", "control", 1],
@@ -262,7 +263,7 @@ METADATA_ROWS: List[List[Any]] = [
 # Manifest + README templates
 # ---------------------------------------------------------------------------
 
-TOOL_INDEX: Tuple[Dict[str, str], ...] = (
+TOOL_INDEX: tuple[dict[str, str], ...] = (
     {
         "name": "ChatAgent",
         "payload": "payloads/chat_agent.json",
@@ -439,8 +440,8 @@ def write_pdf(path: Path, paragraphs: Iterable[str]) -> None:
 
 def write_xlsx(
     path: Path,
-    header: List[str],
-    rows: List[List[Any]],
+    header: list[str],
+    rows: list[list[Any]],
 ) -> None:
     """Render a workbook then repack the ZIP with fixed timestamps."""
     workbook = Workbook()
@@ -498,7 +499,7 @@ def _render_readme() -> str:
     )
 
 
-def _build_manifest() -> Dict[str, Any]:
+def _build_manifest() -> dict[str, Any]:
     return {
         "files": dict(sorted(FILE_INDEX.items())),
         "tools": list(TOOL_INDEX),

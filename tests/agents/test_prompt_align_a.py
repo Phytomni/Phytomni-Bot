@@ -37,6 +37,7 @@ ALIGN_A_PROMPTS_LITERATURE_ONLY = (
 )
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_WITH_STRUCTURAL)
 def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
     """Section + intro prompts split annotation data from Literature."""
@@ -72,6 +73,7 @@ def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
     )
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_LITERATURE_ONLY)
 def test_literature_only_prompt_uses_align_a(name: str) -> None:
     """Knowledge / Review prompts declare the citation form.
