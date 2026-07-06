@@ -10,6 +10,7 @@ filtering, and SDK fallback paths when obsfs is unavailable.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -140,7 +141,9 @@ async def test_download_obs_out_via_relay_writes_matching_objects(
 
     async def _to_path(obs_path, destination, *, message):
         del message
-        Path(destination).write_bytes(b"DATA:" + obs_path.encode())
+        await asyncio.to_thread(
+            Path(destination).write_bytes, b"DATA:" + obs_path.encode()
+        )
 
     relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
     monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
@@ -170,7 +173,7 @@ async def test_download_obs_out_via_relay_downloads_all_when_flagged(
 
     async def _to_path(obs_path, destination, *, message):
         del obs_path, message
-        Path(destination).write_bytes(b"x")
+        await asyncio.to_thread(Path(destination).write_bytes, b"x")
 
     relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
     monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)

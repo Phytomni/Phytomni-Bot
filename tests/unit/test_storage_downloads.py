@@ -12,6 +12,7 @@ probing the obsfs mount. Normal mode is unaffected.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -33,7 +34,7 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
         obs_path: str, destination: Path, *, message: str
     ) -> None:
         del obs_path, message
-        Path(destination).write_bytes(b"PDF-BYTES")
+        await asyncio.to_thread(Path(destination).write_bytes, b"PDF-BYTES")
 
     relay = Mock()
     relay.get_obs_object_to_path = AsyncMock(side_effect=_stream_to_path)
@@ -53,4 +54,4 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
         "notes.pdf"
     )
     assert not no_sdk.called
-    assert Path(local_path).read_bytes() == b"PDF-BYTES"
+    assert await asyncio.to_thread(Path(local_path).read_bytes) == b"PDF-BYTES"

@@ -401,7 +401,7 @@ async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
             message=f"OBS download failed: {exc}",
         ) from exc
     csv_path = Path(local_path)
-    if not csv_path.is_file():
+    if not await asyncio.to_thread(csv_path.is_file):
         raise ChainTop20MissingError(
             output_dir=output_dir,
             filename=TOP20_GLOB,

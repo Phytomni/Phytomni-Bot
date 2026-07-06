@@ -10,6 +10,7 @@ fallback, and download-list conversion cleanup flags.
 
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -222,7 +223,9 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         """
         del obs_client, context
         captured["object_key"] = object_key
-        Path(server_file).write_text("downloaded", encoding="utf-8")
+        await asyncio.to_thread(
+            Path(server_file).write_text, "downloaded", encoding="utf-8"
+        )
         return server_file
 
     monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
@@ -239,7 +242,10 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
     )
 
     assert captured["object_key"] == "agent_data/paper.pdf"
-    assert Path(result).read_text(encoding="utf-8") == "downloaded"
+    assert (
+        await asyncio.to_thread(Path(result).read_text, encoding="utf-8")
+        == "downloaded"
+    )
     assert str(result).startswith(str(tmp_path / "temp"))
     result_path = Path(result)
     assert result_path.parent.parent.parent == tmp_path / "temp" / "agent_data"
@@ -306,7 +312,9 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
             Local path to the fake downloaded file.
         """
         del obs_client, object_key, context
-        Path(server_file).write_text("downloaded", encoding="utf-8")
+        await asyncio.to_thread(
+            Path(server_file).write_text, "downloaded", encoding="utf-8"
+        )
         return server_file
 
     def fake_convert(file_path: str, cleanup: bool = True) -> str:
