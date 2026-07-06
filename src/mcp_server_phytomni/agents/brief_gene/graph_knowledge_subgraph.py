@@ -15,7 +15,7 @@ mirrors the analyst-side mixin pattern in
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -166,9 +166,7 @@ class BriefGeneKnowledgeSubgraphMixin:
             ``retrieve_worker_node`` with the per-task payload merged
             into the worker's state delta.
         """
-        retrieve_tasks = cast(
-            list[dict[str, Any]], state.get("retrieve_tasks", [])
-        )
+        retrieve_tasks = state.get("retrieve_tasks", [])
         return [
             Send(
                 "retrieve_worker_node",
@@ -217,10 +215,8 @@ class BriefGeneKnowledgeSubgraphMixin:
         async def _retrieve_worker(
             state: BriefGeneAgentState,
         ) -> dict[str, Any]:
-            task_index = cast(int, state.get("task_index", 0))
-            knowledge_input = cast(
-                dict[str, Any], state.get("knowledge_input", {})
-            )
+            task_index = state.get("task_index", 0)
+            knowledge_input = state.get("knowledge_input", {})
             try:
                 knowledge_output = await knowledge_app.ainvoke(knowledge_input)
                 docs = extract_brief_gene_knowledge_response(knowledge_output)
@@ -236,7 +232,7 @@ class BriefGeneKnowledgeSubgraphMixin:
                     "retrieve_indexed_results": [(task_index, [])],
                     "literature_degraded": [
                         DegradedRecord(
-                            task_label=cast(str, state.get("task_label", "")),
+                            task_label=state.get("task_label", ""),
                             message=redact_failure_message(str(exc)),
                         )
                     ],
