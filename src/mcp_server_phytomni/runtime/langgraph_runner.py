@@ -12,7 +12,7 @@ Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
@@ -49,7 +49,7 @@ SECRET_FIELD_NAMES = frozenset(
 )
 
 
-def ensure_thread_id(thread_id: Optional[str] = None) -> str:
+def ensure_thread_id(thread_id: str | None = None) -> str:
     """Return an existing thread id or create a new one.
 
     Args:
@@ -63,7 +63,7 @@ def ensure_thread_id(thread_id: Optional[str] = None) -> str:
     return IdFactory().new_id("thread")
 
 
-def build_runnable_config(thread_id: Optional[str] = None) -> RunnableConfig:
+def build_runnable_config(thread_id: str | None = None) -> RunnableConfig:
     """Build the LangGraph RunnableConfig used for checkpointing.
 
     Args:
@@ -79,7 +79,7 @@ def build_runnable_config(thread_id: Optional[str] = None) -> RunnableConfig:
 
 
 def ensure_checkpointer(
-    checkpointer: Optional[MemorySaver] = None,
+    checkpointer: MemorySaver | None = None,
 ) -> MemorySaver:
     """Return a caller-provided checkpointer or create a fresh one.
 
@@ -97,7 +97,7 @@ def ensure_checkpointer(
 async def ainvoke_graph(
     app: Any,
     initial_state: Any,
-    thread_id: Optional[str] = None,
+    thread_id: str | None = None,
 ) -> Any:
     """Invoke a compiled graph with a standard RunnableConfig.
 
@@ -136,7 +136,7 @@ async def capture_workflow_boundary(
         return failure_result(exc)
 
 
-def config_fingerprint(values: Optional[Mapping[str, Any]] = None) -> str:
+def config_fingerprint(values: Mapping[str, Any] | None = None) -> str:
     """Return a stable fingerprint for non-secret config values.
 
     Args:
@@ -163,7 +163,7 @@ class GraphRegistry(Generic[GraphT]):
         self,
         name: str,
         factory: Callable[[], GraphT],
-        fingerprint_values: Optional[Mapping[str, Any]] = None,
+        fingerprint_values: Mapping[str, Any] | None = None,
     ) -> GraphT:
         """Return a cached graph or create one for this fingerprint.
 
@@ -180,7 +180,7 @@ class GraphRegistry(Generic[GraphT]):
             self._graphs[key] = factory()
         return self._graphs[key]
 
-    def clear(self, name: Optional[str] = None) -> None:
+    def clear(self, name: str | None = None) -> None:
         """Clear all cached graphs, or only entries for one graph name.
 
         Args:

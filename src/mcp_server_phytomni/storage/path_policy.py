@@ -15,7 +15,7 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from secrets import token_hex
 
 from ..config.relay_mode import relay_mode_enabled
@@ -52,7 +52,7 @@ class IdFactory:
             token_factory: Callable returning random token string
                 (default uses token_hex).
         """
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._token_factory = token_factory
 
     def current_utc(self) -> datetime:
@@ -63,8 +63,8 @@ class IdFactory:
         """
         current = self._now()
         if current.tzinfo is None:
-            return current.replace(tzinfo=timezone.utc)
-        return current.astimezone(timezone.utc)
+            return current.replace(tzinfo=UTC)
+        return current.astimezone(UTC)
 
     def date_stamp(self, current: datetime | None = None) -> str:
         """Return a compact UTC date stamp.
@@ -128,10 +128,10 @@ class IdFactory:
     def _utc(current: datetime | None = None) -> datetime:
         """Return a provided timestamp normalized to UTC."""
         if current is None:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         if current.tzinfo is None:
-            return current.replace(tzinfo=timezone.utc)
-        return current.astimezone(timezone.utc)
+            return current.replace(tzinfo=UTC)
+        return current.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,7 @@ class RunIdentity:
         user_id: str | None = None,
         scope: str = "run",
         id_factory: IdFactory | None = None,
-    ) -> "RunIdentity":
+    ) -> RunIdentity:
         """Create a sanitized user identity and matching run ID.
 
         Args:

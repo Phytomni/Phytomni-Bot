@@ -17,7 +17,7 @@ with the legacy ``AnalystAgentsState`` alias.
 # class-definition time, so future annotations would silently drop
 # every ``Required[]`` marker on ``AnalystInput``.
 
-from typing import Any, Dict, List, NotRequired, Optional, Required, TypedDict
+from typing import Any, NotRequired, Required, TypedDict
 
 
 class AnalystInput(TypedDict, total=False):
@@ -32,8 +32,8 @@ class AnalystInput(TypedDict, total=False):
     query: Required[str]
     goal_description: str
     preset_plan: str
-    data_list: Dict[str, str]
-    obs_file_list: List
+    data_list: dict[str, str]
+    obs_file_list: list
     compute_resource: str
     output_dir: str
     is_polling: bool
@@ -66,10 +66,10 @@ class AnalystOutput(TypedDict):
     task_status: str
     # observability intermediates (lifted into phytomni_state)
     goal_description: str
-    method_context: Dict[str, str]
-    plan_feedback: Optional[str]
+    method_context: dict[str, str]
+    plan_feedback: str | None
     plan_retries: int
-    extracted_tools: List
+    extracted_tools: list
     # failure detail (set by arun's failure_state on graph errors)
     error_detail: str
 
@@ -93,17 +93,17 @@ class AnalystState(TypedDict):
 
     query: str
     goal_description: str
-    obs_file_list: List
-    data_list: Dict[str, str]
+    obs_file_list: list
+    data_list: dict[str, str]
     output_dir: str
     compute_resource: str
     job_name: str
-    method_context: Dict[str, str]
+    method_context: dict[str, str]
     preset_plan: str
     plan: str
-    plan_feedback: Optional[str]
+    plan_feedback: str | None
     plan_retries: int
-    extracted_tools: List
+    extracted_tools: list
     tool_usages: str
     task_id: str
     task_status: str
@@ -111,12 +111,12 @@ class AnalystState(TypedDict):
     is_auto_select: bool
     is_preset_plan: bool
     error_detail: str
-    pending_post: Optional[str]
-    chat_payload: Optional[Dict[str, Any]]
-    chat_response: Optional[Dict[str, Any]]
-    pending_post_knowledge: Optional[str]
-    knowledge_payload: Optional[Dict[str, Any]]
-    knowledge_response: Optional[Dict[str, Any]]
+    pending_post: str | None
+    chat_payload: dict[str, Any] | None
+    chat_response: dict[str, Any] | None
+    pending_post_knowledge: str | None
+    knowledge_payload: dict[str, Any] | None
+    knowledge_response: dict[str, Any] | None
     input_fingerprint: NotRequired[str]
 
 

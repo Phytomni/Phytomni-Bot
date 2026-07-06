@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -72,7 +72,7 @@ def _verdict_state(
     content = json.dumps(
         {"score": score, "decision": decision, "feedback": feedback}
     )
-    state: Dict[str, Any] = {
+    state: dict[str, Any] = {
         "plan_retries": retries,
         "chat_payload": {"staged": True},
         "chat_response": {"choices": [{"message": {"content": content}}]},

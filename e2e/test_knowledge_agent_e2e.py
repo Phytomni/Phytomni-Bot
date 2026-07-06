@@ -18,7 +18,8 @@ Covers two variants in one file:
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -44,7 +45,7 @@ RUN_UPLOADED_KA_VAR = "PHYTOMNI_E2E_RUN_KA_UPLOAD"
 
 async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
+    load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
     """KnowledgeAgent answers the wheat drought query with cue words.
 
@@ -69,8 +70,8 @@ async def test_knowledge_agent_e2e_returns_evidence_backed_answer(
 )
 async def test_knowledge_agent_e2e_with_uploaded_brief(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
-    published_demo_data: Dict[str, str],
+    load_payload: Callable[[str], dict[str, Any]],
+    published_demo_data: dict[str, str],
 ) -> None:
     """KnowledgeAgent answers when the brief PDF is attached.
 

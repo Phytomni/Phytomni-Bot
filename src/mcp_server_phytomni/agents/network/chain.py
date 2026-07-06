@@ -19,8 +19,9 @@ import asyncio
 import csv
 import fnmatch
 import logging
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Final, List, Mapping, Optional
+from typing import Any, Final
 
 from ...config.defaults import DeepGenomeConfig, GeneNetworkConfig
 from ...config.settings import get_sensitive_config
@@ -156,7 +157,7 @@ class ChainTop20MissingError(FileNotFoundError):
         super().__init__(full_message)
 
 
-def _parse_top20_gene_ids(csv_path: Path) -> List[str]:
+def _parse_top20_gene_ids(csv_path: Path) -> list[str]:
     """Parse the top-20 CSV file into a list of gene IDs.
 
     Uses ``utf-8-sig`` encoding to tolerate a BOM that some upstream
@@ -196,7 +197,7 @@ def _parse_top20_gene_ids(csv_path: Path) -> List[str]:
                     f"column; headers={list(fieldnames)}"
                 ),
             )
-        gene_ids: List[str] = []
+        gene_ids: list[str] = []
         for row in reader:
             if len(gene_ids) >= TOP20_MAX_ROWS:
                 break
@@ -225,7 +226,7 @@ def _build_top20_object_key(
     return f"{prefix.rstrip('/')}/{filename}"
 
 
-def _obsfs_top20_match(output_dir: str, bucket_name: str) -> Optional[str]:
+def _obsfs_top20_match(output_dir: str, bucket_name: str) -> str | None:
     """Return the first filename matching ``TOP20_GLOB`` under obsfs.
 
     Args:
@@ -250,7 +251,7 @@ def _obsfs_top20_match(output_dir: str, bucket_name: str) -> Optional[str]:
 
 def _sdk_top20_match(
     output_dir: str, bucket_name: str, obs_server: str
-) -> Optional[str]:
+) -> str | None:
     """Return the first object key matching ``TOP20_GLOB`` via the SDK.
 
     Args:
@@ -325,7 +326,7 @@ def _find_top20_object_key(
         ) from exc
 
 
-def _scratch_dir_for(user_id: Optional[str]) -> Path:
+def _scratch_dir_for(user_id: str | None) -> Path:
     """Return a fresh scratch dir for the chain's top-20 CSV download.
 
     Args:
@@ -412,10 +413,10 @@ async def _download_top20_csv(output_dir: str, scratch_dir: Path) -> Path:
 async def network_to_deep_genome_chain(
     species: str,
     to_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     batch: bool = False,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the network analysis, parse top20, dispatch 20 deepgenome runs.
 
     The function blocks on the network analysis (which in turn blocks
@@ -515,7 +516,7 @@ async def network_to_deep_genome_chain(
         )
         for gene_id in gene_ids
     ]
-    envelopes: List[Any] = []
+    envelopes: list[Any] = []
     if coros:
         envelopes = list(await asyncio.gather(*coros, return_exceptions=True))
 
@@ -539,7 +540,7 @@ _CHAIN_DROPPED_KWARGS: Final[frozenset[str]] = frozenset(
 )
 
 
-def _filter_chain_kwargs(kwargs: Mapping[str, Any]) -> Dict[str, Any]:
+def _filter_chain_kwargs(kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """Strip MCP-handler-only keys from a kwargs mapping.
 
     Args:

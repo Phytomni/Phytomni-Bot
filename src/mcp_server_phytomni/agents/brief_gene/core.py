@@ -13,7 +13,7 @@ agent.py; pipeline helpers live in pipeline.py.
 """
 
 import asyncio
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -82,10 +82,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
+        checkpointer: MemorySaver | None = None,
         brief_config: BriefGeneConfig = BRIEF_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
-        knowledge_agent: Optional[KnowledgeAgent] = None,
+        sensitive_config: SensitiveConfig | None = None,
+        knowledge_agent: KnowledgeAgent | None = None,
     ):
         self.brief_config = brief_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
@@ -381,7 +381,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
     async def follow_up_prep_node(
         self, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat payload for follow-up questions generation.
 
         Mirrors the prompt-building half of the legacy
@@ -429,7 +429,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
     async def follow_up_post_node(
         self, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the chat response into follow-up questions + final_response.
 
         Mirrors the response-parsing half of the legacy
@@ -465,8 +465,8 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         }
 
     async def arun(
-        self, user_query: str, thread_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, user_query: str, thread_id: str | None = None
+    ) -> dict[str, Any]:
         """Execute the BriefGeneAgent workflow.
 
         Args:

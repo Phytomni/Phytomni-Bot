@@ -12,7 +12,7 @@ maintains backward-compat pipeline symbol re-exports for existing
 importers.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from ...config.overrides import (
     CHAT_COMPLETION_CONFIG_FIELD_MAP,
@@ -93,7 +93,7 @@ BRIEF_GENE_SECRET_FIELD_MAP = {
 async def brief_gene_function(
     user_query: str,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the LangGraph brief gene function workflow.
 
     Args:

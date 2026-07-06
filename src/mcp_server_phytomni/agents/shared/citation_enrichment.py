@@ -11,7 +11,8 @@ degrades silently so a cited answer never fails on this lookup.
 """
 
 import logging
-from typing import Any, Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
+from typing import Any
 
 from mcp.shared.exceptions import McpError
 

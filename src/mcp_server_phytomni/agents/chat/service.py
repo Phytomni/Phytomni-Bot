@@ -11,8 +11,9 @@ prompt, with support for various model parameters and retry mechanisms.
 import asyncio
 import importlib
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
@@ -52,10 +53,10 @@ MAX_OPEN_STREAM_RETRIES = 1
 
 async def phyto_chat_with_follow(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
-    semaphore: Optional[asyncio.Semaphore] = None,
+    obs_file_list: list[str] | None = None,
+    semaphore: asyncio.Semaphore | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
@@ -173,10 +174,10 @@ async def phyto_chat_with_follow(
 
 async def phyto_chat(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
-    semaphore: Optional[asyncio.Semaphore] = None,
+    obs_file_list: list[str] | None = None,
+    semaphore: asyncio.Semaphore | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
 
     This function sends a request to a Phyto language model and returns the
@@ -256,10 +257,10 @@ async def phyto_chat(
             ...     obs_file_list=files
             ... )
     """
-    chat_kwargs: Dict[str, Any] = {**kwargs, "with_follow_up": False}
+    chat_kwargs: dict[str, Any] = {**kwargs, "with_follow_up": False}
     if semaphore is not None:
         chat_kwargs["semaphore"] = semaphore
-    initial_state: Dict[str, Any] = {
+    initial_state: dict[str, Any] = {
         "user_query": user_query,
         "obs_file_list": list(obs_file_list) if obs_file_list else [],
         "chat_kwargs": chat_kwargs,
@@ -288,7 +289,7 @@ def _cached_chat_app() -> Any:
     return builder_module._build_chat_graph()
 
 
-def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:
+def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
     """Resolve keyword-compatible chat and OBS options."""
     sensitive = get_sensitive_config()
     default_access_key_id, default_secret_access_key = (
@@ -347,8 +348,8 @@ def _chat_options(values: Dict[str, Any]) -> Dict[str, Any]:
 
 async def _query_with_upload_context(
     user_query: str,
-    obs_file_list: List[str],
-    options: Dict[str, Any],
+    obs_file_list: list[str],
+    options: dict[str, Any],
 ) -> str:
     """Download uploaded files and prepend bounded context to the query."""
     upload_str_list = await download_list_convert(
@@ -416,22 +417,22 @@ def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
 # silently invalidate the cache. See docs/lint-exemptions.md.
 async def run_phyto_chat_cached(
     *,
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     model: str,
     temperature: float,
     top_p: float,
     frequency_penalty: float,
     presence_penalty: float,
     n: int,
-    max_tokens: Optional[int],
-    response_format: Dict[str, Any],
-    reasoning_effort: Optional[str],
+    max_tokens: int | None,
+    response_format: dict[str, Any],
+    reasoning_effort: str | None,
     api_key: str,
     base_url: str,
     user: str,
     timeout: float,
     stream: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Issue one LLM completion and cache the normalized dict.
 
     The cache key is the semantic sampling shape (messages, model, and
@@ -448,7 +449,7 @@ async def run_phyto_chat_cached(
     """
     api_key, base_url = _relay_llm_endpoint(api_key, base_url)
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "messages": messages,
         "model": model,
         "frequency_penalty": frequency_penalty,
@@ -477,9 +478,9 @@ async def run_phyto_chat_cached(
 
 
 async def _run_phyto_chat(
-    messages: List[Dict[str, str]],
-    options: Dict[str, Any],
-) -> Dict[str, Any]:
+    messages: list[dict[str, str]],
+    options: dict[str, Any],
+) -> dict[str, Any]:
     """Call the Phyto chat endpoint with retry handling.
 
     Thin dispatcher around ``run_phyto_chat_cached`` that owns the
@@ -540,9 +541,9 @@ async def _run_phyto_chat(
 
 async def stream_phyto_chat_chunks(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
+    obs_file_list: list[str] | None = None,
     **kwargs: Any,
-) -> AsyncIterator[Dict[str, Any]]:
+) -> AsyncIterator[dict[str, Any]]:
     """Yield raw provider chunks for one streaming chat completion.
 
     Mirrors :func:`phyto_chat` for prompt construction and OBS upload
@@ -604,8 +605,8 @@ async def stream_phyto_chat_chunks(
 
 
 def _build_stream_params(
-    messages: List[Dict[str, str]], options: Dict[str, Any]
-) -> Dict[str, Any]:
+    messages: list[dict[str, str]], options: dict[str, Any]
+) -> dict[str, Any]:
     """Build the OpenAI ``chat.completions.create`` kwargs for streaming.
 
     Mirrors the parameter shape used by :func:`run_phyto_chat_cached`
@@ -613,7 +614,7 @@ def _build_stream_params(
     inputs to the provider; the only forced difference is
     ``stream=True``.
     """
-    params: Dict[str, Any] = {
+    params: dict[str, Any] = {
         "messages": messages,
         "model": options["model"],
         "frequency_penalty": options["frequency_penalty"],
@@ -637,7 +638,7 @@ def _build_stream_params(
 
 
 async def _open_chat_stream(
-    client: AsyncOpenAI, params: Dict[str, Any]
+    client: AsyncOpenAI, params: dict[str, Any]
 ) -> Any:
     """Open one streaming chat completion with bounded transport retries.
 
@@ -647,7 +648,7 @@ async def _open_chat_stream(
     (HTTPStatusError, malformed requests, etc.) propagate immediately
     so the API layer can map them to the correct HTTP status.
     """
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
     for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):
         try:
             return await client.chat.completions.create(**params)
@@ -675,7 +676,7 @@ async def _open_chat_stream(
     ) from last_exc
 
 
-async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
+async def _stream_response_to_dict(stream_completions: Any) -> dict[str, Any]:
     """Collect streaming chunks into an OpenAI-style response dictionary.
 
     Accumulates both ``delta.content`` and ``delta.reasoning_content``
@@ -688,7 +689,7 @@ async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
     """
     full_content = ""
     full_reasoning = ""
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
     chunk = None
     async for chunk in stream_completions:
         if not chunk.choices:
@@ -723,8 +724,8 @@ async def _stream_response_to_dict(stream_completions: Any) -> Dict[str, Any]:
 def _stream_choice(
     full_content: str,
     full_reasoning: str,
-    finish_reason: Optional[str],
-) -> Dict[str, Any]:
+    finish_reason: str | None,
+) -> dict[str, Any]:
     """Return the assembled final streaming choice.
 
     The ``reasoning_content`` field is omitted when the backend never
@@ -732,7 +733,7 @@ def _stream_choice(
     for non-reasoner providers; reasoner backends get the accumulated
     trace placed beside ``content`` in OpenAI canonical position.
     """
-    message: Dict[str, Any] = {
+    message: dict[str, Any] = {
         "content": full_content.strip(),
         "refusal": None,
         "role": "assistant",

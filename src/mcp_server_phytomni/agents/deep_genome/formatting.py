@@ -11,7 +11,7 @@ prompt-ready report text.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 SPECIES_CODE_MAP = {
     "ach": "kiwi (Actinidia chinensis)",
@@ -119,7 +119,7 @@ class EnrichmentSummarySpec:
     top_n: int
 
 
-def _new_enrichment_maps() -> Dict[str, Dict[str, Any]]:
+def _new_enrichment_maps() -> dict[str, dict[str, Any]]:
     """Create mutable annotation id/count maps for one network summary."""
     return {
         "go_ids": {},
@@ -146,7 +146,7 @@ def _network_symbol_string(
 
 def _append_annotation_terms(
     gene_anno: dict,
-    enrichment_maps: Dict[str, Dict[str, Any]],
+    enrichment_maps: dict[str, dict[str, Any]],
 ) -> None:
     """Accumulate annotation term ids, names, and counts."""
     for (
@@ -167,7 +167,7 @@ def _format_network_gene_line(
     species_gene: tuple,
     species_gene_symbol_dict: dict,
     species_gene_anno_dict: dict,
-    enrichment_maps: Dict[str, Dict[str, Any]],
+    enrichment_maps: dict[str, dict[str, Any]],
 ) -> str:
     """Format one network gene line and update enrichment counters."""
     symbol_string = _network_symbol_string(
@@ -186,7 +186,7 @@ def _format_network_gene_line(
 
 
 def _format_enrichment_summary(
-    enrichment_maps: Dict[str, Dict[str, Any]],
+    enrichment_maps: dict[str, dict[str, Any]],
     spec: EnrichmentSummarySpec,
 ) -> str:
     """Format one TOP-N enrichment summary line."""

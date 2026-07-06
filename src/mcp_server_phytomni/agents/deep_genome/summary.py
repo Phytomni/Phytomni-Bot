@@ -10,9 +10,10 @@ The builder reads downloaded analyst files, normalizes image/table labels, and
 returns report data plus the next figure index.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
@@ -56,7 +57,7 @@ class SummaryBuildResult:
         figure_index: Next figure index after loaded assets are counted.
     """
 
-    data: Dict[str, Any]
+    data: dict[str, Any]
     figure_index: int
 
 
@@ -75,7 +76,7 @@ class SubSummaryBuilder:
         self,
         gene_id: str,
         out_path: Path,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         figure_index: int,
     ):
         """Initialize summary loading context."""
@@ -93,7 +94,7 @@ class SubSummaryBuilder:
             self.markdown_path = gene_id
         self.data = data
         self.figure_index = figure_index
-        self.handlers: Dict[str, Callable[[], None]] = {
+        self.handlers: dict[str, Callable[[], None]] = {
             "evolution_analysis": self.load_evolution,
             "single_cell_analysis": self.load_single_cell,
             "protein_structure_analysis": self.load_protein_structure,
@@ -189,7 +190,7 @@ class SubSummaryBuilder:
                 f"{self.gene_id}_domain.legend",
                 replace_figure=False,
             )
-        except (FileNotFoundError, OSError, IOError):
+        except (FileNotFoundError, OSError):
             self.data["domain_table"] = ""
             self.data["domain_summary"] = "None Results"
             self.data["domain_legend"] = ""
@@ -232,7 +233,7 @@ class SubSummaryBuilder:
                 self.structure_block(structure_path)
                 for structure_path in structure_files
             )
-        except (FileNotFoundError, OSError, IOError):
+        except (FileNotFoundError, OSError):
             self.data["protein_structures"] = "None Results"
 
     def structure_block(self, structure_path: Path) -> str:
@@ -424,7 +425,7 @@ def build_sub_summary(
     analysis_type: str,
     gene_id: str,
     deepgenome_out: str,
-    data: Optional[Dict[str, Any]],
+    data: dict[str, Any] | None,
     figure_index: int,
     **kwargs: Any,
 ) -> SummaryBuildResult:

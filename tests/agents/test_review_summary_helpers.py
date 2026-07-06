@@ -13,7 +13,7 @@ plus follow-up assembly the legacy single nodes owned.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, cast
+from typing import Any, cast
 
 import pytest
 
@@ -38,12 +38,12 @@ def _build_agent() -> DeepResearchAgent:
 
 def _capture_summary_params(
     monkeypatch: pytest.MonkeyPatch,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Stub summary_module.get_prompt; capture the params dict per call."""
-    captured: List[Dict[str, Any]] = []
+    captured: list[dict[str, Any]] = []
 
     def fake_prompt(
-        _prompt_file: str, _path: str, params: Dict[str, Any]
+        _prompt_file: str, _path: str, params: dict[str, Any]
     ) -> str:
         captured.append(params)
         return "PROMPT"
@@ -52,7 +52,7 @@ def _capture_summary_params(
     return captured
 
 
-def _chat_response(text: str) -> Dict[str, Any]:
+def _chat_response(text: str) -> dict[str, Any]:
     """Build a chat_response carrying assistant ``text``."""
     return {"choices": [{"message": {"content": text}}]}
 
@@ -61,7 +61,7 @@ async def _run_follow_up(
     agent: DeepResearchAgent,
     prep_state: DeepResearchState,
     follow_up_text: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Drive follow_up_prep -> (chat) -> follow_up_post; return the message."""
     prep = await agent.follow_up_prep_node(prep_state)
     post_state = cast(

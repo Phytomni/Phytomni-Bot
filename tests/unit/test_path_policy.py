@@ -10,7 +10,7 @@ resolution, path-segment rejection, and readable slug generation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.unit
 
 def _fixed_time() -> datetime:
     """Return a fixed UTC timestamp for deterministic tests."""
-    return datetime(2026, 5, 7, 1, 2, 3, tzinfo=timezone.utc)
+    return datetime(2026, 5, 7, 1, 2, 3, tzinfo=UTC)
 
 
 def test_run_identity_uses_stable_timestamp_and_token():

@@ -13,7 +13,7 @@ the only point at which their poll logic could drift.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from mcp.shared.exceptions import McpError
 
@@ -30,8 +30,8 @@ _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 
 
 def _heal_finished_local_workflow(
-    result: Dict[str, Any], *, agent: Optional[str]
-) -> Dict[str, Any]:
+    result: dict[str, Any], *, agent: str | None
+) -> dict[str, Any]:
     """Self-heal a deep_genome umbrella whose local workflow has ended.
 
     The umbrella runs as a background task whose terminal status write is
@@ -73,7 +73,7 @@ def _heal_finished_local_workflow(
     return result
 
 
-async def reconcile_task(task_id: str) -> Dict[str, Any]:
+async def reconcile_task(task_id: str) -> dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
 
     Performs a single non-blocking ``SELECT`` on the local registry,
@@ -117,7 +117,7 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
     analyst_config = AnalystConfig()
     degraded_reason = manager.get_task_degraded(task_id)
     task_agent = manager.get_task_agent(task_id)
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "task_id": task_id,
         "status": row["status"],
         "output_dir": row["output_dir"],
@@ -146,7 +146,7 @@ async def reconcile_task(task_id: str) -> Dict[str, Any]:
     return _heal_finished_local_workflow(result, agent=task_agent)
 
 
-async def reconcile_task_log(task_id: str) -> Optional[Dict[str, Any]]:
+async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
     """Return cached log or fetch from remote + cache, best-effort.
 
     Reads ``tasks.task_log`` first; on hit, returns the cached dict

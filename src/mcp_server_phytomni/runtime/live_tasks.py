@@ -14,7 +14,6 @@ umbrella has no durable resume, so process liveness equals run liveness.
 from __future__ import annotations
 
 import asyncio
-from typing import Dict
 
 __all__ = [
     "register_live_task",
@@ -22,7 +21,7 @@ __all__ = [
     "is_live_running",
 ]
 
-_LIVE: Dict[str, asyncio.Task[object]] = {}
+_LIVE: dict[str, asyncio.Task[object]] = {}
 
 
 def register_live_task(task_id: str, task: asyncio.Task[object]) -> None:

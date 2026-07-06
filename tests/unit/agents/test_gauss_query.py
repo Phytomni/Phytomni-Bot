@@ -15,7 +15,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any
 
 import asyncpg
 import pytest
@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.agent]
 
 
 class _FakePool:
-    def __init__(self, rows: List[Dict[str, Any]], boom: bool) -> None:
+    def __init__(self, rows: list[dict[str, Any]], boom: bool) -> None:
         """Store rows and boom flag; start with closed=False."""
         self._rows = rows
         self._boom = boom
@@ -43,7 +43,7 @@ class _FakePool:
         """Yield a connection stub that returns rows or raises on boom."""
         rows, boom = self._rows, self._boom
 
-        async def fetch(_sql: str) -> List[Dict[str, Any]]:
+        async def fetch(_sql: str) -> list[dict[str, Any]]:
             if boom:
                 raise asyncpg.PostgresError("bad sql")
             return rows
@@ -57,11 +57,11 @@ class _FakePool:
 
 def _patch_pool(
     monkeypatch: pytest.MonkeyPatch,
-    rows: List[Dict[str, Any]],
+    rows: list[dict[str, Any]],
     *,
     boom: bool = False,
-) -> List[_FakePool]:
-    made: List[_FakePool] = []
+) -> list[_FakePool]:
+    made: list[_FakePool] = []
 
     async def fake_create_pool(*_a: Any, **_k: Any) -> _FakePool:
         pool = _FakePool(rows, boom)

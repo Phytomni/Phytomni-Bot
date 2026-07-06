@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -32,7 +32,7 @@ def _clear_phyto_chat_cache() -> None:
     chat_service.run_phyto_chat_cached.cache_clear()
 
 
-def _make_response(payload: Any) -> Dict[str, Any]:
+def _make_response(payload: Any) -> dict[str, Any]:
     """Wrap an LLM payload into the OpenAI chat-completion shape."""
     return {
         "choices": [
@@ -54,7 +54,7 @@ async def test_resolver_returns_typed_result_for_single_id(
     """Top-level gene_id with no candidates becomes a single-element list."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response({"gene_id": "AT5G42800", "species_code": "ath"})
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
@@ -93,7 +93,7 @@ async def test_resolver_warns_but_accepts_unsupported_species(
     brief_config, sensitive_config = configs
     caplog = attach_resolver_caplog(_RESOLVER_LOGGER_NAME)
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response({"gene_id": "GENE1", "species_code": "zzz"})
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
@@ -117,7 +117,7 @@ async def test_resolver_selects_top_confidence_candidate(
     """Multi-candidate output picks the highest-confidence id."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "gene_id": "X",
@@ -153,7 +153,7 @@ async def test_resolver_accepts_top_level_gene_id_without_candidates(
     """When candidates is missing, synthesize one from gene_id field."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {"gene_id": "  Zm00001eb000010  ", "species_code": "zma"}
         )
@@ -195,7 +195,7 @@ async def test_resolver_rejects_empty_candidates(
     """Empty gene_id and empty candidates raise no-valid-candidate."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {"gene_id": "", "species_code": "ath", "candidates": []}
         )
@@ -217,7 +217,7 @@ async def test_resolver_rejects_non_json_response(
     """Non-JSON LLM payload surfaces non-parseable error."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return {
             "choices": [
                 {"message": {"content": "sorry I cannot determine"}},
@@ -241,8 +241,8 @@ async def test_resolver_falls_back_on_timeout(
     """Inflight LLM timeout maps to BriefGeneResolveError, not propagated."""
     brief_config, sensitive_config = configs
 
-    async def slow_phyto_chat(**_: Any) -> Dict[str, Any]:
-        raise asyncio.TimeoutError("simulated")
+    async def slow_phyto_chat(**_: Any) -> dict[str, Any]:
+        raise TimeoutError("simulated")
 
     monkeypatch.setattr(resolve_query, "phyto_chat", slow_phyto_chat)
 
@@ -284,7 +284,7 @@ async def test_resolver_clamps_out_of_range_confidence(
     """LLM-returned confidence outside [0, 1] is clamped, not rejected."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "gene_id": "AT1G01010",
@@ -304,7 +304,7 @@ async def test_resolver_clamps_out_of_range_confidence(
         sensitive_config=sensitive_config,
     )
 
-    confidences: List[float] = [c.confidence for c in result.candidates]
+    confidences: list[float] = [c.confidence for c in result.candidates]
     assert max(confidences) == pytest.approx(1.0)
     assert min(confidences) == pytest.approx(0.0)
     assert result.gene_id == "AT1G01010"
@@ -318,7 +318,7 @@ async def test_resolver_rejects_missing_species_code(
     """LLM payload without species_code field surfaces a 400 semantic error."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response({"gene_id": "Os01g0177400"})
 
     monkeypatch.setattr(resolve_query, "phyto_chat", fake_phyto_chat)
@@ -340,7 +340,7 @@ async def test_resolver_rejects_blank_species_code(
     """Whitespace-only species_code is treated as undetermined and rejected."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {"gene_id": "Os01g0177400", "species_code": "   "}
         )
@@ -364,7 +364,7 @@ async def test_resolver_preserves_per_candidate_species_code(
     """Explicit per-candidate species_code wins over the top-level fallback."""
     brief_config, sensitive_config = configs
 
-    async def fake_phyto_chat(**_: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "gene_id": "Os01g0177400",

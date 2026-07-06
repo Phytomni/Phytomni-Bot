@@ -14,7 +14,7 @@ duplicate 30min-3h job collapses into a constant-time reuse hit. The
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ...runtime.task_dedup import (
     analyst_task_fingerprint,
@@ -29,10 +29,10 @@ from .task_ops import probe_live_status
 
 async def retrieve_plan_submit(
     goal_description: str,
-    data_list: Dict[str, str],
-    obs_file_list: Optional[List[str]] = None,
+    data_list: dict[str, str],
+    obs_file_list: list[str] | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve context, plan, and submit an analysis through AnalystAgent.
 
     Computes an input-identity fingerprint from the stable user-supplied
@@ -80,7 +80,7 @@ async def retrieve_plan_submit(
             live_status=live_status,
             require_terminal_success=False,
         ):
-            reused: Dict[str, Any] = {
+            reused: dict[str, Any] = {
                 "task_id": mint_caller_owned_task_id("analyst"),
                 "output_dir": prior["output_dir"],
                 "job_name": "",

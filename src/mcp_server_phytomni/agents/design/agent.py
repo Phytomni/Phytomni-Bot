@@ -15,11 +15,8 @@ import operator
 from typing import (
     Annotated,
     Any,
-    Dict,
-    List,
     Literal,
     NamedTuple,
-    Optional,
 )
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -82,7 +79,7 @@ class _DispatchOptions(NamedTuple):
             task reaches a terminal state.
     """
 
-    output_dir: Optional[str] = None
+    output_dir: str | None = None
     is_polling: bool = False
 
 
@@ -115,10 +112,10 @@ class DigitalDesignState(ParallelDispatchState):
     gene_id: str
     user_id: str
     batch: bool
-    output_dir: Optional[str]
+    output_dir: str | None
     is_polling: bool
-    design_task_result: Annotated[List[Dict[str, Any]], operator.add]
-    design_tasks: List[Dict[str, Any]]  # List of design tasks
+    design_task_result: Annotated[list[dict[str, Any]], operator.add]
+    design_tasks: list[dict[str, Any]]  # List of design tasks
 
 
 class DigitalDesignAgents:
@@ -145,10 +142,10 @@ class DigitalDesignAgents:
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
-        analyst_agent: Optional[AnalystAgent] = None,
+        checkpointer: MemorySaver | None = None,
+        analyst_agent: AnalystAgent | None = None,
         digital_design_config=DIGITAL_DESIGN_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the DigitalDesignAgents.
 
@@ -312,7 +309,7 @@ class DigitalDesignAgents:
             a_type: str,
             species: str,
             gene: str,
-            out_dir: Optional[str],
+            out_dir: str | None,
         ) -> dict:
             return await self._dispatch_and_wait_analysis(
                 a_type,
@@ -334,7 +331,7 @@ class DigitalDesignAgents:
         species_code: str,
         gene_id: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit protein design tasks and return task_ids.
 
         Args:
@@ -362,10 +359,10 @@ class DigitalDesignAgents:
 async def design_module(
     species_code: str,
     gene_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     batch: bool = True,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph digital design agent.
 
     Args:
@@ -422,7 +419,7 @@ async def _submit_design_analysis(
     species_code: str,
     gene_id: str,
     spec: _DesignAnalysisSpec,
-    output_dir: Optional[str],
+    output_dir: str | None,
     *,
     is_polling: bool,
 ) -> dict[str, Any]:
@@ -469,7 +466,7 @@ async def _submit_design_analysis(
 async def protein_structure_for_gene(
     species_code: str,
     gene_id: str,
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
     *,
     is_polling: bool = True,
 ) -> dict[str, Any]:
@@ -510,7 +507,7 @@ async def protein_structure_for_gene(
 async def promoter_design_for_gene(
     species_code: str,
     gene_id: str,
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
     *,
     is_polling: bool = True,
 ) -> dict[str, Any]:

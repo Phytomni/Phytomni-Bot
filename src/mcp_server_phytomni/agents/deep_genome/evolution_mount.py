@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -24,7 +24,7 @@ from .mount_common import degraded_analysis_delta
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
-    DeepGenomeState = Dict[str, Any]
+    DeepGenomeState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ _EVOLUTION_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 # helper reads species_code / target_gene / task_index from the Send
 # payload state, so the mount node only forwards the submitted task.
 FinalizeFn = Callable[
-    [Optional[dict], "DeepGenomeState"],
-    Awaitable[Dict[str, Any]],
+    [dict | None, "DeepGenomeState"],
+    Awaitable[dict[str, Any]],
 ]
 
 
@@ -75,11 +75,11 @@ def make_evolution_mount_node(
         Async callable suitable for ``StateGraph.add_node``.
     """
 
-    async def _evolution_mount(state: DeepGenomeState) -> Dict[str, Any]:
+    async def _evolution_mount(state: DeepGenomeState) -> dict[str, Any]:
         species_code = state["species_code"]
         gene_id = state["target_gene"]
         task_index = state.get("task_index")
-        evo_input: Dict[str, Any] = {
+        evo_input: dict[str, Any] = {
             "query": gene_id,
             "species_code": species_code,
             "gene_id": gene_id,
@@ -87,7 +87,7 @@ def make_evolution_mount_node(
             "is_polling": True,
         }
         try:
-            evo_output: Dict[str, Any] = await evolution_app.ainvoke(evo_input)
+            evo_output: dict[str, Any] = await evolution_app.ainvoke(evo_input)
             task = evo_output.get("evolution_agents_task")
             return await finalize_fn(task, state)
         except _EVOLUTION_MOUNT_CAUGHT as exc:

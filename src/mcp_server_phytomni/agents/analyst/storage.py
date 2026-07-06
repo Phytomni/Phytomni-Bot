@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import logging
 import shutil
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 from obs import GetObjectHeader, ObsClient, PutObjectHeader
 
@@ -64,12 +64,12 @@ class ObsDownloadOptions:
     access: ObsAccessOptions
     obsfs_mount_root: str
     target_file_feature: tuple[str, ...]
-    marker: Optional[str]
+    marker: str | None
     max_keys: int
     if_download_all: bool
 
     @classmethod
-    def from_kwargs(cls, values: Dict[str, Any]):
+    def from_kwargs(cls, values: dict[str, Any]):
         """Build options from keyword-compatible overrides.
 
         Args:
@@ -105,7 +105,7 @@ class ObsDownloadOptions:
 
 
 def _resolved_download_path(
-    values: Dict[str, Any],
+    values: dict[str, Any],
     bucket_name: str,
     obsfs_mount_root: str,
 ) -> str:
@@ -151,8 +151,8 @@ def _obs_access_from_values(values: Mapping[str, Any]) -> ObsAccessOptions:
 
 def upload_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: Optional[str] = None,
-    secret_access_key: Optional[str] = None,
+    access_key_id: str | None = None,
+    secret_access_key: str | None = None,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,
@@ -358,8 +358,8 @@ def _upload_content_sdk(
 
 def delete_analyst_agents_data(
     analyst_agents_datapath: str,
-    access_key_id: Optional[str] = None,
-    secret_access_key: Optional[str] = None,
+    access_key_id: str | None = None,
+    secret_access_key: str | None = None,
     obs_server: str = ANALYST_CONFIG.OBS_SERVER,
     bucket_name: str = ANALYST_CONFIG.BUCKET_NAME,
     **kwargs: Any,

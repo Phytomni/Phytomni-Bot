@@ -13,8 +13,9 @@ immediately since silent retry would lose delivered chunks.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any
 
 import pytest
 from httpx import ConnectError, TimeoutException
@@ -25,7 +26,7 @@ from mcp_server_phytomni.agents.chat import service as chat_service
 pytestmark = pytest.mark.agent
 
 
-def _fake_chunk(payload: Dict[str, Any]) -> SimpleNamespace:
+def _fake_chunk(payload: dict[str, Any]) -> SimpleNamespace:
     """Wrap a chunk payload so ``chunk.model_dump()`` returns it unchanged.
 
     Built as a ``SimpleNamespace`` to dodge pylint R0903 on a
@@ -36,7 +37,7 @@ def _fake_chunk(payload: Dict[str, Any]) -> SimpleNamespace:
 
 
 async def _iter_chunks(
-    payloads: List[Dict[str, Any]],
+    payloads: list[dict[str, Any]],
 ) -> AsyncIterator[SimpleNamespace]:
     """Yield each payload wrapped via :func:`_fake_chunk`.
 
@@ -61,7 +62,7 @@ def _install_default_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _build_fake_async_openai(
     create_fn: Any,
-    captured: Dict[str, Any],
+    captured: dict[str, Any],
 ) -> Any:
     """Build an ``AsyncOpenAI`` shim routing ``create`` to ``create_fn``.
 
@@ -93,7 +94,7 @@ def _build_fake_async_openai(
     return _factory
 
 
-def _stream_kwargs() -> Dict[str, Any]:
+def _stream_kwargs() -> dict[str, Any]:
     """Return a minimal complete kwargs set for the streaming primitive."""
     return {
         "prompt_file": "prompts.yaml",
@@ -125,7 +126,7 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
     them verbatim in ``data: {...}\\n\\n`` frames.
     """
     _install_default_prompt(monkeypatch)
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
     payloads = [
         {"id": "c1", "choices": [{"delta": {"content": "Hel"}}]},
         {
@@ -146,7 +147,7 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
         _build_fake_async_openai(fake_create, captured),
     )
 
-    received: List[Dict[str, Any]] = []
+    received: list[dict[str, Any]] = []
     async for chunk in chat_service.stream_phyto_chat_chunks(
         user_query="hi", **_stream_kwargs()
     ):
@@ -168,15 +169,15 @@ async def test_stream_phyto_chat_chunks_prepends_upload_context(
     streaming and non-streaming chat see identical context.
     """
     _install_default_prompt(monkeypatch)
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    async def fake_download_list_convert(**kwargs: Any) -> List[str]:
+    async def fake_download_list_convert(**kwargs: Any) -> list[str]:
         """Capture download kwargs and return converted upload text."""
         captured["download"] = kwargs
         return ["converted paper text"]
 
     def fake_format_upload_context(
-        upload_str_list: List[str], _max_tokens: int
+        upload_str_list: list[str], _max_tokens: int
     ) -> tuple[str, int]:
         """Skip ``format_upload_context``'s token budget truncation.
 
@@ -251,7 +252,7 @@ async def test_stream_phyto_chat_chunks_open_retries_transient_then_succeeds(
         _build_fake_async_openai(fake_create, {}),
     )
 
-    received: List[Dict[str, Any]] = []
+    received: list[dict[str, Any]] = []
     async for chunk in chat_service.stream_phyto_chat_chunks(
         user_query="hi", **_stream_kwargs()
     ):
@@ -332,7 +333,7 @@ async def test_stream_phyto_chat_chunks_mid_stream_failure_propagates(
         _build_fake_async_openai(fake_create, {}),
     )
 
-    received: List[Dict[str, Any]] = []
+    received: list[dict[str, Any]] = []
     with pytest.raises(TimeoutException):
         async for chunk in chat_service.stream_phyto_chat_chunks(
             user_query="hi", **_stream_kwargs()

@@ -15,7 +15,6 @@ off so the loader surface stays inert outside opt-in callers.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import ValidationError
 
@@ -43,8 +42,8 @@ class GraphLoader:
 
     def __init__(
         self,
-        allowlist: Optional[frozenset[str]] = None,
-        config: Optional[ServerConfig] = None,
+        allowlist: frozenset[str] | None = None,
+        config: ServerConfig | None = None,
     ) -> None:
         """Initialize a loader, enforcing the feature flag at construction.
 

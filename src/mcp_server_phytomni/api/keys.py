@@ -13,8 +13,8 @@ Subcommands: create (prints the plaintext key exactly once), list
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 from ..common.cli import dispatch_cli
 from ..config.defaults import ApiConfig
@@ -32,9 +32,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
     """Mint a key and print the one-time plaintext."""
     expires_at = None
     if args.expires_days is not None:
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=args.expires_days
-        )
+        expires_at = datetime.now(UTC) + timedelta(days=args.expires_days)
     created = _store().create(
         user_id=args.user_id,
         name=args.name,
@@ -115,7 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Run the API key admin CLI."""
     return dispatch_cli(_build_parser, argv)
 

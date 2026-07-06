@@ -21,11 +21,7 @@ import operator
 from typing import (
     Annotated,
     Any,
-    Dict,
-    List,
-    Optional,
     Required,
-    Tuple,
     TypedDict,
 )
 
@@ -42,7 +38,7 @@ class DeepResearchInput(TypedDict, total=False):
     """
 
     original_user_query: Required[str]
-    obs_file_list: List[str]
+    obs_file_list: list[str]
 
 
 class DeepResearchOutput(TypedDict):
@@ -54,7 +50,7 @@ class DeepResearchOutput(TypedDict):
     plain markdown body without re-running the review pipeline.
     """
 
-    final_response: Dict[str, Any]
+    final_response: dict[str, Any]
     summary_content: str
 
 
@@ -78,51 +74,51 @@ class DeepResearchState(ParallelDispatchState):
 
     original_user_query: str
     user_query: str
-    obs_file_list: List[str]
+    obs_file_list: list[str]
     upload_context: str
     total_length: int
-    research_dimensions: List[str]
-    all_raw_doc_list: List[Dict[str, Any]]
-    dimension_params: List[Dict[str, str]]
-    draft_contents: List[str]
-    review_contents: List[str]
-    revised_reports: List[Dict[str, str]]
-    add_doc_list: Annotated[List[Dict[str, Any]], operator.add]
+    research_dimensions: list[str]
+    all_raw_doc_list: list[dict[str, Any]]
+    dimension_params: list[dict[str, str]]
+    draft_contents: list[str]
+    review_contents: list[str]
+    revised_reports: list[dict[str, str]]
+    add_doc_list: Annotated[list[dict[str, Any]], operator.add]
     summary_content: str
-    final_response: Dict[str, Any]
+    final_response: dict[str, Any]
 
     # === Single-shot chat-mount fields (locked Step 6.0 pattern) ===
-    chat_payload: Optional[Dict[str, Any]]
-    chat_response: Optional[Dict[str, Any]]
-    pending_post: Optional[str]
+    chat_payload: dict[str, Any] | None
+    chat_response: dict[str, Any] | None
+    pending_post: str | None
     # Renumbered reference list computed once by ``follow_up_prep_node``
     # and read by ``follow_up_post_node``. Forwarding it avoids a second
     # ``_renumber_citations`` pass over the already-renumbered
     # ``[document:N]`` text, which matches nothing and recovers an empty
     # ordered list.
-    ordered_doc_list: Optional[List[Dict[str, Any]]]
+    ordered_doc_list: list[dict[str, Any]] | None
 
     # === Send-payload transient fields (set ONLY during Send invocation) ===
-    subtopic: Optional[str]
-    knowledge: Optional[str]
-    dimension: Optional[str]
-    review_draft: Optional[str]
-    original_draft: Optional[str]
-    review_feedback: Optional[str]
-    knowledge_payload: Optional[Dict[str, Any]]
-    draft_content: Optional[str]
-    review_content: Optional[str]
-    raw_doc_list: Optional[List[Dict[str, Any]]]
+    subtopic: str | None
+    knowledge: str | None
+    dimension: str | None
+    review_draft: str | None
+    original_draft: str | None
+    review_feedback: str | None
+    knowledge_payload: dict[str, Any] | None
+    draft_content: str | None
+    review_content: str | None
+    raw_doc_list: list[dict[str, Any]] | None
 
     # === Fan-out parallel accumulators (5 fields x Annotated reducer) ===
     retrieve_indexed_results: Annotated[
-        List[Tuple[int, List[Dict[str, Any]]]], operator.add
+        list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
-    draft_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
-    review_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
-    revised_indexed_results: Annotated[List[Tuple[int, str]], operator.add]
+    draft_indexed_results: Annotated[list[tuple[int, str]], operator.add]
+    review_indexed_results: Annotated[list[tuple[int, str]], operator.add]
+    revised_indexed_results: Annotated[list[tuple[int, str]], operator.add]
 
     # === Fan-out final ordered output (write-once by reduce_node) ===
     # draft_contents and review_contents already declared above (kept as-is).
     # all_raw_doc_list already declared above (kept as-is).
-    revised_contents: List[str]
+    revised_contents: list[str]

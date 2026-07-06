@@ -4,10 +4,10 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared Protocols for Send-based parallel-dispatch fan-out workers."""
 
-from typing import Any, Dict, List, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-TaskPayload = Dict[str, Any]
-StateDelta = Dict[str, Any]
+TaskPayload = dict[str, Any]
+StateDelta = dict[str, Any]
 
 
 __all__ = [
@@ -37,7 +37,7 @@ class FanOutWorker(Protocol):
     sentinel can be retired by a later step.
     """
 
-    async def __call__(self, state: Dict[str, Any]) -> StateDelta: ...
+    async def __call__(self, state: dict[str, Any]) -> StateDelta: ...
 
 
 class TaskBuilder(Protocol):
@@ -47,4 +47,4 @@ class TaskBuilder(Protocol):
     The route function wraps each into a ``Send(node, payload)``.
     """
 
-    def __call__(self, state: Dict[str, Any]) -> List[TaskPayload]: ...
+    def __call__(self, state: dict[str, Any]) -> list[TaskPayload]: ...

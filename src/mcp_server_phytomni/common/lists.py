@@ -9,14 +9,13 @@ Public functions:
 """
 
 from math import ceil
-from typing import List
 
 __all__ = [
     "split_list",
 ]
 
 
-def split_list(lst: List, max_size: int = 128) -> List[List]:
+def split_list(lst: list, max_size: int = 128) -> list[list]:
     """Split a list into evenly sized chunks.
 
     Args:

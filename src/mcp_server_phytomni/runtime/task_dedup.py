@@ -18,7 +18,6 @@ import hashlib
 import json
 import logging
 import sqlite3
-from typing import Dict, List, Optional
 
 from ..storage.path_policy import IdFactory
 from .task_manager import Submission, TaskManager, resolve_tasks_db_path
@@ -56,8 +55,8 @@ _LIVE_DEAD = frozenset({"FAILED", "CANCELLED"})
 
 def analyst_task_fingerprint(
     goal_description: str,
-    data_list: Dict[str, str],
-    obs_file_list: Optional[List[str]],
+    data_list: dict[str, str],
+    obs_file_list: list[str] | None,
 ) -> str:
     """Return a stable identity digest for one analyst submission.
 
@@ -103,9 +102,9 @@ def should_reuse_prior_task(prior_status: str) -> bool:
 
 
 def verify_live_status(
-    prior: Dict[str, str],
+    prior: dict[str, str],
     *,
-    live_status: Optional[str],
+    live_status: str | None,
     require_terminal_success: bool,
 ) -> bool:
     """Decide if a prior task is reusable from its probed live status.
@@ -146,7 +145,7 @@ def verify_live_status(
     return False
 
 
-def _write_back_dead(prior: Dict[str, str]) -> None:
+def _write_back_dead(prior: dict[str, str]) -> None:
     """Persist a confirmed-dead remote status onto the local row.
 
     Turns the otherwise-inert dead-status SQL filter live so a later
@@ -190,7 +189,7 @@ def record_dispatch_submission(
     task_id: str,
     output_dir: str,
     fingerprint: str,
-    source_task_id: Optional[str] = None,
+    source_task_id: str | None = None,
 ) -> None:
     """Persist a dispatch-seam submission row carrying its dedup key.
 

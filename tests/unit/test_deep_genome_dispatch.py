@@ -10,7 +10,7 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -34,7 +34,7 @@ pytestmark = pytest.mark.unit
 def _fixed_run_identity() -> RunIdentity:
     """Return a deterministic RunIdentity for local fallback paths."""
     factory = IdFactory(
-        now=lambda: datetime(2026, 5, 7, 1, 2, 3, tzinfo=timezone.utc),
+        now=lambda: datetime(2026, 5, 7, 1, 2, 3, tzinfo=UTC),
         token_factory=lambda _: "abcdef01",
     )
     return RunIdentity.create("alice", "deep-genome-test", factory)

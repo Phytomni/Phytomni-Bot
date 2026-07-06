@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class SubgraphSpec:
 
     id: str
     factory: Callable[[], Any]
-    state_schema: Optional[type] = field(default=None)
-    input_schema: Optional[type] = field(default=None)
-    output_schema: Optional[type] = field(default=None)
-    fingerprint_fields: Optional[Mapping[str, Any]] = field(default=None)
+    state_schema: type | None = field(default=None)
+    input_schema: type | None = field(default=None)
+    output_schema: type | None = field(default=None)
+    fingerprint_fields: Mapping[str, Any] | None = field(default=None)

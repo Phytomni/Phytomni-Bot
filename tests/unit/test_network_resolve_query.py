@@ -9,7 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Dict, Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 
@@ -59,7 +60,7 @@ def _resolver_caplog(
         resolver_logger.removeHandler(caplog.handler)
 
 
-def _make_response(payload: Any) -> Dict[str, Any]:
+def _make_response(payload: Any) -> dict[str, Any]:
     """Wrap an LLM payload into the OpenAI chat-completion shape."""
     return {"choices": [{"message": {"content": json.dumps(payload)}}]}
 
@@ -77,7 +78,7 @@ async def test_resolver_returns_typed_result_for_valid_to_id(
     """Happy path returns the typed result with the catalog-validated id."""
     captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
         captured["kwargs"] = kwargs
         return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
@@ -117,7 +118,7 @@ async def test_resolver_warns_but_accepts_unsupported_species(
     """
     caplog = attach_resolver_caplog(_RESOLVER_LOGGER_NAME)
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:0000207", "species_code": "zzz"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -141,7 +142,7 @@ async def test_resolver_picks_top_confidence_among_candidates(
 ) -> None:
     """Sort by confidence descending; chosen id wins the tie-break."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "to_id": "TO:0000207",
@@ -195,7 +196,7 @@ async def test_resolver_rejects_id_not_in_catalog(
     reach the downstream agent.
     """
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:9999999", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -216,7 +217,7 @@ async def test_resolver_rejects_non_json_llm_output(
 ) -> None:
     """Non-parseable LLM output maps to a definitive error."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return {"choices": [{"message": {"content": "not json at all"}}]}
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -237,7 +238,7 @@ async def test_resolver_maps_timeout_to_resolve_error(
 ) -> None:
     """asyncio.TimeoutError converts to GeneNetworkResolveError."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         await asyncio.sleep(5)
         return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
@@ -260,7 +261,7 @@ async def test_resolver_rejects_empty_llm_content(
 ) -> None:
     """Empty content / null content from the LLM is a definitive error."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return {"choices": [{"message": {"content": ""}}]}
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -289,7 +290,7 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
     """
     caplog = resolver_caplog
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:0000139", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -338,7 +339,7 @@ async def test_resolver_warns_on_post_sort_deprecated_winner(
     """
     caplog = resolver_caplog
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "to_id": "TO:0000207",
@@ -390,7 +391,7 @@ async def test_resolver_does_not_warn_for_canonical_id(
     """
     caplog = resolver_caplog
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:0000207", "species_code": "osa"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -428,7 +429,7 @@ async def test_resolver_rejects_blank_species_code(
     Pydantic ValidationError.
     """
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:0000207", "species_code": ""})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -449,7 +450,7 @@ async def test_resolver_rejects_missing_species_code_key(
 ) -> None:
     """LLM payload entirely missing species_code raises ResolveError."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"to_id": "TO:0000207"})
 
     monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
@@ -475,7 +476,7 @@ async def test_resolver_propagates_per_candidate_species_code(
     back to the top-level value when blank or omitted.
     """
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response(
             {
                 "to_id": "TO:0000207",

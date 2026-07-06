@@ -13,7 +13,7 @@ raise / timeout). HTTP wrappers themselves stay e2e-covered.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -74,7 +74,7 @@ async def test_wait_for_completion_returns_succeeded_payload(
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"status": "SUCCEEDED", "task_id": "T1"}
 
     monkeypatch.setattr(task_ops_module, "task_status", fake_task_status)
@@ -91,7 +91,7 @@ async def test_wait_for_completion_raises_on_failed(
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"status": "FAILED"}
 
     monkeypatch.setattr(task_ops_module, "task_status", fake_task_status)
@@ -107,7 +107,7 @@ async def test_wait_for_completion_raises_on_cancelled(
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"status": "CANCELLED"}
 
     monkeypatch.setattr(task_ops_module, "task_status", fake_task_status)
@@ -123,7 +123,7 @@ async def test_wait_for_completion_raises_on_unknown_status(
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"status": "UNRECOGNIZED"}
 
     monkeypatch.setattr(task_ops_module, "task_status", fake_task_status)
@@ -136,12 +136,12 @@ async def test_wait_for_completion_polls_until_terminal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """RUNNING/PENDING statuses keep polling until SUCCEEDED."""
-    statuses: List[str] = ["PENDING", "RUNNING", "SUCCEEDED"]
+    statuses: list[str] = ["PENDING", "RUNNING", "SUCCEEDED"]
     call_count = {"n": 0}
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         idx = call_count["n"]
         call_count["n"] += 1
         return {"status": statuses[idx]}
@@ -161,7 +161,7 @@ async def test_wait_for_completion_times_out_when_max_poll_exceeded(
 
     async def fake_task_status(
         _task_id: str, **_kwargs: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"status": "RUNNING"}
 
     monkeypatch.setattr(task_ops_module, "task_status", fake_task_status)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -62,7 +62,7 @@ def session_run_identity_fixture() -> RunIdentity:
 def published_demo_data_fixture(
     demo_data_dir: Path,
     session_run_identity: RunIdentity,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Publish demo_data fixtures and return a rel-path → OBS URL map.
 
     Args:
@@ -107,7 +107,7 @@ async def mcp_client_fixture() -> AsyncIterator[PhytomniMcpClient]:
 def load_payload_fixture(
     demo_data_dir: Path,
     published_demo_data: Mapping[str, str],
-) -> Callable[[str], Dict[str, Any]]:
+) -> Callable[[str], dict[str, Any]]:
     """Return a callable that loads and rewrites a committed payload.
 
     Args:
@@ -122,7 +122,7 @@ def load_payload_fixture(
         corresponding URL in ``published_demo_data``.
     """
 
-    def _load(name: str) -> Dict[str, Any]:
+    def _load(name: str) -> dict[str, Any]:
         raw = (demo_data_dir / "payloads" / name).read_text(encoding="utf-8")
         payload = json.loads(raw)
         return _rewrite_obs_placeholders(payload, published_demo_data)

@@ -13,7 +13,7 @@ import logging
 import traceback
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from langgraph.types import Send
 
@@ -41,7 +41,7 @@ from .parallel_dispatch import FailureRecord, redact_failure_message
 logger = logging.getLogger(__name__)
 
 
-def _compute_traceback_digest(exc: BaseException) -> Optional[str]:
+def _compute_traceback_digest(exc: BaseException) -> str | None:
     """Compute a stable 16-char SHA256 digest of the exception traceback.
 
     Used to populate FailureRecord.traceback_digest. The digest stays in
@@ -111,7 +111,7 @@ def prepare_analyst_dispatch_context(
     config: Any,
     sensitive_config: Any,
     request: Mapping[str, Any],
-    fingerprint: Optional[str] = None,
+    fingerprint: str | None = None,
 ) -> AnalystDispatchContext:
     """Resolve the dispatch context shared by both analyst entry points.
 

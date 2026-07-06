@@ -13,7 +13,7 @@ upstream events.
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator, List
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.server
 
 
 async def _async_iter(
-    events: List[AguiEvent],
+    events: list[AguiEvent],
 ) -> AsyncIterator[AguiEvent]:
     """Yield each pre-built event so tests can feed lists into the shaper."""
     for event in events:
@@ -163,7 +163,7 @@ async def test_to_chat_completion_chunks_empty_stream_still_emits_done() -> (
     Without the terminator, clients would hang on their EventSource
     until the read timeout fired.
     """
-    events: List[AguiEvent] = []
+    events: list[AguiEvent] = []
 
     lines = [
         line

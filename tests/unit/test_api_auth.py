@@ -11,7 +11,7 @@ revoke and expiry handling, last-used tracking, and listing without secrets.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -125,7 +125,7 @@ def test_resolve_revoked_key_raises_401(tmp_path: Path) -> None:
 def test_resolve_expired_key_raises_401(tmp_path: Path) -> None:
     """Verify an expired key is rejected."""
     store = _make_store(tmp_path)
-    past = datetime.now(timezone.utc) - timedelta(days=1)
+    past = datetime.now(UTC) - timedelta(days=1)
     created = store.create(user_id="frank", expires_at=past)
 
     with pytest.raises(HTTPException) as exc:

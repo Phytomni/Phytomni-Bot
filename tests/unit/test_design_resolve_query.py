@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -30,7 +30,7 @@ def _clear_phyto_chat_cache() -> None:
     chat_service.run_phyto_chat_cached.cache_clear()
 
 
-def _make_response(payload: Any) -> Dict[str, Any]:
+def _make_response(payload: Any) -> dict[str, Any]:
     """Wrap an LLM payload into the OpenAI chat-completion shape."""
     return {"choices": [{"message": {"content": json.dumps(payload)}}]}
 
@@ -47,7 +47,7 @@ async def test_resolver_returns_design_typed_result(
 ) -> None:
     """Happy path delegates to BGA and returns Design-typed result."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response({"gene_id": "AT1G01010", "species_code": "ath"})
 
     monkeypatch.setattr(bga_module, "phyto_chat", fake_phyto_chat)
@@ -73,7 +73,7 @@ async def test_resolver_maps_bga_error_to_design_error(
 ) -> None:
     """BriefGeneResolveError raised inside BGA maps to the design type."""
 
-    async def fake_phyto_chat(**_kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
         return _make_response(
             {"gene_id": "", "species_code": "ath", "candidates": []}
         )

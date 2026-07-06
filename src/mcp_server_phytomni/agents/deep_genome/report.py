@@ -16,7 +16,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ...common.prompts import get_prompt
 from ...common.responses import (
@@ -220,12 +220,12 @@ def _assemble_sections(
     return _EMPTY_IMAGE_RE.sub("", "\n".join(sections))
 
 
-def _state_gene_string(state: "DeepGenomeState") -> str:
+def _state_gene_string(state: DeepGenomeState) -> str:
     """Return the display gene string from workflow state."""
     return state.get("gene_annotation", {}).get("gene_string", "")
 
 
-def _assemble_final_report(state: "DeepGenomeState") -> str:
+def _assemble_final_report(state: DeepGenomeState) -> str:
     """Concatenate all report sections into one markdown string.
 
     The ``part12_combined`` head already carries the verbatim brief_gene
@@ -679,9 +679,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         }
 
     @staticmethod
-    def _persist_final_report(
-        task_id: Optional[str], final_report: str
-    ) -> None:
+    def _persist_final_report(task_id: str | None, final_report: str) -> None:
         """Write the assembled report to the umbrella task row, best-effort.
 
         DeepGenome runs in the background and returns only a submit
@@ -713,9 +711,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             )
 
     @staticmethod
-    def _persist_degraded(
-        task_id: Optional[str], state: DeepGenomeState
-    ) -> None:
+    def _persist_degraded(task_id: str | None, state: DeepGenomeState) -> None:
         """Persist a redacted degraded reason when a node failed.
 
         Reads the ``failures`` channel; when non-empty, redacts the

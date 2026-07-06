@@ -12,7 +12,7 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
 """
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..agents.analyst.agent import retrieve_plan_submit
 from ..agents.brief_gene.agent import brief_gene_function
@@ -70,7 +70,7 @@ from .schemas import (
 # either returns a Dict or raises McpError on retry exhaustion, so the
 # handler surface is unconditionally ``Dict[str, Any]``; no handler
 # branches return None.
-HandlerResult = Dict[str, Any]
+HandlerResult = dict[str, Any]
 
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:

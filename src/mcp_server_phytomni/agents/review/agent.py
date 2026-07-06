@@ -14,7 +14,7 @@ pipeline.py-style siblings.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -125,10 +125,10 @@ class DeepResearchAgent(
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
+        checkpointer: MemorySaver | None = None,
         review_config: ReviewConfig = REVIEW_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
-        knowledge_agent: Optional[KnowledgeAgent] = None,
+        sensitive_config: SensitiveConfig | None = None,
+        knowledge_agent: KnowledgeAgent | None = None,
     ):
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.review_config = review_config
@@ -137,7 +137,7 @@ class DeepResearchAgent(
             knowledge_config=review_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: Optional[CompiledStateGraph]
+        self._knowledge_app: CompiledStateGraph | None
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.review_config,
             sensitive_config=self.sensitive_config,
@@ -337,8 +337,8 @@ class DeepResearchAgent(
     async def _chat(
         self,
         prompt: str,
-        response_format_override: Optional[Dict[str, Union[str, Dict]]] = None,
-    ) -> Optional[Dict[str, Any]]:
+        response_format_override: dict[str, str | dict] | None = None,
+    ) -> dict[str, Any] | None:
         """Call the configured LLM."""
         return await phyto_chat(
             user_query=prompt,
@@ -364,7 +364,7 @@ class DeepResearchAgent(
 
     async def draft_prepare_tasks_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare for Send fan-out over the draft dimensions.
 
         Acts as a graph 'split' node — returns an empty delta. The
@@ -378,7 +378,7 @@ class DeepResearchAgent(
 
     async def draft_worker_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Per-dimension draft worker invoked via ``Send``.
 
         Awaits the module-level :data:`CHAT_APP` so LangGraph's
@@ -421,7 +421,7 @@ class DeepResearchAgent(
 
     async def draft_reduce_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Project ``draft_indexed_results`` into ``draft_contents``.
 
         Sorts the accumulated ``(task_index, content)`` tuples by
@@ -433,7 +433,7 @@ class DeepResearchAgent(
             "draft_contents": [content for _, content in indexed],
         }
 
-    def route_draft_tasks(self, state: DeepResearchState) -> List[Send]:
+    def route_draft_tasks(self, state: DeepResearchState) -> list[Send]:
         """Build N Send payloads, one per research dimension.
 
         Each payload carries the per-worker ``task_index``, the
@@ -468,7 +468,7 @@ class DeepResearchAgent(
 
     async def review_results_prepare_tasks_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare for Send fan-out over the per-draft critiques.
 
         Acts as a graph 'split' node — returns an empty delta. The
@@ -482,7 +482,7 @@ class DeepResearchAgent(
 
     async def review_results_worker_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Per-dimension critique worker invoked via ``Send``.
 
         Awaits the module-level :data:`CHAT_APP` so LangGraph's
@@ -526,7 +526,7 @@ class DeepResearchAgent(
 
     async def review_results_reduce_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Project ``review_indexed_results`` into ``review_contents``.
 
         Sorts the accumulated ``(task_index, content)`` tuples by
@@ -540,7 +540,7 @@ class DeepResearchAgent(
 
     def route_review_results_tasks(
         self, state: DeepResearchState
-    ) -> List[Send]:
+    ) -> list[Send]:
         """Build N Send payloads, one per draft critique.
 
         Each payload carries the per-worker ``task_index``, the
@@ -587,7 +587,7 @@ class DeepResearchAgent(
 
     async def revised_prepare_tasks_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare for Send fan-out over the per-dimension revision passes.
 
         Acts as a graph 'split' node — returns an empty delta. The
@@ -601,7 +601,7 @@ class DeepResearchAgent(
 
     async def revised_worker_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Per-dimension revision worker invoked via ``Send``.
 
         Calls ``self._feedback_rag`` directly (its body in
@@ -670,7 +670,7 @@ class DeepResearchAgent(
 
     async def revised_reduce_node(
         self, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Project ``revised_indexed_results`` into the output channels.
 
         Sorts the accumulated ``(task_index, content)`` tuples by
@@ -703,7 +703,7 @@ class DeepResearchAgent(
             "revised_reports": revised_reports,
         }
 
-    def route_revised_tasks(self, state: DeepResearchState) -> List[Send]:
+    def route_revised_tasks(self, state: DeepResearchState) -> list[Send]:
         """Build N Send payloads, one per dimension under revision.
 
         Each payload carries the per-worker ``task_index``, the
@@ -733,7 +733,7 @@ class DeepResearchAgent(
     def initial_state(
         self,
         user_query: str,
-        obs_file_list: Optional[List[str]] = None,
+        obs_file_list: list[str] | None = None,
     ) -> DeepResearchState:
         """Build the graph's initial state dict from wrapper arguments.
 
@@ -803,9 +803,9 @@ class DeepResearchAgent(
     async def arun(
         self,
         user_query: str,
-        obs_file_list: Optional[List[str]] = None,
-        thread_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        obs_file_list: list[str] | None = None,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
         Args:
@@ -826,9 +826,9 @@ class DeepResearchAgent(
 
 async def review_agent_function(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
+    obs_file_list: list[str] | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the LangGraph deep research review workflow.
 
     Args:
@@ -874,7 +874,7 @@ async def review_agent_function(
 
 def review_stream_target(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
+    obs_file_list: list[str] | None = None,
 ) -> tuple[Any, DeepResearchState]:
     """Return the cached DeepResearchAgent app + seeded streaming state.
 

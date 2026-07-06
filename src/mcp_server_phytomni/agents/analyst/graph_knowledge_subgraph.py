@@ -13,7 +13,7 @@ stays in ``graph.py``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from ...common.docs import format_retrieved_doc_context
 from ...graphs.analyst_to_knowledge_adapters import (
@@ -25,7 +25,7 @@ from ...storage.downloads import download_upload_context
 if TYPE_CHECKING:
     from .agent import AnalystAgentsState
 else:
-    AnalystAgentsState = Dict[str, Any]
+    AnalystAgentsState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class AnalystKnowledgeSubgraphMixin:
 
     async def method_retrieve_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the knowledge input + post-knowledge sentinel.
 
         Mirrors the input-building half of the legacy
@@ -68,7 +68,7 @@ class AnalystKnowledgeSubgraphMixin:
 
     async def method_retrieve_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the knowledge response into the ``method_context`` delta.
 
         Mirrors the post-processing half of the legacy

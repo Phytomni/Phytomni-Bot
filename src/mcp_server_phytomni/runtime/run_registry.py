@@ -15,8 +15,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from ..config.defaults import ApiConfig
 from .task_manager import TaskManager, resolve_tasks_db_path
@@ -91,10 +91,10 @@ _CREATE_TASKS_RUN_INDEX = (
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _aggregate_status(task_statuses: List[str]) -> str:
+def _aggregate_status(task_statuses: list[str]) -> str:
     """Aggregate child task statuses into one run status.
 
     All success-like → ``succeeded``; any failure-like → ``failed``;
@@ -141,8 +141,8 @@ class RunOutcome:
     """
 
     status: str = "running"
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -166,11 +166,11 @@ class RunRequestInfo:
             auditor can replay or diff the call.
     """
 
-    dialogue_id: Optional[str] = None
-    query: Optional[str] = None
-    tool_name: Optional[str] = None
-    model: Optional[str] = None
-    request_json: Optional[str] = None
+    dialogue_id: str | None = None
+    query: str | None = None
+    tool_name: str | None = None
+    model: str | None = None
+    request_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,12 +195,12 @@ class RunFilter:
             ``created_at <= created_before`` are kept.
     """
 
-    status: Optional[str] = None
-    agent: Optional[str] = None
-    origin: Optional[str] = None
-    dialogue_id: Optional[str] = None
-    created_after: Optional[str] = None
-    created_before: Optional[str] = None
+    status: str | None = None
+    agent: str | None = None
+    origin: str | None = None
+    dialogue_id: str | None = None
+    created_after: str | None = None
+    created_before: str | None = None
 
 
 @dataclass(frozen=True)
@@ -215,7 +215,7 @@ class Timestamps:
 
     created_at: str
     updated_at: str
-    expires_at: Optional[str]
+    expires_at: str | None
 
 
 @dataclass(frozen=True)
@@ -242,10 +242,10 @@ class RunRecord:
 
     spec: RunSpec
     status: str
-    result: Optional[Dict[str, Any]]
-    error: Optional[str]
+    result: dict[str, Any] | None
+    error: str | None
     timestamps: Timestamps
-    task_ids: Tuple[str, ...]
+    task_ids: tuple[str, ...]
     request_info: RunRequestInfo = RunRequestInfo()
 
 
@@ -256,7 +256,7 @@ class RunRegistry:
     and its child tasks are always co-located in one SQLite file.
     """
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: str | None = None) -> None:
         """Open or create the run registry at ``db_path``.
 
         Args:
@@ -300,8 +300,8 @@ class RunRegistry:
         self,
         spec: RunSpec,
         *,
-        outcome: Optional[RunOutcome] = None,
-        request_info: Optional[RunRequestInfo] = None,
+        outcome: RunOutcome | None = None,
+        request_info: RunRequestInfo | None = None,
     ) -> None:
         """Insert a new run row.
 
@@ -412,8 +412,8 @@ class RunRegistry:
         *,
         owner: str,
         status: str,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> bool:
         """Settle an owned run to a terminal status in place.
 
@@ -457,7 +457,7 @@ class RunRegistry:
             )
             return cursor.rowcount > 0
 
-    def get_run(self, run_id: str, *, owner: str) -> Optional[RunRecord]:
+    def get_run(self, run_id: str, *, owner: str) -> RunRecord | None:
         """Return the run owned by ``owner`` or ``None``.
 
         Owner isolation is enforced at the SELECT so an unknown id and
@@ -496,10 +496,10 @@ class RunRegistry:
         self,
         *,
         owner: str,
-        run_filter: Optional[RunFilter] = None,
+        run_filter: RunFilter | None = None,
         limit: int = 10,
         offset: int = 0,
-    ) -> List[RunRecord]:
+    ) -> list[RunRecord]:
         """Return up to ``limit`` runs owned by ``owner``.
 
         Filters compose conjunctively. The result is ordered by
@@ -519,7 +519,7 @@ class RunRegistry:
         run_filter = run_filter or RunFilter()
         where, params = _build_list_where(owner, run_filter)
         params.extend([limit, offset])
-        records: List[RunRecord] = []
+        records: list[RunRecord] = []
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -548,8 +548,8 @@ class RunRegistry:
         run_id: str,
         *,
         owner: str,
-        lister: Optional[ArtifactLister] = None,
-    ) -> Optional[RunRecord]:
+        lister: ArtifactLister | None = None,
+    ) -> RunRecord | None:
         """Refresh a non-terminal run by polling its child tasks.
 
         Terminal cached runs are returned as-is without any task probe;
@@ -568,7 +568,7 @@ class RunRegistry:
         current = self.get_run(run_id, owner=owner)
         if current is None or current.status in _TERMINAL_RUN_STATUSES:
             return current
-        live: List[Dict[str, Any]] = []
+        live: list[dict[str, Any]] = []
         for task_id in current.task_ids:
             live.append(await reconcile_task(task_id))
         new_status = _aggregate_status([row["status"] for row in live])
@@ -673,8 +673,8 @@ class RunRegistry:
         self,
         current: RunRecord,
         status: str,
-        result_payload: Optional[Dict[str, Any]],
-        error: Optional[str],
+        result_payload: dict[str, Any] | None,
+        error: str | None,
     ) -> RunRecord:
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
@@ -715,10 +715,10 @@ class RunRegistry:
 
 def _build_list_where(
     owner: str, run_filter: RunFilter
-) -> Tuple[str, List[Any]]:
+) -> tuple[str, list[Any]]:
     """Return the WHERE fragment + params for ``list_runs``."""
     clauses = ["user_id = ?"]
-    params: List[Any] = [owner]
+    params: list[Any] = [owner]
     for column, value in (
         ("status", run_filter.status),
         ("agent", run_filter.agent),
@@ -739,10 +739,10 @@ def _build_list_where(
 
 def _terminal_payload(
     status: str,
-    live: List[Dict[str, Any]],
-    artifacts: List[Dict[str, Any]],
+    live: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
     answer: str,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+) -> tuple[dict[str, Any] | None, str | None]:
     """Return the (result_payload, error) pair for a terminal run.
 
     Both branches ship the same structured blocks so clients polling
@@ -761,7 +761,7 @@ def _terminal_payload(
       signal (e.g. a DeepGenome report that lost its gene profile); the
       per-task ``degraded_reason`` rides ``task_results``.
     """
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "task_results": live,
         "live_status": live,
         "artifacts": artifacts,
@@ -780,7 +780,7 @@ def _terminal_payload(
     return payload, f"one or more tasks failed: {', '.join(failed)}"
 
 
-def _first_final_report(live: List[Dict[str, Any]]) -> Optional[str]:
+def _first_final_report(live: list[dict[str, Any]]) -> str | None:
     """Return the first non-empty child ``final_report``, else None.
 
     DeepGenome's single umbrella child persists the assembled report on
@@ -795,7 +795,7 @@ def _first_final_report(live: List[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _any_degraded(live: List[Dict[str, Any]]) -> bool:
+def _any_degraded(live: list[dict[str, Any]]) -> bool:
     """Return True when any reconciled child task is degraded.
 
     DeepGenome flags a degraded report (brief_gene mount fault) on its
@@ -808,7 +808,7 @@ def _any_degraded(live: List[Dict[str, Any]]) -> bool:
 
 def _row_to_record(
     row: sqlite3.Row,
-    task_rows: List[Any],
+    task_rows: list[Any],
 ) -> RunRecord:
     """Build a RunRecord from a ``sqlite3.Row`` of the ``runs`` table.
 
@@ -843,7 +843,7 @@ def _row_to_record(
     )
 
 
-def _expires_at_for(status: str, now_iso: str) -> Optional[str]:
+def _expires_at_for(status: str, now_iso: str) -> str | None:
     """Compute the TTL ``expires_at`` for a terminal run status."""
     if status not in _TERMINAL_RUN_STATUSES:
         return None

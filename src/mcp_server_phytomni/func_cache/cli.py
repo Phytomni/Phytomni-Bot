@@ -15,7 +15,7 @@ expired`` (sweep already-expired rows).
 from __future__ import annotations
 
 import argparse
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from ..common.cli import dispatch_cli
 from .maintenance import (
@@ -127,7 +127,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Run the func_cache admin CLI."""
     return dispatch_cli(_build_parser, argv)
 

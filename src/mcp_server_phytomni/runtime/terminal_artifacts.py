@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Iterable, List, Optional, Protocol
+from collections.abc import Iterable
+from typing import Any, Protocol
 
 from ..config.defaults import ServerConfig
 from ..storage.artifact_listing import list_artifact_paths
@@ -35,10 +36,10 @@ _DEFAULT_PATH_CAP = 200
 class ArtifactLister(Protocol):
     """Async callable listing object paths under one output directory."""
 
-    async def __call__(self, output_dir: str) -> List[str]: ...
+    async def __call__(self, output_dir: str) -> list[str]: ...
 
 
-async def _default_artifact_lister(output_dir: str) -> List[str]:
+async def _default_artifact_lister(output_dir: str) -> list[str]:
     """List artifact paths via the storage helper, off the event loop.
 
     Resolves bucket / endpoint from ``ServerConfig`` lazily so the
@@ -61,11 +62,11 @@ async def _default_artifact_lister(output_dir: str) -> List[str]:
 
 
 async def enumerate_artifact_paths(
-    live: List[Dict[str, Any]],
+    live: list[dict[str, Any]],
     *,
-    lister: Optional[ArtifactLister] = None,
+    lister: ArtifactLister | None = None,
     cap: int = _DEFAULT_PATH_CAP,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Attach ``artifact_paths`` to each succeeded row with an output_dir.
 
     Best-effort: a per-row listing failure logs a warning and leaves that
@@ -112,8 +113,8 @@ async def enumerate_artifact_paths(
 
 
 def collect_terminal_artifacts(
-    task_results: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    task_results: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Return one artifact descriptor per succeeded task with output_dir.
 
     Args:
@@ -127,7 +128,7 @@ def collect_terminal_artifacts(
         List of ``{"task_id", "output_dir", "paths"}`` dicts. ``paths``
         is the row's ``artifact_paths`` when present, else an empty list.
     """
-    artifacts: List[Dict[str, Any]] = []
+    artifacts: list[dict[str, Any]] = []
     for row in task_results:
         status = (row.get("status") or "").lower()
         if status not in _SUCCESS_STATUSES:

@@ -16,7 +16,7 @@ subgraph via :func:`ainvoke_graph`.
 import importlib
 from functools import lru_cache
 from json import loads
-from typing import Any, List
+from typing import Any
 
 from mcp.shared.exceptions import McpError
 
@@ -85,7 +85,7 @@ def evolution_submit_kwargs(
     )
 
 
-async def find_spa_taxids(spa_names: str, timeout: float) -> List[str]:
+async def find_spa_taxids(spa_names: str, timeout: float) -> list[str]:
     """Return taxonomy ids for a target species name."""
     if relay_mode_enabled():
         # The relay injects the operator IAM token and bypasses the proxy

@@ -14,7 +14,7 @@ scope here.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,7 +36,7 @@ class GraphEdgeManifest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     source: str = Field(min_length=1)
-    target: Optional[str] = Field(default=None, min_length=1)
+    target: str | None = Field(default=None, min_length=1)
     conditional: bool = False
 
 

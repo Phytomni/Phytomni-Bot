@@ -14,7 +14,7 @@ cross-agent reusable building block — one compiled sub-piece per
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from ..runtime.langgraph_runner import config_fingerprint
 from .spec import SubgraphSpec
@@ -49,7 +49,7 @@ class SubgraphRegistry:
     def get_or_compile(
         self,
         sub_id: str,
-        fingerprint_values: Optional[Mapping[str, Any]] = None,
+        fingerprint_values: Mapping[str, Any] | None = None,
     ) -> Any:
         """Return a compiled subgraph, caching by (id, fingerprint).
 
@@ -82,7 +82,7 @@ class SubgraphRegistry:
             self._cache[key] = spec.factory()
         return self._cache[key]
 
-    def clear(self, sub_id: Optional[str] = None) -> None:
+    def clear(self, sub_id: str | None = None) -> None:
         """Drop compiled cache, optionally one id only.
 
         Args:

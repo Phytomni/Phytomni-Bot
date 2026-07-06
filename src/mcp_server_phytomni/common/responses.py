@@ -12,7 +12,7 @@ Functions: message_content, first_message, parse_json_list_fragment,
 import json
 import re
 from collections.abc import Iterable, Mapping
-from typing import Any, List, Optional
+from typing import Any
 
 # Matches any `[<content>]` bracket where the content is NOT just
 # digits (those are valid `[N]` citations) and the bracket is NOT
@@ -71,7 +71,7 @@ def message_content(response: Any) -> str:
     return str(message.get("content", "")) if message else ""
 
 
-def first_message(response: Any) -> Optional[dict[str, Any]]:
+def first_message(response: Any) -> dict[str, Any] | None:
     """Return the first OpenAI-style message dictionary if present.
 
     Args:
@@ -93,7 +93,7 @@ def first_message(response: Any) -> Optional[dict[str, Any]]:
     return message if isinstance(message, dict) else None
 
 
-def parse_json_list_fragment(text: str) -> List[Any]:
+def parse_json_list_fragment(text: str) -> list[Any]:
     """Parse a JSON list embedded in model output text.
 
     Args:
@@ -115,7 +115,7 @@ def parse_json_list_fragment(text: str) -> List[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
-def parse_follow_up_questions(text: str) -> List[str]:
+def parse_follow_up_questions(text: str) -> list[str]:
     """Parse follow-up questions from a JSON list embedded in model output.
 
     Args:

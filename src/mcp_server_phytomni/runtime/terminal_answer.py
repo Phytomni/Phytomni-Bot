@@ -14,7 +14,7 @@ without changing the call site (inputs ride a ``TerminalAnswerContext``).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 __all__ = [
     "AnswerSynthesizer",
@@ -41,9 +41,9 @@ class TerminalAnswerContext:
 
     agent: str
     status: str
-    live: List[Dict[str, Any]]
-    artifacts: List[Dict[str, Any]]
-    query: Optional[str]
+    live: list[dict[str, Any]]
+    artifacts: list[dict[str, Any]]
+    query: str | None
 
 
 class AnswerSynthesizer(Protocol):
@@ -55,7 +55,7 @@ class AnswerSynthesizer(Protocol):
 async def synthesize_terminal_answer(
     context: TerminalAnswerContext,
     *,
-    synthesizer: Optional[AnswerSynthesizer] = None,
+    synthesizer: AnswerSynthesizer | None = None,
 ) -> str:
     """Return a renderable markdown answer for a terminal remote run.
 
@@ -83,7 +83,7 @@ def _thin_answer(context: TerminalAnswerContext) -> str:
     all_paths = [p for a in artifacts for p in a.get("paths", [])]
     figures = [p for p in all_paths if p.lower().endswith(_FIGURE_EXTS)]
 
-    lines: List[str] = []
+    lines: list[str] = []
     if context.status == "succeeded":
         lines.append(
             f"**Analysis complete** — {succeeded}/{total} tasks succeeded."

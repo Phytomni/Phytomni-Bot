@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 from langgraph.types import Send
 
@@ -36,7 +36,7 @@ from .helpers import _extract_json_object, _format_doc_fragment
 if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
-    DeepResearchState = Dict[str, Any]
+    DeepResearchState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class RetrievalAccumulator:
         file_id: Next sequential base document id.
     """
 
-    raw_docs: List[Dict[str, Any]]
+    raw_docs: list[dict[str, Any]]
     current_length: int
     file_id: int = 0
 
@@ -72,7 +72,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
 
     async def plan_query_prep_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat payload for the plan-query call.
 
         Mirrors the prompt-building half of ``plan_node``, including
@@ -143,7 +143,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
 
     async def plan_query_post_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the plan-query chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``plan_node`` but reads
@@ -183,7 +183,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
 
     async def retrieve_prepare_tasks_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prepare for Send fan-out over research dimensions.
 
         Acts as a graph 'split' node — returns an empty delta. The
@@ -221,7 +221,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
             Async callable suitable for ``StateGraph.add_node``.
         """
 
-        async def _retrieve_worker(state: DeepResearchState) -> Dict[str, Any]:
+        async def _retrieve_worker(state: DeepResearchState) -> dict[str, Any]:
             task_index = state["task_index"]
             try:
                 knowledge_output = await knowledge_app.ainvoke(
@@ -253,7 +253,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
 
     async def retrieve_reduce_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Reduce per-dimension docs into accumulator + dimension_params.
 
         Mirrors the POST-gather logic in the legacy retrieve_node.
@@ -297,7 +297,7 @@ class ReviewPlanningMixin(WorkflowMixinBase):
 
     def route_retrieve_tasks(
         self: Any, state: DeepResearchState
-    ) -> List[Send]:
+    ) -> list[Send]:
         """Build N Send payloads, one per research dimension."""
         dimensions = state["research_dimensions"]
         repo_id_dict = self.review_config.REPO_ID_DICT
@@ -321,9 +321,9 @@ class ReviewPlanningMixin(WorkflowMixinBase):
         dimension_result: Any,
         accumulator: RetrievalAccumulator,
         length_limit: float,
-    ) -> List[str]:
+    ) -> list[str]:
         """Format bounded fragments for one research dimension."""
-        fragments: List[str] = []
+        fragments: list[str] = []
         if isinstance(dimension_result, BaseException):
             return fragments
 

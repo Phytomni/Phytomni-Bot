@@ -14,7 +14,7 @@ behaviorally equivalent and ``run_phyto_chat_cached`` keys match.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+from typing import Any, Literal
 
 from ...common.responses import (
     first_message,
@@ -31,7 +31,7 @@ from .service import (
 from .state import ChatState
 
 
-async def prepare_context_node(state: ChatState) -> Dict[str, Any]:
+async def prepare_context_node(state: ChatState) -> dict[str, Any]:
     """Materialize OBS upload context into the working state.
 
     When ``obs_file_list`` is empty, emit a ``None`` upload_context so
@@ -55,7 +55,7 @@ async def prepare_context_node(state: ChatState) -> Dict[str, Any]:
     return {"user_query": rewritten, "upload_context": rewritten}
 
 
-async def generate_node(state: ChatState) -> Dict[str, Any]:
+async def generate_node(state: ChatState) -> dict[str, Any]:
     """Issue the primary LLM completion using the chat service helpers.
 
     Mirrors the message-assembly + ``_run_phyto_chat`` dispatch shape
@@ -85,7 +85,7 @@ async def generate_node(state: ChatState) -> Dict[str, Any]:
     return {"response": response}
 
 
-async def follow_up_node(state: ChatState) -> Dict[str, Any]:
+async def follow_up_node(state: ChatState) -> dict[str, Any]:
     """Generate follow-up questions and embed them into the response.
 
     Mirrors the second-LLM-call shape inside

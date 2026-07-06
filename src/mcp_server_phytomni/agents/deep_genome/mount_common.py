@@ -11,14 +11,14 @@ mount.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
 
 
 def degraded_analysis_delta(
     analysis_label: str, task_index: Any, exc: BaseException
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return the analyst-branch delta for a failed analysis mount.
 
     Shared by the evolution and design mounts: writes a ``FailureRecord``

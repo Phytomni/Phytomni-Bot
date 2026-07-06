@@ -20,7 +20,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -38,7 +38,7 @@ from .helpers import (
 if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
-    DeepResearchState = Dict[str, Any]
+    DeepResearchState = dict[str, Any]
 
 
 # Mirror of the ``_REVISED_WORKER_CAUGHT`` pattern at agent.py:92
@@ -52,8 +52,8 @@ _ADD_QUERY_FAILURE_TYPES: tuple[type[Exception], ...] = (Exception,)
 
 def _collect_add_query_failures(
     subtopic_idx: int,
-    add_query_results: List[Any],
-) -> List[FailureRecord]:
+    add_query_results: list[Any],
+) -> list[FailureRecord]:
     """Build FailureRecord entries for failed add_query gather results.
 
     Walks the ``return_exceptions=True`` results from the supplementary
@@ -67,7 +67,7 @@ def _collect_add_query_failures(
     local-count threshold and so the failure-walk logic is one
     ``import``-followed helper away from any future caller.
     """
-    failures: List[FailureRecord] = []
+    failures: list[FailureRecord] = []
     for query_idx, result in enumerate(add_query_results):
         if isinstance(result, BaseException) and not isinstance(
             result, Exception
@@ -98,9 +98,9 @@ class SupplementaryResultContext:
     """
 
     subtopic_idx: int
-    add_queries: List[Any]
-    add_query_results: List[Any]
-    add_doc_list: List[Dict[str, Any]]
+    add_queries: list[Any]
+    add_query_results: list[Any]
+    add_doc_list: list[dict[str, Any]]
     draft_content: str
 
 
@@ -138,8 +138,8 @@ class ReviewReportMixin(WorkflowMixinBase):
         subtopic_idx: int,
         draft_content: str,
         review_content: str,
-        raw_doc_list: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        raw_doc_list: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Retrieve additional evidence, revise, and audit citations.
 
         Per-call ``self.ka.arun`` failures surface as ``FailureRecord``
@@ -157,8 +157,8 @@ class ReviewReportMixin(WorkflowMixinBase):
         if not isinstance(add_queries, list):
             add_queries = []
 
-        add_doc_list: List[Dict[str, Any]] = []
-        failures: List[FailureRecord] = []
+        add_doc_list: list[dict[str, Any]] = []
+        failures: list[FailureRecord] = []
         content_to_check = draft_content
 
         if has_gaps and add_queries:
@@ -289,8 +289,8 @@ class ReviewReportMixin(WorkflowMixinBase):
     async def _audit_citations(
         self: Any,
         content_to_check: str,
-        raw_doc_list: List[Dict[str, Any]],
-        add_doc_list: List[Dict[str, Any]],
+        raw_doc_list: list[dict[str, Any]],
+        add_doc_list: list[dict[str, Any]],
     ) -> str:
         """Ask the model to remove unsupported citations."""
         all_doc_lookup = {
@@ -298,10 +298,10 @@ class ReviewReportMixin(WorkflowMixinBase):
             for doc in [*raw_doc_list, *add_doc_list]
             if doc.get("doc_id")
         }
-        current_batch_docs: Dict[str, str] = {}
+        current_batch_docs: dict[str, str] = {}
         current_batch_doc_len = 0
 
-        async def run_citation_check(batch_docs: Dict[str, str]) -> None:
+        async def run_citation_check(batch_docs: dict[str, str]) -> None:
             nonlocal content_to_check
             if not batch_docs:
                 return

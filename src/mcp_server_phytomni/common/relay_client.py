@@ -14,9 +14,10 @@ never logged), and reuses the shared retry helpers + get_async_client.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 from urllib.parse import urlencode
 
 from mcp.shared.exceptions import McpError
@@ -56,10 +57,10 @@ class RelayClient:
     api_key: SecretStr
     timeout: float
     max_retries: int
-    retriable_codes: Tuple[int, ...]
+    retriable_codes: tuple[int, ...]
 
     def relay_url(
-        self, relay_path: str, query: Optional[Mapping[str, str]] = None
+        self, relay_path: str, query: Mapping[str, str] | None = None
     ) -> str:
         """Return the absolute relay URL for ``relay_path``.
 
@@ -78,7 +79,7 @@ class RelayClient:
         return url
 
     def _auth_headers(
-        self, extra: Optional[Mapping[str, str]] = None
+        self, extra: Mapping[str, str] | None = None
     ) -> dict[str, str]:
         """Return the bearer auth header, merged with any extra headers.
 
@@ -125,7 +126,7 @@ class RelayClient:
         *,
         json_body: Any,
         message: str,
-        extra_headers: Optional[Mapping[str, str]] = None,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> Any:
         """POST ``json_body`` to a relay route and return parsed JSON.
 
@@ -162,7 +163,7 @@ class RelayClient:
         relay_path: str,
         *,
         message: str,
-        query: Optional[Mapping[str, str]] = None,
+        query: Mapping[str, str] | None = None,
     ) -> Any:
         """GET a relay route (optional allowlisted query) and parse JSON."""
         request = JsonPostRequest(

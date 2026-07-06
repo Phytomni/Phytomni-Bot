@@ -26,9 +26,9 @@ from collections.abc import (
 )
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import (
     Depends,
@@ -236,7 +236,7 @@ def _purge_expired_runs_best_effort() -> None:
         _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
 
 
-def _extract_answer(result: Any) -> Optional[str]:
+def _extract_answer(result: Any) -> str | None:
     """Pull a display-ready answer string from a stored run result.
 
     Tolerates the two envelope shapes the API writes today: the chat /
@@ -369,8 +369,8 @@ async def _maybe_resolve_brief_gene_query(
     *,
     raw_query: str,
     resolve_flag: bool,
-    tool_name: Optional[str],
-    agent_slug: Optional[str] = None,
+    tool_name: str | None,
+    agent_slug: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Resolve free-form text into a gene id when ``resolve_gene_id`` is on.
 
@@ -430,8 +430,8 @@ async def _maybe_resolve_deep_genome_query(
     *,
     raw_query: str,
     resolve_flag: bool,
-    agent_slug: Optional[str] = None,
-) -> tuple[Optional[DeepGenomeResolveResult], dict[str, Any]]:
+    agent_slug: str | None = None,
+) -> tuple[DeepGenomeResolveResult | None, dict[str, Any]]:
     """Mirror of ``_maybe_resolve_brief_gene_query`` for deep_genome.
 
     Sibling helper kept per-domain so each agent's 400-on-misuse
@@ -468,8 +468,8 @@ async def _maybe_resolve_design_query(
     *,
     raw_query: str,
     resolve_flag: bool,
-    agent_slug: Optional[str] = None,
-) -> tuple[Optional[DigitalDesignResolveResult], dict[str, Any]]:
+    agent_slug: str | None = None,
+) -> tuple[DigitalDesignResolveResult | None, dict[str, Any]]:
     """Mirror of ``_maybe_resolve_brief_gene_query`` for design.
 
     Returns the typed result (or ``None`` when ``resolve_flag`` is
@@ -588,8 +588,8 @@ async def _maybe_resolve_network_query(
     *,
     raw_query: str,
     resolve_flag: bool,
-    agent_slug: Optional[str] = None,
-) -> tuple[Optional[GeneNetworkResolveResult], dict[str, Any]]:
+    agent_slug: str | None = None,
+) -> tuple[GeneNetworkResolveResult | None, dict[str, Any]]:
     """Mirror of the gene-id resolvers but for GeneNetwork's TO id.
 
     The flag, target field, and metadata key all use ``to_id`` rather
@@ -632,8 +632,8 @@ async def _invoke_agent_run(
     *,
     agent: str,
     arguments: dict[str, Any],
-    dialogue_id: Optional[str] = None,
-    request_json: Optional[str] = None,
+    dialogue_id: str | None = None,
+    request_json: str | None = None,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
@@ -741,7 +741,7 @@ async def _invoke_agent_run(
     return body, 200
 
 
-def _resolve_remote_run(owner: str) -> tuple[Optional[str], list[str]]:
+def _resolve_remote_run(owner: str) -> tuple[str | None, list[str]]:
     """Read the chokepoint's run id from contextvar, then list its tasks.
 
     The submit chokepoint in ``mcp/handlers`` calls ``bind_run_id``
@@ -870,12 +870,12 @@ def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
 def _list_owner_runs(
     *,
     owner: str,
-    status: Optional[str],
-    agent: Optional[str],
-    origin: Optional[str],
-    dialogue_id: Optional[str],
-    created_after: Optional[str],
-    created_before: Optional[str],
+    status: str | None,
+    agent: str | None,
+    origin: str | None,
+    dialogue_id: str | None,
+    created_after: str | None,
+    created_before: str | None,
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
@@ -953,8 +953,8 @@ def _record_sync_run(
     agent: str,
     owner: str,
     result: dict[str, Any],
-    request_info: Optional[RunRequestInfo] = None,
-) -> Optional[str]:
+    request_info: RunRequestInfo | None = None,
+) -> str | None:
     """Persist a terminal ``origin="local"`` run for a sync agent call.
 
     Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``
@@ -1073,7 +1073,7 @@ def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
 
 def _stamp_remote_request_info(
     *,
-    run_id: Optional[str],
+    run_id: str | None,
     owner: str,
     request_info: RunRequestInfo,
 ) -> None:
@@ -1111,7 +1111,7 @@ def _stamp_remote_request_info(
 def _error_response(
     status_code: int,
     message: str,
-    headers: Optional[Mapping[str, str]] = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     """Build a unified error-envelope JSON response.
 
@@ -1388,9 +1388,9 @@ def create_app() -> FastAPI:
         cannot escalate to issuance.
         """
         del _admin  # Auth side-effect only.
-        expires_at: Optional[datetime] = None
+        expires_at: datetime | None = None
         if payload.expires_days is not None:
-            expires_at = datetime.now(timezone.utc) + timedelta(
+            expires_at = datetime.now(UTC) + timedelta(
                 days=payload.expires_days
             )
         store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
@@ -1412,7 +1412,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/api-keys")
     async def list_api_keys(
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         _admin: None = Depends(require_service_principal),
     ) -> JSONResponse:
         """List per-user API keys; ``user_id`` filters to one user."""
@@ -1460,12 +1460,12 @@ def create_app() -> FastAPI:
     async def list_relay_audit(
         _admin: None = Depends(require_service_principal),
         *,
-        user_id: Optional[str] = None,
-        key_prefix: Optional[str] = None,
-        service: Optional[str] = None,
-        status_code: Optional[int] = None,
-        created_after: Optional[str] = None,
-        created_before: Optional[str] = None,
+        user_id: str | None = None,
+        key_prefix: str | None = None,
+        service: str | None = None,
+        status_code: int | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> JSONResponse:
@@ -1579,7 +1579,7 @@ def create_app() -> FastAPI:
             "raw": envelope.raw,
         }
         agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
-        chat_run_id: Optional[str] = None
+        chat_run_id: str | None = None
         if agent_slug is not None:
             chat_run_id = _record_sync_run(
                 agent=agent_slug,
@@ -1732,18 +1732,18 @@ def create_app() -> FastAPI:
     async def list_runs(
         principal: ApiPrincipal = Depends(require_scope("agents")),
         *,
-        status: Optional[str] = None,
-        agent: Optional[str] = None,
-        origin: Optional[str] = None,
-        user_id: Optional[str] = None,
-        dialogue_id: Optional[str] = None,
-        created_after: Optional[str] = None,
-        created_before: Optional[str] = None,
+        status: str | None = None,
+        agent: str | None = None,
+        origin: str | None = None,
+        user_id: str | None = None,
+        dialogue_id: str | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
         limit: int = 10,
         offset: int = 0,
         debug: bool = False,
-        authorization: Optional[str] = Header(default=None),
-        x_service_token: Optional[str] = Header(
+        authorization: str | None = Header(default=None),
+        x_service_token: str | None = Header(
             default=None, alias="X-Service-Token"
         ),
     ) -> JSONResponse:

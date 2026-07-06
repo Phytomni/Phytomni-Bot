@@ -15,7 +15,6 @@ compromised per-user key cannot escalate to issuance scope.
 from __future__ import annotations
 
 import secrets
-from typing import Optional
 
 from fastapi import Header, HTTPException
 
@@ -27,8 +26,8 @@ _SERVICE_TOKEN_HEADERS = {"WWW-Authenticate": "Bearer"}
 
 
 def _extract_service_token(
-    authorization: Optional[str], x_service_token: Optional[str]
-) -> Optional[str]:
+    authorization: str | None, x_service_token: str | None
+) -> str | None:
     """Pull the service token from Bearer or X-Service-Token headers."""
     if authorization and authorization.startswith("Bearer "):
         token = authorization[len("Bearer ") :].strip()
@@ -40,7 +39,7 @@ def _extract_service_token(
 
 
 def is_service_token_valid(
-    authorization: Optional[str], x_service_token: Optional[str]
+    authorization: str | None, x_service_token: str | None
 ) -> bool:
     """Return True when the headers carry the configured service token.
 
@@ -79,8 +78,8 @@ def is_service_token_valid(
 
 
 async def require_service_principal(
-    authorization: Optional[str] = Header(default=None),
-    x_service_token: Optional[str] = Header(
+    authorization: str | None = Header(default=None),
+    x_service_token: str | None = Header(
         default=None, alias="X-Service-Token"
     ),
 ) -> None:

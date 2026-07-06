@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Callable
 
 import pytest
 

@@ -13,14 +13,14 @@ Public functions:
 from __future__ import annotations
 
 import argparse
-from typing import Callable, Optional, Sequence
+from collections.abc import Callable, Sequence
 
 __all__ = ["dispatch_cli"]
 
 
 def dispatch_cli(
     parser_factory: Callable[[], argparse.ArgumentParser],
-    argv: Optional[Sequence[str]] = None,
+    argv: Sequence[str] | None = None,
 ) -> int:
     """Run an ``argparse``-driven admin CLI and return its exit code.
 

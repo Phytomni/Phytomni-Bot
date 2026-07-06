@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -27,7 +27,7 @@ from ..shared.sql import bi_query, sql_literal
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
-    DeepGenomeState = Dict[str, Any]
+    DeepGenomeState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 async def _post_bi_sql(
     sql: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
     Routes through the shared ``bi_query`` seam (a direct GaussDB query,
@@ -89,14 +89,14 @@ async def _cached_gene_symbol_lookup(
     species_code: str,
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-) -> List[str]:
+) -> list[str]:
     """Retrieve gene symbols for one species/gene pair."""
     sql = (
         f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
         f"AND species_code = {sql_literal(species_code)}"
     )
     response = await _post_bi_sql(sql, timeout)
-    gene_symbol_list: List[str] = []
+    gene_symbol_list: list[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
         if "|" in cell_raw_value:
@@ -113,7 +113,7 @@ async def _cached_gene_annotation_lookup(
     species_code: str,
     gene_id: str,
     timeout: float = _LOOKUP_CONFIG.TIMEOUT,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve gene annotations for one species/gene pair."""
     gene_literal = sql_literal(gene_id)
     species_literal = sql_literal(species_code)
@@ -134,7 +134,7 @@ async def _cached_gene_annotation_lookup(
         f"AND species_code = {species_literal}",
     )
     responses = [await _post_bi_sql(sql, timeout) for sql in sql_list]
-    gene_anno_dict: Dict[str, Any] = {}
+    gene_anno_dict: dict[str, Any] = {}
     if responses[0]["data"]:
         gene_anno_dict.update({"description": responses[0]["data"]})
     if responses[1]["data"]:
@@ -153,8 +153,8 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         self: Any,
         species_code: str,
         gene_id: str,
-        semaphore: Optional[asyncio.Semaphore] = None,
-    ) -> List[str]:
+        semaphore: asyncio.Semaphore | None = None,
+    ) -> list[str]:
         """Retrieve gene symbols for a specific gene ID and species code.
 
         This function queries a database using the `nl2sql` service to find
@@ -191,7 +191,7 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
             attempts.
         """
 
-        async def get_gene_symbol() -> List[str]:
+        async def get_gene_symbol() -> list[str]:
             return await _cached_gene_symbol_lookup(
                 species_code=species_code,
                 gene_id=gene_id,
@@ -208,9 +208,9 @@ class DeepGenomeProfileMixin(WorkflowMixinBase):
         self: Any,
         species_code: str,
         gene_id: str,
-        semaphore: Optional[asyncio.Semaphore] = None,
+        semaphore: asyncio.Semaphore | None = None,
     ):
-        async def get_gene_annotation() -> Dict:
+        async def get_gene_annotation() -> dict:
             return await _cached_gene_annotation_lookup(
                 species_code=species_code,
                 gene_id=gene_id,

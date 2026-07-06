@@ -19,7 +19,7 @@ valid.
 # every ``Required[]`` marker on ``KnowledgeInput`` and
 # ``KnowledgeState``.
 
-from typing import Any, Dict, List, Optional, Required, TypedDict
+from typing import Any, Required, TypedDict
 
 
 class KnowledgeInput(TypedDict, total=False):
@@ -33,8 +33,8 @@ class KnowledgeInput(TypedDict, total=False):
     """
 
     user_query: Required[str]
-    obs_file_list: Optional[List[str]]
-    repo_id_dict: Optional[Dict[str, int]]
+    obs_file_list: list[str] | None
+    repo_id_dict: dict[str, int] | None
     is_generate: bool
     is_follow_up: bool
 
@@ -48,8 +48,8 @@ class KnowledgeOutput(TypedDict):
     mirroring the existing ``KnowledgeAgent.arun`` bifurcation.
     """
 
-    retrieved_docs: List[Dict[str, Any]]
-    final_response: Dict[str, Any]
+    retrieved_docs: list[dict[str, Any]]
+    final_response: dict[str, Any]
 
 
 class KnowledgeState(TypedDict):
@@ -66,19 +66,19 @@ class KnowledgeState(TypedDict):
     """
 
     user_query: str
-    obs_file_list: Optional[List[str]]
-    repo_id_dict: Optional[Dict[str, int]]
+    obs_file_list: list[str] | None
+    repo_id_dict: dict[str, int] | None
     upload_context: str
-    retrieved_docs: List[Dict[str, Any]]
+    retrieved_docs: list[dict[str, Any]]
     retrieve_context: str
-    main_response: Dict[str, Any]
+    main_response: dict[str, Any]
     is_generate: bool
     is_follow_up: bool
-    follow_up_questions: List[dict]
-    final_response: Dict[str, Any]
-    pending_post: Optional[str]
-    chat_payload: Optional[Dict[str, Any]]
-    chat_response: Optional[Dict[str, Any]]
+    follow_up_questions: list[dict]
+    final_response: dict[str, Any]
+    pending_post: str | None
+    chat_payload: dict[str, Any] | None
+    chat_response: dict[str, Any] | None
 
 
 KnowledgeAgentState = KnowledgeState

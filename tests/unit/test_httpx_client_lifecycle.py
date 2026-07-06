@@ -15,7 +15,7 @@ The shared slot is also bypassed when no lifespan has initialised it.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -91,7 +91,7 @@ async def test_get_async_client_falls_back_to_ephemeral_for_extra_kwargs(
             so we can assert ephemeral construction without TLS calls.
     """
     shared = init_shared_client(config=ServerConfig())
-    constructed: list[Dict[str, Any]] = []
+    constructed: list[dict[str, Any]] = []
 
     class _RecordingClient(AsyncClient):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -119,7 +119,7 @@ async def test_get_async_client_ephemeral_when_shared_uninitialised(
             so we can assert ephemeral construction without TLS calls.
     """
     assert shared_client_initialised() is False
-    constructed: list[Dict[str, Any]] = []
+    constructed: list[dict[str, Any]] = []
 
     class _RecordingClient(AsyncClient):
         def __init__(self, *args: Any, **kwargs: Any) -> None:

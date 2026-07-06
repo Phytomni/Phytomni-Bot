@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -79,7 +79,7 @@ class _FakeRelay:
         *,
         json_body: Any,
         message: str,
-        extra_headers: Optional[dict[str, str]] = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> Any:
         """Record a relay POST and return the canned response."""
         self.calls.append(
@@ -98,7 +98,7 @@ class _FakeRelay:
         relay_path: str,
         *,
         message: str,
-        query: Optional[dict[str, str]] = None,
+        query: dict[str, str] | None = None,
     ) -> Any:
         """Record a relay GET and return the canned response."""
         self.calls.append(

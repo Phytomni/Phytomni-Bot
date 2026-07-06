@@ -13,7 +13,7 @@ so the ``_build_graph`` barrier fires once all four sections complete.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -26,7 +26,7 @@ from .state import BriefGeneAgentState
 BRIEF_GENE_CONFIG = BriefGeneConfig()
 
 
-def _build_section_context(state: BriefGeneAgentState) -> Dict[str, Any]:
+def _build_section_context(state: BriefGeneAgentState) -> dict[str, Any]:
     """Assemble the prompt template variables shared by all 4 sections.
 
     Sections share BI annotation + literature inputs. The
@@ -80,7 +80,7 @@ async def _call_section_llm(
 
 async def _run_section_discovery_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """§1 Discovery LLM call.
 
     Writes ``section1_markdown`` (the LLM-produced
@@ -98,7 +98,7 @@ async def _run_section_discovery_node(
 
 async def _run_section_cloning_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """§2 Cloning LLM call.
 
     Writes ``section2_markdown`` (the LLM-produced
@@ -115,7 +115,7 @@ async def _run_section_cloning_node(
 
 async def _run_section_functional_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """§3 Functional LLM call.
 
     Writes ``section3_markdown`` (the LLM-produced
@@ -132,7 +132,7 @@ async def _run_section_functional_node(
 
 async def _run_section_application_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """§4 Application LLM call.
 
     Writes ``section4_markdown`` (the LLM-produced

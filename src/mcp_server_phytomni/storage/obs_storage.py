@@ -12,8 +12,9 @@ Functions: normalize_obs_object_key, obsfs_bucket_root, obsfs_path_for,
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 DEFAULT_OBSFS_MOUNT_ROOT = "/obs"
 OBSFS_FALLBACK_ERRORS = (OSError,)

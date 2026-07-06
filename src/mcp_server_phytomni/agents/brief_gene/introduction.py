@@ -14,7 +14,7 @@ consumption.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -29,7 +29,7 @@ from .state import BriefGeneAgentState
 BRIEF_GENE_CONFIG = BriefGeneConfig()
 
 
-def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
+def _build_introduction_context(state: BriefGeneAgentState) -> dict[str, Any]:
     """Assemble prompt template variables.
 
     ``content`` carries the shared Basic Genomic Information block plus
@@ -55,7 +55,7 @@ def _build_introduction_context(state: BriefGeneAgentState) -> Dict[str, Any]:
 
 async def _run_introduction_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Produce a 3-5 paragraph introduction summarizing sections / lit.
 
     Writes ``introduction_report`` state field consumed by

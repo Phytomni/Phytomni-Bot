@@ -13,10 +13,11 @@ them): ``{{> bucket/path}}`` includes another prompt body, and
 """
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from re import compile as _compile_re
 from re import sub
-from typing import Any, Mapping, Optional
+from typing import Any
 from warnings import warn
 
 from yaml import safe_load
@@ -35,7 +36,7 @@ _MAX_INCLUDE_DEPTH = 20
 
 def load_template(
     template_file: str,
-    template_str: Optional[str] = None,
+    template_str: str | None = None,
 ) -> str:
     """Load a template string from a YAML file.
 
@@ -156,13 +157,13 @@ def _expand_includes(text: str, data: Any, stack: tuple[str, ...]) -> str:
 
 def _load_template_cached(
     template_file: str,
-    template_str: Optional[str],
+    template_str: str | None,
     mtime_ns: int,
     size: int,
 ) -> str:
     """Load a template string from disk, expanding ``{{> path}}`` includes."""
     del mtime_ns, size
-    with open(template_file, "r", encoding="utf-8") as f:
+    with open(template_file, encoding="utf-8") as f:
         data = safe_load(f)
     if template_str:
         current = _walk_prompt_path(data, template_str)
@@ -196,7 +197,7 @@ def load_json_file(file_path: str) -> Any:
 def _load_json_file_cached(file_path: str, mtime_ns: int, size: int) -> Any:
     """Load JSON from disk."""
     del mtime_ns, size
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -219,7 +220,7 @@ def load_text_file(file_path: str) -> str:
 def _load_text_file_cached(file_path: str, mtime_ns: int, size: int) -> str:
     """Load text from disk."""
     del mtime_ns, size
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         return f.read()
 
 
@@ -302,7 +303,7 @@ def _resolve_conditionals(template: str, parameters: Mapping[str, Any]) -> str:
 
 
 def render_template(
-    template: str, parameters: Optional[Mapping[str, Any]] = None
+    template: str, parameters: Mapping[str, Any] | None = None
 ) -> str:
     """Replace placeholders in a template string with provided values.
 
@@ -347,8 +348,8 @@ def render_template(
 
 def get_prompt(
     template_file: str,
-    template_str: Optional[str] = None,
-    parameters: Optional[Mapping[str, Any]] = None,
+    template_str: str | None = None,
+    parameters: Mapping[str, Any] | None = None,
 ) -> str:
     """Generate a complete prompt from a template file and parameters.
 

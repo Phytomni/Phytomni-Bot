@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/brief_gene_resolve_gene_id"
 _RESOLVER_USER_PROMPT_PATH = "user/brief_gene_resolve_gene_id"
-_RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
+_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
         "name": "BriefGeneResolution",
@@ -104,7 +104,7 @@ class BriefGeneResolveResult(BaseModel):
     gene_id: str
     species_code: str
     raw_query: str
-    candidates: List[BriefGeneIdCandidate]
+    candidates: list[BriefGeneIdCandidate]
 
 
 async def resolve_brief_gene_user_query(
@@ -159,7 +159,7 @@ async def resolve_brief_gene_user_query(
             phyto_chat(user_query=rendered_user_query, **chat_kwargs),
             timeout=timeout_seconds,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise BriefGeneResolveError(
             f"resolver timeout after {timeout_seconds:.1f} s"
         ) from exc
@@ -209,8 +209,8 @@ async def resolve_brief_gene_user_query(
 
 
 def _first_message_content(
-    phyto_response: Dict[str, Any],
-) -> Optional[str]:
+    phyto_response: dict[str, Any],
+) -> str | None:
     """Pull the first assistant message content out of an OpenAI dict."""
     choices = phyto_response.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -231,7 +231,7 @@ def _normalize_candidates(
     top_gene_id: Any,
     candidates_field: Any,
     top_species_code: str,
-) -> List[BriefGeneIdCandidate]:
+) -> list[BriefGeneIdCandidate]:
     """Build the candidate list, dropping blanks and clamping confidence.
 
     Prefer an explicit ``candidates`` list when present; fall back to
@@ -240,7 +240,7 @@ def _normalize_candidates(
     ``top_species_code`` when absent or blank so downstream consumers
     always see a populated three-letter code.
     """
-    out: List[BriefGeneIdCandidate] = []
+    out: list[BriefGeneIdCandidate] = []
     if isinstance(candidates_field, list):
         for raw in candidates_field:
             if not isinstance(raw, dict):

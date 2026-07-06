@@ -10,16 +10,17 @@ stable for existing clients.
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import asdict
 from json import dumps
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Dict,
-    Mapping,
-    Sequence,
     TypedDict,
     Unpack,
     cast,
@@ -96,7 +97,7 @@ logger = logging.getLogger(__name__)
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
-TOOL_ARGUMENT_MODELS: Dict[str, type[BaseModel]] = {
+TOOL_ARGUMENT_MODELS: dict[str, type[BaseModel]] = {
     PhytomniAgents.CHAT_AGENT.value: ChatAgent,
     PhytomniAgents.KNOWLEDGE_AGENT.value: KnowledgeAgent,
     PhytomniAgents.DATA_AGENT.value: DataAgent,
@@ -110,7 +111,7 @@ TOOL_ARGUMENT_MODELS: Dict[str, type[BaseModel]] = {
     PhytomniAgents.GET_TASK_STATUS.value: GetTaskStatus,
 }
 
-TOOL_HANDLERS: Dict[str, ToolHandler] = {
+TOOL_HANDLERS: dict[str, ToolHandler] = {
     PhytomniAgents.CHAT_AGENT.value: handle_chat_agent,
     PhytomniAgents.KNOWLEDGE_AGENT.value: handle_knowledge_agent,
     PhytomniAgents.DATA_AGENT.value: handle_data_agent,
@@ -161,7 +162,7 @@ def _text_response(response: Any) -> list[TextContent]:
     return [TextContent(type="text", text=dumps(response))]
 
 
-async def invoke_tool_raw(name: Any, arguments: Dict[str, Any]) -> Any:
+async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
     This is the single shared invocation seam: the MCP dispatcher and the
@@ -196,7 +197,7 @@ async def invoke_tool_raw(name: Any, arguments: Dict[str, Any]) -> Any:
 
 
 async def invoke_tool_formatted(
-    name: Any, arguments: Dict[str, Any]
+    name: Any, arguments: dict[str, Any]
 ) -> FormattedToolResult:
     """Validate arguments, call a handler, and format its payload.
 
@@ -220,7 +221,7 @@ async def invoke_tool_formatted(
 
 
 async def invoke_tool_enveloped(
-    name: Any, arguments: Dict[str, Any]
+    name: Any, arguments: dict[str, Any]
 ) -> ToolResultEnvelope:
     """Validate arguments, call a handler, and preserve raw payload.
 
@@ -285,7 +286,7 @@ def _raw_doc_list(raw: Any) -> list[dict[str, Any]]:
 
 async def invoke_tool_streamed(
     name: Any,
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     *,
     run_id: str,
     dialogue_id: str | None,
@@ -524,7 +525,7 @@ def _chunk_content_delta(chunk: Mapping[str, Any]) -> str:
 
 async def _stream_chat_agent(
     args: ChatAgent,
-) -> AsyncIterator[Dict[str, Any]]:
+) -> AsyncIterator[dict[str, Any]]:
     """Stream phyto-chat chunks using the chat handler's standard kwargs.
 
     Mirrors :func:`handle_chat_agent` by composing the same
@@ -552,7 +553,7 @@ async def _stream_chat_agent(
 
 
 async def dispatch_tool(
-    name: Any, arguments: Dict[str, Any]
+    name: Any, arguments: dict[str, Any]
 ) -> list[TextContent]:
     """Validate arguments, call a tool handler, and serialize the result.
 
@@ -571,7 +572,7 @@ async def dispatch_tool(
         McpError: If the tool is unknown or arguments fail validation.
     """
     envelope = await invoke_tool_enveloped(name, arguments)
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "formatted": asdict(envelope.formatted),
     }
     if resolve_debug(None):
@@ -628,7 +629,7 @@ async def serve() -> None:
         return tools
 
     @server.call_tool()
-    async def call_tool(name, arguments: Dict[str, Any]) -> list[TextContent]:
+    async def call_tool(name, arguments: dict[str, Any]) -> list[TextContent]:
         """Dispatch one MCP tool call.
 
         Args:

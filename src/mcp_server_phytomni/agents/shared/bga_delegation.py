@@ -14,7 +14,7 @@ projection) and removes the cross-file duplicate-code cluster.
 
 from __future__ import annotations
 
-from typing import Any, Type
+from typing import Any
 
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig
@@ -33,7 +33,7 @@ async def resolve_via_bga(
     sensitive_config: SensitiveConfig,
     timeout_seconds: float,
     *,
-    error_cls: Type[ValueError],
+    error_cls: type[ValueError],
 ) -> BriefGeneResolveResult:
     """Delegate a gene-id resolve to BGA from a sibling agent wrapper.
 

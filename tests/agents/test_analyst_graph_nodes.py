@@ -20,9 +20,9 @@ in the shared chat node, so the tests feed the verdict through
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -64,7 +64,7 @@ def _capture_prompt_paths(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     prompt_paths: list[str] = []
 
     def fake_prompt(
-        _file: str, prompt_path: str, _args: Dict[str, Any]
+        _file: str, prompt_path: str, _args: dict[str, Any]
     ) -> str:
         prompt_paths.append(prompt_path)
         return f"PROMPT::{prompt_path}"
@@ -87,7 +87,7 @@ def _plan_state(
     Returns:
         The workflow state mapping passed to ``plan_prep_node``.
     """
-    state: Dict[str, Any] = {
+    state: dict[str, Any] = {
         "goal_description": "goal",
         "obs_file_list": obs_file_list,
         "method_context": {
@@ -114,10 +114,10 @@ def _chat_response_state(
     Returns:
         The workflow state mapping passed to ``plan_post_node``.
     """
-    message: Dict[str, Any] = {}
+    message: dict[str, Any] = {}
     if content is not None:
         message["content"] = content
-    state: Dict[str, Any] = {
+    state: dict[str, Any] = {
         "plan_retries": plan_retries,
         "chat_response": {"choices": [{"message": message}]},
     }
@@ -234,7 +234,7 @@ def test_submit_output_dir_forwards_input_fingerprint(
     pipeline (which computes it in ``retrieve_plan_submit``) and the OBS
     directory creator (which routes on it in ``create_output_dir``).
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_ensure(
         config: Any,
@@ -258,7 +258,7 @@ def test_submit_output_dir_forwards_input_fingerprint(
     run_identity = RunIdentity(
         user_id="alice",
         run_id=IdFactory().new_id("run", "analysis_agents_task"),
-        created_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+        created_at=datetime(2026, 6, 16, tzinfo=UTC),
     )
     state = cast(
         AnalystAgentsState,

@@ -11,7 +11,7 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 """
 
 from pathlib import Path
-from typing import Annotated, Dict, List, Literal, Optional, Union
+from typing import Annotated, Literal, Union
 
 from pydantic import (
     AliasChoices,
@@ -129,7 +129,7 @@ class ServerConfig(BaseSettings):
 
     TEMP_DIR: str = str(TEMP_PATH)
     TIMEOUT: float = 600
-    RETRIABLE_CODES: List[int] = [429, 500, 502, 503, 504]
+    RETRIABLE_CODES: list[int] = [429, 500, 502, 503, 504]
     MAX_RETRIES: int = 5
     MAX_CONCURRENCY: int = 4
     MAX_WORKERS: int = 4
@@ -190,7 +190,7 @@ class ServerConfig(BaseSettings):
     # (without the pydantic plugin) sees the field as defaulted;
     # Pydantic v2 deep-copies dict literals per instance.
     REPO_ID_DICT: Annotated[
-        Dict[str, int],
+        dict[str, int],
         Field(
             default={},
             validation_alias=AliasChoices(
@@ -244,7 +244,7 @@ class ServerConfig(BaseSettings):
         ),
     ] = True
     CA_BUNDLE: Annotated[
-        Optional[str],
+        str | None,
         Field(
             default=None,
             validation_alias=AliasChoices("CA_BUNDLE", "PHYTOMNI_CA_BUNDLE"),
@@ -376,7 +376,7 @@ class ChatConfig(ServerConfig):
     FREQUENCY_PENALTY: float = 0
     N: int = 1
     REASONING_EFFORT: Literal["low", "medium", "high"] = "high"
-    RESPONSE_FORMAT: Dict[str, Union[str, Dict]] = {"type": "json_object"}
+    RESPONSE_FORMAT: dict[str, str | dict] = {"type": "json_object"}
     STREAM: bool = False
 
 
@@ -410,9 +410,9 @@ class KnowledgeConfig(ChatConfig):
     PAGE_NUM: int = 1
     PAGE_SIZE: int = int(_MAX_TOKENS / 512)
     TOP_N: int = int(_MAX_TOKENS / 512)
-    FILTER_STRING: Optional[str] = None
+    FILTER_STRING: str | None = None
     SCOPE: Literal["both", "doc", "keyword"] = "both"
-    EXTRA_REPO_IDS: Optional[List[str]] = None
+    EXTRA_REPO_IDS: list[str] | None = None
     SCORE_THRESHOLD: float = 0
     RERANK_BATCH_SIZE: int = 128
     RERANK_CONCURRENCY: Annotated[
@@ -508,7 +508,7 @@ class AnalystConfig(KnowledgeConfig):
     OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/output"
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
     TASK_NAME: str = "analyst-agents-task"
-    RESOURCE: Dict[str, Dict[str, int]] = {
+    RESOURCE: dict[str, dict[str, int]] = {
         "small": {"cpu": 1, "memory": 4},
         "medium": {"cpu": 4, "memory": 8},
         "large": {"cpu": 16, "memory": 48},
@@ -520,7 +520,7 @@ class AnalystConfig(KnowledgeConfig):
     # mypy without the pydantic plugin sees the field as defaulted,
     # while Pydantic v2 deep-copies the literal per instance.
     APP_ID: Annotated[
-        Dict[str, str],
+        dict[str, str],
         Field(
             default={},
             validation_alias=AliasChoices("APP_ID", "PHYTOMNI_APP_ID"),
@@ -536,10 +536,10 @@ class AnalystConfig(KnowledgeConfig):
     USER_ID: str = ""
     CREATE_DIR: bool = True
     DOWNLOAD_PATH: str = str(DOWNLOAD_PATH)
-    DOWNLOAD_MARKER: Optional[str] = None
+    DOWNLOAD_MARKER: str | None = None
     DOWNLOAD_MAX_KEYS: int = 1000
     IF_DOWNLOAD_ALL: bool = True
-    TARGET_FILE_FEATURE: List[str] = [""]
+    TARGET_FILE_FEATURE: list[str] = [""]
     PRE_PREPARED_DATA_PATH: str = str(PRE_PREPARED_DATA_PATH)
     POLL_INTERVAL: float = 300
     MAX_POLL: float = 86400
@@ -765,7 +765,7 @@ class ApiConfig(BaseSettings):
     API_RUN_TTL_OK_HOURS: int = 24
     API_RUN_TTL_FAIL_DAYS: int = 7
     API_SERVICE_TOKEN: Annotated[
-        Optional[SecretStr],
+        SecretStr | None,
         Field(
             validation_alias=AliasChoices(
                 "API_SERVICE_TOKEN", "PHYTOMNI_API_SERVICE_TOKEN"
@@ -833,11 +833,11 @@ class ApiConfig(BaseSettings):
     )
 
 
-SpeciesEntryValue = Union[str, Dict[str, str]]
+SpeciesEntryValue = Union[str, dict[str, str]]
 
 
 class SpeciesDataIndex(
-    RootModel[Dict[str, Dict[str, Dict[str, SpeciesEntryValue]]]]
+    RootModel[dict[str, dict[str, dict[str, SpeciesEntryValue]]]]
 ):
     """Validation schema for species_data_list.json.
 
@@ -847,7 +847,7 @@ class SpeciesDataIndex(
     keys (e.g. ``cultivars``, ``tissues``) to ``{file_path: description}``.
     """
 
-    def analysis_types(self) -> List[str]:
+    def analysis_types(self) -> list[str]:
         """Return the top-level analysis type keys.
 
         Returns:
@@ -855,7 +855,7 @@ class SpeciesDataIndex(
         """
         return list(self.root.keys())
 
-    def species_for(self, analysis_type: str) -> List[str]:
+    def species_for(self, analysis_type: str) -> list[str]:
         """Return the species keys configured under ``analysis_type``.
 
         Args:
@@ -867,14 +867,14 @@ class SpeciesDataIndex(
         return list(self.root[analysis_type].keys())
 
 
-class RegionMap(RootModel[Dict[str, Dict[str, Dict[str, str]]]]):
+class RegionMap(RootModel[dict[str, dict[str, dict[str, str]]]]):
     """Validation schema for region_map.json.
 
     The file maps {province: {city: {district: region_code}}}; every leaf
     value is a pipe-delimited string like ``"310000|310000|310114"``.
     """
 
-    def provinces(self) -> List[str]:
+    def provinces(self) -> list[str]:
         """Return the top-level province keys.
 
         Returns:
@@ -882,7 +882,7 @@ class RegionMap(RootModel[Dict[str, Dict[str, Dict[str, str]]]]):
         """
         return list(self.root.keys())
 
-    def cities_for(self, province: str) -> List[str]:
+    def cities_for(self, province: str) -> list[str]:
         """Return the city keys configured under ``province``.
 
         Args:
@@ -894,10 +894,10 @@ class RegionMap(RootModel[Dict[str, Dict[str, Dict[str, str]]]]):
         return list(self.root[province].keys())
 
 
-PromptLeaf = Union[str, Dict[str, str]]
+PromptLeaf = Union[str, dict[str, str]]
 
 
-class PromptTemplates(RootModel[Dict[str, Dict[str, PromptLeaf]]]):
+class PromptTemplates(RootModel[dict[str, dict[str, PromptLeaf]]]):
     """Validation schema for .prompts.yaml.
 
     The file follows the shape ``{section: {key: leaf}}`` where
@@ -907,7 +907,7 @@ class PromptTemplates(RootModel[Dict[str, Dict[str, PromptLeaf]]]):
     nested prompt paths such as ``user/environment/get_code_query``).
     """
 
-    def sections(self) -> List[str]:
+    def sections(self) -> list[str]:
         """Return the top-level prompt section keys.
 
         Returns:
@@ -915,7 +915,7 @@ class PromptTemplates(RootModel[Dict[str, Dict[str, PromptLeaf]]]):
         """
         return list(self.root.keys())
 
-    def keys_for(self, section: str) -> List[str]:
+    def keys_for(self, section: str) -> list[str]:
         """Return the prompt keys configured under ``section``.
 
         Args:

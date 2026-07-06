@@ -14,7 +14,7 @@ import asyncio
 import logging
 import operator
 import sqlite3
-from typing import Annotated, Any, Dict, List, NamedTuple, Optional, TypedDict
+from typing import Annotated, Any, NamedTuple, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -168,28 +168,28 @@ class DeepGenomeState(TypedDict):
 
     species_code: str
     gene_id: str
-    config_params: Dict[str, Any]
-    gene_annotation: Dict[str, Any]
+    config_params: dict[str, Any]
+    gene_annotation: dict[str, Any]
     skip_synthesize: bool
-    knowledge_context: Dict[str, Any]
-    orthologs_summary: Optional[str]
-    paralogs_summary: Optional[str]
-    interaction_summary: Optional[str]
+    knowledge_context: dict[str, Any]
+    orthologs_summary: str | None
+    paralogs_summary: str | None
+    interaction_summary: str | None
     task_submit_sleep: int
-    analysis_tasks: List[Dict[str, Any]]
-    raw_analyst_data: Annotated[Dict[str, Any], update_dict]
-    analyst_summaries: Annotated[Dict, update_dict]
-    synthesize_report: Optional[str]
-    experiment_report: Optional[str]
-    protocol_report: Optional[str]
-    discussion_report: Optional[str]
-    summary_report: Optional[str]
-    follow_up_questions: Optional[List[str]]
+    analysis_tasks: list[dict[str, Any]]
+    raw_analyst_data: Annotated[dict[str, Any], update_dict]
+    analyst_summaries: Annotated[dict, update_dict]
+    synthesize_report: str | None
+    experiment_report: str | None
+    protocol_report: str | None
+    discussion_report: str | None
+    summary_report: str | None
+    follow_up_questions: list[str] | None
     # brief_gene owns the entire preamble: the mount projects its
     # rendered answer (title swapped to deep_genome) into ``preamble``,
     # which report.py consumes verbatim as the report's pre-analysis
     # block.
-    preamble: Optional[str]
+    preamble: str | None
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
@@ -197,20 +197,20 @@ class DeepGenomeState(TypedDict):
     # appends a FailureRecord here (operator.add merges concurrent
     # writes) so the report node can persist a degraded signal. The
     # brief_gene, evolution, and design mounts each produce records here.
-    failures: Annotated[List[FailureRecord], operator.add]
+    failures: Annotated[list[FailureRecord], operator.add]
     # Status-independent literature degradation rolled up from the
     # brief_gene mount. Never feeds project_universal_failure_metadata —
     # only _persist_degraded's status-independent set_task_degraded path.
-    literature_degraded: Annotated[List[DegradedRecord], operator.add]
+    literature_degraded: Annotated[list[DegradedRecord], operator.add]
     report_triggered: bool
     target_gene: str
     species: str
     analysis_type: str
-    part12_combined: Optional[str]
-    task_id: Optional[str]
-    output_dir: Optional[str]
-    report_dir: Optional[str]
-    error: Optional[str]
+    part12_combined: str | None
+    task_id: str | None
+    output_dir: str | None
+    report_dir: str | None
+    error: str | None
 
 
 class DeepGenomeAgentDeps(NamedTuple):
@@ -475,7 +475,7 @@ class DeepGenomeAgents(
         species_code: str,
         gene_id: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit a deep gene analysis run; return task identity immediately.
 
         DeepGenome is wired into the submit-style chokepoint
@@ -505,7 +505,7 @@ class DeepGenomeAgents(
         """
         config_params = kwargs.get("config_params") or {}
 
-        initial_state: Dict[str, Any] = {
+        initial_state: dict[str, Any] = {
             "species_code": species_code,
             "gene_id": gene_id,
             "config_params": config_params,
@@ -665,9 +665,9 @@ class DeepGenomeAgents(
 async def gene_function(
     species_code: str,
     gene_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the LangGraph deep genome analysis workflow.
 
     Args:

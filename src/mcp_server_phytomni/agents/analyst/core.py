@@ -14,7 +14,7 @@ prior late-import workaround in ``agent.py`` papered over.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -94,9 +94,9 @@ class AnalystAgent(
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
+        checkpointer: MemorySaver | None = None,
         analyst_config=ANALYST_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the AnalystAgent and build the graph."""
         self.checkpointer = ensure_checkpointer(checkpointer)
@@ -420,7 +420,7 @@ class AnalystAgent(
 
     async def arun(
         self,
-        query: Optional[str],
+        query: str | None,
         **kwargs: Any,
     ) -> dict:
         """Execute the AnalystAgent workflow.

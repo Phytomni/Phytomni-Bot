@@ -13,7 +13,7 @@ by the parallel_dispatch builder migration.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, cast
+from typing import Any, cast
 
 import pytest
 
@@ -87,8 +87,8 @@ async def test_research_state_reduction_dispatches_single_goal(
 
     async def fake_extract(
         user_query: str,
-        obs_file_list: List[str],
-    ) -> List[Dict[str, str]]:
+        obs_file_list: list[str],
+    ) -> list[dict[str, str]]:
         """Return one fixed research goal to drive single-task dispatch.
 
         Args:
@@ -181,8 +181,8 @@ async def test_research_state_reduction_handles_multiple_goals(
 
     async def fake_extract(
         user_query: str,
-        obs_file_list: List[str],
-    ) -> List[Dict[str, str]]:
+        obs_file_list: list[str],
+    ) -> list[dict[str, str]]:
         """Return two research goals so prepare_tasks fans out twice.
 
         Args:

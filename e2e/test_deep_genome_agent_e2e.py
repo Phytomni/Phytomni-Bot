@@ -15,7 +15,8 @@ silently drop the mounted preamble.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.live
 
 async def test_deep_genome_agent_e2e_polls_to_success(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
+    load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
     """DeepGenomeAgent submits, polls to success, and reports artifacts.
 

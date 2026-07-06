@@ -14,7 +14,7 @@ Basic Information bullet rendering. Migrated from deep_genome's
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from ..shared.sql import sql_literal
 from .interactions import _homology_gene_lists, _interaction_gene_list
@@ -24,7 +24,7 @@ from .state import BriefGeneAgentState
 
 async def _run_fetch_homology_interactions_node(
     state: BriefGeneAgentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fetch homology + interactions BI rows for the query gene.
 
     Issues two BI SQL queries against ``homology_gene`` and

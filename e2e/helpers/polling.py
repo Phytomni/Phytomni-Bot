@@ -33,7 +33,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
 from mcp_server_phytomni.runtime.task_reconcile import reconcile_task
@@ -71,7 +71,7 @@ class TaskState:
     status: str
     analysis_id: str
     output_dir: str
-    final_report: Optional[str] = None
+    final_report: str | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -131,7 +131,7 @@ def _state_is_terminal(state: TaskState) -> bool:
 async def _reconciled_task_state(
     task_id: str,
     resolved_db: Path,
-) -> Optional[TaskState]:
+) -> TaskState | None:
     """Return a fresh ``TaskState`` combining local DB + live backend.
 
     Calls :func:`reconcile_task` which itself issues one local
@@ -165,8 +165,8 @@ async def _reconciled_task_state(
 async def poll_until_done(
     task_id: str,
     *,
-    db_path: Optional[Path] = None,
-    timeout_seconds: Optional[float] = None,
+    db_path: Path | None = None,
+    timeout_seconds: float | None = None,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
 ) -> TaskState:
     """Poll local DB + live backend until ``task_id`` reaches terminal.
@@ -202,7 +202,7 @@ async def poll_until_done(
         else resolve_timeout_seconds()
     )
     resolved_db = db_path or resolve_db_path()
-    last_state: Optional[TaskState] = None
+    last_state: TaskState | None = None
 
     while time.monotonic() < deadline:
         state = await _reconciled_task_state(task_id, resolved_db)
@@ -258,7 +258,7 @@ def extract_task_id(response: McpToolResponse) -> str:
     )
 
 
-def _extract_from_mapping(payload: Any) -> Optional[str]:
+def _extract_from_mapping(payload: Any) -> str | None:
     """Return a task_id from a dict-shaped payload if present."""
     if not isinstance(payload, dict):
         return None
@@ -269,7 +269,7 @@ def _extract_from_mapping(payload: Any) -> Optional[str]:
     return None
 
 
-def _extract_from_text(text: str) -> Optional[str]:
+def _extract_from_text(text: str) -> str | None:
     """Return a task_id parsed from formatted answer text if present."""
     explicit = _TASK_ID_PATTERN.search(text)
     if explicit:
@@ -327,7 +327,7 @@ async def submit_and_poll_to_success(
 def _read_task_state(
     db_path: Path,
     task_id: str,
-) -> Optional[TaskState]:
+) -> TaskState | None:
     """Return one task row by id, or ``None`` if the row is missing."""
     if not db_path.exists():
         return None

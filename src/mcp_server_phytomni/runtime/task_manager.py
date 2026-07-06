@@ -12,7 +12,6 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 from ..config.defaults import ApiConfig
 
@@ -36,12 +35,12 @@ class RunContext:
         updated_at: ISO-8601 last-update timestamp.
     """
 
-    run_id: Optional[str] = None
-    user_id: Optional[str] = None
-    agent: Optional[str] = None
-    origin: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    run_id: str | None = None
+    user_id: str | None = None
+    agent: str | None = None
+    origin: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,9 +77,9 @@ class Submission:
     status: str
     output_dir: str
     analysis_id: str = ""
-    run_context: Optional[RunContext] = None
-    input_fingerprint: Optional[str] = None
-    source_task_id: Optional[str] = None
+    run_context: RunContext | None = None
+    input_fingerprint: str | None = None
+    source_task_id: str | None = None
 
 
 # Fresh-database schema: ``CREATE TABLE IF NOT EXISTS`` creates all
@@ -299,7 +298,7 @@ class TaskManager:
 
     def get_task_by_fingerprint(
         self, input_fingerprint: str
-    ) -> Optional[Dict[str, str]]:
+    ) -> dict[str, str] | None:
         """Return the most-recent non-failed task row for a fingerprint.
 
         Filters out terminal-failed rows (``_DEAD_TASK_STATUSES``) so a
@@ -383,7 +382,7 @@ class TaskManager:
             )
         )
 
-    def get_task(self, task_id: str) -> Optional[Dict[str, str]]:
+    def get_task(self, task_id: str) -> dict[str, str] | None:
         """Return one task row, or None when the id is unknown.
 
         A single non-blocking ``SELECT`` — never polls or waits — so
@@ -419,7 +418,7 @@ class TaskManager:
             "source_task_id": row[3],
         }
 
-    def get_task_agent(self, task_id: str) -> Optional[str]:
+    def get_task_agent(self, task_id: str) -> str | None:
         """Return the recorded ``agent`` tag for ``task_id`` (or None).
 
         Kept separate from ``get_task`` so the tool-facing ``get_task``
@@ -472,7 +471,7 @@ class TaskManager:
         finally:
             conn.close()
 
-    def get_task_log(self, task_id: str) -> Optional[dict]:
+    def get_task_log(self, task_id: str) -> dict | None:
         """Read the task_log column and deserialize from JSON.
 
         Returns the cached log dict for a task, or None if the task
@@ -527,7 +526,7 @@ class TaskManager:
         finally:
             conn.close()
 
-    def get_task_final_report(self, task_id: str) -> Optional[str]:
+    def get_task_final_report(self, task_id: str) -> str | None:
         """Read the final_report column as a markdown string.
 
         Returns the persisted report for a task, or None when the task
@@ -584,7 +583,7 @@ class TaskManager:
         finally:
             conn.close()
 
-    def get_task_degraded(self, task_id: str) -> Optional[str]:
+    def get_task_degraded(self, task_id: str) -> str | None:
         """Read the degraded reason, or None when the run is healthy.
 
         Returns the persisted redacted reason for a degraded task, or

@@ -9,7 +9,7 @@ Functions: get_cached_agent, clear_agent_registry, agent_fingerprint_values.
 """
 
 from collections.abc import Callable, Mapping
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -23,7 +23,7 @@ _AGENT_REGISTRY: GraphRegistry[Any] = GraphRegistry()
 def get_cached_agent(
     name: str,
     factory: Callable[[], AgentT],
-    fingerprint_values: Optional[Mapping[str, Any]] = None,
+    fingerprint_values: Mapping[str, Any] | None = None,
 ) -> AgentT:
     """Return a cached agent for an explicit non-secret fingerprint.
 
@@ -38,7 +38,7 @@ def get_cached_agent(
     return _AGENT_REGISTRY.get_or_create(name, factory, fingerprint_values)
 
 
-def clear_agent_registry(name: Optional[str] = None) -> None:
+def clear_agent_registry(name: str | None = None) -> None:
     """Clear cached agents, optionally only one agent name.
 
     Args:

@@ -12,7 +12,7 @@ otherwise.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -34,7 +34,7 @@ pytestmark = pytest.mark.unit
 def _fixed_identity() -> RunIdentity:
     """Return a deterministic RunIdentity for scratch path assertions."""
     factory = IdFactory(
-        now=lambda: datetime(2026, 5, 7, 1, 2, 3, tzinfo=timezone.utc),
+        now=lambda: datetime(2026, 5, 7, 1, 2, 3, tzinfo=UTC),
         token_factory=lambda _: "abcdef01",
     )
     return RunIdentity.create("alice", "scratch-run", factory)

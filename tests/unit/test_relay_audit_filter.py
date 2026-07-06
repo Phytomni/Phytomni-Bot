@@ -23,16 +23,19 @@ pytestmark = pytest.mark.unit
 
 def test_credential_header_allowlist_is_the_expected_set() -> None:
     """The dropped-header allowlist is the agreed credential set."""
-    assert CREDENTIAL_HEADERS == frozenset(
-        {
-            "authorization",
-            "x-api-key",
-            "x-service-token",
-            "x-auth-token",
-            "token",
-            "cookie",
-            "set-cookie",
-        }
+    assert (
+        frozenset(
+            {
+                "authorization",
+                "x-api-key",
+                "x-service-token",
+                "x-auth-token",
+                "token",
+                "cookie",
+                "set-cookie",
+            }
+        )
+        == CREDENTIAL_HEADERS
     )
 
 
@@ -69,7 +72,7 @@ def test_drop_credential_headers_keeps_non_credentials_unchanged() -> None:
 
 def test_decode_body_returns_utf8_text_verbatim() -> None:
     """A UTF-8 body is decoded without redaction or truncation."""
-    raw = '{"q": "héllo", "n": 1}'.encode("utf-8")
+    raw = '{"q": "héllo", "n": 1}'.encode()
 
     assert decode_body(raw) == '{"q": "héllo", "n": 1}'
 

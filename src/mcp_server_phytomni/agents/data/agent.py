@@ -10,7 +10,7 @@ Functions: rewrite_nl2sql, retrieve_and_generate.
 """
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -82,7 +82,7 @@ async def rewrite_nl2sql(
     user_query: str,
     is_rewrite: bool = True,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent.
 
     Args:
@@ -155,15 +155,15 @@ class DataAgent:
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
+        checkpointer: MemorySaver | None = None,
         data_config=DATA_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the DataAgent with configuration and build the graph."""
         self.data_config = data_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self._knowledge_app: Optional[CompiledStateGraph]
+        self._knowledge_app: CompiledStateGraph | None
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.data_config,
             sensitive_config=self.sensitive_config,
@@ -274,7 +274,7 @@ class DataAgent:
 
     async def retrieve_prep_node(
         self, state: DataAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the knowledge input + post-knowledge sentinel.
 
         Mirrors the user-query-extraction half of the legacy
@@ -308,7 +308,7 @@ class DataAgent:
 
     async def retrieve_post_node(
         self, state: DataAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Format retrieved docs into the ``retrieve_prompt`` delta.
 
         Mirrors the post-processing half of the legacy
@@ -355,7 +355,7 @@ class DataAgent:
 
         return {"retrieve_prompt": retrieve_prompt}
 
-    async def rewrite_prep_node(self, state: DataAgentState) -> Dict[str, Any]:
+    async def rewrite_prep_node(self, state: DataAgentState) -> dict[str, Any]:
         """Build the chat payload for the rewrite call.
 
         Mirrors the prompt + payload-building half of
@@ -381,7 +381,7 @@ class DataAgent:
         )
         return {"chat_payload": chat_payload}
 
-    async def rewrite_post_node(self, state: DataAgentState) -> Dict[str, Any]:
+    async def rewrite_post_node(self, state: DataAgentState) -> dict[str, Any]:
         """Convert the chat response into the ``rewrite_query`` delta.
 
         Mirrors the response-validation + content-extraction half of
@@ -464,7 +464,7 @@ class DataAgent:
         self,
         user_query: str,
         is_rewrite: bool = True,
-        thread_id: Optional[str] = None,
+        thread_id: str | None = None,
     ):
         """Execute the DataAgent workflow.
 

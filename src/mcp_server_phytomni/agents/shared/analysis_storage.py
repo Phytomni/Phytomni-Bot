@@ -13,7 +13,7 @@ when the mount is unavailable.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, NamedTuple
+from typing import Any, NamedTuple
 
 from obs import ObsClient
 
@@ -66,7 +66,7 @@ class ObsAccessOptions(NamedTuple):
 
 def get_data_list(
     data_file: str, analysis_type: str, species: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return configured data files for one analysis type and species.
 
     Args:
@@ -105,7 +105,7 @@ def _get_data_list_cached(
     species: str,
     mtime_ns: int,
     size: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Select a data list from cached static species metadata."""
     del mtime_ns, size
     data = load_species_data(data_file)
@@ -120,7 +120,7 @@ def _get_data_list_cached(
     return data_list
 
 
-ANALYSIS_DATA_LIST_MAP: Dict[str, str] = {
+ANALYSIS_DATA_LIST_MAP: dict[str, str] = {
     "haplotypes_analysis": "haplotypes_analysis",
     "fst_analysis": "fst_analysis",
     "enrichment_analysis": "enrichment_analysis",

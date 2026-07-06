@@ -40,7 +40,7 @@ class _StubMcpClient:
         self.call_result = call_result
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def __aenter__(self) -> "_StubMcpClient":
+    async def __aenter__(self) -> _StubMcpClient:
         return self
 
     async def __aexit__(

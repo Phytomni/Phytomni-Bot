@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Optional
 
 from ..common.relay_client import current_relay_client
 from ..config.defaults import ServerConfig
@@ -108,8 +107,8 @@ async def upload_user_file(
     *,
     max_bytes: int,
     prefix: str,
-    bucket_name: Optional[str] = None,
-    obs_server: Optional[str] = None,
+    bucket_name: str | None = None,
+    obs_server: str | None = None,
     obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
 ) -> UploadRecord:
     """Validate and store one user upload, returning its OBS coordinates.

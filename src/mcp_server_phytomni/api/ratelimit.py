@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from typing import Callable, Optional
+from collections.abc import Callable
 
 __all__ = ["make_rate_limiter"]
 
-RateLimiter = Callable[[str, int], Optional[int]]
+RateLimiter = Callable[[str, int], int | None]
 
 
 def make_rate_limiter(
@@ -43,7 +43,7 @@ def make_rate_limiter(
     """
     hits: dict[str, list[float]] = defaultdict(list)
 
-    def check(key: str, limit: int) -> Optional[int]:
+    def check(key: str, limit: int) -> int | None:
         """Record an attempt and report whether it is over budget."""
         if limit <= 0:
             return None

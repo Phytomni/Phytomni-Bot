@@ -14,7 +14,8 @@ section node.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.live
 
 async def test_brief_gene_agent_e2e_returns_rich_preamble(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
+    load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
     """BriefGeneAgent returns the rich gene preamble for Os01g0177400.
 

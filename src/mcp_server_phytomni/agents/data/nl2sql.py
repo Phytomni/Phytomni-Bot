@@ -11,7 +11,7 @@ This module exposes `Nl2SqlRequest`, `nl2sql`, and
 import asyncio
 from dataclasses import dataclass, replace
 from random import uniform
-from typing import Any, Dict
+from typing import Any
 
 from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
@@ -77,13 +77,13 @@ class Nl2SqlRequest:
 
     database_url: str
     workspace_id: str
-    payload_data: Dict[str, Any]
+    payload_data: dict[str, Any]
     timeout: float
     retriable_codes: tuple[int, ...]
     max_retries: int
 
     @classmethod
-    def from_kwargs(cls, message_content: str, values: Dict[str, Any]):
+    def from_kwargs(cls, message_content: str, values: dict[str, Any]):
         """Build request settings from keyword-compatible overrides.
 
         Args:
@@ -116,7 +116,7 @@ class Nl2SqlRequest:
             max_retries=values.get("max_retries", DATA_CONFIG.MAX_RETRIES),
         )
 
-    def payload(self) -> Dict[str, Any]:
+    def payload(self) -> dict[str, Any]:
         """Return the database API JSON payload.
 
         Returns:
@@ -124,7 +124,7 @@ class Nl2SqlRequest:
         """
         return dict(self.payload_data)
 
-    def payload_with_fresh_dialog(self) -> Dict[str, Any]:
+    def payload_with_fresh_dialog(self) -> dict[str, Any]:
         """Return the payload under a newly minted conversation id.
 
         Each call rebinds ``dialog_id`` to a fresh
@@ -143,7 +143,7 @@ class Nl2SqlRequest:
 async def nl2sql(
     message_content: str,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convert a natural language query to SQL and execute it.
 
     Args:
@@ -172,7 +172,7 @@ async def nl2sql(
 async def _post_one_conversation(
     client: AsyncClient,
     request: Nl2SqlRequest,
-    body: Dict[str, Any],
+    body: dict[str, Any],
     token: str,
 ) -> Any:
     """POST one NL2SQL body as a single server-side conversation.

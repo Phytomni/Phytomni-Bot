@@ -19,7 +19,7 @@ import os
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -407,7 +407,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _default_output_path() -> Path:
     """Return the default timestamped evidence path."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return OUTPUT_DIR / f"reasoning_normalize_{stamp}.jsonl"
 
 

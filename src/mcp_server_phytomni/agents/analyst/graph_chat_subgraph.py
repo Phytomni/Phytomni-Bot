@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -31,7 +31,7 @@ from ...graphs.chat_adapters import (
 if TYPE_CHECKING:
     from .agent import AnalystAgentsState
 else:
-    AnalystAgentsState = Dict[str, Any]
+    AnalystAgentsState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class AnalystChatSubgraphMixin:
 
     async def parse_query_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the chat payload for the parse-query call.
 
         Mirrors the prompt-building half of ``parse_query_node``.
@@ -88,7 +88,7 @@ class AnalystChatSubgraphMixin:
 
     async def parse_query_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the parse-query chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``parse_query_node`` but
@@ -143,7 +143,7 @@ class AnalystChatSubgraphMixin:
 
     async def data_select_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the chat payload for the data-selection call.
 
         Mirrors the prompt-building half of ``data_select_node``.
@@ -201,7 +201,7 @@ class AnalystChatSubgraphMixin:
 
     async def data_select_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the data-selection chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``data_select_node`` but
@@ -223,7 +223,7 @@ class AnalystChatSubgraphMixin:
         """
         selection_response = state.get("chat_response") or {}
         data_list = state["data_list"]
-        selected_data: Dict[Any, Any] = {}
+        selected_data: dict[Any, Any] = {}
         if (
             selection_response
             and selection_response.get("choices")
@@ -262,7 +262,7 @@ class AnalystChatSubgraphMixin:
 
     async def plan_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the chat payload for the plan-generation call.
 
         Mirrors the prompt-building half of ``plan_node``, including
@@ -348,7 +348,7 @@ class AnalystChatSubgraphMixin:
 
     async def plan_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the plan chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``plan_node`` but reads
@@ -396,7 +396,7 @@ class AnalystChatSubgraphMixin:
 
     async def check_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the chat payload for the plan-check call.
 
         Mirrors the prompt-building half of ``check_node``. When the
@@ -447,7 +447,7 @@ class AnalystChatSubgraphMixin:
 
     async def check_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the plan-check chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``check_node`` but reads
@@ -526,7 +526,7 @@ class AnalystChatSubgraphMixin:
 
     async def tool_extract_prep_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Stage the chat payload for the tool-extraction call.
 
         Mirrors the prompt-building half of ``tool_extract_node``.
@@ -557,7 +557,7 @@ class AnalystChatSubgraphMixin:
 
     async def tool_extract_post_node(
         self: Any, state: AnalystAgentsState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the tool-extraction chat response into the legacy delta.
 
         Mirrors the response-parsing half of ``tool_extract_node`` but

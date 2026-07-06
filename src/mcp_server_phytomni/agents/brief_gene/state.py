@@ -21,11 +21,8 @@ import operator
 from typing import (
     Annotated,
     Any,
-    Dict,
-    List,
     NotRequired,
     Required,
-    Tuple,
     TypedDict,
 )
 
@@ -69,17 +66,17 @@ class BriefGeneOutput(TypedDict):
     interpro_string: str
     description_string: str
     gene_structure_string: str
-    orthologs_data: Dict[str, Any]
-    paralogs_data: Dict[str, Any]
-    interaction_data: Dict[str, Any]
+    orthologs_data: dict[str, Any]
+    paralogs_data: dict[str, Any]
+    interaction_data: dict[str, Any]
     section1_markdown: str
     section2_markdown: str
     section3_markdown: str
     section4_markdown: str
     introduction_report: str
-    retrieved_docs: List[Dict[str, Any]]
-    final_response: Dict[str, Any]
-    follow_up_questions: List[str]
+    retrieved_docs: list[dict[str, Any]]
+    final_response: dict[str, Any]
+    follow_up_questions: list[str]
 
 
 class BriefGeneState(TypedDict):
@@ -101,8 +98,8 @@ class BriefGeneState(TypedDict):
     species_latin_name: str
     species_english_name: str
     species_all_name: str
-    gene_name_symbol_list: List[str]
-    gene_id_list: List[str]
+    gene_name_symbol_list: list[str]
+    gene_id_list: list[str]
     gene_chr: str
     gene_start: str
     gene_end: str
@@ -111,19 +108,19 @@ class BriefGeneState(TypedDict):
     kegg_string: str
     interpro_string: str
     description_string: str
-    retrieved_docs: List[Dict[str, Any]]
+    retrieved_docs: list[dict[str, Any]]
     retrieve_context: str
-    follow_up_questions: List[str]
-    final_response: Dict[str, Any]
+    follow_up_questions: list[str]
+    final_response: dict[str, Any]
     # X3b A architecture (M6) — preamble fan-out fields.
     # BI fetch outputs from the homology + protein interaction tables;
     # ``fetch_homology_interactions_node`` writes these dicts and the
     # six derived count summaries (consumed by the Basic Information
     # bullets in ``render_node``).
     gene_structure_string: str
-    orthologs_data: Dict[str, Any]
-    paralogs_data: Dict[str, Any]
-    interaction_data: Dict[str, Any]
+    orthologs_data: dict[str, Any]
+    paralogs_data: dict[str, Any]
+    interaction_data: dict[str, Any]
     ortholog_count: int
     ortholog_species_count: int
     paralog_count: int
@@ -155,9 +152,9 @@ class BriefGeneState(TypedDict):
     # ``NotRequired`` so legacy fixtures that construct
     # ``BriefGeneState`` without the chat-subgraph branch keep
     # type-checking.
-    chat_payload: NotRequired[Dict[str, Any]]
+    chat_payload: NotRequired[dict[str, Any]]
     pending_post: NotRequired[str]
-    chat_response: NotRequired[Dict[str, Any]]
+    chat_response: NotRequired[dict[str, Any]]
     # Additive optional keys for the knowledge-subgraph split.
     # ``retrieve_prep_tasks_node`` stages the per-symbol task
     # list under ``retrieve_tasks``; ``route_retrieve_tasks`` dispatches
@@ -173,22 +170,22 @@ class BriefGeneState(TypedDict):
     # / ``pending_post_knowledge`` / ``knowledge_response`` carry the
     # per-Send legs through the shared ``knowledge`` node wrapper
     # registered via ``make_knowledge_node_wrapper``.
-    retrieve_tasks: NotRequired[List[Dict[str, Any]]]
+    retrieve_tasks: NotRequired[list[dict[str, Any]]]
     task_index: NotRequired[int]
     task_label: NotRequired[str]
-    knowledge_input: NotRequired[Dict[str, Any]]
-    knowledge_payload: NotRequired[Dict[str, Any]]
+    knowledge_input: NotRequired[dict[str, Any]]
+    knowledge_payload: NotRequired[dict[str, Any]]
     pending_post_knowledge: NotRequired[str]
-    knowledge_response: NotRequired[List[Dict[str, Any]]]
+    knowledge_response: NotRequired[list[dict[str, Any]]]
     retrieve_indexed_results: Annotated[
-        List[Tuple[int, List[Dict[str, Any]]]], operator.add
+        list[tuple[int, list[dict[str, Any]]]], operator.add
     ]
     # Status-independent degraded channel: a retrieve worker that recovers
     # from a per-symbol retrieve fault appends a DegradedRecord here
     # (operator.add merges concurrent legs). Never feeds the PARTIAL/FAILED
     # status projection — only the render banner and the ``degraded``
     # metadata key.
-    literature_degraded: Annotated[List[DegradedRecord], operator.add]
+    literature_degraded: Annotated[list[DegradedRecord], operator.add]
 
 
 BriefGeneAgentState = BriefGeneState

@@ -11,7 +11,7 @@ This module exposes retrieval option models plus `retrieve`,
 import asyncio
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 from weakref import WeakKeyDictionary
 
 from httpx import (
@@ -113,9 +113,9 @@ class RetrievePayloadOptions:
     repo_id: str = KNOWLEDGE_CONFIG.REPO_ID
     page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
     page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE
-    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING
+    filter_string: str | None = KNOWLEDGE_CONFIG.FILTER_STRING
     scope: str = KNOWLEDGE_CONFIG.SCOPE
-    extra_repo_ids: Optional[tuple[str, ...]] = None
+    extra_repo_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -130,9 +130,9 @@ class MultiRetrievePayloadOptions:
     """
 
     page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
-    filter_string: Optional[str] = KNOWLEDGE_CONFIG.FILTER_STRING
+    filter_string: str | None = KNOWLEDGE_CONFIG.FILTER_STRING
     scope: str = KNOWLEDGE_CONFIG.SCOPE
-    extra_repo_ids: Optional[tuple[str, ...]] = None
+    extra_repo_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -156,7 +156,7 @@ class RetrieveOptions:
     retry_options: RetryOptions = RetryOptions()
 
     @classmethod
-    def from_kwargs(cls, values: Dict[str, Any]):
+    def from_kwargs(cls, values: dict[str, Any]):
         """Build options from keyword-compatible overrides.
 
         Args:
@@ -252,7 +252,7 @@ class RetrieveOptions:
         """
         return self.retry_options.max_retries
 
-    def payload(self, user_query: str, scope: str) -> Dict[str, Any]:
+    def payload(self, user_query: str, scope: str) -> dict[str, Any]:
         """Return the HTTP JSON payload for one retrieve scope.
 
         Args:
@@ -298,7 +298,7 @@ class MultiRetrieveOptions:
     retry_options: RetryOptions = RetryOptions()
 
     @classmethod
-    def from_kwargs(cls, values: Dict[str, Any]):
+    def from_kwargs(cls, values: dict[str, Any]):
         """Build options from keyword-compatible overrides.
 
         Args:
@@ -375,7 +375,7 @@ class MultiRetrieveOptions:
         """
         return self.retry_options.max_retries
 
-    def retrieve_kwargs(self, repo_id: str, page_size: int) -> Dict[str, Any]:
+    def retrieve_kwargs(self, repo_id: str, page_size: int) -> dict[str, Any]:
         """Return keyword arguments for a single retrieve call.
 
         Args:
@@ -425,7 +425,7 @@ class RerankOptions:
     max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES
 
     @classmethod
-    def from_kwargs(cls, values: Dict[str, Any]):
+    def from_kwargs(cls, values: dict[str, Any]):
         """Build options from keyword-compatible overrides.
 
         Args:
@@ -465,12 +465,12 @@ async def _retrieve_cached(
     scope: str,
     page_num: int,
     page_size: int,
-    filter_string: Optional[str],
+    filter_string: str | None,
     extra_repo_ids: tuple[str, ...],
     top_n: int,
     score_threshold: float,
     options: RetrieveOptions,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Cache the merged retrieve + rerank answer per user query.
 
     The cache key is anchored on ``user_query`` plus the minimum set
@@ -519,7 +519,7 @@ async def _retrieve_cached(
 # pylint: enable=too-many-arguments
 
 
-async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
+async def retrieve(user_query: str, **kwargs: Any) -> dict[str, Any]:
     """Keyword-compatible cached knowledge-base retrieval.
 
     Thin wrapper that resolves ``RetrieveOptions`` from kwargs and
@@ -554,7 +554,7 @@ async def retrieve(user_query: str, **kwargs: Any) -> Dict[str, Any]:
 async def _retrieve_raw_docs(
     user_query: str,
     options: RetrieveOptions,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Return raw retrieve docs for the configured search scope."""
     async with get_async_client(timeout=_timeout(options.timeout)) as client:
         if options.scope in ("doc", "keyword"):
@@ -606,7 +606,7 @@ async def _retrieve_scope_docs(
     scope: str,
     page_num: int,
     page_size: int,
-    filter_string: Optional[str],
+    filter_string: str | None,
     extra_repo_ids: tuple[str, ...],
     timeout: float,
     max_retries: int,
@@ -667,7 +667,7 @@ async def _retrieve_both_scopes(
     client: AsyncClient,
     user_query: str,
     options: RetrieveOptions,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Retrieve and merge docs from document and keyword scopes."""
     tasks = [
         _retrieve_scope_docs(
@@ -687,7 +687,7 @@ async def _retrieve_both_scopes(
         for scope in ("doc", "keyword")
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    doc_list: List[Dict[str, Any]] = []
+    doc_list: list[dict[str, Any]] = []
     for result in results:
         if isinstance(result, Exception):
             raise McpError(
@@ -710,7 +710,7 @@ async def _multi_retrieve(
     top_n: int,
     *,
     options: MultiRetrieveOptions,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve from multiple repositories and cache the merged result.
 
     The composite cache key is anchored on ``user_query`` plus the
@@ -752,10 +752,10 @@ async def _multi_retrieve(
 
 async def multi_retrieve(
     user_query: str,
-    repo_id_dict: Optional[Dict[str, int]] = None,
-    semaphore: Optional[asyncio.Semaphore] = None,
+    repo_id_dict: dict[str, int] | None = None,
+    semaphore: asyncio.Semaphore | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Keyword-compatible cached retrieval from multiple repositories.
 
     Args:
@@ -789,7 +789,7 @@ async def multi_retrieve(
 
 async def rerank(
     user_query: str,
-    doc_list: List[Dict[str, Any]],
+    doc_list: list[dict[str, Any]],
     **kwargs: Any,
 ) -> list:
     """Rerank a list of documents based on a user query.
@@ -816,7 +816,7 @@ async def rerank(
 async def _rank_docs(
     client: AsyncClient,
     user_query: str,
-    docs: List[Dict[str, Any]],
+    docs: list[dict[str, Any]],
     options: RerankOptions,
 ):
     """Rank docs, batching when needed.
@@ -865,7 +865,7 @@ async def _rerank_batch(
     client: AsyncClient,
     *,
     user_query: str,
-    docs_batch: List[Dict[str, Any]],
+    docs_batch: list[dict[str, Any]],
     rerank_url: str,
     top_n: int,
     timeout: float,
@@ -921,10 +921,10 @@ async def _rerank_batch(
 
 
 def _collect_rank_results(
-    results: List[Any], top_n: int
-) -> List[Dict[str, Any]]:
+    results: list[Any], top_n: int
+) -> list[dict[str, Any]]:
     """Flatten rank results or raise on batch errors."""
-    all_results: List[Dict[str, Any]] = []
+    all_results: list[dict[str, Any]] = []
     for result in results:
         if isinstance(result, BaseException):
             raise McpError(
@@ -940,8 +940,8 @@ def _collect_rank_results(
 
 
 def _rerank_docs(
-    doc_list: List[Dict[str, Any]],
-) -> tuple[List[Dict[str, Any]], Dict[Any, Dict[str, Any]]]:
+    doc_list: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[Any, dict[str, Any]]]:
     """Build rerank API docs and an ID lookup map."""
     docs, id_doc_dict = [], {}
     for doc in doc_list:
@@ -959,8 +959,8 @@ def _rerank_docs(
 
 
 def _sorted_merged_docs(
-    results: List[Any], top_n: int
-) -> List[Dict[str, Any]]:
+    results: list[Any], top_n: int
+) -> list[dict[str, Any]]:
     """Merge retrieve results and sort them by score."""
     merged_docs = []
     for result in results:

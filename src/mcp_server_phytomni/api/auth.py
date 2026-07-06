@@ -20,10 +20,9 @@ import sqlite3
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from functools import lru_cache
+from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
-from typing import Optional
 
 from fastapi import Header, HTTPException
 from pydantic import BaseModel, ConfigDict
@@ -51,7 +50,7 @@ _UNAUTHORIZED_HEADERS = {"WWW-Authenticate": "Bearer"}
 
 def _now_iso() -> str:
     """Return the current UTC timestamp as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _unauthorized() -> HTTPException:
@@ -63,11 +62,11 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def _is_expired(expires_at: Optional[str]) -> bool:
+def _is_expired(expires_at: str | None) -> bool:
     """Return True when an ISO expiry timestamp is in the past."""
     if not expires_at:
         return False
-    return datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc)
+    return datetime.fromisoformat(expires_at) <= datetime.now(UTC)
 
 
 def _pbkdf2(key: str, salt: str) -> str:
@@ -77,14 +76,14 @@ def _pbkdf2(key: str, salt: str) -> str:
     ).hex()
 
 
-def _serialize_scopes(scopes: Optional[Sequence[str]]) -> Optional[str]:
+def _serialize_scopes(scopes: Sequence[str] | None) -> str | None:
     """Serialize a scope set to JSON; None for an all-access key."""
     if not scopes:
         return None
     return json.dumps(sorted(set(scopes)))
 
 
-def _parse_scopes(raw: Optional[str]) -> frozenset[str]:
+def _parse_scopes(raw: str | None) -> frozenset[str]:
     """Parse a stored scope string; None or empty means all access."""
     if not raw:
         return frozenset()
@@ -187,12 +186,12 @@ class ApiKeyRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     user_id: str
-    name: Optional[str]
+    name: str | None
     prefix: str
     created_at: str
-    revoked_at: Optional[str]
-    last_used_at: Optional[str]
-    expires_at: Optional[str]
+    revoked_at: str | None
+    last_used_at: str | None
+    expires_at: str | None
     scopes: frozenset[str] = frozenset()
 
     @property
@@ -267,9 +266,9 @@ class ApiKeyStore:
     def create(
         self,
         user_id: str,
-        name: Optional[str] = None,
-        expires_at: Optional[datetime] = None,
-        scopes: Optional[Sequence[str]] = None,
+        name: str | None = None,
+        expires_at: datetime | None = None,
+        scopes: Sequence[str] | None = None,
     ) -> CreatedApiKey:
         """Mint and persist a new key, returning the one-time plaintext.
 
@@ -352,7 +351,7 @@ class ApiKeyStore:
 
     def list(
         self,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         active_only: bool = True,
     ) -> list[ApiKeyRecord]:
         """List stored keys without any secret material.
@@ -416,7 +415,7 @@ class ApiKeyStore:
             return cursor.rowcount > 0
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_key_store(db_path: str) -> ApiKeyStore:
     """Return a process-cached store for a resolved database path.
 
@@ -430,8 +429,8 @@ def get_key_store(db_path: str) -> ApiKeyStore:
 
 
 def _extract_token(
-    authorization: Optional[str], x_api_key: Optional[str]
-) -> Optional[str]:
+    authorization: str | None, x_api_key: str | None
+) -> str | None:
     """Pull the presented key from Bearer or X-API-Key headers."""
     if authorization and authorization.startswith("Bearer "):
         token = authorization[len("Bearer ") :].strip()
@@ -444,8 +443,8 @@ def _extract_token(
 
 def resolve_principal(
     store: ApiKeyStore,
-    authorization: Optional[str],
-    x_api_key: Optional[str],
+    authorization: str | None,
+    x_api_key: str | None,
 ) -> ApiPrincipal:
     """Resolve a request's credentials to a principal or raise 401.
 
@@ -467,8 +466,8 @@ def resolve_principal(
 
 
 async def require_principal(
-    authorization: Optional[str] = Header(default=None),
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> ApiPrincipal:
     """FastAPI dependency resolving the caller from request headers.
 

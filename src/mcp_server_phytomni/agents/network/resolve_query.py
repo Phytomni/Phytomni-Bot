@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -44,7 +44,7 @@ __all__ = [
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/gene_network_resolve_to_id"
 _RESOLVER_USER_PROMPT_PATH = "user/gene_network_resolve_to_id"
-_RESOLVER_JSON_SCHEMA: Dict[str, Any] = {
+_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
         "name": "GeneNetworkResolution",
@@ -109,7 +109,7 @@ class GeneNetworkResolveResult(BaseModel):
     to_id: str
     species_code: str
     raw_query: str
-    candidates: List[GeneNetworkToIdCandidate]
+    candidates: list[GeneNetworkToIdCandidate]
 
 
 async def resolve_network_user_query(
@@ -171,7 +171,7 @@ async def resolve_network_user_query(
             phyto_chat(user_query=rendered_user_query, **chat_kwargs),
             timeout=timeout_seconds,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise GeneNetworkResolveError(
             f"resolver timeout after {timeout_seconds:.1f} s"
         ) from exc
@@ -264,8 +264,8 @@ def _extract_species_code(raw: Any) -> str:
 
 
 def _first_message_content(
-    phyto_response: Dict[str, Any],
-) -> Optional[str]:
+    phyto_response: dict[str, Any],
+) -> str | None:
     """Pull the first assistant message content out of an OpenAI dict."""
     choices = phyto_response.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -287,7 +287,7 @@ def _normalize_candidates(
     candidates_field: Any,
     valid_to_ids: set,
     top_species_code: str,
-) -> List[GeneNetworkToIdCandidate]:
+) -> list[GeneNetworkToIdCandidate]:
     """Build candidate list, dropping blanks and ids outside the catalog.
 
     Validation against ``valid_to_ids`` is the resolver's last line
@@ -300,7 +300,7 @@ def _normalize_candidates(
     when absent or blank so downstream consumers always see a
     populated three-letter code.
     """
-    out: List[GeneNetworkToIdCandidate] = []
+    out: list[GeneNetworkToIdCandidate] = []
     if isinstance(candidates_field, list):
         for raw in candidates_field:
             if not isinstance(raw, dict):

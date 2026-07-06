@@ -12,7 +12,8 @@ free-text-only completions that bypass the SQL backend.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,7 @@ pytestmark = pytest.mark.live
 
 async def test_data_agent_e2e_returns_nl2sql_response(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
+    load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
     """DataAgent answers the Os01g0177400 homology query.
 

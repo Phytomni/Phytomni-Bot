@@ -34,8 +34,8 @@ import argparse
 import shlex
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -45,7 +45,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # author should apply in the same diff. The rationale for each rule
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/lint-exemptions.md``.
-RULE_BASELINES: Dict[str, int] = {
+RULE_BASELINES: dict[str, int] = {
     "R0801": 92,  # duplicate-code: cross-file similar blocks
     # too-few-public-methods: test fake classes + Protocol stubs +
     # GraphLoader (load + flag-gated __init__ only) + the terminal-result
@@ -122,9 +122,9 @@ def _run_pylint(pylint_cmd: str, files: Iterable[str]) -> str:
 
 def _count_violations(
     pylint_output: str,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Count occurrences of each rule code in pylint output."""
-    counts: Dict[str, int] = {rule: 0 for rule in RULE_BASELINES}
+    counts: dict[str, int] = {rule: 0 for rule in RULE_BASELINES}
     for line in pylint_output.splitlines():
         for rule in RULE_BASELINES:
             if f": {rule}:" in line:
@@ -132,7 +132,7 @@ def _count_violations(
     return counts
 
 
-def _evaluate(counts: Dict[str, int]) -> Tuple[list[str], list[str]]:
+def _evaluate(counts: dict[str, int]) -> tuple[list[str], list[str]]:
     """Return (violations, ratchet_hints) by comparing counts to floors."""
     violations: list[str] = []
     hints: list[str] = []

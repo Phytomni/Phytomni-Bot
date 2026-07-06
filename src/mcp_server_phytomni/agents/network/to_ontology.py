@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -56,13 +56,13 @@ class ToOntologyEntry(BaseModel):
 
     id: str
     name: str
-    synonyms: List[str] = []
+    synonyms: list[str] = []
     definition: str = ""
     status: _StatusLiteral = ""
 
 
 @lru_cache(maxsize=1)
-def load_to_ontology() -> List[ToOntologyEntry]:
+def load_to_ontology() -> list[ToOntologyEntry]:
     """Load the committed TO catalog into a typed list (process-cached).
 
     Returns the customer-filtered set rather than the full upstream
@@ -76,14 +76,14 @@ def load_to_ontology() -> List[ToOntologyEntry]:
     return [ToOntologyEntry.model_validate(item) for item in raw_entries]
 
 
-def format_to_ontology_for_prompt(entries: List[ToOntologyEntry]) -> str:
+def format_to_ontology_for_prompt(entries: list[ToOntologyEntry]) -> str:
     """Format the catalog as a compact text block for LLM injection.
 
     One line per entry: ``TO:NNNNNNN | <name> | synonyms: ...``. Skips
     the definition (kept in the JSON for documentation only) so the
     prompt stays within the per-call token budget the resolver pays.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     for entry in entries:
         line = f"{entry.id} | {entry.name}"
         if entry.synonyms:

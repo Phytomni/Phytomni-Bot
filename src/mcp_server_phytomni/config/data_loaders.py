@@ -7,8 +7,6 @@
 Functions: load_species_data, load_prompt_templates.
 """
 
-from typing import Dict
-
 from yaml import safe_load
 
 from ..common.prompts import load_json_file
@@ -22,7 +20,7 @@ from .defaults import (
 
 def load_species_data(
     file_path: str,
-) -> Dict[str, Dict[str, Dict[str, SpeciesEntryValue]]]:
+) -> dict[str, dict[str, dict[str, SpeciesEntryValue]]]:
     """Load and validate the species data list.
 
     The file is expected to follow the schema
@@ -50,7 +48,7 @@ def load_species_data(
 
 def load_prompt_templates(
     file_path: str,
-) -> Dict[str, Dict[str, PromptLeaf]]:
+) -> dict[str, dict[str, PromptLeaf]]:
     """Load and validate the prompt templates YAML.
 
     The file is expected to follow the schema ``{section: {key: leaf}}``
@@ -72,6 +70,6 @@ def load_prompt_templates(
         pydantic.ValidationError: If the YAML shape diverges from the
             two-or-three-level nested-dict schema with string leaves.
     """
-    with open(file_path, "r", encoding="utf-8") as handle:
+    with open(file_path, encoding="utf-8") as handle:
         raw = safe_load(handle)
     return PromptTemplates.model_validate(raw).root

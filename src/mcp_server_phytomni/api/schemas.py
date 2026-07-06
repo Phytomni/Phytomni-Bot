@@ -13,7 +13,7 @@ Public aliases: UploadPurpose.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,7 +61,7 @@ class ApiErrorDetail(BaseModel):
     type: str
     code: int
     message: str
-    request_id: Optional[str] = None
+    request_id: str | None = None
 
 
 class ApiErrorResponse(BaseModel):
@@ -114,12 +114,12 @@ class ChatCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     model: str
-    messages: List[ChatMessage]
+    messages: list[ChatMessage]
     stream: bool = False
-    obs_file_list: Optional[List[str]] = None
-    resolve_gene_id: Optional[bool] = None
-    dialogue_id: Optional[str] = None
-    debug: Optional[bool] = None
+    obs_file_list: list[str] | None = None
+    resolve_gene_id: bool | None = None
+    dialogue_id: str | None = None
+    debug: bool | None = None
 
 
 class AgentRunRequest(BaseModel):
@@ -140,9 +140,9 @@ class AgentRunRequest(BaseModel):
             PHYTOMNI_DEBUG=1 overrides this to always return full.
     """
 
-    arguments: Dict[str, Any] = Field(default_factory=dict)
-    dialogue_id: Optional[str] = None
-    debug: Optional[bool] = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    dialogue_id: str | None = None
+    debug: bool | None = None
 
 
 class ExpertQueryRequest(BaseModel):
@@ -166,10 +166,10 @@ class ExpertQueryRequest(BaseModel):
     """
 
     user_query: str
-    history: List[Dict[str, Any]] = Field(default_factory=list)
-    obs_file_list: List[str] = Field(default_factory=list)
-    dialogue_id: Optional[str] = None
-    forced_tool: Optional[str] = None
+    history: list[dict[str, Any]] = Field(default_factory=list)
+    obs_file_list: list[str] = Field(default_factory=list)
+    dialogue_id: str | None = None
+    forced_tool: str | None = None
 
 
 class ApiKeyCreateRequest(BaseModel):
@@ -182,8 +182,8 @@ class ApiKeyCreateRequest(BaseModel):
     """
 
     user_id: str
-    name: Optional[str] = None
-    expires_days: Optional[int] = None
+    name: str | None = None
+    expires_days: int | None = None
 
 
 class ApiKeyCreateResponse(BaseModel):
@@ -201,7 +201,7 @@ class ApiKeyCreateResponse(BaseModel):
     api_key: str
     prefix: str
     user_id: str
-    expires_at: Optional[str] = None
+    expires_at: str | None = None
 
 
 class ApiKeyRecordResponse(BaseModel):
@@ -219,12 +219,12 @@ class ApiKeyRecordResponse(BaseModel):
     """
 
     user_id: str
-    name: Optional[str] = None
+    name: str | None = None
     prefix: str
     created_at: str
-    revoked_at: Optional[str] = None
-    last_used_at: Optional[str] = None
-    expires_at: Optional[str] = None
+    revoked_at: str | None = None
+    last_used_at: str | None = None
+    expires_at: str | None = None
     active: bool
 
 
@@ -237,7 +237,7 @@ class ApiKeyListResponse(BaseModel):
     """
 
     object: str = "list"
-    data: List[ApiKeyRecordResponse]
+    data: list[ApiKeyRecordResponse]
 
 
 class ApiKeyDeleteResponse(BaseModel):

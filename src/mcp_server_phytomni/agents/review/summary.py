@@ -16,7 +16,7 @@ inheritance, sharing the ``self.review_config`` /
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import parse_follow_up_questions
@@ -27,7 +27,7 @@ from .helpers import _renumber_citations
 if TYPE_CHECKING:
     from .agent import DeepResearchState
 else:
-    DeepResearchState = Dict[str, Any]
+    DeepResearchState = dict[str, Any]
 
 
 class ReviewSummaryMixin(WorkflowMixinBase):
@@ -35,7 +35,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
     async def summary_prep_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat payload for the summary synthesis call.
 
         Mirrors the prompt-building half of ``summary_node``. The
@@ -51,7 +51,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
             ``chat_payload`` and ``"summary_post_node"`` under
             ``pending_post``.
         """
-        summary_params: Dict[str, str] = {
+        summary_params: dict[str, str] = {
             "user_query": state["original_user_query"]
         }
         for idx in range(4):
@@ -90,7 +90,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
     async def summary_post_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse the summary chat response into ``summary_content``.
 
         Mirrors the response-parsing half of ``summary_node`` but reads
@@ -123,7 +123,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
     async def follow_up_prep_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Renumber citations and build the follow-up chat payload.
 
         Mirrors the pre-chat half of ``post_process_node``: runs
@@ -175,7 +175,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
 
     async def follow_up_post_node(
         self: Any, state: DeepResearchState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Assemble ``final_response`` from the follow-up chat response.
 
         Mirrors the response-handling half of ``post_process_node`` but

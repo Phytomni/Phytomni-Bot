@@ -15,7 +15,7 @@ resolution lives in resolve_query.py.
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ...common.http import JsonPostRetry, require_json_object
 from ...common.prompts import get_prompt
@@ -53,7 +53,7 @@ class GeneRetrieveRequest:
     top_n: int
 
 
-def _response_data(response: Any) -> List[Dict[str, Any]]:
+def _response_data(response: Any) -> list[dict[str, Any]]:
     """Return BI API data rows from a response if present."""
     if not isinstance(response, dict) or response.get("message") != "ok":
         return []
@@ -61,20 +61,20 @@ def _response_data(response: Any) -> List[Dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-def _first_row(response: Any) -> Optional[Dict[str, Any]]:
+def _first_row(response: Any) -> dict[str, Any] | None:
     """Return the first BI API row, if available."""
     data = _response_data(response)
     return data[0] if data and isinstance(data[0], dict) else None
 
 
-def _split_symbols(symbols: str) -> List[str]:
+def _split_symbols(symbols: str) -> list[str]:
     """Split pipe-separated gene symbols into a clean list."""
     if not symbols:
         return []
     return [symbol.strip() for symbol in symbols.split("|") if symbol.strip()]
 
 
-def _dedupe(values: List[str]) -> List[str]:
+def _dedupe(values: list[str]) -> list[str]:
     """Preserve order while removing empty strings and duplicates."""
     seen = set()
     deduped = []
@@ -85,12 +85,12 @@ def _dedupe(values: List[str]) -> List[str]:
     return deduped
 
 
-def _doc_content(doc: Dict[str, Any]) -> str:
+def _doc_content(doc: dict[str, Any]) -> str:
     """Return the best available document text field."""
     return str(doc.get("big_content") or doc.get("content") or "")
 
 
-def _format_docs(doc_list: List[Dict[str, Any]], max_tokens: int) -> str:
+def _format_docs(doc_list: list[dict[str, Any]], max_tokens: int) -> str:
     """Format retrieved documents into prompt context."""
     fragments = []
     total_length = 0
@@ -109,18 +109,18 @@ def _format_docs(doc_list: List[Dict[str, Any]], max_tokens: int) -> str:
 
 
 def _attach_metadata(
-    phyto_response: Dict[str, Any],
-    doc_list: List[Dict[str, Any]],
-    follow_up_questions: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    phyto_response: dict[str, Any],
+    doc_list: list[dict[str, Any]],
+    follow_up_questions: list[str] | None = None,
+) -> dict[str, Any]:
     """Attach references and follow-up questions to a model response."""
-    payload: Dict[str, Any] = {"doc_list": doc_list, "total": 10000}
+    payload: dict[str, Any] = {"doc_list": doc_list, "total": 10000}
     if follow_up_questions is not None:
         payload["follow_up_questions"] = follow_up_questions
     return attach_message_payload(phyto_response, payload)
 
 
-def _safe_rows(results: List[Any], index: int) -> List[Dict[str, Any]]:
+def _safe_rows(results: list[Any], index: int) -> list[dict[str, Any]]:
     """Return BI response rows for one gather result index."""
     result = results[index]
     if isinstance(result, Exception):
@@ -128,7 +128,7 @@ def _safe_rows(results: List[Any], index: int) -> List[Dict[str, Any]]:
     return _response_data(result)
 
 
-def _go_annotation_string(go_rows: List[Dict[str, Any]]) -> str:
+def _go_annotation_string(go_rows: list[dict[str, Any]]) -> str:
     """Format selected GO annotations."""
     core_rows = [
         row
@@ -153,7 +153,7 @@ def _go_annotation_string(go_rows: List[Dict[str, Any]]) -> str:
     )
 
 
-def _mapman_annotation_string(mapman_rows: List[Dict[str, Any]]) -> str:
+def _mapman_annotation_string(mapman_rows: list[dict[str, Any]]) -> str:
     """Format MapMan descriptions while skipping uninformative entries."""
     invalid_keywords = ["not assigned", "unknown", "not annotate"]
     return (
@@ -175,7 +175,7 @@ def _mapman_annotation_string(mapman_rows: List[Dict[str, Any]]) -> str:
     )
 
 
-def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
+def _interpro_annotation_string(interpro_rows: list[dict[str, Any]]) -> str:
     """Format InterPro annotation names."""
     return (
         " ; ".join(
@@ -192,9 +192,9 @@ def _interpro_annotation_string(interpro_rows: List[Dict[str, Any]]) -> str:
 
 
 def _annotation_strings_delta(
-    annotation_responses: List[Any],
-    structure_row: Dict[str, Any],
-) -> Dict[str, str]:
+    annotation_responses: list[Any],
+    structure_row: dict[str, Any],
+) -> dict[str, str]:
     """Format the five annotation flat strings into a state-delta dict.
 
     Keeps ``fetch_annotation_node`` within pylint R0914 too-many-locals
@@ -222,8 +222,8 @@ def _annotation_strings_delta(
 
 
 def _alias_counts_delta(
-    gene_id_info_response: Optional[Dict[str, Any]],
-) -> Dict[str, int]:
+    gene_id_info_response: dict[str, Any] | None,
+) -> dict[str, int]:
     """Derive Basic Information cross-species alias counts.
 
     The ``id2multispecies`` response when queried with the resolved
@@ -246,7 +246,7 @@ def _alias_counts_delta(
     }
 
 
-def _gene_structure_annotation_string(structure_row: Dict[str, Any]) -> str:
+def _gene_structure_annotation_string(structure_row: dict[str, Any]) -> str:
     """Build a concise display string for gene structural metadata.
 
     Excludes location columns (``chromosome``, ``start``, ``end``,
@@ -269,7 +269,7 @@ def _gene_structure_annotation_string(structure_row: Dict[str, Any]) -> str:
         "species_code",
         "sequence_type",
     }
-    parts: List[str] = []
+    parts: list[str] = []
     for key, value in structure_row.items():
         if key in skip:
             continue
@@ -280,7 +280,7 @@ def _gene_structure_annotation_string(structure_row: Dict[str, Any]) -> str:
 
 
 def _description_annotation_string(
-    description_rows: List[Dict[str, Any]],
+    description_rows: list[dict[str, Any]],
 ) -> str:
     """Format gene description text from BI annotation rows.
 
@@ -311,7 +311,7 @@ def _description_annotation_string(
 async def run_bi_api(
     query_sql: str,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Invoke the BI API to retrieve annotation information.
 
     Args:
@@ -349,10 +349,10 @@ async def run_bi_api(
 
 async def gene_retrieve(
     species: str,
-    gene_symbol_list: List[str],
+    gene_symbol_list: list[str],
     knowledge_agent: KnowledgeAgent,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve literature for a gene through the LangGraph KnowledgeAgent.
 
     Args:
@@ -385,8 +385,8 @@ async def gene_retrieve(
 async def _gene_retrieve(
     request: GeneRetrieveRequest,
     knowledge_agent: KnowledgeAgent,
-    semaphore: Optional[asyncio.Semaphore] = None,
-) -> Dict[str, Any]:
+    semaphore: asyncio.Semaphore | None = None,
+) -> dict[str, Any]:
     """Fan out one KnowledgeAgent.arun per symbol and merge the docs.
 
     The composite cache that previously sat on this function is gone;
@@ -400,7 +400,7 @@ async def _gene_retrieve(
     combined_symbols = "\n".join(request.symbols)
     query_terms = _dedupe([*request.symbols, combined_symbols])
 
-    async def make_gene_retrieve() -> Dict[str, Any]:
+    async def make_gene_retrieve() -> dict[str, Any]:
         tasks = [
             knowledge_agent.arun(
                 user_query=f"{request.species}\n{symbol}",
@@ -445,9 +445,9 @@ def clear_gene_retrieve_cache() -> None:
 
 async def _generate_follow_up(
     user_query: str,
-    phyto_response: Dict[str, Any],
+    phyto_response: dict[str, Any],
     **kwargs: Any,
-) -> List[str]:
+) -> list[str]:
     """Generate follow-up questions for a brief gene response."""
     prompt_file = kwargs.get("prompt_file", BRIEF_CONFIG.PROMPT_FILE)
     follow_up_response = await phyto_chat(

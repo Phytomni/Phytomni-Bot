@@ -14,7 +14,7 @@ analyst submission. Nodes route every external call through the
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from ...config.settings import get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
@@ -39,14 +39,14 @@ class _EnvironmentSubmitInputs(NamedTuple):
     """
 
     goal_description: str
-    data_list: Dict[str, str]
+    data_list: dict[str, str]
     output_dir: str
     meta: str
 
 
 async def extract_region_codes_node(
     state: EnvironmentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract province / city / county codes from the user query.
 
     Delegates to :func:`agents.environment.agent.environment_region_codes`
@@ -66,7 +66,7 @@ async def extract_region_codes_node(
 
 async def submit_vci_task_node(
     state: EnvironmentState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Submit the VCI analysis task for the parsed region codes.
 
     Mirrors the post-extraction body of
@@ -129,8 +129,8 @@ async def _submit_vci_via_subgraph(
     inputs: _EnvironmentSubmitInputs,
     *,
     region_codes: tuple[str, str, str],
-    submit_kwargs: Dict[str, Any],
-) -> Dict[str, Any]:
+    submit_kwargs: dict[str, Any],
+) -> dict[str, Any]:
     """Dispatch the VCI analysis task through the compiled analyst subgraph.
 
     Mirrors ``analyst.submit`` (the legacy free-function path) but

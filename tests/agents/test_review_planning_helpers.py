@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any
 
 import pytest
 
@@ -155,7 +155,7 @@ class _PlanningProbe(ReviewPlanningMixin):
         dimension_result: Any,
         accumulator: RetrievalAccumulator,
         length_limit: float,
-    ) -> List[str]:
+    ) -> list[str]:
         """Public proxy for the protected ``_dimension_fragments`` helper."""
         return self._dimension_fragments(
             dimension_result, accumulator, length_limit

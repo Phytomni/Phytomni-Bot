@@ -14,7 +14,7 @@ against the dispatch site's expectations.
 
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from ..agents.deep_genome.formatting import SPECIES_CODE_MAP
 from ..agents.knowledge.state import KnowledgeInput

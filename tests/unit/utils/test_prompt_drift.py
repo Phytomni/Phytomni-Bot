@@ -13,8 +13,8 @@ silently rot and a missing key cannot crash an agent unnoticed.
 """
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import pytest
 import yaml
@@ -68,7 +68,7 @@ KNOWN_UNREFERENCED: frozenset[str] = frozenset(
 
 def _load_yaml() -> dict:
     """Return the parsed tracked prompt file."""
-    with open(_PROMPT_FILE, "r", encoding="utf-8") as handle:
+    with open(_PROMPT_FILE, encoding="utf-8") as handle:
         return yaml.safe_load(handle)
 
 

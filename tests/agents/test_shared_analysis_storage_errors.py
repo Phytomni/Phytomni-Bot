@@ -12,7 +12,7 @@ and the ``_obs_error_message`` formatting helper.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -89,7 +89,7 @@ def test_ensure_run_output_dir_reuses_preset_dir() -> None:
         run_identity=RunIdentity(
             user_id="alice",
             run_id=IdFactory().new_id("run", "evolution"),
-            created_at=datetime(2026, 5, 27, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 27, tzinfo=UTC),
         ),
         output_dir=preset,
     )

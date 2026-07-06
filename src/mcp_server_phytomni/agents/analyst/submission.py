@@ -14,7 +14,7 @@ keep the import graph acyclic.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+from typing import Any, Literal
 
 from ...config.overrides import (
     copy_config_with_overrides,
@@ -46,7 +46,7 @@ def _shared_arun_kwargs(
     output_dir: str,
     compute_resource: str,
     data_list: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return the AnalystAgent.arun kwarg block shared by submit wrappers.
 
     ``submit`` (here) and ``retrieve_plan_submit`` (``.planning``) both
@@ -109,7 +109,7 @@ def _submit_user_and_thread_id(
 
 
 def _build_submit_agent(
-    kwargs: Dict[str, Any],
+    kwargs: dict[str, Any],
     scope: str,
     operation: str,
     cache_label: str,
@@ -153,7 +153,7 @@ async def submit(
     goal_description: str,
     data_list: Any,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Submit a prepared analysis plan through AnalystAgent.
 
     Args:

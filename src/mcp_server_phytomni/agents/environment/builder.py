@@ -14,7 +14,7 @@ the compiled result see a narrow public contract.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
@@ -26,7 +26,7 @@ from .graph import (
 from .state import EnvironmentInput, EnvironmentOutput, EnvironmentState
 
 
-def build_environment_graph(checkpointer: Optional[Any] = None) -> Any:
+def build_environment_graph(checkpointer: Any | None = None) -> Any:
     """Return a compiled environment VCI LangGraph app.
 
     Args:

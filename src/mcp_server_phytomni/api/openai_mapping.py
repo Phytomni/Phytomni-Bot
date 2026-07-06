@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator
-from typing import Any, Mapping, Optional, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from typing import Any
 
 from ..mcp.result_formatting import AguiEvent
 from ..storage.path_policy import IdFactory
@@ -72,7 +72,7 @@ _RESOLVE_TO_ID_CAPABLE_TOOLS = {"GeneNetworkAgent"}
 _STREAM_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
 
-def tool_for_model(model: str) -> Optional[str]:
+def tool_for_model(model: str) -> str | None:
     """Return the MCP tool name for an OpenAI-style model id."""
     return MODEL_TO_TOOL.get(model)
 

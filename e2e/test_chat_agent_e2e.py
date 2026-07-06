@@ -12,7 +12,8 @@ suite is invoked manually with a configured ``.env``.
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -41,7 +42,7 @@ def _expect_reasoning_enabled() -> bool:
 
 async def test_chat_agent_e2e_returns_photosynthesis_answer(
     mcp_client: PhytomniMcpClient,
-    load_payload: Callable[[str], Dict[str, Any]],
+    load_payload: Callable[[str], dict[str, Any]],
 ) -> None:
     """ChatAgent answers the C3 query with photosynthesis-related text.
 

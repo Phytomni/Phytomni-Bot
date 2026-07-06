@@ -28,7 +28,6 @@ from collections.abc import (
 )
 from contextlib import AsyncExitStack, aclosing
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import parse_qsl, urlencode
 
 import httpx
@@ -255,7 +254,7 @@ class TeeOutcome:
     finish_reason: RelayFinishReason
     truncated: bool
     total_bytes: int
-    error_type: Optional[str] = None
+    error_type: str | None = None
 
 
 async def tee_and_stream(
@@ -263,7 +262,7 @@ async def tee_and_stream(
     *,
     audit_cap: int,
     on_complete: Callable[[TeeOutcome], Awaitable[None]],
-    deadline: Optional[float] = None,
+    deadline: float | None = None,
 ) -> AsyncGenerator[bytes, None]:
     """Stream upstream chunks to the client while capturing an audit copy.
 
@@ -290,7 +289,7 @@ async def tee_and_stream(
     copy = bytearray()
     total = 0
     reason = RelayFinishReason.COMPLETE
-    error_type: Optional[str] = None
+    error_type: str | None = None
     started = time.monotonic()
     try:
         while True:
@@ -353,7 +352,7 @@ class RelayUpstream:
     error_mode: RelayErrorMode
     service: str
     inject_headers: RelayInjectionStrategy
-    operation: Optional[str] = None
+    operation: str | None = None
     trust_env: bool = True
 
 
@@ -398,7 +397,7 @@ def _streaming_relay_response(
     *,
     cap: int,
     record: Callable[..., None],
-    deadline: Optional[float] = None,
+    deadline: float | None = None,
 ) -> StreamingResponse:
     """Build a streamed 2xx relay response that tees + audits on end.
 
@@ -586,9 +585,9 @@ async def forward_relay_request(
 
     def record(
         *,
-        status_code: Optional[int],
-        response_body: Optional[str],
-        error_type: Optional[str],
+        status_code: int | None,
+        response_body: str | None,
+        error_type: str | None,
     ) -> None:
         entry = RelayAuditRecord(
             request_id=request_id,

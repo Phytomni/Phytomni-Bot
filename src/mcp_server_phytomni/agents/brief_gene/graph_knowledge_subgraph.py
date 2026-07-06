@@ -15,7 +15,7 @@ mirrors the analyst-side mixin pattern in
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -31,7 +31,7 @@ from .pipeline import _dedupe, _format_docs
 if TYPE_CHECKING:
     from .state import BriefGeneAgentState
 else:
-    BriefGeneAgentState = Dict[str, Any]
+    BriefGeneAgentState = dict[str, Any]
 
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class BriefGeneKnowledgeSubgraphMixin:
 
     async def retrieve_prep_tasks_node(
         self: Any, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the per-symbol task list for the Send-dispatched fan-out.
 
         Mirrors the prompt-building half of the legacy
@@ -126,7 +126,7 @@ class BriefGeneKnowledgeSubgraphMixin:
             species = state["species_all_name"]
             combined_symbols = "\n".join(symbols)
             query_terms = list(_dedupe([*symbols, combined_symbols]))
-            tasks: List[Dict[str, Any]] = [
+            tasks: list[dict[str, Any]] = [
                 {
                     "knowledge_input": build_brief_gene_knowledge_input(
                         f"{species}\n{symbol}"
@@ -148,7 +148,7 @@ class BriefGeneKnowledgeSubgraphMixin:
 
     def route_retrieve_tasks(
         self: Any, state: BriefGeneAgentState
-    ) -> List[Send]:
+    ) -> list[Send]:
         """Dispatch one ``Send`` per ``retrieve_tasks`` entry.
 
         Each ``Send`` carries the per-task ``knowledge_input`` plus a
@@ -167,7 +167,7 @@ class BriefGeneKnowledgeSubgraphMixin:
             into the worker's state delta.
         """
         retrieve_tasks = cast(
-            List[Dict[str, Any]], state.get("retrieve_tasks", [])
+            list[dict[str, Any]], state.get("retrieve_tasks", [])
         )
         return [
             Send(
@@ -216,10 +216,10 @@ class BriefGeneKnowledgeSubgraphMixin:
 
         async def _retrieve_worker(
             state: BriefGeneAgentState,
-        ) -> Dict[str, Any]:
+        ) -> dict[str, Any]:
             task_index = cast(int, state.get("task_index", 0))
             knowledge_input = cast(
-                Dict[str, Any], state.get("knowledge_input", {})
+                dict[str, Any], state.get("knowledge_input", {})
             )
             try:
                 knowledge_output = await knowledge_app.ainvoke(knowledge_input)
@@ -246,7 +246,7 @@ class BriefGeneKnowledgeSubgraphMixin:
 
     async def retrieve_reduce_node(
         self: Any, state: BriefGeneAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Reduce per-worker indexed doc lists into the legacy outputs.
 
         Sorts the reducer-accumulated ``retrieve_indexed_results``
@@ -272,7 +272,7 @@ class BriefGeneKnowledgeSubgraphMixin:
             state.get("retrieve_indexed_results", []),
             key=lambda entry: entry[0],
         )
-        merged_docs: List[Dict[str, Any]] = []
+        merged_docs: list[dict[str, Any]] = []
         for _, docs in indexed:
             merged_docs.extend(doc for doc in docs if isinstance(doc, dict))
         sorted_docs = sorted(

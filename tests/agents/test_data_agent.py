@@ -9,7 +9,7 @@ legacy rewrite_nl2sql wrapper thread-id compatibility.
 """
 
 import importlib
-from typing import Any, List, cast
+from typing import Any, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -62,11 +62,11 @@ class _FakePost:
             fast and the cadence is assertable).
     """
 
-    def __init__(self, outcomes: List[Any]) -> None:
+    def __init__(self, outcomes: list[Any]) -> None:
         """Store the scripted per-attempt outcomes."""
         self.outcomes = outcomes
-        self.dialog_ids: List[str] = []
-        self.backoff_attempts: List[int] = []
+        self.dialog_ids: list[str] = []
+        self.backoff_attempts: list[int] = []
 
     async def __call__(self, client: Any, request: Any, retry: Any) -> Any:
         """Record the conversation id and return/raise the outcome.
@@ -89,7 +89,7 @@ class _FakePost:
             raise outcome
         return outcome
 
-    def recorded_dialog_ids(self) -> List[str]:
+    def recorded_dialog_ids(self) -> list[str]:
         """Return the conversation ids seen across attempts in order.
 
         Returns:
@@ -105,7 +105,7 @@ class _FakePost:
         """
         return len(self.dialog_ids)
 
-    def recorded_backoffs(self) -> List[int]:
+    def recorded_backoffs(self) -> list[int]:
         """Return the attempt index handed to each backoff, in order.
 
         Returns:

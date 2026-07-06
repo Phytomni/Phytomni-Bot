@@ -17,7 +17,7 @@ in tests remain valid without an unrelated migration.
 # class-definition time, so future annotations would silently drop
 # every ``Required[]`` marker on ``DataInput`` and ``DataState``.
 
-from typing import Any, Dict, Optional, Required, TypedDict
+from typing import Any, Required, TypedDict
 
 
 class DataInput(TypedDict, total=False):
@@ -41,7 +41,7 @@ class DataOutput(TypedDict):
     the SQL database response dict produced by ``search_node``.
     """
 
-    final_response: Dict[str, Any]
+    final_response: dict[str, Any]
 
 
 class DataState(TypedDict):
@@ -68,11 +68,11 @@ class DataState(TypedDict):
     retrieve_prompt: str
     rewrite_query: str
     final_response: dict
-    chat_payload: Optional[Dict[str, Any]]
-    chat_response: Optional[Dict[str, Any]]
-    pending_post_knowledge: Optional[str]
-    knowledge_payload: Optional[Dict[str, Any]]
-    knowledge_response: Optional[Dict[str, Any]]
+    chat_payload: dict[str, Any] | None
+    chat_response: dict[str, Any] | None
+    pending_post_knowledge: str | None
+    knowledge_payload: dict[str, Any] | None
+    knowledge_response: dict[str, Any] | None
 
 
 DataAgentState = DataState

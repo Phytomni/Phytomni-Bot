@@ -13,7 +13,8 @@ frames -> terminal ``TextMessage``/``Custom`` projection ->
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Dict, Mapping, Tuple
+from collections.abc import AsyncIterator, Mapping
+from typing import Any
 
 import pytest
 
@@ -44,7 +45,7 @@ def _fail_fast_on_network_escape(
 # ``retrieve_node`` updates (the repeat must not re-emit a StepStarted),
 # one off-whitelist worker node (must emit no StepStarted), one
 # ``generate_post_node`` update, then a terminal ``values`` chunk.
-_KNOWLEDGE_STAGE_YIELDS: list[Tuple[str, Dict[str, Any]]] = [
+_KNOWLEDGE_STAGE_YIELDS: list[tuple[str, dict[str, Any]]] = [
     ("updates", {"retrieve_node": {}}),
     ("updates", {"retrieve_node": {}}),
     ("updates", {"retrieve_worker_node": {}}),
@@ -76,7 +77,7 @@ class FakeStreamApp:
 
     def __init__(
         self,
-        yields: list[Tuple[str, Dict[str, Any]]],
+        yields: list[tuple[str, dict[str, Any]]],
         *,
         record_config: bool = False,
     ) -> None:
@@ -96,7 +97,7 @@ class FakeStreamApp:
         _state: Mapping[str, Any],
         stream_mode: list[str],
         config: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
+    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Assert modes, optionally capture config, yield the canned seq."""
         assert stream_mode == ["updates", "values"]
         if self._record:

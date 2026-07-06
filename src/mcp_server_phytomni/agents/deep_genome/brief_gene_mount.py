@@ -15,7 +15,7 @@ plus the experiment barrier increment.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -25,7 +25,7 @@ from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
-    DeepGenomeState = Dict[str, Any]
+    DeepGenomeState = dict[str, Any]
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _BRIEF_TITLE_PREFIX = "# Brief Gene Analysis of"
 
 
-def _deep_genome_preamble(brief_output: Dict[str, Any], gene_id: str) -> str:
+def _deep_genome_preamble(brief_output: dict[str, Any], gene_id: str) -> str:
     """Return brief_gene's preamble with the deep_genome H1 title.
 
     brief_gene renders ``# Brief Gene Analysis of <gene>`` as the first
@@ -79,7 +79,7 @@ def _degraded_preamble_banner(gene_id: str) -> str:
     return f"# Deep Genome Analysis of {gene_id}\n\n{_DEGRADED_BANNER}"
 
 
-def _degraded_mount_delta(gene_id: str, exc: BaseException) -> Dict[str, Any]:
+def _degraded_mount_delta(gene_id: str, exc: BaseException) -> dict[str, Any]:
     """Return the deep_genome state delta for a failed brief_gene mount.
 
     Carries a ``FailureRecord`` on the ``failures`` channel (machine
@@ -169,14 +169,14 @@ def make_brief_gene_mount_node(
         Async callable suitable for ``StateGraph.add_node``.
     """
 
-    async def _brief_gene_mount(state: DeepGenomeState) -> Dict[str, Any]:
+    async def _brief_gene_mount(state: DeepGenomeState) -> dict[str, Any]:
         gene_id = state["gene_id"]
-        brief_input: Dict[str, Any] = {
+        brief_input: dict[str, Any] = {
             "user_query": gene_id,
             "is_follow_up": False,
         }
         try:
-            brief_output: Dict[str, Any] = await brief_gene_app.ainvoke(
+            brief_output: dict[str, Any] = await brief_gene_app.ainvoke(
                 brief_input
             )
         except _BRIEF_GENE_MOUNT_CAUGHT as exc:

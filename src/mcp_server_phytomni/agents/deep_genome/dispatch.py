@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from langgraph.graph import END
 from langgraph.types import Send
@@ -44,7 +44,7 @@ from .summary import build_sub_summary
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
 else:
-    DeepGenomeState = Dict[str, Any]
+    DeepGenomeState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
     async def finalize_evolution_result(
         self: Any,
-        task: Optional[dict],
+        task: dict | None,
         state: DeepGenomeState,
     ) -> dict:
         """Turn a submitted evolution task into an analyst-branch delta.
@@ -483,7 +483,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         analysis_type: str,
         gene_id: str,
         state: DeepGenomeState,
-        results_dir: Optional[str] = None,
+        results_dir: str | None = None,
     ) -> dict:
         """Generate sub-summary for a specific analysis type."""
         result = build_sub_summary(
@@ -497,7 +497,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         self._figure_index = result.figure_index
         return result.data
 
-    async def _bi_json(self: Any, sql: str) -> Dict[str, Any]:
+    async def _bi_json(self: Any, sql: str) -> dict[str, Any]:
         """Query GaussDB and return the parsed JSON payload."""
         if relay_mode_enabled():
             return await relay_bi_query(sql, message="BI query failed")
@@ -639,7 +639,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         analysis_type: str,
         species_code: str,
         gene_id: str,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
     ) -> dict:
         """Submit analysis task using AnalystAgent and wait for completion.
 
@@ -865,7 +865,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             return str(local_path)
         return None
 
-    def _chat_kwargs(self: Any) -> Dict[str, Any]:
+    def _chat_kwargs(self: Any) -> dict[str, Any]:
         """Return shared Phyto chat kwargs for report nodes."""
         return {
             "prompt_file": self.deep_genome_config.PROMPT_FILE,

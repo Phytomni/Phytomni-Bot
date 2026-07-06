@@ -13,10 +13,11 @@ Functions: download_upload_context, download_obs_file,
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Mapping, Optional
+from typing import Any
 
 from markitdown import MarkItDown
 from obs import ObsClient
@@ -376,10 +377,10 @@ def _obs_download_error(download_response: Any) -> OSError:
 
 
 async def download_obs_list(
-    obs_file_list: List[str],
+    obs_file_list: list[str],
     server_dir: str,
     **kwargs: Any,
-) -> List[str]:
+) -> list[str]:
     """Download multiple files from OBS concurrently.
 
     This function uses an `asyncio.Semaphore` to limit the number of
@@ -442,9 +443,9 @@ def convert_single_file(server_file: str, cleanup: bool = True) -> str:
 
 
 def convert_multi_files(
-    server_file_list: List[str],
+    server_file_list: list[str],
     max_workers: int = SERVER_CONFIG.MAX_WORKERS,
-) -> List[str]:
+) -> list[str]:
     """Convert multiple files to Markdown in parallel.
 
     This function uses a `ProcessPoolExecutor` to convert a list of files to
@@ -465,11 +466,11 @@ def convert_multi_files(
 
 
 async def download_list_convert(
-    obs_file_list: List[str],
+    obs_file_list: list[str],
     server_dir: str,
-    executor: Optional[Executor] = None,
+    executor: Executor | None = None,
     **kwargs: Any,
-) -> List[str]:
+) -> list[str]:
     """Download, and convert multiple files from OBS in a parallel pipeline.
 
     This function orchestrates a workflow where files are downloaded from OBS

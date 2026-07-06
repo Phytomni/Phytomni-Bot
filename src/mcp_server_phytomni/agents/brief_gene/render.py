@@ -13,7 +13,7 @@ bullets, literature-only sections); the section prompts self-degrade.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..shared.parallel_dispatch import degraded_labels
 from .state import BriefGeneAgentState
@@ -23,7 +23,7 @@ def _format_gene_string(state: BriefGeneAgentState) -> str:
     """Pipe-join gene_name_symbol_list with gene_id_list for display."""
     symbols = state.get("gene_name_symbol_list") or []
     ids = state.get("gene_id_list") or []
-    combined: List[str] = []
+    combined: list[str] = []
     for item in symbols + ids:
         if item and item not in combined:
             combined.append(item)
@@ -95,7 +95,7 @@ def _render_degraded_banner(state: BriefGeneAgentState) -> str:
     )
 
 
-def _render_preamble_node(state: BriefGeneAgentState) -> Dict[str, Any]:
+def _render_preamble_node(state: BriefGeneAgentState) -> dict[str, Any]:
     """Assemble final_response.content from state fields.
 
     Writes ``final_response`` in OpenAI chat-completions shape so

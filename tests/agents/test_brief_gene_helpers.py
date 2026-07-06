@@ -14,7 +14,7 @@ or knowledge layer tests.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -78,7 +78,7 @@ def test_format_docs_truncates_when_max_tokens_exceeded() -> None:
     [document N end]`` (~41 chars even for tiny docs), so the threshold
     has to leave room for one full doc and reject the second.
     """
-    doc_list: List[Dict[str, Any]] = [
+    doc_list: list[dict[str, Any]] = [
         {"title": "A", "content": "aaa"},
         {"title": "B", "content": "bbbbbbbb"},
         {"title": "C", "content": "ccc"},
@@ -107,7 +107,7 @@ def test_format_docs_threads_subtitle_into_body() -> None:
 
 def test_attach_metadata_attaches_doc_list_and_optional_questions() -> None:
     """``_attach_metadata`` only attaches follow_up_questions when provided."""
-    response: Dict[str, Any] = {
+    response: dict[str, Any] = {
         "choices": [{"message": {"content": "answer"}}]
     }
 
@@ -124,7 +124,7 @@ def test_attach_metadata_attaches_doc_list_and_optional_questions() -> None:
 
 def test_attach_metadata_omits_follow_up_when_none() -> None:
     """Omitted follow_up_questions leaves the field off the payload."""
-    response: Dict[str, Any] = {
+    response: dict[str, Any] = {
         "choices": [{"message": {"content": "answer"}}]
     }
 
@@ -135,7 +135,7 @@ def test_attach_metadata_omits_follow_up_when_none() -> None:
 
 def test_safe_rows_returns_rows_for_index_or_empty_on_exception() -> None:
     """``_safe_rows`` returns BI data rows or [] when the index is an error."""
-    results: List[Any] = [
+    results: list[Any] = [
         {"message": "ok", "data": [{"a": 1}]},
         RuntimeError("BI down"),
     ]

@@ -13,7 +13,7 @@ pools are loop-bound. Driver errors surface as ``McpError``; the relay's
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict
+from typing import Any
 from weakref import WeakKeyDictionary
 
 import asyncpg
@@ -25,11 +25,11 @@ from ...config.settings import get_sensitive_config
 __all__ = ["aclose_gauss_pool", "gauss_query"]
 
 _GAUSS_POOL_STATE: WeakKeyDictionary[
-    asyncio.AbstractEventLoop, "asyncpg.Pool"
+    asyncio.AbstractEventLoop, asyncpg.Pool
 ] = WeakKeyDictionary()
 
 
-async def _gauss_pool() -> "asyncpg.Pool":
+async def _gauss_pool() -> asyncpg.Pool:
     """Return the current loop's asyncpg pool, creating it on first use.
 
     The pool is keyed by the running loop so the project's MCP serve
@@ -45,7 +45,7 @@ async def _gauss_pool() -> "asyncpg.Pool":
     return pool
 
 
-async def gauss_query(sql: str) -> Dict[str, Any]:
+async def gauss_query(sql: str) -> dict[str, Any]:
     """Run one read-only SQL statement against GaussDB.
 
     Args:

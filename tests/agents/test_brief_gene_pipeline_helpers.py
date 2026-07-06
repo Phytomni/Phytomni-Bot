@@ -15,7 +15,7 @@ and ``_generate_follow_up`` prompt construction. The pure sync helpers
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,7 +45,7 @@ async def test_gene_retrieve_dedupes_symbols_before_fanning_out() -> None:
     """Duplicate symbols are collapsed into one retrieval call."""
     calls: list[str] = []
 
-    async def fake_arun(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
         calls.append(kwargs["user_query"])
         return {"doc_list": []}
 
@@ -73,7 +73,7 @@ async def test_gene_retrieve_passes_top_n_and_semaphore() -> None:
     )
     semaphore = asyncio.Semaphore(2)
 
-    async def fake_arun(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
         del kwargs
         return {"doc_list": [{"score": 0.9}, {"score": 0.8}]}
 
@@ -103,9 +103,9 @@ async def test_generate_follow_up_constructs_prompt_and_parses_questions() -> (
     None
 ):
     """_generate_follow_up builds prompt and returns questions."""
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
         return {
             "choices": [

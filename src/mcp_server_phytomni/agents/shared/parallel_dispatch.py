@@ -11,7 +11,7 @@ Functions: build_parallel_dispatch_graph.
 import operator
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -51,7 +51,7 @@ class FailureRecord(TypedDict):
     task_label: str
     message: str
     kind: Literal["dispatch", "execute", "render"]
-    traceback_digest: Optional[str]
+    traceback_digest: str | None
 
 
 class DegradedRecord(TypedDict):
@@ -73,9 +73,9 @@ class DegradedRecord(TypedDict):
 
 
 def keep_last_error(
-    left: Optional[str],
-    right: Optional[str],
-) -> Optional[str]:
+    left: str | None,
+    right: str | None,
+) -> str | None:
     """Reduce concurrent error writes, keeping the latest non-empty one.
 
     Parallel-dispatch worker branches each merge their own update into the
@@ -109,7 +109,7 @@ def redact_failure_message(message: str) -> str:
     return redact_secrets(message)
 
 
-def degraded_labels(records: List[DegradedRecord]) -> List[str]:
+def degraded_labels(records: list[DegradedRecord]) -> list[str]:
     """Return the sorted unique task labels from degraded records.
 
     Shared by the brief_gene ``degraded`` metadata projection and the
@@ -139,14 +139,14 @@ class ParallelDispatchState(TypedDict):
     """
 
     analysis_type: str
-    task_index: Optional[int]  # Current task index in parallel execution
+    task_index: int | None  # Current task index in parallel execution
     task_ids: Annotated[
-        Dict[str, str], operator.or_
+        dict[str, str], operator.or_
     ]  # Mapping of task names to task IDs
     completed_count: Annotated[int, operator.add]  # Completed task counter
-    error: Annotated[Optional[str], keep_last_error]  # Last task error
+    error: Annotated[str | None, keep_last_error]  # Last task error
     failures: Annotated[
-        List[FailureRecord], operator.add
+        list[FailureRecord], operator.add
     ]  # Per-task failure records (concurrent-safe accumulator)
 
 
@@ -175,13 +175,13 @@ class ParallelDispatchSpec:
     work_node: Callable[..., Any]
     route_fn: Callable[..., Any]
     work_node_name: str
-    extract_node: Optional[Callable[..., Any]] = None
+    extract_node: Callable[..., Any] | None = None
     extract_node_name: str = "extract_node"
 
 
 def build_parallel_dispatch_graph(
     spec: ParallelDispatchSpec,
-    checkpointer: Optional[Any] = None,
+    checkpointer: Any | None = None,
 ) -> Any:
     """Compile the standard parallel-dispatch LangGraph workflow.
 

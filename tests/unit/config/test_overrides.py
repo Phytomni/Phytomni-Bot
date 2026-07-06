@@ -8,8 +8,6 @@ Covers mapped override collection, public config copies, sensitive config
 copies, and SecretStr override preservation.
 """
 
-from typing import Optional
-
 import pytest
 from pydantic import BaseModel, SecretStr
 
@@ -35,7 +33,7 @@ class DemoConfig(BaseModel):
     NAME: str = "base"
     COUNT: int = 1
     FLAG: bool = True
-    OPTIONAL_VALUE: Optional[str] = "fallback"
+    OPTIONAL_VALUE: str | None = "fallback"
 
 
 class DemoSensitiveConfig(BaseModel):

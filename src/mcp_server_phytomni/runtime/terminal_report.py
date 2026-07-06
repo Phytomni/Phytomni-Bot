@@ -8,10 +8,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 from ..agents.chat.service import _cached_chat_app
 from ..common.responses import message_content
@@ -80,7 +80,7 @@ class TerminalReportResult:
     final_report: str
     answer: str
     degraded: bool = False
-    degraded_reason: Optional[str] = None
+    degraded_reason: str | None = None
     selected_paths: tuple[str, ...] = ()
     skipped_paths: tuple[str, ...] = ()
 
@@ -92,7 +92,7 @@ def is_terminal_report_agent(agent: str) -> bool:
 
 
 def select_text_artifact_paths(
-    artifacts: Iterable[Dict[str, Any]],
+    artifacts: Iterable[dict[str, Any]],
     *,
     max_files: int = _MAX_TEXT_ARTIFACTS,
 ) -> list[str]:
@@ -118,7 +118,7 @@ def select_text_artifact_paths(
 def build_fallback_report(
     context: TerminalReportContext,
     *,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     selected_paths: tuple[str, ...] = (),
     skipped_paths: tuple[str, ...] = (),
 ) -> TerminalReportResult:
@@ -194,7 +194,7 @@ def _report_title(agent: str) -> str:
     return titles.get(agent, "Analysis Final Report")
 
 
-def _success_count(live: Iterable[Dict[str, Any]]) -> int:
+def _success_count(live: Iterable[dict[str, Any]]) -> int:
     """Count reconciled rows whose status is terminal-success."""
     return sum(
         1
@@ -204,7 +204,7 @@ def _success_count(live: Iterable[Dict[str, Any]]) -> int:
     )
 
 
-def _all_artifact_paths(artifacts: Iterable[Dict[str, Any]]) -> list[str]:
+def _all_artifact_paths(artifacts: Iterable[dict[str, Any]]) -> list[str]:
     """Flatten every path across all artifact descriptors."""
     paths: list[str] = []
     for artifact in artifacts:
@@ -270,7 +270,7 @@ async def synthesize_terminal_report(
     context: TerminalReportContext,
     *,
     reader: ArtifactTextReader = read_obs_text_artifact,
-    summarizer: Optional[ReportSummarizer] = None,
+    summarizer: ReportSummarizer | None = None,
 ) -> TerminalReportResult:
     """Return an LLM-enhanced final report with deterministic fallback."""
 
@@ -376,7 +376,7 @@ async def _summarize_with_chat(prompt: str) -> str:
 
 
 def persist_terminal_report(
-    live: List[Dict[str, Any]],
+    live: list[dict[str, Any]],
     result: TerminalReportResult,
     *,
     task_manager: Any | None = None,

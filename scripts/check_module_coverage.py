@@ -27,7 +27,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COVERAGE_JSON = PROJECT_ROOT / "coverage.json"
@@ -36,7 +35,7 @@ AGENT_PATH_PREFIX = "src/mcp_server_phytomni/agents/"
 # Per-file floors. Each entry locks the current measured percentage so a
 # regression below it fails the local gate. Each ratchet push raises one
 # entry toward ``TARGET`` alongside the new tests that support the bump.
-MODULE_FLOORS: Dict[str, int] = {
+MODULE_FLOORS: dict[str, int] = {
     "src/mcp_server_phytomni/agents/deep_genome/report.py": 23,
     "src/mcp_server_phytomni/agents/chat/graph.py": 30,
     # Recalibrated 42->33: the six unwired legacy monolithic nodes
@@ -99,7 +98,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_coverage(path: Path) -> Dict[str, dict]:
+def _load_coverage(path: Path) -> dict[str, dict]:
     """Load ``files`` table from coverage.json."""
     if not path.exists():
         print(
@@ -127,10 +126,10 @@ def _load_coverage(path: Path) -> Dict[str, dict]:
 
 
 def _evaluate(
-    files: Dict[str, dict],
-) -> tuple[int, List[str]]:
+    files: dict[str, dict],
+) -> tuple[int, list[str]]:
     """Return (checked_count, violations) for all agent files."""
-    violations: List[str] = []
+    violations: list[str] = []
     checked = 0
     for path in sorted(files):
         if not path.startswith(AGENT_PATH_PREFIX):

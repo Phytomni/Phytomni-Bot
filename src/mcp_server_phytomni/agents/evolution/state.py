@@ -12,7 +12,7 @@ time; lazy annotations would collapse ``Required[]`` markers into
 ``total=False`` keys.
 """
 
-from typing import Any, Optional, Required, TypedDict
+from typing import Any, Required, TypedDict
 
 
 class EvolutionInput(TypedDict, total=False):
@@ -64,7 +64,7 @@ class EvolutionOutput(TypedDict):
     membership check.
     """
 
-    evolution_agents_task: Optional[dict[str, Any]]
+    evolution_agents_task: dict[str, Any] | None
 
 
 class EvolutionState(TypedDict, total=False):
@@ -84,5 +84,5 @@ class EvolutionState(TypedDict, total=False):
     enable_auto_select: bool
     is_polling: bool
     kwargs: dict[str, Any]
-    target_taxids: Optional[str]
-    evolution_agents_task: Optional[dict[str, Any]]
+    target_taxids: str | None
+    evolution_agents_task: dict[str, Any] | None

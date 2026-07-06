@@ -27,7 +27,7 @@ def test_api_config_defaults() -> None:
 
     assert config.API_HOST == "127.0.0.1"
     assert config.API_PORT == 8080
-    assert config.API_KEYS_DB_PATH == str(_CACHE_DIR / "api_keys.sqlite")
+    assert str(_CACHE_DIR / "api_keys.sqlite") == config.API_KEYS_DB_PATH
     assert config.API_TASKS_DB_PATH == "server_tasks.db"
     assert not hasattr(config, "API_RUNS_DB_PATH")
     assert config.API_REQUEST_TIMEOUT == 600.0
@@ -38,7 +38,7 @@ def test_api_config_defaults() -> None:
     assert config.API_UPLOAD_MAX_BYTES == 26_214_400
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
     assert config.RELAY_ENABLED is False
-    assert config.RELAY_AUDIT_DB_PATH == str(_CACHE_DIR / "relay_audit.sqlite")
+    assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
     assert config.RELAY_REQUEST_MAX_BYTES == 10_485_760
     assert config.RELAY_TIMEOUT_SECONDS == 600.0

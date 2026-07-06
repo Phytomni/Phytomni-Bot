@@ -12,7 +12,7 @@ Functions: in_silico_research, extract_goals_node, prepare_tasks,
 import logging
 from dataclasses import dataclass
 from json import loads
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Send
@@ -97,7 +97,7 @@ class ResearchTaskContext:
 
     goal_description: str
     context: str
-    data_list: Dict[str, str]
+    data_list: dict[str, str]
     output_dir: str
     task_name: str
     thread_id: str
@@ -127,12 +127,12 @@ class InSilicoResearchState(ParallelDispatchState):
     """
 
     paper_text: str
-    data_list: Dict[str, str]
+    data_list: dict[str, str]
     user_id: str
-    obs_file_list: List[str]
-    output_dir: Optional[str]
-    goals: List[Dict[str, str]]  # List of extracted research objectives
-    research_tasks: List[Dict[str, str]]  # List of research tasks
+    obs_file_list: list[str]
+    output_dir: str | None
+    goals: list[dict[str, str]]  # List of extracted research objectives
+    research_tasks: list[dict[str, str]]  # List of research tasks
     goal_description: str
     context: str
     task_name: str
@@ -156,10 +156,10 @@ class InSilicoResearchAgents:
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
-        analyst_agent: Optional[AnalystAgent] = None,
+        checkpointer: MemorySaver | None = None,
+        analyst_agent: AnalystAgent | None = None,
         in_silico_config=IN_SILICO_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the InSilicoResearchAgents.
 
@@ -218,8 +218,8 @@ class InSilicoResearchAgents:
         ]
 
     async def _extract_goals(
-        self, user_query: str, obs_file_list: List[str]
-    ) -> List[Dict[str, str]]:
+        self, user_query: str, obs_file_list: list[str]
+    ) -> list[dict[str, str]]:
         """Extract research goals from scientific paper text.
 
         Args:
@@ -443,9 +443,9 @@ class InSilicoResearchAgents:
     async def arun(
         self,
         paper_text: str,
-        data_list: Dict[str, str],
+        data_list: dict[str, str],
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Conduct in silico research and return task_ids.
 
         Args:
@@ -477,12 +477,12 @@ class InSilicoResearchAgents:
 
 async def in_silico_research(
     user_query: str,
-    data_list: Dict[str, str],
-    user_id: Optional[str] = None,
-    obs_file_list: Optional[List[str]] = None,
-    output_dir: Optional[str] = None,
+    data_list: dict[str, str],
+    user_id: str | None = None,
+    obs_file_list: list[str] | None = None,
+    output_dir: str | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph in-silico research agent.
 
     Args:

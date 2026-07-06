@@ -57,7 +57,7 @@ def test_pytest_layer_markers_are_registered():
     markers = set(_pyproject()["tool"]["pytest"]["ini_options"]["markers"])
     marker_prefixes = {marker.split(" ", maxsplit=1)[0] for marker in markers}
 
-    assert EXPECTED_MARKER_PREFIXES <= marker_prefixes
+    assert marker_prefixes >= EXPECTED_MARKER_PREFIXES
 
 
 def test_test_files_live_in_named_pytest_layers():

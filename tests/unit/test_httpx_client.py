@@ -13,7 +13,7 @@ those settings without re-reading os.environ at the call-site.
 from __future__ import annotations
 
 import ssl
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -51,7 +51,7 @@ def test_resolve_verify_wraps_ca_bundle_in_ssl_context(
             touches a real on-disk PEM file.
     """
     sentinel = ssl.create_default_context()
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     def _fake_create(*args: Any, **kwargs: Any) -> ssl.SSLContext:
         captured["args"] = args
@@ -98,7 +98,7 @@ async def test_get_async_client_passes_resolved_verify_to_httpx(
         "create_default_context",
         lambda *_args, **_kwargs: sentinel,
     )
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     class _RecordingClient(AsyncClient):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -123,7 +123,7 @@ async def test_get_async_client_forwards_extra_kwargs(
     Args:
         monkeypatch: Pytest monkeypatch fixture used to swap AsyncClient.
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     class _RecordingClient(AsyncClient):
         def __init__(self, *args: Any, **kwargs: Any) -> None:

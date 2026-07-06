@@ -13,8 +13,9 @@ for registered tools that do not support streaming.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -31,7 +32,7 @@ from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 pytestmark = pytest.mark.server
 
 
-def _chat_payload(demo_data_dir: Path) -> Dict[str, Any]:
+def _chat_payload(demo_data_dir: Path) -> dict[str, Any]:
     """Load the ChatAgent demo payload as parsed JSON."""
     return json.loads(
         (demo_data_dir / "payloads" / "chat_agent.json").read_text(
@@ -40,14 +41,14 @@ def _chat_payload(demo_data_dir: Path) -> Dict[str, Any]:
     )
 
 
-async def _drain(stream: AsyncIterator[AguiEvent]) -> List[AguiEvent]:
+async def _drain(stream: AsyncIterator[AguiEvent]) -> list[AguiEvent]:
     """Collect every emitted event so tests can assert against the list."""
     return [event async for event in stream]
 
 
 def _patch_stream(
-    monkeypatch: pytest.MonkeyPatch, payloads: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+    monkeypatch: pytest.MonkeyPatch, payloads: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Replace ``stream_phyto_chat_chunks`` with a fake yielding ``payloads``.
 
     Args:
@@ -59,9 +60,9 @@ def _patch_stream(
         single test that needs to verify the chat handler's standard
         kwargs reach the primitive can assert on it.
     """
-    captured: List[Dict[str, Any]] = []
+    captured: list[dict[str, Any]] = []
 
-    async def fake_stream(**kwargs: Any) -> AsyncIterator[Dict[str, Any]]:
+    async def fake_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         """Capture kwargs and yield each pre-built payload in order."""
         captured.append(kwargs)
         for payload in payloads:
@@ -231,7 +232,7 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     _patch_stream(monkeypatch, [])
     # Use arguments valid against the chosen tool's schema so the
     # raise fires at the dispatch branch, not Pydantic validation.
-    args_by_tool: Dict[str, Dict[str, Any]] = {
+    args_by_tool: dict[str, dict[str, Any]] = {
         PhytomniAgents.BRIEF_GENE_AGENT.value: {"user_query": "AT1G01010"},
         PhytomniAgents.GET_TASK_STATUS.value: {"task_id": "t-1"},
     }

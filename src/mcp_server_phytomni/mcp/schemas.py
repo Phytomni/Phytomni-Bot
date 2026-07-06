@@ -10,7 +10,7 @@ These schemas are the public JSON-schema surface for MCP clients.
 """
 
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Tuple
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class ChatAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional user-uploaded context files "
             "to summarize or use while answering. Use complete OBS paths "
@@ -69,7 +69,7 @@ class KnowledgeAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional user-uploaded documents to "
             "combine with retrieved evidence. Use complete OBS paths exactly "
@@ -128,7 +128,7 @@ class AnalystAgent(BaseModel):
         ),
     ]
     data_list: Annotated[
-        Dict[str, str],
+        dict[str, str],
         Field(
             description="Dictionary of input analysis datasets. Each key must "
             "be a complete OBS path to a data file, and each value must "
@@ -149,7 +149,7 @@ class AnalystAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional supporting documents, such as "
             "protocols, papers, or requirement files, that provide context "
@@ -278,7 +278,7 @@ class ReviewAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional user-uploaded papers, notes, "
             "or source documents to consider during review generation. Use "
@@ -334,7 +334,7 @@ class InSilicoResearchAgent(BaseModel):
         ),
     ]
     data_list: Annotated[
-        Dict[str, str],
+        dict[str, str],
         Field(
             description="Dictionary of datasets available for the extracted "
             "in silico tasks. Each key must be a complete OBS path to a data "
@@ -355,7 +355,7 @@ class InSilicoResearchAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional uploaded paper or context "
             "files used to extract research objectives. Use complete OBS "
@@ -468,7 +468,7 @@ class DigitalDesignAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional uploaded context files. Use "
             "complete OBS paths exactly as provided, pass [] when no files "
@@ -579,7 +579,7 @@ class GeneNetworkAgent(BaseModel):
         ),
     ]
     obs_file_list: Annotated[
-        List[str],
+        list[str],
         Field(
             description="OBS paths for optional uploaded context files. Use "
             "complete OBS paths exactly as provided, pass [] when no files "
@@ -719,8 +719,8 @@ class PhytomniAgents(str, Enum):
 # their tool lists from this single tuple so the two surfaces stay
 # byte-equivalent and a new agent cannot be exposed on one but not the
 # other.
-AGENT_TOOL_DEFINITIONS: Tuple[
-    Tuple[PhytomniAgents, PhytomniAgents, type[BaseModel]], ...
+AGENT_TOOL_DEFINITIONS: tuple[
+    tuple[PhytomniAgents, PhytomniAgents, type[BaseModel]], ...
 ] = (
     (
         PhytomniAgents.CHAT_AGENT,
@@ -775,7 +775,7 @@ AGENT_TOOL_DEFINITIONS: Tuple[
 )
 
 
-def agent_openai_tool_specs() -> List[Dict[str, Any]]:
+def agent_openai_tool_specs() -> list[dict[str, Any]]:
     """Return the dispatchable agents as OpenAI function-tool dicts.
 
     Builds one ``{"type": "function", "function": {...}}`` entry per

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from httpx import Timeout
 from mcp.shared.exceptions import McpError
@@ -34,7 +34,7 @@ from ...config.relay_mode import relay_mode_enabled
 from .defaults import ANALYST_CONFIG
 
 
-def _common_request_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def _common_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Resolve the shared analysis-URL / region / timeout / retry kwargs.
 
     Every analyst task wrapper accepts the same five overrides and
@@ -114,7 +114,7 @@ async def task_status(
     )
 
 
-async def probe_live_status(task_id: str) -> Optional[str]:
+async def probe_live_status(task_id: str) -> str | None:
     """Return the upper-cased remote status, or None on probe failure.
 
     A single non-blocking ``task_status`` lookup wired to
@@ -272,7 +272,7 @@ async def task_delete(
 async def wait_for_completion(
     task_id: str,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Poll a submitted task until it reaches a terminal status.
 
     Args:
@@ -311,9 +311,7 @@ async def wait_for_completion(
                 raise McpError(
                     ErrorData(code=INTERNAL_ERROR, message="Task status error")
                 )
-    raise asyncio.TimeoutError(
-        f"Exceeded max polling time {max_poll / 60} minutes"
-    )
+    raise TimeoutError(f"Exceeded max polling time {max_poll / 60} minutes")
 
 
 __all__ = [

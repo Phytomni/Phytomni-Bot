@@ -13,7 +13,7 @@ re-polling the remote platform).
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 import pytest
@@ -76,7 +76,7 @@ async def test_get_run_logs_returns_reconciled_task_logs(
 
     reconcile_calls = []
 
-    async def fake_reconcile(task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile(task_id: str) -> dict[str, Any]:
         """Simulate reconcile returning cached log data."""
         reconcile_calls.append(task_id)
         return {
@@ -234,7 +234,7 @@ async def test_get_run_logs_debug_includes_raw(
         )
     )
 
-    async def fake_reconcile(_task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile(_task_id: str) -> dict[str, Any]:
         """Return log with raw field."""
         return {
             "formatted": {"answer": "debug log"},
@@ -328,7 +328,7 @@ async def test_get_run_logs_cache_reuse(
 
     remote_calls = []
 
-    async def fake_remote(task_id: str, **_: Any) -> Dict[str, Any]:
+    async def fake_remote(task_id: str, **_: Any) -> dict[str, Any]:
         """Track remote calls (should not happen for cached logs)."""
         remote_calls.append(task_id)
         return {"formatted": {"answer": "fresh"}, "raw": {}}

@@ -12,7 +12,7 @@ Functions: collect_mapped_overrides, copy_config_with_overrides,
 """
 
 from collections.abc import Mapping
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, SecretStr
 
@@ -106,7 +106,7 @@ def copy_config_with_overrides(
     values: Mapping[str, Any],
     field_map: FieldMap,
     *,
-    fixed_updates: Optional[Mapping[str, Any]] = None,
+    fixed_updates: Mapping[str, Any] | None = None,
     skip_none: bool = True,
 ) -> ConfigT:
     """Return a config copy with mapped public wrapper overrides.
@@ -138,9 +138,9 @@ def copy_sensitive_config_with_overrides(
     base_config: ConfigT,
     values: Mapping[str, Any],
     *,
-    field_map: Optional[FieldMap] = None,
-    secret_field_map: Optional[FieldMap] = None,
-    fixed_updates: Optional[Mapping[str, Any]] = None,
+    field_map: FieldMap | None = None,
+    secret_field_map: FieldMap | None = None,
+    fixed_updates: Mapping[str, Any] | None = None,
 ) -> ConfigT:
     """Return a sensitive config copy with secret fields kept separate.
 
@@ -172,7 +172,7 @@ def copy_sensitive_config_with_overrides(
 
 
 def _collect_fixed_updates(
-    fixed_updates: Optional[Mapping[str, Any]],
+    fixed_updates: Mapping[str, Any] | None,
     *,
     skip_none: bool,
 ) -> dict[str, Any]:

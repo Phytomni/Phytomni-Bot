@@ -14,7 +14,7 @@ the wrapper review_agent_function is covered by test_wrapper_smoke.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Union
+from typing import Any
 
 import pytest
 
@@ -52,9 +52,9 @@ async def test_chat_threads_review_config_into_phyto_chat(
     review_config when no override is passed. This is the only direct
     coverage for line 153 of agent.py.
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
         return {"choices": [{"message": {"content": "ok"}}]}
 
@@ -86,15 +86,15 @@ async def test_chat_uses_response_format_override_when_provided(
     a regression of the ``or self.review_config.RESPONSE_FORMAT``
     fallback would surface here without needing the full plan_node run.
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
         return {}
 
     monkeypatch.setattr(review_agent, "phyto_chat", fake_phyto_chat)
 
-    schema_override: Dict[str, Union[str, Dict]] = {
+    schema_override: dict[str, str | dict] = {
         "type": "json_schema",
         "json_schema": {"type": "object"},
     }

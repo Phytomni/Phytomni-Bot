@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from httpx import Timeout
@@ -43,7 +43,7 @@ from .storage import upload_analyst_agents_content
 if TYPE_CHECKING:
     from .agent import AnalystAgentsState
 else:
-    AnalystAgentsState = Dict[str, Any]
+    AnalystAgentsState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +270,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
     @staticmethod
     def _processed_data_list(state: AnalystAgentsState) -> list[str]:
         """Normalize OBS URL keys and return a list of YAML-friendly items."""
-        processed_data_list: Dict[Any, Any] = {}
+        processed_data_list: dict[Any, Any] = {}
         for key, value in state.get("data_list", {}).items():
             if isinstance(key, str) and key.startswith("obs://"):
                 processed_data_list["/obs/" + key[6:].lstrip("/")] = value
@@ -299,7 +299,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
             f"### TOOL USAGE\n{state.get('tool_usages', '')}"
         )
 
-    async def _submit_headers(self: Any) -> Dict[str, str]:
+    async def _submit_headers(self: Any) -> dict[str, str]:
         """Return authenticated submit headers (none minted in relay mode)."""
         if relay_mode_enabled():
             return {"Content-Type": "application/json"}
@@ -314,7 +314,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         state: AnalystAgentsState,
         obs_task_path: str,
         obs_model_path: str,
-    ) -> tuple[str, Dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any]]:
         """Build analysis platform job name and payload."""
         time_stamp = datetime.datetime.now().strftime("%H%M%S-%f")
         job_name = (
@@ -362,11 +362,11 @@ class AnalystGraphMixin(WorkflowMixinBase):
 
     async def _post_submit_job(
         self: Any,
-        job_headers: Dict[str, str],
-        job_data: Dict[str, Any],
+        job_headers: dict[str, str],
+        job_data: dict[str, Any],
         job_name: str,
         output_dir: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit the job payload to the analysis platform with retries."""
         if relay_mode_enabled():
             payload = await current_relay_client().post_json(

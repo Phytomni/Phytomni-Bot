@@ -13,10 +13,7 @@ them through AnalystAgent, and returns submitted task metadata.
 import logging
 from typing import (
     Any,
-    Dict,
-    List,
     Literal,
-    Optional,
 )
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -87,9 +84,9 @@ class GeneNetworkState(ParallelDispatchState):
     to_id: str  # Trait Ontology id formatted like "TO:0000207"
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
-    output_dir: Optional[str]
-    network_task: Dict[str, Any]  # submit results
-    network_tasks: List[Dict[str, Any]]  # List of network analysis tasks
+    output_dir: str | None
+    network_task: dict[str, Any]  # submit results
+    network_tasks: list[dict[str, Any]]  # List of network analysis tasks
 
 
 class GeneNetworkAgents:
@@ -117,10 +114,10 @@ class GeneNetworkAgents:
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
-        analyst_agent: Optional[AnalystAgent] = None,
+        checkpointer: MemorySaver | None = None,
+        analyst_agent: AnalystAgent | None = None,
         gene_network_config=GENE_NETWORK_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the GeneNetworkAgents.
 
@@ -174,7 +171,7 @@ class GeneNetworkAgents:
         analysis_type: str,
         species_code: str,
         to_id: str,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
     ) -> dict:
         """Submit network analysis task and wait for completion.
 
@@ -287,7 +284,7 @@ class GeneNetworkAgents:
         species_code: str,
         to_id: str,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit a gene network analysis task and return task_id.
 
         Args:
@@ -316,10 +313,10 @@ class GeneNetworkAgents:
 async def network_analysis(
     species_code: str,
     to_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     batch: bool = False,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph gene network agent.
 
     Args:

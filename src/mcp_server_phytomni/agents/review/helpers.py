@@ -13,14 +13,14 @@ from __future__ import annotations
 
 import re
 from json import loads
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 CITATION_PATTERN = (
     r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
 )
 
 
-def _extract_json_object(text: str) -> Dict[str, Any]:
+def _extract_json_object(text: str) -> dict[str, Any]:
     """Extract a JSON object from model output."""
     start_index = text.find("{")
     end_index = text.rfind("}") + 1
@@ -33,12 +33,12 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _doc_content(doc: Dict[str, Any]) -> str:
+def _doc_content(doc: dict[str, Any]) -> str:
     """Return the best available document text field."""
     return str(doc.get("big_content") or doc.get("content") or "")
 
 
-def _format_doc_fragment(doc: Dict[str, Any], doc_id: str) -> str:
+def _format_doc_fragment(doc: dict[str, Any], doc_id: str) -> str:
     """Format a retrieved document as a prompt fragment."""
     title = doc.get("title", "")
     subtitle = doc.get("subtitle", "")
@@ -59,8 +59,8 @@ def _normalize_citation_id(raw_id: str) -> str:
 
 
 def _renumber_citations(
-    summary_text: str, doc_list: List[Dict[str, Any]]
-) -> Tuple[str, List[Dict[str, Any]]]:
+    summary_text: str, doc_list: list[dict[str, Any]]
+) -> tuple[str, list[dict[str, Any]]]:
     """Convert internal citation IDs to public [document:N] references."""
     final_doc_lookup = {
         str(doc.get("doc_id", "")): doc
@@ -68,8 +68,8 @@ def _renumber_citations(
         if doc.get("doc_id")
     }
     raw_tags = list(dict.fromkeys(re.findall(CITATION_PATTERN, summary_text)))
-    tag_to_number: Dict[str, int] = {}
-    ordered_doc_list: List[Dict[str, Any]] = []
+    tag_to_number: dict[str, int] = {}
+    ordered_doc_list: list[dict[str, Any]] = []
     current_ref_number = 1
 
     for tag in raw_tags:

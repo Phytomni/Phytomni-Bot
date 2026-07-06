@@ -17,10 +17,9 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from functools import lru_cache
+from datetime import UTC, datetime, timedelta
+from functools import cache
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -34,7 +33,7 @@ __all__ = [
 
 def _now_iso() -> str:
     """Return the current UTC timestamp as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class RelayAuditRecord(BaseModel):
@@ -58,18 +57,18 @@ class RelayAuditRecord(BaseModel):
         created_at: ISO-8601 creation timestamp (None before insert).
     """
 
-    id: Optional[int] = None
+    id: int | None = None
     request_id: str
     user_id: str
     key_prefix: str
     service: str
-    operation: Optional[str] = None
-    status_code: Optional[int] = None
-    duration_ms: Optional[int] = None
-    request_body: Optional[str] = None
-    response_body: Optional[str] = None
-    error_type: Optional[str] = None
-    created_at: Optional[str] = None
+    operation: str | None = None
+    status_code: int | None = None
+    duration_ms: int | None = None
+    request_body: str | None = None
+    response_body: str | None = None
+    error_type: str | None = None
+    created_at: str | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> RelayAuditRecord:
@@ -111,12 +110,12 @@ class RelayAuditQuery(BaseModel):
         offset: Rows to skip for pagination.
     """
 
-    user_id: Optional[str] = None
-    key_prefix: Optional[str] = None
-    service: Optional[str] = None
-    status_code: Optional[int] = None
-    created_after: Optional[str] = None
-    created_before: Optional[str] = None
+    user_id: str | None = None
+    key_prefix: str | None = None
+    service: str | None = None
+    status_code: int | None = None
+    created_after: str | None = None
+    created_before: str | None = None
     limit: int = 100
     offset: int = 0
 
@@ -231,7 +230,7 @@ class RelayAuditStore:
         return int(cursor.lastrowid or 0)
 
     def query(
-        self, criteria: Optional[RelayAuditQuery] = None
+        self, criteria: RelayAuditQuery | None = None
     ) -> list[RelayAuditRecord]:
         """List audit records matching optional filters, newest first.
 
@@ -299,7 +298,7 @@ class RelayAuditStore:
             The number of deleted rows.
         """
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=retention_days)
+            datetime.now(UTC) - timedelta(days=retention_days)
         ).isoformat()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -308,7 +307,7 @@ class RelayAuditStore:
         return cursor.rowcount
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_audit_store(db_path: str) -> RelayAuditStore:
     """Return a process-cached audit store for a resolved database path.
 

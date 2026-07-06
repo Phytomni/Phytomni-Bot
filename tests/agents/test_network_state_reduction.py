@@ -13,7 +13,7 @@ the happy path; the dual-failure test pins the reducer fix.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import pytest
 
@@ -76,7 +76,7 @@ async def test_network_state_reduction_dispatches_single_task(
         analysis_type: str,
         species_code: str,
         to_id: str,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
     ) -> dict[str, Any]:
         """Record the dispatched analysis type and return a fake result.
 
@@ -193,7 +193,7 @@ async def test_network_state_reduction_handles_dual_failure(
         analysis_type: str,
         species_code: str,
         to_id: str,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
     ) -> dict[str, Any]:
         """Fail every dispatched network task deterministically.
 

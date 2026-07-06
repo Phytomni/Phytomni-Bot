@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
     "bind_recorder_degraded",
@@ -32,13 +32,13 @@ __all__ = [
     "reset_request_var",
 ]
 
-_request_user: ContextVar[Optional[str]] = ContextVar(
+_request_user: ContextVar[str | None] = ContextVar(
     "phytomni_request_user", default=None
 )
-_request_id: ContextVar[Optional[str]] = ContextVar(
+_request_id: ContextVar[str | None] = ContextVar(
     "phytomni_request_id", default=None
 )
-_request_run_id: ContextVar[Optional[str]] = ContextVar(
+_request_run_id: ContextVar[str | None] = ContextVar(
     "phytomni_request_run_id", default=None
 )
 _recorder_degraded: ContextVar[bool] = ContextVar(
@@ -46,17 +46,17 @@ _recorder_degraded: ContextVar[bool] = ContextVar(
 )
 
 
-def current_request_user() -> Optional[str]:
+def current_request_user() -> str | None:
     """Return the authenticated user id bound to this request, if any."""
     return _request_user.get()
 
 
-def current_request_id() -> Optional[str]:
+def current_request_id() -> str | None:
     """Return the correlation id bound to this request, if any."""
     return _request_id.get()
 
 
-def current_run_id() -> Optional[str]:
+def current_run_id() -> str | None:
     """Return the run id bound to this request by the chokepoint.
 
     The submit chokepoint in ``mcp/handlers`` calls ``bind_run_id``
@@ -67,17 +67,17 @@ def current_run_id() -> Optional[str]:
     return _request_run_id.get()
 
 
-def bind_request_user(user_id: Optional[str]) -> Token[Optional[str]]:
+def bind_request_user(user_id: str | None) -> Token[str | None]:
     """Bind the request user id and return a reset token."""
     return _request_user.set(user_id)
 
 
-def bind_request_id(request_id: Optional[str]) -> Token[Optional[str]]:
+def bind_request_id(request_id: str | None) -> Token[str | None]:
     """Bind the request correlation id and return a reset token."""
     return _request_id.set(request_id)
 
 
-def bind_run_id(run_id: Optional[str]) -> Token[Optional[str]]:
+def bind_run_id(run_id: str | None) -> Token[str | None]:
     """Bind the chokepoint-minted run id and return a reset token.
 
     The HTTP path's ``request_context_middleware`` brackets this
@@ -128,9 +128,9 @@ def reset_request_var(token: Token[Any]) -> None:
 
 @contextmanager
 def request_context(
-    user_id: Optional[str],
-    request_id: Optional[str],
-    run_id: Optional[str] = None,
+    user_id: str | None,
+    request_id: str | None,
+    run_id: str | None = None,
 ) -> Generator[None, None, None]:
     """Bind user, request, and run ids for the duration of the block.
 

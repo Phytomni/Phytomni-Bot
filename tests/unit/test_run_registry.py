@@ -15,7 +15,7 @@ import asyncio
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -211,7 +211,7 @@ async def test_reconcile_terminal_run_does_not_poll(
     )
     calls = {"n": 0}
 
-    async def boom(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    async def boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
         """Track that the cache guard skips reconcile_task for terminals."""
         _ = (args, kwargs)
         calls["n"] += 1
@@ -241,7 +241,7 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
     statuses = {"t-1": "succeeded", "t-2": "completed"}
     output_dirs = {"t-1": "/obs/a", "t-2": "/obs/b"}
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return one terminal status per child task id."""
         return {
             "task_id": task_id,
@@ -290,7 +290,7 @@ async def test_reconcile_surfaces_deep_genome_final_report(
     )
     report_md = "# Deep Genome Analysis of Os01g0177400\n\nbody\n"
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return a succeeded child carrying the persisted report."""
         return {
             "task_id": task_id,
@@ -333,7 +333,7 @@ async def test_reconcile_final_report_none_without_report(
         ("t-1",),
     )
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return a succeeded child with no persisted report."""
         return {
             "task_id": task_id,
@@ -374,7 +374,7 @@ async def test_reconcile_propagates_failure_status(
     )
     statuses = {"t-1": "succeeded", "t-2": "failed"}
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return mixed terminal statuses to trigger failure aggregation."""
         return {"task_id": task_id, "status": statuses[task_id]}
 
@@ -491,7 +491,7 @@ async def test_reconcile_assembles_answer_and_paths_once(
         ("t-1",),
     )
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return a succeeded child with no persisted report."""
         return {
             "task_id": task_id,
@@ -877,7 +877,7 @@ async def test_reconcile_concurrent_first_polls_are_idempotent(
     )
     release = asyncio.Event()
 
-    async def gated(task_id: str) -> Dict[str, Any]:
+    async def gated(task_id: str) -> dict[str, Any]:
         """Hold every poll at the gate, then settle the child succeeded."""
         await release.wait()
         return {
@@ -934,7 +934,7 @@ async def test_reconcile_terminal_analyst_run_includes_final_report(
         request_info=RunRequestInfo(query="summarize this run"),
     )
 
-    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile_task(task_id: str) -> dict[str, Any]:
         """Return a succeeded task with the expected output_dir."""
         return {
             "task_id": task_id,
@@ -1006,7 +1006,7 @@ async def test_reconcile_terminal_report_degraded_reaches_payload(
         request_info=RunRequestInfo(query="design workflow"),
     )
 
-    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile_task(task_id: str) -> dict[str, Any]:
         """Return a succeeded task row."""
         return {
             "task_id": task_id,
@@ -1069,7 +1069,7 @@ async def test_reconcile_non_target_agent_skips_terminal_report(
     )
     called = {"n": 0}
 
-    async def fake_reconcile_task(task_id: str) -> Dict[str, Any]:
+    async def fake_reconcile_task(task_id: str) -> dict[str, Any]:
         """Return a succeeded task row."""
         return {
             "task_id": task_id,

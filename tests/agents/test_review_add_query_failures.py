@@ -17,7 +17,7 @@ contract when no add_query calls are issued.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -50,8 +50,8 @@ async def _audit_passthrough(
     self: Any,
     *,
     content_to_check: str,
-    raw_doc_list: List[Dict[str, Any]],
-    add_doc_list: List[Dict[str, Any]],
+    raw_doc_list: list[dict[str, Any]],
+    add_doc_list: list[dict[str, Any]],
 ) -> str:
     """Return ``content_to_check`` unchanged for deterministic asserts.
 
@@ -84,7 +84,7 @@ async def test_feedback_rag_records_failure_for_single_failed_query(
         user_query: str,
         is_generate: bool,
         is_follow_up: bool,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
         if user_query == "q-mid":
             raise RuntimeError("boom")
@@ -141,7 +141,7 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
         user_query: str,
         is_generate: bool,
         is_follow_up: bool,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
         raise RuntimeError(call_messages[user_query])
 
@@ -199,7 +199,7 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
 
-    arun_calls: List[str] = []
+    arun_calls: list[str] = []
 
     async def fake_arun(
         self: Any,
@@ -207,7 +207,7 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
         user_query: str,
         is_generate: bool,
         is_follow_up: bool,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         del self, is_generate, is_follow_up
         arun_calls.append(user_query)
         return []
@@ -229,7 +229,7 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
 
 def test_collect_records_only_exception_results() -> None:
     """Exception results become FailureRecords; clean results skipped."""
-    results: List[Any] = [[], RuntimeError("boom"), []]
+    results: list[Any] = [[], RuntimeError("boom"), []]
     failures = _collect_add_query_failures(3, results)
     assert len(failures) == 1
     assert failures[0]["task_label"] == "add_query:3:1"
@@ -245,6 +245,6 @@ def test_collect_reraises_cancellation_class() -> None:
     re-raise it so cancellation aborts the review instead of being
     recorded as a normal degraded ``FailureRecord``.
     """
-    results: List[Any] = [RuntimeError("ok-failure"), asyncio.CancelledError()]
+    results: list[Any] = [RuntimeError("ok-failure"), asyncio.CancelledError()]
     with pytest.raises(asyncio.CancelledError):
         _collect_add_query_failures(0, results)

@@ -9,8 +9,8 @@ Public functions: handle_file_upload, read_with_byte_budget.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from fastapi import Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -38,7 +38,7 @@ async def read_with_byte_budget(
     file: UploadFile,
     max_bytes: int,
     chunk_size: int = DEFAULT_READ_CHUNK_SIZE,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Buffer ``file`` in chunks, returning None if the budget is breached.
 
     Unlike ``await file.read()``, this streams the body so an authenticated
@@ -104,7 +104,7 @@ async def handle_file_upload(
     declared = request.headers.get("content-length")
     if declared is not None:
         try:
-            declared_int: Optional[int] = int(declared)
+            declared_int: int | None = int(declared)
         except ValueError:
             declared_int = None
         if declared_int is not None and declared_int > max_bytes:
@@ -137,7 +137,7 @@ async def handle_file_upload(
         bytes=record.bytes,
         filename=record.filename,
         purpose=purpose,
-        created_at=int(datetime.now(timezone.utc).timestamp()),
+        created_at=int(datetime.now(UTC).timestamp()),
         obs_path=record.obs_path,
         path=record.obs_path,
     )

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -44,7 +44,7 @@ def _patch_db_path(monkeypatch: pytest.MonkeyPatch, db_path: str) -> None:
     )
 
 
-def _forbid_submit_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, int]:
+def _forbid_submit_agent(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     """Replace ``_build_submit_agent`` with a sentinel that fails the test.
 
     Returns the call-count dict so the caller can assert zero invocations.
@@ -65,8 +65,8 @@ def _forbid_submit_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, int]:
 
 def _patch_submit_agent(
     monkeypatch: pytest.MonkeyPatch,
-    arun_return: Dict[str, Any],
-) -> Dict[str, int]:
+    arun_return: dict[str, Any],
+) -> dict[str, int]:
     """Replace ``_build_submit_agent`` with a counting fake agent.
 
     The fake returns ``arun_return`` from its ``arun`` coroutine and
@@ -77,7 +77,7 @@ def _patch_submit_agent(
     """
     calls = {"build": 0, "arun": 0}
 
-    async def fake_arun(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
         """Tally invocation and return the scripted payload."""
         del kwargs
         calls["arun"] += 1
@@ -257,7 +257,7 @@ async def test_retrieve_plan_submit_misses_on_different_fingerprint(
     """A prior row for a different question never collides."""
     db = str(tmp_path / "tasks.sqlite")
     _patch_db_path(monkeypatch, db)
-    arun_payload: Dict[str, Any] = {
+    arun_payload: dict[str, Any] = {
         "task_id": "fresh-task-2",
         "output_dir": "/out/fresh-2",
     }

@@ -19,8 +19,8 @@ import logging
 import re
 import sqlite3
 import time
-from collections.abc import Iterator
-from typing import Any, Callable
+from collections.abc import Callable, Iterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse

@@ -12,7 +12,7 @@ fans tasks out to the worker node.
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, List, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import pytest
 from langgraph.types import Send
@@ -28,9 +28,9 @@ pytestmark = pytest.mark.agent
 class _ToyState(TypedDict, total=False):
     """Toy state for the parallel-dispatch end-to-end test."""
 
-    tasks: List[Any]
+    tasks: list[Any]
     task_index: int
-    results: Annotated[List[Any], operator.add]
+    results: Annotated[list[Any], operator.add]
 
 
 async def _toy_prepare(state: _ToyState) -> dict[str, Any]:

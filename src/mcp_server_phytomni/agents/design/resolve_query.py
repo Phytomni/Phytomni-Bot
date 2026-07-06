@@ -14,8 +14,6 @@ HTTP layer can disambiguate 400 responses by agent.
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import BaseModel
 
 from ...config.defaults import DigitalDesignConfig
@@ -66,7 +64,7 @@ class DigitalDesignResolveResult(BaseModel):
     gene_id: str
     species_code: str
     raw_query: str
-    candidates: List[DigitalDesignIdCandidate]
+    candidates: list[DigitalDesignIdCandidate]
 
 
 async def resolve_design_user_query(

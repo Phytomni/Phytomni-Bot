@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 import pytest
 
@@ -61,7 +61,7 @@ class _ReportProbe(DeepGenomeReportMixin):
 
 def _state(**overrides: Any) -> DeepGenomeState:
     """Build a DeepGenomeState-shaped mapping with overridable keys."""
-    base: Dict[str, Any] = {
+    base: dict[str, Any] = {
         "gene_id": "Os01g0177400",
         "species_code": "osa",
         "gene_annotation": {"gene_string": "Os01g0177400 (display)"},
@@ -123,9 +123,9 @@ def test_experiment_prompt_threads_state_and_content_to_get_prompt(
     or a dropped key surfaces as an assertion failure rather than a
     silent prompt-shape change.
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    def fake_prompt(_file: str, prompt_path: str, args: Dict[str, Any]) -> str:
+    def fake_prompt(_file: str, prompt_path: str, args: dict[str, Any]) -> str:
         captured["path"] = prompt_path
         captured["args"] = args
         return "PROMPT"
@@ -195,14 +195,14 @@ class _FollowUpProbe(DeepGenomeReportMixin):
         """Wire the single config attribute the node reads."""
         self.deep_genome_config = DeepGenomeConfig()
 
-    async def _dispatch_chat(self, user_query: str) -> Dict[str, Any]:
+    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
         """Return a canned follow-up chat response (JSON-list content)."""
         del user_query
         return {"choices": [{"message": {"content": '["Q1?", "Q2?"]'}}]}
 
     async def run_follow_up_node(
         self, state: DeepGenomeState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Public proxy for ``_run_follow_up_node`` (in-hierarchy access)."""
         return await self._run_follow_up_node(state)
 

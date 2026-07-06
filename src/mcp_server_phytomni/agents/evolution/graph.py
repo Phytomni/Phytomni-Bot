@@ -14,7 +14,7 @@ analyst submission. Nodes route every external call through the
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from ...config.settings import get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
@@ -38,14 +38,14 @@ class _EvolutionSubmitInputs(NamedTuple):
     """
 
     goal_description: str
-    data_list: Dict[str, str]
+    data_list: dict[str, str]
     output_dir: str
     meta: str
 
 
 async def resolve_target_taxids_node(
     state: EvolutionState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Resolve target taxonomy ids for the evolution query.
 
     A consumer (e.g. deep_genome) may pre-supply ``target_taxids`` in the
@@ -71,7 +71,7 @@ async def resolve_target_taxids_node(
 
 async def submit_evolution_task_node(
     state: EvolutionState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Submit the evolution analysis task for the resolved taxids.
 
     Mirrors the post-extraction body of
@@ -129,9 +129,9 @@ async def _submit_evolution_via_subgraph(
     *,
     user_id: Any,
     gene_id: str,
-    submit_kwargs: Dict[str, Any],
+    submit_kwargs: dict[str, Any],
     is_polling: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Dispatch the evolution analysis task through the analyst subgraph.
 
     Mirrors ``analyst.submit`` (the legacy free-function path) but

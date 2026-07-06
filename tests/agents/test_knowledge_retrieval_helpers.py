@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import fields
-from typing import Any, Dict, List, cast
+from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient, Timeout
@@ -45,7 +45,7 @@ pytestmark = pytest.mark.unit
 
 def test_collect_rank_results_flattens_and_sorts_by_score() -> None:
     """Per-batch lists flatten, sort by score desc, then truncate to top_n."""
-    batches: List[List[Dict[str, Any]]] = [
+    batches: list[list[dict[str, Any]]] = [
         [{"score": 0.4}, {"score": 0.9}],
         [{"score": 0.7}, {"score": 0.2}],
     ]
@@ -62,7 +62,7 @@ def test_collect_rank_results_raises_when_any_batch_is_exception() -> None:
     batches must not silently drop a failing batch's slice; the helper
     must surface the failure so the agent caller fails loudly.
     """
-    batches: List[Any] = [
+    batches: list[Any] = [
         [{"score": 0.5}],
         RuntimeError("rerank pod failed"),
     ]
@@ -111,7 +111,7 @@ def test_rerank_docs_dedupes_by_chunk_id_and_uses_big_content_fallback() -> (
 
 def test_sorted_merged_docs_merges_and_trims_to_top_n() -> None:
     """``_sorted_merged_docs`` merges results then truncates to top_n."""
-    results: List[Any] = [
+    results: list[Any] = [
         {"doc_list": [{"score": 0.3}, {"score": 0.8}]},
         {"doc_list": [{"score": 0.5}]},
         {"not_doc_list": "ignored"},
@@ -124,7 +124,7 @@ def test_sorted_merged_docs_merges_and_trims_to_top_n() -> None:
 
 def test_sorted_merged_docs_returns_all_when_top_n_is_zero() -> None:
     """A top_n of 0 or None disables truncation."""
-    results: List[Any] = [
+    results: list[Any] = [
         {"doc_list": [{"score": 0.2}, {"score": 0.4}]},
     ]
 

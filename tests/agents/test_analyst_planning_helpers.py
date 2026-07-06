@@ -15,7 +15,7 @@ arun-returned key of the same name.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.agent
 
 def _patch_prior(
     monkeypatch: pytest.MonkeyPatch,
-    prior: Dict[str, Any] | None,
+    prior: dict[str, Any] | None,
 ) -> None:
     """Stub ``TaskManager(...).get_task_by_fingerprint`` to return ``prior``.
 
@@ -41,7 +41,7 @@ def _patch_prior(
         """Return a stub manager with a scripted dedup lookup."""
         del db_path
 
-        def lookup(fingerprint: str) -> Dict[str, Any] | None:
+        def lookup(fingerprint: str) -> dict[str, Any] | None:
             """Yield the scripted row regardless of the queried key."""
             del fingerprint
             return prior
@@ -56,17 +56,17 @@ def _patch_prior(
 
 def _patch_submit_agent_capturing(
     monkeypatch: pytest.MonkeyPatch,
-    arun_return: Dict[str, Any],
-) -> Dict[str, Any]:
+    arun_return: dict[str, Any],
+) -> dict[str, Any]:
     """Replace ``_build_submit_agent`` and capture the ``arun`` kwargs.
 
     The returned dict accumulates ``arun_kwargs`` on the first call so
     tests can assert what the wrapper actually forwarded to the agent
     (e.g. ``obs_file_list``, ``is_polling``).
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    async def fake_arun(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_arun(**kwargs: Any) -> dict[str, Any]:
         """Record forwarded kwargs and return the scripted payload."""
         captured["arun_kwargs"] = kwargs
         return dict(arun_return)

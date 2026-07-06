@@ -12,7 +12,7 @@ settles the run as terminal when all children are success-like.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 import pytest
@@ -51,7 +51,7 @@ async def test_get_run_returns_terminal_record(
     )
     calls = {"n": 0}
 
-    async def boom(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    async def boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
         """Track that the terminal cache skips reconcile_task."""
         _ = (args, kwargs)
         calls["n"] += 1
@@ -150,7 +150,7 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
 
     output_dirs = {"t-1": "/obs/x", "t-2": "/obs/y"}
 
-    async def fake(task_id: str) -> Dict[str, Any]:
+    async def fake(task_id: str) -> dict[str, Any]:
         """Return a terminal success for every child task with output_dir."""
         return {
             "task_id": task_id,

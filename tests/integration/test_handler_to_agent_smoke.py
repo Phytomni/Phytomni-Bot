@@ -13,7 +13,7 @@ the agent wrapper without booting a live LLM.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -36,9 +36,9 @@ async def test_handle_chat_agent_routes_args_to_chat_service(
     every layer cares about (api_key, base_url, model, max_tokens,
     response_format) actually reached phyto_chat.
     """
-    captured_calls: list[Dict[str, Any]] = []
+    captured_calls: list[dict[str, Any]] = []
 
-    async def fake_phyto_chat(**kwargs: Any) -> Dict[str, Any]:
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
         """Record each phyto_chat call and return a minimal completion.
 
         phyto_chat_with_follow calls phyto_chat twice — once with the

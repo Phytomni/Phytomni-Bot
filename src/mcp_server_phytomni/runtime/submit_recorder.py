@@ -15,9 +15,9 @@ shell rather than carrying registry-write logic alongside it.
 import functools
 import logging
 import sqlite3
-from collections.abc import Mapping
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from ..storage.path_policy import IdFactory
 from .request_context import (
@@ -44,7 +44,7 @@ __all__ = [
 
 def extract_task_submissions(
     result: Mapping[str, Any], agent: str
-) -> Tuple[Tuple[str, str, Optional[str], Optional[str]], ...]:
+) -> tuple[tuple[str, str, str | None, str | None], ...]:
     """Extract per-task identity tuples by per-agent wrapper shape.
 
     Each public submit wrapper returns task identity in its own shape,
@@ -75,7 +75,7 @@ def extract_task_submissions(
         ``source_task_id`` are ``None`` for agents / submissions that do
         not participate in the dedup contract.
     """
-    pairs: list[tuple[str, str, Optional[str], Optional[str]]] = []
+    pairs: list[tuple[str, str, str | None, str | None]] = []
     if agent in ("analyst", "deep_genome"):
         task_id = result.get("task_id")
         if isinstance(task_id, str) and task_id:
@@ -186,7 +186,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
         return
     user_id = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     db_path = resolve_tasks_db_path()
     # Seed the run row with the same envelope shape ``_terminal_payload``
     # writes later so a client polling ``GET /v1/runs/{id}`` while the
@@ -201,7 +201,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
         }
         for task_id, output_dir, _fingerprint, _source in submissions
     ]
-    initial_result: Dict[str, Any] = {
+    initial_result: dict[str, Any] = {
         "task_results": initial_task_rows,
         "live_status": initial_task_rows,
         "artifacts": [],

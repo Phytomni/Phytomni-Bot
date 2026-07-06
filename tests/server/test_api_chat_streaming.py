@@ -16,15 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import (
     Any,
-    AsyncIterator,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Tuple,
     cast,
 )
 
@@ -48,7 +42,7 @@ pytestmark = pytest.mark.server
 
 
 def _patch_chat_stream(
-    monkeypatch: pytest.MonkeyPatch, payloads: List[Dict[str, Any]]
+    monkeypatch: pytest.MonkeyPatch, payloads: list[dict[str, Any]]
 ) -> None:
     """Replace ``stream_phyto_chat_chunks`` in the mcp app namespace.
 
@@ -57,7 +51,7 @@ def _patch_chat_stream(
         payloads: Provider chunk dicts the fake should yield.
     """
 
-    async def fake_stream(**_kwargs: Any) -> AsyncIterator[Dict[str, Any]]:
+    async def fake_stream(**_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         """Yield each pre-built payload, ignoring the chat kwargs."""
         for payload in payloads:
             yield payload
@@ -226,7 +220,7 @@ async def _drive_stream_until(
 
     async def fake_streamed(
         _tool_name: Any,
-        _arguments: Dict[str, Any],
+        _arguments: dict[str, Any],
         *,
         run_id: str,
         dialogue_id: str | None,
@@ -358,7 +352,7 @@ class _FakeKnowledgeStreamApp:
         _state: Mapping[str, Any],
         stream_mode: list[str],
         config: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
+    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Record config, then yield one stage + one terminal chunk."""
         assert stream_mode == ["updates", "values"]
         self.captured_config = config
@@ -403,7 +397,7 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
 
     def _fake_target(
         _user_query: str, obs_file_list: Any = None
-    ) -> Tuple[Any, Dict[str, Any]]:
+    ) -> tuple[Any, dict[str, Any]]:
         """Return the fake app + a minimal knowledge initial state."""
         del obs_file_list
         return fake_app, {"user_query": _user_query}
@@ -452,7 +446,7 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
 
     def _fake_target(
         _user_query: str, obs_file_list: Any = None
-    ) -> Tuple[Any, Dict[str, Any]]:
+    ) -> tuple[Any, dict[str, Any]]:
         """Return the fake app + a minimal knowledge initial state."""
         del obs_file_list
         return fake_app, {"user_query": _user_query}
@@ -464,7 +458,7 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
 
     monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
 
-    async def _boom_reconcile(_task_id: str) -> Dict[str, Any]:
+    async def _boom_reconcile(_task_id: str) -> dict[str, Any]:
         """Fail loudly if reconcile fires on a terminal run."""
         raise AssertionError(
             "reconcile_task must not run for a terminal streamed run"

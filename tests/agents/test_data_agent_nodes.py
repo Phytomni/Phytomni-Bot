@@ -13,7 +13,7 @@ external services.
 
 from __future__ import annotations
 
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.agent
 
 def _state(**overrides: Any) -> DataAgentState:
     """Build a DataAgentState mapping with overridable keys."""
-    base: Dict[str, Any] = {
+    base: dict[str, Any] = {
         "user_query": "List orthologs of Os01g0177400",
         "retrieve_prompt": "",
         "rewrite_query": "",
@@ -48,7 +48,7 @@ async def test_search_node_executes_rewrite_query_when_rewrite_enabled(
     """search_node uses rewrite_query when is_rewrite is True."""
     captured_requests: list[Any] = []
 
-    async def fake_execute(request: Any) -> Dict[str, Any]:
+    async def fake_execute(request: Any) -> dict[str, Any]:
         captured_requests.append(request.payload_data["message_content"])
         return {"data": [["AT1G00010"]], "headers": [{"name": "gene"}]}
 
@@ -68,7 +68,7 @@ async def test_search_node_falls_back_to_user_query_when_rewrite_off(
     """search_node uses user_query directly when is_rewrite is False."""
     captured_requests: list[Any] = []
 
-    async def fake_execute(request: Any) -> Dict[str, Any]:
+    async def fake_execute(request: Any) -> dict[str, Any]:
         captured_requests.append(request.payload_data["message_content"])
         return {"data": []}
 

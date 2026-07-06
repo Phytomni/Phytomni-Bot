@@ -20,9 +20,9 @@ collide.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable
 
 from obs import ObsClient, PutObjectHeader
 
@@ -59,7 +59,7 @@ class PublishTarget:
     secret_access_key: str
 
     @classmethod
-    def from_defaults(cls) -> "PublishTarget":
+    def from_defaults(cls) -> PublishTarget:
         """Build a publish target from the project's standard config.
 
         Returns:
@@ -81,7 +81,7 @@ def publish_demo_data(
     run_identity: RunIdentity,
     *,
     target: PublishTarget | None = None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Upload demo_data binary fixtures to a per-session OBS prefix.
 
     Args:
@@ -101,7 +101,7 @@ def publish_demo_data(
     )
     obs_client = None if obsfs_ready else _build_obs_client(resolved_target)
 
-    published: Dict[str, str] = {}
+    published: dict[str, str] = {}
     for local_path, rel_path in _iter_publishable_files(
         demo_data_dir, _PUBLISH_SUBDIRS
     ):

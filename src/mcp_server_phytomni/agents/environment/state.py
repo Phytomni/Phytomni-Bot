@@ -12,7 +12,7 @@ time; lazy annotations would collapse every ``Required[]`` marker
 into a ``total=False`` key.
 """
 
-from typing import Any, Optional, Required, TypedDict
+from typing import Any, Required, TypedDict
 
 
 class EnvironmentInput(TypedDict, total=False):
@@ -51,7 +51,7 @@ class EnvironmentOutput(TypedDict):
     single membership check.
     """
 
-    vci_analysis_task: Optional[dict[str, Any]]
+    vci_analysis_task: dict[str, Any] | None
 
 
 class EnvironmentState(TypedDict, total=False):
@@ -67,5 +67,5 @@ class EnvironmentState(TypedDict, total=False):
     query: Required[str]
     batch: bool
     kwargs: dict[str, Any]
-    region_codes: Optional[list[Optional[str]]]
-    vci_analysis_task: Optional[dict[str, Any]]
+    region_codes: list[str | None] | None
+    vci_analysis_task: dict[str, Any] | None

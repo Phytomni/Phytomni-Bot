@@ -14,7 +14,7 @@ query callers in dispatch and profile now emit the escaped form.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -61,12 +61,12 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
         monkeypatch: Pytest monkeypatch fixture used to swap the BI post
             primitive with an in-memory capture.
     """
-    captured: Dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
     async def _capture(
         sql: str,
         timeout: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record the SQL and return a minimal symbol payload."""
         del timeout
         captured["sql"] = sql
@@ -98,12 +98,12 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
         monkeypatch: Pytest monkeypatch fixture used to swap the BI post
             primitive with an in-memory capture.
     """
-    captured: List[str] = []
+    captured: list[str] = []
 
     async def _capture(
         sql: str,
         timeout: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record each annotation SQL and return an empty payload."""
         del timeout
         captured.append(sql)

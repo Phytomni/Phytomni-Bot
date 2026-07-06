@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Awaitable, Callable
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
@@ -80,7 +79,7 @@ async def _relay_no_inject() -> dict[str, str]:
 
 
 def _build_platform_inject(
-    kind: str, region: Optional[str]
+    kind: str, region: str | None
 ) -> RelayInjectionStrategy:
     """Build the per-service injection strategy for a platform route.
 
@@ -139,7 +138,7 @@ def _openai_relay_handler(
 
 
 def _platform_relay_handler(
-    name: str, url_attr: str, inject_kind: str, region_attr: Optional[str]
+    name: str, url_attr: str, inject_kind: str, region_attr: str | None
 ) -> Callable[..., Awaitable[Response]]:
     """Build an ENVELOPE relay handler for one platform-family service.
 

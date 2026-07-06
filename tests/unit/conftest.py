@@ -13,7 +13,7 @@ the two test modules below the duplicate-code guard.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Iterator, List
+from collections.abc import Callable, Iterator
 
 import pytest
 
@@ -30,7 +30,7 @@ def attach_resolver_caplog(
     handler to the named logger sidesteps the gap. Handlers detach on
     teardown so the fixture stays per-test.
     """
-    targets: List[logging.Logger] = []
+    targets: list[logging.Logger] = []
 
     def _attach(logger_name: str) -> pytest.LogCaptureFixture:
         target = logging.getLogger(logger_name)
@@ -46,11 +46,11 @@ def attach_resolver_caplog(
 
 @pytest.fixture
 def assert_unsupported_species_warning() -> (
-    Callable[[List[logging.LogRecord], str], None]
+    Callable[[list[logging.LogRecord], str], None]
 ):
     """Return an assertion for the unsupported-species WARNING shape."""
 
-    def _assert(records: List[logging.LogRecord], expected_code: str) -> None:
+    def _assert(records: list[logging.LogRecord], expected_code: str) -> None:
         unsupported = [
             record
             for record in records

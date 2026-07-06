@@ -14,8 +14,6 @@ HTTP layer can disambiguate 400 responses by agent.
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import BaseModel
 
 from ...config.defaults import DeepGenomeConfig
@@ -65,7 +63,7 @@ class DeepGenomeResolveResult(BaseModel):
     gene_id: str
     species_code: str
     raw_query: str
-    candidates: List[DeepGenomeIdCandidate]
+    candidates: list[DeepGenomeIdCandidate]
 
 
 async def resolve_deep_genome_user_query(

@@ -10,7 +10,7 @@ Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
     retrieve_generate.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -120,9 +120,9 @@ class KnowledgeAgent:
 
     def __init__(
         self,
-        checkpointer: Optional[MemorySaver] = None,
+        checkpointer: MemorySaver | None = None,
         knowledge_config=KNOWLEDGE_CONFIG,
-        sensitive_config: Optional[SensitiveConfig] = None,
+        sensitive_config: SensitiveConfig | None = None,
     ):
         """Initialize the KnowledgeAgent and build the graph."""
         self.knowledge_config = knowledge_config
@@ -296,7 +296,7 @@ class KnowledgeAgent:
 
     async def generate_prep_node(
         self, state: KnowledgeAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat payload for the primary generate call.
 
         Mirrors the prompt-building half of :meth:`generate_node` but
@@ -350,7 +350,7 @@ class KnowledgeAgent:
 
     async def generate_post_node(
         self, state: KnowledgeAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Merge retrieved docs into the shared chat subgraph response.
 
         Mirrors the doc-list-merge half of :meth:`generate_node` but
@@ -403,7 +403,7 @@ class KnowledgeAgent:
 
     async def follow_up_prep_node(
         self, state: KnowledgeAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat payload for the follow-up questions call.
 
         Mirrors the prompt-building half of :meth:`follow_up_node`
@@ -446,7 +446,7 @@ class KnowledgeAgent:
 
     async def follow_up_post_node(
         self, state: KnowledgeAgentState
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Parse follow-up questions and merge them into the primary turn.
 
         Mirrors the parse + mutate half of :meth:`follow_up_node` and
@@ -539,11 +539,11 @@ class KnowledgeAgent:
         self,
         user_query: str,
         *,
-        obs_file_list: Optional[List[str]] = None,
-        repo_id_dict: Optional[Dict[str, int]] = None,
+        obs_file_list: list[str] | None = None,
+        repo_id_dict: dict[str, int] | None = None,
         is_generate: bool = True,
         is_follow_up: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the graph's initial state dict from wrapper arguments.
 
         Factored out of :meth:`arun` so the streaming seam can seed the
@@ -648,12 +648,12 @@ def _knowledge_sensitive_config_with_overrides(**kwargs: Any):
 
 async def multi_retrieve_generate(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
-    repo_id_dict: Optional[Dict[str, int]] = None,
+    obs_file_list: list[str] | None = None,
+    repo_id_dict: dict[str, int] | None = None,
     is_generate: bool = True,
     is_follow_up: bool = True,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based KnowledgeAgent.
 
     Args:
@@ -691,8 +691,8 @@ async def multi_retrieve_generate(
 
 def knowledge_stream_target(
     user_query: str,
-    obs_file_list: Optional[List[str]] = None,
-) -> tuple[Any, Dict[str, Any]]:
+    obs_file_list: list[str] | None = None,
+) -> tuple[Any, dict[str, Any]]:
     """Return the cached KnowledgeAgent app + seeded streaming state.
 
     Acquires the SAME cached agent ``multi_retrieve_generate`` uses with
@@ -731,9 +731,9 @@ async def retrieve_generate(
     user_query: str,
     repo_id: str = KNOWLEDGE_CONFIG.REPO_ID,
     page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE,
-    obs_file_list: Optional[List[str]] = None,
+    obs_file_list: list[str] | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compatibility wrapper for single-repository retrieve and generate.
 
     Args:

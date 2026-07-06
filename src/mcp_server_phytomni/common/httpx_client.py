@@ -15,8 +15,9 @@ pool's TLS / proxy posture is never mutated mid-request.
 from __future__ import annotations
 
 import ssl
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Optional, Union
+from typing import Any, Union
 
 from httpx import AsyncClient
 
@@ -37,10 +38,10 @@ VerifyArg = Union[bool, ssl.SSLContext]
 # ``global`` statement (pylint W0603) and without renaming the slot to
 # an UPPER_CASE constant (pylint C0103) — neither lint is suppressed.
 # The container identity stays fixed; only the ``client`` entry rebinds.
-_HTTPX_STATE: dict[str, Optional[AsyncClient]] = {"client": None}
+_HTTPX_STATE: dict[str, AsyncClient | None] = {"client": None}
 
 
-def resolve_verify(config: Optional[ServerConfig] = None) -> VerifyArg:
+def resolve_verify(config: ServerConfig | None = None) -> VerifyArg:
     """Return the ``verify`` argument value httpx should use.
 
     Resolution order:
@@ -69,9 +70,7 @@ def resolve_verify(config: Optional[ServerConfig] = None) -> VerifyArg:
     return True
 
 
-def init_shared_client(
-    *, config: Optional[ServerConfig] = None
-) -> AsyncClient:
+def init_shared_client(*, config: ServerConfig | None = None) -> AsyncClient:
     """Initialise the process-wide shared ``AsyncClient``.
 
     Idempotent: a second call returns the existing client unchanged so
@@ -128,7 +127,7 @@ def shared_client_initialised() -> bool:
 async def get_async_client(
     *,
     timeout: Any = None,
-    config: Optional[ServerConfig] = None,
+    config: ServerConfig | None = None,
     **client_kwargs: Any,
 ) -> AsyncGenerator[AsyncClient, None]:
     """Yield the shared keep-alive client, or an ephemeral fallback.

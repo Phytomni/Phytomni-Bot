@@ -56,7 +56,7 @@ class _CapturingClient:
         self.response = response
         self.captured: dict[str, Any] = {}
 
-    async def __aenter__(self) -> "_CapturingClient":
+    async def __aenter__(self) -> _CapturingClient:
         return self
 
     async def __aexit__(self, *_args: Any) -> None:

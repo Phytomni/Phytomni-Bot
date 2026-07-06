@@ -14,13 +14,13 @@ homology data path.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 
 def _homology_gene_lists(
-    homology_response: Dict[str, Any],
+    homology_response: dict[str, Any],
     species_code: str,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split homology BI response into orthologs + paralogs lists.
 
     Args:
@@ -36,8 +36,8 @@ def _homology_gene_lists(
         homology_species match.
     """
     entries = homology_response.get("data") or []
-    orthologs: List[Dict[str, Any]] = []
-    paralogs: List[Dict[str, Any]] = []
+    orthologs: list[dict[str, Any]] = []
+    paralogs: list[dict[str, Any]] = []
     for entry in entries:
         if entry.get("homology_species") == species_code:
             paralogs.append(entry)
@@ -47,10 +47,10 @@ def _homology_gene_lists(
 
 
 def _interaction_gene_list(
-    interaction_response: Dict[str, Any],
+    interaction_response: dict[str, Any],
     gene_id: str,
     species_code: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Project protein interaction BI response into compact list.
 
     Filters out self-loops where ``interact_gene_id`` equals the

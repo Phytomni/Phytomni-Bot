@@ -129,7 +129,7 @@ def _read_timeout_seconds() -> float:
     return float(raw) if raw else _READ_TIMEOUT_DEFAULT
 
 
-def _drain(stream: IO[str], sink: "deque[str]") -> None:
+def _drain(stream: IO[str], sink: deque[str]) -> None:
     """Copy a subprocess stream line-by-line into a bounded buffer.
 
     Reading the pipe continuously prevents a full OS buffer from
@@ -143,13 +143,13 @@ def _drain(stream: IO[str], sink: "deque[str]") -> None:
         sink.append(line.rstrip("\n"))
 
 
-def _log_tail(logs: "deque[str]") -> str:
+def _log_tail(logs: deque[str]) -> str:
     """Return the captured subprocess log tail as one string."""
     return "\n".join(logs)
 
 
 def _await_healthy(
-    proc: "subprocess.Popen[str]", base_url: str, logs: "deque[str]"
+    proc: subprocess.Popen[str], base_url: str, logs: deque[str]
 ) -> None:
     """Block until ``/healthz`` is ok or the deadline elapses.
 
@@ -220,7 +220,7 @@ def boot_phytomni_api(
     env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
     cmd = [sys.executable, "-m", "mcp_server_phytomni.api.server"]
-    logs: "deque[str]" = deque(maxlen=_LOG_TAIL)
+    logs: deque[str] = deque(maxlen=_LOG_TAIL)
     with subprocess.Popen(
         cmd,
         env=env,

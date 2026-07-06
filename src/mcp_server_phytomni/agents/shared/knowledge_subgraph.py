@@ -14,7 +14,7 @@ it.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Optional
+from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -23,7 +23,7 @@ from ..knowledge.agent import KnowledgeAgent
 
 def build_knowledge_app(
     knowledge_config: Any,
-    sensitive_config: Optional[Any] = None,
+    sensitive_config: Any | None = None,
 ) -> CompiledStateGraph:
     """Compile a KnowledgeAgent subgraph for the given config.
 
@@ -80,7 +80,7 @@ def make_knowledge_node_wrapper(
 def make_knowledge_after_router(
     *,
     pending_post_key: str = "pending_post_knowledge",
-    default: Optional[str] = None,
+    default: str | None = None,
 ) -> Callable[[Any], str]:
     """Return a router callable for ``add_conditional_edges``.
 
