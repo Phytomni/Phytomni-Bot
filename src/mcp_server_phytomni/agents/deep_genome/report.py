@@ -12,6 +12,7 @@ and follow-up questions into the final report state.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import sqlite3
@@ -43,6 +44,13 @@ else:
     DeepGenomeState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
+
+
+def _write(path: Path, text: str) -> None:
+    """Blocking file write, offloaded to a worker thread by async callers."""
+    with open(path, "w", encoding="utf-8") as fo:
+        fo.write(text)
+
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 
@@ -371,8 +379,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             ),
         )
         results_path = Path(report_dir) / f"{state['gene_id']}_results.md"
-        with open(results_path, "w", encoding="utf-8") as fo:
-            fo.write(gene_results)
+        await asyncio.to_thread(_write, results_path, gene_results)
         return {
             "report_dir": report_dir,
             "synthesize_report": gene_results,
@@ -669,8 +676,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         for follow_up in follow_up_list:
             final_report += follow_up
             final_report += "\n"
-        with open(results_path, "w", encoding="utf-8") as fo:
-            fo.write(final_report)
+        await asyncio.to_thread(_write, results_path, final_report)
         self._persist_final_report(state.get("task_id"), final_report)
         self._persist_degraded(state.get("task_id"), state)
         return {
