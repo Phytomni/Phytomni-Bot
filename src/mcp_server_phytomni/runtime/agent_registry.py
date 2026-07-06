@@ -9,18 +9,16 @@ Functions: get_cached_agent, clear_agent_registry, agent_fingerprint_values.
 """
 
 from collections.abc import Callable, Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel
 
 from .langgraph_runner import GraphRegistry
 
-AgentT = TypeVar("AgentT")
-
 _AGENT_REGISTRY: GraphRegistry[Any] = GraphRegistry()
 
 
-def get_cached_agent(
+def get_cached_agent[AgentT](
     name: str,
     factory: Callable[[], AgentT],
     fingerprint_values: Mapping[str, Any] | None = None,

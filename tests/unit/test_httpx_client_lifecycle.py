@@ -71,10 +71,12 @@ async def test_get_async_client_yields_shared_when_initialised() -> None:
     """With shared init'd and no extra kwargs, the shared client is yielded."""
     shared = init_shared_client(config=ServerConfig())
 
-    async with get_async_client(timeout=5.0) as first:
-        async with get_async_client(timeout=10.0) as second:
-            assert first is shared
-            assert second is shared
+    async with (
+        get_async_client(timeout=5.0) as first,
+        get_async_client(timeout=10.0) as second,
+    ):
+        assert first is shared
+        assert second is shared
 
     # The shared client must NOT be closed on context exit (lifespan owns it).
     assert shared_client_initialised() is True

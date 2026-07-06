@@ -17,7 +17,7 @@ from __future__ import annotations
 import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, Union
+from typing import Any
 
 from httpx import AsyncClient
 
@@ -32,7 +32,7 @@ __all__ = [
     "shared_client_initialised",
 ]
 
-VerifyArg = Union[bool, ssl.SSLContext]
+VerifyArg = bool | ssl.SSLContext
 
 # Single-key dict so ``init`` / ``aclose`` can mutate the slot without a
 # ``global`` statement (pylint W0603) and without renaming the slot to

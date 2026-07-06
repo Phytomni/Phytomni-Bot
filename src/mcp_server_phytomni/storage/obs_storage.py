@@ -14,12 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-from typing import TypeVar
 
 DEFAULT_OBSFS_MOUNT_ROOT = "/obs"
 OBSFS_FALLBACK_ERRORS = (OSError,)
-
-T = TypeVar("T")
 
 
 class ObsPathError(ValueError):
@@ -174,7 +171,7 @@ def bucket_colon_path(bucket_name: str, object_key: str) -> str:
     return f"{_safe_bucket_name(bucket_name)}:/{safe_key}"
 
 
-def obsfs_or_sdk(
+def obsfs_or_sdk[T](
     obsfs_action: Callable[[], T],
     sdk_action: Callable[[], T],
 ) -> T:

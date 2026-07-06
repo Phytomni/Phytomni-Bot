@@ -521,7 +521,7 @@ def _format_analyst_task_result(
             else ()
         ),
         "method_context_keys": (
-            tuple(str(key) for key in method_context.keys())
+            tuple(str(key) for key in method_context)
             if isinstance(method_context, Mapping)
             else ()
         ),

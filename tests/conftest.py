@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
@@ -300,7 +300,7 @@ def _build_scripted_client_class(
             """Ignore client construction arguments."""
             del args, kwargs
 
-        async def __aenter__(self) -> "_FakeClient":
+        async def __aenter__(self) -> Self:
             """Enter the async context."""
             return self
 

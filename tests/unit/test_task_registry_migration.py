@@ -409,11 +409,9 @@ def test_no_module_level_remote_task_functions() -> None:
 
 def test_deep_genome_config_has_no_task_urls() -> None:
     """CREATE_TASK_URL / UPDATE_TASK_URL are removed from the config."""
-    assert (
-        "CREATE_TASK_URL"
-        not in defaults_mod.DeepGenomeConfig.model_fields.keys()
+    assert "CREATE_TASK_URL" not in dict(
+        defaults_mod.DeepGenomeConfig.model_fields
     )
-    assert (
-        "UPDATE_TASK_URL"
-        not in defaults_mod.DeepGenomeConfig.model_fields.keys()
+    assert "UPDATE_TASK_URL" not in dict(
+        defaults_mod.DeepGenomeConfig.model_fields
     )

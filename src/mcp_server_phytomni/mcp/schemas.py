@@ -9,7 +9,7 @@ This module defines request models for each public MCP tool and
 These schemas are the public JSON-schema surface for MCP clients.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
@@ -616,7 +616,7 @@ class GetTaskStatus(BaseModel):
     ]
 
 
-class PhytomniAgents(str, Enum):
+class PhytomniAgents(StrEnum):
     """Enumeration of specialized AI agents for plant science research support.
 
     Defines available agent types with domain-specific capabilities for

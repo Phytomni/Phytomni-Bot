@@ -12,15 +12,13 @@ Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
-
-GraphT = TypeVar("GraphT")
 
 # Workflow boundary: every non-system failure produced inside a LangGraph
 # action must be converted to a structured failure state rather than
@@ -150,7 +148,7 @@ def config_fingerprint(values: Mapping[str, Any] | None = None) -> str:
 
 
 @dataclass
-class GraphRegistry(Generic[GraphT]):
+class GraphRegistry[GraphT]:
     """Cache compiled graphs by an explicit non-secret fingerprint.
 
     Attributes:

@@ -7,6 +7,7 @@
 Classes: Storage.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -413,10 +414,8 @@ class Storage:
             try:
                 conn.execute("ROLLBACK")
             except sqlite3.Error:
-                try:
+                with contextlib.suppress(sqlite3.Error):
                     conn.close()
-                except sqlite3.Error:
-                    pass
                 self._local.conn = None
             raise StorageError(f"Failed to acquire lock: {e}") from e
 

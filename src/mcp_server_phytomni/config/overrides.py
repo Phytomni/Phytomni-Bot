@@ -12,11 +12,10 @@ Functions: collect_mapped_overrides, copy_config_with_overrides,
 """
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
-ConfigT = TypeVar("ConfigT", bound=BaseModel)
 FieldMap = Mapping[str, str]
 
 RETRIEVAL_CONFIG_FIELD_MAP = {
@@ -101,7 +100,7 @@ def collect_mapped_overrides(
     return updates
 
 
-def copy_config_with_overrides(
+def copy_config_with_overrides[ConfigT: BaseModel](
     base_config: ConfigT,
     values: Mapping[str, Any],
     field_map: FieldMap,
@@ -134,7 +133,7 @@ def copy_config_with_overrides(
     return base_config.model_copy(update=updates)
 
 
-def copy_sensitive_config_with_overrides(
+def copy_sensitive_config_with_overrides[ConfigT: BaseModel](
     base_config: ConfigT,
     values: Mapping[str, Any],
     *,

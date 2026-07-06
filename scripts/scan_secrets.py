@@ -16,9 +16,9 @@ import argparse
 import re
 import subprocess
 import sys
+import typing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Pattern
 
 MAX_FILE_BYTES = 1_000_000
 ALLOWLIST_MARKERS = (
@@ -85,7 +85,7 @@ class Rule:
     """
 
     name: str
-    pattern: Pattern[str]
+    pattern: typing.Pattern[str]
     message: str
 
 
@@ -404,8 +404,7 @@ def run_git(
     return subprocess.run(
         ["git", *args],
         check=check,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
 
@@ -484,8 +483,7 @@ def scan_staged_path(path: str) -> list[Finding]:
     result = subprocess.run(
         ["git", "show", f":{path}"],
         check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     if result.returncode != 0:
         return []

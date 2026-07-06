@@ -127,11 +127,12 @@ def _indirect_supplier_identifiers() -> set[str]:
     for relative in _INDIRECT_SUPPLIER_MODULES:
         tree = ast.parse((_SRC_ROOT / relative).read_text(encoding="utf-8"))
         for literal in ast.walk(tree):
-            if isinstance(literal, ast.Constant) and isinstance(
-                literal.value, str
+            if (
+                isinstance(literal, ast.Constant)
+                and isinstance(literal.value, str)
+                and _IDENTIFIER_RE.match(literal.value)
             ):
-                if _IDENTIFIER_RE.match(literal.value):
-                    found.add(literal.value)
+                found.add(literal.value)
     return found
 
 

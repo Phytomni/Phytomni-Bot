@@ -230,17 +230,17 @@ class RelayClient:
         a key-free ``McpError`` on a non-2xx status before any file write.
         """
         url = self.relay_url("obs/object", {"path": obs_path})
-        async with get_async_client(timeout=self.timeout) as client:
-            async with client.stream(
+        async with (
+            get_async_client(timeout=self.timeout) as client,
+            client.stream(
                 "GET", url, headers=self._auth_headers()
-            ) as response:
-                if response.status_code >= 400:
-                    raise McpError(
-                        ErrorData(code=INTERNAL_ERROR, message=message)
-                    )
-                with destination.open("wb") as sink:
-                    async for chunk in response.aiter_bytes():
-                        sink.write(chunk)
+            ) as response,
+        ):
+            if response.status_code >= 400:
+                raise McpError(ErrorData(code=INTERNAL_ERROR, message=message))
+            with destination.open("wb") as sink:
+                async for chunk in response.aiter_bytes():
+                    sink.write(chunk)
 
     async def get_obs_list(
         self, obs_prefix: str, *, message: str

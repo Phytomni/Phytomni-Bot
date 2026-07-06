@@ -11,7 +11,7 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 """
 
 from pathlib import Path
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import (
     AliasChoices,
@@ -833,7 +833,7 @@ class ApiConfig(BaseSettings):
     )
 
 
-SpeciesEntryValue = Union[str, dict[str, str]]
+SpeciesEntryValue = str | dict[str, str]
 
 
 class SpeciesDataIndex(
@@ -894,7 +894,7 @@ class RegionMap(RootModel[dict[str, dict[str, dict[str, str]]]]):
         return list(self.root[province].keys())
 
 
-PromptLeaf = Union[str, dict[str, str]]
+PromptLeaf = str | dict[str, str]
 
 
 class PromptTemplates(RootModel[dict[str, dict[str, PromptLeaf]]]):

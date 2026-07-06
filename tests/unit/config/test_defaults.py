@@ -172,8 +172,8 @@ def test_deep_genome_config_missing_required_env_raises(field, monkeypatch):
 
 def test_deep_genome_config_has_no_task_url_fields():
     """CREATE_TASK_URL / UPDATE_TASK_URL are removed from DeepGenomeConfig."""
-    assert "CREATE_TASK_URL" not in DeepGenomeConfig.model_fields.keys()
-    assert "UPDATE_TASK_URL" not in DeepGenomeConfig.model_fields.keys()
+    assert "CREATE_TASK_URL" not in dict(DeepGenomeConfig.model_fields)
+    assert "UPDATE_TASK_URL" not in dict(DeepGenomeConfig.model_fields)
 
 
 @pytest.mark.parametrize("env_name", ["RELAY_MODE", "PHYTOMNI_RELAY_MODE"])
@@ -324,14 +324,14 @@ def test_brief_gene_and_deep_genome_share_repo_id_dict_source():
 
 def test_brief_gene_config_has_no_bi_url() -> None:
     """BI_URL is gone from BriefGeneConfig after the GaussDB cutover."""
-    assert "BI_URL" not in BriefGeneConfig.model_fields.keys()
+    assert "BI_URL" not in dict(BriefGeneConfig.model_fields)
 
 
 def test_deep_genome_config_has_no_bi_url() -> None:
     """BI_URL is gone from DeepGenomeConfig after the GaussDB cutover."""
-    assert "BI_URL" not in DeepGenomeConfig.model_fields.keys()
+    assert "BI_URL" not in dict(DeepGenomeConfig.model_fields)
 
 
 def test_sensitive_config_has_no_bi_token() -> None:
     """BI_TOKEN is gone from SensitiveConfig after the GaussDB cutover."""
-    assert "BI_TOKEN" not in SensitiveConfig.model_fields.keys()
+    assert "BI_TOKEN" not in dict(SensitiveConfig.model_fields)

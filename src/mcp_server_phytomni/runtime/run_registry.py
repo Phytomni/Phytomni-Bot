@@ -12,6 +12,7 @@ Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -284,12 +285,10 @@ class RunRegistry:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_RUNS_DDL)
             for column, column_type in _REQUEST_INFO_COLUMNS:
-                try:
+                with contextlib.suppress(sqlite3.OperationalError):
                     conn.execute(
                         f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
                     )
-                except sqlite3.OperationalError:
-                    pass
             conn.execute(_CREATE_RUNS_USER_INDEX)
             conn.execute(_CREATE_TASKS_RUN_INDEX)
             conn.commit()

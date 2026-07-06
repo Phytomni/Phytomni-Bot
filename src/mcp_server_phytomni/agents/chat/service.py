@@ -576,10 +576,7 @@ async def stream_phyto_chat_chunks(
         McpError: When the open-stream call exhausts its retries on
             transient transport errors.
     """
-    if obs_file_list is None:
-        obs_file_list = []
-    else:
-        obs_file_list = list(obs_file_list)
+    obs_file_list = [] if obs_file_list is None else list(obs_file_list)
     options = _chat_options(kwargs)
     if obs_file_list:
         user_query = await _query_with_upload_context(

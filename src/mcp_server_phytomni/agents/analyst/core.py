@@ -496,10 +496,7 @@ class AnalystAgent(
         )
 
         obs_file_list = kwargs.get("obs_file_list")
-        if obs_file_list is None:
-            obs_file_list = []
-        else:
-            obs_file_list = list(obs_file_list)
+        obs_file_list = [] if obs_file_list is None else list(obs_file_list)
 
         input_fingerprint = kwargs.get("input_fingerprint") or ""
         initial_state = {

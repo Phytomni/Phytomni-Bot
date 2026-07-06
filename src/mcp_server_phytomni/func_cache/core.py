@@ -10,6 +10,7 @@ helpers live in decorator.py and lifecycle.py respectively.
 """
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -454,17 +455,13 @@ class CacheRuntime:
 
     def _delete_corrupted(self, cache_key: str) -> None:
         """Delete one corrupted cache entry, ignoring storage failures."""
-        try:
+        with contextlib.suppress(CacheError):
             self.storage.delete_entry(self.key_builder.func_id, cache_key)
-        except CacheError:
-            pass
 
     async def _delete_corrupted_async(self, cache_key: str) -> None:
         """Delete one corrupted cache entry, ignoring storage failures."""
-        try:
+        with contextlib.suppress(CacheError):
             self.storage.delete_entry(self.key_builder.func_id, cache_key)
-        except CacheError:
-            pass
 
     def _log_corrupted_entry(self, cache_key: str) -> None:
         """Log a corrupted cache entry warning."""
