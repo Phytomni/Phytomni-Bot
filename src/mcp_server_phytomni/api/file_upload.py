@@ -139,6 +139,5 @@ async def handle_file_upload(
         purpose=purpose,
         created_at=int(datetime.now(UTC).timestamp()),
         obs_path=record.obs_path,
-        path=record.obs_path,
     )
     return JSONResponse(response.model_dump(), status_code=201)

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 # Allowed values for the ``purpose`` field on ``POST /v1/files`` and
 # the response echo. Combines the OpenAI files API enum (assistants,
@@ -279,9 +279,11 @@ class FileUploadResponse(BaseModel):
             stored.
         obs_path: Public ``/obs/<bucket>/<key>`` path that clients can
             replay in a later ``obs_file_list`` argument.
-        path: Alias of ``obs_path`` preserved so chat-ai's existing
-            ``obs_file_list`` builder, which already reads ``path``
-            from the legacy local upload bridge, can plug in unchanged.
+        path: Computed alias of ``obs_path`` preserved so chat-ai's
+            existing ``obs_file_list`` builder, which already reads
+            ``path`` from the legacy local upload bridge, can plug in
+            unchanged. Read-only mirror that can never drift from
+            ``obs_path``.
     """
 
     id: str
@@ -291,4 +293,9 @@ class FileUploadResponse(BaseModel):
     purpose: UploadPurpose
     created_at: int
     obs_path: str
-    path: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def path(self) -> str:
+        """Alias of ``obs_path`` for chat-ai's ``obs_file_list`` builder."""
+        return self.obs_path
