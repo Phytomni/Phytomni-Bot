@@ -685,6 +685,10 @@ class ApiConfig(BaseSettings):
     Attributes:
         API_HOST (str): Bind host for the uvicorn server.
         API_PORT (int): Bind port for the uvicorn server.
+        API_GRACEFUL_SHUTDOWN (int): Maximum seconds uvicorn waits for
+            in-flight connections to drain during shutdown before forcing
+            exit; kept shorter than systemd's TimeoutStopSec so SSE chat,
+            relay tee, and OBS download streams get a bounded window.
         API_KEYS_DB_PATH (str): Local SQLite path for the API key store.
         API_TASKS_DB_PATH (str): Shared local SQLite path for the run
             registry and backend task status (single source of truth).
@@ -749,6 +753,7 @@ class ApiConfig(BaseSettings):
 
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8080
+    API_GRACEFUL_SHUTDOWN: int = 30
     API_KEYS_DB_PATH: str = Field(
         default=str(_API_CACHE_DIR / "api_keys.sqlite"),
         validation_alias=AliasChoices(

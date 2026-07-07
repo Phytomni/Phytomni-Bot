@@ -28,6 +28,7 @@ def main() -> None:
         create_app(),
         host=config.API_HOST,
         port=config.API_PORT,
+        timeout_graceful_shutdown=config.API_GRACEFUL_SHUTDOWN,
     )
 
 

@@ -32,10 +32,17 @@ def test_main_forwards_app_host_and_port_to_uvicorn(
     """
     captured: dict[str, Any] = {}
 
-    def fake_uvicorn_run(app: Any, *, host: str, port: int) -> None:
+    def fake_uvicorn_run(
+        app: Any,
+        *,
+        host: str,
+        port: int,
+        timeout_graceful_shutdown: int,
+    ) -> None:
         captured["app"] = app
         captured["host"] = host
         captured["port"] = port
+        captured["timeout_graceful_shutdown"] = timeout_graceful_shutdown
 
     monkeypatch.setattr(api_launcher.uvicorn, "run", fake_uvicorn_run)
 
@@ -44,3 +51,4 @@ def test_main_forwards_app_host_and_port_to_uvicorn(
     assert captured["app"] is not None
     assert isinstance(captured["host"], str)
     assert isinstance(captured["port"], int)
+    assert captured["timeout_graceful_shutdown"] == 30
