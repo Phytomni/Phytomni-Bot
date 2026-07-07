@@ -134,6 +134,8 @@ class ServerConfig(BaseSettings):
     MAX_CONCURRENCY: int = 4
     MAX_WORKERS: int = 4
     GAUSS_COMMAND_TIMEOUT: float = 30.0
+    HTTP_MAX_CONNECTIONS: int = 100
+    HTTP_MAX_KEEPALIVE: int = 50
 
     TOKEN_URL: Annotated[
         str,

@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from httpx import AsyncClient
+from httpx import AsyncClient, Limits
 
 from ..config.defaults import ServerConfig
 
@@ -92,9 +92,14 @@ def init_shared_client(*, config: ServerConfig | None = None) -> AsyncClient:
     existing = _HTTPX_STATE["client"]
     if existing is not None:
         return existing
+    resolved = config if config is not None else ServerConfig()
     client = AsyncClient(
-        verify=resolve_verify(config),
+        verify=resolve_verify(resolved),
         timeout=None,
+        limits=Limits(
+            max_connections=resolved.HTTP_MAX_CONNECTIONS,
+            max_keepalive_connections=resolved.HTTP_MAX_KEEPALIVE,
+        ),
     )
     _HTTPX_STATE["client"] = client
     return client
