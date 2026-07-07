@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -221,8 +222,8 @@ def _purge_expired_runs_best_effort() -> None:
     """Run a single ``RunRegistry.purge_expired`` pass, swallowing errors.
 
     Every API write path (sync chat completions, native agent runs,
-    and the registry listing) drives the lazy GC by calling this
-    helper so an expired row never outlives its TTL. A SQLite / OS
+    and the registry listing) drives the lazy GC through this helper
+    so an expired row never outlives its TTL. A SQLite / OS
     failure must never propagate — the user-facing write already
     succeeded and the next request can re-trigger the purge — but
     the failure does emit a sanitized ``warning`` log so ops can
@@ -234,6 +235,18 @@ def _purge_expired_runs_best_effort() -> None:
         RunRegistry(resolve_tasks_db_path()).purge_expired()
     except (sqlite3.Error, OSError) as exc:
         _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
+
+
+def _schedule_run_gc(background: BackgroundTasks) -> None:
+    """Schedule the run-registry GC to run after the response flushes.
+
+    FastAPI resolves BackgroundTasks by dependency injection, so a
+    write route declares this dependency instead of blocking its
+    response on the SQLite DELETE scan. The purge stays best-effort and
+    idempotent, so running it once per request (deduping the former
+    per-helper inline calls) carries no data risk.
+    """
+    background.add_task(_purge_expired_runs_best_effort)
 
 
 def _extract_answer(result: Any) -> str | None:
@@ -702,7 +715,6 @@ async def _invoke_agent_run(
         _stamp_remote_request_info(
             run_id=run_id, owner=owner, request_info=request_info
         )
-        _purge_expired_runs_best_effort()
         body: dict[str, Any] = {
             "id": run_id,
             "object": "agent.run",
@@ -999,7 +1011,6 @@ def _record_sync_run(
             exc.__class__.__name__,
         )
         return None
-    _purge_expired_runs_best_effort()
     return run_id
 
 
@@ -1513,7 +1524,10 @@ def create_app() -> FastAPI:
             }
         )
 
-    @app.post("/v1/chat/completions")
+    @app.post(
+        "/v1/chat/completions",
+        dependencies=[Depends(_schedule_run_gc)],
+    )
     async def chat_completions(
         payload: ChatCompletionRequest,
         principal: ApiPrincipal = Depends(require_scope("agents")),
@@ -1636,7 +1650,10 @@ def create_app() -> FastAPI:
             }
         )
 
-    @app.post("/v1/agents/{agent}/runs")
+    @app.post(
+        "/v1/agents/{agent}/runs",
+        dependencies=[Depends(_schedule_run_gc)],
+    )
     async def create_agent_run(
         agent: str,
         payload: AgentRunRequest,
@@ -1653,7 +1670,10 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(body, status_code=status_code)
 
-    @app.post("/v1/query/route")
+    @app.post(
+        "/v1/query/route",
+        dependencies=[Depends(_schedule_run_gc)],
+    )
     async def route_query(
         payload: ExpertQueryRequest,
         principal: ApiPrincipal = Depends(require_scope("agents")),

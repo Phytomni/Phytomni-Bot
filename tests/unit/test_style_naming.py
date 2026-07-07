@@ -185,6 +185,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/agents/test_analyst_graph_nodes.py": {
         "protected-access",
     },
+    # Test for ``_schedule_run_gc`` (a module-private dependency function
+    # on api/app.py) — asserts the three sync write routes declare it
+    # via route-introspection; same protected-helper coverage seam.
+    "tests/server/test_run_gc_background.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
