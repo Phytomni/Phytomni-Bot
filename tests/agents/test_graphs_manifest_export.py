@@ -199,10 +199,10 @@ def test_export_real_chat_subgraph_node_set() -> None:
     """Real chat subgraph export matches the documented three-node graph.
 
     Pins the chat subgraph's manifest shape so the docs section in
-    ``docs/agent-graphs.md`` and the compiled graph stay in sync. If
-    a future refactor renames a node or collapses the prepare /
-    generate split, the assertion fails first and the docs update
-    rides in the same diff.
+    ``docs/explanation/agent-graphs.md`` and the compiled graph stay
+    in sync. If a future refactor renames a node or collapses the
+    prepare / generate split, the assertion fails first and the docs
+    update rides in the same diff.
     """
     manifest = export_manifest(_build_chat_graph())
     names = {node.name for node in manifest.nodes}
@@ -218,10 +218,11 @@ def test_export_real_knowledge_subgraph_node_set() -> None:
     """Real KnowledgeAgent export matches the structural-mount topology.
 
     Pins the knowledge subgraph's manifest shape so the docs section
-    in ``docs/agent-graphs.md`` and the compiled graph stay in sync.
-    The legacy single-node ``generate_node`` / ``follow_up_node``
-    bodies were retired in favor of the structural chat mount; the
-    compiled graph now always wires the prep + chat + post split.
+    in ``docs/explanation/agent-graphs.md`` and the compiled graph
+    stay in sync. The legacy single-node ``generate_node`` /
+    ``follow_up_node`` bodies were retired in favor of the structural
+    chat mount; the compiled graph now always wires the prep + chat +
+    post split.
     """
     manifest = export_manifest(KnowledgeAgent().app)
     names = {node.name for node in manifest.nodes}
@@ -241,7 +242,7 @@ def test_export_real_data_subgraph_node_set() -> None:
     """Real DataAgent export matches the structural-mount topology.
 
     Pins the data subgraph's manifest shape so the docs section in
-    ``docs/agent-graphs.md`` and the compiled graph stay in sync.
+    ``docs/explanation/agent-graphs.md`` and the compiled graph stay in sync.
     The legacy single-node ``rewrite_node`` body was retired in
     favor of the structural chat mount; ``retrieve_node`` also splits
     into prep + post around the mounted knowledge subgraph.
@@ -264,7 +265,7 @@ def test_export_real_analyst_subgraph_node_set() -> None:
     """Real AnalystAgent export covers the chat + knowledge node set.
 
     Pins the analyst subgraph's structural-mount shape so the docs
-    section in ``docs/agent-graphs.md`` and the compiled graph stay
+    section in ``docs/explanation/agent-graphs.md`` and the compiled graph stay
     in sync. Each chat site becomes a prep + post pair around the
     shared ``chat`` node; the method_retrieve site becomes a prep +
     post pair around the mounted ``knowledge`` node.
@@ -315,7 +316,7 @@ def test_export_real_environment_subgraph_node_set() -> None:
     """Real environment subgraph export matches the two-node graph.
 
     Pins the environment subgraph's manifest shape so the docs
-    section in ``docs/agent-graphs.md`` and the compiled graph
+    section in ``docs/explanation/agent-graphs.md`` and the compiled graph
     stay in sync. The documented node-name set is canonically
     pinned by ``test_environment_graph`` two-node assertion.
     """
@@ -332,7 +333,7 @@ def test_export_real_evolution_subgraph_node_set() -> None:
     """Real evolution subgraph export matches the two-node graph.
 
     Pins the evolution subgraph's manifest shape so the docs
-    section in ``docs/agent-graphs.md`` and the compiled graph
+    section in ``docs/explanation/agent-graphs.md`` and the compiled graph
     stay in sync. The documented node-name set is canonically
     pinned by ``test_evolution_graph`` two-node assertion.
     """
@@ -349,7 +350,7 @@ def test_export_real_deep_genome_subgraph_node_set() -> None:
     """Real deep_genome subgraph export matches the documented set.
 
     Pins the deep_genome subgraph's manifest shape so the docs
-    section in ``docs/agent-graphs.md`` and the compiled graph
+    section in ``docs/explanation/agent-graphs.md`` and the compiled graph
     stay in sync. The documented node-name set covers the three
     phases (Part 1 brief_gene preamble + analyst fan-out / Part 2
     synthesis + experiment loop / Part 3 protocol → discussion →
