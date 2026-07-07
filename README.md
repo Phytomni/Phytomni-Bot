@@ -136,7 +136,7 @@ remains the only effective source inside images.
 
 See [Configuration](docs/reference/configuration.md) for required variables,
 encrypted envelope behavior, HTTP API settings, cache paths, and e2e
-tunables. See [Deployment and Storage](docs/deployment.md) for
+tunables. See [Deployment and Storage](docs/guides/deployment.md) for
 customer-image distribution, OBSFS-first storage, scratch path layout, and
 startup troubleshooting.
 
@@ -208,7 +208,7 @@ python scripts/visualize_agent_graphs.py --agent brief_gene
 The gate covers secret scanning, compile checks, whitespace, Python
 format/lint/type checks, shell/YAML/JSON/Markdown/TOML checks,
 `demo_data/` idempotency, and offline pytest. See
-[Development](docs/development.md) for the full command matrix, CI scope,
+[Development](docs/guides/development.md) for the full command matrix, CI scope,
 dependency policy, config normalization, and common troubleshooting.
 
 ## Documentation
@@ -225,9 +225,9 @@ dependency policy, config normalization, and common troubleshooting.
   `phytomni-api-key`, and `phytomni-cache`.
 - [Configuration](docs/reference/configuration.md): local `.env`, encrypted
   envelopes, API variables, cache paths, and live e2e tunables.
-- [Deployment and Storage](docs/deployment.md): encrypted customer
+- [Deployment and Storage](docs/guides/deployment.md): encrypted customer
   configuration, OBSFS fallback behavior, and scratch directory policy.
-- [Development](docs/development.md): local gates, CI, dependency policy,
+- [Development](docs/guides/development.md): local gates, CI, dependency policy,
   demo fixtures, E2E commands, and troubleshooting.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.

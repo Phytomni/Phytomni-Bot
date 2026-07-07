@@ -2,7 +2,7 @@
 
 This document covers customer distribution, OBSFS-first storage, scratch
 paths, and startup troubleshooting. The canonical variable matrix lives in
-[Configuration](reference/configuration.md).
+[Configuration](../reference/configuration.md).
 
 ## Local Configuration
 
@@ -13,7 +13,7 @@ cp src/mcp_server_phytomni/config/.env.example \
   src/mcp_server_phytomni/config/.env
 ```
 
-See [Configuration](reference/configuration.md) for the required variables,
+See [Configuration](../reference/configuration.md) for the required variables,
 accepted legacy aliases, and runtime-only customer license key behavior.
 
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
@@ -25,7 +25,7 @@ Phytomni-Bot ships to trusted customers as a Docker image that consumes the
 operator's Huawei resources and LLM quota. The plaintext `.env` must never
 enter the image. Instead, each customer gets a per-customer encrypted
 envelope. (The plaintext-first resolution order in
-[configuration.md](reference/configuration.md#resolution-order) is dev-side only;
+[configuration.md](../reference/configuration.md#resolution-order) is dev-side only;
 `.dockerignore` blocks plaintext `.env` from build contexts so customer
 images reach the encrypted fallback unconditionally.)
 
@@ -43,7 +43,7 @@ The input `.env` must be valid UTF-8 **without** a byte-order mark (BOM).
 and exit code `4`, so a mis-encoded source file (common on Chinese Windows
 build hosts) cannot be sealed into an image — where it would otherwise
 surface as a cryptic `UnicodeDecodeError` at customer startup. See
-[configuration.md](reference/configuration.md#encrypted-customer-envelope) for the
+[configuration.md](../reference/configuration.md#encrypted-customer-envelope) for the
 full encoding contract.
 
 The output is an AES-256-GCM blob with `PHYBOT01` magic and a

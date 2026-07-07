@@ -22,7 +22,7 @@ Out of scope:
 - Agent business-field semantics. Use [MCP Tool Reference](../reference/mcp-tools.md)
   for tool arguments and demo payloads.
 - Building encrypted customer envelopes. Use
-  [Deployment and Storage](../deployment.md) for that workflow.
+  [Deployment and Storage](../guides/deployment.md) for that workflow.
 
 ## Service Model
 
