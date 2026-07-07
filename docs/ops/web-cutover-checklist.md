@@ -73,7 +73,7 @@ explicitly out of scope for this cutover.
 
 ### 2. `/v1/chat/completions` SSE streaming
 
-- Status: delivered (`phyto-chat` only)
+- Status: delivered (`phyto-chat`, `phyto-knowledge`, `phyto-review`)
 
 - Evidence: `6119d22` (route + `_STREAM_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}`)
 
