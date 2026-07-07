@@ -1,6 +1,6 @@
 [project]
 name = "mcp_server_phytomni"
-version = "0.1.0"
+version = "0.1.2"
 description = "Phytomni MCP server, FastAPI HTTP API, and stdio CLI client packaging LangGraph agents for plant-science research workflows."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -265,6 +265,10 @@ max-module-lines = 1100
 # mirroring how [tool.black] / [tool.ruff] own Python line shape.
 # See docs/lint-exemptions.md for the full rationale.
 plugins.md013.enabled = false
+# MD024 (no-duplicate-heading): CHANGELOG.md repeats ``### Added`` /
+# ``### Changed`` per version block; siblings_only allows repeats under
+# different parents while still catching true in-section duplicates.
+plugins.md024.siblings_only = true
 
 [tool.tomlsort]
 # TOML gate config (consumed by `toml-sort --check` and the in-place
