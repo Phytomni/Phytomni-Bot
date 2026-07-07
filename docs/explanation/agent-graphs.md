@@ -1,7 +1,7 @@
 # Agent Graphs
 
 This document describes the graph composition layer that lives in
-[`src/mcp_server_phytomni/graphs/`](../src/mcp_server_phytomni/graphs/)
+[`src/mcp_server_phytomni/graphs/`](../../src/mcp_server_phytomni/graphs/)
 and the visualization tooling that exposes it.
 
 The layer exists so that one compiled LangGraph subgraph can be
@@ -13,18 +13,18 @@ through a serializable manifest.
 
 ## Layer Pieces
 
-| Symbol                          | Where                                                                 | Role                                                                                                                                                                                  |
-| ------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SubgraphSpec`                  | [`graphs/spec.py`](../src/mcp_server_phytomni/graphs/spec.py)         | Frozen dataclass describing one cacheable subgraph: id, factory, optional state/input/output schemas, optional fingerprint fields.                                                    |
-| `SubgraphRegistry`              | [`graphs/registry.py`](../src/mcp_server_phytomni/graphs/registry.py) | In-memory cache keyed on `(id, fingerprint)`. Calls the spec's factory at most once per key, reusing `runtime.langgraph_runner.config_fingerprint` so secrets never reach the key.    |
-| `adapter_node`                  | [`graphs/adapters.py`](../src/mcp_server_phytomni/graphs/adapters.py) | Async parent-graph node wrapping a compiled subgraph: runs `map_in`, awaits `compiled_subgraph.ainvoke(...)`, runs `map_out`. Use when parent and child state schemas do not overlap. |
-| `GraphManifest`                 | [`graphs/manifest.py`](../src/mcp_server_phytomni/graphs/manifest.py) | Pydantic snapshot of nodes (with `node` / `subgraph` / `boundary` classification) and edges (with `conditional` flag).                                                                |
-| `export_manifest(compiled_app)` | [`graphs/manifest.py`](../src/mcp_server_phytomni/graphs/manifest.py) | Reflects a compiled LangGraph app into a `GraphManifest` snapshot. Read-only; loading a manifest back into a runtime graph is not yet supported.                                      |
+| Symbol                          | Where                                                                    | Role                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SubgraphSpec`                  | [`graphs/spec.py`](../../src/mcp_server_phytomni/graphs/spec.py)         | Frozen dataclass describing one cacheable subgraph: id, factory, optional state/input/output schemas, optional fingerprint fields.                                                    |
+| `SubgraphRegistry`              | [`graphs/registry.py`](../../src/mcp_server_phytomni/graphs/registry.py) | In-memory cache keyed on `(id, fingerprint)`. Calls the spec's factory at most once per key, reusing `runtime.langgraph_runner.config_fingerprint` so secrets never reach the key.    |
+| `adapter_node`                  | [`graphs/adapters.py`](../../src/mcp_server_phytomni/graphs/adapters.py) | Async parent-graph node wrapping a compiled subgraph: runs `map_in`, awaits `compiled_subgraph.ainvoke(...)`, runs `map_out`. Use when parent and child state schemas do not overlap. |
+| `GraphManifest`                 | [`graphs/manifest.py`](../../src/mcp_server_phytomni/graphs/manifest.py) | Pydantic snapshot of nodes (with `node` / `subgraph` / `boundary` classification) and edges (with `conditional` flag).                                                                |
+| `export_manifest(compiled_app)` | [`graphs/manifest.py`](../../src/mcp_server_phytomni/graphs/manifest.py) | Reflects a compiled LangGraph app into a `GraphManifest` snapshot. Read-only; loading a manifest back into a runtime graph is not yet supported.                                      |
 
 ## Two Registries, Two Roles
 
 `SubgraphRegistry` and
-[`runtime/langgraph_runner.py:GraphRegistry`](../src/mcp_server_phytomni/runtime/langgraph_runner.py)
+[`runtime/langgraph_runner.py:GraphRegistry`](../../src/mcp_server_phytomni/runtime/langgraph_runner.py)
 have similar names and overlapping mechanics but solve different
 problems. Treat them as orthogonal:
 
@@ -71,14 +71,14 @@ exported JSON manifests are untouched and keep the original single
 
 The chat workflow is the first agent compiled as an atomic-Layer
 subgraph. Its compiled app is registered as `chat` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py) so the visualization command renders it
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py) so the visualization command renders it
 alongside `brief_gene` and `deep_genome`.
 
-| TypedDict    | Required keys | Optional keys                               | Where                                                              |
-| ------------ | ------------- | ------------------------------------------- | ------------------------------------------------------------------ |
-| `ChatInput`  | `user_query`  | `obs_file_list`, `chat_kwargs`              | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
-| `ChatOutput` | `response`    | —                                           | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
-| `ChatState`  | `user_query`  | every `ChatInput` key plus `upload_context` | [`chat/state.py`](../src/mcp_server_phytomni/agents/chat/state.py) |
+| TypedDict    | Required keys | Optional keys                               | Where                                                                 |
+| ------------ | ------------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| `ChatInput`  | `user_query`  | `obs_file_list`, `chat_kwargs`              | [`chat/state.py`](../../src/mcp_server_phytomni/agents/chat/state.py) |
+| `ChatOutput` | `response`    | —                                           | [`chat/state.py`](../../src/mcp_server_phytomni/agents/chat/state.py) |
+| `ChatState`  | `user_query`  | every `ChatInput` key plus `upload_context` | [`chat/state.py`](../../src/mcp_server_phytomni/agents/chat/state.py) |
 
 The graph compiles into three nodes plus a conditional edge:
 
@@ -97,10 +97,10 @@ the with-follow `phyto_chat_with_follow` shape via a single switch.
 ## Knowledge Subgraph
 
 The knowledge workflow is registered as `knowledge` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/knowledge/state.py`](../src/mcp_server_phytomni/agents/knowledge/state.py),
+[`agents/knowledge/state.py`](../../src/mcp_server_phytomni/agents/knowledge/state.py),
 and the legacy `KnowledgeAgentState` symbol stays a back-compat
 alias for `KnowledgeState` so internal node annotations remain
 valid.
@@ -135,10 +135,10 @@ short-circuits to `__end__`.
 ## Data Subgraph
 
 The NL2SQL workflow is registered as `data` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/data/state.py`](../src/mcp_server_phytomni/agents/data/state.py),
+[`agents/data/state.py`](../../src/mcp_server_phytomni/agents/data/state.py),
 and the legacy `DataAgentState` symbol stays a back-compat alias
 for `DataState`.
 
@@ -169,10 +169,10 @@ node's one-branch after-router returns to `retrieve_post_node`.
 ## Analyst Subgraph
 
 The bioinformatics analysis workflow is registered as `analyst` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/analyst/state.py`](../src/mcp_server_phytomni/agents/analyst/state.py),
+[`agents/analyst/state.py`](../../src/mcp_server_phytomni/agents/analyst/state.py),
 and the legacy `AnalystAgentsState` symbol stays a back-compat
 alias for `AnalystState`.
 
@@ -218,10 +218,10 @@ network / research / deep_genome) that want to compose analyst via
 
 The single-gene annotation + literature workflow is registered as
 `brief_gene` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/brief_gene/state.py`](../src/mcp_server_phytomni/agents/brief_gene/state.py),
+[`agents/brief_gene/state.py`](../../src/mcp_server_phytomni/agents/brief_gene/state.py),
 and the legacy `BriefGeneAgentState` symbol stays a back-compat
 alias for `BriefGeneState`.
 
@@ -280,10 +280,10 @@ verbatim as its report preamble (only the H1 title is swapped).
 
 The literature-deep-research workflow is registered as `review`
 in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/review/state.py`](../src/mcp_server_phytomni/agents/review/state.py).
+[`agents/review/state.py`](../../src/mcp_server_phytomni/agents/review/state.py).
 The legacy inline TypedDict is replaced by the same `DeepResearchState` symbol the file exports.
 
 | TypedDict            | Required keys                       | Optional keys                                        |
@@ -334,10 +334,10 @@ rather than pinning a routing flag.
 ## Environment Subgraph
 
 The regional VCI workflow is registered as `environment` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/environment/state.py`](../src/mcp_server_phytomni/agents/environment/state.py).
+[`agents/environment/state.py`](../../src/mcp_server_phytomni/agents/environment/state.py).
 `region_vci_analysis` is now a thin wrapper that delegates to the
 compiled subgraph via `ainvoke_graph`.
 
@@ -364,10 +364,10 @@ extraction failure so the wrapper still returns
 
 The taxonomy-driven evolution workflow is registered as `evolution`
 in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app exposes a narrow IO contract through three
 TypedDicts in
-[`agents/evolution/state.py`](../src/mcp_server_phytomni/agents/evolution/state.py).
+[`agents/evolution/state.py`](../../src/mcp_server_phytomni/agents/evolution/state.py).
 `evo_test_analysis` is now a thin wrapper that delegates to the
 compiled subgraph via `ainvoke_graph`.
 
@@ -396,7 +396,7 @@ happy paths (previously the failure path returned the inconsistent
 
 The DeepGenome gene-function workflow is registered as
 `deep_genome` in
-[`graphs.defaults.build_default_registry()`](../src/mcp_server_phytomni/graphs/defaults.py).
+[`graphs.defaults.build_default_registry()`](../../src/mcp_server_phytomni/graphs/defaults.py).
 The compiled app is the project's largest single graph: it
 orchestrates a Part 1 brief_gene preamble (the BriefGeneAgent
 mounted as a subgraph), a Part 2 parallel analyst fan-out across
@@ -452,7 +452,7 @@ at a key that carries no `user_id` regardless of the mount's config or
 (anonymous) user. The parent's `USER_ID` scopes only the ephemeral local
 download scratch dir, never a stored object key. The tenant neutrality
 this rests on is pinned by
-[`test_dispatch_context_user_neutral.py`](../tests/unit/test_dispatch_context_user_neutral.py)
+[`test_dispatch_context_user_neutral.py`](../../tests/unit/test_dispatch_context_user_neutral.py)
 and `test_shared_output_key_is_tenant_neutral`. Threading the parent's
 per-request config into these mounts is therefore **not** a fix to apply
 blindly: it would reintroduce a user-scoped `output_dir` into the mounts
@@ -464,7 +464,7 @@ having a gap, where today the mounts simply carry no tenant state to leak.
 LangGraph's `parent.add_node("name", child_compiled_app)` pattern
 shares the parent's `thread_id` through the `configurable` dict to
 the embedded child. The spike in
-[`tests/agents/test_nested_checkpoint_spike.py`](../tests/agents/test_nested_checkpoint_spike.py)
+[`tests/agents/test_nested_checkpoint_spike.py`](../../tests/agents/test_nested_checkpoint_spike.py)
 confirms three properties of the nested-persistence shape:
 
 1. State keys shared between parent and child schemas project
@@ -487,7 +487,7 @@ configurable layer.
 
 ## Manifest Snapshots
 
-[`graphs/manifests/`](../src/mcp_server_phytomni/graphs/manifests/)
+[`graphs/manifests/`](../../src/mcp_server_phytomni/graphs/manifests/)
 contains JSON snapshots produced by
 `export_manifest(compiled_app).model_dump_json(indent=2)` for the
 analyst / brief_gene / chat / data / deep_genome / environment /

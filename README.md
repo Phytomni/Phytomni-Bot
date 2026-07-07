@@ -121,7 +121,7 @@ storage, auth, configuration, and cache helpers live in `runtime/`,
 
 For the full package map, dispatch boundary, LangGraph wrapper policy,
 configuration ownership, and cache policy, see
-[Architecture](docs/architecture.md).
+[Architecture](docs/explanation/architecture.md).
 
 ## Configuration
 
@@ -213,9 +213,9 @@ dependency policy, config normalization, and common troubleshooting.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): package layout, MCP dispatch,
+- [Architecture](docs/explanation/architecture.md): package layout, MCP dispatch,
   LangGraph wrappers, configuration ownership, and cache policy.
-- [Agent Graphs](docs/agent-graphs.md): subgraph registry, schema-mismatch
+- [Agent Graphs](docs/explanation/agent-graphs.md): subgraph registry, schema-mismatch
   adapter, graph manifest export, and the visualization command.
 - [MCP Tool Reference](docs/reference/mcp-tools.md): public tool arguments,
   sync/async behavior, status polling, and demo payload links.
