@@ -37,7 +37,7 @@ It exposes no CLI flags. Bind host, port, stores, rate limit, and run TTLs
 come from environment variables documented in
 [Configuration](configuration.md). Endpoint behavior is documented in
 [HTTP API](http-api.md), and operational procedures live in
-[HTTP API Operations Runbook](ops/http-api-runbook.md).
+[HTTP API Operations Runbook](../ops/http-api-runbook.md).
 
 ## `phytomni-api-key`
 

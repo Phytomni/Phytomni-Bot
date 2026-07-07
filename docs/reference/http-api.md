@@ -281,7 +281,7 @@ verbatim request/response bodies (capped for the response by
 key hash or any injected credential header. Query audits with the
 service-token `GET /v1/relay/audit` routes.
 
-See *Relay Variables* in `docs/configuration.md` for the knobs and the
+See *Relay Variables* in `docs/reference/configuration.md` for the knobs and the
 *Relay* section of `docs/ops/http-api-runbook.md` for operator
 procedures.
 

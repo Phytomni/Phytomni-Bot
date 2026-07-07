@@ -168,7 +168,7 @@ is no relay-specific secret. Every variable accepts an unprefixed or
 Rate, concurrency, and retention state are per worker, so the effective
 per-key ceilings scale with the worker count. See
 `docs/ops/http-api-runbook.md` *Relay Operations* for the operator
-procedures and `docs/http-api.md` *Relay* for the route contracts.
+procedures and `docs/reference/http-api.md` *Relay* for the route contracts.
 
 ## Cache and Registry Variables
 

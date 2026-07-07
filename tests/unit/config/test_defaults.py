@@ -132,7 +132,7 @@ def test_analyst_config_missing_app_id_raises(monkeypatch):
 def test_analyst_config_parses_app_id_json_env(monkeypatch):
     """Pydantic-settings parses the APP_ID JSON-string env into Dict[str, str].
 
-    Pins the JSON-string env contract that ``docs/configuration.md``
+    Pins the JSON-string env contract that ``docs/reference/configuration.md``
     documents (parallel to the existing ``REPO_ID_DICT`` pattern):
     a single env var carries the full compute-tier map rather than
     needing three independent ``APP_ID_SMALL`` / ``..._MEDIUM`` / etc.

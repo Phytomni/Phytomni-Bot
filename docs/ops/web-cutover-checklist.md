@@ -4,7 +4,7 @@ This checklist tracks the Bot-side delivery against the Web cutover
 handoff acceptance items. Each row records implementation evidence
 (commits, docs, curl) and the candidate-A consumer model under which
 Bot is now operated. Endpoint contracts live in
-[HTTP API](../http-api.md); operator procedures live in
+[HTTP API](../reference/http-api.md); operator procedures live in
 [HTTP API Operations Runbook](http-api-runbook.md); decision rationale
 lives in `.codex/integration/web-consolidation-decisions.md`.
 
@@ -12,7 +12,7 @@ lives in `.codex/integration/web-consolidation-decisions.md`.
 > local-only working ADRs — they are gitignored and do NOT ship in the
 > tracked repository tree, so they are unresolvable from a fresh clone
 > or the GitHub UI. The authoritative tracked references are
-> [HTTP API](../http-api.md) for every endpoint contract and the
+> [HTTP API](../reference/http-api.md) for every endpoint contract and the
 > runtime `/v1/agents.legacy_aliases` field for the tool-name mapping.
 
 ## Scope
@@ -253,7 +253,7 @@ explicitly out of scope for this cutover.
 ### 10. Error response contract
 
 - Status: delivered
-- Evidence: `api/schemas.py:ApiErrorResponse` + `docs/http-api.md`
+- Evidence: `api/schemas.py:ApiErrorResponse` + `docs/reference/http-api.md`
   §Errors
 - Contract: HTTP error envelope is FastAPI's `{"detail": "..."}`
   for HTTPException-derived errors. 4xx domain errors carry a

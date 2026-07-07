@@ -47,17 +47,17 @@ supports a per-request `debug` flag (see
 
 | Tool                    | Kind  | Required arguments                               | Demo payload                                                                         |
 | ----------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | [chat_agent.json](../demo_data/payloads/chat_agent.json)                             |
-| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | [knowledge_agent.json](../demo_data/payloads/knowledge_agent.json)                   |
-| `DataAgent`             | sync  | `user_query`                                     | [data_agent.json](../demo_data/payloads/data_agent.json)                             |
-| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | [review_agent.json](../demo_data/payloads/review_agent.json)                         |
-| `BriefGeneAgent`        | sync  | `user_query`                                     | [brief_gene_agent.json](../demo_data/payloads/brief_gene_agent.json)                 |
-| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | [analyst_agent.json](../demo_data/payloads/analyst_agent.json)                       |
-| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | [deep_genome_agent.json](../demo_data/payloads/deep_genome_agent.json)               |
-| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | [in_silico_research_agent.json](../demo_data/payloads/in_silico_research_agent.json) |
-| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | [digital_design_agent.json](../demo_data/payloads/digital_design_agent.json)         |
-| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | [gene_network_agent.json](../demo_data/payloads/gene_network_agent.json)             |
-| `GetTaskStatus`         | sync  | `task_id`                                        | [get_task_status.json](../demo_data/payloads/get_task_status.json)                   |
+| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | [chat_agent.json](../../demo_data/payloads/chat_agent.json)                             |
+| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | [knowledge_agent.json](../../demo_data/payloads/knowledge_agent.json)                   |
+| `DataAgent`             | sync  | `user_query`                                     | [data_agent.json](../../demo_data/payloads/data_agent.json)                             |
+| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | [review_agent.json](../../demo_data/payloads/review_agent.json)                         |
+| `BriefGeneAgent`        | sync  | `user_query`                                     | [brief_gene_agent.json](../../demo_data/payloads/brief_gene_agent.json)                 |
+| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | [analyst_agent.json](../../demo_data/payloads/analyst_agent.json)                       |
+| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | [deep_genome_agent.json](../../demo_data/payloads/deep_genome_agent.json)               |
+| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | [in_silico_research_agent.json](../../demo_data/payloads/in_silico_research_agent.json) |
+| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | [digital_design_agent.json](../../demo_data/payloads/digital_design_agent.json)         |
+| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | [gene_network_agent.json](../../demo_data/payloads/gene_network_agent.json)             |
+| `GetTaskStatus`         | sync  | `task_id`                                        | [get_task_status.json](../../demo_data/payloads/get_task_status.json)                   |
 
 ## Sync Tools
 

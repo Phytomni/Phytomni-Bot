@@ -48,14 +48,14 @@ phytomni-api
 phytomni-api-key create --user-id alice --name laptop
 ```
 
-See [CLI Reference](docs/cli.md) for the installed commands and
-[HTTP API](docs/http-api.md) for authentication, endpoint contracts,
+See [CLI Reference](docs/reference/cli.md) for the installed commands and
+[HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
 run polling, retention, and OpenAI-compatible chat examples.
 
 ## Available MCP Tools
 
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
-document upload is needed. See [MCP Tool Reference](docs/mcp-tools.md)
+document upload is needed. See [MCP Tool Reference](docs/reference/mcp-tools.md)
 for detailed argument semantics, async behavior, and demo payload links.
 
 | Tool                    | Kind  | Required arguments                               | Purpose                                                                                                                                           |
@@ -107,8 +107,8 @@ block; the `raw` block is omitted to reduce response volume. Set
 include `raw` in every response.
 
 Credential-pattern keys are stripped recursively before `raw` reaches the
-wire. See [MCP Tool Reference](docs/mcp-tools.md) for the per-tool
-formatted view and [HTTP API](docs/http-api.md) for the full envelope
+wire. See [MCP Tool Reference](docs/reference/mcp-tools.md) for the per-tool
+formatted view and [HTTP API](docs/reference/http-api.md) for the full envelope
 contract on `/v1/chat/completions` and `/v1/agents/{agent}/runs`.
 
 ## Architecture
@@ -134,7 +134,7 @@ generated cache databases, or local virtual environments. `.dockerignore`
 keeps plaintext `.env` out of customer images so the encrypted envelope
 remains the only effective source inside images.
 
-See [Configuration](docs/configuration.md) for required variables,
+See [Configuration](docs/reference/configuration.md) for required variables,
 encrypted envelope behavior, HTTP API settings, cache paths, and e2e
 tunables. See [Deployment and Storage](docs/deployment.md) for
 customer-image distribution, OBSFS-first storage, scratch path layout, and
@@ -150,7 +150,7 @@ object paths under the operator-assigned `RELAY_USER_ID` tenant namespace
 (the operator's OBS relay confines each key to its own namespace). Copy
 [`config/.env.customer.example`](src/mcp_server_phytomni/config/.env.customer.example)
 to `.env` and fill in only the `PHYTOMNI_RELAY_*` values. The operator
-side is documented in [HTTP API](docs/http-api.md) *Relay* and the
+side is documented in [HTTP API](docs/reference/http-api.md) *Relay* and the
 [runbook](docs/ops/http-api-runbook.md) *Relay Operations*.
 
 ## Demo Data and Live E2E
@@ -217,13 +217,13 @@ dependency policy, config normalization, and common troubleshooting.
   LangGraph wrappers, configuration ownership, and cache policy.
 - [Agent Graphs](docs/agent-graphs.md): subgraph registry, schema-mismatch
   adapter, graph manifest export, and the visualization command.
-- [MCP Tool Reference](docs/mcp-tools.md): public tool arguments,
+- [MCP Tool Reference](docs/reference/mcp-tools.md): public tool arguments,
   sync/async behavior, status polling, and demo payload links.
-- [HTTP API](docs/http-api.md): service startup, per-user keys,
+- [HTTP API](docs/reference/http-api.md): service startup, per-user keys,
   endpoints, polling, retention, and response shape.
-- [CLI Reference](docs/cli.md): `phytomni`, `phytomni-api`,
+- [CLI Reference](docs/reference/cli.md): `phytomni`, `phytomni-api`,
   `phytomni-api-key`, and `phytomni-cache`.
-- [Configuration](docs/configuration.md): local `.env`, encrypted
+- [Configuration](docs/reference/configuration.md): local `.env`, encrypted
   envelopes, API variables, cache paths, and live e2e tunables.
 - [Deployment and Storage](docs/deployment.md): encrypted customer
   configuration, OBSFS fallback behavior, and scratch directory policy.

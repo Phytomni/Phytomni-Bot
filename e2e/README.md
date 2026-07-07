@@ -57,8 +57,8 @@ parse the same envelope from the wire:
   display view, `body["result"]["raw"][...]` for the same
   raw block.
 
-See [`../docs/http-api.md`](../docs/http-api.md) for the full
-envelope contract and [`../docs/mcp-tools.md`](../docs/mcp-tools.md)
+See [`../docs/reference/http-api.md`](../docs/reference/http-api.md) for the full
+envelope contract and [`../docs/reference/mcp-tools.md`](../docs/reference/mcp-tools.md)
 for the per-tool formatted view.
 
 ## Setup

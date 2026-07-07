@@ -2,8 +2,8 @@
 
 This runbook is for operators who deploy `phytomni-api`, issue per-user
 API keys, monitor health, rotate local stores, and triage customer tickets.
-Endpoint contracts live in [HTTP API](../http-api.md), and all
-environment variables live in [Configuration](../configuration.md).
+Endpoint contracts live in [HTTP API](../reference/http-api.md), and all
+environment variables live in [Configuration](../reference/configuration.md).
 
 ## Scope
 
@@ -19,7 +19,7 @@ Covered:
 Out of scope:
 
 - The stdio MCP server, `python -m mcp_server_phytomni.server`.
-- Agent business-field semantics. Use [MCP Tool Reference](../mcp-tools.md)
+- Agent business-field semantics. Use [MCP Tool Reference](../reference/mcp-tools.md)
   for tool arguments and demo payloads.
 - Building encrypted customer envelopes. Use
   [Deployment and Storage](../deployment.md) for that workflow.
@@ -159,7 +159,7 @@ Authorization: Bearer ptm_...
 X-API-Key: ptm_...
 ```
 
-Use [CLI Reference](../cli.md) for the complete command reference.
+Use [CLI Reference](../reference/cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 

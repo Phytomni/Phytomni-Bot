@@ -2,8 +2,8 @@
 
 This document covers local setup, validation gates, CI, demo fixtures,
 dependency policy, and common development troubleshooting. Configuration
-variables are documented in [Configuration](configuration.md), and
-installed commands are documented in [CLI Reference](cli.md).
+variables are documented in [Configuration](reference/configuration.md), and
+installed commands are documented in [CLI Reference](reference/cli.md).
 
 ## Requirements
 
@@ -221,12 +221,12 @@ Tracked Markdown files are checked for formatting and lint shape through
 documentation to code-owned surfaces:
 
 - Markdown relative links must point to existing tracked or workspace files.
-- `README.md` and [MCP Tool Reference](mcp-tools.md) must list every public
+- `README.md` and [MCP Tool Reference](reference/mcp-tools.md) must list every public
   MCP tool from `mcp/schemas.py`.
-- [HTTP API](http-api.md) and the
+- [HTTP API](reference/http-api.md) and the
   [HTTP API Operations Runbook](ops/http-api-runbook.md) must list every
   public FastAPI route from `api/app.py`.
-- [CLI Reference](cli.md) must cover every console script in
+- [CLI Reference](reference/cli.md) must cover every console script in
   `pyproject.toml`.
 
 ## Dependency Policy

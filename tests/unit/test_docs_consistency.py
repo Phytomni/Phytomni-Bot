@@ -126,7 +126,7 @@ def test_readme_and_mcp_reference_list_public_tools() -> None:
         if match.endswith("Agent") or match == "GetTaskStatus"
     }
 
-    reference_text = (ROOT / "docs/mcp-tools.md").read_text(encoding="utf-8")
+    reference_text = (ROOT / "docs/reference/mcp-tools.md").read_text(encoding="utf-8")
     reference_tools = set(MCP_TOOL_PATTERN.findall(reference_text))
 
     assert readme_tools == tool_names
@@ -137,7 +137,7 @@ def test_http_docs_list_public_fastapi_routes() -> None:
     """Verify HTTP reference docs list every public FastAPI route."""
     route_pairs = _api_endpoint_pairs()
 
-    assert _documented_endpoint_pairs(ROOT / "docs/http-api.md") == route_pairs
+    assert _documented_endpoint_pairs(ROOT / "docs/reference/http-api.md") == route_pairs
     assert (
         _documented_endpoint_pairs(ROOT / "docs/ops/http-api-runbook.md")
         == route_pairs
@@ -148,7 +148,7 @@ def test_cli_reference_covers_console_scripts() -> None:
     """Verify CLI docs cover every installed console script."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     scripts = set(pyproject["project"]["scripts"])
-    cli_text = (ROOT / "docs/cli.md").read_text(encoding="utf-8")
+    cli_text = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
 
     missing = [
         script for script in sorted(scripts) if f"`{script}`" not in cli_text
