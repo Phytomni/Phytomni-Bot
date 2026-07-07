@@ -45,8 +45,8 @@ supports a per-request `debug` flag (see
 
 ## Tool Inventory
 
-| Tool                    | Kind  | Required arguments                               | Demo payload                                                                         |
-| ----------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Tool                    | Kind  | Required arguments                               | Demo payload                                                                            |
+| ----------------------- | ----- | ------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | [chat_agent.json](../../demo_data/payloads/chat_agent.json)                             |
 | `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | [knowledge_agent.json](../../demo_data/payloads/knowledge_agent.json)                   |
 | `DataAgent`             | sync  | `user_query`                                     | [data_agent.json](../../demo_data/payloads/data_agent.json)                             |
