@@ -39,36 +39,6 @@ _LOGGER = logging.getLogger(__name__)
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/brief_gene_resolve_gene_id"
 _RESOLVER_USER_PROMPT_PATH = "user/brief_gene_resolve_gene_id"
-_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "BriefGeneResolution",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "gene_id": {"type": "string"},
-                "species_code": {"type": "string"},
-                "candidates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "gene_id": {"type": "string"},
-                            "species_code": {"type": "string"},
-                            "confidence": {
-                                "type": "number",
-                                "minimum": 0,
-                                "maximum": 1,
-                            },
-                        },
-                        "required": ["gene_id"],
-                    },
-                },
-            },
-            "required": ["gene_id", "species_code"],
-        },
-    },
-}
 
 
 class BriefGeneResolveError(ValueError):
@@ -105,6 +75,51 @@ class BriefGeneResolveResult(BaseModel):
     species_code: str
     raw_query: str
     candidates: list[BriefGeneIdCandidate]
+
+
+def _candidate_item_schema() -> dict[str, Any]:
+    """Derive the per-candidate JSON schema from the pydantic model.
+
+    Strips pydantic's ``title`` keys so the shape matches what the
+    self-hosted OpenAI-compatible endpoint expects (bare type +
+    numeric bounds), keeping a single source of truth for the
+    confidence constraint.
+    """
+    model = BriefGeneIdCandidate.model_json_schema()
+    props = model["properties"]
+    return {
+        "type": "object",
+        "properties": {
+            "gene_id": {"type": "string"},
+            "species_code": {"type": "string"},
+            "confidence": {
+                "type": "number",
+                "minimum": props["confidence"]["minimum"],
+                "maximum": props["confidence"]["maximum"],
+            },
+        },
+        "required": ["gene_id"],
+    }
+
+
+_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "BriefGeneResolution",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "gene_id": {"type": "string"},
+                "species_code": {"type": "string"},
+                "candidates": {
+                    "type": "array",
+                    "items": _candidate_item_schema(),
+                },
+            },
+            "required": ["gene_id", "species_code"],
+        },
+    },
+}
 
 
 async def resolve_brief_gene_user_query(

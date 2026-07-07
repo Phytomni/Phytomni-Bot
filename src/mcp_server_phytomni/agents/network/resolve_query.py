@@ -44,36 +44,6 @@ __all__ = [
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/gene_network_resolve_to_id"
 _RESOLVER_USER_PROMPT_PATH = "user/gene_network_resolve_to_id"
-_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "GeneNetworkResolution",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "to_id": {"type": "string"},
-                "species_code": {"type": "string"},
-                "candidates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "to_id": {"type": "string"},
-                            "species_code": {"type": "string"},
-                            "confidence": {
-                                "type": "number",
-                                "minimum": 0,
-                                "maximum": 1,
-                            },
-                        },
-                        "required": ["to_id"],
-                    },
-                },
-            },
-            "required": ["to_id", "species_code"],
-        },
-    },
-}
 
 
 class GeneNetworkResolveError(ValueError):
@@ -110,6 +80,50 @@ class GeneNetworkResolveResult(BaseModel):
     species_code: str
     raw_query: str
     candidates: list[GeneNetworkToIdCandidate]
+
+
+def _candidate_item_schema() -> dict[str, Any]:
+    """Derive the per-candidate JSON schema from the pydantic model.
+
+    Strips pydantic's ``title`` keys so the shape matches the
+    self-hosted OpenAI-compatible endpoint, keeping one source of truth
+    for the confidence constraint.
+    """
+    model = GeneNetworkToIdCandidate.model_json_schema()
+    props = model["properties"]
+    return {
+        "type": "object",
+        "properties": {
+            "to_id": {"type": "string"},
+            "species_code": {"type": "string"},
+            "confidence": {
+                "type": "number",
+                "minimum": props["confidence"]["minimum"],
+                "maximum": props["confidence"]["maximum"],
+            },
+        },
+        "required": ["to_id"],
+    }
+
+
+_RESOLVER_JSON_SCHEMA: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "GeneNetworkResolution",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "to_id": {"type": "string"},
+                "species_code": {"type": "string"},
+                "candidates": {
+                    "type": "array",
+                    "items": _candidate_item_schema(),
+                },
+            },
+            "required": ["to_id", "species_code"],
+        },
+    },
+}
 
 
 async def resolve_network_user_query(

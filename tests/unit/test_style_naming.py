@@ -191,6 +191,13 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/server/test_run_gc_background.py": {
         "protected-access",
     },
+    # Schema-derivation pin on the two resolver modules'
+    # module-private ``_RESOLVER_JSON_SCHEMA`` constant — asserts the
+    # candidate confidence bounds are derived from the Candidate model
+    # so the two cannot drift; same protected-helper coverage seam.
+    "tests/agents/test_resolver_schema_derivation.py": {
+        "protected-access",
+    },
 }
 ALLOWED_UUID4_CALLERS = {
     "src/mcp_server_phytomni/runtime/task_manager.py",
