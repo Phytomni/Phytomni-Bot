@@ -75,7 +75,7 @@ explicitly out of scope for this cutover.
 
 - Status: delivered (`phyto-chat` only)
 
-- Evidence: `6119d22` (route + `_STREAM_CAPABLE_TOOLS = {"ChatAgent"}`)
+- Evidence: `6119d22` (route + `_STREAM_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}`)
 
 - Curl:
 
@@ -90,8 +90,8 @@ explicitly out of scope for this cutover.
   | Model              | `stream=true` | `stream=false` |
   | ------------------ | ------------- | -------------- |
   | `phyto-chat`       | 200 SSE       | 200 JSON       |
-  | `phyto-knowledge`  | 400           | 200 JSON       |
-  | `phyto-review`     | 400           | 200 JSON       |
+  | `phyto-knowledge`  | 200 SSE       | 200 JSON       |
+  | `phyto-review`     | 200 SSE       | 200 JSON       |
   | `phyto-brief-gene` | 400           | 200 JSON       |
   | unknown            | 404           | 404            |
 
