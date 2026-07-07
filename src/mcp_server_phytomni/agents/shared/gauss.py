@@ -20,6 +20,7 @@ import asyncpg
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from ...config.defaults import ServerConfig
 from ...config.settings import get_sensitive_config
 
 __all__ = ["aclose_gauss_pool", "gauss_query"]
@@ -40,7 +41,12 @@ async def _gauss_pool() -> asyncpg.Pool:
     pool = _GAUSS_POOL_STATE.get(loop)
     if pool is None:
         dsn = get_sensitive_config().GAUSS_DSN.get_secret_value()
-        pool = await asyncpg.create_pool(dsn=dsn, min_size=5, max_size=20)
+        pool = await asyncpg.create_pool(
+            dsn=dsn,
+            min_size=5,
+            max_size=20,
+            command_timeout=ServerConfig().GAUSS_COMMAND_TIMEOUT,
+        )
         _GAUSS_POOL_STATE[loop] = pool
     return pool
 
@@ -56,8 +62,10 @@ async def gauss_query(sql: str) -> dict[str, Any]:
         to the gaussapp envelope (NULL -> None, text -> str, int -> int).
 
     Raises:
-        McpError: On any asyncpg driver / connection error, mirroring the
-            failure shape the prior BI HTTP retry path raised.
+        McpError: On any asyncpg driver / connection error (including
+            command timeouts, which surface as asyncio.TimeoutError —
+            a subclass of OSError), mirroring the failure shape the
+            prior BI HTTP retry path raised.
     """
     try:
         pool = await _gauss_pool()

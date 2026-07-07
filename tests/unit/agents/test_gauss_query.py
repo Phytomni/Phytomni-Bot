@@ -32,18 +32,26 @@ pytestmark = [pytest.mark.unit, pytest.mark.agent]
 
 
 class _FakePool:
-    def __init__(self, rows: list[dict[str, Any]], boom: bool) -> None:
-        """Store rows and boom flag; start with closed=False."""
+    def __init__(
+        self,
+        rows: list[dict[str, Any]],
+        boom: bool,
+        timeout_boom: bool = False,
+    ) -> None:
+        """Store rows and flags; start with closed=False."""
         self._rows = rows
         self._boom = boom
+        self._timeout_boom = timeout_boom
         self.closed = False
 
     @asynccontextmanager
     async def acquire(self) -> AsyncIterator[Any]:
-        """Yield a connection stub that returns rows or raises on boom."""
-        rows, boom = self._rows, self._boom
+        """Yield a connection stub that returns rows or raises on a flag."""
+        rows, boom, timeout_boom = self._rows, self._boom, self._timeout_boom
 
         async def fetch(_sql: str) -> list[dict[str, Any]]:
+            if timeout_boom:
+                raise TimeoutError("command timeout")
             if boom:
                 raise asyncpg.PostgresError("bad sql")
             return rows
@@ -60,17 +68,20 @@ def _patch_pool(
     rows: list[dict[str, Any]],
     *,
     boom: bool = False,
-) -> list[_FakePool]:
+    timeout_boom: bool = False,
+) -> tuple[list[_FakePool], dict[str, Any]]:
     made: list[_FakePool] = []
+    captured: dict[str, Any] = {}
 
-    async def fake_create_pool(*_a: Any, **_k: Any) -> _FakePool:
-        pool = _FakePool(rows, boom)
+    async def fake_create_pool(*_a: Any, **kwargs: Any) -> _FakePool:
+        captured.update(kwargs)
+        pool = _FakePool(rows, boom, timeout_boom)
         made.append(pool)
         return pool
 
     monkeypatch.setattr(gauss_mod.asyncpg, "create_pool", fake_create_pool)
     _GAUSS_POOL_STATE.clear()
-    return made
+    return made, captured
 
 
 async def test_gauss_query_returns_ok_envelope(
@@ -119,7 +130,7 @@ def test_pool_is_per_event_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each event loop gets its own pool (asyncpg pools are loop-bound)."""
-    made = _patch_pool(monkeypatch, [{"x": 1}])
+    made, _ = _patch_pool(monkeypatch, [{"x": 1}])
 
     asyncio.run(gauss_query("SELECT 1"))
     asyncio.run(gauss_query("SELECT 1"))
@@ -132,7 +143,7 @@ async def test_aclose_gauss_pool_closes_and_evicts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """aclose closes the loop's pool and drops it from the registry."""
-    made = _patch_pool(monkeypatch, [{"x": 1}])
+    made, _ = _patch_pool(monkeypatch, [{"x": 1}])
     await gauss_query("SELECT 1")
     assert len(_GAUSS_POOL_STATE) == 1
 
@@ -140,3 +151,27 @@ async def test_aclose_gauss_pool_closes_and_evicts(
 
     assert made[0].closed is True
     assert len(_GAUSS_POOL_STATE) == 0
+
+
+async def test_gauss_pool_sets_command_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """create_pool receives command_timeout from ServerConfig (default 30)."""
+    _made, captured = _patch_pool(monkeypatch, [{"x": 1}])
+    await gauss_query("SELECT 1")
+    assert captured["command_timeout"] == 30.0
+
+
+async def test_gauss_query_command_timeout_raises_mcperror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A command timeout (asyncio.TimeoutError) surfaces as McpError.
+
+    TimeoutError is a subclass of OSError, so the existing OSError
+    entry in the except tuple already covers this case. This test
+    pins that contract so a future except-tuple tightening cannot
+    silently break command-timeout handling.
+    """
+    _patch_pool(monkeypatch, [], timeout_boom=True)
+    with pytest.raises(McpError):
+        await gauss_query("SELECT slow")

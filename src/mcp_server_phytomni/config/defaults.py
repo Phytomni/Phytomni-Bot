@@ -133,6 +133,7 @@ class ServerConfig(BaseSettings):
     MAX_RETRIES: int = 5
     MAX_CONCURRENCY: int = 4
     MAX_WORKERS: int = 4
+    GAUSS_COMMAND_TIMEOUT: float = 30.0
 
     TOKEN_URL: Annotated[
         str,
