@@ -414,7 +414,7 @@ def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
 # run_phyto_chat_cached is a @func_cache chokepoint: every named
 # parameter goes into the cache key, so semantic LLM inputs must
 # stay flat (no options-object wrapping) or rotating an API key would
-# silently invalidate the cache. See docs/lint-exemptions.md.
+# silently invalidate the cache. See docs/development/lint-exemptions.md.
 async def run_phyto_chat_cached(
     *,
     messages: list[dict[str, str]],

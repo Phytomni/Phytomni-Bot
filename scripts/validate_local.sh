@@ -37,7 +37,7 @@ EOF
 # silenced here at the CLI level and re-counted against a pinned
 # baseline by scripts/check_pylint_baseline.py below, so the gate
 # fails on a count increase but passes at the current state. See
-# docs/lint-exemptions.md for the full rationale.
+# docs/development/lint-exemptions.md for the full rationale.
 run uv run pylint --persistent=no --disable=R0801,R0903 "$@"
 run uv run python scripts/check_pylint_baseline.py
 

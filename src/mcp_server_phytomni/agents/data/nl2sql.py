@@ -341,7 +341,7 @@ async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 # Cache primitive: every named parameter contributes to the
 # @func_cache key; the request object carries infra-only fields that
-# must NOT enter the key. See docs/lint-exemptions.md.
+# must NOT enter the key. See docs/development/lint-exemptions.md.
 async def _execute_nl2sql_cached(
     message_content: str,
     subject_id: str,

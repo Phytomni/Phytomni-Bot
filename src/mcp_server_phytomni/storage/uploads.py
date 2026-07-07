@@ -98,7 +98,8 @@ def safe_upload_filename(original_filename: str) -> str:
 # pylint: disable=too-many-arguments,too-many-locals
 # Conceptually-atomic OBS upload (validate -> resolve target ->
 # write). Splitting the args into dataclasses adds caller boilerplate
-# without splitting the responsibility. See docs/lint-exemptions.md.
+# without splitting the responsibility. See
+# docs/development/lint-exemptions.md.
 async def upload_user_file(
     file_bytes: bytes,
     original_filename: str,

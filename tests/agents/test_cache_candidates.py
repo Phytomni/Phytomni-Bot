@@ -42,7 +42,7 @@ pytestmark = pytest.mark.agent
 # constructed per-test from a scripted behaviour list); the closure
 # reference confuses pylint's static analysis even though the
 # decorator's ``GeneratorExit`` -> ``__aexit__`` conversion is
-# correct. See ``docs/lint-exemptions.md`` for the full analysis.
+# correct. See ``docs/development/lint-exemptions.md`` for the full analysis.
 
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):

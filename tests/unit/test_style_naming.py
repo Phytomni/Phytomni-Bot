@@ -28,34 +28,39 @@ AUTHOR_CONTINUATION_PATTERN = re.compile(
 )
 PYLINT_DISABLE_MARKER = "".join(("pylint:", " disable="))
 ALLOWED_LOCAL_PYLINT_DISABLES = {
-    # FastAPI factory + route handlers: see ``docs/lint-exemptions.md``
-    # entries on ``api/app.py``. ``too-many-lines`` is file-level;
-    # the rest scope per-function via bracketed disable/enable pairs.
+    # FastAPI factory + route handlers: see
+    # ``docs/development/lint-exemptions.md`` entries on
+    # ``api/app.py``. ``too-many-lines`` is file-level; the rest
+    # scope per-function via bracketed disable/enable pairs.
     "src/mcp_server_phytomni/api/app.py": {
         "too-many-lines",
         "too-many-arguments",
         "too-many-locals",
         "too-many-statements",
     },
-    # @func_cache chokepoint: see ``docs/lint-exemptions.md`` entry on
+    # @func_cache chokepoint: see
+    # ``docs/development/lint-exemptions.md`` entry on
     # ``run_phyto_chat_cached``.
     "src/mcp_server_phytomni/agents/chat/service.py": {
         "too-many-arguments",
         "too-many-locals",
     },
     # @func_cache chokepoints (3 functions): see
-    # ``docs/lint-exemptions.md`` entry on ``knowledge/retrieval.py``.
+    # ``docs/development/lint-exemptions.md`` entry on
+    # ``knowledge/retrieval.py``.
     "src/mcp_server_phytomni/agents/knowledge/retrieval.py": {
         "too-many-arguments",
     },
-    # @func_cache chokepoint: see ``docs/lint-exemptions.md`` entry on
+    # @func_cache chokepoint: see
+    # ``docs/development/lint-exemptions.md`` entry on
     # ``_execute_nl2sql_cached``.
     "src/mcp_server_phytomni/agents/data/nl2sql.py": {
         "too-many-arguments",
         "too-many-positional-arguments",
     },
-    # Conceptually-atomic OBS upload: see ``docs/lint-exemptions.md``
-    # entry on ``upload_user_file``.
+    # Conceptually-atomic OBS upload: see
+    # ``docs/development/lint-exemptions.md`` entry on
+    # ``upload_user_file``.
     "src/mcp_server_phytomni/storage/uploads.py": {
         "too-many-arguments",
         "too-many-locals",
@@ -68,20 +73,20 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     # bracketed disable above + enable below scope the exemption to
     # the install block only.
     # ``contextmanager-generator-missing-cleanup`` is documented in
-    # ``docs/lint-exemptions.md`` as a false-positive on the
+    # ``docs/development/lint-exemptions.md`` as a false-positive on the
     # ``@asynccontextmanager`` + closure-class fake-client pattern.
     "tests/conftest.py": {
         "wrong-import-position",
         "contextmanager-generator-missing-cleanup",
     },
     # Same W0135 false positive as conftest.py; see
-    # ``docs/lint-exemptions.md``.
+    # ``docs/development/lint-exemptions.md``.
     "tests/agents/test_cache_candidates.py": {
         "contextmanager-generator-missing-cleanup",
     },
     # Test exercises design-agent internal helpers
     # (``_get_compute_resource``, ``_analysis_prompt_parts``); see
-    # ``docs/lint-exemptions.md`` "W0212 protected-access in test
+    # ``docs/development/lint-exemptions.md`` "W0212 protected-access in test
     # helpers" entry.
     "tests/agents/test_design_helpers.py": {
         "protected-access",

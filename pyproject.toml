@@ -263,7 +263,7 @@ max-module-lines = 1100
 # unsatisfiable — the two markdown tools would disagree on the same
 # line. mdformat is the sole authority on markdown line shape here,
 # mirroring how [tool.black] / [tool.ruff] own Python line shape.
-# See docs/lint-exemptions.md for the full rationale.
+# See docs/development/lint-exemptions.md for the full rationale.
 plugins.md013.enabled = false
 # MD024 (no-duplicate-heading): CHANGELOG.md repeats ``### Added`` /
 # ``### Changed`` per version block; siblings_only allows repeats under

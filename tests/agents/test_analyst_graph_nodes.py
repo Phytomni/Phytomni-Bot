@@ -16,7 +16,7 @@ in the shared chat node, so the tests feed the verdict through
 # Test file exercises the analyst graph-mixin's internal helper
 # ``_submit_output_dir`` directly; pylint W0212 is suppressed at file
 # scope because the unit test must reach the smallest sub-operation
-# that forwards the fingerprint. See ``docs/lint-exemptions.md``.
+# that forwards the fingerprint. See ``docs/development/lint-exemptions.md``.
 
 from __future__ import annotations
 

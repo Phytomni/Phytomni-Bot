@@ -50,8 +50,8 @@ from mcp_server_phytomni.storage import (
 # variable (as in ``_build_async_factory`` below). The decorator
 # already converts a thrown ``GeneratorExit`` into the proper
 # ``__aexit__`` call, so the warning never matches a real cleanup bug
-# in this fixture file. See ``docs/lint-exemptions.md`` for the full
-# refactor cost / sunset analysis.
+# in this fixture file. See ``docs/development/lint-exemptions.md``
+# for the full refactor cost / sunset analysis.
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 

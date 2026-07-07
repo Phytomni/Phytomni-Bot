@@ -158,7 +158,7 @@ README-style prose may wrap the same copyright text across lines.
   include a short reason when the intent is not obvious.
 - Current local Pylint waivers are enumerated in the
   ALLOWED_LOCAL_PYLINT_DISABLES table in `tests/unit/test_style_naming.py` and
-  documented in `docs/lint-exemptions.md`.
+  documented in `docs/development/lint-exemptions.md`.
 - Test-only style exceptions, such as pytest function docstrings, must remain
   under `tests/`.
 

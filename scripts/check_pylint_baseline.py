@@ -44,7 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # refactor that lowers the count emits a "ratchet down" hint that the
 # author should apply in the same diff. The rationale for each rule
 # stays exempt-here-instead-of-refactored lives in
-# ``docs/lint-exemptions.md``.
+# ``docs/development/lint-exemptions.md``.
 RULE_BASELINES: dict[str, int] = {
     # Bumped from 92 to 94: Task 5's UP modernization (Optional -> | None,
     # List -> list) shifted line numbers in brief_gene/state.py, causing

@@ -527,9 +527,9 @@ exemption is project-wide-conditional instead of per-file.
 
 ______________________________________________________________________
 
-### Test fakes and Protocol stubs — too-few-public-methods (21 occurrences)
+### Test fakes and Protocol stubs — too-few-public-methods (20 occurrences)
 
-**Rule(s)**: R0903 too-few-public-methods (1/2). 21 occurrences (the
+**Rule(s)**: R0903 too-few-public-methods (1/2). 20 occurrences (the
 authoritative count is enforced by `check_pylint_baseline.py`; a
 representative sample below):
 
@@ -548,7 +548,7 @@ representative sample below):
 - `tests/agents/test_brief_gene_preamble_workflow.py:55` (`_StubKnowledgeApp` preamble fan-in test stub)
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 21`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 20`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
@@ -627,7 +627,7 @@ codebase, in nine clusters:
    class instantiates it because that is the right idiom, not
    because the classes should share a base. The role split between
    `SubgraphRegistry` and `runtime.langgraph_runner.GraphRegistry`
-   is independently documented in `docs/agent-graphs.md`.
+   is independently documented in `docs/explanation/agent-graphs.md`.
 1. **Bootstrap env install dict, viz vs root conftest** (1
    occurrence, added 2026-05-28 with `a81ce97`).
    `scripts/_visualize_bootstrap.py` mirrors the env-var key list

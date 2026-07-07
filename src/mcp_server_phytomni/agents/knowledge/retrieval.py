@@ -457,7 +457,8 @@ class RerankOptions:
 )
 # pylint: disable=too-many-arguments
 # Cache primitive: every named parameter is part of the @func_cache
-# key, so semantic inputs must stay flat. See docs/lint-exemptions.md.
+# key, so semantic inputs must stay flat. See
+# docs/development/lint-exemptions.md.
 async def _retrieve_cached(
     user_query: str,
     *,
@@ -596,7 +597,7 @@ async def _retrieve_raw_docs(
     ttl=LONG_TTL_SECONDS,
 )
 # pylint: disable=too-many-arguments
-# Cache primitive: see docs/lint-exemptions.md.
+# Cache primitive: see docs/development/lint-exemptions.md.
 async def _retrieve_scope_docs(
     client: AsyncClient,
     *,
@@ -860,7 +861,7 @@ async def _rank_docs(
 
 
 # pylint: disable=too-many-arguments
-# Cache primitive: see docs/lint-exemptions.md.
+# Cache primitive: see docs/development/lint-exemptions.md.
 async def _rerank_batch(
     client: AsyncClient,
     *,

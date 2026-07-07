@@ -15,7 +15,7 @@ unknown analysis type before any prompt lookup.
 # (``_get_compute_resource``, ``_analysis_prompt_parts``); pylint W0212
 # is suppressed at file scope because pytest's "test the smallest unit
 # the bug can hide in" convention requires reaching into private
-# methods. See ``docs/lint-exemptions.md`` for the rationale.
+# methods. See ``docs/development/lint-exemptions.md`` for the rationale.
 
 from __future__ import annotations
 

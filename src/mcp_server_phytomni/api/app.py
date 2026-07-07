@@ -10,7 +10,7 @@ Public functions: create_app.
 # pylint: disable=too-many-lines
 # C0302: FastAPI app factory + every route registration lives in one
 # file. Splitting per-route modules makes dependency wiring opaque
-# without reducing total complexity. See docs/lint-exemptions.md.
+# without reducing total complexity. See docs/development/lint-exemptions.md.
 
 from __future__ import annotations
 
@@ -645,7 +645,7 @@ async def _maybe_resolve_network_query(
 # pylint: disable=too-many-locals
 # Request validation -> DB lookup -> reconciliation -> response
 # assembly inline; helpers would require 5+ context args each.
-# See docs/lint-exemptions.md.
+# See docs/development/lint-exemptions.md.
 async def _invoke_agent_run(
     *,
     agent: str,
@@ -883,7 +883,8 @@ def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
 
 # pylint: disable=too-many-arguments
 # RunFilter is built from each query arg; folding into a Pydantic
-# query model triples the route boilerplate. See docs/lint-exemptions.md.
+# query model triples the route boilerplate. See
+# docs/development/lint-exemptions.md.
 def _list_owner_runs(
     *,
     owner: str,
@@ -1296,7 +1297,7 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 # validation -> DB lookup -> response assembly inline. Splitting per
 # module triples dependency-injection boilerplate. The disable runs
 # to EOF since create_app is the last function in the file.
-# See docs/lint-exemptions.md.
+# See docs/development/lint-exemptions.md.
 def create_app() -> FastAPI:
     """Build the FastAPI application.
 
