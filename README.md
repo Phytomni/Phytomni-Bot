@@ -231,6 +231,12 @@ dependency policy, config normalization, and common troubleshooting.
   demo fixtures, E2E commands, and troubleshooting.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.
+- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.2).
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup, local gate, test markers,
+  commit convention, and dependency policy.
+- [SECURITY.md](SECURITY.md): supported versions, vulnerability
+  reporting, and the secret-handling posture.
+- [docs/](docs/README.md): the full documentation map.
 
 ## License
 
