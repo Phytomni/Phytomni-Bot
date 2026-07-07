@@ -216,6 +216,8 @@ class ApiKeyRecordResponse(BaseModel):
         last_used_at: ISO-8601 last successful auth, or None.
         expires_at: ISO-8601 expiry, or None for never.
         active: True when neither revoked nor expired.
+        scopes: Sorted granted scopes; empty means all access (back-compat
+            for keys minted before scopes existed).
     """
 
     user_id: str
@@ -226,6 +228,7 @@ class ApiKeyRecordResponse(BaseModel):
     last_used_at: str | None = None
     expires_at: str | None = None
     active: bool
+    scopes: list[str]
 
 
 class ApiKeyListResponse(BaseModel):

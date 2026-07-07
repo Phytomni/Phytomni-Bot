@@ -131,8 +131,13 @@ from .schemas import (
     ApiErrorDetail,
     ApiErrorResponse,
     ApiKeyCreateRequest,
+    ApiKeyCreateResponse,
+    ApiKeyDeleteResponse,
+    ApiKeyListResponse,
+    ApiKeyRecordResponse,
     ChatCompletionRequest,
     ExpertQueryRequest,
+    FileUploadResponse,
     UploadPurpose,
 )
 
@@ -1387,11 +1392,15 @@ def create_app() -> FastAPI:
             }
         )
 
-    @app.post("/v1/api-keys", status_code=201)
+    @app.post(
+        "/v1/api-keys",
+        status_code=201,
+        response_model=ApiKeyCreateResponse,
+    )
     async def issue_api_key(
         payload: ApiKeyCreateRequest,
         _admin: None = Depends(require_service_principal),
-    ) -> JSONResponse:
+    ) -> ApiKeyCreateResponse:
         """Mint a per-user API key for the upstream service.
 
         The plaintext key is shown exactly once in the response. The
@@ -1410,62 +1419,52 @@ def create_app() -> FastAPI:
             name=payload.name,
             expires_at=expires_at,
         )
-        return JSONResponse(
-            status_code=201,
-            content={
-                "object": "api_key",
-                "api_key": created.api_key,
-                "prefix": created.prefix,
-                "user_id": created.user_id,
-                "expires_at": (expires_at.isoformat() if expires_at else None),
-            },
+        return ApiKeyCreateResponse(
+            api_key=created.api_key,
+            prefix=created.prefix,
+            user_id=created.user_id,
+            expires_at=(expires_at.isoformat() if expires_at else None),
         )
 
-    @app.get("/v1/api-keys")
+    @app.get("/v1/api-keys", response_model=ApiKeyListResponse)
     async def list_api_keys(
         user_id: str | None = None,
         _admin: None = Depends(require_service_principal),
-    ) -> JSONResponse:
+    ) -> ApiKeyListResponse:
         """List per-user API keys; ``user_id`` filters to one user."""
         del _admin  # Auth side-effect only.
         store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
         records = store.list(user_id=user_id)
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "user_id": record.user_id,
-                        "name": record.name,
-                        "prefix": record.prefix,
-                        "created_at": record.created_at,
-                        "revoked_at": record.revoked_at,
-                        "last_used_at": record.last_used_at,
-                        "expires_at": record.expires_at,
-                        "active": record.active,
-                        "scopes": sorted(record.scopes),
-                    }
-                    for record in records
-                ],
-            }
+        return ApiKeyListResponse(
+            data=[
+                ApiKeyRecordResponse(
+                    user_id=record.user_id,
+                    name=record.name,
+                    prefix=record.prefix,
+                    created_at=record.created_at,
+                    revoked_at=record.revoked_at,
+                    last_used_at=record.last_used_at,
+                    expires_at=record.expires_at,
+                    active=record.active,
+                    scopes=sorted(record.scopes),
+                )
+                for record in records
+            ],
         )
 
-    @app.delete("/v1/api-keys/{prefix}")
+    @app.delete(
+        "/v1/api-keys/{prefix}",
+        response_model=ApiKeyDeleteResponse,
+    )
     async def revoke_api_key(
         prefix: str,
         _admin: None = Depends(require_service_principal),
-    ) -> JSONResponse:
+    ) -> ApiKeyDeleteResponse:
         """Revoke an active key by its public prefix."""
         del _admin  # Auth side-effect only.
         store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
         deleted = store.revoke(prefix)
-        return JSONResponse(
-            {
-                "object": "api_key.deleted",
-                "prefix": prefix,
-                "deleted": deleted,
-            }
-        )
+        return ApiKeyDeleteResponse(prefix=prefix, deleted=deleted)
 
     @app.get("/v1/relay/audit")
     async def list_relay_audit(
@@ -1685,13 +1684,17 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(body, status_code=status_code)
 
-    @app.post("/v1/files", status_code=201)
+    @app.post(
+        "/v1/files",
+        status_code=201,
+        response_model=FileUploadResponse,
+    )
     async def upload_file(
         request: Request,
         file: UploadFile = File(...),
         purpose: UploadPurpose = Form("agent_context"),
         principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> JSONResponse:
+    ) -> FileUploadResponse | JSONResponse:
         """Accept one multipart file upload and store it in OBS.
 
         Pre-checks ``Content-Length`` so oversize requests are rejected

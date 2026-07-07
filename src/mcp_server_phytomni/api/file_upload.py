@@ -73,7 +73,7 @@ async def handle_file_upload(
     purpose: UploadPurpose,
     user_id: str,
     error_response: ErrorEnvelope,
-) -> JSONResponse:
+) -> FileUploadResponse | JSONResponse:
     """Validate one multipart upload and write it to OBS.
 
     Pre-checks ``Content-Length`` so oversized requests are rejected
@@ -95,8 +95,9 @@ async def handle_file_upload(
             project's unified error envelope.
 
     Returns:
-        ``201`` JSON response with the ``FileUploadResponse`` shape on
-        success, or the appropriate error envelope on validation
+        ``FileUploadResponse`` model instance on success (FastAPI
+        serializes it through the route's ``response_model`` with
+        ``201``), or the appropriate error envelope on validation
         failure.
     """
     config = ApiConfig()
@@ -132,7 +133,7 @@ async def handle_file_upload(
         return error_response(413, str(exc))
     except InvalidUploadError as exc:
         return error_response(400, str(exc))
-    response = FileUploadResponse(
+    return FileUploadResponse(
         id=record.file_id,
         bytes=record.bytes,
         filename=record.filename,
@@ -140,4 +141,3 @@ async def handle_file_upload(
         created_at=int(datetime.now(UTC).timestamp()),
         obs_path=record.obs_path,
     )
-    return JSONResponse(response.model_dump(), status_code=201)
