@@ -127,6 +127,7 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 | ---------------------------- | --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------- |
 | `API_HOST`                   | `127.0.0.1`                       | no         | Uvicorn bind address.                                                                                               |
 | `API_PORT`                   | `8080`                            | no         | Uvicorn bind port.                                                                                                  |
+| `API_GRACEFUL_SHUTDOWN`      | `30`                              | no         | Uvicorn graceful-shutdown drain window in seconds; kept shorter than systemd's `TimeoutStopSec`.                    |
 | `API_KEYS_DB_PATH`           | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                                                                                      |
 | `PHYTOMNI_API_KEYS_DB`       | unset                             | no         | Backward-compatible API key store alias.                                                                            |
 | `API_TASKS_DB_PATH`          | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                                                                                        |
@@ -217,6 +218,21 @@ A missing or unreadable `PHYTOMNI_CA_BUNDLE` path surfaces as the same
 `PHYTOMNI_TLS_VERIFY=0` in dev environments behind a corporate proxy or
 self-signed cluster ingress only — production deployments should ship a
 real CA bundle instead.
+
+## Server Tuning Variables
+
+| Variable                | Default | Sensitive? | Purpose                                                                                       |
+| ----------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------- |
+| `GAUSS_COMMAND_TIMEOUT` | `30.0`  | no         | Per-query timeout in seconds for the direct GaussDB pool (`agents/shared/gauss.py`).          |
+| `HTTP_MAX_CONNECTIONS`  | `100`   | no         | Max total connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`).     |
+| `HTTP_MAX_KEEPALIVE`    | `50`    | no         | Max keepalive connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`). |
+
+These are `ServerConfig` fields read once at startup. `GAUSS_COMMAND_TIMEOUT`
+bounds each direct GaussDB query so a stuck backend cannot hold a pooled
+connection indefinitely; `HTTP_MAX_CONNECTIONS` / `HTTP_MAX_KEEPALIVE` set
+the `httpx.Limits` handed to the shared `AsyncClient` so heavy
+`multi_retrieve` x `rerank` x relay fan-out reuses connections instead of
+churning TCP/TLS handshakes. Leave them unset to accept the defaults.
 
 ## Retrieval Tuning Variables
 
