@@ -27,6 +27,7 @@ from ...graphs.review_to_knowledge_adapters import (
     build_review_knowledge_input,
     extract_review_knowledge_response,
 )
+from ...mcp.progress_events import emit_progress
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.downloads import download_upload_context
 from ..shared.analysis import _compute_traceback_digest
@@ -262,6 +263,12 @@ class ReviewPlanningMixin(WorkflowMixinBase):
         and state["total_length"]; writes all_raw_doc_list,
         dimension_params, and total_length.
         """
+        emit_progress(
+            "retrieving",
+            len(state.get("retrieve_indexed_results", [])),
+            total=len(state.get("research_dimensions", [])),
+            detail="reducing retrieved dimensions",
+        )
         dimensions = state["research_dimensions"]
         indexed = sorted(state["retrieve_indexed_results"], key=lambda t: t[0])
         # Rebuild a results list ordered by task_index for the fragment loop.

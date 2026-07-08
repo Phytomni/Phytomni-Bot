@@ -19,6 +19,7 @@ from ...common.prompts import get_prompt
 from ...common.responses import message_content
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import get_sensitive_config
+from ...mcp.progress_events import emit_progress
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
 from .state import BriefGeneAgentState
@@ -87,6 +88,7 @@ async def _run_section_discovery_node(
     "### 1. Gene Discovery..." section) plus +1 to the
     ``gene_profile_completed_branches`` barrier counter.
     """
+    emit_progress("analyzing", 0, detail="discovery")
     markdown = await _call_section_llm(
         state, "user/brief_gene_section_discovery"
     )
@@ -104,6 +106,7 @@ async def _run_section_cloning_node(
     Writes ``section2_markdown`` (the LLM-produced
     "### 2. Gene Cloning..." section) plus +1 barrier counter.
     """
+    emit_progress("analyzing", 0, detail="cloning")
     markdown = await _call_section_llm(
         state, "user/brief_gene_section_cloning"
     )
@@ -121,6 +124,7 @@ async def _run_section_functional_node(
     Writes ``section3_markdown`` (the LLM-produced
     "### 3. Functional Analysis..." section) plus +1 barrier counter.
     """
+    emit_progress("analyzing", 0, detail="functional")
     markdown = await _call_section_llm(
         state, "user/brief_gene_section_functional"
     )
@@ -139,6 +143,7 @@ async def _run_section_application_node(
     "### 4. Application and Evolutionary Analysis..." section)
     plus +1 barrier counter.
     """
+    emit_progress("analyzing", 0, detail="application")
     markdown = await _call_section_llm(
         state, "user/brief_gene_section_application"
     )

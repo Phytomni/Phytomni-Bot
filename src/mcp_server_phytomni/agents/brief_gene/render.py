@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...mcp.progress_events import emit_progress
 from ..shared.parallel_dispatch import degraded_labels
 from .state import BriefGeneAgentState
 
@@ -105,6 +106,7 @@ def _render_preamble_node(state: BriefGeneAgentState) -> dict[str, Any]:
     annotation bullets are empty and the sections are literature-only.
     No LLM call — bullets are verbatim by Python string formatting.
     """
+    emit_progress("generating", 0, detail="rendering preamble")
     gene_id = state.get("gene_id") or state.get("user_query", "")
     content = (
         f"# Brief Gene Analysis of {gene_id}\n\n"

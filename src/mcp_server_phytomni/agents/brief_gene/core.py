@@ -24,6 +24,7 @@ from ...common.responses import message_content, parse_follow_up_questions
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
+from ...mcp.progress_events import emit_progress
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.chat_subgraph import (
@@ -397,6 +398,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             State updates containing symbols, coordinates, and formatted
             annotation strings.
         """
+        emit_progress("annotating", 0, detail="fetching gene annotation")
         gene_id_literal = sql_literal(state["gene_id"])
         species_code_literal = sql_literal(state["species_code"])
         annotation_sqls = [

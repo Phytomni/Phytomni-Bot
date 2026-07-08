@@ -38,6 +38,7 @@ from ...graphs.chat_adapters import (
     build_chat_kwargs_for,
     extract_chat_response,
 )
+from ...mcp.progress_events import emit_progress
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -428,6 +429,12 @@ class DeepResearchAgent(
         task_index so concurrent worker completion order does not
         affect downstream dimension ordering.
         """
+        emit_progress(
+            "drafting",
+            len(state.get("draft_indexed_results", [])),
+            total=len(state.get("dimension_params", [])),
+            detail="drafting review dimensions",
+        )
         indexed = sorted(state["draft_indexed_results"], key=lambda t: t[0])
         return {
             "draft_contents": [content for _, content in indexed],
@@ -685,6 +692,12 @@ class DeepResearchAgent(
         dicts so existing readers in ``summary.py`` keep working
         without migration.
         """
+        emit_progress(
+            "revising",
+            len(state.get("revised_indexed_results", [])),
+            total=len(state.get("research_dimensions", [])),
+            detail="revising review dimensions",
+        )
         indexed = sorted(state["revised_indexed_results"], key=lambda t: t[0])
         drafts = state["draft_contents"]
         dimensions = state["research_dimensions"]

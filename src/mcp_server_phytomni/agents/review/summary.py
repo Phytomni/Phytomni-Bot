@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from ...common.prompts import get_prompt
 from ...common.responses import parse_follow_up_questions
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
+from ...mcp.progress_events import emit_progress
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from .helpers import _renumber_citations
 
@@ -105,6 +106,7 @@ class ReviewSummaryMixin(WorkflowMixinBase):
             State delta with the combined review text under
             ``summary_content``.
         """
+        emit_progress("generating", 0, detail="composing summary")
         phyto_response = state.get("chat_response") or {}
         content = ""
         if (

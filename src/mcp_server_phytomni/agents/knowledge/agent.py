@@ -32,6 +32,7 @@ from ...config.overrides import (
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
+from ...mcp.progress_events import emit_progress
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -260,6 +261,7 @@ class KnowledgeAgent:
                 - retrieved_docs: The raw list of retrieved documents.
                 - retrieve_context: The formatted context string for the LLM.
         """
+        emit_progress("retrieving", 0, detail="querying knowledge base")
         user_query = state["user_query"]
         repo_id_dict = (
             state.get("repo_id_dict") or self.knowledge_config.REPO_ID_DICT
@@ -368,6 +370,7 @@ class KnowledgeAgent:
             A state delta with ``main_response`` and
             ``final_response`` carrying the merged doc list payload.
         """
+        emit_progress("generating", 0, detail="composing answer")
         phyto_response = dict(state.get("chat_response") or {})
         doc_list_payload = {
             "doc_list": state["retrieved_docs"],

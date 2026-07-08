@@ -25,6 +25,7 @@ from ...graphs.brief_gene_to_knowledge_adapters import (
     build_brief_gene_knowledge_input,
     extract_brief_gene_knowledge_response,
 )
+from ...mcp.progress_events import emit_progress
 from ..shared.parallel_dispatch import DegradedRecord, redact_failure_message
 from .pipeline import _dedupe, _format_docs
 
@@ -264,6 +265,11 @@ class BriefGeneKnowledgeSubgraphMixin:
             written to the legacy field names so the downstream nodes
             stay untouched.
         """
+        emit_progress(
+            "retrieving",
+            len(state.get("retrieve_indexed_results", [])),
+            detail="reducing literature results",
+        )
         indexed = sorted(
             state.get("retrieve_indexed_results", []),
             key=lambda entry: entry[0],

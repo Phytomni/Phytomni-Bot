@@ -34,6 +34,7 @@ from ...graphs.data_to_knowledge_adapters import (
     build_data_knowledge_input,
     extract_data_knowledge_response,
 )
+from ...mcp.progress_events import emit_progress
 from ...mcp.schemas import DataAgent as DataAgentSchema
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
@@ -379,6 +380,7 @@ class DataAgent:
             the stitched user/database prompt the downstream rewrite
             stage consumes.
         """
+        emit_progress("retrieving", 0, detail="processing retrieved scenarios")
         user_query = state["user_query"]
         docs = extract_data_knowledge_response(
             state.get("knowledge_response") or {}
@@ -448,6 +450,7 @@ class DataAgent:
         Raises:
             McpError: If the chat response is missing or has no choices.
         """
+        emit_progress("rewriting", 0, detail="rewriting query")
         phyto_response = state.get("chat_response") or {}
         if (
             not phyto_response
@@ -477,6 +480,7 @@ class DataAgent:
             A dictionary containing the final_response key with the
             database query results.
         """
+        emit_progress("querying", 0, detail="executing SQL query")
         if state["is_rewrite"]:
             query = state["rewrite_query"]
         else:
