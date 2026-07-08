@@ -32,3 +32,22 @@ def test_unknown_agent_or_node_returns_none() -> None:
     """Unknown agent or off-whitelist node returns None."""
     assert phase_for("ChatAgent", "whatever") is None
     assert phase_for("KnowledgeAgent", "not_a_node") is None
+
+
+def test_data_agent_phase_map_covers_reduce_nodes() -> None:
+    """DataAgent reduce/search nodes project to semantic phases."""
+    assert phase_for("DataAgent", "retrieve_post_node") == "retrieving"
+    assert phase_for("DataAgent", "rewrite_post_node") == "rewriting"
+    assert phase_for("DataAgent", "search_node") == "querying"
+    # Prep/dispatch nodes stay off the whitelist.
+    assert phase_for("DataAgent", "retrieve_prep_node") is None
+
+
+def test_brief_gene_phase_map_covers_section_and_render() -> None:
+    """BriefGeneAgent annotation/retrieve/section/render map to phases."""
+    assert phase_for("BriefGeneAgent", "fetch_annotation_node") == "annotating"
+    assert phase_for("BriefGeneAgent", "retrieve_reduce_node") == "retrieving"
+    assert phase_for("BriefGeneAgent", "section_discovery_node") == "analyzing"
+    assert phase_for("BriefGeneAgent", "render_node") == "generating"
+    # Off-whitelist prep/judge nodes drop.
+    assert phase_for("BriefGeneAgent", "query_judge_node") is None

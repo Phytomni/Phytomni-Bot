@@ -25,6 +25,20 @@ _PHASE_MAP: dict[str, dict[str, str]] = {
         "revised_reduce_node": "revising",
         "summary_post_node": "generating",
     },
+    "DataAgent": {
+        "retrieve_post_node": "retrieving",
+        "rewrite_post_node": "rewriting",
+        "search_node": "querying",
+    },
+    "BriefGeneAgent": {
+        "fetch_annotation_node": "annotating",
+        "retrieve_reduce_node": "retrieving",
+        "section_discovery_node": "analyzing",
+        "section_cloning_node": "analyzing",
+        "section_functional_node": "analyzing",
+        "section_application_node": "analyzing",
+        "render_node": "generating",
+    },
 }
 
 
