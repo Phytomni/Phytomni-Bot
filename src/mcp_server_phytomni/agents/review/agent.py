@@ -19,7 +19,7 @@ from typing import Any
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
@@ -229,6 +229,7 @@ class DeepResearchAgent(
         workflow.add_node("summary_post_node", self.summary_post_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
         workflow.add_node("follow_up_post_node", self.follow_up_post_node)
+        workflow.add_node("approval_node", self.approval_node)
         workflow.add_node(
             "chat",
             make_chat_node_wrapper(
@@ -332,7 +333,15 @@ class DeepResearchAgent(
         workflow.add_edge("draft_reduce_node", "review_results_dispatch")
         workflow.add_edge("review_results_reduce_node", "revised_dispatch")
         workflow.add_edge("revised_reduce_node", "summary_prep_node")
-        workflow.add_edge("summary_post_node", "follow_up_prep_node")
+        workflow.add_edge("summary_post_node", "approval_node")
+        workflow.add_conditional_edges(
+            "approval_node",
+            self.route_after_approval,
+            {
+                "follow_up_prep_node": "follow_up_prep_node",
+                "summary_prep_node": "summary_prep_node",
+            },
+        )
         workflow.add_edge("follow_up_post_node", END)
 
     async def _chat(
@@ -362,6 +371,44 @@ class DeepResearchAgent(
             retriable_codes=self.review_config.RETRIABLE_CODES,
             max_retries=self.review_config.MAX_RETRIES,
         )
+
+    async def approval_node(self, state: DeepResearchState) -> dict[str, Any]:
+        """Pause for human approval of the synthesized summary.
+
+        Emits a progress tick, then calls ``interrupt()`` with the draft
+        summary so a human can approve or reject. On resume, LangGraph
+        replays this node from the top and ``interrupt()`` returns the
+        decision payload the adapter supplied.
+
+        Args:
+            state: Current workflow state; reads ``summary_content``.
+
+        Returns:
+            State delta recording the human decision under
+            ``approval_decision`` and clearing ``approval_pending``.
+        """
+        emit_progress("awaiting_approval", 0, detail="awaiting human review")
+        decision = interrupt({"draft": state["summary_content"]})
+        return {
+            "approval_decision": decision,
+            "approval_pending": False,
+        }
+
+    def route_after_approval(self, state: DeepResearchState) -> str:
+        """Route approved runs to follow-up, rejected runs to redraft.
+
+        Args:
+            state: Current workflow state; reads ``approval_decision``.
+
+        Returns:
+            ``"follow_up_prep_node"`` when approved, else
+            ``"summary_prep_node"`` to regenerate the summary from the
+            existing revised reports.
+        """
+        decision = state.get("approval_decision") or {}
+        if decision.get("approved"):
+            return "follow_up_prep_node"
+        return "summary_prep_node"
 
     async def draft_prepare_tasks_node(
         self, state: DeepResearchState
