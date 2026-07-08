@@ -283,6 +283,7 @@ class PhytomniMcpClient:
         arguments: Mapping[str, Any],
         *,
         read_timeout_seconds: int = DEFAULT_TOOL_TIMEOUT_SECONDS,
+        progress_callback: Any = None,
     ) -> McpToolResponse:
         """Call one MCP tool and return raw plus formatted output.
 
@@ -290,6 +291,10 @@ class PhytomniMcpClient:
             tool_name: Public MCP tool name to call.
             arguments: JSON-schema-compatible arguments for the tool.
             read_timeout_seconds: Timeout used by the MCP client call.
+            progress_callback: Optional async callback
+                ``(progress, total, message)`` invoked per server
+                progress notification. Forwarded to the MCP SDK's
+                ``ClientSession.call_tool``.
 
         Returns:
             Raw MCP response plus a normalized formatted representation.
@@ -302,6 +307,7 @@ class PhytomniMcpClient:
             tool_name,
             dict(arguments),
             read_timeout_seconds=timedelta(seconds=read_timeout_seconds),
+            progress_callback=progress_callback,
         )
         raw_text = _result_text(result)
         if result.isError:
