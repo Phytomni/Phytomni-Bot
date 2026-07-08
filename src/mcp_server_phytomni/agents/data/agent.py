@@ -12,7 +12,7 @@ Functions: rewrite_nl2sql, retrieve_and_generate.
 import logging
 from typing import Any, Literal
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
@@ -204,7 +204,7 @@ class DataAgent:
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         data_config=DATA_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
     ):

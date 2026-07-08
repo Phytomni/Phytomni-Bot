@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from json import loads
 from typing import Any
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Send
 
 from ...common.prompts import get_prompt
@@ -156,7 +156,7 @@ class InSilicoResearchAgents:
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         analyst_agent: AnalystAgent | None = None,
         in_silico_config=IN_SILICO_CONFIG,
         sensitive_config: SensitiveConfig | None = None,

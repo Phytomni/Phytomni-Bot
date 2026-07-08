@@ -16,7 +16,7 @@ from typing import (
     Literal,
 )
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ...common.prompts import get_prompt
 from ...config.defaults import GeneNetworkConfig
@@ -114,7 +114,7 @@ class GeneNetworkAgents:
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         analyst_agent: AnalystAgent | None = None,
         gene_network_config=GENE_NETWORK_CONFIG,
         sensitive_config: SensitiveConfig | None = None,

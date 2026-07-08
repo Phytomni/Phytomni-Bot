@@ -16,7 +16,7 @@ pipeline.py-style siblings.
 import logging
 from typing import Any
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
@@ -126,7 +126,7 @@ class DeepResearchAgent(
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         review_config: ReviewConfig = REVIEW_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
         knowledge_agent: KnowledgeAgent | None = None,

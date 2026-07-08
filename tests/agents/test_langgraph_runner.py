@@ -11,8 +11,10 @@ fingerprint secret omission, graph registry reuse, and source-boundary checks.
 from pathlib import Path
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
+from mcp_server_phytomni.runtime import langgraph_runner
 from mcp_server_phytomni.runtime.langgraph_runner import (
     GraphRegistry,
     ainvoke_graph,
@@ -84,7 +86,7 @@ def test_ensure_thread_id_generates_value_when_missing():
     assert "-thread-" in second
 
 
-def test_ensure_checkpointer_creates_fresh_instances():
+async def test_ensure_checkpointer_creates_fresh_instances():
     """Verify ensure checkpointer creates fresh instances."""
     first = ensure_checkpointer()
     second = ensure_checkpointer()
@@ -190,3 +192,22 @@ def test_agent_sources_use_shared_runner_for_graph_invocation():
         assert (
             'config = {"configurable": {"thread_id": thread_id}}' not in source
         )
+
+
+def test_ensure_checkpointer_returns_injected_saver() -> None:
+    """An injected checkpointer is returned unchanged (DI seam)."""
+    injected = MemorySaver()
+    assert ensure_checkpointer(injected) is injected
+
+
+def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
+    """Without injection, ensure_checkpointer builds the SQLite default."""
+    sentinel = object()
+
+    def _fake_build() -> object:
+        return sentinel
+
+    monkeypatch.setattr(
+        langgraph_runner, "build_default_checkpointer", _fake_build
+    )
+    assert langgraph_runner.ensure_checkpointer() is sentinel

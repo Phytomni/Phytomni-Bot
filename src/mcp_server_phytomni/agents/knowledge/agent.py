@@ -12,7 +12,7 @@ Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
 
 from typing import Any, Literal
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from ...common.docs import (
@@ -121,7 +121,7 @@ class KnowledgeAgent:
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         knowledge_config=KNOWLEDGE_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
     ):

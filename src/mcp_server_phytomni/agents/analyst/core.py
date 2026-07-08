@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
@@ -94,7 +94,7 @@ class AnalystAgent(
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         analyst_config=ANALYST_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
     ):

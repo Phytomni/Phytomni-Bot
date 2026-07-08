@@ -15,10 +15,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
+from .checkpoint_backend import build_default_checkpointer
 
 # Workflow boundary: every non-system failure produced inside a LangGraph
 # action must be converted to a structured failure state rather than
@@ -77,19 +78,24 @@ def build_runnable_config(thread_id: str | None = None) -> RunnableConfig:
 
 
 def ensure_checkpointer(
-    checkpointer: MemorySaver | None = None,
-) -> MemorySaver:
-    """Return a caller-provided checkpointer or create a fresh one.
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> BaseCheckpointSaver:
+    """Return a caller-provided checkpointer or the SQLite default.
+
+    Tests inject a ``MemorySaver`` to stay offline; production callers
+    pass ``None`` and receive the persistent ``AsyncSqliteSaver`` built
+    by :func:`build_default_checkpointer`, so a graph pause point
+    survives a process restart.
 
     Args:
-        checkpointer: Optional existing MemorySaver to reuse.
+        checkpointer: Optional existing checkpointer to reuse.
 
     Returns:
-        MemorySaver: Provided checkpointer or newly created instance.
+        The provided checkpointer, or a fresh SQLite-backed default.
     """
     if checkpointer is not None:
         return checkpointer
-    return MemorySaver()
+    return build_default_checkpointer()
 
 
 async def ainvoke_graph(

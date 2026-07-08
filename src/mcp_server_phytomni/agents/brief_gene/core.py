@@ -15,7 +15,7 @@ agent.py; pipeline helpers live in pipeline.py.
 import asyncio
 from typing import Any, Literal
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -159,7 +159,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         brief_config: BriefGeneConfig = BRIEF_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
         knowledge_agent: KnowledgeAgent | None = None,

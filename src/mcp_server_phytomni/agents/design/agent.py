@@ -19,7 +19,7 @@ from typing import (
     NamedTuple,
 )
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
@@ -142,7 +142,7 @@ class DigitalDesignAgents:
 
     def __init__(
         self,
-        checkpointer: MemorySaver | None = None,
+        checkpointer: BaseCheckpointSaver | None = None,
         analyst_agent: AnalystAgent | None = None,
         digital_design_config=DIGITAL_DESIGN_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
