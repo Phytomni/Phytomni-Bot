@@ -175,3 +175,124 @@ async def test_gauss_query_command_timeout_raises_mcperror(
     _patch_pool(monkeypatch, [], timeout_boom=True)
     with pytest.raises(McpError):
         await gauss_query("SELECT slow")
+
+
+class _ResetModelingPool:
+    """Fake pool that models asyncpg's connection-release reset branch.
+
+    asyncpg ``pool.py`` releases a connection two ways (release-time
+    ``_ConnectionProxy._release``): when ``create_pool`` got a custom
+    ``reset`` coroutine it runs ``conn._reset()`` then that coroutine;
+    otherwise it runs ``conn.reset()``, whose ``get_reset_query()``
+    emits ``UNLISTEN *`` on a notifications-capable server. GaussDB
+    advertises notifications yet has no ``UNLISTEN``, so the default
+    path raises ``FeatureNotSupportedError`` when the connection is
+    returned to the pool. This fake reproduces exactly that fork so the
+    bug is offline-reproducible without a real GaussDB.
+    """
+
+    def __init__(self, rows: list[dict[str, Any]], reset: Any) -> None:
+        """Store rows and the ``reset`` coroutine create_pool received."""
+        self._rows = rows
+        self._reset = reset
+        self.closed = False
+
+    @asynccontextmanager
+    async def acquire(self) -> AsyncIterator[Any]:
+        """Yield a conn stub, then run the modeled release-time reset.
+
+        The reset fires in ``__aexit__`` (mirroring ``async with
+        pool.acquire()``), which is where the real UNLISTEN failure
+        surfaces after the rows are already fetched.
+        """
+        rows = self._rows
+
+        async def fetch(_sql: str) -> list[dict[str, Any]]:
+            return rows
+
+        async def default_reset() -> None:
+            # Models conn.reset() -> get_reset_query() -> UNLISTEN * on
+            # a server that lacks UNLISTEN (GaussDB).
+            raise asyncpg.exceptions.FeatureNotSupportedError(
+                "UNLISTEN is not yet supported."
+            )
+
+        conn = SimpleNamespace(fetch=fetch)
+        try:
+            yield conn
+        finally:
+            if self._reset is not None:
+                await self._reset(conn)
+            else:
+                await default_reset()
+
+    async def close(self) -> None:
+        """Mark pool as closed."""
+        self.closed = True
+
+
+def _patch_reset_modeling_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Patch create_pool with a release-branch-modeling fake pool.
+
+    Returns the captured create_pool kwargs so a test can assert the
+    ``reset`` coroutine was supplied and exercise it directly.
+    """
+    captured: dict[str, Any] = {}
+
+    async def fake_create_pool(*_a: Any, **kwargs: Any) -> _ResetModelingPool:
+        captured.update(kwargs)
+        return _ResetModelingPool(rows, kwargs.get("reset"))
+
+    monkeypatch.setattr(gauss_mod.asyncpg, "create_pool", fake_create_pool)
+    _GAUSS_POOL_STATE.clear()
+    return captured
+
+
+async def test_gauss_query_survives_pool_release_without_unlisten(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pooled acquire->fetch->release round-trip must not raise.
+
+    On the deployed GaussDB, asyncpg's default connection reset issues
+    ``UNLISTEN *`` when the connection returns to the pool, which the
+    server rejects with FeatureNotSupportedError -- discarding the rows
+    already fetched. The fix supplies a ``reset`` coroutine that omits
+    UNLISTEN; this pins that a full round-trip returns the ok envelope
+    instead of raising.
+    """
+    _patch_reset_modeling_pool(monkeypatch, [{"n": 1}])
+
+    result = await gauss_query("SELECT 1")
+
+    assert result == {"message": "ok", "data": [{"n": 1}]}
+
+
+async def test_gauss_pool_supplies_non_unlisten_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """create_pool receives a reset coroutine that emits no UNLISTEN.
+
+    Pins the fix mechanism: a ``reset`` callback is passed (so asyncpg
+    takes the custom-reset branch that skips ``conn.reset()``'s
+    UNLISTEN), and invoking it drives no ``UNLISTEN`` statement through
+    the connection.
+    """
+    captured = _patch_reset_modeling_pool(monkeypatch, [{"n": 1}])
+    await gauss_query("SELECT 1")
+
+    reset = captured.get("reset")
+    assert reset is not None, "no reset= passed; default UNLISTEN path used"
+
+    executed: list[str] = []
+
+    async def record_execute(sql: str) -> None:
+        executed.append(sql)
+
+    await reset(SimpleNamespace(execute=record_execute))
+
+    assert not any(
+        "UNLISTEN" in stmt.upper() for stmt in executed
+    ), f"reset issued UNLISTEN: {executed}"
