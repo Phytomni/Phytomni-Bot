@@ -13,6 +13,66 @@ Newest first.
 
 ______________________________________________________________________
 
+## [0.1.3] — 2026-07-08
+
+Streaming-progress-observability release. Adds a unified in-band progress
+bus so graph agents (Knowledge / Review / Data / BriefGene) emit structured
+stage ticks during long runs, visible on both the SSE and MCP stdio paths.
+Full commit range: `1f8f628..HEAD`.
+
+### Added
+
+- **Progress-event vocabulary** — `mcp/progress_events.py` ships a
+  `ProgressEvent` TypedDict and `emit_progress()` helper that writes through
+  the LangGraph stream writer; outside a runnable context it is a silent
+  no-op, so the same node body works streamed and unstreamed. The field set
+  maps losslessly onto an A2A `TaskStatusUpdateEvent` (forward-compat for
+  Phase 4).
+- **SSE `phyto.progress` Custom frame** — `_stream_graph_agent` now drives
+  `astream(stream_mode=["custom","updates","values"], subgraphs=True)` and
+  projects custom `phyto.progress` ticks from any namespace into a new
+  `Custom` frame interleaved before the terminal `TextMessage`. The
+  namespace filter is a correctness gate: `updates`/`values` project
+  parent-only (`ns == ()`), preventing child-subgraph nodes from spuriously
+  firing `StepStarted` or clobbering the parent's terminal state.
+- **MCP stdio progress notifications** — when the client supplies a
+  `progressToken` and the tool is a graph agent (Knowledge / Review / Data
+  / BriefGene per `_GRAPH_PROGRESS_TOOLS`), `dispatch_tool` drives the
+  graph and forwards each `phyto.progress` tick to
+  `send_progress_notification`; the terminal payload is byte-identical to
+  the blocking path. Calls without a token keep the blocking
+  `invoke_tool_enveloped` path unchanged.
+- **BriefGene SSE streaming** — `BriefGeneAgent` joins
+  `_STREAM_CAPABLE_TOOLS` and routes through the shared graph streaming
+  primitive; `DataAgent` stays out (no `phyto-data` model alias → no SSE
+  entry point).
+- **Node emission points** — 15+ graph reduce / section / post nodes across
+  Knowledge / Review / Data / BriefGene call `emit_progress` at the top of
+  their bodies (before the first `await`), so the tick fires when the stage
+  begins. Emission is a pure side-effect; under blocking `ainvoke` it
+  no-ops.
+- **Client `progress_callback`** — `PhytomniMcpClient.call_tool` accepts an
+  optional `progress_callback` and threads it to the MCP SDK's
+  `ClientSession.call_tool`.
+- **Phase maps for Data + BriefGene** — `mcp/streaming_phases.py:_PHASE_MAP`
+  gains DataAgent (3 phases: retrieving / rewriting / querying) and
+  BriefGeneAgent (4 phases + 4 section nodes sharing `analyzing`).
+- **DRY `initial_brief_gene_state`** — the 40-key initial-state literal
+  that previously lived inline in `BriefGeneAgent.arun` is extracted to a
+  shared module-level function called by both `arun` and
+  `brief_gene_stream_seed`, preventing the two from drifting.
+
+### Changed
+
+- `_stream_graph_agent` upgraded from 2-tuple `(mode, chunk)` to 3-tuple
+  `(namespace, mode, chunk)` astream unpacking with `subgraphs=True`. All
+  dependent test fakes upgraded consistently.
+- `dispatch_tool` now detects `progressToken` + graph-tool and routes
+  through `_drive_stdio_progress`; the no-token fallback is byte-identical
+  to the prior blocking path.
+
+______________________________________________________________________
+
 ## [0.1.2] — 2026-07-07
 
 Feature + hardening release on top of `0.1.1`. Cuts the BI query path over to a
