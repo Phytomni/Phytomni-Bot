@@ -9,6 +9,7 @@ Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
     ainvoke_graph, capture_workflow_boundary, config_fingerprint.
 """
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
@@ -85,16 +87,25 @@ def ensure_checkpointer(
     Tests inject a ``MemorySaver`` to stay offline; production callers
     pass ``None`` and receive the persistent ``AsyncSqliteSaver`` built
     by :func:`build_default_checkpointer`, so a graph pause point
-    survives a process restart.
+    survives a process restart.  When no async event loop is running
+    (sync test fixtures that construct agents without injecting a
+    checkpointer), falls back to ``MemorySaver`` so the offline
+    discipline is preserved without crashing on the SQLite backend's
+    loop requirement.
 
     Args:
         checkpointer: Optional existing checkpointer to reuse.
 
     Returns:
-        The provided checkpointer, or a fresh SQLite-backed default.
+        The provided checkpointer, or a fresh SQLite-backed default
+        (``MemorySaver`` when called outside an async context).
     """
     if checkpointer is not None:
         return checkpointer
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return MemorySaver()
     return build_default_checkpointer()
 
 

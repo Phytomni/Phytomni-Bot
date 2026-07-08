@@ -200,8 +200,13 @@ def test_ensure_checkpointer_returns_injected_saver() -> None:
     assert ensure_checkpointer(injected) is injected
 
 
-def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
-    """Without injection, ensure_checkpointer builds the SQLite default."""
+@pytest.mark.asyncio
+async def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
+    """Without injection, ensure_checkpointer builds the SQLite default.
+
+    Must run in an async context so the event-loop probe passes and the
+    fallback reaches ``build_default_checkpointer``.
+    """
     sentinel = object()
 
     def _fake_build() -> object:
@@ -211,3 +216,14 @@ def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
         langgraph_runner, "build_default_checkpointer", _fake_build
     )
     assert langgraph_runner.ensure_checkpointer() is sentinel
+
+
+def test_ensure_checkpointer_falls_back_to_memory_outside_loop() -> None:
+    """Outside an async context, ensure_checkpointer yields MemorySaver.
+
+    Sync test fixtures that construct agents without injecting a
+    checkpointer must not crash on the SQLite backend's event-loop
+    requirement — they get an in-memory fallback instead.
+    """
+    result = ensure_checkpointer()
+    assert isinstance(result, MemorySaver)
