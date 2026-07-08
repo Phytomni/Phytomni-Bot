@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from tests.agents._network_escape import install_network_escape_guard
 
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -211,7 +212,6 @@ async def test_invoke_tool_streamed_raises_mcperror_on_validation_error(
 @pytest.mark.parametrize(
     "tool_name",
     [
-        PhytomniAgents.BRIEF_GENE_AGENT.value,
         PhytomniAgents.GET_TASK_STATUS.value,
     ],
 )
@@ -221,9 +221,9 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     """A registered non-streaming tool raises NotImplementedError.
 
     Pins the current streaming scope: ChatAgent token-streams and
-    KnowledgeAgent / ReviewAgent drive their compiled graphs through
-    ``_stream_graph_agent``; every other registered tool (BriefGene,
-    GetTaskStatus) must surface a clear "streaming not supported"
+    KnowledgeAgent / ReviewAgent / BriefGeneAgent drive their compiled
+    graphs through ``_stream_graph_agent``; every other registered tool
+    (GetTaskStatus) must surface a clear "streaming not supported"
     signal instead of a silent empty stream — the per-model gate at
     the HTTP layer trusts this contract to translate into a 400 for
     those models, and a regression that silently no-ops here would
@@ -233,7 +233,6 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     # Use arguments valid against the chosen tool's schema so the
     # raise fires at the dispatch branch, not Pydantic validation.
     args_by_tool: dict[str, dict[str, Any]] = {
-        PhytomniAgents.BRIEF_GENE_AGENT.value: {"user_query": "AT1G01010"},
         PhytomniAgents.GET_TASK_STATUS.value: {"task_id": "t-1"},
     }
     stream = mcp_app.invoke_tool_streamed(
@@ -302,3 +301,141 @@ def test_format_tool_chunk_preserves_payload_verbatim() -> None:
     # TW-C pattern (see commit 9072103).
     with pytest.raises(AttributeError):
         setattr(chunk, "payload", {})
+
+
+# -- Cold-cache BriefGene SSE seam drive --------------------------------
+#
+# Drives ``invoke_tool_streamed("BriefGeneAgent", ...)`` through the
+# full seam (validation → graph branch → ``_stream_graph_agent``) with
+# a fake compiled graph, asserting the RunStarted…RunFinished envelope.
+# The mounted knowledge subgraph's ``.ainvoke`` never fires because the
+# fake ``astream`` yields pre-built ``(ns, mode, chunk)`` tuples
+# directly; ``install_network_escape_guard`` converts any un-mocked
+# escape into a named RuntimeError instead of a 20s hang.
+
+
+async def test_brief_gene_stream_seam_emits_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BriefGene SSE seam routes through _stream_graph_agent end-to-end.
+
+    Cold-cache drive: ``brief_gene_stream_seed`` is monkeypatched to
+    return a fake compiled app whose ``astream`` yields a canned
+    BriefGene-phase sequence. The knowledge subgraph's ``.ainvoke`` is
+    never reached because the fake short-circuits at the ``astream``
+    boundary. ``_maybe_enrich_cited`` is stubbed to skip the live BI
+    bibliographic lookup. ``install_network_escape_guard`` patches the
+    three async paths ``block_external_http`` leaves open so any
+    un-mocked socket escape surfaces as a fast RuntimeError.
+    """
+    install_network_escape_guard(monkeypatch, label="brief-gene-sse")
+
+    # Canned BriefGene astream yields — one node per phase, then a
+    # terminal values chunk. Node names match the BriefGene phase map
+    # in streaming_phases.py so StepStarted frames fire for each.
+    brief_gene_yields: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [
+        ((), "updates", {"fetch_annotation_node": {}}),
+        ((), "updates", {"retrieve_reduce_node": {}}),
+        ((), "updates", {"section_discovery_node": {}}),
+        ((), "updates", {"render_node": {}}),
+        (
+            (),
+            "values",
+            {
+                "final_response": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "Gene AT1G01010 encodes [1].",
+                                "doc_list": [
+                                    {
+                                        "file_id": "bg1",
+                                        "title": "BG doc",
+                                    }
+                                ],
+                                "follow_up_questions": [
+                                    "What about orthologs?"
+                                ],
+                            }
+                        }
+                    ]
+                }
+            },
+        ),
+    ]
+
+    class BriefGeneFakeApp:
+        """Minimal fake compiled graph for the BriefGene SSE seam test.
+
+        Distinct from ``tests/agents/test_stream_graph_agent.py``'s
+        ``FakeStreamApp`` — no ``configurable`` accessor, no
+        ``record_config`` flag; the single ``astream`` method keeps
+        this off the R0903 baseline via the companion ``get_nodes``
+        stub that surfaces the node-set for diagnostic assertions.
+        """
+
+        def get_nodes(self) -> set[str]:
+            """Return a fixed node set; keeps R0903 at bay."""
+            return {"fetch_annotation_node", "render_node"}
+
+        async def astream(
+            self,
+            _state: Any,
+            stream_mode: list[str],
+            config: Any = None,
+            *,
+            subgraphs: bool = False,
+        ) -> Any:
+            """Yield the canned BriefGene phase sequence."""
+            del config
+            assert stream_mode == ["custom", "updates", "values"]
+            assert subgraphs is True
+            for ns, mode, chunk in brief_gene_yields:
+                yield ns, mode, chunk
+
+    fake_app = BriefGeneFakeApp()
+
+    def fake_seed(_args: Any) -> tuple[Any, dict[str, Any]]:
+        """Return the fake app + a minimal state dict."""
+        return fake_app, {"user_query": "AT1G01010"}
+
+    monkeypatch.setattr(mcp_app, "brief_gene_stream_seed", fake_seed)
+
+    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
+        """Skip bibliographic enrichment in the offline test."""
+
+    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
+
+    events = await _drain(
+        mcp_app.invoke_tool_streamed(
+            PhytomniAgents.BRIEF_GENE_AGENT.value,
+            {"user_query": "AT1G01010"},
+            run_id="run-bg",
+            dialogue_id="dlg-bg",
+        )
+    )
+
+    types = [e.type for e in events]
+    assert types[0] == "RunStarted"
+    assert types[-1] == "RunFinished"
+    # BriefGene phase map produces StepStarted for each whitelisted node
+    step_names = [
+        e.data["step_name"] for e in events if e.type == "StepStarted"
+    ]
+    assert "annotating" in step_names
+    assert "retrieving" in step_names
+    assert "analyzing" in step_names
+    assert "generating" in step_names
+    # Terminal projection: one-shot TextMessage + citation Custom frames
+    assert "TextMessageStart" in types
+    assert "TextMessageContent" in types
+    assert "TextMessageEnd" in types
+    customs = {
+        e.data["name"]: e.data["value"] for e in events if e.type == "Custom"
+    }
+    assert "phyto.references" in customs
+    assert customs["phyto.follow_up"] == ["What about orthologs?"]
+    # RunStarted/RunFinished carry the caller's ids
+    assert events[0].data["run_id"] == "run-bg"
+    assert events[0].data["dialogue_id"] == "dlg-bg"
+    assert events[-1].data["run_id"] == "run-bg"

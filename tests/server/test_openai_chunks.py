@@ -17,7 +17,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from mcp_server_phytomni.api.openai_mapping import to_chat_completion_chunks
+from mcp_server_phytomni.api.openai_mapping import (
+    to_chat_completion_chunks,
+    tool_accepts_stream,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
     run_finished,
@@ -195,3 +198,13 @@ async def test_shaper_renders_event_and_data_lines() -> None:
     assert lines[1].startswith("event: TextMessageContent\n")
     assert '"delta": "Hi"' in lines[1]
     assert lines[-1] == "data: [DONE]\n\n"
+
+
+def test_brief_gene_is_stream_capable() -> None:
+    """BriefGene now streams over SSE (it has a phyto-brief-gene alias)."""
+    assert tool_accepts_stream("BriefGeneAgent") is True
+
+
+def test_data_agent_is_not_stream_capable() -> None:
+    """DataAgent stays out of SSE: it carries no chat-completions alias."""
+    assert tool_accepts_stream("DataAgent") is False

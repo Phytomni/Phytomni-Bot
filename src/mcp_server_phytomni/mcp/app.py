@@ -300,13 +300,14 @@ async def invoke_tool_streamed(
     Fourth invocation seam, parallel to :func:`invoke_tool_raw` /
     :func:`invoke_tool_formatted` / :func:`invoke_tool_enveloped`.
     :class:`ChatAgent` token-streams provider deltas via
-    :func:`stream_phyto_chat_chunks`; :class:`KnowledgeAgent` and
-    :class:`ReviewAgent` drive their compiled graphs through
-    :func:`_stream_graph_agent`, emitting stage ``StepStarted`` frames
-    then a one-shot terminal answer plus citation ``Custom`` frames.
-    Every other registered tool raises :class:`NotImplementedError` so
-    callers receive a clear "streaming not supported for X" signal
-    instead of a silent fallback to non-streaming aggregation.
+    :func:`stream_phyto_chat_chunks`; :class:`KnowledgeAgent`,
+    :class:`ReviewAgent`, and :class:`BriefGeneAgent` drive their
+    compiled graphs through :func:`_stream_graph_agent`, emitting
+    stage ``StepStarted`` frames then a one-shot terminal answer plus
+    citation ``Custom`` frames. Every other registered tool raises
+    :class:`NotImplementedError` so callers receive a clear "streaming
+    not supported for X" signal instead of a silent fallback to
+    non-streaming aggregation.
 
     The function is an async generator — argument validation,
     unknown-tool detection, and the not-implemented branch all raise
@@ -333,7 +334,7 @@ async def invoke_tool_streamed(
             fails (mirrors :func:`invoke_tool_raw`).
         NotImplementedError: When the tool is registered but lacks a
             streaming primitive (every tool except ChatAgent /
-            KnowledgeAgent / ReviewAgent).
+            KnowledgeAgent / ReviewAgent / BriefGeneAgent).
     """
     tool_name = _tool_name(name)
     model = TOOL_ARGUMENT_MODELS.get(tool_name)
@@ -369,6 +370,7 @@ async def invoke_tool_streamed(
     if tool_name in {
         PhytomniAgents.KNOWLEDGE_AGENT.value,
         PhytomniAgents.REVIEW_AGENT.value,
+        PhytomniAgents.BRIEF_GENE_AGENT.value,
     }:
         app, initial_state = _build_graph_stream_target(tool_name, args)
         async for event in _stream_graph_agent(
@@ -390,13 +392,16 @@ def _build_graph_stream_target(
     """Acquire the cached compiled app + seeded state for a graph agent.
 
     Dispatches on ``tool_name`` to the co-located per-agent stream-target
-    accessor (``knowledge_stream_target`` / ``review_stream_target``),
-    each of which acquires the SAME cached agent its blocking wrapper
-    uses with default config and returns ``(app, initial_state)``. Both
-    request schemas expose only ``user_query`` + ``obs_file_list``.
+    accessor (``knowledge_stream_target`` / ``review_stream_target`` /
+    ``brief_gene_stream_seed``), each of which acquires the SAME cached
+    agent its blocking wrapper uses with default config and returns
+    ``(app, initial_state)``. Knowledge / Review request schemas expose
+    ``user_query`` + ``obs_file_list``; BriefGene carries only
+    ``user_query``.
 
     Args:
-        tool_name: Public MCP tool name (KnowledgeAgent or ReviewAgent).
+        tool_name: Public MCP tool name (KnowledgeAgent, ReviewAgent,
+            or BriefGeneAgent).
         args: The validated request schema for that tool.
 
     Returns:
@@ -408,6 +413,8 @@ def _build_graph_stream_target(
             knowledge_args.user_query,
             obs_file_list=knowledge_args.obs_file_list,
         )
+    if tool_name == PhytomniAgents.BRIEF_GENE_AGENT.value:
+        return brief_gene_stream_seed(cast(BriefGeneAgent, args))
     review_args = cast(ReviewAgent, args)
     return review_stream_target(
         review_args.user_query,

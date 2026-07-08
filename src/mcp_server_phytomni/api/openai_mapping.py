@@ -62,14 +62,20 @@ _RESOLVE_TO_ID_CAPABLE_TOOLS = {"GeneNetworkAgent"}
 
 # Tools that support SSE streaming via ``invoke_tool_streamed``.
 # ChatAgent token-streams provider deltas; KnowledgeAgent / ReviewAgent
-# drive their compiled graphs through the ``_stream_graph_agent``
-# primitive, emitting stage ``StepStarted`` frames then a one-shot
-# terminal answer + citations. BriefGene / DataAgent stay out of this
-# set: adding a model here without also implementing its streaming
-# primitive in ``invoke_tool_streamed`` would surface as a 500
-# (``NotImplementedError``) at request time, so keep this set aligned
-# with the seam's implemented branches.
-_STREAM_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
+# / BriefGeneAgent drive their compiled graphs through the
+# ``_stream_graph_agent`` primitive, emitting stage ``StepStarted``
+# frames then a one-shot terminal answer + citations. DataAgent stays
+# out of this set: it carries no chat-completions model alias and thus
+# no SSE entry point. Keep this set aligned with the seam's
+# implemented branches — adding a model here without also wiring its
+# streaming primitive in ``invoke_tool_streamed`` would surface as a
+# 500 (``NotImplementedError``) at request time.
+_STREAM_CAPABLE_TOOLS = {
+    "ChatAgent",
+    "KnowledgeAgent",
+    "ReviewAgent",
+    "BriefGeneAgent",
+}
 
 
 def tool_for_model(model: str) -> str | None:
