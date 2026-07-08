@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.data.nl2sql import (
 )
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.mcp.schemas import DataAgent as DataAgentSchema
 
 # ``agents.data.__init__`` re-exports the ``nl2sql`` *function*, which
 # shadows the submodule of the same name on the package; resolve the
@@ -506,3 +507,58 @@ async def test_execute_nl2sql_dedupes_identical_questions_across_dialogs(
 
     assert third == {"answer": "rice orthologs"}
     assert fake.attempt_count() == 2
+
+
+def test_data_stream_seed_returns_app_and_initial_state(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify data_stream_seed acquires the agent and seeds state.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to stub the agent
+            registry so no real DataAgent is constructed.
+    """
+    sentinel_app = object()
+
+    class _FakeAgent:
+        """Minimal stand-in exposing ``app`` for the seed to return."""
+
+        def __init__(
+            self,
+            data_config: Any,
+            sensitive_config: Any,
+        ) -> None:
+            del data_config, sensitive_config
+            self.app = sentinel_app
+
+        def describe(self) -> str:
+            """Companion to stay off the R0903 baseline."""
+            return "FakeAgent"
+
+        def is_cached(self) -> bool:
+            """Second companion to satisfy the two-method minimum."""
+            return False
+
+    def _no_cache(
+        name: str,
+        factory: Any,
+        fingerprint_values: Any = None,
+    ) -> _FakeAgent:
+        """Skip caching and build via the supplied factory."""
+        del name, fingerprint_values
+        return factory()
+
+    monkeypatch.setattr(data_agent_module, "DataAgent", _FakeAgent)
+    monkeypatch.setattr(data_agent_module, "get_cached_agent", _no_cache)
+
+    args = DataAgentSchema(user_query="gene count in rice")
+    app, state = data_agent_module.data_stream_seed(args)
+
+    assert app is sentinel_app
+    assert state == {
+        "user_query": "gene count in rice",
+        "is_rewrite": True,
+        "retrieve_prompt": None,
+        "rewrite_query": None,
+        "final_response": None,
+    }

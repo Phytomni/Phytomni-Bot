@@ -44,6 +44,14 @@ async def test_progress_forwarded_when_token_present(
         for t in ticks:
             yield t
 
+    # Short-circuit graph acquisition so the test never touches the
+    # real agent cache (a prior test may have cached a mock agent).
+    fake_app = AsyncMock()
+    monkeypatch.setattr(
+        app_mod,
+        "_graph_stream_target",
+        lambda _tool, _args: (fake_app, {"user_query": "q"}),
+    )
     monkeypatch.setattr(
         app_mod, "_astream_progress_ticks", _fake_astream_progress
     )

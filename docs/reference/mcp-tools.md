@@ -172,3 +172,45 @@ reading `running`, and a completed run whose only loss was the terminal
 write still reads `succeeded` from its persisted report. This liveness
 check is process-local, so run the API single-worker (see the runbook's
 multi-worker caveat).
+
+## Progress Notifications
+
+MCP stdio clients may subscribe to in-band progress during long
+graph-agent runs. Set a `progressToken` in the request meta and the
+server sends one MCP `notifications/progress` per graph reduce or
+section node, carrying:
+
+- `progress` — the completed-step count (`current` from the
+  underlying `ProgressEvent`).
+- `total` — the stage denominator when known, else absent.
+- `message` — the semantic phase label (e.g. `"retrieving"`,
+  `"drafting"`, `"revising"`).
+
+Four tools emit progress on stdio: `KnowledgeAgent`, `ReviewAgent`,
+`DataAgent`, and `BriefGeneAgent`. Each emits one tick per graph
+reduce/section node during its run.
+
+`ChatAgent` does **not** emit stdio progress: it is not a graph agent,
+so the call blocks until the answer is ready. On the SSE path
+(`phyto-chat` with `stream: true`) ChatAgent token-streams its answer
+directly, which serves as its own liveness signal.
+
+The Python client (`mcp_client_phytomni`) accepts a
+`progress_callback` on `call_tool`; the MCP SDK invokes it for each
+server progress notification:
+
+```python
+async def on_progress(progress: float, total: float | None,
+                      message: str | None) -> None:
+    print(f"[{message}] {int(progress)}/{int(total) if total else '?'}")
+
+result = await client.call_tool(
+    "KnowledgeAgent",
+    {"user_query": "...", "obs_file_list": []},
+    progress_callback=on_progress,
+)
+```
+
+The progress event's fields (`kind`, `phase`, `current`, `total`,
+`detail`) map losslessly onto an A2A `TaskStatusUpdateEvent` for
+forward compatibility.

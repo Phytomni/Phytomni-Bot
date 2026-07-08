@@ -52,7 +52,7 @@ RULE_BASELINES: dict[str, int] = {
     # fake-state TypedDict (test_deep_genome_brief_gene_mount) that mirror
     # the source BriefGeneState. The underlying duplicate is the same
     # test-stub-mirrors-source pattern; only the line ranges shifted.
-    "R0801": 94,  # duplicate-code: cross-file similar blocks
+    "R0801": 93,  # duplicate-code: cross-file similar blocks
     # too-few-public-methods: test fake classes + Protocol stubs +
     # GraphLoader (load + flag-gated __init__ only) + the terminal-result
     # assembly seams (TerminalAnswerContext DTO, ArtifactLister /

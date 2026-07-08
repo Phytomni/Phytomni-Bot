@@ -63,9 +63,9 @@ Every response carries an `X-Request-Id`. Errors on native routes use:
 
 Over-budget callers get `429` with `Retry-After`. SSE streaming is
 supported only on streaming-capable chat models — `phyto-chat`,
-`phyto-knowledge`, and `phyto-review`; every other chat-like model
-with `stream: true` returns `400` with a per-model message
-(`streaming is not supported for model phyto-brief-gene`, etc.). See the SSE Streaming section below.
+`phyto-knowledge`, `phyto-review`, and `phyto-brief-gene`; every
+other chat-like model with `stream: true` returns `400` with a
+per-model message. See the SSE Streaming section below.
 
 ## Endpoints
 
@@ -348,32 +348,55 @@ Default is `false`. When `true`, the response switches from a single
 JSON `chat.completion` envelope to an OpenAI-compatible
 `text/event-stream`. For `phyto-chat` each frame carries one
 `data: {chat.completion.chunk JSON}\n\n` line per provider chunk;
-for `phyto-knowledge` / `phyto-review` the stream carries AG-UI event
-frames (`event: RunStarted`, one `event: StepStarted` per graph stage,
-a one-shot `event: TextMessageContent` answer, `event: Custom`
-reference / follow-up frames, then `event: RunFinished`). Both shapes
+for `phyto-knowledge` / `phyto-review` / `phyto-brief-gene` the
+stream carries AG-UI event frames (`event: RunStarted`, one
+`event: StepStarted` per graph stage, `event: Custom` frames for
+`phyto.progress` / `phyto.references` / `phyto.follow_up`, a one-shot
+`event: TextMessageContent` answer, then `event: RunFinished`). Both
+shapes
 end with a terminating `data: [DONE]\n\n` so the client closes its
 `EventSource` on the first match instead of waiting for the read
 timeout.
 
-Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
-`phyto-review`: ChatAgent token-streams provider deltas, while
-KnowledgeAgent / ReviewAgent drive their compiled graphs through the
-`_stream_graph_agent` primitive (stage `StepStarted` frames then a
-terminal answer + citations). `phyto-brief-gene` returns a structured
-single answer with no stage graph, so it stays non-streaming and a
-`stream: true` request returns `400` with
-`streaming is not supported for model <name>` — a clear per-model
-signal instead of a silent fallback. The streaming-capable set is
-maintained in
+Streaming is wired on `phyto-chat`, `phyto-knowledge`,
+`phyto-review`, and `phyto-brief-gene`: ChatAgent token-streams
+provider deltas, while KnowledgeAgent / ReviewAgent / BriefGeneAgent
+drive their compiled graphs through the `_stream_graph_agent`
+primitive (stage `StepStarted` frames then a terminal answer +
+citations). Every other chat-like model with `stream: true`
+returns `400` with `streaming is not supported for model <name>` — a
+clear per-model signal instead of a silent fallback. The streaming-
+capable set is maintained in
 `src/mcp_server_phytomni/api/openai_mapping.py:_STREAM_CAPABLE_TOOLS`.
 
-`resolve_gene_id=true` + `stream=true` is unreachable by
-construction: `resolve_gene_id` is BriefGene-only (the resolver
-preprocessor rejects other models with `400`) and BriefGene is not
-streaming-capable. The combination therefore always `400`s — against
-`phyto-chat` via the BriefGene-only gate, against `phyto-brief-gene`
-via the streaming-capable gate.
+During a graph agent's run, `event: Custom` frames with
+`name: "phyto.progress"` carry structured progress ticks interleaved
+with the stage events. Each frame's `value` is a `ProgressEvent`
+(`kind: "phyto.progress"`, `phase`, `current`, `total`, `detail`)
+emitted by graph reduce/section nodes; clients may render a
+progress bar or stage label from these ticks before the terminal
+`TextMessageContent` arrives.
+
+```json
+{
+  "type": "Custom",
+  "name": "phyto.progress",
+  "value": {
+    "kind": "phyto.progress",
+    "phase": "retrieving",
+    "current": 3,
+    "total": 8,
+    "detail": "gene 3/8"
+  }
+}
+```
+
+`resolve_gene_id=true` + `stream=true` is valid only against
+`phyto-brief-gene` (the sole model that is both BriefGene-only-
+resolver-eligible and streaming-capable); the resolver runs before
+the stream begins. Against `phyto-chat` the BriefGene-only gate
+returns `400`; against every other non-streaming model the
+streaming-capable gate returns `400`.
 
 ```bash
 curl -N -s http://127.0.0.1:8080/v1/chat/completions \
