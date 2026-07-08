@@ -22,6 +22,7 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import get_sensitive_config
+from ...mcp.schemas import BriefGeneAgent as BriefGeneAgentSchema
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -31,6 +32,7 @@ from .core import (
     BRIEF_CONFIG,
     BriefGeneAgent,
     BriefGeneAgentState,
+    initial_brief_gene_state,
 )
 from .pipeline import (
     GeneRetrieveRequest,
@@ -70,6 +72,7 @@ __all__ = [
     "_safe_rows",
     "_split_symbols",
     "brief_gene_function",
+    "brief_gene_stream_seed",
     "clear_gene_retrieve_cache",
     "gene_retrieve",
     "run_bi_api",
@@ -132,3 +135,48 @@ async def brief_gene_function(
         ),
     )
     return await agent.arun(user_query=user_query)
+
+
+def brief_gene_stream_seed(
+    args: BriefGeneAgentSchema,
+) -> tuple[Any, BriefGeneAgentState]:
+    """Return the cached BriefGeneAgent app + seeded state for progress.
+
+    Acquires the SAME cached agent ``brief_gene_function`` uses with
+    DEFAULT config and seeds the 40-key initial state through the
+    shared :func:`initial_brief_gene_state` helper so the seed and
+    ``arun`` stay byte-identical. There is no SSE ``stream_target``
+    for BriefGeneAgent because it carries no public chat-completions
+    model alias; this seed feeds only the MCP stdio progress driver.
+
+    Args:
+        args: The validated MCP request schema carrying ``user_query``.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict.
+    """
+    brief_config = copy_config_with_overrides(
+        BRIEF_CONFIG, {}, BRIEF_GENE_CONFIG_FIELD_MAP
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        get_sensitive_config(),
+        {},
+        field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
+        secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "BriefGeneAgent",
+        lambda: BriefGeneAgent(
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=brief_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    return agent.app, initial_brief_gene_state(args.user_query)

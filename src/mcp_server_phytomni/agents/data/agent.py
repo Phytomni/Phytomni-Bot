@@ -34,6 +34,7 @@ from ...graphs.data_to_knowledge_adapters import (
     build_data_knowledge_input,
     extract_data_knowledge_response,
 )
+from ...mcp.schemas import DataAgent as DataAgentSchema
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -122,6 +123,53 @@ async def rewrite_nl2sql(
         is_rewrite=is_rewrite,
         thread_id=active_dialog_id,
     )
+
+
+def data_stream_seed(
+    args: DataAgentSchema,
+) -> tuple[Any, dict[str, Any]]:
+    """Return the cached DataAgent app + seeded state for progress streaming.
+
+    Acquires the SAME cached agent ``rewrite_nl2sql`` uses with DEFAULT
+    config and seeds the state ``arun`` builds inline (``is_rewrite``
+    defaults True, matching a no-override blocking call). There is no
+    SSE ``stream_target`` for DataAgent because it carries no public
+    chat-completions model alias; this seed feeds only the MCP stdio
+    progress driver.
+
+    Args:
+        args: The validated MCP request schema carrying ``user_query``.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict.
+    """
+    data_config = copy_config_with_overrides(
+        DATA_CONFIG, {}, DATA_CONFIG_FIELD_MAP
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        get_sensitive_config(),
+        {},
+        field_map=DATA_SENSITIVE_FIELD_MAP,
+        secret_field_map=DATA_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "DataAgent",
+        lambda: DataAgent(
+            data_config=data_config,
+            sensitive_config=sensitive_config,
+        ),
+        agent_fingerprint_values(
+            data_config=data_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    return agent.app, {
+        "user_query": args.user_query,
+        "is_rewrite": True,
+        "retrieve_prompt": None,
+        "rewrite_query": None,
+        "final_response": None,
+    }
 
 
 class DataAgent:

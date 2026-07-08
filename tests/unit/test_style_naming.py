@@ -196,6 +196,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/server/test_run_gc_background.py": {
         "protected-access",
     },
+    # Stdio progress-driver test exercises ``_drive_stdio_progress``
+    # and ``dispatch_tool`` — protected-helper coverage seam for the
+    # MCP stdio in-band progress-notification path.
+    "tests/server/test_stdio_progress.py": {
+        "protected-access",
+    },
     # Schema-derivation pin on the two resolver modules'
     # module-private ``_RESOLVER_JSON_SCHEMA`` constant — asserts the
     # candidate confidence bounds are derived from the Candidate model

@@ -28,12 +28,15 @@ from typing import (
 
 from httpx import ConnectError, TimeoutException
 from mcp.server import Server
+from mcp.server.lowlevel.server import request_ctx
 from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS, ErrorData, TextContent, Tool
 from pydantic import BaseModel, ValidationError
 
+from ..agents.brief_gene.agent import brief_gene_stream_seed
 from ..agents.chat.service import stream_phyto_chat_chunks
+from ..agents.data.agent import data_stream_seed
 from ..agents.knowledge.agent import knowledge_stream_target
 from ..agents.review.agent import review_stream_target
 from ..agents.shared.citation_enrichment import enrich_cited_doc_list
@@ -523,6 +526,184 @@ async def _stream_graph_agent(
     yield run_finished(run_id)
 
 
+_GRAPH_PROGRESS_TOOLS = frozenset(
+    {
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        PhytomniAgents.REVIEW_AGENT.value,
+        PhytomniAgents.DATA_AGENT.value,
+        PhytomniAgents.BRIEF_GENE_AGENT.value,
+    }
+)
+
+
+def _stdio_progress_context() -> tuple[str | int | None, Any, str]:
+    """Return (progress_token, session, run_id) from the MCP request ctx.
+
+    Reads the low-level server's ``request_ctx`` contextvar. Outside an
+    active MCP request (``LookupError``) or when the client sent no
+    ``progressToken``, returns ``(None, None, <fresh run id>)`` so the
+    caller takes the blocking path.
+    """
+    run_id = IdFactory().new_id("run")
+    try:
+        ctx = request_ctx.get()
+    except LookupError:
+        return None, None, run_id
+    meta = getattr(ctx, "meta", None)
+    token = getattr(meta, "progressToken", None) if meta else None
+    return token, ctx.session, run_id
+
+
+def _graph_stream_target(
+    tool_name: str, args: BaseModel
+) -> tuple[Any, Mapping[str, Any]] | None:
+    """Return (app, initial_state) for a graph tool, or None if not one.
+
+    Knowledge/Review reuse their existing ``*_stream_target`` accessors;
+    Data/BriefGene acquire their cached agent and seed the initial
+    state inline (they have no SSE ``stream_target`` because they carry
+    no public chat-completions model alias).
+
+    Args:
+        tool_name: Public MCP tool name.
+        args: The validated request schema for that tool.
+
+    Returns:
+        Tuple of the compiled graph app and its initial state dict,
+        or ``None`` when the tool is not a graph-progress candidate.
+    """
+    if tool_name in {
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        PhytomniAgents.REVIEW_AGENT.value,
+    }:
+        return _build_graph_stream_target(tool_name, args)
+    if tool_name == PhytomniAgents.DATA_AGENT.value:
+        return data_stream_seed(cast(DataAgent, args))
+    if tool_name == PhytomniAgents.BRIEF_GENE_AGENT.value:
+        return brief_gene_stream_seed(cast(BriefGeneAgent, args))
+    return None
+
+
+async def _astream_progress_ticks(
+    app: Any,
+    initial_state: Mapping[str, Any],
+    run_id: str,
+    sink: list[Mapping[str, Any]],
+) -> AsyncIterator[Mapping[str, Any]]:
+    """Yield phyto.progress ticks from a graph walk; capture final state.
+
+    Mirrors :func:`_stream_graph_agent`'s astream contract (custom /
+    updates / values with ``subgraphs=True``) but emits only the
+    progress ticks the stdio seam forwards as MCP progress
+    notifications. The parent-level (``ns == ()``) ``values`` chunk is
+    appended to ``sink`` so the caller can format the terminal payload
+    without a second graph walk.
+
+    Args:
+        app: Compiled LangGraph application.
+        initial_state: Seeded initial state dict.
+        run_id: Registry run id for the LangGraph thread config.
+        sink: Caller-owned list; cleared and repopulated with the
+            latest parent-level ``values`` chunk on each iteration.
+
+    Yields:
+        Each ``phyto.progress`` custom tick emitted by the graph.
+    """
+    async for ns, mode, chunk in app.astream(
+        initial_state,
+        stream_mode=["custom", "updates", "values"],
+        subgraphs=True,
+        config=build_runnable_config(run_id),
+    ):
+        if mode == "custom":
+            if isinstance(chunk, Mapping) and chunk.get("kind") == (
+                PROGRESS_KIND
+            ):
+                yield chunk
+        elif mode == "values" and ns == ():
+            sink.clear()
+            sink.append(chunk)
+
+
+async def _stdio_terminal_payload(
+    tool_name: str, final_state: Mapping[str, Any] | None
+) -> list[TextContent]:
+    """Format a captured graph final-state into the stdio text payload.
+
+    Reuses the same enrichment + envelope path ``dispatch_tool`` uses so
+    the terminal answer is byte-identical to the blocking response.
+
+    Args:
+        tool_name: Public MCP tool name driving envelope formatting.
+        final_state: The captured last ``values`` chunk, or ``None``
+            when the astream loop produced no terminal state.
+
+    Returns:
+        MCP text content containing the serialized formatted result.
+    """
+    if final_state is None:
+        return _text_response({"formatted": {}})
+    merged = merge_intermediate_state(dict(final_state))
+    await _maybe_enrich_cited(tool_name, merged)
+    envelope = build_tool_result_envelope(tool_name, merged)
+    payload: dict[str, Any] = {"formatted": asdict(envelope.formatted)}
+    if resolve_debug(None):
+        payload["raw"] = envelope.raw
+    return _text_response(payload)
+
+
+async def _drive_stdio_progress(
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    progress_token: str | int,
+    session: Any,
+    run_id: str,
+) -> list[TextContent]:
+    """Drive a graph tool, notifying progress, returning terminal payload.
+
+    Validates arguments, walks the graph via
+    :func:`_astream_progress_ticks` forwarding each ``phyto.progress``
+    tick to ``session.send_progress_notification``, then formats the
+    captured final state through :func:`_stdio_terminal_payload`.
+
+    Args:
+        tool_name: Public MCP tool name.
+        arguments: JSON object passed to the selected tool.
+        progress_token: Token supplied by the MCP client.
+        session: The MCP session carrying ``send_progress_notification``.
+        run_id: Registry run id for the LangGraph thread config.
+
+    Returns:
+        MCP text content containing the serialized formatted result.
+
+    Raises:
+        NotImplementedError: If the tool has no graph progress support.
+    """
+    model = TOOL_ARGUMENT_MODELS.get(tool_name)
+    if model is None:
+        raise NotImplementedError(f"no graph progress for {tool_name}")
+    args = model(**arguments)
+    target = _graph_stream_target(tool_name, args)
+    if target is None:
+        raise NotImplementedError(f"no graph progress for {tool_name}")
+    graph_app, initial_state = target
+    sink: list[Mapping[str, Any]] = []
+    async for tick in _astream_progress_ticks(
+        graph_app, initial_state, run_id, sink
+    ):
+        await session.send_progress_notification(
+            progress_token=progress_token,
+            progress=float(tick["current"]),
+            total=(
+                float(tick["total"]) if tick.get("total") is not None else None
+            ),
+            message=tick["phase"],
+        )
+    final_state = sink[0] if sink else None
+    return await _stdio_terminal_payload(tool_name, final_state)
+
+
 def _chunk_content_delta(chunk: Mapping[str, Any]) -> str:
     """Return the assistant content delta from one provider chunk."""
     choices = chunk.get("choices") or []
@@ -567,9 +748,11 @@ async def dispatch_tool(
 ) -> list[TextContent]:
     """Validate arguments, call a tool handler, and serialize the result.
 
-    In default mode the response contains only ``formatted``; set
-    ``PHYTOMNI_DEBUG=1`` to include the sanitized ``raw`` handler
-    payload alongside it.
+    When the MCP client supplied a ``progressToken`` and the tool is a
+    graph agent, the call is driven through ``_drive_stdio_progress`` so
+    the client receives in-band ``notifications/progress`` during the
+    run; the terminal payload is byte-identical to the blocking path.
+    Every other call takes the blocking ``invoke_tool_enveloped`` path.
 
     Args:
         name: Raw MCP tool name supplied by the client.
@@ -581,6 +764,25 @@ async def dispatch_tool(
     Raises:
         McpError: If the tool is unknown or arguments fail validation.
     """
+    tool_name = _tool_name(name)
+    token, session, run_id = _stdio_progress_context()
+    if token is not None and tool_name in _GRAPH_PROGRESS_TOOLS:
+        model = TOOL_ARGUMENT_MODELS.get(tool_name)
+        if model is None:
+            raise _invalid_params(f"Unknown tool: {tool_name}")
+        try:
+            model(**arguments)
+        except ValidationError as exc:
+            raise _invalid_params(
+                _format_validation_error(tool_name, exc)
+            ) from exc
+        return await _drive_stdio_progress(
+            tool_name,
+            arguments,
+            progress_token=token,
+            session=session,
+            run_id=run_id,
+        )
     envelope = await invoke_tool_enveloped(name, arguments)
     payload: dict[str, Any] = {
         "formatted": asdict(envelope.formatted),
