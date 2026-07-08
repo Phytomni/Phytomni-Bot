@@ -810,6 +810,9 @@ class DeepResearchAgent(
             "revised_indexed_results": [],
             # Fan-out final ordered outputs
             "revised_contents": [],
+            # Human-in-the-loop approval
+            "approval_pending": False,
+            "approval_decision": {},
         }
         return initial_state
 

@@ -122,3 +122,7 @@ class DeepResearchState(ParallelDispatchState):
     # draft_contents and review_contents already declared above (kept as-is).
     # all_raw_doc_list already declared above (kept as-is).
     revised_contents: list[str]
+
+    # === Human-in-the-loop approval (single-writer, no reducer) ===
+    approval_pending: bool
+    approval_decision: dict[str, Any]
