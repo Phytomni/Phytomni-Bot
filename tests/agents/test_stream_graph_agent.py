@@ -41,16 +41,18 @@ def _fail_fast_on_network_escape(
     install_network_escape_guard(monkeypatch, label="stream")
 
 
-# Canned ``(mode, chunk)`` sequence for the dedup / whitelist tests: two
-# ``retrieve_node`` updates (the repeat must not re-emit a StepStarted),
-# one off-whitelist worker node (must emit no StepStarted), one
-# ``generate_post_node`` update, then a terminal ``values`` chunk.
-_KNOWLEDGE_STAGE_YIELDS: list[tuple[str, dict[str, Any]]] = [
-    ("updates", {"retrieve_node": {}}),
-    ("updates", {"retrieve_node": {}}),
-    ("updates", {"retrieve_worker_node": {}}),
-    ("updates", {"generate_post_node": {}}),
+# Canned ``(ns, mode, chunk)`` sequence for the dedup / whitelist tests:
+# two ``retrieve_node`` updates (the repeat must not re-emit a
+# StepStarted), one off-whitelist worker node (must emit no StepStarted),
+# one ``generate_post_node`` update, then a terminal ``values`` chunk.
+# All carry ``ns=()`` (parent-only) so updates/values project.
+_KNOWLEDGE_STAGE_YIELDS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [
+    ((), "updates", {"retrieve_node": {}}),
+    ((), "updates", {"retrieve_node": {}}),
+    ((), "updates", {"retrieve_worker_node": {}}),
+    ((), "updates", {"generate_post_node": {}}),
     (
+        (),
         "values",
         {
             "final_response": {
@@ -62,7 +64,7 @@ _KNOWLEDGE_STAGE_YIELDS: list[tuple[str, dict[str, Any]]] = [
 
 
 class FakeStreamApp:
-    """Fake compiled graph yielding a canned ``(mode, chunk)`` sequence.
+    """Fake compiled graph yielding a canned ``(ns, mode, chunk)`` sequence.
 
     One parameterized fake backs every ``_stream_graph_agent`` test: the
     yield sequence is injected, and an optional ``record_config`` flag
@@ -77,7 +79,7 @@ class FakeStreamApp:
 
     def __init__(
         self,
-        yields: list[tuple[str, dict[str, Any]]],
+        yields: list[tuple[tuple[str, ...], str, dict[str, Any]]],
         *,
         record_config: bool = False,
     ) -> None:
@@ -97,13 +99,16 @@ class FakeStreamApp:
         _state: Mapping[str, Any],
         stream_mode: list[str],
         config: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        """Assert modes, optionally capture config, yield the canned seq."""
-        assert stream_mode == ["updates", "values"]
+        *,
+        subgraphs: bool = False,
+    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
+        """Assert modes+subgraphs, optionally capture config, yield seq."""
+        assert stream_mode == ["custom", "updates", "values"]
+        assert subgraphs is True
         if self._record:
             self.seen = config
-        for mode, chunk in self._yields:
-            yield mode, chunk
+        for ns, mode, chunk in self._yields:
+            yield ns, mode, chunk
 
 
 async def test_graph_stream_dedups_stage_events() -> None:
@@ -169,9 +174,9 @@ async def test_graph_stream_off_whitelist_agent_emits_no_step_started() -> (
         async for e in _stream_graph_agent(
             FakeStreamApp(
                 [
-                    ("updates", {"retrieve_node": {}}),
-                    ("updates", {"generate_post_node": {}}),
-                    ("values", {"final_response": {}}),
+                    ((), "updates", {"retrieve_node": {}}),
+                    ((), "updates", {"generate_post_node": {}}),
+                    ((), "values", {"final_response": {}}),
                 ]
             ),
             {},
@@ -209,8 +214,9 @@ async def test_terminal_events_carry_answer_and_custom(
         async for e in _stream_graph_agent(
             FakeStreamApp(
                 [
-                    ("updates", {"retrieve_node": {}}),
+                    ((), "updates", {"retrieve_node": {}}),
                     (
+                        (),
                         "values",
                         {
                             "final_response": {
@@ -266,8 +272,8 @@ async def test_graph_stream_passes_thread_id_config_to_astream() -> None:
     """
     fake_app = FakeStreamApp(
         [
-            ("updates", {"retrieve_node": {}}),
-            ("values", {"final_response": {}}),
+            ((), "updates", {"retrieve_node": {}}),
+            ((), "values", {"final_response": {}}),
         ],
         record_config=True,
     )
@@ -287,3 +293,66 @@ async def test_graph_stream_passes_thread_id_config_to_astream() -> None:
     assert fake_app.configurable().get("thread_id") == "run-cfg-1"
     assert events[0].type == "RunStarted"
     assert events[-1].type == "RunFinished"
+
+
+async def test_graph_stream_projects_progress_and_filters_child_ns() -> None:
+    """phyto.progress passes from any ns; child updates/values are ignored.
+
+    A custom tick from a mounted subgraph (non-empty ns) must project
+    to a phyto.progress Custom frame, while a child-ns ``updates`` must
+    NOT fire a StepStarted and a child-ns ``values`` must NOT overwrite
+    the parent terminal state.
+    """
+    yields: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [
+        ((), "updates", {"retrieve_node": {}}),
+        (
+            ("retrieve_node:abc",),
+            "custom",
+            {
+                "kind": "phyto.progress",
+                "phase": "retrieving",
+                "current": 3,
+                "total": 8,
+                "detail": "gene 3/8",
+            },
+        ),
+        (
+            ("retrieve_node:abc",),
+            "updates",
+            {"sub_reduce_node": {}},
+        ),
+        (
+            ("retrieve_node:abc",),
+            "values",
+            {"final_response": "CHILD"},
+        ),
+        ((), "updates", {"generate_post_node": {}}),
+        ((), "values", {"final_response": {}}),
+    ]
+    events = [
+        e
+        async for e in _stream_graph_agent(
+            FakeStreamApp(yields),
+            {},
+            "KnowledgeAgent",
+            "KnowledgeAgent",
+            run_id="r",
+            dialogue_id="d",
+        )
+    ]
+    types = [e.type for e in events]
+    # exactly two StepStarted (retrieving, generating) — child dropped
+    step_names = [
+        e.data["step_name"] for e in events if e.type == "StepStarted"
+    ]
+    assert step_names == ["retrieving", "generating"]
+    # one phyto.progress Custom frame carrying the child-ns tick
+    progress = [
+        e
+        for e in events
+        if e.type == "Custom" and e.data["name"] == "phyto.progress"
+    ]
+    assert len(progress) == 1
+    assert progress[0].data["value"]["phase"] == "retrieving"
+    assert progress[0].data["value"]["current"] == 3
+    assert types[0] == "RunStarted" and types[-1] == "RunFinished"

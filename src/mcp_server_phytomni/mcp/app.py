@@ -60,6 +60,7 @@ from .handlers import (
     handle_review_agent,
     scratch_server_dir,
 )
+from .progress_events import PROGRESS_KIND
 from .result_formatting import (
     AguiEvent,
     FormattedToolResult,
@@ -483,11 +484,14 @@ async def _stream_graph_agent(
 ) -> AsyncIterator[AguiEvent]:
     """Drive a compiled graph, emitting stage events then a terminal answer.
 
-    Walks ``app.astream`` in ``["updates", "values"]`` mode, projecting
-    whitelisted node updates to deduped ``StepStarted`` frames while
-    capturing the latest ``values`` chunk as the graph's final state.
-    Once the astream loop is exhausted, the captured state is projected
-    into terminal answer/reference frames through
+    Walks ``app.astream`` in ``["custom", "updates", "values"]`` mode
+    with ``subgraphs=True``, projecting whitelisted parent-only
+    (``ns == ()``) node updates to deduped ``StepStarted`` frames,
+    capturing the latest parent-only ``values`` chunk as the graph's
+    final state, and forwarding ``custom`` ticks whose ``kind`` matches
+    :data:`PROGRESS_KIND` from any namespace as ``phyto.progress``
+    frames. Once the astream loop is exhausted, the captured state is
+    projected into terminal answer/reference frames through
     :func:`_terminal_graph_events` before ``RunFinished`` closes the run.
     """
     run_id = run_meta["run_id"]
@@ -495,18 +499,24 @@ async def _stream_graph_agent(
     yield run_started(run_id, dialogue_id)
     seen_phases: set[str] = set()
     final_state: Mapping[str, Any] | None = None
-    async for mode, chunk in app.astream(
+    async for ns, mode, chunk in app.astream(
         initial_state,
-        stream_mode=["updates", "values"],
+        stream_mode=["custom", "updates", "values"],
+        subgraphs=True,
         config=build_runnable_config(run_id),
     ):
-        if mode == "updates":
+        if mode == "custom":
+            if isinstance(chunk, Mapping) and chunk.get("kind") == (
+                PROGRESS_KIND
+            ):
+                yield custom("phyto.progress", dict(chunk))
+        elif mode == "updates" and ns == ():
             for node_name in chunk:
                 phase = phase_for(agent_name, node_name)
                 if phase and phase not in seen_phases:
                     seen_phases.add(phase)
                     yield step_started(phase)
-        elif mode == "values":
+        elif mode == "values" and ns == ():
             final_state = chunk
     async for event in _terminal_graph_events(tool_name, final_state):
         yield event

@@ -352,12 +352,16 @@ class _FakeKnowledgeStreamApp:
         _state: Mapping[str, Any],
         stream_mode: list[str],
         config: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+        *,
+        subgraphs: bool = False,
+    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
         """Record config, then yield one stage + one terminal chunk."""
-        assert stream_mode == ["updates", "values"]
+        assert stream_mode == ["custom", "updates", "values"]
+        assert subgraphs is True
         self.captured_config = config
-        yield ("updates", {"retrieve_node": {}})
+        yield ((), "updates", {"retrieve_node": {}})
         yield (
+            (),
             "values",
             {
                 "final_response": {
