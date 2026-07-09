@@ -56,7 +56,8 @@ phytomni-api-key create --user-id alice --name laptop
 
 See [CLI Reference](docs/reference/cli.md) for the installed commands and
 [HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
-run polling, retention, and OpenAI-compatible chat examples.
+run polling, retention, OpenAI-compatible chat, human-in-the-loop review
+resume, and flag-gated A2UI confirm widgets (`PHYTOMNI_A2UI_ENABLED`).
 
 ## Available MCP Tools
 
@@ -239,7 +240,7 @@ dependency policy, config normalization, and common troubleshooting.
   demo fixtures, E2E commands, and troubleshooting.
 - [STYLE.md](STYLE.md): naming, docstrings, imports, compatibility rules,
   and repository-specific code style.
-- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.2).
+- [CHANGELOG.md](CHANGELOG.md): dated release history (0.1.0–0.1.3).
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, local gate, test markers,
   commit convention, and dependency policy.
 - [SECURITY.md](SECURITY.md): supported versions, vulnerability
