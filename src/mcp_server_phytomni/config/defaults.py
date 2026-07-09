@@ -722,6 +722,11 @@ class ApiConfig(BaseSettings):
             distinct namespace from per-run scratch
             (``agent_data/user_data/...``) and never collide with task
             output directories.
+        STREAM_ANSWER_MAX_BYTES (int): Soft UTF-8 byte cap for the
+            answer string persisted on ChatAgent streamed run records.
+            The SSE wire stream is never truncated; only the registry
+            blob is capped. Defaults to 1 MiB. Accepts the
+            ``PHYTOMNI_STREAM_ANSWER_MAX_BYTES`` alias.
         RELAY_ENABLED (bool): When True, the server exposes the
             credential-injecting relay surface and writes relay audit
             records. Defaults to False so a stock deployment ships no
@@ -782,6 +787,13 @@ class ApiConfig(BaseSettings):
     ] = None
     API_UPLOAD_MAX_BYTES: int = 26_214_400
     API_UPLOAD_PREFIX: str = "agent_data/uploads"
+    STREAM_ANSWER_MAX_BYTES: int = Field(
+        default=1_048_576,
+        validation_alias=AliasChoices(
+            "STREAM_ANSWER_MAX_BYTES",
+            "PHYTOMNI_STREAM_ANSWER_MAX_BYTES",
+        ),
+    )
     RELAY_ENABLED: bool = Field(
         default=False,
         validation_alias=AliasChoices(

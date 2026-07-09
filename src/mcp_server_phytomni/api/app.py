@@ -148,6 +148,10 @@ from .schemas import (
     ResumeRequest,
     UploadPurpose,
 )
+from .stream_answer import (
+    StreamAnswerAccumulator,
+    resolve_stream_answer_max_bytes,
+)
 
 __all__ = ["create_app"]
 
@@ -339,11 +343,9 @@ def _stream_chat_completion(
     on whether the stream actually reached ``RunFinished``. A client
     that disconnects right after ``RunFinished`` still settles
     succeeded — the answer was produced regardless of whether the
-    socket stayed open to see it. The settled ``result`` carries
-    stream-mode markers rather than the aggregated response content —
-    buffering the entire stream just to populate the record would
-    defeat the primitive's per-chunk design and ties recorded volume
-    to LLM output size for no caller benefit.
+    socket stayed open to see it. ChatAgent settle persists the
+    accumulated answer under a soft byte cap; other streamed agents keep
+    stream-mode placeholder markers.
 
     Auth, rate-limit, request-id, and OBS argument prep all happen
     before this helper is called, mirroring the non-stream branch.
@@ -368,6 +370,13 @@ def _stream_chat_completion(
         run_id=run_id,
         dialogue_id=payload.dialogue_id,
     )
+    accumulator: StreamAnswerAccumulator | None = None
+    if tool_name == "ChatAgent":
+        accumulator = StreamAnswerAccumulator(
+            events,
+            max_bytes=_stream_answer_max_bytes(),
+        )
+        events = accumulator
     sse_lines = to_chat_completion_chunks(events, payload.model)
 
     async def _wrapped() -> AsyncIterator[str]:
@@ -382,11 +391,23 @@ def _stream_chat_completion(
             # Stage 2: settle terminal keyed on reaching RunFinished,
             # not on connection close.
             if agent_slug is not None:
-                _settle_stream_run(
-                    run_id,
-                    owner,
-                    "succeeded" if reached_finish else "failed",
-                )
+                status = "succeeded" if reached_finish else "failed"
+                if accumulator is not None:
+                    snap = accumulator.snapshot
+                    result: dict[str, Any] = {
+                        "formatted": {"answer": snap.answer},
+                        "raw": None,
+                        "stream": True,
+                        "truncated": snap.truncated,
+                        "partial": status == "failed",
+                    }
+                else:
+                    result = {
+                        "formatted": {"answer": "[streamed]"},
+                        "raw": None,
+                        "stream": True,
+                    }
+                _settle_stream_run(run_id, owner, status, result)
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
@@ -1348,7 +1369,17 @@ def _create_running_stream_run(
         )
 
 
-def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
+def _stream_answer_max_bytes() -> int:
+    """Return the resolved soft cap for streamed chat answer storage."""
+    return resolve_stream_answer_max_bytes(ApiConfig().STREAM_ANSWER_MAX_BYTES)
+
+
+def _settle_stream_run(
+    run_id: str,
+    owner: str,
+    status: str,
+    result: dict[str, Any],
+) -> None:
     """Settle a streaming run to a terminal status (stage 2).
 
     Targeted owner-scoped UPDATE via ``RunRegistry.settle_run`` so the
@@ -1360,17 +1391,14 @@ def _settle_stream_run(run_id: str, owner: str, status: str) -> None:
         run_id: Registry run id pre-minted for this stream.
         owner: Authenticated user id used for the owner-scoped lookup.
         status: Terminal status to write (``"succeeded"``/``"failed"``).
+        result: Terminal result payload written to ``result_json``.
     """
     try:
         RunRegistry(resolve_tasks_db_path()).settle_run(
             run_id,
             owner=owner,
             status=status,
-            result={
-                "formatted": {"answer": "[streamed]"},
-                "raw": None,
-                "stream": True,
-            },
+            result=result,
         )
     except (sqlite3.Error, OSError) as exc:
         _LOGGER.warning(

@@ -189,6 +189,12 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert record.spec.origin == "local"
     assert record.spec.run_id == started_run_id
     assert record.timestamps.created_at <= record.timestamps.updated_at
+    assert record.result is not None
+    assert record.result["formatted"]["answer"] == "Hi"
+    assert record.result["stream"] is True
+    assert record.result["truncated"] is False
+    assert record.result["partial"] is False
+    assert "[streamed]" not in record.result["formatted"]["answer"]
 
 
 async def _drive_stream_until(
@@ -196,25 +202,12 @@ async def _drive_stream_until(
     monkeypatch: pytest.MonkeyPatch,
     *,
     stop_after_finish: bool,
-) -> str | None:
-    """Drive ``_stream_chat_completion``'s generator then ``aclose`` early.
-
-    Patches the producer to a deterministic ``AguiEvent`` sequence,
-    drives the ``StreamingResponse`` body iterator to just after (or
-    just before) the ``RunFinished`` frame, aborts via ``aclose`` to
-    simulate a client disconnect, and returns the settled run status
-    read back from the registry.
-
-    Args:
-        tasks_db_path: Temp SQLite path the handlers resolve to.
-        monkeypatch: Pytest monkeypatch fixture.
-        stop_after_finish: When True, consume through the
-            ``RunFinished`` line before aborting; when False, abort at
-            the first ``TextMessageContent`` line, before
-            ``RunFinished`` is ever produced.
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Drive ``_stream_chat_completion`` then ``aclose`` early.
 
     Returns:
-        The settled run's status, or None when no row was created.
+        ``(status, result)`` from the settled run row, or
+        ``(None, None)`` when no row exists.
     """
     captured: dict[str, str] = {}
 
@@ -259,7 +252,9 @@ async def _drive_stream_until(
         run_id = captured["run_id"]
     registry = RunRegistry(db_path=tasks_db_path)
     record = registry.get_run(run_id, owner="u1")
-    return record.status if record is not None else None
+    if record is None:
+        return None, None
+    return record.status, record.result
 
 
 async def test_stream_run_succeeds_when_client_disconnects_after_finish(
@@ -267,21 +262,73 @@ async def test_stream_run_succeeds_when_client_disconnects_after_finish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A disconnect AFTER RunFinished still settles the run succeeded."""
-    status = await _drive_stream_until(
+    status, result = await _drive_stream_until(
         tasks_db_path, monkeypatch, stop_after_finish=True
     )
     assert status == "succeeded"
+    assert result is not None
+    assert result["formatted"]["answer"] == "Hi"
+    assert result["partial"] is False
 
 
 async def test_stream_run_fails_when_client_disconnects_before_finish(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A disconnect BEFORE RunFinished settles the run failed."""
-    status = await _drive_stream_until(
+    """A disconnect BEFORE RunFinished settles failed with partial answer."""
+    status, result = await _drive_stream_until(
         tasks_db_path, monkeypatch, stop_after_finish=False
     )
     assert status == "failed"
+    assert result is not None
+    assert result["formatted"]["answer"] == "Hi"
+    assert result["partial"] is True
+    assert result["stream"] is True
+
+
+async def test_stream_settle_marks_truncated_when_over_cap(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Chat stream settle sets truncated=true when over the soft cap."""
+    monkeypatch.setenv("PHYTOMNI_STREAM_ANSWER_MAX_BYTES", "4")
+    # ApiConfig is constructed inside the settle path via ApiConfig();
+    # if the process already cached a config instance, patch the
+    # resolver the app uses. Prefer patching at the call site:
+    monkeypatch.setattr(
+        api_app,
+        "_stream_answer_max_bytes",
+        lambda: 4,
+    )
+    _patch_chat_stream(
+        monkeypatch,
+        [
+            {
+                "choices": [
+                    {
+                        "delta": {"content": "HelloWorld"},
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        ],
+    )
+    response = await chat_completion(api_client, issued_api_key, stream=True)
+    assert response.status_code == 200
+    started_run_id = _extract_run_started_id(response.text)
+    registry = RunRegistry(db_path=tasks_db_path)
+    record = registry.get_run(started_run_id, owner="u1")
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result is not None
+    assert record.result["truncated"] is True
+    answer = record.result["formatted"]["answer"]
+    assert len(answer.encode("utf-8")) <= 4
+    # Wire still carried the full text.
+    assert "HelloWorld" in response.text or "Hello" in response.text
 
 
 def _guard_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:

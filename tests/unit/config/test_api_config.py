@@ -37,6 +37,7 @@ def test_api_config_defaults() -> None:
     assert config.API_SERVICE_TOKEN is None
     assert config.API_UPLOAD_MAX_BYTES == 26_214_400
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
+    assert config.STREAM_ANSWER_MAX_BYTES == 1_048_576
     assert config.RELAY_ENABLED is False
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
@@ -61,6 +62,15 @@ def test_api_config_env_override(
     assert config.API_KEYS_DB_PATH == "/tmp/keys.sqlite"
     assert config.API_TASKS_DB_PATH == "/tmp/tasks.sqlite"
     assert config.API_RATE_LIMIT_PER_MIN == 5
+
+
+def test_stream_answer_max_bytes_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PHYTOMNI_STREAM_ANSWER_MAX_BYTES overrides the soft cap."""
+    monkeypatch.setenv("PHYTOMNI_STREAM_ANSWER_MAX_BYTES", "4096")
+    config = ApiConfig()
+    assert config.STREAM_ANSWER_MAX_BYTES == 4096
 
 
 def test_api_service_token_loads_from_env(
