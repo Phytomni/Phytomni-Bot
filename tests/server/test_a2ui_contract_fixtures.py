@@ -2,11 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shape-lock tests for docs/contracts/a2ui Chat confirm goldens."""
+"""Shape-lock tests for docs/contracts/a2ui contract goldens."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,14 +18,15 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CATALOG_VERSION,
     A2uiActionEnvelope,
     A2uiDownlinkValue,
+    build_choice_template_props,
+    build_form_template_props,
     build_submitted_value,
 )
 
 pytestmark = pytest.mark.server
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_CONTRACT_ROOT = _REPO_ROOT / "docs" / "contracts" / "a2ui" / "chat_confirm"
-_ERRORS_ROOT = _CONTRACT_ROOT / "errors"
+_A2UI_ROOT = _REPO_ROOT / "docs" / "contracts" / "a2ui"
 
 _EXPECTED_ERRORS: dict[str, tuple[int, str]] = {
     "flag_off_403.json": (403, "a2ui disabled"),
@@ -35,77 +38,285 @@ _EXPECTED_ERRORS: dict[str, tuple[int, str]] = {
 }
 
 
+@dataclass(frozen=True)
+class _ConfirmContract:
+    name: str
+    title: str
+    body: str
+    has_errors: bool
+
+
+@dataclass(frozen=True)
+class _FormChoiceContract:
+    name: str
+    widget: str
+    submit_payload: dict[str, Any]
+    cancel_action_id: str
+    success_answers: tuple[str, str]
+    submitted_submit: Callable[[dict[str, Any]], dict[str, Any]]
+    submitted_cancel: Callable[[dict[str, Any]], dict[str, Any]]
+
+
+_CONFIRM_CONTRACTS = (
+    _ConfirmContract(
+        name="chat_confirm",
+        title="Continue?",
+        body="Run the analysis as planned.",
+        has_errors=True,
+    ),
+    _ConfirmContract(
+        name="review_confirm",
+        title="Review approval",
+        body="Draft summary for approval.",
+        has_errors=True,
+    ),
+)
+
+_FORM_CHOICE_CONTRACTS = (
+    _FormChoiceContract(
+        name="chat_form",
+        widget="form",
+        submit_payload={"fields": {"value": "AT1G01010"}},
+        cancel_action_id="act-contract-1-cancel",
+        success_answers=("Form submitted.", "Form cancelled."),
+        submitted_submit=lambda downlink: build_submitted_value(
+            downlink, fields={"value": "AT1G01010"}
+        ),
+        submitted_cancel=lambda downlink: build_submitted_value(
+            downlink, cancelled=True
+        ),
+    ),
+    _FormChoiceContract(
+        name="chat_choice",
+        widget="choice",
+        submit_payload={"selected": "a"},
+        cancel_action_id="act-contract-1-cancel",
+        success_answers=("Choice submitted.", "Choice cancelled."),
+        submitted_submit=lambda downlink: build_submitted_value(
+            downlink, selected="a"
+        ),
+        submitted_cancel=lambda downlink: build_submitted_value(
+            downlink, cancelled=True
+        ),
+    ),
+)
+
+
 def _load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_contract_files_exist() -> None:
-    """Every golden path from the P4-1c spec is present."""
+def _contract_root(name: str) -> Path:
+    return _A2UI_ROOT / name
+
+
+@pytest.mark.parametrize("contract", _CONFIRM_CONTRACTS, ids=lambda c: c.name)
+def test_confirm_contract_files_exist(contract: _ConfirmContract) -> None:
+    """Every confirm golden path from the P4-1c/1d spec is present."""
+    root = _contract_root(contract.name)
     required = [
-        _CONTRACT_ROOT / "downlink.json",
-        _CONTRACT_ROOT / "uplink_accept.json",
-        _CONTRACT_ROOT / "uplink_reject.json",
-        _CONTRACT_ROOT / "success_accept.json",
-        _CONTRACT_ROOT / "success_reject.json",
+        root / "downlink.json",
+        root / "uplink_accept.json",
+        root / "uplink_reject.json",
+        root / "success_accept.json",
+        root / "success_reject.json",
     ]
     for path in required:
         assert path.is_file(), f"missing golden: {path}"
-    for name in _EXPECTED_ERRORS:
-        assert (_ERRORS_ROOT / name).is_file(), f"missing error golden: {name}"
+    if contract.has_errors:
+        for name in _EXPECTED_ERRORS:
+            assert (
+                root / "errors" / name
+            ).is_file(), f"missing error golden: {name}"
 
 
-def test_downlink_matches_pydantic() -> None:
-    """Downlink value validates as A2uiDownlinkValue."""
-    raw = _load(_CONTRACT_ROOT / "downlink.json")
+@pytest.mark.parametrize(
+    "contract", _FORM_CHOICE_CONTRACTS, ids=lambda c: c.name
+)
+def test_form_choice_contract_files_exist(
+    contract: _FormChoiceContract,
+) -> None:
+    """Every form/choice golden path from the P4-1d spec is present."""
+    root = _contract_root(contract.name)
+    required = [
+        root / "downlink.json",
+        root / "uplink_submit.json",
+        root / "uplink_cancel.json",
+        root / "success_submit.json",
+        root / "success_cancel.json",
+    ]
+    for path in required:
+        assert path.is_file(), f"missing golden: {path}"
+
+
+@pytest.mark.parametrize("contract", _CONFIRM_CONTRACTS, ids=lambda c: c.name)
+def test_confirm_downlink_matches_pydantic(contract: _ConfirmContract) -> None:
+    """Confirm downlink value validates as A2uiDownlinkValue."""
+    root = _contract_root(contract.name)
+    raw = _load(root / "downlink.json")
     model = A2uiDownlinkValue.model_validate(raw)
     assert model.catalog_version == A2UI_CATALOG_VERSION
     assert model.surface_id == "sfc-contract-1"
     assert model.widget == "confirm"
-    assert model.props["title"] == "Continue?"
+    assert model.props["title"] == contract.title
+    assert model.props["body"] == contract.body
 
 
-def test_uplink_accept_and_reject_match_envelope() -> None:
-    """Uplink goldens validate as A2uiActionEnvelope."""
+@pytest.mark.parametrize(
+    "contract", _FORM_CHOICE_CONTRACTS, ids=lambda c: c.name
+)
+def test_form_choice_downlink_matches_pydantic(
+    contract: _FormChoiceContract,
+) -> None:
+    """Form/choice downlink props match the fixed template builders."""
+    root = _contract_root(contract.name)
+    raw = _load(root / "downlink.json")
+    model = A2uiDownlinkValue.model_validate(raw)
+    assert model.catalog_version == A2UI_CATALOG_VERSION
+    assert model.surface_id == "sfc-contract-1"
+    assert model.widget == contract.widget
+    if contract.widget == "form":
+        expected = build_form_template_props().model_dump(
+            exclude_none=True, by_alias=True
+        )
+    else:
+        expected = build_choice_template_props().model_dump(
+            exclude_none=True, by_alias=True
+        )
+    assert model.props == expected
+
+
+@pytest.mark.parametrize("contract", _CONFIRM_CONTRACTS, ids=lambda c: c.name)
+def test_confirm_uplink_accept_and_reject_match_envelope(
+    contract: _ConfirmContract,
+) -> None:
+    """Confirm uplink goldens validate as A2uiActionEnvelope."""
+    root = _contract_root(contract.name)
     accept = A2uiActionEnvelope.model_validate(
-        _load(_CONTRACT_ROOT / "uplink_accept.json")
+        _load(root / "uplink_accept.json")
     )
     assert accept.payload["accepted"] is True
     assert accept.run_id == "run-contract-1"
     assert accept.surface_id == "sfc-contract-1"
     assert accept.action_id == "act-contract-1"
+    assert accept.widget == "confirm"
 
     reject = A2uiActionEnvelope.model_validate(
-        _load(_CONTRACT_ROOT / "uplink_reject.json")
+        _load(root / "uplink_reject.json")
     )
     assert reject.payload["accepted"] is False
     assert reject.action_id == "act-contract-1-reject"
+    assert reject.widget == "confirm"
 
 
-def test_success_accept_matches_submitted_shape() -> None:
-    """Success accept locks status + submitted a2ui props."""
-    downlink = _load(_CONTRACT_ROOT / "downlink.json")
-    success = _load(_CONTRACT_ROOT / "success_accept.json")
+@pytest.mark.parametrize(
+    "contract", _FORM_CHOICE_CONTRACTS, ids=lambda c: c.name
+)
+def test_form_choice_uplink_submit_and_cancel_match_envelope(
+    contract: _FormChoiceContract,
+) -> None:
+    """Form/choice uplink goldens validate as A2uiActionEnvelope."""
+    root = _contract_root(contract.name)
+    submit = A2uiActionEnvelope.model_validate(
+        _load(root / "uplink_submit.json")
+    )
+    assert submit.payload == contract.submit_payload
+    assert submit.run_id == "run-contract-1"
+    assert submit.surface_id == "sfc-contract-1"
+    assert submit.action_id == "act-contract-1"
+    assert submit.widget == contract.widget
+
+    cancel = A2uiActionEnvelope.model_validate(
+        _load(root / "uplink_cancel.json")
+    )
+    assert cancel.payload == {"cancelled": True}
+    assert cancel.action_id == contract.cancel_action_id
+    assert cancel.widget == contract.widget
+
+
+@pytest.mark.parametrize("contract", _CONFIRM_CONTRACTS, ids=lambda c: c.name)
+def test_confirm_success_accept_matches_submitted_shape(
+    contract: _ConfirmContract,
+) -> None:
+    """Confirm success accept locks status + submitted a2ui props."""
+    root = _contract_root(contract.name)
+    downlink = _load(root / "downlink.json")
+    success = _load(root / "success_accept.json")
     assert success["status"] == "succeeded"
     assert "answer" in success["result"]["formatted"]
     expected = build_submitted_value(downlink, accepted=True)
     assert success["result"]["a2ui"] == expected
 
 
-def test_success_reject_matches_submitted_shape() -> None:
-    """Success reject locks accepted=false submitted snapshot."""
-    downlink = _load(_CONTRACT_ROOT / "downlink.json")
-    success = _load(_CONTRACT_ROOT / "success_reject.json")
+@pytest.mark.parametrize("contract", _CONFIRM_CONTRACTS, ids=lambda c: c.name)
+def test_confirm_success_reject_matches_submitted_shape(
+    contract: _ConfirmContract,
+) -> None:
+    """Confirm success reject locks accepted=false submitted snapshot."""
+    root = _contract_root(contract.name)
+    downlink = _load(root / "downlink.json")
+    success = _load(root / "success_reject.json")
     assert success["status"] == "succeeded"
     assert isinstance(success["result"]["formatted"]["answer"], str)
     expected = build_submitted_value(downlink, accepted=False)
     assert success["result"]["a2ui"] == expected
 
 
-@pytest.mark.parametrize("filename", sorted(_EXPECTED_ERRORS))
-def test_error_golden_matches_api_detail(filename: str) -> None:
+@pytest.mark.parametrize(
+    "contract", _FORM_CHOICE_CONTRACTS, ids=lambda c: c.name
+)
+def test_form_choice_success_submit_matches_submitted_shape(
+    contract: _FormChoiceContract,
+) -> None:
+    """Form/choice success submit locks status + submitted a2ui props."""
+    root = _contract_root(contract.name)
+    downlink = _load(root / "downlink.json")
+    success = _load(root / "success_submit.json")
+    assert success["status"] == "succeeded"
+    assert (
+        success["result"]["formatted"]["answer"] == contract.success_answers[0]
+    )
+    expected = contract.submitted_submit(downlink)
+    assert success["result"]["a2ui"] == expected
+
+
+@pytest.mark.parametrize(
+    "contract", _FORM_CHOICE_CONTRACTS, ids=lambda c: c.name
+)
+def test_form_choice_success_cancel_matches_submitted_shape(
+    contract: _FormChoiceContract,
+) -> None:
+    """Form/choice success cancel locks cancelled=true submitted snapshot."""
+    root = _contract_root(contract.name)
+    downlink = _load(root / "downlink.json")
+    success = _load(root / "success_cancel.json")
+    assert success["status"] == "succeeded"
+    assert (
+        success["result"]["formatted"]["answer"] == contract.success_answers[1]
+    )
+    expected = contract.submitted_cancel(downlink)
+    assert success["result"]["a2ui"] == expected
+
+
+@pytest.mark.parametrize(
+    ("contract_name", "filename"),
+    [
+        (contract.name, filename)
+        for contract in _CONFIRM_CONTRACTS
+        if contract.has_errors
+        for filename in sorted(_EXPECTED_ERRORS)
+    ],
+    ids=lambda value: (
+        f"{value[0]}/{value[1]}" if isinstance(value, tuple) else str(value)
+    ),
+)
+def test_error_golden_matches_api_detail(
+    contract_name: str,
+    filename: str,
+) -> None:
     """Error goldens mirror api/app.py HTTPException detail strings."""
     status, message = _EXPECTED_ERRORS[filename]
-    raw = _load(_ERRORS_ROOT / filename)
+    raw = _load(_contract_root(contract_name) / "errors" / filename)
     assert raw["status"] == status
     assert raw["error"]["code"] == status
     assert raw["error"]["message"] == message

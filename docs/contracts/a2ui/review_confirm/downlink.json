@@ -1,0 +1,9 @@
+{
+  "catalog_version": "v1.0",
+  "surface_id": "sfc-contract-1",
+  "widget": "confirm",
+  "props": {
+    "title": "Review approval",
+    "body": "Draft summary for approval."
+  }
+}
