@@ -49,19 +49,19 @@ See `chat_confirm/downlink.json` for the canonical `value` payload.
 
 ## File index
 
-| File | Purpose |
-|------|---------|
-| `chat_confirm/downlink.json` | Bot → client confirm widget value |
-| `chat_confirm/uplink_accept.json` | Client → Bot accept action |
-| `chat_confirm/uplink_reject.json` | Client → Bot reject action |
-| `chat_confirm/success_accept.json` | Terminal success after accept |
-| `chat_confirm/success_reject.json` | Terminal success after reject |
-| `chat_confirm/errors/flag_off_403.json` | A2UI feature flag disabled |
-| `chat_confirm/errors/widget_mismatch_400.json` | Widget type mismatch |
-| `chat_confirm/errors/surface_mismatch_409.json` | Surface ID mismatch |
-| `chat_confirm/errors/not_input_required_409.json` | Run not awaiting input |
-| `chat_confirm/errors/not_owner_404.json` | Run not found / not owned |
-| `chat_confirm/errors/run_id_mismatch_400.json` | Path vs body run_id mismatch |
+| File                                              | Purpose                           |
+| ------------------------------------------------- | --------------------------------- |
+| `chat_confirm/downlink.json`                      | Bot → client confirm widget value |
+| `chat_confirm/uplink_accept.json`                 | Client → Bot accept action        |
+| `chat_confirm/uplink_reject.json`                 | Client → Bot reject action        |
+| `chat_confirm/success_accept.json`                | Terminal success after accept     |
+| `chat_confirm/success_reject.json`                | Terminal success after reject     |
+| `chat_confirm/errors/flag_off_403.json`           | A2UI feature flag disabled        |
+| `chat_confirm/errors/widget_mismatch_400.json`    | Widget type mismatch              |
+| `chat_confirm/errors/surface_mismatch_409.json`   | Surface ID mismatch               |
+| `chat_confirm/errors/not_input_required_409.json` | Run not awaiting input            |
+| `chat_confirm/errors/not_owner_404.json`          | Run not found / not owned         |
+| `chat_confirm/errors/run_id_mismatch_400.json`    | Path vs body run_id mismatch      |
 
 ## Out of scope
 
