@@ -84,6 +84,10 @@ Full commit range: `1f8f628..HEAD`.
   that previously lived inline in `BriefGeneAgent.arun` is extracted to a
   shared module-level function called by both `arun` and
   `brief_gene_stream_seed`, preventing the two from drifting.
+- **CLI structured call output** — `phytomni call` prints `formatted.answer`
+  first, then optional DataAgent TSV (`tabular`), cited-tool references,
+  and a one-line async task metadata summary (`task_id` / `output_dir` /
+  `status` / `failures`).
 
 ### Changed
 
@@ -93,6 +97,16 @@ Full commit range: `1f8f628..HEAD`.
 - `dispatch_tool` now detects `progressToken` + graph-tool and routes
   through `_drive_stdio_progress`; the no-token fallback is byte-identical
   to the prior blocking path.
+- **Async submit formatting** — missing or blank `task_id` (Analyst /
+  Network / DeepGenome / InSilico) formats as a failed submit instead of
+  `Task created successfully:None`. Empty DigitalDesign task lists project
+  universal `failures` into metadata and the answer when present.
+- **DeepGenome GetTaskStatus probe** — umbrella rows without
+  `source_task_id` reconcile from the local registry + live-task heal
+  only (no remote jobs API call with the local umbrella id). One-shot
+  `phytomni call` still cannot keep DeepGenome background work alive;
+  use `phytomni-api` or a persistent MCP session (documented in
+  [CLI Reference](docs/reference/cli.md)).
 
 ______________________________________________________________________
 

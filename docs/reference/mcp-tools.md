@@ -149,8 +149,12 @@ Use to check a previously submitted async task without blocking. Pass the
 `InSilicoResearchAgent`, `DigitalDesignAgent`, or `GeneNetworkAgent`.
 
 Unrecorded ids return `status: "unknown"`. Known ids return the local
-registry state, output directory, and one live platform status check when
-available.
+registry state and output directory. Remote analysis-platform child
+tasks (and DeepGenome rows that carry a `source_task_id`) also receive
+one live platform status probe when available. A `DeepGenomeAgent`
+umbrella without `source_task_id` is local-only: reconcile skips the
+remote jobs probe and uses the in-process live registry plus any
+persisted `final_report` (see the liveness note below).
 
 For a succeeded `DeepGenomeAgent` task, `formatted.answer` carries the
 assembled report markdown (the workflow runs in the background and

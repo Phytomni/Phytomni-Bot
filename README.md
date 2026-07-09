@@ -41,6 +41,12 @@ phytomni list-tools
 phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
 ```
 
+`phytomni call` prints `formatted.answer` first, then optional tabular /
+references / task-metadata blocks. DeepGenome and other background
+submit tools need a long-lived `phytomni-api` or MCP server session —
+a one-shot `phytomni call` exits the server subprocess and cancels
+in-process background work. Details: [CLI Reference](docs/reference/cli.md).
+
 The HTTP API runs as a separate process:
 
 ```bash
@@ -72,8 +78,10 @@ for detailed argument semantics, async behavior, and demo payload links.
 | `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | Gene network analysis for species and trait ontology IDs.                                                                                         |
 | `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.                                                                                 |
 
-Async tools submit work to a backend and return a `task_id`. Poll that id
-through `GetTaskStatus`; the lookup is non-blocking and returns
+Async tools submit work to a backend and return a `task_id`. A missing
+or blank `task_id` is formatted as a failed submit (not
+`Task created successfully:None`). Poll a real id through
+`GetTaskStatus`; the lookup is non-blocking and returns
 `status: "unknown"` for an unrecorded id.
 
 Identical analysis submissions are deduplicated by a content fingerprint

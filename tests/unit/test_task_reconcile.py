@@ -394,7 +394,7 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
 def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Umbrella ids are local; probing jobs/{umbrella} only yields 404 noise."""
+    """Umbrella ids are local; jobs/{umbrella} probes only yield 404 noise."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,
@@ -437,7 +437,7 @@ def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
 def test_reconcile_still_probes_deep_genome_with_source_task_id(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A deep_genome dedup row with source_task_id still probes the remote id."""
+    """Dedup deep_genome rows with source_task_id still probe the remote id."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,
