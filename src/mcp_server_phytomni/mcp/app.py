@@ -552,9 +552,10 @@ def _stdio_progress_context() -> tuple[str | int | None, Any, str]:
     """Return (progress_token, session, run_id) from the MCP request ctx.
 
     Reads the low-level server's ``request_ctx`` contextvar. Outside an
-    active MCP request (``LookupError``) or when the client sent no
-    ``progressToken``, returns ``(None, None, <fresh run id>)`` so the
-    caller takes the blocking path.
+    active MCP request (``LookupError``), returns
+    ``(None, None, <fresh run id>)`` so the caller takes the blocking
+    path. Inside an MCP request without ``progressToken``, returns the
+    session with a ``None`` token so ReviewAgent can still elicit.
     """
     run_id = IdFactory().new_id("run")
     try:
@@ -668,7 +669,7 @@ async def _drive_stdio_progress(
     tool_name: str,
     arguments: dict[str, Any],
     *,
-    progress_token: str | int,
+    progress_token: str | int | None,
     session: Any,
     run_id: str,
 ) -> list[TextContent]:
@@ -676,13 +677,14 @@ async def _drive_stdio_progress(
 
     Validates arguments, walks the graph via
     :func:`_astream_progress_ticks` forwarding each ``phyto.progress``
-    tick to ``session.send_progress_notification``, then formats the
-    captured final state through :func:`_stdio_terminal_payload`.
+    tick to ``session.send_progress_notification`` when a token exists,
+    then formats the captured final state through
+    :func:`_stdio_terminal_payload`.
 
     Args:
         tool_name: Public MCP tool name.
         arguments: JSON object passed to the selected tool.
-        progress_token: Token supplied by the MCP client.
+        progress_token: Token supplied by the MCP client, or ``None``.
         session: The MCP session carrying ``send_progress_notification``.
         run_id: Registry run id for the LangGraph thread config.
 
@@ -704,14 +706,17 @@ async def _drive_stdio_progress(
     async for tick in _astream_progress_ticks(
         graph_app, initial_state, run_id, sink
     ):
-        await session.send_progress_notification(
-            progress_token=progress_token,
-            progress=float(tick["current"]),
-            total=(
-                float(tick["total"]) if tick.get("total") is not None else None
-            ),
-            message=tick["phase"],
-        )
+        if progress_token is not None:
+            await session.send_progress_notification(
+                progress_token=progress_token,
+                progress=float(tick["current"]),
+                total=(
+                    float(tick["total"])
+                    if tick.get("total") is not None
+                    else None
+                ),
+                message=tick["phase"],
+            )
     final_state = sink[0] if sink else None
     if (
         tool_name == PhytomniAgents.REVIEW_AGENT.value
@@ -773,7 +778,8 @@ async def dispatch_tool(
     When the MCP client supplied a ``progressToken`` and the tool is a
     graph agent, the call is driven through ``_drive_stdio_progress`` so
     the client receives in-band ``notifications/progress`` during the
-    run; the terminal payload is byte-identical to the blocking path.
+    run. ReviewAgent also uses that path whenever an MCP session exists,
+    even without a token, so approval interrupts can elicit or degrade.
     Every other call takes the blocking ``invoke_tool_enveloped`` path.
 
     Args:
@@ -788,7 +794,13 @@ async def dispatch_tool(
     """
     tool_name = _tool_name(name)
     token, session, run_id = _stdio_progress_context()
-    if token is not None and tool_name in _GRAPH_PROGRESS_TOOLS:
+    should_drive_graph = (
+        token is not None and tool_name in _GRAPH_PROGRESS_TOOLS
+    )
+    should_drive_review = (
+        tool_name == PhytomniAgents.REVIEW_AGENT.value and session is not None
+    )
+    if should_drive_graph or should_drive_review:
         model = TOOL_ARGUMENT_MODELS.get(tool_name)
         if model is None:
             raise _invalid_params(f"Unknown tool: {tool_name}")
