@@ -80,6 +80,10 @@ Copyable Chat-confirm A2UI goldens for Web/Go consumers live under
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
 document upload is needed. See [MCP Tool Reference](docs/reference/mcp-tools.md)
 for detailed argument semantics, async behavior, and demo payload links.
+To attach a document, upload it with `POST /v1/files` on the HTTP API,
+then put the returned `obs_path` into `obs_file_list`. Demo upload
+samples live under [`demo_data/`](demo_data/). Details:
+[MCP Tool Reference — Uploading documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
 
 | Tool                    | Kind  | Required arguments                               | Purpose                                                                                                                                           |
 | ----------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |

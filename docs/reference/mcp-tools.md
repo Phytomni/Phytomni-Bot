@@ -9,6 +9,32 @@ For tools that accept `obs_file_list`, pass an empty list (`[]`) when no
 uploaded document context is available. Async tools return one or more
 task ids and should be polled with `GetTaskStatus`.
 
+## Uploading documents for `obs_file_list`
+
+Tools that accept `obs_file_list` expect public OBS paths such as
+`/obs/<bucket>/...`, not local filesystem paths.
+
+**HTTP upload (recommended):**
+
+1. Start `phytomni-api` with a valid API key.
+1. `POST /v1/files` with multipart field `file` (optional `purpose`,
+   default `agent_context`).
+1. Read `obs_path` (alias `path`) from the `201` response.
+1. Pass that string in the tool argument, e.g.
+   `"obs_file_list": ["/obs/phytomni/agent_data/uploads/.../report.pdf"]`.
+
+Full contract, size limits, and curl example:
+[HTTP API — file upload](http-api.md) (`POST /v1/files`).
+
+**Demo files:** small markdown / PDF / xlsx / FASTA samples live under
+[`demo_data/`](../../demo_data/). JSON tool payloads under
+`demo_data/payloads/` often use `"obs_file_list": []`; replace with your
+uploaded `obs_path` when you need document context.
+
+**MCP-only:** there is no MCP upload tool. Obtain an OBS path via the
+HTTP upload route (or an already-provisioned object), then call the MCP
+tool with that path. Pass `[]` when no document context is needed.
+
 ## Response Envelope
 
 Every MCP tool response ships as a JSON envelope with two top-level
