@@ -13,6 +13,7 @@ and the ``_obs_error_message`` formatting helper.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -37,7 +38,7 @@ def test_get_data_list_raises_filenotfound_with_path_in_message(
 ) -> None:
     """Missing data file surfaces a ``FileNotFoundError`` naming the path."""
     missing = str(tmp_path / "does-not-exist.json")
-    with pytest.raises(FileNotFoundError, match=missing):
+    with pytest.raises(FileNotFoundError, match=re.escape(missing)):
         get_data_list(missing, "evolution_analysis", "actinidia chinensis")
 
 
