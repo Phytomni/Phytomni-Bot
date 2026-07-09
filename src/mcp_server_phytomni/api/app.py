@@ -27,6 +27,7 @@ from collections.abc import (
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,7 @@ from ..agents.brief_gene.resolve_query import (
     BriefGeneResolveError,
     resolve_brief_gene_user_query,
 )
+from ..agents.chat.a2ui_builder import build_chat_a2ui_graph
 from ..agents.deep_genome.resolve_query import (
     DeepGenomeResolveError,
     DeepGenomeResolveResult,
@@ -71,6 +73,7 @@ from ..agents.network.resolve_query import (
     resolve_network_user_query,
 )
 from ..agents.review.agent import review_stream_target
+from ..agents.shared.a2ui import A2UI_CUSTOM_NAME, should_emit_confirm
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
@@ -78,20 +81,29 @@ from ..common.logging_config import configure_logging
 from ..config.defaults import (
     ApiConfig,
     BriefGeneConfig,
+    ChatConfig,
     DeepGenomeConfig,
     DigitalDesignConfig,
     GeneNetworkConfig,
 )
 from ..config.settings import SensitiveConfig
 from ..mcp.app import invoke_tool_enveloped, invoke_tool_streamed
+from ..mcp.handler_support import chat_kwargs, load_handler_runtime
 from ..mcp.result_formatting import (
+    AguiEvent,
     build_tool_result_envelope,
+    custom,
     resolve_debug,
+    run_finished,
+    run_started,
     strip_agent_result,
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
-from ..runtime.langgraph_runner import build_runnable_config
+from ..runtime.langgraph_runner import (
+    build_runnable_config,
+    ensure_checkpointer,
+)
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -326,6 +338,109 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
     }
 
 
+@lru_cache(maxsize=1)
+def _chat_a2ui_stream_app() -> Any:
+    """Return the cached Chat A2UI compiled graph app."""
+    return build_chat_a2ui_graph(
+        checkpointer=ensure_checkpointer(),
+    )
+
+
+def _chat_a2ui_initial_state(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """Build initial state for one Chat A2UI confirm graph invoke."""
+    chat_config = ChatConfig()
+    runtime = load_handler_runtime()
+    return {
+        "user_query": str(arguments["user_query"]),
+        "obs_file_list": list(arguments.get("obs_file_list") or []),
+        "chat_kwargs": chat_kwargs(chat_config, runtime.sensitive),
+    }
+
+
+def _chat_a2ui_interrupt_result(
+    interrupt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the registry payload stored for a paused chat A2UI run."""
+    return {
+        "interrupt": dict(interrupt),
+        "status": "input_required",
+    }
+
+
+def _stream_chat_a2ui_confirm(
+    *,
+    arguments: dict[str, Any],
+    payload: ChatCompletionRequest,
+    user_query: str,
+) -> StreamingResponse:
+    """Short-circuit chat streaming into an A2UI confirm pause.
+
+    Runs the dedicated Chat A2UI graph until its ``interrupt()`` point,
+    emits ``phyto.a2ui`` over SSE, and settles the run as
+    ``input_required`` so Web can resume via ``/a2ui-actions`` while
+    the LangGraph checkpoint stays keyed on ``run_id``.
+    """
+    agent_slug = "chat"
+    owner = current_request_user() or "anonymous"
+    run_id = IdFactory().new_id("run", agent_slug)
+    request_info = RunRequestInfo(
+        dialogue_id=payload.dialogue_id,
+        query=user_query,
+        tool_name="ChatAgent",
+        model=payload.model,
+        request_json=payload.model_dump_json(),
+    )
+    _create_running_stream_run(run_id, agent_slug, owner, request_info)
+
+    async def _agui_events(
+        settled: list[bool],
+    ) -> AsyncIterator[AguiEvent]:
+        """Yield AG-UI frames for one A2UI confirm pause."""
+        yield run_started(run_id, payload.dialogue_id)
+        app = _chat_a2ui_stream_app()
+        final_state = await app.ainvoke(
+            _chat_a2ui_initial_state(arguments),
+            config=build_runnable_config(run_id),
+        )
+        interrupt = detect_interrupt(final_state, run_id)
+        if interrupt is not None:
+            a2ui_value = interrupt["draft"]["a2ui"]
+            yield custom(A2UI_CUSTOM_NAME, a2ui_value)
+            _settle_stream_run(
+                run_id,
+                owner,
+                "input_required",
+                _chat_a2ui_interrupt_result(interrupt),
+            )
+            settled[0] = True
+        yield run_finished(run_id)
+
+    async def _wrapped() -> AsyncIterator[str]:
+        """Forward SSE; settle failed only when pause was not recorded."""
+        settled_input_required = [False]
+        try:
+            async for line in to_chat_completion_chunks(
+                _agui_events(settled_input_required),
+                payload.model,
+            ):
+                yield line
+        finally:
+            if not settled_input_required[0]:
+                _settle_stream_run(
+                    run_id,
+                    owner,
+                    "failed",
+                    {
+                        "formatted": {"answer": ""},
+                        "raw": None,
+                        "stream": True,
+                        "partial": True,
+                    },
+                )
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+
+
 def _stream_chat_completion(
     *,
     tool_name: str,
@@ -350,6 +465,16 @@ def _stream_chat_completion(
     Auth, rate-limit, request-id, and OBS argument prep all happen
     before this helper is called, mirroring the non-stream branch.
     """
+    if (
+        tool_name == "ChatAgent"
+        and ApiConfig().A2UI_ENABLED
+        and should_emit_confirm(user_query)
+    ):
+        return _stream_chat_a2ui_confirm(
+            arguments=arguments,
+            payload=payload,
+            user_query=user_query,
+        )
     agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
     owner = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent_slug or "chat")
