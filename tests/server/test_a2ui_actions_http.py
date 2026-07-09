@@ -227,6 +227,36 @@ async def test_a2ui_action_flag_off_returns_403(
     assert response.json()["error"]["message"] == "a2ui disabled"
 
 
+async def test_a2ui_action_wrong_widget_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Body widget must match the open interrupt draft surface."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-wrong-widget",
+        surface_id="sfc-open-widget",
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-open-widget",
+            "widget": "form",
+            "action_id": "act-form",
+            "payload": {"fields": {"name": "x"}},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "widget mismatch"
+
+
 async def test_a2ui_action_wrong_surface_returns_409(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

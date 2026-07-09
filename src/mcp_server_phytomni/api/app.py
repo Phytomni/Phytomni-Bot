@@ -428,6 +428,7 @@ def _open_a2ui_surface_for_action(
     record: RunRecord,
     *,
     surface_id: str,
+    widget: str,
 ) -> Mapping[str, Any]:
     """Return the open A2UI draft surface or raise HTTP conflicts."""
     if record.status != "input_required":
@@ -448,6 +449,11 @@ def _open_a2ui_surface_for_action(
         raise HTTPException(
             status_code=409,
             detail="surface_id mismatch",
+        )
+    if open_surface.get("widget") != widget:
+        raise HTTPException(
+            status_code=400,
+            detail="widget mismatch",
         )
     return open_surface
 
@@ -475,6 +481,7 @@ async def _resume_a2ui_run(
     open_surface = _open_a2ui_surface_for_action(
         record,
         surface_id=body.surface_id,
+        widget=body.widget,
     )
 
     try:

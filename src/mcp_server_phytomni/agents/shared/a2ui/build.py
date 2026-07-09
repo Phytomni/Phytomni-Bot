@@ -36,7 +36,7 @@ def build_a2ui_value(
         "catalog_version": A2UI_CATALOG_VERSION,
         "surface_id": surface_id,
         "widget": widget,
-        "props": props.model_dump(exclude_none=True),
+        "props": props.model_dump(exclude_none=True, by_alias=True),
     }
 
 

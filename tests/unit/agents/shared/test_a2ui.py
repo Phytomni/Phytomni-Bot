@@ -13,6 +13,8 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CATALOG_VERSION,
     A2uiActionEnvelope,
     ConfirmProps,
+    FormField,
+    FormProps,
     action_to_resume_payload,
     build_a2ui_value,
     build_submitted_value,
@@ -35,6 +37,37 @@ def test_build_confirm_value_shape() -> None:
     assert value["surface_id"] == surface
     assert value["widget"] == "confirm"
     assert value["props"]["title"] == "Continue?"
+
+
+def test_build_form_field_dump_uses_type_key() -> None:
+    """Form field downlink serializes field type under the public type key."""
+    surface = mint_surface_id()
+    value = build_a2ui_value(
+        surface_id=surface,
+        widget="form",
+        props=FormProps(
+            title="Details",
+            fields=[
+                FormField(name="gene", label="Gene"),
+            ],
+        ),
+    )
+    field = value["props"]["fields"][0]
+    assert "type" in field
+    assert field["type"] == "text"
+    assert "field_type" not in field
+
+
+def test_form_field_validates_type_alias() -> None:
+    """FormField accepts the Web type key on validation."""
+    field = FormField.model_validate(
+        {
+            "name": "gene",
+            "label": "Gene",
+            "type": "select",
+        }
+    )
+    assert field.field_type == "select"
 
 
 def test_should_emit_confirm_matches_shortlist() -> None:

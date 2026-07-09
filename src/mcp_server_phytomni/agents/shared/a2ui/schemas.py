@@ -23,16 +23,18 @@ class ConfirmProps(BaseModel):
 
     title: str
     body: str | None = None
+    confirm_label: str | None = None
+    cancel_label: str | None = None
 
 
 class FormField(BaseModel):
     """One editable field on a form surface."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     name: str
     label: str
-    field_type: str = "text"
+    field_type: str = Field(default="text", alias="type")
     required: bool = False
 
 
