@@ -180,17 +180,23 @@ keys off `run.agent` (`chat` vs `review`). The route is gated behind
 }
 ```
 
-Confirm payloads carry `{"accepted": bool}`; form and choice envelopes
-validate the same shapes Web already emits. Chat and Review HTTP paths
-emit only `confirm` surfaces today. Review A2UI maps accept/reject to
+Confirm payloads carry `{"accepted": bool}`; form payloads carry
+`{"fields": {...}}` and choice payloads carry
+`{"selected": string | string[]}`; form and choice cancel actions send
+`{"cancelled": true}`. Form and choice envelopes validate the same
+shapes Web already emits. Review HTTP paths emit `confirm` only; Chat
+may emit `confirm`, `form`, or `choice` behind the same
+`A2UI_ENABLED` flag (widget selection priority: confirm > form >
+choice via `select_chat_a2ui_widget`). Review A2UI maps accept/reject to
 `{"approved": bool, "edits": null}` — the Review graph does not consume
 `edits` even when `/resume` accepts them. The path `run_id` must match
 `body.run_id` or the call returns `400 run_id mismatch`.
 
-Copyable Chat-confirm downlink / uplink / success / error goldens live
-under [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and
-Go gateway consumers. Those fixtures lock shapes only; this section and
-the offline HTTP tests remain authoritative for runtime behavior.
+Copyable A2UI downlink / uplink / success / error goldens live under
+[`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and Go
+gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`, and
+`chat_choice`. Those fixtures lock shapes only; this section and the
+offline HTTP tests remain authoritative for runtime behavior.
 
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
@@ -207,10 +213,11 @@ the offline HTTP tests remain authoritative for runtime behavior.
 
 On success the run settles `succeeded` and the response carries the
 normal `agent.run` envelope with `result.formatted.answer` (the real
-agent answer, or the short cancel string on Chat reject) plus
-`result.a2ui` when the pause carried a projected surface: the prior
-downlink cloned with `props.status: "submitted"` and `props.accepted`
-when applicable. Both `/resume` and `/a2ui-actions` attach `result.a2ui`
+agent answer, or the short cancel string on Chat reject / form or
+choice cancel) plus `result.a2ui` when the pause carried a projected
+surface: the prior downlink cloned with `props.status: "submitted"`
+and `props.accepted`, `props.cancelled`, `props.fields`, or
+`props.selected` when applicable. Both `/resume` and `/a2ui-actions` attach `result.a2ui`
 on success when projection was present. The two uplinks coexist for
 Review pauses — send only one per pause round; the first success wins
 and the second returns `409`. If the resumed graph pauses again, the
@@ -514,9 +521,12 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   true when the run settled `failed` (client disconnect before
   `RunFinished`, or a mid-stream `RunError`).
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, `A2UI_ENABLED` on,
-  confirm heuristic match): when `should_emit_confirm(user_query)` fires
-  (queries containing `请确认`, `是否确认`, `确认是否`, or the word
-  `confirm`), the stream bypasses token deltas and instead emits
+  heuristic match): when `select_chat_a2ui_widget(user_query)` returns
+  `confirm`, `form`, or `choice` (confirm: `请确认` / `是否确认` /
+  `确认是否` / `confirm`; form: `请填写` / `请输入` / `fill in` /
+  `please enter`; choice: `请选择` / `二选一` / `choose one` /
+  `select one`; priority confirm > form > choice), the stream bypasses
+  token deltas and instead emits
   `event: RunStarted`, one `event: Custom` frame with
   `name: "phyto.a2ui"` carrying the downlink value
   (`catalog_version`, `surface_id`, `widget`, `props`), then

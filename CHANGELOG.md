@@ -50,6 +50,9 @@ Full commit range: `1f8f628..HEAD`.
   Chat confirm surface, locked by offline shape tests for Web/Go
   consumers. No runtime behavior change; Go `/a2ui-actions` passthrough
   remains a Web-gateway follow-up.
+- A2UI Chat form/choice heuristic surfaces (flag-gated) plus Review
+  confirm and Chat form/choice contract goldens under
+  `docs/contracts/a2ui/`.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.
