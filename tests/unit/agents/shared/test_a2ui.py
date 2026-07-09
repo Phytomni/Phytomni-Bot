@@ -18,11 +18,16 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     action_to_resume_payload,
     attach_review_a2ui,
     build_a2ui_value,
+    build_choice_template_props,
+    build_form_template_props,
     build_submitted_value,
     mint_surface_id,
     project_review_confirm,
     review_confirm_action_to_resume,
+    select_chat_a2ui_widget,
+    should_emit_choice,
     should_emit_confirm,
+    should_emit_form,
     summary_text_from_interrupt_draft,
 )
 
@@ -267,3 +272,86 @@ def test_review_confirm_action_rejects_non_confirm_widget() -> None:
     )
     with pytest.raises(ValueError, match="confirm"):
         review_confirm_action_to_resume(envelope)
+
+
+def test_select_chat_a2ui_widget_priority() -> None:
+    """confirm beats form/choice; form beats choice; else None."""
+    assert select_chat_a2ui_widget("请确认并请填写") == "confirm"
+    assert select_chat_a2ui_widget("请填写基因名") == "form"
+    assert select_chat_a2ui_widget("请选择方案") == "choice"
+    assert select_chat_a2ui_widget("What is CRISPR?") is None
+
+
+def test_should_emit_form_and_choice_shortlist() -> None:
+    """Form/choice heuristics hit the approved keyword shortlists."""
+    assert should_emit_form("请输入数值") is True
+    assert should_emit_form("please enter the id") is True
+    assert should_emit_form("hello") is False
+    assert should_emit_choice("二选一哪个好") is True
+    assert should_emit_choice("choose one option") is True
+    assert should_emit_choice("hello") is False
+
+
+def test_form_and_choice_template_props() -> None:
+    """Thin templates match the P4-1d fixed field/option contract."""
+    form = build_form_template_props()
+    assert form.title == "Form"
+    assert len(form.fields) == 1
+    assert form.fields[0].name == "value"
+    assert form.fields[0].required is True
+    choice = build_choice_template_props()
+    assert choice.title == "Choice"
+    assert choice.multiple is False
+    assert [o.id for o in choice.options] == ["a", "b"]
+
+
+def test_action_to_resume_payload_form_cancelled() -> None:
+    """cancelled:true bypasses FormPayload validation."""
+    env = A2uiActionEnvelope(
+        surface_id="sfc-1",
+        widget="form",
+        action_id="act-1",
+        run_id="run-1",
+        payload={"cancelled": True},
+    )
+    payload = action_to_resume_payload(env)
+    assert payload["cancelled"] is True
+    assert "fields" not in payload
+
+
+def test_action_to_resume_payload_choice_cancelled() -> None:
+    """cancelled:true bypasses ChoicePayload validation."""
+    env = A2uiActionEnvelope(
+        surface_id="sfc-1",
+        widget="choice",
+        action_id="act-1",
+        run_id="run-1",
+        payload={"cancelled": True},
+    )
+    payload = action_to_resume_payload(env)
+    assert payload["cancelled"] is True
+    assert "selected" not in payload
+
+
+def test_build_submitted_value_form_and_choice() -> None:
+    """Submitted snapshots echo fields/selected/cancelled."""
+    form_prior = build_a2ui_value(
+        surface_id="sfc-1",
+        widget="form",
+        props=build_form_template_props(),
+    )
+    submitted = build_submitted_value(
+        form_prior,
+        fields={"value": "AT1G01010"},
+    )
+    assert submitted["props"]["status"] == "submitted"
+    assert submitted["props"]["fields"] == {"value": "AT1G01010"}
+
+    choice_prior = build_a2ui_value(
+        surface_id="sfc-1",
+        widget="choice",
+        props=build_choice_template_props(),
+    )
+    cancelled = build_submitted_value(choice_prior, cancelled=True)
+    assert cancelled["props"]["status"] == "submitted"
+    assert cancelled["props"]["cancelled"] is True

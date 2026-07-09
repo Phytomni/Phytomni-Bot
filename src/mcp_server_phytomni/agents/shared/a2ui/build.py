@@ -44,12 +44,21 @@ def build_submitted_value(
     prior: Mapping[str, Any],
     *,
     accepted: bool | None = None,
+    cancelled: bool | None = None,
+    fields: Mapping[str, Any] | None = None,
+    selected: str | list[str] | None = None,
 ) -> dict[str, Any]:
     """Clone a prior downlink value with status=submitted."""
     props = dict(prior.get("props") or {})
     props["status"] = "submitted"
     if accepted is not None:
         props["accepted"] = accepted
+    if cancelled is not None:
+        props["cancelled"] = cancelled
+    if fields is not None:
+        props["fields"] = dict(fields)
+    if selected is not None:
+        props["selected"] = selected
     return {
         "catalog_version": prior.get("catalog_version", A2UI_CATALOG_VERSION),
         "surface_id": prior["surface_id"],

@@ -15,7 +15,12 @@ from .review import (
     review_confirm_action_to_resume,
     summary_text_from_interrupt_draft,
 )
-from .rules import should_emit_confirm
+from .rules import (
+    select_chat_a2ui_widget,
+    should_emit_choice,
+    should_emit_confirm,
+    should_emit_form,
+)
 from .schemas import (
     A2UI_CATALOG_VERSION,
     A2UI_CUSTOM_NAME,
@@ -31,6 +36,7 @@ from .schemas import (
     FormPayload,
     FormProps,
 )
+from .templates import build_choice_template_props, build_form_template_props
 from .translate import action_to_resume_payload
 
 __all__ = [
@@ -52,10 +58,15 @@ __all__ = [
     "action_to_resume_payload",
     "attach_review_a2ui",
     "build_a2ui_value",
+    "build_choice_template_props",
+    "build_form_template_props",
     "build_submitted_value",
     "mint_surface_id",
     "project_review_confirm",
     "review_confirm_action_to_resume",
+    "select_chat_a2ui_widget",
+    "should_emit_choice",
     "should_emit_confirm",
+    "should_emit_form",
     "summary_text_from_interrupt_draft",
 ]

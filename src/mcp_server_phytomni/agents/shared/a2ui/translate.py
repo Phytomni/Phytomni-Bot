@@ -27,6 +27,11 @@ def action_to_resume_payload(
         "widget": envelope.widget,
         "action_id": envelope.action_id,
     }
+    if (
+        envelope.widget in ("form", "choice")
+        and envelope.payload.get("cancelled") is True
+    ):
+        return {**base, "cancelled": True}
     try:
         if envelope.widget == "confirm":
             confirm = ConfirmPayload.model_validate(envelope.payload)
