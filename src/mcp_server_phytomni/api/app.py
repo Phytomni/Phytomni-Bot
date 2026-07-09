@@ -405,7 +405,6 @@ def _stream_chat_a2ui_confirm(
         interrupt = detect_interrupt(final_state, run_id)
         if interrupt is not None:
             a2ui_value = interrupt["draft"]["a2ui"]
-            yield custom(A2UI_CUSTOM_NAME, a2ui_value)
             _settle_stream_run(
                 run_id,
                 owner,
@@ -413,6 +412,7 @@ def _stream_chat_a2ui_confirm(
                 _chat_a2ui_interrupt_result(interrupt),
             )
             settled[0] = True
+            yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(run_id)
 
     async def _wrapped() -> AsyncIterator[str]:
@@ -426,17 +426,30 @@ def _stream_chat_a2ui_confirm(
                 yield line
         finally:
             if not settled_input_required[0]:
-                _settle_stream_run(
-                    run_id,
-                    owner,
-                    "failed",
-                    {
-                        "formatted": {"answer": ""},
-                        "raw": None,
-                        "stream": True,
-                        "partial": True,
-                    },
-                )
+                already_paused = False
+                try:
+                    record = RunRegistry(resolve_tasks_db_path()).get_run(
+                        run_id,
+                        owner=owner,
+                    )
+                    already_paused = (
+                        record is not None
+                        and record.status == "input_required"
+                    )
+                except (sqlite3.Error, OSError):
+                    pass
+                if not already_paused:
+                    _settle_stream_run(
+                        run_id,
+                        owner,
+                        "failed",
+                        {
+                            "formatted": {"answer": ""},
+                            "raw": None,
+                            "stream": True,
+                            "partial": True,
+                        },
+                    )
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
