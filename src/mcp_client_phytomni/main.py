@@ -14,6 +14,7 @@ import asyncio
 import json
 from typing import Any
 
+from .call_output import render_call_output
 from .client import PhytomniMcpClient, server_command_from_target
 
 
@@ -49,7 +50,7 @@ async def _main() -> None:
                 args.tool_name,
                 _json_object(args.arguments),
             )
-            print(result.formatted.answer)
+            print(render_call_output(result.formatted))
             return
 
     parser.error(f"Unsupported command: {args.command}")

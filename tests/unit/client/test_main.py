@@ -163,6 +163,42 @@ def test_main_call_prints_formatted_answer(
     assert stub.calls == [("ChatAgent", {"user_query": "hello"})]
 
 
+def test_main_call_prints_tabular_block(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``call`` prints tabular TSV after the formatted answer."""
+    response = SimpleNamespace(
+        formatted=FormattedToolResult(
+            answer="1 row x 2 columns",
+            tabular={
+                "headers": ["alias", "gene"],
+                "rows": [["ACT2", "AT3G18780"]],
+            },
+        )
+    )
+    stub = _StubMcpClient(call_result=response)
+    monkeypatch.setattr(cli_main, "PhytomniMcpClient", lambda _command: stub)
+    monkeypatch.setattr(
+        cli_main, "server_command_from_target", lambda target: target
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "phytomni-mcp-client",
+            "call",
+            "DataAgent",
+            '{"user_query":"genes"}',
+        ],
+    )
+
+    asyncio.run(_main())
+
+    output = capsys.readouterr().out
+    assert "alias" in output
+    assert stub.calls == [("DataAgent", {"user_query": "genes"})]
+
+
 def test_main_entry_runs_async_main(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
