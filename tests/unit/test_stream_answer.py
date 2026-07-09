@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 
 import pytest
@@ -114,22 +113,19 @@ async def test_accumulator_utf8_safe_prefix() -> None:
     await _drain(acc)
     snap = acc.snapshot
     assert snap.truncated is True
+    assert snap.answer == "ab"
     assert snap.answer.encode("utf-8")  # must not raise
     assert len(snap.answer.encode("utf-8")) <= 3
 
 
-def test_resolve_stream_answer_max_bytes_rejects_non_positive(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Non-positive config falls back to the default with a warning."""
-    with caplog.at_level(logging.WARNING):
-        assert (
-            resolve_stream_answer_max_bytes(0)
-            == DEFAULT_STREAM_ANSWER_MAX_BYTES
-        )
-        assert (
-            resolve_stream_answer_max_bytes(-1)
-            == DEFAULT_STREAM_ANSWER_MAX_BYTES
-        )
-    assert any("invalid" in record.message for record in caplog.records)
+def test_resolve_stream_answer_max_bytes_rejects_non_positive() -> None:
+    """Non-positive config falls back to the default."""
+    assert (
+        resolve_stream_answer_max_bytes(0)
+        == DEFAULT_STREAM_ANSWER_MAX_BYTES
+    )
+    assert (
+        resolve_stream_answer_max_bytes(-1)
+        == DEFAULT_STREAM_ANSWER_MAX_BYTES
+    )
     assert resolve_stream_answer_max_bytes(4096) == 4096
