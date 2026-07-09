@@ -46,20 +46,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/development/lint-exemptions.md``.
 RULE_BASELINES: dict[str, int] = {
-    # Bumped from 92 to 94: Task 5's UP modernization (Optional -> | None,
-    # List -> list) shifted line numbers in brief_gene/state.py, causing
-    # pylint to detect 2 additional field-declaration blocks in the test
-    # fake-state TypedDict (test_deep_genome_brief_gene_mount) that mirror
-    # the source BriefGeneState. The underlying duplicate is the same
-    # test-stub-mirrors-source pattern; only the line ranges shifted.
-    "R0801": 93,  # duplicate-code: cross-file similar blocks
-    # too-few-public-methods: test fake classes + Protocol stubs +
-    # GraphLoader (load + flag-gated __init__ only) + the terminal-result
-    # assembly seams (TerminalAnswerContext DTO, ArtifactLister /
-    # AnswerSynthesizer single-method Protocols) + the brief_gene preamble
-    # fan-in test stub (_StubKnowledgeApp). Pinned at the count measured
-    # under the installed pylint 4.0.x.
-    "R0903": 20,
+    # Bumped 93 -> 97 for the review human-in-the-loop surface: the
+    # resume-kernel / cross-restart stub graphs share an interrupt+
+    # finalize skeleton, and the MCP resume stdio harness mirrors the
+    # existing stdio-progress fake-session shape. Both are intentional
+    # test-stub parallels, not production drift.
+    "R0801": 97,  # duplicate-code: cross-file similar blocks
+    # too-few-public-methods: prior Protocol/DTO/test-fake set (20) plus
+    # four HITL test fakes in test_resume_http / test_resume_mcp
+    # (_FakeInterrupt, stub apps, _FakeSession, nested elicit result).
+    "R0903": 24,
 }
 
 

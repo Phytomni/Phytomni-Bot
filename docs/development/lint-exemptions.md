@@ -87,14 +87,14 @@ entry plus a catalog section, none of which can be added silently.
 
 **Someone adds a 21st test fake with one public method.** A
 project-wide `min-public-methods = 1` would silently pass it.
-Counted instead by the L2 ratchet. The current baseline is 20; the
-21st fake pushes the count to 21, the ratchet fails, refactor or
+Counted instead by the L2 ratchet. The current baseline is 24; the
+25th fake pushes the count to 25, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 93rd R0801 duplicate-code violation appears.** Default pylint
+**A 98th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 92; the
-93rd duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 97; the
+98th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -527,9 +527,9 @@ exemption is project-wide-conditional instead of per-file.
 
 ______________________________________________________________________
 
-### Test fakes and Protocol stubs — too-few-public-methods (20 occurrences)
+### Test fakes and Protocol stubs — too-few-public-methods (24 occurrences)
 
-**Rule(s)**: R0903 too-few-public-methods (1/2). 20 occurrences (the
+**Rule(s)**: R0903 too-few-public-methods (1/2). 24 occurrences (the
 authoritative count is enforced by `check_pylint_baseline.py`; a
 representative sample below):
 
@@ -538,6 +538,8 @@ representative sample below):
 - `tests/agents/test_deep_genome_submit.py:32`
 - `tests/agents/test_evolution_agent.py:250 + 305`
 - `tests/server/test_handler_support.py:35`
+- `tests/server/test_resume_http.py` (HITL interrupt / stub-app fakes)
+- `tests/server/test_resume_mcp.py` (HITL `_FakeSession` + elicit result)
 - `tests/unit/test_api_file_upload.py:24`
 - `tests/unit/test_deep_genome_dispatch.py:226`
 - `tests/unit/test_storage_error_sanitization.py:31`
@@ -548,7 +550,7 @@ representative sample below):
 - `tests/agents/test_brief_gene_preamble_workflow.py:55` (`_StubKnowledgeApp` preamble fan-in test stub)
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 20`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 24`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
@@ -664,37 +666,39 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 93`). The catalog header count above
+`RULE_BASELINES["R0801"] = 97`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
 analyst / data retrieve-fan-out templates), 66 / 79 / 93 / 94
 (brief_gene preamble fusion + Align-A citation rules accumulation,
 documented in their own commit bodies), 97 (Step 6.4 env/evo per-
-consumer wiring; see entry below), 102 (Step 6.5 producer-
-wrapper request-dict mirrors net of the cluster #9 sunset, see
-entries below), and 110 (HTTP resolver cascade for
-deep_genome / design / network — each new `resolve_query.py`
-module mirrors BGA's `_first_message_content` + `_normalize_ candidates` + chat-kwargs assembly shape; intentional parallel
-structure per the AGENTS.md "Per-request context + HTTP-only
-pre-shaping" reference template). Each ratchet was disclosed in
-its own commit body;
-the original 25-cluster catalog remains accurate for the legacy
-clusters but is no longer the authoritative count. The main pylint invocation in
+consumer wiring), 102 (Step 6.5 producer-wrapper request-dict
+mirrors net of the cluster #9 sunset, see entries below), and 110
+(HTTP resolver cascade for deep_genome / design / network — each
+new `resolve_query.py` module mirrors BGA's
+`_first_message_content` + `_normalize_candidates` + chat-kwargs
+assembly shape; intentional parallel structure per the AGENTS.md
+"Per-request context + HTTP-only pre-shaping" reference template).
+Each ratchet was disclosed in its own commit body; the original
+25-cluster catalog remains accurate for the legacy clusters but is
+no longer the authoritative count. The main pylint invocation in
 `scripts/validate_local.sh` and `scripts/scoped_gate.sh` is run with
 `--disable=R0801,R0903` so the gate-level pylint exits 0 on this
 rule; the baseline script runs its own pylint without the disable
 and counts the violations against the pinned baseline. A new R0801
 violation pushes the count past the baseline, the baseline script
 exits 1, and the gate fails until the author either resolves the
-duplicate or explicitly bumps the baseline in the same diff. The three
-most recent ratchets after 110 were 112 (resolver shared-helper
-extraction into `agents/shared/bga_delegation.py`), 108 (removing the
-five `USE_*_SUBGRAPH` flags collapsed the chat-fallback and dispatch
-request-dict flag-off mirror clusters below `min-similar-lines=4`), and
+duplicate or explicitly bumps the baseline in the same diff. The
+ratchets after 110 were 112 (resolver shared-helper extraction into
+`agents/shared/bga_delegation.py`), 108 (removing the five
+`USE_*_SUBGRAPH` flags collapsed the chat-fallback and dispatch
+request-dict flag-off mirror clusters below `min-similar-lines=4`),
 95 (deleting the unwired legacy monolithic analyst / review nodes
-removed every prep/post-vs-monolithic-half mirror cluster, since the
-split nodes no longer have a single-node twin to duplicate).
+removed every prep/post-vs-monolithic-half mirror cluster), 93
+(pre-HITL measured count), and 97 (review HITL: resume-kernel /
+cross-restart stub-graph skeleton plus MCP resume stdio harness
+mirroring `test_stdio_progress`).
 
 **Why refactor is net-negative for cluster 1**: the analyst fan-out
 wrappers' parallel signatures are by design — they map onto one
