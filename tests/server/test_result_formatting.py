@@ -600,7 +600,9 @@ def test_in_silico_result_surfaces_extraction_error() -> None:
     result = format_tool_result("InSilicoResearchAgent", payload)
 
     assert result.metadata["error"] == "LLM rate limited"
-    assert result.answer == "Tasks created successfully: "
+    assert result.answer == "Task submission failed: no task ids"
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["log_status"] == "sync_failed"
 
 
 def test_digital_design_result_extracts_tasks_from_list() -> None:
@@ -963,3 +965,71 @@ def test_is_cited_tool() -> None:
     assert is_cited_tool("KnowledgeAgents")  # alias
     assert not is_cited_tool("DeepGenomeAgent")
     assert not is_cited_tool("ChatAgent")
+
+
+def test_analyst_result_rejects_missing_task_id() -> None:
+    """A None task_id must not look like a successful submit."""
+    result = format_tool_result(
+        "AnalystAgent",
+        {
+            "task_id": None,
+            "output_dir": "/obs/out",
+            "compute_resource": "small",
+        },
+    )
+    assert result.answer == "Task submission failed: missing task_id"
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["log_status"] == "sync_failed"
+    assert result.metadata["task_id"] is None
+
+
+def test_gene_network_result_rejects_missing_task_id() -> None:
+    """Nested network_task with null task_id is a failed submit."""
+    result = format_tool_result(
+        "GeneNetworkAgent",
+        {
+            "network_task": {
+                "task_id": None,
+                "output_dir": "/obs/net",
+                "compute_resource": "medium",
+            },
+            "phytomni_state": {"goal_description": "x"},
+        },
+    )
+    assert result.answer == "Task submission failed: missing task_id"
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["log_status"] == "sync_failed"
+
+
+def test_deep_genome_result_rejects_missing_task_id() -> None:
+    """Empty DeepGenome umbrella id is FAILED, not success."""
+    result = format_tool_result(
+        "DeepGenomeAgent",
+        {
+            "task_id": None,
+            "output_dir": "/tmp/x",
+            "compute_resource": "deep-genome",
+        },
+        arguments={"species_code": "ath", "gene_id": "AT1G01010"},
+    )
+    assert result.answer == "Task submission failed: missing task_id"
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["log_status"] == "sync_failed"
+
+
+def test_in_silico_result_rejects_empty_task_ids() -> None:
+    """No submitted child ids must not print 'Tasks created successfully: '."""
+    result = format_tool_result(
+        "InSilicoResearchAgent",
+        {
+            "task_ids": {},
+            "goals": [{"goal": "g", "context": "c"}],
+            "output_dir": "/obs/r",
+            "error": "download failed",
+            "failures": [],
+        },
+    )
+    assert "successfully" not in result.answer.lower()
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["log_status"] == "sync_failed"
+    assert result.metadata["error"] == "download failed"

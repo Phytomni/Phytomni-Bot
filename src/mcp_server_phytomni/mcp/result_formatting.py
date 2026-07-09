@@ -470,14 +470,19 @@ def _format_task_result(content: Mapping[str, Any]) -> FormattedToolResult:
     compute_resource = _normalize_compute_resource(
         _string_or_none(content.get("compute_resource"))
     )
+    failed = not task_id
     return FormattedToolResult(
-        answer=f"Task created successfully:{task_id}",
+        answer=(
+            "Task submission failed: missing task_id"
+            if failed
+            else f"Task created successfully:{task_id}"
+        ),
         metadata={
             "task_id": task_id,
             "output_dir": output_dir,
             "compute_resource": compute_resource,
-            "status": "RUNNING",
-            "log_status": "sync_running",
+            "status": "FAILED" if failed else "RUNNING",
+            "log_status": "sync_failed" if failed else "sync_running",
         },
     )
 
@@ -585,6 +590,8 @@ def _format_network_task_result(
         "failed_count": universal["failed_count"],
         "failures": universal["failures"],
     }
+    if not enriched_metadata.get("task_id"):
+        enriched_metadata.update(status="FAILED", log_status="sync_failed")
     return FormattedToolResult(
         answer=base.answer,
         follow_up_questions=base.follow_up_questions,
@@ -601,27 +608,19 @@ def _format_deep_genome_result(
 ) -> FormattedToolResult:
     """Format a DeepGenome submit envelope.
 
-    DeepGenome's ``arun`` mints a synthetic umbrella ``task_id``
-    synchronously, spawns the LangGraph workflow on the running
-    event loop, and returns ``{"task_id", "output_dir",
-    "compute_resource"}`` so the chokepoint can persist the row and
-    the HTTP layer can return a poll handle. The formatter mirrors
-    the analyst answer shape (``"Task created successfully:<id>"``)
-    instead of the legacy ``Server task...:None`` line that the prior
-    formatter produced when no top-level ``task_id`` was ever
-    populated. ``species_code`` / ``gene_id`` continue to come from
-    the request arguments since they identify the submission target,
-    not anything the workflow added.
+    DeepGenome's ``arun`` returns ``{"task_id", "output_dir",
+    "compute_resource"}`` for the poll handle. Missing ``task_id``
+    is FAILED. ``species_code`` / ``gene_id`` come from arguments.
     """
     arguments = arguments or {}
     server_id = _string_or_none(content.get("task_id"))
-    answer = (
-        f"Task created successfully:{server_id}"
-        if server_id
-        else "Task created successfully:"
-    )
+    failed = not server_id
     return FormattedToolResult(
-        answer=answer,
+        answer=(
+            "Task submission failed: missing task_id"
+            if failed
+            else f"Task created successfully:{server_id}"
+        ),
         metadata={
             "task_id": server_id,
             "output_dir": _string_or_none(content.get("output_dir")),
@@ -630,8 +629,8 @@ def _format_deep_genome_result(
             "compute_resource": _string_or_none(
                 content.get("compute_resource")
             ),
-            "status": "RUNNING",
-            "log_status": "sync_running",
+            "status": "FAILED" if failed else "RUNNING",
+            "log_status": "sync_failed" if failed else "sync_running",
         },
     )
 
@@ -683,19 +682,24 @@ def _format_in_silico_result(
         if isinstance(raw_legacy_error, str)
         else raw_legacy_error
     )
+    failed = not task_ids
     return FormattedToolResult(
-        answer=f"Tasks created successfully: {','.join(task_ids)}",
+        answer=(
+            "Task submission failed: no task ids"
+            if failed
+            else f"Tasks created successfully: {','.join(task_ids)}"
+        ),
         metadata={
             "task_id": primary_task_id,
             "task_ids": task_ids,
             "output_dir": output_dir,
             "goals": goals,
             "error": legacy_error,
-            "status": universal["status"],
+            "status": "FAILED" if failed else universal["status"],
             "succeeded_count": universal["succeeded_count"],
             "failed_count": universal["failed_count"],
             "failures": universal["failures"],
-            "log_status": "sync_running",
+            "log_status": "sync_failed" if failed else "sync_running",
         },
     )
 
