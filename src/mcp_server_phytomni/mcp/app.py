@@ -47,6 +47,11 @@ from ..common.logging_config import configure_logging
 from ..common.redaction import redact_secrets
 from ..config.defaults import ChatConfig
 from ..runtime.langgraph_runner import build_runnable_config
+from ..runtime.resume import (
+    aresume_graph,
+    detect_interrupt,
+    elicit_review_decision,
+)
 from ..storage.path_policy import IdFactory
 from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
 from .handlers import (
@@ -708,6 +713,16 @@ async def _drive_stdio_progress(
             message=tick["phase"],
         )
     final_state = sink[0] if sink else None
+    if (
+        tool_name == PhytomniAgents.REVIEW_AGENT.value
+        and final_state is not None
+    ):
+        interrupt = detect_interrupt(final_state, run_id)
+        if interrupt is not None:
+            decision = await elicit_review_decision(
+                session, interrupt["draft"]
+            )
+            final_state = await aresume_graph(graph_app, run_id, decision)
     return await _stdio_terminal_payload(tool_name, final_state)
 
 

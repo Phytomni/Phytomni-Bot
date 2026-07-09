@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from typing import Any, TypedDict
 
 from langgraph.types import Command
+from mcp.types import ClientCapabilities, ElicitationCapability
 
 from .langgraph_runner import build_runnable_config
 
@@ -66,6 +67,40 @@ def detect_interrupt(
     first = raw[0]
     draft = getattr(first, "value", first)
     return InterruptInfo(thread_id=thread_id, draft=draft)
+
+
+async def elicit_review_decision(
+    session: Any,
+    draft: Any,
+) -> ResumePayload:
+    """Collect a ReviewAgent approval decision through MCP elicitation.
+
+    Clients that do not advertise elicitation support are auto-approved so
+    legacy one-shot stdio calls keep their existing terminal behavior.
+    """
+    capable = session.check_client_capability(
+        ClientCapabilities(elicitation=ElicitationCapability())
+    )
+    if not capable:
+        return {"approved": True, "edits": None}
+    result = await session.elicit(
+        message=(
+            "Review the drafted summary and approve or reject.\n\n"
+            f"Draft:\n{draft}"
+        ),
+        requestedSchema={
+            "type": "object",
+            "properties": {
+                "approved": {"type": "boolean"},
+                "edits": {"type": "string"},
+            },
+            "required": ["approved"],
+        },
+    )
+    if getattr(result, "action", None) == "accept":
+        content = getattr(result, "content", None) or {}
+        return {"approved": True, "edits": content.get("edits")}
+    return {"approved": False, "edits": None}
 
 
 async def aresume_graph(
