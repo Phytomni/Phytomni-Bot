@@ -80,7 +80,7 @@ from ..agents.shared.a2ui import (
     attach_review_a2ui,
     build_submitted_value,
     review_confirm_action_to_resume,
-    should_emit_confirm,
+    select_chat_a2ui_widget,
 )
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
@@ -377,6 +377,22 @@ def _chat_a2ui_interrupt_result(
     }
 
 
+def _submitted_a2ui_value(
+    prior_surface: Mapping[str, Any],
+    resume_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the submitted downlink from a chat A2UI resume payload."""
+    accepted = resume_payload.get("accepted")
+    fields = resume_payload.get("fields")
+    return build_submitted_value(
+        prior_surface,
+        accepted=accepted if isinstance(accepted, bool) else None,
+        cancelled=(True if resume_payload.get("cancelled") is True else None),
+        fields=fields if isinstance(fields, Mapping) else None,
+        selected=resume_payload.get("selected"),
+    )
+
+
 def _format_chat_a2ui_result(
     final_state: Mapping[str, Any],
     *,
@@ -389,10 +405,7 @@ def _format_chat_a2ui_result(
         final_response_key="response",
     )
     envelope = build_tool_result_envelope("ChatAgent", raw_payload)
-    accepted = resume_payload.get("accepted")
-    if not isinstance(accepted, bool):
-        accepted = None
-    submitted = build_submitted_value(prior_surface, accepted=accepted)
+    submitted = _submitted_a2ui_value(prior_surface, resume_payload)
     return {
         "formatted": asdict(envelope.formatted),
         "raw": envelope.raw,
@@ -794,7 +807,7 @@ def _stream_chat_completion(
     if (
         tool_name == "ChatAgent"
         and ApiConfig().A2UI_ENABLED
-        and should_emit_confirm(user_query)
+        and select_chat_a2ui_widget(user_query) is not None
     ):
         return _stream_chat_a2ui_confirm(
             arguments=arguments,

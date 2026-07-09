@@ -109,6 +109,35 @@ async def test_stream_a2ui_confirm_settles_input_required(
     assert "[streamed]" not in json.dumps(result)
 
 
+async def test_stream_a2ui_form_settles_input_required(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag+form query emits phyto.a2ui with widget=form and pauses."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="请填写基因名",
+        dialogue_id="dlg-a2ui-form",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "event: RunStarted\n" in body
+    assert f'"name": "{A2UI_CUSTOM_NAME}"' in body
+    assert "event: RunFinished\n" in body
+
+    a2ui = _extract_custom_a2ui(body)
+    assert a2ui is not None
+    assert a2ui["widget"] == "form"
+    assert a2ui["surface_id"]
+
+
 async def test_stream_with_flag_skips_a2ui_for_non_confirm_query(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

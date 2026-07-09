@@ -2,12 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Compile the Chat A2UI confirm interrupt LangGraph workflow.
+"""Compile the Chat A2UI confirm/form/choice interrupt LangGraph workflow.
 
 ``build_chat_a2ui_graph`` assembles the
 ``prepare_context → a2ui_prepare_surface → a2ui_confirm →
-(generate → follow_up | cancel)`` pipeline. The shared
-``_build_chat_graph`` subgraph stays interrupt-free; HTTP A2UI
+(a2ui_apply_decision → generate → follow_up | cancel)`` pipeline. The
+shared ``_build_chat_graph`` subgraph stays interrupt-free; HTTP A2UI
 callers mount this dedicated app instead.
 """
 
@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from .a2ui_graph import (
     ChatA2uiOutput,
     ChatA2uiState,
+    a2ui_apply_decision_node,
     a2ui_cancel_node,
     a2ui_confirm_node,
     a2ui_prepare_surface_node,
@@ -56,6 +57,10 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
         a2ui_prepare_surface_node,
     )
     workflow.add_node("a2ui_confirm_node", a2ui_confirm_node)
+    workflow.add_node(
+        "a2ui_apply_decision_node",
+        a2ui_apply_decision_node,
+    )
     workflow.add_node("generate_node", generate_node)
     workflow.add_node("follow_up_node", follow_up_node)
     workflow.add_node("a2ui_cancel_node", a2ui_cancel_node)
@@ -72,10 +77,11 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
         "a2ui_confirm_node",
         route_after_a2ui_confirm,
         {
-            "generate_node": "generate_node",
+            "a2ui_apply_decision_node": "a2ui_apply_decision_node",
             "a2ui_cancel_node": "a2ui_cancel_node",
         },
     )
+    workflow.add_edge("a2ui_apply_decision_node", "generate_node")
     workflow.add_conditional_edges(
         "generate_node",
         route_after_generate,

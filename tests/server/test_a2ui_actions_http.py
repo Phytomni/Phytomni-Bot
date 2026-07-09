@@ -534,6 +534,172 @@ async def test_a2ui_action_no_checkpoint_returns_409(
     assert response.json()["error"]["message"] == "no pause point for run"
 
 
+def _open_form_surface(surface_id: str) -> dict[str, Any]:
+    """Build a paused form surface stored on the run row."""
+    return {
+        "catalog_version": A2UI_CATALOG_VERSION,
+        "surface_id": surface_id,
+        "widget": "form",
+        "props": {
+            "title": "Form",
+            "fields": [
+                {
+                    "name": "value",
+                    "label": "Value",
+                    "type": "text",
+                    "required": True,
+                }
+            ],
+        },
+    }
+
+
+def _seed_a2ui_form_run(
+    tasks_db_path: str,
+    *,
+    run_id: str,
+    surface_id: str,
+    user_id: str = "u1",
+) -> str:
+    """Seed a chat run paused on an A2UI form surface."""
+    result = {
+        "interrupt": {
+            "thread_id": run_id,
+            "draft": {"a2ui": _open_form_surface(surface_id)},
+        },
+        "status": "input_required",
+    }
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(
+            run_id=run_id,
+            user_id=user_id,
+            agent="chat",
+            origin="local",
+        ),
+        outcome=RunOutcome(status="input_required", result=result),
+    )
+    return run_id
+
+
+def _form_submitted_final_state() -> dict[str, Any]:
+    """Terminal graph state after a submitted form resume."""
+    return {
+        "response": {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Got form.",
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        },
+        "a2ui_surface": _open_form_surface("sfc-form-submit"),
+    }
+
+
+async def test_a2ui_action_form_submit_succeeds(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Form submit resumes and returns submitted fields on result.a2ui."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_form_run(
+        tasks_db_path,
+        run_id="run-a2ui-form-submit",
+        surface_id="sfc-open-form-submit",
+    )
+    calls: list[tuple[Any, ...]] = []
+
+    async def _fake_resume(
+        app: Any,
+        thread_id: str,
+        resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append((app, thread_id, resume_payload))
+        return _form_submitted_final_state()
+
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-open-form-submit",
+            "widget": "form",
+            "action_id": "act-form-submit",
+            "payload": {"fields": {"value": "AT1G01010"}},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["result"]["formatted"]["answer"] == "Got form."
+    assert body["result"]["a2ui"]["props"]["status"] == "submitted"
+    assert body["result"]["a2ui"]["props"]["fields"] == {"value": "AT1G01010"}
+    assert len(calls) == 1
+    assert calls[0][1] == run_id
+    assert calls[0][2]["fields"] == {"value": "AT1G01010"}
+
+
+async def test_a2ui_action_form_cancel_succeeds(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Form cancel returns cancelled submitted snapshot + cancel answer."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_form_run(
+        tasks_db_path,
+        run_id="run-a2ui-form-cancel",
+        surface_id="sfc-open-form-cancel",
+    )
+
+    async def _fake_resume(
+        _app: Any,
+        _thread_id: str,
+        _resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": _CANCEL_MESSAGE,
+                            "follow_up_questions": [],
+                        }
+                    }
+                ]
+            },
+            "a2ui_surface": _open_form_surface("sfc-open-form-cancel"),
+        }
+
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-open-form-cancel",
+            "widget": "form",
+            "action_id": "act-form-cancel",
+            "payload": {"cancelled": True},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["result"]["formatted"]["answer"] == _CANCEL_MESSAGE
+    assert body["result"]["a2ui"]["props"]["cancelled"] is True
+
+
 async def test_a2ui_action_missing_draft_surface_returns_409(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

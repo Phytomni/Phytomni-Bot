@@ -179,3 +179,111 @@ async def test_a2ui_graph_resume_rejected_cancels(
     assert detect_interrupt(final, thread_id) is None
     content = final["response"]["choices"][0]["message"]["content"]
     assert "Cancelled" in content
+
+
+@pytest.mark.asyncio
+async def test_a2ui_graph_form_pauses_and_submit_injects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Form query pauses as form; submit prepends user input then generates."""
+    captured: dict[str, Any] = {}
+
+    async def _fake_run(
+        messages: list[dict[str, str]],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        del options
+        captured["user"] = messages[1]["content"]
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Got form.",
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+
+    async def _fake_phyto_chat(query: str, **kwargs: Any) -> dict[str, Any]:
+        del query, kwargs
+        return {"choices": [{"message": {"content": "[]"}}]}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
+        _fake_run,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
+        _fake_phyto_chat,
+    )
+
+    app = build_chat_a2ui_graph(checkpointer=MemorySaver())
+    thread_id = "chat-a2ui-form-1"
+    paused = await app.ainvoke(
+        {
+            "user_query": "请填写基因名",
+            "obs_file_list": [],
+            "chat_kwargs": {},
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    info = detect_interrupt(paused, thread_id)
+    assert info is not None
+    assert info["draft"]["a2ui"]["widget"] == "form"
+
+    final = await aresume_graph(
+        app,
+        thread_id,
+        {
+            "surface_id": info["draft"]["a2ui"]["surface_id"],
+            "widget": "form",
+            "action_id": "act-1",
+            "fields": {"value": "AT1G01010"},
+        },
+    )
+    assert final["response"]["choices"][0]["message"]["content"] == (
+        "Got form."
+    )
+    assert "AT1G01010" in captured["user"]
+    assert "请填写基因名" in captured["user"]
+
+
+@pytest.mark.asyncio
+async def test_a2ui_graph_choice_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Choice cancel settles the shared cancel message without LLM."""
+    _patch_chat_llm(monkeypatch)
+    app = build_chat_a2ui_graph(checkpointer=MemorySaver())
+    thread_id = "chat-a2ui-choice-cancel"
+    paused = await app.ainvoke(
+        {
+            "user_query": "请选择方案",
+            "obs_file_list": [],
+            "chat_kwargs": {},
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    info = detect_interrupt(paused, thread_id)
+    assert info is not None
+    assert info["draft"]["a2ui"]["widget"] == "choice"
+
+    def _must_not_run(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("LLM must not run on cancel")
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
+        _must_not_run,
+    )
+    final = await aresume_graph(
+        app,
+        thread_id,
+        {
+            "surface_id": info["draft"]["a2ui"]["surface_id"],
+            "widget": "choice",
+            "action_id": "act-1",
+            "cancelled": True,
+        },
+    )
+    assert "Cancelled" in final["response"]["choices"][0]["message"]["content"]

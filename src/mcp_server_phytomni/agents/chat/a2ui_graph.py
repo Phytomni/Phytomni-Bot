@@ -2,12 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Node functions for the Chat A2UI confirm interrupt graph.
+"""Node functions for the Chat A2UI confirm/form/choice interrupt graph.
 
-The dedicated A2UI graph pauses at a confirm surface before the main
-LLM call. On resume, accepted decisions flow through the shared
-``generate_node`` / ``follow_up_node`` pair; rejected decisions settle
-a short cancel response without a second confirm interrupt.
+The dedicated A2UI graph pauses at a confirm/form/choice surface
+before the main LLM call. On resume, accepted/submitted decisions
+flow through ``a2ui_apply_decision_node`` into ``generate_node`` /
+``follow_up_node``; rejected/cancelled decisions settle a short
+cancel response without a second interrupt.
 """
 
 from __future__ import annotations
@@ -17,9 +18,14 @@ from typing import Any, Literal, TypedDict
 from langgraph.types import interrupt
 
 from ..shared.a2ui import (
+    ChoiceProps,
     ConfirmProps,
+    FormProps,
     build_a2ui_value,
+    build_choice_template_props,
+    build_form_template_props,
     mint_surface_id,
+    select_chat_a2ui_widget,
 )
 from .state import ChatState
 
@@ -29,13 +35,15 @@ _CANCEL_MESSAGE = "Cancelled — no further action taken."
 class ChatA2uiState(ChatState, total=False):
     """Internal state for the Chat A2UI confirm workflow.
 
-    Extends :class:`ChatState` with the confirm-surface draft, the
-    human decision returned by ``interrupt()`` on resume, and an
-    optional cancel message for the rejected branch.
+    Extends :class:`ChatState` with the confirm/form/choice surface
+    draft, the human decision returned by ``interrupt()`` on resume,
+    the injected form/choice answer summary, and an optional cancel
+    message for the rejected/cancelled branch.
     """
 
     a2ui_surface: dict[str, Any] | None
     a2ui_decision: dict[str, Any] | None
+    a2ui_user_input: str | None
     cancel_message: str | None
 
 
@@ -53,10 +61,12 @@ class ChatA2uiOutput(TypedDict, total=False):
 async def a2ui_prepare_surface_node(
     state: ChatA2uiState,
 ) -> dict[str, Any]:
-    """Mint the confirm surface once before the interrupt node.
+    """Mint the confirm/form/choice surface once before the interrupt.
 
     LangGraph replays the interrupt node from the top on resume; surface
-    minting lives here so the same ``surface_id`` survives replay.
+    minting lives here so the same ``surface_id`` survives replay. The
+    widget is selected once from ``user_query`` via
+    ``select_chat_a2ui_widget`` (defaulting to ``confirm``).
 
     Args:
         state: Current workflow state; reads ``user_query`` and
@@ -67,14 +77,21 @@ async def a2ui_prepare_surface_node(
     """
     if state.get("a2ui_surface"):
         return {}
-    surface_id = mint_surface_id()
-    value = build_a2ui_value(
-        surface_id=surface_id,
-        widget="confirm",
-        props=ConfirmProps(
+    widget = select_chat_a2ui_widget(state["user_query"]) or "confirm"
+    props: ConfirmProps | FormProps | ChoiceProps
+    if widget == "form":
+        props = build_form_template_props()
+    elif widget == "choice":
+        props = build_choice_template_props()
+    else:
+        props = ConfirmProps(
             title="Confirm",
             body=state["user_query"][:500],
-        ),
+        )
+    value = build_a2ui_value(
+        surface_id=mint_surface_id(),
+        widget=widget,
+        props=props,
     )
     return {"a2ui_surface": value}
 
@@ -103,20 +120,68 @@ async def a2ui_confirm_node(state: ChatA2uiState) -> dict[str, Any]:
 
 def route_after_a2ui_confirm(
     state: ChatA2uiState,
-) -> Literal["generate_node", "a2ui_cancel_node"]:
-    """Route accepted confirms to generate, rejected confirms to cancel.
+) -> Literal["a2ui_apply_decision_node", "a2ui_cancel_node"]:
+    """Route accepted/submitted decisions to apply, else to cancel.
+
+    Form and choice surfaces cancel only on an explicit ``cancelled``
+    flag (any other decision, i.e. a submit, proceeds to apply).
+    Confirm surfaces cancel unless ``accepted`` is truthy.
 
     Args:
-        state: Current workflow state; reads ``a2ui_decision``.
+        state: Current workflow state; reads ``a2ui_decision`` and
+            ``a2ui_surface``.
 
     Returns:
-        ``"generate_node"`` when the human accepted, else
+        ``"a2ui_apply_decision_node"`` when the human proceeded, else
         ``"a2ui_cancel_node"``.
     """
     decision = state.get("a2ui_decision") or {}
+    widget = decision.get("widget") or (
+        (state.get("a2ui_surface") or {}).get("widget")
+    )
+    if widget in ("form", "choice"):
+        if decision.get("cancelled") is True:
+            return "a2ui_cancel_node"
+        return "a2ui_apply_decision_node"
     if decision.get("accepted"):
-        return "generate_node"
+        return "a2ui_apply_decision_node"
     return "a2ui_cancel_node"
+
+
+async def a2ui_apply_decision_node(
+    state: ChatA2uiState,
+) -> dict[str, Any]:
+    """Inject form/choice answers into user_query before generate.
+
+    Confirm accept is a no-op on ``user_query``: the human simply
+    approved the original request as-is.
+
+    Args:
+        state: Current workflow state; reads ``a2ui_decision``,
+            ``a2ui_surface``, and ``user_query``.
+
+    Returns:
+        State delta prepending the injected summary to ``user_query``
+        for form/choice, or empty for confirm.
+    """
+    decision = state.get("a2ui_decision") or {}
+    widget = decision.get("widget") or (
+        (state.get("a2ui_surface") or {}).get("widget")
+    )
+    if widget == "form":
+        fields = decision.get("fields") or {}
+        summary = "User form input: " + ", ".join(
+            f"{key}={fields[key]}" for key in sorted(fields)
+        )
+    elif widget == "choice":
+        summary = f"User selected: {decision.get('selected')}"
+    else:
+        return {}
+    original = state["user_query"]
+    return {
+        "a2ui_user_input": summary,
+        "user_query": f"{summary}\n\n{original}",
+    }
 
 
 async def a2ui_cancel_node(state: ChatA2uiState) -> dict[str, Any]:
