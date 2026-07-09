@@ -21,8 +21,21 @@ or JavaScript file:
 phytomni --server mcp_server_phytomni.server list-tools
 ```
 
-The `call` subcommand prints the formatted answer text to stdout. For
-full response models, use `mcp_client_phytomni.client.PhytomniMcpClient`
+The `call` subcommand prints the formatted answer first. When the
+envelope includes structured blocks, it also prints:
+
+- a TSV table for DataAgent `tabular` headers/rows
+- a numbered list for cited-tool `references`
+- a one-line `task_id` / `output_dir` / `status` / `failures` summary
+  for async submit tools
+
+DeepGenome (and other agents that continue work after returning a
+`task_id`) need a long-lived process: run `phytomni-api` or keep an MCP
+server session open, then poll with `GetTaskStatus`. A one-shot
+`phytomni call` starts the server as a subprocess and exits after the
+tool returns, which cancels in-process background workflows.
+
+For full response models, use `mcp_client_phytomni.client.PhytomniMcpClient`
 from Python.
 
 ## `phytomni-api`
