@@ -86,6 +86,7 @@ Streaming section below.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
 | `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resumes a ReviewAgent run paused at a human approval interrupt.                                                                                                                                         |
+| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resumes a ChatAgent run paused on an A2UI confirm surface (`input_required`).                                                                                                                           |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                                                                                                                 |
 | `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                                                                                                                   |
 | `POST`   | `/v1/files`                              | yes   | Stores one multipart upload in OBS and returns the public path.                                                                                                                                         |
@@ -150,16 +151,56 @@ owner-only path (no `user_id`) keeps its existing contract.
 
 `POST /v1/runs/{thread_id}/resume` accepts
 `{"approved": bool, "edits": string | null}` for a ReviewAgent run
-whose current status is `input_required`. ReviewAgent is the only HTTP
-agent that pauses for human input. The `thread_id` is the same value as
-the Bot `run_id` returned in the interrupt body. Unknown runs return
-`404`, terminal or otherwise non-paused runs return `409`, malformed
-resume bodies return FastAPI's normal `422`, and a missing checkpoint
-returns `409 no pause point for run`. If the resumed graph pauses again,
-the response repeats
+whose current status is `input_required`. The `thread_id` is the same
+value as the Bot `run_id` returned in the interrupt body. Unknown runs
+return `404`, terminal or otherwise non-paused runs return `409`,
+malformed resume bodies return FastAPI's normal `422`, and a missing
+checkpoint returns `409 no pause point for run`. If the resumed graph
+pauses again, the response repeats
 `{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
 otherwise it settles the run as `succeeded` and returns the normal
 `agent.run` result envelope.
+
+`POST /v1/runs/{run_id}/a2ui-actions` accepts the Web action envelope
+for a ChatAgent run paused on an A2UI surface. The route is gated behind
+`A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED` (default off). Request body:
+
+```json
+{
+  "surface_id": "<from interrupt draft>",
+  "widget": "confirm",
+  "action_id": "<client-issued id>",
+  "run_id": "<same as path>",
+  "payload": {"accepted": true}
+}
+```
+
+Confirm payloads carry `{"accepted": bool}`; form and choice envelopes
+validate the same shapes Web already emits, though the P4-1 Chat path
+emits only `confirm` surfaces today. The path `run_id` must match
+`body.run_id` or the call returns `400 run_id mismatch`.
+
+| Condition                    | HTTP  | Detail                             |
+| ---------------------------- | ----- | ---------------------------------- |
+| `A2UI_ENABLED` off           | `403` | `a2ui disabled`                    |
+| Unknown or foreign run       | `404` | `run not found: <run_id>`          |
+| Path/body `run_id` mismatch  | `400` | `run_id mismatch`                  |
+| Invalid widget payload       | `400` | e.g. missing `accepted` on confirm |
+| Run not `input_required`     | `409` | `run is not awaiting input`        |
+| No open surface on run       | `409` | `no open a2ui surface`             |
+| `surface_id` ≠ draft         | `409` | `surface_id mismatch`              |
+| Missing LangGraph checkpoint | `409` | `no pause point for run`           |
+| Second POST after success    | `409` | terminal run                       |
+| Malformed body               | `422` | FastAPI validation                 |
+
+On success the run settles `succeeded` and the response carries the
+normal `agent.run` envelope with `result.formatted.answer` (the real
+ChatAgent answer, or the short cancel string on reject) plus
+`result.a2ui`: the prior downlink surface cloned with
+`props.status: "submitted"` and `props.accepted` when applicable. If the
+resumed graph pauses again (not emitted on the confirm-only Chat path
+today), the response stays `status: "input_required"` with a fresh
+`interrupt` block.
 
 The stdio MCP path uses client elicitation for the same ReviewAgent
 approval payload. Clients that advertise elicitation support are shown
@@ -168,8 +209,8 @@ capability gracefully degrade to auto-approval so legacy one-shot calls
 keep completing.
 
 E12 single-replica caveat: the checkpointer is local SQLite. Run the HTTP
-API as a single replica, or ensure all `/resume` requests for a paused
-ReviewAgent thread land on the same node with the same local
+API as a single replica, or ensure all `/resume` and `/a2ui-actions`
+requests for a paused thread land on the same node with the same local
 `checkpoints.db`; otherwise a second replica can see the registry row but
 miss the pause checkpoint and return `409 no pause point for run`.
 
@@ -452,6 +493,24 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   `truncated` is true when the stored blob hit the cap; `partial` is
   true when the run settled `failed` (client disconnect before
   `RunFinished`, or a mid-stream `RunError`).
+- **ChatAgent A2UI short-circuit** (`phyto-chat`, `A2UI_ENABLED` on,
+  confirm heuristic match): when `should_emit_confirm(user_query)` fires
+  (queries containing `请确认`, `是否确认`, `确认是否`, or the word
+  `confirm`), the stream bypasses token deltas and instead emits
+  `event: RunStarted`, one `event: Custom` frame with
+  `name: "phyto.a2ui"` carrying the downlink value
+  (`catalog_version`, `surface_id`, `widget`, `props`), then
+  `event: RunFinished` and `data: [DONE]`. The run settles
+  `input_required` — not `succeeded` — with
+  `result.interrupt.thread_id` equal to `run_id` and
+  `result.interrupt.draft.a2ui` holding the open surface. Web must keep
+  the action transport and `run_id` while the run stays
+  `input_required`, even though the SSE iterator has already emitted
+  `RunFinished` and its `finally` block would normally clear session
+  bindings; restore from `GET /v1/runs/{id}` when needed. Resume the
+  paused graph via `POST /v1/runs/{run_id}/a2ui-actions`. With
+  `A2UI_ENABLED` off, or when the heuristic does not match, behaviour
+  stays the normal token-stream path above.
 - **Other streaming-capable models** (knowledge / brief_gene today):
   settle still uses
   `{"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true}`

@@ -175,6 +175,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                     |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                  |
 | `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                |
+| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resume a ChatAgent A2UI confirm pause (`input_required`).                                                                                 |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                           |
 | `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                           |
 | `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                               |
@@ -224,6 +225,25 @@ Before flipping Web `bot.stream_enabled` + `VITE_STREAM_ENABLED` on:
 1. Optional: send a very long reply and confirm `truncated: true` on
    `GET /v1/runs/{id}` while the live UI still showed the full text.
 
+### A2UI cutover checklist (ChatAgent / Instant)
+
+Enable `PHYTOMNI_A2UI_ENABLED=1` only after the streaming cutover
+above is green (P4-0): ChatAgent streamed-answer persistence must already
+be live so non-A2UI traffic is safe. Additional gates:
+
+1. Coordinate the flag with Web so both sides enable A2UI together.
+1. Web must retain action transport and `run_id` while a run stays
+   `input_required`, even after the SSE stream emits `RunFinished` and
+   the session `finally` block would normally clear bindings; restore
+   from `GET /v1/runs/{id}` when the transport drops.
+1. Smoke: streamed confirm query → `phyto.a2ui` frame →
+   `GET /v1/runs/{id}` shows `input_required` →
+   `POST /v1/runs/{id}/a2ui-actions` with accept → run `succeeded` with
+   real `formatted.answer` and `result.a2ui` `status: submitted`.
+
+ReviewAgent A2UI dual-transport (P4-1b) is not in this cutover; keep
+using `/v1/runs/{id}/resume` for review pauses until that slice lands.
+
 The OBS relay rows confine each object key to the caller's tenant namespace
 (`agent_data/{user_data,uploads}/<user_id>/`), with one read-only exception:
 `GET /v1/relay/obs/object` also serves the content-addressed
@@ -247,13 +267,23 @@ row carries `dialogue_id` / `query` / `tool_name` / `model` /
 `result.formatted.answer`.
 
 `POST /v1/runs/{thread_id}/resume` is valid only for owner-scoped
-ReviewAgent rows in `input_required`; ReviewAgent is the only pausing
-agent. The body is `{"approved": bool, "edits": string | null}`. Expect
-`404` for unknown or foreign runs, `409` for terminal / non-paused runs,
-FastAPI `422` for malformed bodies, and `409 no pause point for run` if
-the registry row exists but the graph checkpoint does not. If a resumed
-review pauses again, the response stays `status: "input_required"` and
-returns the next `interrupt.thread_id` / `interrupt.draft`.
+ReviewAgent rows in `input_required`. The body is
+`{"approved": bool, "edits": string | null}`. Expect `404` for unknown
+or foreign runs, `409` for terminal / non-paused runs, FastAPI `422` for
+malformed bodies, and `409 no pause point for run` if the registry row
+exists but the graph checkpoint does not. If a resumed review pauses
+again, the response stays `status: "input_required"` and returns the
+next `interrupt.thread_id` / `interrupt.draft`.
+
+`POST /v1/runs/{run_id}/a2ui-actions` resumes ChatAgent runs paused on an
+A2UI confirm surface. Requires `A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED`
+(`403 a2ui disabled` when off). Body mirrors the Web envelope
+(`surface_id`, `widget`, `action_id`, `run_id`, `payload`). Expect
+`404` for unknown runs, `400` for path/body `run_id` mismatch or invalid
+payload, `409` for non-paused runs / surface mismatch / missing
+checkpoint / duplicate POST after success. Success settles `succeeded`
+with `result.formatted.answer` and `result.a2ui` marked
+`props.status: submitted`.
 
 The stdio MCP path collects the same approval payload through client
 elicitation. Clients that advertise elicitation support see the draft
@@ -356,10 +386,10 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   single-worker (the default) until the registry moves to shared storage.
 - **E12 checkpointer caveat.** ReviewAgent human-in-the-loop pause points
   live in the local SQLite `checkpoints.db` sibling of `server_tasks.db`.
-  Run the API as one replica, or keep `/resume` traffic pinned to a node
-  that shares the same checkpoint file. A different replica can see the
-  run row in `input_required` but miss the LangGraph checkpoint and return
-  `409 no pause point for run`.
+  Run the API as one replica, or keep `/resume` and `/a2ui-actions`
+  traffic pinned to a node that shares the same checkpoint file. A
+  different replica can see the run row in `input_required` but miss the
+  LangGraph checkpoint and return `409 no pause point for run`.
 
 ## Health Checks
 

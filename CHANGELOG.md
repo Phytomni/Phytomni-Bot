@@ -35,6 +35,10 @@ Full commit range: `1f8f628..HEAD`.
 - **HTTP resume endpoint** — `POST /v1/runs/{thread_id}/resume` accepts an
   approval payload (`approved` plus optional `edits`) and resumes the paused
   ReviewAgent thread through the shared resume kernel.
+- **A2UI confirm surfaces for streamed chat (flag-gated)** —
+  `PHYTOMNI_A2UI_ENABLED` gates ChatAgent SSE short-circuit into a
+  `phyto.a2ui` confirm widget (`input_required` settle) and the companion
+  `POST /v1/runs/{run_id}/a2ui-actions` resume route; default off.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.
