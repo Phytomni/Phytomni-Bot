@@ -990,6 +990,19 @@ def test_is_cited_tool() -> None:
     assert not is_cited_tool("ChatAgent")
 
 
+def test_analyst_result_rejects_whitespace_task_id() -> None:
+    result = format_tool_result(
+        "AnalystAgent",
+        {
+            "task_id": "   ",
+            "output_dir": "/obs/out",
+            "compute_resource": "small",
+        },
+    )
+    assert result.answer == "Task submission failed: missing task_id"
+    assert result.metadata["status"] == "FAILED"
+
+
 def test_analyst_result_rejects_missing_task_id() -> None:
     """A None task_id must not look like a successful submit."""
     result = format_tool_result(

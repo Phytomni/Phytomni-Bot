@@ -3,11 +3,16 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Shared local+remote reconciliation for one task row.
 
-The MCP ``GetTaskStatus`` tool and the upcoming run-registry status
-endpoint both need the same non-blocking "read the local ``tasks`` row
-then perform exactly one remote ``task_status`` lookup" semantics.
+The MCP ``GetTaskStatus`` tool and the run-registry status endpoint
+both need the same non-blocking "read the local ``tasks`` row, then
+optionally perform one remote ``task_status`` lookup" semantics.
 Factoring it here keeps the two consumers byte-equivalent and removes
 the only point at which their poll logic could drift.
+
+Deep_genome umbrella rows without a ``source_task_id`` are local-only:
+no remote probe runs because the umbrella id is not an analysis-platform
+job id. Child and dedup rows that carry a ``source_task_id`` still probe
+that remote id.
 """
 
 from __future__ import annotations
@@ -77,10 +82,15 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
     """Return one task's locally recorded + live-bridged status.
 
     Performs a single non-blocking ``SELECT`` on the local registry,
-    then exactly one live analysis-platform ``task_status`` lookup —
-    never the ``wait_for_completion`` poll loop, so the call cannot
-    re-create the C-1 MCP timeout. A failed or unreachable live check
-    degrades to the locally recorded status so the lookup stays robust.
+    then — when the row is eligible — exactly one live analysis-platform
+    ``task_status`` lookup. Never the ``wait_for_completion`` poll loop,
+    so the call cannot re-create the C-1 MCP timeout. A failed or
+    unreachable live check degrades to the locally recorded status so
+    the lookup stays robust.
+
+    Remote probe is skipped for deep_genome umbrella rows that have no
+    ``source_task_id`` (the umbrella id is not a platform job id). All
+    other rows probe ``source_task_id`` when set, else ``task_id``.
 
     Args:
         task_id: The task id to look up.

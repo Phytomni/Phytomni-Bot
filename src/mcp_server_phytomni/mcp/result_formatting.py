@@ -652,9 +652,11 @@ def _format_in_silico_result(
     task_ids_mapping = content.get("task_ids")
     task_ids = (
         tuple(
-            str(value)
-            for value in task_ids_mapping.values()
-            if isinstance(value, str) and value
+            tid
+            for tid in (
+                _string_or_none(value) for value in task_ids_mapping.values()
+            )
+            if tid is not None
         )
         if isinstance(task_ids_mapping, Mapping)
         else ()
@@ -723,7 +725,9 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
         answer = "No tasks found"
         if failures:
             first = failures[0].get("message", "")
-            answer = f"No tasks found ({universal['failed_count']} failed: {first})"
+            answer = (
+                f"No tasks found ({universal['failed_count']} failed: {first})"
+            )
         return FormattedToolResult(
             answer=answer,
             metadata={
@@ -737,9 +741,9 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
 
     primary_task = tasks[0]
     task_ids = tuple(
-        str(task.get("task_id", ""))
+        tid
         for task in tasks
-        if task.get("task_id") is not None
+        if (tid := _string_or_none(task.get("task_id"))) is not None
     )
     output_dirs = tuple(
         str(task.get("output_dir"))
@@ -960,8 +964,11 @@ def _normalize_compute_resource(value: str | None) -> str | None:
 
 
 def _string_or_none(value: Any) -> str | None:
-    """Return a string value or None."""
-    return None if value is None else str(value)
+    """Return a stripped non-empty string value or None."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _json_dumps(value: Any) -> str:
