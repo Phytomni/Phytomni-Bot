@@ -319,7 +319,10 @@ def test_obs_download_options_uses_resolver_with_run_identity(tmp_path):
         }
     )
 
-    assert options.download_path.endswith(f"{run_identity.run_id}/analyst")
+    assert Path(options.download_path).parts[-2:] == (
+        run_identity.run_id,
+        "analyst",
+    )
 
 
 def test_obs_download_options_falls_back_to_static_default():
