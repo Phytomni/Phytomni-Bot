@@ -20,7 +20,7 @@ from typing import Any, cast
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import get_default_environment, stdio_client
-from mcp.types import Tool
+from mcp.types import ElicitResult, Tool
 from openai import AsyncOpenAI
 
 from .tool_result_formatters import (
@@ -183,6 +183,7 @@ class PhytomniMcpClient:
         self.field_mapper = field_mapper
         self.reference_resolver = reference_resolver
         self._exit_stack = AsyncExitStack()
+        self._approval_decider: Any = None
         self.session: ClientSession | None = None
 
     async def __aenter__(self) -> "PhytomniMcpClient":
@@ -232,7 +233,11 @@ class PhytomniMcpClient:
         )
         read_stream, write_stream = stdio_transport
         self.session = await self._exit_stack.enter_async_context(
-            ClientSession(read_stream, write_stream)
+            ClientSession(
+                read_stream,
+                write_stream,
+                elicitation_callback=self._elicitation_callback,
+            )
         )
         await self.session.initialize()
 
@@ -259,6 +264,20 @@ class PhytomniMcpClient:
         response = await session.list_tools()
         return tuple(response.tools)
 
+    async def _elicitation_callback(
+        self,
+        context: Any,
+        params: Any,
+    ) -> ElicitResult:
+        """Return a client approval decision for server elicitation."""
+        decider = self._approval_decider
+        decision = (
+            {"approved": True, "edits": None}
+            if decider is None
+            else decider(context, params)
+        )
+        return ElicitResult(action="accept", content=decision)
+
     async def openai_tools(self) -> list[dict[str, Any]]:
         """Return MCP tools in OpenAI Chat Completions tool format.
 
@@ -284,6 +303,7 @@ class PhytomniMcpClient:
         *,
         read_timeout_seconds: int = DEFAULT_TOOL_TIMEOUT_SECONDS,
         progress_callback: Any = None,
+        approval_decider: Any = None,
     ) -> McpToolResponse:
         """Call one MCP tool and return raw plus formatted output.
 
@@ -295,6 +315,8 @@ class PhytomniMcpClient:
                 ``(progress, total, message)`` invoked per server
                 progress notification. Forwarded to the MCP SDK's
                 ``ClientSession.call_tool``.
+            approval_decider: Optional callback ``(context, params)`` that
+                returns elicitation approval content for this call.
 
         Returns:
             Raw MCP response plus a normalized formatted representation.
@@ -303,12 +325,17 @@ class PhytomniMcpClient:
             ToolCallError: If the MCP tool returns an error result.
         """
         session = self._require_session()
-        result = await session.call_tool(
-            tool_name,
-            dict(arguments),
-            read_timeout_seconds=timedelta(seconds=read_timeout_seconds),
-            progress_callback=progress_callback,
-        )
+        previous_decider = self._approval_decider
+        self._approval_decider = approval_decider
+        try:
+            result = await session.call_tool(
+                tool_name,
+                dict(arguments),
+                read_timeout_seconds=timedelta(seconds=read_timeout_seconds),
+                progress_callback=progress_callback,
+            )
+        finally:
+            self._approval_decider = previous_decider
         raw_text = _result_text(result)
         if result.isError:
             raise ToolCallError(raw_text)
