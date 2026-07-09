@@ -12,7 +12,7 @@ a short cancel response without a second confirm interrupt.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from langgraph.types import interrupt
 
@@ -39,20 +39,34 @@ class ChatA2uiState(ChatState, total=False):
     cancel_message: str | None
 
 
-async def a2ui_confirm_node(state: ChatA2uiState) -> dict[str, Any]:
-    """Pause for human confirmation before the main LLM call.
+class ChatA2uiOutput(TypedDict, total=False):
+    """Public output contract for the Chat A2UI confirm workflow.
 
-    Mints a confirm surface, stashes the downlink value in state, and
-    calls ``interrupt()`` with the draft payload. On resume LangGraph
-    replays this node from the top and ``interrupt()`` returns the
-    decision the adapter supplied.
+    Carries the terminal ``response`` plus the minted confirm surface so
+    callers can validate ``surface_id`` against the paused draft.
+    """
+
+    response: dict[str, Any] | None
+    a2ui_surface: dict[str, Any] | None
+
+
+async def a2ui_prepare_surface_node(
+    state: ChatA2uiState,
+) -> dict[str, Any]:
+    """Mint the confirm surface once before the interrupt node.
+
+    LangGraph replays the interrupt node from the top on resume; surface
+    minting lives here so the same ``surface_id`` survives replay.
 
     Args:
-        state: Current workflow state; reads ``user_query``.
+        state: Current workflow state; reads ``user_query`` and
+            ``a2ui_surface``.
 
     Returns:
-        State delta recording the downlink surface and human decision.
+        State delta with the downlink surface, or empty when already set.
     """
+    if state.get("a2ui_surface"):
+        return {}
     surface_id = mint_surface_id()
     value = build_a2ui_value(
         surface_id=surface_id,
@@ -62,11 +76,29 @@ async def a2ui_confirm_node(state: ChatA2uiState) -> dict[str, Any]:
             body=state["user_query"][:500],
         ),
     )
-    decision = interrupt({"a2ui": value})
-    return {
-        "a2ui_surface": value,
-        "a2ui_decision": decision,
-    }
+    return {"a2ui_surface": value}
+
+
+async def a2ui_confirm_node(state: ChatA2uiState) -> dict[str, Any]:
+    """Pause for human confirmation before the main LLM call.
+
+    Reads the pre-minted surface from state and calls ``interrupt()``
+    with the draft payload. On resume LangGraph replays this node from
+    the top and ``interrupt()`` returns the decision the adapter
+    supplied without reminting ``surface_id``.
+
+    Args:
+        state: Current workflow state; reads ``a2ui_surface``.
+
+    Returns:
+        State delta recording the human decision.
+    """
+    surface = state.get("a2ui_surface")
+    if surface is None:
+        msg = "a2ui_surface missing before confirm interrupt"
+        raise RuntimeError(msg)
+    decision = interrupt({"a2ui": surface})
+    return {"a2ui_decision": decision}
 
 
 def route_after_a2ui_confirm(

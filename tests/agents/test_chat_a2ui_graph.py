@@ -118,18 +118,19 @@ async def test_a2ui_graph_resume_accepted_generates(
     )
     info = detect_interrupt(paused, thread_id)
     assert info is not None
-    surface = info["draft"]["a2ui"]["surface_id"]
+    draft_surface_id = info["draft"]["a2ui"]["surface_id"]
     final = await aresume_graph(
         app,
         thread_id,
         {
             "accepted": True,
-            "surface_id": surface,
+            "surface_id": draft_surface_id,
             "widget": "confirm",
             "action_id": "act-1",
         },
     )
     assert detect_interrupt(final, thread_id) is None
+    assert final["a2ui_surface"]["surface_id"] == draft_surface_id
     content = final["response"]["choices"][0]["message"]["content"]
     assert "Analysis complete." in content
 
