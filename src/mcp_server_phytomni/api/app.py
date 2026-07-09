@@ -79,6 +79,7 @@ from ..agents.shared.a2ui import (
     action_to_resume_payload,
     attach_review_a2ui,
     build_submitted_value,
+    review_confirm_action_to_resume,
     should_emit_confirm,
 )
 from ..agents.shared.gauss import aclose_gauss_pool
@@ -465,7 +466,7 @@ async def _resume_a2ui_run(
     body: A2uiActionRequest,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """Resume a paused Chat A2UI run from a Web action envelope."""
+    """Resume a paused A2UI run from a Web action envelope."""
     if not ApiConfig().A2UI_ENABLED:
         raise HTTPException(status_code=403, detail="a2ui disabled")
     if run_id != body.run_id:
@@ -479,6 +480,12 @@ async def _resume_a2ui_run(
             status_code=404,
             detail=f"run not found: {run_id}",
         )
+    agent = record.spec.agent
+    if agent not in ("chat", "review"):
+        raise HTTPException(
+            status_code=400,
+            detail="unsupported agent for a2ui",
+        )
     open_surface = _open_a2ui_surface_for_action(
         record,
         surface_id=body.surface_id,
@@ -487,13 +494,18 @@ async def _resume_a2ui_run(
 
     try:
         envelope = A2uiActionEnvelope.model_validate(body.model_dump())
-        resume_payload = action_to_resume_payload(envelope)
+        if agent == "chat":
+            resume_payload = action_to_resume_payload(envelope)
+            app = _chat_a2ui_stream_app()
+        else:
+            resume_payload = review_confirm_action_to_resume(envelope)
+            app = _review_stream_app()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         final_state = await _resume_paused_run(
-            _chat_a2ui_stream_app(),
+            app,
             run_id,
             resume_payload,
         )
@@ -509,26 +521,51 @@ async def _resume_a2ui_run(
 
     interrupt_after = detect_interrupt(final_state, run_id)
     if interrupt_after is not None:
-        interrupt_dict = dict(interrupt_after)
+        if agent == "chat":
+            interrupt_dict = dict(interrupt_after)
+            registry.settle_run(
+                run_id,
+                owner=owner,
+                status="input_required",
+                result=_chat_a2ui_interrupt_result(interrupt_dict),
+            )
+            return (
+                _a2ui_interrupt_body(
+                    run_id=run_id,
+                    interrupt=interrupt_dict,
+                ),
+                200,
+            )
+        interrupt_dict = _maybe_project_review_interrupt(interrupt_after)
         registry.settle_run(
             run_id,
             owner=owner,
             status="input_required",
-            result=_chat_a2ui_interrupt_result(interrupt_dict),
+            result=_review_interrupt_result(interrupt_dict),
         )
         return (
-            _a2ui_interrupt_body(
-                run_id=run_id,
+            _review_interrupt_body(
+                thread_id=run_id,
                 interrupt=interrupt_dict,
             ),
             200,
         )
 
-    result = _format_chat_a2ui_result(
-        final_state,
-        prior_surface=open_surface,
-        resume_payload=resume_payload,
-    )
+    if agent == "chat":
+        result = _format_chat_a2ui_result(
+            final_state,
+            prior_surface=open_surface,
+            resume_payload=resume_payload,
+        )
+    else:
+        result = _format_review_result(final_state)
+        result = {
+            **result,
+            "a2ui": build_submitted_value(
+                open_surface,
+                accepted=resume_payload["approved"],
+            ),
+        }
     registry.settle_run(
         run_id,
         owner=owner,
@@ -541,7 +578,7 @@ async def _resume_a2ui_run(
             "id": run_id,
             "run_id": run_id,
             "object": "agent.run",
-            "agent": "chat",
+            "agent": agent,
             "status": "succeeded",
             "task_ids": [],
             "result": response_result,
@@ -1488,6 +1525,13 @@ async def _resume_review_run(
             status_code=409,
             detail="run is not awaiting input",
         )
+    prior_surface: Mapping[str, Any] | None = None
+    stored = record.result or {}
+    interrupt_stored = stored.get("interrupt") or {}
+    draft = interrupt_stored.get("draft") or {}
+    candidate = draft.get("a2ui")
+    if isinstance(candidate, Mapping):
+        prior_surface = candidate
     try:
         final_state = await _resume_paused_run(
             _review_stream_app(),
@@ -1517,6 +1561,14 @@ async def _resume_review_run(
             200,
         )
     result = _format_review_result(final_state)
+    if prior_surface is not None:
+        result = {
+            **result,
+            "a2ui": build_submitted_value(
+                prior_surface,
+                accepted=payload.approved,
+            ),
+        }
     registry.settle_run(
         thread_id,
         owner=owner,
