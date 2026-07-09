@@ -59,6 +59,31 @@ def test_action_to_resume_payload_confirm() -> None:
     assert payload["widget"] == "confirm"
 
 
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        {},
+        {"accepted": []},
+    ],
+)
+def test_action_to_resume_payload_confirm_invalid_raises(
+    bad_payload: dict[str, object],
+) -> None:
+    """Invalid confirm payload surfaces as ValueError, not raw Pydantic."""
+    env = A2uiActionEnvelope(
+        surface_id="sfc-1",
+        widget="confirm",
+        action_id="act-1",
+        run_id="run-1",
+        payload=bad_payload,
+    )
+    with pytest.raises(
+        ValueError, match="Invalid confirm action payload"
+    ) as exc:
+        action_to_resume_payload(env)
+    assert exc.value.args[0] == "Invalid confirm action payload"
+
+
 def test_form_and_choice_envelopes_validate() -> None:
     """Form and choice action envelopes parse for infrastructure tests."""
     form = A2uiActionEnvelope(
