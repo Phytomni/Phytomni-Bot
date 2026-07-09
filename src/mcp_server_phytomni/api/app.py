@@ -25,7 +25,7 @@ from collections.abc import (
     Mapping,
 )
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -45,6 +45,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
+from pydantic import ValidationError
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -69,7 +70,9 @@ from ..agents.network.resolve_query import (
     GeneNetworkResolveResult,
     resolve_network_user_query,
 )
+from ..agents.review.agent import review_stream_target
 from ..agents.shared.gauss import aclose_gauss_pool
+from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import (
@@ -82,10 +85,13 @@ from ..config.defaults import (
 from ..config.settings import SensitiveConfig
 from ..mcp.app import invoke_tool_enveloped, invoke_tool_streamed
 from ..mcp.result_formatting import (
+    build_tool_result_envelope,
     resolve_debug,
     strip_agent_result,
     strip_chat_completion,
 )
+from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..runtime.langgraph_runner import build_runnable_config
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -96,6 +102,7 @@ from ..runtime.request_context import (
     current_run_id,
     reset_request_var,
 )
+from ..runtime.resume import NoCheckpointError, aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
@@ -138,6 +145,7 @@ from .schemas import (
     ChatCompletionRequest,
     ExpertQueryRequest,
     FileUploadResponse,
+    ResumeRequest,
     UploadPurpose,
 )
 
@@ -694,15 +702,6 @@ async def _invoke_agent_run(
             status_code=404, detail=f"agent not found: {agent}"
         )
     resolve_meta = await _apply_runs_resolver(agent, arguments)
-    envelope = await invoke_tool_enveloped(tool_name, arguments)
-    formatted_dict = asdict(envelope.formatted)
-    if resolve_meta:
-        existing_meta = formatted_dict.get("metadata") or {}
-        if not isinstance(existing_meta, dict):
-            existing_meta = {}
-        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-    result = {"formatted": formatted_dict, "raw": envelope.raw}
-    response_result = result if debug else strip_agent_result(result)
     owner = current_request_user() or "anonymous"
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
@@ -715,6 +714,21 @@ async def _invoke_agent_run(
         model=None,
         request_json=request_json,
     )
+    if agent == "review":
+        execution = await _run_review_with_interrupt(
+            arguments=arguments,
+            request_info=request_info,
+        )
+        return _review_run_body(execution, debug=debug), 200
+    envelope = await invoke_tool_enveloped(tool_name, arguments)
+    formatted_dict = asdict(envelope.formatted)
+    if resolve_meta:
+        existing_meta = formatted_dict.get("metadata") or {}
+        if not isinstance(existing_meta, dict):
+            existing_meta = {}
+        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
+    result = {"formatted": formatted_dict, "raw": envelope.raw}
+    response_result = result if debug else strip_agent_result(result)
     if agent in _REMOTE_AGENT_SLUGS:
         run_id, task_ids = _resolve_remote_run(owner)
         _stamp_remote_request_info(
@@ -944,6 +958,256 @@ def _list_owner_runs(
 
 
 # pylint: enable=too-many-arguments
+
+
+@dataclass(frozen=True)
+class _ReviewExecution:
+    """Internal result of one interrupt-aware ReviewAgent graph run."""
+
+    run_id: str
+    status: str
+    result: dict[str, Any] | None = None
+    interrupt: dict[str, Any] | None = None
+
+
+def _review_stream_app() -> Any:
+    """Return the cached ReviewAgent compiled graph app."""
+    app, _ = review_stream_target("", [])
+    return app
+
+
+def _review_initial_state(args: ReviewAgentArgs) -> Mapping[str, Any]:
+    """Build the ReviewAgent initial graph state for one request."""
+    _, initial_state = review_stream_target(
+        args.user_query, args.obs_file_list
+    )
+    return initial_state
+
+
+def _validate_review_arguments(arguments: dict[str, Any]) -> ReviewAgentArgs:
+    """Validate a ReviewAgent argument dict with the MCP schema."""
+    try:
+        return ReviewAgentArgs(**arguments)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="invalid ReviewAgent arguments",
+        ) from exc
+
+
+def _review_interrupt_result(interrupt: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the registry payload stored for a paused review run."""
+    return {
+        "interrupt": dict(interrupt),
+        "status": "input_required",
+    }
+
+
+def _review_interrupt_body(
+    *,
+    thread_id: str,
+    interrupt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the HTTP body for a paused review run."""
+    return {
+        "id": thread_id,
+        "run_id": thread_id,
+        "object": "agent.run",
+        "agent": "review",
+        "status": "input_required",
+        "task_ids": [],
+        "interrupt": dict(interrupt),
+    }
+
+
+def _format_review_result(
+    final_state: Mapping[str, Any],
+    *,
+    arguments: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Format a terminal ReviewAgent graph state like MCP dispatch."""
+    raw_payload = merge_intermediate_state(final_state)
+    envelope = build_tool_result_envelope(
+        "ReviewAgent",
+        raw_payload,
+        arguments=arguments,
+    )
+    return {
+        "formatted": asdict(envelope.formatted),
+        "raw": envelope.raw,
+    }
+
+
+def _review_run_body(
+    execution: _ReviewExecution,
+    *,
+    debug: bool,
+) -> dict[str, Any]:
+    """Shape a ReviewAgent execution as an ``agent.run`` response."""
+    if execution.interrupt is not None:
+        return _review_interrupt_body(
+            thread_id=execution.run_id,
+            interrupt=execution.interrupt,
+        )
+    result = execution.result or {"formatted": {"answer": ""}, "raw": None}
+    response_result = result if debug else strip_agent_result(result)
+    return {
+        "id": execution.run_id,
+        "run_id": execution.run_id,
+        "object": "agent.run",
+        "agent": "review",
+        "status": execution.status,
+        "task_ids": [],
+        "result": response_result,
+    }
+
+
+async def _run_review_with_interrupt(
+    *,
+    arguments: dict[str, Any],
+    request_info: RunRequestInfo,
+) -> _ReviewExecution:
+    """Run ReviewAgent once, surfacing a LangGraph interrupt if present."""
+    args = _validate_review_arguments(arguments)
+    owner = current_request_user() or "anonymous"
+    run_id = IdFactory().new_id("run", "review")
+    app = _review_stream_app()
+    initial_state = _review_initial_state(args)
+    final_state = await app.ainvoke(
+        initial_state,
+        config=build_runnable_config(run_id),
+    )
+    interrupt = detect_interrupt(final_state, run_id)
+    registry = RunRegistry(resolve_tasks_db_path())
+    if interrupt is not None:
+        interrupt_dict = dict(interrupt)
+        registry.create_run(
+            RunSpec(
+                run_id=run_id,
+                user_id=owner,
+                agent="review",
+                origin="local",
+            ),
+            outcome=RunOutcome(
+                status="input_required",
+                result=_review_interrupt_result(interrupt_dict),
+            ),
+            request_info=request_info,
+        )
+        return _ReviewExecution(
+            run_id=run_id,
+            status="input_required",
+            interrupt=interrupt_dict,
+        )
+    result = _format_review_result(final_state, arguments=arguments)
+    registry.create_run(
+        RunSpec(
+            run_id=run_id,
+            user_id=owner,
+            agent="review",
+            origin="local",
+        ),
+        outcome=RunOutcome(status="succeeded", result=result),
+        request_info=request_info,
+    )
+    return _ReviewExecution(run_id=run_id, status="succeeded", result=result)
+
+
+async def _resume_review_run(
+    *,
+    thread_id: str,
+    payload: ResumeRequest,
+    debug: bool = False,
+) -> tuple[dict[str, Any], int]:
+    """Resume a paused ReviewAgent graph thread and settle its run row."""
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    record = registry.get_run(thread_id, owner=owner)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"run not found: {thread_id}",
+        )
+    if record.status != "input_required":
+        raise HTTPException(
+            status_code=409,
+            detail="run is not awaiting input",
+        )
+    try:
+        final_state = await aresume_graph(
+            _review_stream_app(),
+            thread_id,
+            {"approved": payload.approved, "edits": payload.edits},
+        )
+    except NoCheckpointError as exc:
+        _LOGGER.exception("resume checkpoint missing for run %s", thread_id)
+        raise HTTPException(
+            status_code=409,
+            detail="no pause point for run",
+        ) from exc
+    interrupt = detect_interrupt(final_state, thread_id)
+    if interrupt is not None:
+        interrupt_dict = dict(interrupt)
+        registry.settle_run(
+            thread_id,
+            owner=owner,
+            status="input_required",
+            result=_review_interrupt_result(interrupt_dict),
+        )
+        return (
+            _review_interrupt_body(
+                thread_id=thread_id,
+                interrupt=interrupt_dict,
+            ),
+            200,
+        )
+    result = _format_review_result(final_state)
+    registry.settle_run(
+        thread_id,
+        owner=owner,
+        status="succeeded",
+        result=result,
+    )
+    execution = _ReviewExecution(
+        run_id=thread_id,
+        status="succeeded",
+        result=result,
+    )
+    return _review_run_body(execution, debug=debug), 200
+
+
+async def _review_chat_completion_response(
+    *,
+    payload: ChatCompletionRequest,
+    arguments: Mapping[str, object],
+    user_query: str,
+) -> JSONResponse:
+    """Return the ReviewAgent non-stream chat response or interrupt body."""
+    execution = await _run_review_with_interrupt(
+        arguments=dict(arguments),
+        request_info=RunRequestInfo(
+            dialogue_id=payload.dialogue_id,
+            query=user_query,
+            tool_name="ReviewAgent",
+            model=payload.model,
+            request_json=payload.model_dump_json(),
+        ),
+    )
+    if execution.interrupt is not None:
+        # A ReviewAgent pause is not an OpenAI chat completion; return
+        # the native interrupt body so clients can resume with the Bot
+        # run id without guessing inside choices[].
+        return JSONResponse(_review_run_body(execution, debug=True))
+    result = execution.result or {"formatted": {"answer": ""}, "raw": None}
+    completion = to_chat_completion(
+        result.get("formatted", {}),
+        result.get("raw"),
+        payload.model,
+    )
+    completion["run_id"] = execution.run_id
+    if not resolve_debug(payload.debug):
+        completion = strip_chat_completion(completion)
+    return JSONResponse(completion)
 
 
 async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
@@ -1581,6 +1845,12 @@ def create_app() -> FastAPI:
                 payload=payload,
                 user_query=user_query,
             )
+        if tool_name == "ReviewAgent":
+            return await _review_chat_completion_response(
+                payload=payload,
+                arguments=arguments,
+                user_query=user_query,
+            )
         envelope = await invoke_tool_enveloped(tool_name, arguments)
         formatted_dict = asdict(envelope.formatted)
         if resolve_meta:
@@ -1751,6 +2021,22 @@ def create_app() -> FastAPI:
                 "result": strip_agent_result(record["result"]),
             }
         return JSONResponse(record)
+
+    @app.post("/v1/runs/{thread_id}/resume")
+    async def resume_run(
+        thread_id: str,
+        body: ResumeRequest,
+        principal: ApiPrincipal = Depends(require_scope("agents")),
+        debug: bool = False,
+    ) -> JSONResponse:
+        """Resume a paused ReviewAgent run by LangGraph thread id."""
+        del principal
+        response_body, status_code = await _resume_review_run(
+            thread_id=thread_id,
+            payload=body,
+            debug=resolve_debug(debug),
+        )
+        return JSONResponse(response_body, status_code=status_code)
 
     @app.get("/v1/runs")
     async def list_runs(

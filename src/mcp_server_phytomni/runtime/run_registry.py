@@ -49,6 +49,7 @@ __all__ = [
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _FAILURE_STATUSES = frozenset({"failed", "error"})
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
+_NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
 
 _CREATE_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -565,7 +566,7 @@ class RunRegistry:
             Updated ``RunRecord`` or ``None`` (unknown / not-owner).
         """
         current = self.get_run(run_id, owner=owner)
-        if current is None or current.status in _TERMINAL_RUN_STATUSES:
+        if current is None or current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
         live: list[dict[str, Any]] = []
         for task_id in current.task_ids:

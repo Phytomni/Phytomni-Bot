@@ -79,6 +79,7 @@ per-model message. See the SSE Streaming section below.
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                                                                                                              |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
+| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resumes a ReviewAgent run paused at a human approval interrupt.                                                                                                                                         |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                                                                                                                 |
 | `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                                                                                                                   |
 | `POST`   | `/v1/files`                              | yes   | Stores one multipart upload in OBS and returns the public path.                                                                                                                                         |
@@ -140,6 +141,17 @@ dedicated header so a Bearer-carried user key cannot get confused
 for the service token). Missing or wrong service token returns
 `403 user_id query parameter requires the service token`. The
 owner-only path (no `user_id`) keeps its existing contract.
+
+`POST /v1/runs/{thread_id}/resume` accepts
+`{"approved": bool, "edits": string | null}` for a ReviewAgent run
+whose current status is `input_required`. The `thread_id` is the same
+value as the Bot `run_id` returned in the interrupt body. Unknown runs
+return `404`, terminal or otherwise non-paused runs return `409`, and a
+missing checkpoint returns `409 no pause point for run`. If the resumed
+graph pauses again, the response repeats
+`{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
+otherwise it settles the run as `succeeded` and returns the normal
+`agent.run` result envelope.
 
 `GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
 The endpoint verifies ownership, then fetches or retrieves cached logs

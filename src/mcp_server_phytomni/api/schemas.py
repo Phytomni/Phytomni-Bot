@@ -6,8 +6,9 @@
 
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
     ChatCompletionRequest, AgentRunRequest, ExpertQueryRequest,
-    ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyRecordResponse,
-    ApiKeyListResponse, ApiKeyDeleteResponse, FileUploadResponse.
+    ResumeRequest, ApiKeyCreateRequest, ApiKeyCreateResponse,
+    ApiKeyRecordResponse, ApiKeyListResponse, ApiKeyDeleteResponse,
+    FileUploadResponse.
 Public aliases: UploadPurpose.
 """
 
@@ -44,6 +45,7 @@ __all__ = [
     "ChatCompletionRequest",
     "ChatMessage",
     "FileUploadResponse",
+    "ResumeRequest",
     "UploadPurpose",
 ]
 
@@ -143,6 +145,18 @@ class AgentRunRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     dialogue_id: str | None = None
     debug: bool | None = None
+
+
+class ResumeRequest(BaseModel):
+    """Body for ``POST /v1/runs/{thread_id}/resume``.
+
+    Attributes:
+        approved: Human approval decision returned to the paused graph.
+        edits: Optional free-form revision instructions.
+    """
+
+    approved: bool
+    edits: str | None = None
 
 
 class ExpertQueryRequest(BaseModel):

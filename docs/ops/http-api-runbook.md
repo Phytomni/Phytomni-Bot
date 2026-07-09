@@ -173,6 +173,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                  |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                     |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                  |
+| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                           |
 | `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                           |
 | `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                               |
@@ -229,6 +230,12 @@ loads only the target conversation; `created_after=<iso-8601>` /
 row carries `dialogue_id` / `query` / `tool_name` / `model` /
 `answer` alongside the standard fields, sourced from
 `result.formatted.answer`.
+
+`POST /v1/runs/{thread_id}/resume` is valid only for owner-scoped
+ReviewAgent rows in `input_required`. The body is
+`{"approved": bool, "edits": string | null}`. Expect `404` for unknown
+or foreign runs, `409` for terminal / non-paused runs, and `409 no pause point for run` if the registry row exists but the graph checkpoint
+does not.
 
 `GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
 The endpoint verifies ownership, then fetches or retrieves cached logs
