@@ -39,6 +39,12 @@ Full commit range: `1f8f628..HEAD`.
   `PHYTOMNI_A2UI_ENABLED` gates ChatAgent SSE short-circuit into a
   `phyto.a2ui` confirm widget (`input_required` settle) and the companion
   `POST /v1/runs/{run_id}/a2ui-actions` resume route; default off.
+- **Review A2UI dual-transport (flag-gated)** — the same
+  `PHYTOMNI_A2UI_ENABLED` flag projects `phyto.a2ui` confirm surfaces
+  onto Review HTTP pauses (non-stream and minimal `stream: true` pause
+  SSE). Review resumes through `/resume` or `/a2ui-actions`; both attach
+  `result.a2ui` on success. A2UI uplink maps to `{approved, edits: null}`
+  because the Review graph does not consume `edits`.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

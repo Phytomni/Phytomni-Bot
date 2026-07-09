@@ -86,7 +86,7 @@ Streaming section below.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
 | `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resumes a ReviewAgent run paused at a human approval interrupt.                                                                                                                                         |
-| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resumes a ChatAgent run paused on an A2UI confirm surface (`input_required`).                                                                                                                           |
+| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resumes a ChatAgent or ReviewAgent run paused on an A2UI confirm surface (`input_required`).                                                                                                            |
 | `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                                                                                                                 |
 | `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                                                                                                                   |
 | `POST`   | `/v1/files`                              | yes   | Stores one multipart upload in OBS and returns the public path.                                                                                                                                         |
@@ -159,10 +159,15 @@ checkpoint returns `409 no pause point for run`. If the resumed graph
 pauses again, the response repeats
 `{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
 otherwise it settles the run as `succeeded` and returns the normal
-`agent.run` result envelope.
+`agent.run` result envelope. When `A2UI_ENABLED` is on, HTTP pause
+projection nests an optional `a2ui` confirm surface beside the text
+draft (`interrupt.draft.draft` carries the human-readable summary;
+`interrupt.draft.a2ui` carries the downlink value). The LangGraph
+checkpoint still stores only the text draft — projection is registry-only.
 
 `POST /v1/runs/{run_id}/a2ui-actions` accepts the Web action envelope
-for a ChatAgent run paused on an A2UI surface. The route is gated behind
+for a ChatAgent or ReviewAgent run paused on an A2UI surface. Dispatch
+keys off `run.agent` (`chat` vs `review`). The route is gated behind
 `A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED` (default off). Request body:
 
 ```json
@@ -176,8 +181,10 @@ for a ChatAgent run paused on an A2UI surface. The route is gated behind
 ```
 
 Confirm payloads carry `{"accepted": bool}`; form and choice envelopes
-validate the same shapes Web already emits, though the P4-1 Chat path
-emits only `confirm` surfaces today. The path `run_id` must match
+validate the same shapes Web already emits. Chat and Review HTTP paths
+emit only `confirm` surfaces today. Review A2UI maps accept/reject to
+`{"approved": bool, "edits": null}` — the Review graph does not consume
+`edits` even when `/resume` accepts them. The path `run_id` must match
 `body.run_id` or the call returns `400 run_id mismatch`.
 
 | Condition                    | HTTP  | Detail                             |
@@ -195,12 +202,15 @@ emits only `confirm` surfaces today. The path `run_id` must match
 
 On success the run settles `succeeded` and the response carries the
 normal `agent.run` envelope with `result.formatted.answer` (the real
-ChatAgent answer, or the short cancel string on reject) plus
-`result.a2ui`: the prior downlink surface cloned with
-`props.status: "submitted"` and `props.accepted` when applicable. If the
-resumed graph pauses again (not emitted on the confirm-only Chat path
-today), the response stays `status: "input_required"` with a fresh
-`interrupt` block.
+agent answer, or the short cancel string on Chat reject) plus
+`result.a2ui` when the pause carried a projected surface: the prior
+downlink cloned with `props.status: "submitted"` and `props.accepted`
+when applicable. Both `/resume` and `/a2ui-actions` attach `result.a2ui`
+on success when projection was present. The two uplinks coexist for
+Review pauses — send only one per pause round; the first success wins
+and the second returns `409`. If the resumed graph pauses again, the
+response stays `status: "input_required"` with a fresh `interrupt`
+block (a new `surface_id` each round).
 
 The stdio MCP path uses client elicitation for the same ReviewAgent
 approval payload. Clients that advertise elicitation support are shown
@@ -433,9 +443,14 @@ Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
 `phyto-brief-gene`: ChatAgent token-streams provider deltas, while
 KnowledgeAgent / BriefGeneAgent drive their compiled graphs through
 the `_stream_graph_agent` primitive (stage `StepStarted` frames then a
-terminal answer + citations). `phyto-review` with `stream: true`
-returns `400` because human-in-the-loop review pauses resume through
-the dual-request non-stream flow. Every other chat-like model with
+terminal answer + citations). `phyto-review` with `stream: true` returns
+`400` when `A2UI_ENABLED` is off because human-in-the-loop review
+pauses resume through the non-stream flow plus `/resume`. When
+`A2UI_ENABLED` is on, `phyto-review` with `stream: true` emits a
+minimal pause stream: `RunStarted` → one `phyto.a2ui` confirm frame →
+`RunFinished` → `data: [DONE]`, settling `input_required` with
+`interrupt.draft.a2ui` (no post-resume SSE — resume via `/resume` or
+`/a2ui-actions` as for non-stream pauses). Every other chat-like model with
 `stream: true` returns `400` with
 `streaming is not supported for model <name>` — a clear per-model
 signal instead of a silent fallback. The streaming-capable set is
@@ -511,6 +526,12 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   paused graph via `POST /v1/runs/{run_id}/a2ui-actions`. With
   `A2UI_ENABLED` off, or when the heuristic does not match, behaviour
   stays the normal token-stream path above.
+- **ReviewAgent A2UI pause stream** (`phyto-review`, `A2UI_ENABLED` on,
+  `stream: true`): bypasses stage/progress frames and emits
+  `RunStarted` → `phyto.a2ui` confirm → `RunFinished` → `[DONE]`.
+  The run settles `input_required` with `interrupt.draft.a2ui`; resume
+  through `/resume` or `/a2ui-actions` (no second SSE after resume).
+  With `A2UI_ENABLED` off, `stream: true` on `phyto-review` stays `400`.
 - **Other streaming-capable models** (knowledge / brief_gene today):
   settle still uses
   `{"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true}`
