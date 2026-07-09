@@ -991,6 +991,7 @@ def test_is_cited_tool() -> None:
 
 
 def test_analyst_result_rejects_whitespace_task_id() -> None:
+    """Whitespace-only task_id is treated as a missing submit id."""
     result = format_tool_result(
         "AnalystAgent",
         {

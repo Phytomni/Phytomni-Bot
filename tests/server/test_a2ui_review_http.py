@@ -19,6 +19,7 @@ pytestmark = pytest.mark.server
 
 class _FakeCheckpointer:
     async def aget(self, _config: dict[str, Any]) -> object:
+        """Return a non-None checkpoint so resume paths stay open."""
         return object()
 
 
@@ -31,6 +32,7 @@ class _FakeReviewAppPause:
         self.calls: list[Any] = []
 
     async def ainvoke(self, payload: Any, *, config: dict[str, Any]) -> dict:
+        """Interrupt on first invoke; finish on Command(resume=...)."""
         self.calls.append((payload, config))
         if isinstance(payload, dict):
             return {
@@ -55,6 +57,7 @@ class _FakeReviewAppPause:
 
 
 def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
+    """Point Review HTTP helpers at a fake compiled graph app."""
     monkeypatch.setattr(api_app_module, "_review_stream_app", lambda: app)
     monkeypatch.setattr(
         api_app_module,
@@ -69,6 +72,7 @@ async def test_review_pause_flag_off_has_no_a2ui(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """With A2UI disabled, Review pauses keep a plain draft interrupt."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     _patch_review_app(monkeypatch, _FakeReviewAppPause())
@@ -94,6 +98,7 @@ async def test_review_pause_flag_on_projects_a2ui(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """With A2UI enabled, Review pauses attach a confirm surface."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, _FakeReviewAppPause())
@@ -129,6 +134,7 @@ async def test_review_chat_completion_pause_projects_a2ui(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Chat-completions Review pauses also project a2ui when enabled."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     _patch_review_app(monkeypatch, _FakeReviewAppPause())
@@ -142,6 +148,77 @@ async def test_review_chat_completion_pause_projects_a2ui(
     )
     assert response.status_code == 200
     assert "a2ui" in response.json()["interrupt"]["draft"]
+
+
+async def test_review_stream_flag_off_still_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review stream=true stays 400 while A2UI is disabled."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this."}],
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == 400
+    assert "human-in-the-loop review" in response.json()["error"]["message"]
+
+
+async def test_review_stream_flag_on_emits_phyto_a2ui(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review stream=true emits phyto.a2ui and pauses the run."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this."}],
+        },
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "event: RunStarted\n" in body
+    assert f'"name": "{A2UI_CUSTOM_NAME}"' in body
+    assert "event: RunFinished\n" in body
+    assert body.rstrip().endswith("data: [DONE]")
+
+    run_id = _extract_run_started_id(body)
+    a2ui = _extract_custom_a2ui(body)
+    assert a2ui is not None
+    assert a2ui["widget"] == "confirm"
+    assert a2ui["surface_id"]
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    record = fetched.json()
+    assert record["status"] == "input_required"
+    result = record["result"]
+    assert result is not None
+    assert result["status"] == "input_required"
+    draft = result["interrupt"]["draft"]
+    assert draft["a2ui"]["surface_id"] == a2ui["surface_id"]
+    assert draft["a2ui"]["props"]["body"] == "draft review"
+    assert "[streamed]" not in json.dumps(result)
 
 
 class _FakeReviewAppRejectReinterrupt(_FakeReviewAppPause):

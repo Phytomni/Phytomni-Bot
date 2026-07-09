@@ -429,7 +429,7 @@ def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
     finally:
         deregister_live_task("20260604T084205Z-task-deep_genome-a2e59bb1")
 
-    assert remote_calls == []
+    assert not remote_calls
     assert result["status"] == "running"
     assert result["live_status"] is None
 

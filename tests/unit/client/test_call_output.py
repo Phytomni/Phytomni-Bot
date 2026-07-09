@@ -15,11 +15,13 @@ pytestmark = pytest.mark.unit
 
 
 def test_render_answer_only() -> None:
+    """Answer-only results print as a bare string."""
     text = render_call_output(FormattedToolResult(answer="Hello"))
     assert text == "Hello"
 
 
 def test_render_includes_tabular_tsv() -> None:
+    """DataAgent tabular blocks append as TSV after the answer."""
     text = render_call_output(
         FormattedToolResult(
             answer="1 row x 2 columns",
@@ -35,6 +37,7 @@ def test_render_includes_tabular_tsv() -> None:
 
 
 def test_render_includes_references() -> None:
+    """Cited-tool references append as numbered title lines."""
     text = render_call_output(
         FormattedToolResult(
             answer="Body [1]",
@@ -45,6 +48,7 @@ def test_render_includes_references() -> None:
 
 
 def test_render_includes_task_metadata_line() -> None:
+    """Async submit metadata collapses to one key=value summary line."""
     text = render_call_output(
         FormattedToolResult(
             answer="Task created successfully:t1",

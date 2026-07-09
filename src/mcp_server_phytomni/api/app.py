@@ -460,7 +460,7 @@ def _open_a2ui_surface_for_action(
     return open_surface
 
 
-async def _resume_a2ui_run(
+async def _resume_a2ui_run(  # pylint: disable=too-many-locals
     *,
     run_id: str,
     body: A2uiActionRequest,
@@ -1390,7 +1390,7 @@ def _maybe_project_review_interrupt(
         return dict(interrupt)
     try:
         return attach_review_a2ui(interrupt)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         _LOGGER.exception("review a2ui projection failed; continuing without")
         return dict(interrupt)
 
@@ -1505,7 +1505,7 @@ async def _run_review_with_interrupt(
     return _ReviewExecution(run_id=run_id, status="succeeded", result=result)
 
 
-async def _resume_review_run(
+async def _resume_review_run(  # pylint: disable=too-many-locals
     *,
     thread_id: str,
     payload: ResumeRequest,

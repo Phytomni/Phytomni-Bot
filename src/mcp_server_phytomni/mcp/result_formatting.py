@@ -2,6 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+# pylint: disable=too-many-lines
 """Format Phytomni MCP tool responses at the server boundary.
 
 Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
@@ -706,7 +707,9 @@ def _format_in_silico_result(
     )
 
 
-def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
+def _format_design_result(  # pylint: disable=too-many-locals
+    content: Mapping[str, Any],
+) -> FormattedToolResult:
     """Format task output from DigitalDesignAgent.
 
     The agent returns ``design_task_result`` as a list of AnalystAgent
