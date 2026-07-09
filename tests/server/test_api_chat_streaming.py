@@ -197,6 +197,56 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert "[streamed]" not in record.result["formatted"]["answer"]
 
 
+async def test_stream_chat_run_get_exposes_answer(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A settled chat stream run exposes the real answer via GET /runs/{id}.
+
+    Web history reads through the HTTP envelope, not ``RunRegistry``
+    directly. Pins that ``GET /v1/runs/{run_id}`` carries
+    ``result.formatted.answer``, the flattened ``answer`` shortcut from
+    ``_run_record_to_dict``, and happy-path ``truncated``/``partial``
+    flags without the ``[streamed]`` placeholder.
+    """
+    _patch_chat_stream(
+        monkeypatch,
+        [
+            {
+                "choices": [
+                    {"delta": {"content": "Hi"}, "finish_reason": "stop"}
+                ]
+            },
+        ],
+    )
+
+    response = await chat_completion(
+        api_client, issued_api_key, stream=True, dialogue_id="dlg-http"
+    )
+    assert response.status_code == 200
+    run_id = _extract_run_started_id(response.text)
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    body = fetched.json()
+    assert body["status"] == "succeeded"
+    assert body["dialogue_id"] == "dlg-http"
+    result = body["result"]
+    assert result is not None
+    assert result["stream"] is True
+    assert result["truncated"] is False
+    assert result["partial"] is False
+    formatted_answer = result["formatted"]["answer"]
+    assert formatted_answer == "Hi"
+    assert "[streamed]" not in formatted_answer
+    assert body["answer"] == formatted_answer
+
+
 async def _drive_stream_until(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
