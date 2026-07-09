@@ -12,8 +12,8 @@ and the ``_obs_error_message`` formatting helper.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import re
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
