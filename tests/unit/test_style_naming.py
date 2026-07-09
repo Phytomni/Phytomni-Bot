@@ -37,6 +37,14 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
         "too-many-arguments",
         "too-many-locals",
         "too-many-statements",
+        "broad-exception-caught",
+    },
+    # Dispatch-boundary formatters: see
+    # ``docs/development/lint-exemptions.md`` entry on
+    # ``mcp/result_formatting.py``.
+    "src/mcp_server_phytomni/mcp/result_formatting.py": {
+        "too-many-lines",
+        "too-many-locals",
     },
     # @func_cache chokepoint: see
     # ``docs/development/lint-exemptions.md`` entry on

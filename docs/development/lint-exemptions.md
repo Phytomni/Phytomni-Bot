@@ -376,11 +376,29 @@ point the parameter set naturally divides across the two functions.
 
 ______________________________________________________________________
 
+### `mcp/result_formatting.py` — dispatch-boundary formatters
+
+**Rule(s)**: C0302 too-many-lines (file-level), R0914 too-many-locals
+on `_format_design_result` (failure projection + tabular assembly).
+
+**Mechanism**: file-level `# pylint: disable=too-many-lines` after the
+module docstring; function-level `too-many-locals` on
+`_format_design_result`. Allowlist entry under
+`src/mcp_server_phytomni/mcp/result_formatting.py`.
+
+**Why refactor is net-negative**: the module is the single MCP/HTTP
+envelope projection seam; splitting per-agent formatters would duplicate
+metadata lift rules and drift from
+`tests/server/test_result_formatting_metadata_contract.py`.
+
+______________________________________________________________________
+
 ### `api/app.py` — FastAPI factory and route handlers
 
 **Rule(s)**: C0302 too-many-lines (1641/1000), R0915
 too-many-statements (76/50 at line 764), R0913 (8 at 443, 12 at 1093),
-R0914 (20 at 275, 19 at 764, 16 at 1093).
+R0914 (20 at 275, 19 at 764, 16 at 1093), W0718 broad-exception-caught
+(review A2UI projection degrade seam).
 
 **Mechanism**: file-level
 `# pylint: disable=too-many-lines` at the top of `api/app.py`, plus

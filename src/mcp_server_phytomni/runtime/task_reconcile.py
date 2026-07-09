@@ -3,16 +3,9 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Shared local+remote reconciliation for one task row.
 
-The MCP ``GetTaskStatus`` tool and the run-registry status endpoint
-both need the same non-blocking "read the local ``tasks`` row, then
-optionally perform one remote ``task_status`` lookup" semantics.
-Factoring it here keeps the two consumers byte-equivalent and removes
-the only point at which their poll logic could drift.
-
-Deep_genome umbrella rows without a ``source_task_id`` are local-only:
-no remote probe runs because the umbrella id is not an analysis-platform
-job id. Child and dedup rows that carry a ``source_task_id`` still probe
-that remote id.
+Used by ``GetTaskStatus`` and run-registry status. Deep_genome umbrellas
+without ``source_task_id`` reconcile locally only; rows with
+``source_task_id`` still probe the remote analysis platform once.
 """
 
 from __future__ import annotations

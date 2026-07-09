@@ -2,7 +2,6 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-# pylint: disable=too-many-lines
 """Format Phytomni MCP tool responses at the server boundary.
 
 Exposes ``FormattedToolResult``, ``ToolResultEnvelope``,
@@ -12,6 +11,8 @@ and response-projection helpers ``resolve_debug`` / ``strip_agent_result``
 (``PHYTOMNI_DEBUG=1`` forces full payloads). Private helpers normalize
 citations and ``_sanitize_raw`` strips credential-pattern keys.
 """
+
+# pylint: disable=too-many-lines
 
 import json
 import os
