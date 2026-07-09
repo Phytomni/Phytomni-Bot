@@ -168,6 +168,24 @@ def test_summary_text_from_interrupt_draft_prefers_draft_key() -> None:
     )
 
 
+def test_summary_text_from_interrupt_draft_accepts_plain_string() -> None:
+    """String drafts pass through unchanged."""
+    assert summary_text_from_interrupt_draft("plain") == "plain"
+
+
+def test_summary_text_from_interrupt_draft_uses_summary_key() -> None:
+    """Mapping drafts may expose summary instead of draft."""
+    assert (
+        summary_text_from_interrupt_draft({"summary": "Summary line"})
+        == "Summary line"
+    )
+
+
+def test_summary_text_from_interrupt_draft_stringifies_other_values() -> None:
+    """Non-string draft values stringify for display."""
+    assert summary_text_from_interrupt_draft(42) == "42"
+
+
 def test_project_review_confirm_shape_and_truncation() -> None:
     """Review confirm downlink truncates body and mints a surface id."""
     long_summary = "x" * 600
@@ -191,6 +209,15 @@ def test_attach_review_a2ui_adds_surface_without_mutating_input() -> None:
     assert projected["draft"]["draft"] == "Summary for humans"
     assert projected["draft"]["a2ui"]["widget"] == "confirm"
     assert projected["draft"]["a2ui"]["props"]["body"] == "Summary for humans"
+
+
+def test_attach_review_a2ui_wraps_non_mapping_draft() -> None:
+    """Non-mapping draft values become a nested draft dict plus a2ui."""
+    projected = attach_review_a2ui({"draft": "Bare summary"})
+    draft_value = projected.get("draft")
+    assert isinstance(draft_value, dict)
+    assert draft_value.get("draft") == "Bare summary"
+    assert draft_value.get("a2ui", {}).get("widget") == "confirm"
 
 
 def test_attach_review_a2ui_mints_new_surface_each_call() -> None:
