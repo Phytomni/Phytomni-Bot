@@ -656,6 +656,29 @@ def test_digital_design_result_handles_empty_list() -> None:
     assert result.metadata["status"] == "FAILED"
 
 
+def test_digital_design_empty_list_projects_failures() -> None:
+    """Empty design_task_result still exposes redacted failure metadata."""
+    payload = {
+        "design_task_result": [],
+        "task_ids": {},
+        "failures": [
+            {
+                "task_label": "protein_design_analysis",
+                "kind": "execute",
+                "message": "submit failed",
+            }
+        ],
+    }
+    result = format_tool_result("DigitalDesignAgent", payload)
+    assert result.metadata["status"] == "FAILED"
+    assert result.metadata["failed_count"] == 1
+    assert result.metadata["failures"][0]["task_label"] == (
+        "protein_design_analysis"
+    )
+    assert "No tasks found" in result.answer
+    assert "submit failed" in result.answer
+
+
 def test_digital_design_result_handles_missing_goal_description() -> None:
     """Absent goal_description keeps the metadata key with None value."""
     payload = {

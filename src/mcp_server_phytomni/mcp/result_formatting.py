@@ -718,11 +718,20 @@ def _format_design_result(content: Mapping[str, Any]) -> FormattedToolResult:
     results_list = design_results if isinstance(design_results, list) else []
     tasks = [task for task in results_list if isinstance(task, Mapping)]
     if not tasks:
+        universal = project_universal_failure_metadata(content)
+        failures = universal["failures"]
+        answer = "No tasks found"
+        if failures:
+            first = failures[0].get("message", "")
+            answer = f"No tasks found ({universal['failed_count']} failed: {first})"
         return FormattedToolResult(
-            answer="No tasks found",
+            answer=answer,
             metadata={
                 "status": "FAILED",
                 "log_status": "sync_failed",
+                "succeeded_count": universal["succeeded_count"],
+                "failed_count": universal["failed_count"],
+                "failures": failures,
             },
         )
 
