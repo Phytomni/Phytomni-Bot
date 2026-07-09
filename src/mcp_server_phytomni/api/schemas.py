@@ -6,9 +6,9 @@
 
 Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
     ChatCompletionRequest, AgentRunRequest, ExpertQueryRequest,
-    ResumeRequest, ApiKeyCreateRequest, ApiKeyCreateResponse,
-    ApiKeyRecordResponse, ApiKeyListResponse, ApiKeyDeleteResponse,
-    FileUploadResponse.
+    ResumeRequest, A2uiActionRequest, ApiKeyCreateRequest,
+    ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
+    ApiKeyDeleteResponse, FileUploadResponse.
 Public aliases: UploadPurpose.
 """
 
@@ -34,6 +34,7 @@ UploadPurpose = Literal[
 ]
 
 __all__ = [
+    "A2uiActionRequest",
     "AgentRunRequest",
     "ApiErrorDetail",
     "ApiErrorResponse",
@@ -157,6 +158,29 @@ class ResumeRequest(BaseModel):
 
     approved: bool
     edits: str | None = None
+
+
+class A2uiActionRequest(BaseModel):
+    """Body for ``POST /v1/runs/{run_id}/a2ui-actions``.
+
+    Mirrors the shared :class:`~agents.shared.a2ui.A2uiActionEnvelope`
+    so Web can submit confirm/form/choice actions against a paused run.
+
+    Attributes:
+        surface_id: Open surface id from the interrupt draft.
+        widget: Widget kind (``confirm`` / ``form`` / ``choice``).
+        action_id: Client-issued action identifier.
+        run_id: Registry run id echoed for path/body consistency.
+        payload: Widget-specific action payload.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surface_id: str
+    widget: Literal["confirm", "form", "choice"]
+    action_id: str
+    run_id: str
+    payload: dict[str, Any]
 
 
 class ExpertQueryRequest(BaseModel):

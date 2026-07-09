@@ -73,7 +73,13 @@ from ..agents.network.resolve_query import (
     resolve_network_user_query,
 )
 from ..agents.review.agent import review_stream_target
-from ..agents.shared.a2ui import A2UI_CUSTOM_NAME, should_emit_confirm
+from ..agents.shared.a2ui import (
+    A2UI_CUSTOM_NAME,
+    A2uiActionEnvelope,
+    action_to_resume_payload,
+    build_submitted_value,
+    should_emit_confirm,
+)
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
@@ -118,6 +124,7 @@ from ..runtime.resume import NoCheckpointError, aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
+    RunRecord,
     RunRegistry,
     RunRequestInfo,
     RunSpec,
@@ -146,6 +153,7 @@ from .openai_mapping import (
 from .ratelimit import make_rate_limiter
 from .relay import RelayAuditQuery, create_relay_router, get_audit_store
 from .schemas import (
+    A2uiActionRequest,
     AgentRunRequest,
     ApiErrorDetail,
     ApiErrorResponse,
@@ -365,6 +373,173 @@ def _chat_a2ui_interrupt_result(
         "interrupt": dict(interrupt),
         "status": "input_required",
     }
+
+
+def _format_chat_a2ui_result(
+    final_state: Mapping[str, Any],
+    *,
+    prior_surface: Mapping[str, Any],
+    resume_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Format a terminal Chat A2UI graph state for registry storage."""
+    raw_payload = merge_intermediate_state(
+        final_state,
+        final_response_key="response",
+    )
+    envelope = build_tool_result_envelope("ChatAgent", raw_payload)
+    accepted = resume_payload.get("accepted")
+    if not isinstance(accepted, bool):
+        accepted = None
+    submitted = build_submitted_value(prior_surface, accepted=accepted)
+    return {
+        "formatted": asdict(envelope.formatted),
+        "raw": envelope.raw,
+        "a2ui": submitted,
+    }
+
+
+def _a2ui_interrupt_body(
+    *,
+    run_id: str,
+    interrupt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the HTTP body for a paused chat A2UI run."""
+    return {
+        "id": run_id,
+        "run_id": run_id,
+        "object": "agent.run",
+        "agent": "chat",
+        "status": "input_required",
+        "task_ids": [],
+        "interrupt": dict(interrupt),
+    }
+
+
+async def _resume_paused_run(
+    app: Any,
+    thread_id: str,
+    resume_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Resume a paused graph via the shared aresume kernel."""
+    return await aresume_graph(app, thread_id, dict(resume_payload))
+
+
+def _open_a2ui_surface_for_action(
+    record: RunRecord,
+    *,
+    surface_id: str,
+) -> Mapping[str, Any]:
+    """Return the open A2UI draft surface or raise HTTP conflicts."""
+    if record.status != "input_required":
+        raise HTTPException(
+            status_code=409,
+            detail="run is not awaiting input",
+        )
+    stored = record.result or {}
+    interrupt = stored.get("interrupt") or {}
+    draft = interrupt.get("draft") or {}
+    open_surface = draft.get("a2ui")
+    if not isinstance(open_surface, Mapping):
+        raise HTTPException(
+            status_code=409,
+            detail="no open a2ui surface",
+        )
+    if open_surface.get("surface_id") != surface_id:
+        raise HTTPException(
+            status_code=409,
+            detail="surface_id mismatch",
+        )
+    return open_surface
+
+
+async def _resume_a2ui_run(
+    *,
+    run_id: str,
+    body: A2uiActionRequest,
+    debug: bool = False,
+) -> tuple[dict[str, Any], int]:
+    """Resume a paused Chat A2UI run from a Web action envelope."""
+    if not ApiConfig().A2UI_ENABLED:
+        raise HTTPException(status_code=403, detail="a2ui disabled")
+    if run_id != body.run_id:
+        raise HTTPException(status_code=400, detail="run_id mismatch")
+
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    record = registry.get_run(run_id, owner=owner)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"run not found: {run_id}",
+        )
+    open_surface = _open_a2ui_surface_for_action(
+        record,
+        surface_id=body.surface_id,
+    )
+
+    try:
+        envelope = A2uiActionEnvelope.model_validate(body.model_dump())
+        resume_payload = action_to_resume_payload(envelope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        final_state = await _resume_paused_run(
+            _chat_a2ui_stream_app(),
+            run_id,
+            resume_payload,
+        )
+    except NoCheckpointError as exc:
+        _LOGGER.exception(
+            "a2ui resume checkpoint missing for run %s",
+            run_id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="no pause point for run",
+        ) from exc
+
+    interrupt_after = detect_interrupt(final_state, run_id)
+    if interrupt_after is not None:
+        interrupt_dict = dict(interrupt_after)
+        registry.settle_run(
+            run_id,
+            owner=owner,
+            status="input_required",
+            result=_chat_a2ui_interrupt_result(interrupt_dict),
+        )
+        return (
+            _a2ui_interrupt_body(
+                run_id=run_id,
+                interrupt=interrupt_dict,
+            ),
+            200,
+        )
+
+    result = _format_chat_a2ui_result(
+        final_state,
+        prior_surface=open_surface,
+        resume_payload=resume_payload,
+    )
+    registry.settle_run(
+        run_id,
+        owner=owner,
+        status="succeeded",
+        result=result,
+    )
+    response_result = result if debug else strip_agent_result(result)
+    return (
+        {
+            "id": run_id,
+            "run_id": run_id,
+            "object": "agent.run",
+            "agent": "chat",
+            "status": "succeeded",
+            "task_ids": [],
+            "result": response_result,
+        },
+        200,
+    )
 
 
 def _stream_chat_a2ui_confirm(
@@ -1293,7 +1468,7 @@ async def _resume_review_run(
             detail="run is not awaiting input",
         )
     try:
-        final_state = await aresume_graph(
+        final_state = await _resume_paused_run(
             _review_stream_app(),
             thread_id,
             {"approved": payload.approved, "edits": payload.edits},
@@ -2208,6 +2383,22 @@ def create_app() -> FastAPI:
                 "result": strip_agent_result(record["result"]),
             }
         return JSONResponse(record)
+
+    @app.post("/v1/runs/{run_id}/a2ui-actions")
+    async def post_a2ui_action(
+        run_id: str,
+        body: A2uiActionRequest,
+        principal: ApiPrincipal = Depends(require_scope("agents")),
+        debug: bool = False,
+    ) -> JSONResponse:
+        """Resume a paused Chat A2UI run from a Web action envelope."""
+        del principal
+        response_body, status_code = await _resume_a2ui_run(
+            run_id=run_id,
+            body=body,
+            debug=resolve_debug(debug),
+        )
+        return JSONResponse(response_body, status_code=status_code)
 
     @app.post("/v1/runs/{thread_id}/resume")
     async def resume_run(
