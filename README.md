@@ -72,6 +72,8 @@ See [CLI Reference](docs/reference/cli.md) for the installed commands and
 [HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
 run polling, retention, OpenAI-compatible chat, human-in-the-loop review
 resume, and flag-gated A2UI confirm widgets (`PHYTOMNI_A2UI_ENABLED`).
+Copyable Chat-confirm A2UI goldens for Web/Go consumers live under
+[docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
 ## Available MCP Tools
 
