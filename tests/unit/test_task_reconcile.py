@@ -391,6 +391,83 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     assert "surfacing as failed" in caplog.text
 
 
+def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Umbrella ids are local; probing jobs/{umbrella} only yields 404 noise."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    remote_calls: list[str] = []
+
+    async def _track_probe(t_id: str, **_: Any) -> dict:
+        remote_calls.append(t_id)
+        return {"status": "RUNNING"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _track_probe,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="20260604T084205Z-task-deep_genome-a2e59bb1",
+            status="running",
+            output_dir="/obs/run",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+    register_live_task(
+        "20260604T084205Z-task-deep_genome-a2e59bb1",
+        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+    )
+    try:
+        result = asyncio.run(
+            reconcile_task("20260604T084205Z-task-deep_genome-a2e59bb1")
+        )
+    finally:
+        deregister_live_task("20260604T084205Z-task-deep_genome-a2e59bb1")
+
+    assert remote_calls == []
+    assert result["status"] == "running"
+    assert result["live_status"] is None
+
+
+def test_reconcile_still_probes_deep_genome_with_source_task_id(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deep_genome dedup row with source_task_id still probes the remote id."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="dg-dedup-local",
+            status="submitted",
+            output_dir="/obs/run",
+            source_task_id="R-remote",
+            run_context=RunContext(agent="deep_genome"),
+        )
+    )
+
+    probed_ids: list[str] = []
+
+    async def _capturing_status(t_id: str, **_: Any) -> dict:
+        probed_ids.append(t_id)
+        return {"status": "running"}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        _capturing_status,
+    )
+
+    asyncio.run(reconcile_task("dg-dedup-local"))
+    assert probed_ids == ["R-remote"]
+
+
 def test_reconcile_leaves_live_deep_genome_umbrella_running(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

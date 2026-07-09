@@ -93,7 +93,11 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         markdown DeepGenome persists on the row (``None`` for every
         other agent and for rows with no report yet), letting the poll
         formatter and the run-aggregate surface the report without
-        re-running the workflow. A deep_genome row still showing a
+        re-running the workflow. A deep_genome umbrella row with no
+        ``source_task_id`` is local-only: no remote ``task_status``
+        probe is performed (the umbrella id is not an analysis-platform
+        job id). Child / dedup rows that carry a ``source_task_id``
+        still probe that remote id. A deep_genome row still showing a
         non-terminal status but carrying a ``final_report`` (a lost
         terminal status write) is surfaced as ``succeeded`` via
         ``_heal_finished_local_workflow``. ``degraded`` /
@@ -128,6 +132,8 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         "degraded_reason": degraded_reason,
     }
     probe_id = row["source_task_id"] or task_id
+    if task_agent == "deep_genome" and not row["source_task_id"]:
+        return _heal_finished_local_workflow(result, agent=task_agent)
     try:
         live = await task_status(
             probe_id,
