@@ -131,7 +131,7 @@ async def resolve_network_user_query(
     *,
     network_config: GeneNetworkConfig,
     sensitive_config: SensitiveConfig,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
 ) -> GeneNetworkResolveResult:
     """Resolve free-form text into the canonical TO id network expects.
 
@@ -141,7 +141,8 @@ async def resolve_network_user_query(
             chat model id, prompt file path, and sampling params.
         sensitive_config: Shared sensitive config; supplies the chat
             api key and base url.
-        timeout_seconds: Resolver wall-clock budget.
+        timeout_seconds: Resolver wall-clock budget. Defaults to
+            ``network_config.TIMEOUT`` (``ServerConfig.TIMEOUT``).
 
     Returns:
         Typed GeneNetworkResolveResult with chosen to_id + matching
@@ -156,6 +157,9 @@ async def resolve_network_user_query(
     """
     if not raw_query or not raw_query.strip():
         raise GeneNetworkResolveError("query is blank")
+
+    if timeout_seconds is None:
+        timeout_seconds = network_config.TIMEOUT
 
     catalog_entries = load_to_ontology()
     catalog_text = format_to_ontology_for_prompt(catalog_entries)

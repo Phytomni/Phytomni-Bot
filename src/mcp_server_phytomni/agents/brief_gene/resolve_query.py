@@ -127,7 +127,7 @@ async def resolve_brief_gene_user_query(
     *,
     brief_config: BriefGeneConfig,
     sensitive_config: SensitiveConfig,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
 ) -> BriefGeneResolveResult:
     """Resolve free-form text into the canonical gene id BriefGene expects.
 
@@ -137,8 +137,10 @@ async def resolve_brief_gene_user_query(
             model id, prompt file path, and sampling params.
         sensitive_config: Shared sensitive config; supplies the chat
             api key and base url.
-        timeout_seconds: Resolver wall-clock budget. An inflight LLM
-            call exceeding this raises BriefGeneResolveError.
+        timeout_seconds: Resolver wall-clock budget. Defaults to
+            ``brief_config.TIMEOUT`` (``ServerConfig.TIMEOUT``). An
+            inflight LLM call exceeding this raises
+            BriefGeneResolveError.
 
     Returns:
         Typed result with the chosen gene_id, the matching species_code
@@ -155,6 +157,9 @@ async def resolve_brief_gene_user_query(
     """
     if not raw_query or not raw_query.strip():
         raise BriefGeneResolveError("query is blank")
+
+    if timeout_seconds is None:
+        timeout_seconds = brief_config.TIMEOUT
 
     rendered_user_query = get_prompt(
         brief_config.PROMPT_FILE,

@@ -72,7 +72,7 @@ async def resolve_design_user_query(
     *,
     design_config: DigitalDesignConfig,
     sensitive_config: SensitiveConfig,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
 ) -> DigitalDesignResolveResult:
     """Resolve free-form text into the canonical gene id design expects.
 
@@ -88,7 +88,8 @@ async def resolve_design_user_query(
             kwargs.
         sensitive_config: Shared sensitive config; supplies the chat
             api key and base url.
-        timeout_seconds: Resolver wall-clock budget.
+        timeout_seconds: Resolver wall-clock budget. Defaults to
+            ``design_config.TIMEOUT`` (``ServerConfig.TIMEOUT``).
 
     Returns:
         Typed DigitalDesignResolveResult with chosen gene_id + original
@@ -100,6 +101,8 @@ async def resolve_design_user_query(
             Other unexpected exceptions propagate so the outer FastAPI
             handler renders them as 500.
     """
+    if timeout_seconds is None:
+        timeout_seconds = design_config.TIMEOUT
     bga_result = await resolve_via_bga(
         raw_query,
         design_config,

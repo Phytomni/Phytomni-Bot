@@ -71,7 +71,7 @@ async def resolve_deep_genome_user_query(
     *,
     deep_genome_config: DeepGenomeConfig,
     sensitive_config: SensitiveConfig,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
 ) -> DeepGenomeResolveResult:
     """Resolve free-form text into the canonical gene id deep_genome expects.
 
@@ -92,7 +92,8 @@ async def resolve_deep_genome_user_query(
             the chat dispatch keys come out identical.
         sensitive_config: Shared sensitive config; supplies the chat
             api key and base url.
-        timeout_seconds: Resolver wall-clock budget.
+        timeout_seconds: Resolver wall-clock budget. Defaults to
+            ``deep_genome_config.TIMEOUT`` (``ServerConfig.TIMEOUT``).
 
     Returns:
         Typed DeepGenomeResolveResult with chosen gene_id + original
@@ -104,6 +105,8 @@ async def resolve_deep_genome_user_query(
             Other unexpected exceptions propagate so the outer FastAPI
             handler renders them as 500.
     """
+    if timeout_seconds is None:
+        timeout_seconds = deep_genome_config.TIMEOUT
     bga_result = await resolve_via_bga(
         raw_query,
         deep_genome_config,
