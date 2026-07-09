@@ -674,6 +674,99 @@ def _stream_chat_a2ui_confirm(
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
+def _stream_review_a2ui_pause(
+    *,
+    arguments: dict[str, Any],
+    payload: ChatCompletionRequest,
+    user_query: str,
+) -> StreamingResponse:
+    """Stream Review until interrupt, emit phyto.a2ui, pause input_required.
+
+    When ``A2UI_ENABLED`` is on, ``stream=true`` for ``phyto-review`` runs
+    the graph to the approval interrupt, settles ``input_required``, and
+    emits one ``phyto.a2ui`` frame. Resume stays on ``/resume`` or
+    ``/a2ui-actions`` (non-stream JSON), mirroring the Chat A2UI slice.
+    """
+    agent_slug = "review"
+    owner = current_request_user() or "anonymous"
+    run_id = IdFactory().new_id("run", agent_slug)
+    request_info = RunRequestInfo(
+        dialogue_id=payload.dialogue_id,
+        query=user_query,
+        tool_name="ReviewAgent",
+        model=payload.model,
+        request_json=payload.model_dump_json(),
+    )
+    _create_running_stream_run(run_id, agent_slug, owner, request_info)
+    args = _validate_review_arguments(arguments)
+
+    async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
+        yield run_started(run_id, payload.dialogue_id)
+        app = _review_stream_app()
+        initial_state = _review_initial_state(args)
+        final_state = await app.ainvoke(
+            initial_state,
+            config=build_runnable_config(run_id),
+        )
+        interrupt = detect_interrupt(final_state, run_id)
+        if interrupt is not None:
+            interrupt_dict = _maybe_project_review_interrupt(dict(interrupt))
+            _settle_stream_run(
+                run_id,
+                owner,
+                "input_required",
+                _review_interrupt_result(interrupt_dict),
+            )
+            settled[0] = True
+            draft = interrupt_dict.get("draft")
+            if isinstance(draft, Mapping):
+                a2ui_value = draft.get("a2ui")
+                if isinstance(a2ui_value, Mapping):
+                    yield custom(A2UI_CUSTOM_NAME, dict(a2ui_value))
+        else:
+            result = _format_review_result(final_state, arguments=arguments)
+            _settle_stream_run(run_id, owner, "succeeded", result)
+            settled[0] = True
+        yield run_finished(run_id)
+
+    async def _wrapped() -> AsyncIterator[str]:
+        settled_run = [False]
+        try:
+            async for line in to_chat_completion_chunks(
+                _agui_events(settled_run),
+                payload.model,
+            ):
+                yield line
+        finally:
+            if not settled_run[0]:
+                already_paused = False
+                try:
+                    record = RunRegistry(resolve_tasks_db_path()).get_run(
+                        run_id,
+                        owner=owner,
+                    )
+                    already_paused = (
+                        record is not None
+                        and record.status == "input_required"
+                    )
+                except (sqlite3.Error, OSError):
+                    pass
+                if not already_paused:
+                    _settle_stream_run(
+                        run_id,
+                        owner,
+                        "failed",
+                        {
+                            "formatted": {"answer": ""},
+                            "raw": None,
+                            "stream": True,
+                            "partial": True,
+                        },
+                    )
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+
+
 def _stream_chat_completion(
     *,
     tool_name: str,
@@ -1626,12 +1719,18 @@ def _stream_chat_response(
 ) -> StreamingResponse:
     """Validate and build a streaming chat response."""
     if tool_name == "ReviewAgent":
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "streaming is not supported for human-in-the-loop review; "
-                "use stream=false and POST /v1/runs/{id}/resume"
-            ),
+        if not ApiConfig().A2UI_ENABLED:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "streaming is not supported for human-in-the-loop "
+                    "review; use stream=false and POST /v1/runs/{id}/resume"
+                ),
+            )
+        return _stream_review_a2ui_pause(
+            arguments=dict(arguments),
+            payload=payload,
+            user_query=user_query,
         )
     if not tool_accepts_stream(tool_name):
         raise HTTPException(

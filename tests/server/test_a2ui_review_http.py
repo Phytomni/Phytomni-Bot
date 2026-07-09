@@ -6,12 +6,15 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from tests.server.test_api_chat_streaming import _extract_run_started_id
 
+from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
 from mcp_server_phytomni.api import app as api_app_module
 
 pytestmark = pytest.mark.server
@@ -362,3 +365,80 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     new_surface_id = out["interrupt"]["draft"]["a2ui"]["surface_id"]
     assert new_surface_id != old_surface_id
     assert out["interrupt"]["draft"]["draft"] == "revised draft"
+
+
+def _extract_custom_a2ui(body: str) -> dict[str, Any] | None:
+    """Return the ``phyto.a2ui`` value from an SSE body, if present."""
+    marker = "event: Custom\ndata: "
+    for chunk in body.split("\n\n"):
+        if not chunk.startswith(marker):
+            continue
+        payload = json.loads(chunk[len(marker) :])
+        if payload.get("name") == A2UI_CUSTOM_NAME:
+            value = payload.get("value")
+            return value if isinstance(value, dict) else None
+    return None
+
+
+async def test_review_stream_flag_off_still_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With A2UI disabled, Review streaming stays rejected."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this topic."}],
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == 400
+    assert "human-in-the-loop review" in response.json()["error"]["message"]
+
+
+async def test_review_stream_flag_on_emits_phyto_a2ui(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With A2UI enabled, Review streaming pauses with phyto.a2ui."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this topic."}],
+        },
+    )
+    assert response.status_code == 200
+    body = response.text
+    a2ui = _extract_custom_a2ui(body)
+    assert a2ui is not None
+    assert a2ui["widget"] == "confirm"
+    assert "phyto.a2ui" in body
+
+    run_id = _extract_run_started_id(body)
+    assert run_id
+
+    got = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert got.status_code == 200
+    record = got.json()
+    assert record["status"] == "input_required"
+    assert record["result"]["interrupt"]["draft"]["a2ui"]["surface_id"] == (
+        a2ui["surface_id"]
+    )
