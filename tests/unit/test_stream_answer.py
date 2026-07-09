@@ -121,11 +121,9 @@ async def test_accumulator_utf8_safe_prefix() -> None:
 def test_resolve_stream_answer_max_bytes_rejects_non_positive() -> None:
     """Non-positive config falls back to the default."""
     assert (
-        resolve_stream_answer_max_bytes(0)
-        == DEFAULT_STREAM_ANSWER_MAX_BYTES
+        resolve_stream_answer_max_bytes(0) == DEFAULT_STREAM_ANSWER_MAX_BYTES
     )
     assert (
-        resolve_stream_answer_max_bytes(-1)
-        == DEFAULT_STREAM_ANSWER_MAX_BYTES
+        resolve_stream_answer_max_bytes(-1) == DEFAULT_STREAM_ANSWER_MAX_BYTES
     )
     assert resolve_stream_answer_max_bytes(4096) == 4096
