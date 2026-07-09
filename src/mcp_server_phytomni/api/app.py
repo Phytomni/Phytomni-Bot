@@ -77,6 +77,7 @@ from ..agents.shared.a2ui import (
     A2UI_CUSTOM_NAME,
     A2uiActionEnvelope,
     action_to_resume_payload,
+    attach_review_a2ui,
     build_submitted_value,
     should_emit_confirm,
 )
@@ -1344,6 +1345,19 @@ def _review_interrupt_result(interrupt: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _maybe_project_review_interrupt(
+    interrupt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach a2ui to a Review interrupt when A2UI is enabled."""
+    if not ApiConfig().A2UI_ENABLED:
+        return dict(interrupt)
+    try:
+        return attach_review_a2ui(interrupt)
+    except Exception:
+        _LOGGER.exception("review a2ui projection failed; continuing without")
+        return dict(interrupt)
+
+
 def _review_interrupt_body(
     *,
     thread_id: str,
@@ -1421,7 +1435,7 @@ async def _run_review_with_interrupt(
     interrupt = detect_interrupt(final_state, run_id)
     registry = RunRegistry(resolve_tasks_db_path())
     if interrupt is not None:
-        interrupt_dict = dict(interrupt)
+        interrupt_dict = _maybe_project_review_interrupt(interrupt)
         registry.create_run(
             RunSpec(
                 run_id=run_id,
@@ -1488,7 +1502,7 @@ async def _resume_review_run(
         ) from exc
     interrupt = detect_interrupt(final_state, thread_id)
     if interrupt is not None:
-        interrupt_dict = dict(interrupt)
+        interrupt_dict = _maybe_project_review_interrupt(interrupt)
         registry.settle_run(
             thread_id,
             owner=owner,
