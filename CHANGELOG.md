@@ -99,6 +99,13 @@ Full commit range: `1f8f628..HEAD`.
   first, then optional DataAgent TSV (`tabular`), cited-tool references,
   and a one-line async task metadata summary (`task_id` / `output_dir` /
   `status` / `failures`).
+- **CLI capped failure detail lines** — when `formatted.metadata.failures`
+  is non-empty, `phytomni call` also prints up to three capped
+  `label: message` lines beneath the metadata summary (still keeps
+  `failures={count}`).
+- **OBS upload docs for `obs_file_list`** — README and
+  `docs/reference/mcp-tools.md` document `POST /v1/files` → `obs_path` →
+  tool args (links the existing HTTP file-upload contract).
 
 ### Changed
 
@@ -112,6 +119,15 @@ Full commit range: `1f8f628..HEAD`.
   Network / DeepGenome / InSilico) formats as a failed submit instead of
   `Task created successfully:None`. Empty DigitalDesign task lists project
   universal `failures` into metadata and the answer when present.
+- **DataAgent NL2SQL error wording** — user-visible failures now say
+  `Failed to query SQL database (upstream gateway timeout or HTTP error)`
+  (and the existing after-retries / no-attempts suffixes). Docs note that
+  Bot does not change upstream platform SLA; shared HTTP mid-retry stays
+  quiet with traceback only on exhaustion.
+- **Install guidance** — README prefers Linux for local runs, positions
+  `uv` as primary and conda as secondary (still needs
+  `pip install -e ".[dev,demo]"`), and notes that pydub/ffmpeg
+  `RuntimeWarning` is safe to ignore.
 - **DeepGenome GetTaskStatus probe** — umbrella rows without
   `source_task_id` reconcile from the local registry + live-task heal
   only (no remote jobs API call with the local umbrella id). One-shot
