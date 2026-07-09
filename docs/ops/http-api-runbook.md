@@ -41,6 +41,7 @@ Local runtime files:
 | ---------------- | ----------------------------------- | ----------------------------------------- |
 | API key store    | `.cache/phytomni/api_keys.sqlite`   | Per-user API key hashes and metadata.     |
 | Runs/tasks store | `server_tasks.db`                   | Run tracking and child task linkage.      |
+| Checkpoint store | `checkpoints.db`                    | ReviewAgent pause points for `/resume`.   |
 | Function cache   | `.cache/phytomni/func_cache.sqlite` | Cached LLM/retrieval/database primitives. |
 
 Defaults are relative to the process working directory. In systemd or
@@ -234,10 +235,18 @@ row carries `dialogue_id` / `query` / `tool_name` / `model` /
 `result.formatted.answer`.
 
 `POST /v1/runs/{thread_id}/resume` is valid only for owner-scoped
-ReviewAgent rows in `input_required`. The body is
-`{"approved": bool, "edits": string | null}`. Expect `404` for unknown
-or foreign runs, `409` for terminal / non-paused runs, and `409 no pause point for run` if the registry row exists but the graph checkpoint
-does not.
+ReviewAgent rows in `input_required`; ReviewAgent is the only pausing
+agent. The body is `{"approved": bool, "edits": string | null}`. Expect
+`404` for unknown or foreign runs, `409` for terminal / non-paused runs,
+FastAPI `422` for malformed bodies, and `409 no pause point for run` if
+the registry row exists but the graph checkpoint does not. If a resumed
+review pauses again, the response stays `status: "input_required"` and
+returns the next `interrupt.thread_id` / `interrupt.draft`.
+
+The stdio MCP path collects the same approval payload through client
+elicitation. Clients that advertise elicitation support see the draft
+before resuming; clients without that capability gracefully degrade to
+auto-approval so older one-shot MCP clients keep completing.
 
 `GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
 The endpoint verifies ownership, then fetches or retrieves cached logs
@@ -333,6 +342,12 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   served by a worker that did not launch the umbrella reads it as dead
   and can reconcile a still-running run to `failed`. Run the API
   single-worker (the default) until the registry moves to shared storage.
+- **E12 checkpointer caveat.** ReviewAgent human-in-the-loop pause points
+  live in the local SQLite `checkpoints.db` sibling of `server_tasks.db`.
+  Run the API as one replica, or keep `/resume` traffic pinned to a node
+  that shares the same checkpoint file. A different replica can see the
+  run row in `input_required` but miss the LangGraph checkpoint and return
+  `409 no pause point for run`.
 
 ## Health Checks
 
@@ -404,7 +419,7 @@ journalctl -u phytomni-api -n 50 -f
 ```
 
 A restart clears in-memory rate-limit counters. It does not clear API keys,
-runs, tasks, or on-disk function-cache rows.
+runs, tasks, ReviewAgent pause checkpoints, or on-disk function-cache rows.
 
 Upgrade one host:
 

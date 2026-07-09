@@ -23,12 +23,16 @@ canonical variable matrix.
 | API bind port        | `API_PORT`                                  | `8080`                            |
 | API key store        | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
 | Runs and tasks store | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
+| Checkpoint store     | beside the runs/tasks store                 | `checkpoints.db`                  |
 | Per-key req/min      | `API_RATE_LIMIT_PER_MIN`                    | `120` (`<= 0` disables)           |
 | Succeeded-run TTL    | `API_RUN_TTL_OK_HOURS`                      | `24`                              |
 | Failed-run TTL       | `API_RUN_TTL_FAIL_DAYS`                     | `7`                               |
 
 The runs table and tasks table share one SQLite file so the submit-side
 writer and the run-status reader address the same source of truth.
+LangGraph pause points use a sibling persistent SQLite checkpointer
+(`checkpoints.db`), which lets a ReviewAgent human-approval pause survive an
+HTTP API process restart.
 
 ## Per-user API Keys
 
@@ -146,14 +150,28 @@ owner-only path (no `user_id`) keeps its existing contract.
 
 `POST /v1/runs/{thread_id}/resume` accepts
 `{"approved": bool, "edits": string | null}` for a ReviewAgent run
-whose current status is `input_required`. The `thread_id` is the same
-value as the Bot `run_id` returned in the interrupt body. Unknown runs
-return `404`, terminal or otherwise non-paused runs return `409`, and a
-missing checkpoint returns `409 no pause point for run`. If the resumed
-graph pauses again, the response repeats
+whose current status is `input_required`. ReviewAgent is the only HTTP
+agent that pauses for human input. The `thread_id` is the same value as
+the Bot `run_id` returned in the interrupt body. Unknown runs return
+`404`, terminal or otherwise non-paused runs return `409`, malformed
+resume bodies return FastAPI's normal `422`, and a missing checkpoint
+returns `409 no pause point for run`. If the resumed graph pauses again,
+the response repeats
 `{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
 otherwise it settles the run as `succeeded` and returns the normal
 `agent.run` result envelope.
+
+The stdio MCP path uses client elicitation for the same ReviewAgent
+approval payload. Clients that advertise elicitation support are shown
+the draft and return `approved` / `edits`; clients without that
+capability gracefully degrade to auto-approval so legacy one-shot calls
+keep completing.
+
+E12 single-replica caveat: the checkpointer is local SQLite. Run the HTTP
+API as a single replica, or ensure all `/resume` requests for a paused
+ReviewAgent thread land on the same node with the same local
+`checkpoints.db`; otherwise a second replica can see the registry row but
+miss the pause checkpoint and return `409 no pause point for run`.
 
 `GET /v1/runs/{run_id}/logs` returns reconciled task logs for a run.
 The endpoint verifies ownership, then fetches or retrieves cached logs

@@ -22,6 +22,21 @@ Full commit range: `1f8f628..HEAD`.
 
 ### Added
 
+- **Persistent SQLite checkpointer** — ReviewAgent graph pause points are
+  stored in a local `checkpoints.db` beside the run/task registry so a
+  human-approval interrupt can survive an HTTP API restart.
+- **ReviewAgent human-in-the-loop approval** — ReviewAgent can pause with
+  `status: "input_required"` and surface the drafted review for approval
+  before finalizing.
+- **HTTP resume endpoint** — `POST /v1/runs/{thread_id}/resume` accepts an
+  approval payload (`approved` plus optional `edits`) and resumes the paused
+  ReviewAgent thread through the shared resume kernel.
+- **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
+  elicitation-capable clients for approval and auto-approve when a legacy
+  client lacks that capability.
+- **Client elicitation capability** — the MCP client surface advertises
+  elicitation support so interactive ReviewAgent approval can flow over
+  stdio.
 - **Progress-event vocabulary** — `mcp/progress_events.py` ships a
   `ProgressEvent` TypedDict and `emit_progress()` helper that writes through
   the LangGraph stream writer; outside a runnable context it is a silent
