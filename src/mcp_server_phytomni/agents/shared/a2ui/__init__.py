@@ -7,6 +7,14 @@
 from __future__ import annotations
 
 from .build import build_a2ui_value, build_submitted_value, mint_surface_id
+from .review import (
+    REVIEW_BODY_MAX_CHARS,
+    REVIEW_CONFIRM_TITLE,
+    attach_review_a2ui,
+    project_review_confirm,
+    review_confirm_action_to_resume,
+    summary_text_from_interrupt_draft,
+)
 from .rules import should_emit_confirm
 from .schemas import (
     A2UI_CATALOG_VERSION,
@@ -39,9 +47,15 @@ __all__ = [
     "FormField",
     "FormPayload",
     "FormProps",
+    "REVIEW_BODY_MAX_CHARS",
+    "REVIEW_CONFIRM_TITLE",
     "action_to_resume_payload",
+    "attach_review_a2ui",
     "build_a2ui_value",
     "build_submitted_value",
     "mint_surface_id",
+    "project_review_confirm",
+    "review_confirm_action_to_resume",
     "should_emit_confirm",
+    "summary_text_from_interrupt_draft",
 ]
