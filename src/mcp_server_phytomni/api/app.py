@@ -1210,6 +1210,35 @@ async def _review_chat_completion_response(
     return JSONResponse(completion)
 
 
+def _stream_chat_response(
+    *,
+    tool_name: str,
+    arguments: dict[str, object],
+    payload: ChatCompletionRequest,
+    user_query: str,
+) -> StreamingResponse:
+    """Validate and build a streaming chat response."""
+    if tool_name == "ReviewAgent":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "streaming is not supported for human-in-the-loop review; "
+                "use stream=false and POST /v1/runs/{id}/resume"
+            ),
+        )
+    if not tool_accepts_stream(tool_name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"streaming is not supported for model {payload.model}",
+        )
+    return _stream_chat_completion(
+        tool_name=tool_name,
+        arguments=arguments,
+        payload=payload,
+        user_query=user_query,
+    )
+
+
 async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
     """Reconcile + flatten one ``GET /v1/runs/{run_id}`` request body.
 
@@ -1831,15 +1860,7 @@ def create_app() -> FastAPI:
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
         if payload.stream:
-            if not tool_accepts_stream(tool_name):
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"streaming is not supported for model "
-                        f"{payload.model}"
-                    ),
-                )
-            return _stream_chat_completion(
+            return _stream_chat_response(
                 tool_name=tool_name,
                 arguments=arguments,
                 payload=payload,

@@ -257,3 +257,26 @@ async def test_review_chat_completion_interrupt_body(
     assert body["status"] == "input_required"
     assert body["id"] == body["interrupt"]["thread_id"]
     assert body["run_id"] == body["interrupt"]["thread_id"]
+
+
+async def test_review_chat_completion_stream_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Streaming review would bypass the human-in-the-loop resume path."""
+    _ = tasks_db_path
+
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this topic."}],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == 400
+    assert "human-in-the-loop review" in response.json()["error"]["message"]
