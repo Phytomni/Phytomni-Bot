@@ -118,7 +118,13 @@ class _FakePost:
 def _mcp_error() -> McpError:
     """Return an MCP error mirroring an exhausted single conversation."""
     return McpError(
-        ErrorData(code=INTERNAL_ERROR, message="Failed to query SQL database")
+        ErrorData(
+            code=INTERNAL_ERROR,
+            message=(
+                "Failed to query SQL database "
+                "(upstream gateway timeout or HTTP error)"
+            ),
+        )
     )
 
 

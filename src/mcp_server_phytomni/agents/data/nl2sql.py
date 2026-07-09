@@ -42,6 +42,10 @@ _ROTATION_BACKOFF_BASE_SECONDS = 0.5
 _ROTATION_BACKOFF_CAP_SECONDS = 4.0
 _ROTATION_BACKOFF_JITTER_SECONDS = 0.25
 
+_NL2SQL_FAIL = (
+    "Failed to query SQL database (upstream gateway timeout or HTTP error)"
+)
+
 
 def _default_dialog_id() -> str:
     """Return a generated dialog ID for caller-omitted NL2SQL sessions."""
@@ -164,7 +168,7 @@ async def nl2sql(
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
-            message="Failed to query SQL database after all retries",
+            message=f"{_NL2SQL_FAIL} after all retries",
         )
     )
 
@@ -212,7 +216,7 @@ async def _post_one_conversation(
             timeout=request.timeout,
             max_retries=0,
             retriable_codes=request.retriable_codes,
-            message="Failed to query SQL database",
+            message=_NL2SQL_FAIL,
         ),
     )
 
@@ -270,7 +274,7 @@ async def _execute_nl2sql_uncached(request: Nl2SqlRequest) -> Any:
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
-            message="Failed to query SQL database: no attempts executed",
+            message=f"{_NL2SQL_FAIL}: no attempts executed",
         )
     )
 
@@ -312,7 +316,7 @@ async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
             return await relay.post_json(
                 "database/nl2sql",
                 json_body=body,
-                message="Failed to query SQL database",
+                message=_NL2SQL_FAIL,
                 extra_headers=extra_headers,
             )
         except McpError:
@@ -322,7 +326,7 @@ async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
     raise McpError(
         ErrorData(
             code=INTERNAL_ERROR,
-            message="Failed to query SQL database: no attempts executed",
+            message=f"{_NL2SQL_FAIL}: no attempts executed",
         )
     )
 

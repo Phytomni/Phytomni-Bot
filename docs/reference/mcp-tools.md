@@ -105,6 +105,15 @@ Use for natural-language questions that should be converted into
 SQL-backed botanical database queries. The MCP and HTTP surfaces return
 the result inline; it is not a remote async task.
 
+Transient upstream NL2SQL gateway timeouts (for example HTTP 504) are
+surfaced as a failed DataAgent call. Phytomni-Bot does not change the
+upstream platform SLA; retry the question or check operator status if
+failures persist.
+
+Shared HTTP helpers retry transient transport errors quietly; operator
+logs record a full traceback only after retries are exhausted. A final
+success after retries is normal and not a Bot failure.
+
 ### `ReviewAgent`
 
 Use for broad literature review or report generation that needs planning,
