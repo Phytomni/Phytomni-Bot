@@ -13,13 +13,27 @@ The package ships two importable libraries from one wheel:
 
 ## Quick Start
 
-Install with `uv`:
+Local development and runs work best on Linux. The examples below use a
+Unix shell.
+
+Install with `uv` (recommended):
 
 ```bash
 uv venv --python=3.12 .venv
 source .venv/bin/activate
 uv pip install -e ".[dev,demo]"
 ```
+
+Conda or mamba is a secondary path: create the env from
+`environment.yml`, then still run `pip install -e ".[dev,demo]"` so the
+editable packages and pip-only extras (including `markitdown[all]`) are
+installed. See [CONTRIBUTING.md](CONTRIBUTING.md) for the conda
+commands. Keep the `environment.yml` Python range
+(`python>=3.12,<3.15`); CI exercises 3.12–3.14.
+
+If import-time tooling prints a pydub / ffmpeg `RuntimeWarning`, you can
+ignore it — Phytomni-Bot does not require a system ffmpeg install for
+normal MCP or HTTP use.
 
 Copy the local environment template and fill in real credentials:
 
