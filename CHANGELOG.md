@@ -22,6 +22,10 @@ Full commit range: `1f8f628..HEAD`.
 
 ### Added
 
+- **Streamed chat answer persistence** — ChatAgent SSE runs settle the
+  run registry with the accumulated answer (soft-capped via
+  `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`) so history overlay no longer
+  replaces visible replies with a `"[streamed]"` placeholder.
 - **Persistent SQLite checkpointer** — ReviewAgent graph pause points are
   stored in a local `checkpoints.db` beside the run/task registry so a
   human-approval interrupt can survive an HTTP API restart.

@@ -441,11 +441,21 @@ Auth, rate-limit, request-id, OBS-file processing, and message
 flattening all complete *before* the stream starts, so a
 `stream=true` request that fails any precondition surfaces as a
 normal JSON error envelope (`401` / `429` / `400`) instead of an
-empty `text/event-stream`. After the stream drains, the run-record
-is written once with `result = {"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true, "completed": bool}`;
-the `completed` flag distinguishes a normal drain from a client
-disconnect or mid-stream provider error so `/v1/runs` callers can
-surface partial calls.
+empty `text/event-stream`. After the stream drains, the run record is settled from the wrapper
+`finally` block:
+
+- **ChatAgent (`phyto-chat`)**: `result` is
+  `{"formatted": {"answer": "<accumulated text>"}, "raw": null, "stream": true, "truncated": bool, "partial": bool}`.
+  `answer` is the concatenation of `TextMessageContent` deltas,
+  soft-capped by `STREAM_ANSWER_MAX_BYTES` / `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`
+  (default 1 MiB). The SSE wire stream is never truncated.
+  `truncated` is true when the stored blob hit the cap; `partial` is
+  true when the run settled `failed` (client disconnect before
+  `RunFinished`, or a mid-stream `RunError`).
+- **Other streaming-capable models** (knowledge / brief_gene today):
+  settle still uses
+  `{"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true}`
+  until a follow-up change persists their answers the same way.
 
 Open-stream transport failures (`ConnectError` / `TimeoutException`)
 are retried once before raising; once the iterator returns, any

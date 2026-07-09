@@ -212,6 +212,18 @@ frame inventory is documented in
 ReviewAgent human-in-the-loop runs reject `stream: true`; use
 non-stream review plus `/v1/runs/{id}/resume`.
 
+### Streaming cutover checklist (ChatAgent / Instant)
+
+Before flipping Web `bot.stream_enabled` + `VITE_STREAM_ENABLED` on:
+
+1. Confirm Bot build includes ChatAgent streamed-answer persistence
+   (settled `result.formatted.answer` is real text, not `"[streamed]"`).
+1. Coordinate the Web flags so both sides enable streaming together.
+1. Smoke: start a streamed Instant chat → refresh history → overlay
+   answer matches what the user saw during the stream.
+1. Optional: send a very long reply and confirm `truncated: true` on
+   `GET /v1/runs/{id}` while the live UI still showed the full text.
+
 The OBS relay rows confine each object key to the caller's tenant namespace
 (`agent_data/{user_data,uploads}/<user_id>/`), with one read-only exception:
 `GET /v1/relay/obs/object` also serves the content-addressed
