@@ -11,6 +11,7 @@ Functions: ensure_thread_id, build_runnable_config, ensure_checkpointer,
 
 import asyncio
 import json
+import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -87,21 +88,26 @@ def ensure_checkpointer(
     Tests inject a ``MemorySaver`` to stay offline; production callers
     pass ``None`` and receive the persistent ``AsyncSqliteSaver`` built
     by :func:`build_default_checkpointer`, so a graph pause point
-    survives a process restart.  When no async event loop is running
-    (sync test fixtures that construct agents without injecting a
-    checkpointer), falls back to ``MemorySaver`` so the offline
-    discipline is preserved without crashing on the SQLite backend's
-    loop requirement.
+    survives a process restart. Under ``PHYTOMNI_TESTING=1`` (root
+    conftest), always fall back to ``MemorySaver`` even when an async
+    event loop is running — otherwise agent constructors that omit an
+    explicit checkpointer open unclosed ``aiosqlite`` connections and
+    poison the suite with ``PytestUnraisableExceptionWarning``. When
+    no async event loop is running outside tests, also fall back to
+    ``MemorySaver`` so sync fixtures stay offline without hitting the
+    SQLite backend's loop requirement.
 
     Args:
         checkpointer: Optional existing checkpointer to reuse.
 
     Returns:
         The provided checkpointer, or a fresh SQLite-backed default
-        (``MemorySaver`` when called outside an async context).
+        (``MemorySaver`` under testing / outside an async context).
     """
     if checkpointer is not None:
         return checkpointer
+    if os.environ.get("PHYTOMNI_TESTING") == "1":
+        return MemorySaver()
     try:
         asyncio.get_running_loop()
     except RuntimeError:

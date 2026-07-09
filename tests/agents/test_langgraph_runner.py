@@ -201,12 +201,16 @@ def test_ensure_checkpointer_returns_injected_saver() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
+async def test_ensure_checkpointer_falls_back_to_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Without injection, ensure_checkpointer builds the SQLite default.
 
-    Must run in an async context so the event-loop probe passes and the
-    fallback reaches ``build_default_checkpointer``.
+    Must run in an async context so the event-loop probe passes, and
+    outside ``PHYTOMNI_TESTING`` so the offline MemorySaver short-
+    circuit does not fire, reaching ``build_default_checkpointer``.
     """
+    monkeypatch.delenv("PHYTOMNI_TESTING", raising=False)
     sentinel = object()
 
     def _fake_build() -> object:
@@ -216,6 +220,26 @@ async def test_ensure_checkpointer_falls_back_to_sqlite(monkeypatch) -> None:
         langgraph_runner, "build_default_checkpointer", _fake_build
     )
     assert langgraph_runner.ensure_checkpointer() is sentinel
+
+
+@pytest.mark.asyncio
+async def test_ensure_checkpointer_uses_memory_under_testing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under PHYTOMNI_TESTING, async callers still get MemorySaver."""
+    monkeypatch.setenv("PHYTOMNI_TESTING", "1")
+    calls = {"n": 0}
+
+    def _fake_build() -> object:
+        calls["n"] += 1
+        return object()
+
+    monkeypatch.setattr(
+        langgraph_runner, "build_default_checkpointer", _fake_build
+    )
+    result = langgraph_runner.ensure_checkpointer()
+    assert isinstance(result, MemorySaver)
+    assert calls["n"] == 0
 
 
 def test_ensure_checkpointer_falls_back_to_memory_outside_loop() -> None:
