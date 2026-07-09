@@ -727,6 +727,14 @@ class ApiConfig(BaseSettings):
             The SSE wire stream is never truncated; only the registry
             blob is capped. Defaults to 1 MiB. Accepts the
             ``PHYTOMNI_STREAM_ANSWER_MAX_BYTES`` alias.
+        A2UI_ENABLED (bool): When True, agents may emit A2UI confirm
+            surfaces on the HTTP chat path. Defaults to False so A2UI
+            stays dark until operators opt in. Accepts the
+            ``PHYTOMNI_A2UI_ENABLED`` alias.
+        A2UI_TOOL_CALL (bool): Reserved flag for future A2UI tool-call
+            emit on the chat path. Defaults to False and is unused in
+            the default path. Accepts the ``PHYTOMNI_A2UI_TOOL_CALL``
+            alias.
         RELAY_ENABLED (bool): When True, the server exposes the
             credential-injecting relay surface and writes relay audit
             records. Defaults to False so a stock deployment ships no
@@ -792,6 +800,16 @@ class ApiConfig(BaseSettings):
         validation_alias=AliasChoices(
             "STREAM_ANSWER_MAX_BYTES",
             "PHYTOMNI_STREAM_ANSWER_MAX_BYTES",
+        ),
+    )
+    A2UI_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("A2UI_ENABLED", "PHYTOMNI_A2UI_ENABLED"),
+    )
+    A2UI_TOOL_CALL: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "A2UI_TOOL_CALL", "PHYTOMNI_A2UI_TOOL_CALL"
         ),
     )
     RELAY_ENABLED: bool = Field(

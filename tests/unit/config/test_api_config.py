@@ -38,6 +38,8 @@ def test_api_config_defaults() -> None:
     assert config.API_UPLOAD_MAX_BYTES == 26_214_400
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
     assert config.STREAM_ANSWER_MAX_BYTES == 1_048_576
+    assert config.A2UI_ENABLED is False
+    assert config.A2UI_TOOL_CALL is False
     assert config.RELAY_ENABLED is False
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
@@ -71,6 +73,17 @@ def test_stream_answer_max_bytes_env_override(
     monkeypatch.setenv("PHYTOMNI_STREAM_ANSWER_MAX_BYTES", "4096")
     config = ApiConfig()
     assert config.STREAM_ANSWER_MAX_BYTES == 4096
+
+
+def test_a2ui_flags_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PHYTOMNI_A2UI_* env vars flip the A2UI feature flags."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    monkeypatch.setenv("PHYTOMNI_A2UI_TOOL_CALL", "1")
+    config = ApiConfig()
+    assert config.A2UI_ENABLED is True
+    assert config.A2UI_TOOL_CALL is True
 
 
 def test_api_service_token_loads_from_env(
