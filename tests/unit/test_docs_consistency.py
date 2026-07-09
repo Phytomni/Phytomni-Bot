@@ -151,7 +151,9 @@ def test_http_docs_list_public_fastapi_routes() -> None:
 
 def test_cli_reference_covers_console_scripts() -> None:
     """Verify CLI docs cover every installed console script."""
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pyproject = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
     scripts = set(pyproject["project"]["scripts"])
     cli_text = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
 
