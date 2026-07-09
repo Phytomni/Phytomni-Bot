@@ -14,6 +14,7 @@ import pytest
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.runtime.resume import NoCheckpointError
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -354,3 +355,192 @@ async def test_a2ui_action_kernel_spy_calls_aresume_graph(
 
     assert response.status_code == 200
     assert len(calls) == 1
+
+
+async def test_a2ui_action_duplicate_after_success_returns_409(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second identical POST after success is rejected."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-duplicate",
+        surface_id="sfc-dup",
+    )
+
+    async def _fake_resume(
+        _app: Any,
+        _thread_id: str,
+        _resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return _accepted_final_state()
+
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
+
+    body = _action_body(
+        run_id=run_id,
+        surface_id="sfc-dup",
+        accepted=True,
+    )
+    first = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=body,
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "succeeded"
+
+    second = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=body,
+    )
+
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == 409
+
+
+async def test_a2ui_action_path_body_run_id_mismatch_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path run_id must match the body run_id echo."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-mismatch",
+        surface_id="sfc-mismatch",
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=_action_body(
+            run_id="run-a2ui-other",
+            surface_id="sfc-mismatch",
+            accepted=True,
+        ),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "run_id mismatch"
+
+
+async def test_a2ui_action_invalid_confirm_payload_returns_400(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirm actions require an accepted boolean in the payload."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-bad-payload",
+        surface_id="sfc-bad-payload",
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-bad-payload",
+            "widget": "confirm",
+            "action_id": "act-confirm",
+            "payload": {},
+        },
+    )
+
+    assert response.status_code == 400
+    assert (
+        "Invalid confirm action payload" in response.json()["error"]["message"]
+    )
+
+
+async def test_a2ui_action_no_checkpoint_returns_409(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing LangGraph checkpoint surfaces as a 409 conflict."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-no-checkpoint",
+        surface_id="sfc-no-checkpoint",
+    )
+
+    async def _raise_no_checkpoint(
+        _app: Any,
+        _thread_id: str,
+        _resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        raise NoCheckpointError("No checkpoint found for thread")
+
+    monkeypatch.setattr(
+        api_app_module,
+        "_resume_paused_run",
+        _raise_no_checkpoint,
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=_action_body(
+            run_id=run_id,
+            surface_id="sfc-no-checkpoint",
+            accepted=True,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == "no pause point for run"
+
+
+async def test_a2ui_action_missing_draft_surface_returns_409(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runs paused without an a2ui draft cannot accept actions."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = "run-a2ui-no-draft"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(
+            run_id=run_id,
+            user_id="u1",
+            agent="chat",
+            origin="local",
+        ),
+        outcome=RunOutcome(
+            status="input_required",
+            result={
+                "interrupt": {
+                    "thread_id": run_id,
+                    "draft": {"summary": "not a2ui"},
+                },
+                "status": "input_required",
+            },
+        ),
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=_action_body(
+            run_id=run_id,
+            surface_id="sfc-missing",
+            accepted=True,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == "no open a2ui surface"
