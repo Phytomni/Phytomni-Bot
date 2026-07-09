@@ -13,6 +13,9 @@ from .tool_result_formatters import FormattedToolResult
 
 __all__ = ["render_call_output"]
 
+_FAILURE_DETAIL_LIMIT = 3
+_FAILURE_MESSAGE_MAX = 120
+
 
 def render_call_output(formatted: FormattedToolResult) -> str:
     """Return human-readable stdout for one phytomni call result."""
@@ -40,8 +43,33 @@ def render_call_output(formatted: FormattedToolResult) -> str:
     if metadata_line is not None:
         parts.append("---")
         parts.append(metadata_line)
+        parts.extend(_failure_detail_lines(formatted.metadata))
 
     return "\n".join(parts).rstrip()
+
+
+def _failure_detail_lines(metadata: Mapping[str, Any]) -> list[str]:
+    """Return up to three human-readable failure summary lines."""
+    failures = metadata.get("failures")
+    if not isinstance(failures, Sequence) or isinstance(
+        failures, (str, bytes)
+    ):
+        return []
+    lines: list[str] = []
+    for item in failures:
+        if len(lines) >= _FAILURE_DETAIL_LIMIT:
+            break
+        if not isinstance(item, Mapping):
+            continue
+        label = item.get("task_label") or item.get("kind") or "failure"
+        message = item.get("message") or item.get("error") or ""
+        text = str(message).strip()
+        if len(text) > _FAILURE_MESSAGE_MAX:
+            text = text[: _FAILURE_MESSAGE_MAX - 3] + "..."
+        if not text:
+            continue
+        lines.append(f"{label}: {text}")
+    return lines
 
 
 def _format_task_metadata_line(

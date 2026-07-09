@@ -63,3 +63,53 @@ def test_render_includes_task_metadata_line() -> None:
     assert "task_id=t1" in text
     assert "output_dir=/obs/out" in text
     assert "status=RUNNING" in text
+
+
+def test_render_includes_failure_message_summaries() -> None:
+    """Non-empty failures append capped message lines after metadata."""
+    text = render_call_output(
+        FormattedToolResult(
+            answer="Task submission failed: missing task_id",
+            metadata={
+                "task_id": None,
+                "status": "FAILED",
+                "failures": (
+                    {
+                        "task_label": "design-1",
+                        "kind": "submit",
+                        "message": "OBS download failed: not found",
+                    },
+                    {
+                        "task_label": "design-2",
+                        "kind": "submit",
+                        "message": "planner returned empty task list",
+                    },
+                ),
+            },
+        )
+    )
+    assert "failures=2" in text
+    assert "design-1: OBS download failed: not found" in text
+    assert "design-2: planner returned empty task list" in text
+
+
+def test_render_caps_failure_message_summaries() -> None:
+    """At most three failure detail lines are printed."""
+    failures = tuple(
+        {
+            "task_label": f"t{i}",
+            "kind": "x",
+            "message": f"err-{i}",
+        }
+        for i in range(5)
+    )
+    text = render_call_output(
+        FormattedToolResult(
+            answer="failed",
+            metadata={"status": "FAILED", "failures": failures},
+        )
+    )
+    assert "failures=5" in text
+    assert "t0: err-0" in text
+    assert "t2: err-2" in text
+    assert "t3: err-3" not in text

@@ -29,6 +29,13 @@ envelope includes structured blocks, it also prints:
 - a one-line `task_id` / `output_dir` / `status` / `failures` summary
   for async submit tools
 
+When `formatted.metadata.failures` is non-empty, read those entries for
+the per-task `message` (and `task_label` / `kind` when present). The CLI
+prints a `failures={count}` token on the metadata line and up to three
+capped `label: message` detail lines beneath it. `formatted.answer` often
+already carries a human failure sentence for submit-style tools — check
+answer first, then metadata.
+
 DeepGenome (and other agents that continue work after returning a
 `task_id`) need a long-lived process: run `phytomni-api` or keep an MCP
 server session open, then poll with `GetTaskStatus`. A one-shot
