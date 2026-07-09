@@ -606,12 +606,13 @@ def _stream_chat_a2ui_confirm(
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Short-circuit chat streaming into an A2UI confirm pause.
+    """Short-circuit chat streaming into an A2UI pause.
 
-    Runs the dedicated Chat A2UI graph until its ``interrupt()`` point,
-    emits ``phyto.a2ui`` over SSE, and settles the run as
-    ``input_required`` so Web can resume via ``/a2ui-actions`` while
-    the LangGraph checkpoint stays keyed on ``run_id``.
+    Runs the dedicated Chat A2UI graph until its ``interrupt()`` point
+    for confirm, form, or choice surfaces, emits ``phyto.a2ui`` over
+    SSE, and settles the run as ``input_required`` so Web can resume
+    via ``/a2ui-actions`` while the LangGraph checkpoint stays keyed
+    on ``run_id``.
     """
     agent_slug = "chat"
     owner = current_request_user() or "anonymous"
