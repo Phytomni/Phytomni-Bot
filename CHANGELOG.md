@@ -45,6 +45,11 @@ Full commit range: `1f8f628..HEAD`.
   SSE). Review resumes through `/resume` or `/a2ui-actions`; both attach
   `result.a2ui` on success. A2UI uplink maps to `{approved, edits: null}`
   because the Review graph does not consume `edits`.
+- **A2UI Chat confirm contract fixtures** — `docs/contracts/a2ui/` ships
+  copyable downlink / uplink / success / error JSON goldens for the
+  Chat confirm surface, locked by offline shape tests for Web/Go
+  consumers. No runtime behavior change; Go `/a2ui-actions` passthrough
+  remains a Web-gateway follow-up.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

@@ -187,6 +187,11 @@ emit only `confirm` surfaces today. Review A2UI maps accept/reject to
 `edits` even when `/resume` accepts them. The path `run_id` must match
 `body.run_id` or the call returns `400 run_id mismatch`.
 
+Copyable Chat-confirm downlink / uplink / success / error goldens live
+under [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and
+Go gateway consumers. Those fixtures lock shapes only; this section and
+the offline HTTP tests remain authoritative for runtime behavior.
+
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
 | `A2UI_ENABLED` off           | `403` | `a2ui disabled`                    |
