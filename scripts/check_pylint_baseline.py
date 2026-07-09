@@ -46,16 +46,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/development/lint-exemptions.md``.
 RULE_BASELINES: dict[str, int] = {
-    # Bumped 93 -> 97 for the review human-in-the-loop surface: the
-    # resume-kernel / cross-restart stub graphs share an interrupt+
-    # finalize skeleton, and the MCP resume stdio harness mirrors the
-    # existing stdio-progress fake-session shape. Both are intentional
-    # test-stub parallels, not production drift.
-    "R0801": 97,  # duplicate-code: cross-file similar blocks
-    # too-few-public-methods: prior Protocol/DTO/test-fake set (20) plus
-    # four HITL test fakes in test_resume_http / test_resume_mcp
-    # (_FakeInterrupt, stub apps, _FakeSession, nested elicit result).
-    "R0903": 24,
+    # Bumped 97 -> 106 for the A2UI review dual-transport surface (HTTP
+    # pause projection mirrors chat confirm stubs) plus early-issues P0
+    # formatter/reconcile test harness parallels.
+    "R0801": 106,  # duplicate-code: cross-file similar blocks
+    # too-few-public-methods: prior set (24) plus A2UI review stream
+    # fakes and early-issues CLI/reconcile test stubs.
+    "R0903": 27,
 }
 
 

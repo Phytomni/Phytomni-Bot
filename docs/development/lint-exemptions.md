@@ -87,14 +87,14 @@ entry plus a catalog section, none of which can be added silently.
 
 **Someone adds a 21st test fake with one public method.** A
 project-wide `min-public-methods = 1` would silently pass it.
-Counted instead by the L2 ratchet. The current baseline is 24; the
-25th fake pushes the count to 25, the ratchet fails, refactor or
+Counted instead by the L2 ratchet. The current baseline is 27; the
+28th fake pushes the count to 28, the ratchet fails, refactor or
 explicit baseline bump is forced.
 
-**A 98th R0801 duplicate-code violation appears.** Default pylint
+**A 107th R0801 duplicate-code violation appears.** Default pylint
 would emit a warning but the gate uses similar-lines tolerance.
-Counted instead by the L2 ratchet. The current baseline is 97; the
-98th duplicate fails.
+Counted instead by the L2 ratchet. The current baseline is 106; the
+107th duplicate fails.
 
 **A new stub mirroring a different external SDK is added under
 `typings/`.** Ruff per-file-ignores covers
@@ -550,7 +550,7 @@ representative sample below):
 - `tests/agents/test_brief_gene_preamble_workflow.py:55` (`_StubKnowledgeApp` preamble fan-in test stub)
 
 **Mechanism**: L2 baseline ratchet via
-`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 24`).
+`scripts/check_pylint_baseline.py` (`RULE_BASELINES["R0903"] = 27`).
 The main pylint invocation in `scripts/validate_local.sh` and
 `scripts/scoped_gate.sh` is run with `--disable=R0801,R0903` so the
 gate-level pylint exits 0 on this rule; the baseline script runs its
@@ -666,7 +666,7 @@ codebase, in nine clusters:
 
 **Mechanism**: L2 baseline ratchet via
 `scripts/check_pylint_baseline.py` (currently
-`RULE_BASELINES["R0801"] = 97`). The catalog header count above
+`RULE_BASELINES["R0801"] = 106`). The catalog header count above
 (25) reflects an older snapshot; subsequent Phase-6 / F-series
 steps ratcheted the baseline through 52 (F1 close), 58 (F2.C2 plus
 AF-6 coverage lift), 63 (F3.C3.3 Send-triad worker mirroring
@@ -679,7 +679,8 @@ mirrors net of the cluster #9 sunset, see entries below), and 110
 new `resolve_query.py` module mirrors BGA's
 `_first_message_content` + `_normalize_candidates` + chat-kwargs
 assembly shape; intentional parallel structure per the AGENTS.md
-"Per-request context + HTTP-only pre-shaping" reference template).
+"Per-request context + HTTP-only pre-shaping" reference template),
+and 106 (A2UI review dual-transport + early-issues P0 test mirrors).
 Each ratchet was disclosed in its own commit body; the original
 25-cluster catalog remains accurate for the legacy clusters but is
 no longer the authoritative count. The main pylint invocation in
