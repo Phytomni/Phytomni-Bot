@@ -230,6 +230,9 @@ CLAUDE.md
 # Local agent context
 .codex
 AGENTS.md
+AGENTS.local.md
+AGENTS.md.pre-compose.bak
+agents-compose.json
 
 .cursor
 .codegraph
