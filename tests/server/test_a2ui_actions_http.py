@@ -740,3 +740,116 @@ async def test_a2ui_action_missing_draft_surface_returns_409(
 
     assert response.status_code == 409
     assert response.json()["error"]["message"] == "no open a2ui surface"
+
+
+def _open_review_form_surface(surface_id: str) -> dict[str, Any]:
+    """Build a paused Review form surface stored on the run row."""
+    return {
+        "catalog_version": A2UI_CATALOG_VERSION,
+        "surface_id": surface_id,
+        "widget": "form",
+        "props": {
+            "title": "Gene ID",
+            "fields": [
+                {
+                    "name": "gene_id",
+                    "label": "Gene ID",
+                    "type": "text",
+                    "required": True,
+                }
+            ],
+        },
+    }
+
+
+def _seed_review_a2ui_form_run(
+    tasks_db_path: str,
+    *,
+    run_id: str,
+    surface_id: str,
+    user_id: str = "u1",
+) -> str:
+    """Seed a review run paused on an A2UI form surface."""
+    result = {
+        "interrupt": {
+            "thread_id": run_id,
+            "draft": {
+                "draft": "请填写 gene id",
+                "a2ui": _open_review_form_surface(surface_id),
+            },
+        },
+        "status": "input_required",
+    }
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(
+            run_id=run_id,
+            user_id=user_id,
+            agent="review",
+            origin="local",
+        ),
+        outcome=RunOutcome(status="input_required", result=result),
+    )
+    return run_id
+
+
+async def test_a2ui_action_review_form_submit_succeeds(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review form submit resumes and echoes fields on result.a2ui."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_review_a2ui_form_run(
+        tasks_db_path,
+        run_id="run-a2ui-review-form-submit",
+        surface_id="sfc-open-review-form",
+    )
+    calls: list[tuple[Any, ...]] = []
+
+    async def _fake_resume(
+        app: Any,
+        thread_id: str,
+        resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append((app, thread_id, resume_payload))
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Review form accepted.",
+                        "doc_list": [],
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-open-review-form",
+            "widget": "form",
+            "action_id": "act-review-form-submit",
+            "payload": {"fields": {"gene_id": "AT1G01010"}},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["agent"] == "review"
+    assert body["result"]["a2ui"]["props"]["status"] == "submitted"
+    assert body["result"]["a2ui"]["props"]["fields"] == {
+        "gene_id": "AT1G01010"
+    }
+    assert "accepted" not in body["result"]["a2ui"]["props"]
+    assert len(calls) == 1
+    assert calls[0][1] == run_id
+    assert calls[0][2]["fields"] == {"gene_id": "AT1G01010"}
+    assert calls[0][2]["approved"] is True
+    assert calls[0][2]["edits"] is None

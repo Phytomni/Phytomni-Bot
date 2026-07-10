@@ -1,0 +1,9 @@
+{
+  "surface_id": "sfc-contract-1",
+  "widget": "form",
+  "action_id": "act-contract-1-cancel",
+  "run_id": "run-contract-1",
+  "payload": {
+    "cancelled": true
+  }
+}

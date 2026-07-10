@@ -79,6 +79,16 @@ See `chat_confirm/downlink.json` for the canonical confirm `value` payload.
 | `chat_choice/uplink_cancel.json`     | Client → Bot choice cancel         |
 | `chat_choice/success_submit.json`    | Terminal success after submit      |
 | `chat_choice/success_cancel.json`    | Terminal success after cancel      |
+| `review_form/downlink.json`          | Bot → client Review form widget    |
+| `review_form/uplink_submit.json`     | Client → Bot Review form submit    |
+| `review_form/uplink_cancel.json`     | Client → Bot Review form cancel    |
+| `review_form/success_submit.json`    | Terminal success after submit      |
+| `review_form/success_cancel.json`    | Terminal success after cancel      |
+| `review_choice/downlink.json`        | Bot → client Review choice widget  |
+| `review_choice/uplink_submit.json`   | Client → Bot Review choice submit  |
+| `review_choice/uplink_cancel.json`   | Client → Bot Review choice cancel  |
+| `review_choice/success_submit.json`  | Terminal success after submit      |
+| `review_choice/success_cancel.json`  | Terminal success after cancel      |
 
 ### Error matrix (`chat_confirm/errors/` and `review_confirm/errors/`)
 
@@ -97,6 +107,5 @@ reference the shared matrix under `chat_confirm/errors/` or
 
 ## Out of scope
 
-Review form/choice **product** paths (Review remains confirm-only at runtime).
 Go gateway passthrough implementation remains open for Web/Go consumers to
 follow these goldens.

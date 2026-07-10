@@ -1,0 +1,19 @@
+{
+  "catalog_version": "v1.0",
+  "surface_id": "sfc-contract-1",
+  "widget": "choice",
+  "props": {
+    "title": "Yes / No",
+    "options": [
+      {
+        "id": "yes",
+        "label": "Yes"
+      },
+      {
+        "id": "no",
+        "label": "No"
+      }
+    ],
+    "multiple": false
+  }
+}

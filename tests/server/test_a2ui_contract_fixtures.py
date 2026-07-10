@@ -72,6 +72,32 @@ _CONFIRM_CONTRACTS = (
     ),
 )
 
+_GENE_ID_PROPS = {
+    "title": "Gene ID",
+    "fields": [
+        {
+            "name": "gene_id",
+            "label": "Gene ID",
+            "type": "text",
+            "required": True,
+        }
+    ],
+}
+
+_YES_NO_PROPS = {
+    "title": "Yes / No",
+    "options": [
+        {"id": "yes", "label": "Yes"},
+        {"id": "no", "label": "No"},
+    ],
+    "multiple": False,
+}
+
+_RICH_DOWNLINK_PROPS: dict[str, dict[str, Any]] = {
+    "review_form": _GENE_ID_PROPS,
+    "review_choice": _YES_NO_PROPS,
+}
+
 _FORM_CHOICE_CONTRACTS = (
     _FormChoiceContract(
         name="chat_form",
@@ -94,6 +120,38 @@ _FORM_CHOICE_CONTRACTS = (
         success_answers=("Choice submitted.", "Choice cancelled."),
         submitted_submit=lambda downlink: build_submitted_value(
             downlink, selected="a"
+        ),
+        submitted_cancel=lambda downlink: build_submitted_value(
+            downlink, cancelled=True
+        ),
+    ),
+    _FormChoiceContract(
+        name="review_form",
+        widget="form",
+        submit_payload={"fields": {"gene_id": "AT1G01010"}},
+        cancel_action_id="act-contract-1-cancel",
+        success_answers=(
+            "Review form submitted.",
+            "Review form cancelled.",
+        ),
+        submitted_submit=lambda downlink: build_submitted_value(
+            downlink, fields={"gene_id": "AT1G01010"}
+        ),
+        submitted_cancel=lambda downlink: build_submitted_value(
+            downlink, cancelled=True
+        ),
+    ),
+    _FormChoiceContract(
+        name="review_choice",
+        widget="choice",
+        submit_payload={"selected": "yes"},
+        cancel_action_id="act-contract-1-cancel",
+        success_answers=(
+            "Review choice submitted.",
+            "Review choice cancelled.",
+        ),
+        submitted_submit=lambda downlink: build_submitted_value(
+            downlink, selected="yes"
         ),
         submitted_cancel=lambda downlink: build_submitted_value(
             downlink, cancelled=True
@@ -175,7 +233,9 @@ def test_form_choice_downlink_matches_pydantic(
     assert model.catalog_version == A2UI_CATALOG_VERSION
     assert model.surface_id == "sfc-contract-1"
     assert model.widget == contract.widget
-    if contract.widget == "form":
+    if contract.name in _RICH_DOWNLINK_PROPS:
+        expected = _RICH_DOWNLINK_PROPS[contract.name]
+    elif contract.widget == "form":
         expected = build_form_template_props().model_dump(
             exclude_none=True, by_alias=True
         )

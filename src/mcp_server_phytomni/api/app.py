@@ -79,7 +79,7 @@ from ..agents.shared.a2ui import (
     action_to_resume_payload,
     attach_review_a2ui,
     build_submitted_value,
-    review_confirm_action_to_resume,
+    review_action_to_resume,
     select_chat_a2ui_widget,
 )
 from ..agents.shared.gauss import aclose_gauss_pool
@@ -381,8 +381,18 @@ def _submitted_a2ui_value(
     prior_surface: Mapping[str, Any],
     resume_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Build the submitted downlink from a chat A2UI resume payload."""
+    """Build the submitted downlink from an A2UI resume payload."""
     accepted = resume_payload.get("accepted")
+    if not isinstance(accepted, bool):
+        # Review confirm maps approved → accepted for the echo.
+        approved = resume_payload.get("approved")
+        if (
+            isinstance(approved, bool)
+            and resume_payload.get("cancelled") is not True
+            and "fields" not in resume_payload
+            and "selected" not in resume_payload
+        ):
+            accepted = approved
     fields = resume_payload.get("fields")
     return build_submitted_value(
         prior_surface,
@@ -511,7 +521,7 @@ async def _resume_a2ui_run(  # pylint: disable=too-many-locals
             resume_payload = action_to_resume_payload(envelope)
             app = _chat_a2ui_stream_app()
         else:
-            resume_payload = review_confirm_action_to_resume(envelope)
+            resume_payload = review_action_to_resume(envelope)
             app = _review_stream_app()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -574,10 +584,7 @@ async def _resume_a2ui_run(  # pylint: disable=too-many-locals
         result = _format_review_result(final_state)
         result = {
             **result,
-            "a2ui": build_submitted_value(
-                open_surface,
-                accepted=resume_payload["approved"],
-            ),
+            "a2ui": _submitted_a2ui_value(open_surface, resume_payload),
         }
     registry.settle_run(
         run_id,

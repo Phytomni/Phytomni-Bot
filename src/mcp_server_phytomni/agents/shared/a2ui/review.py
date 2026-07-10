@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
+from .author import author_a2ui_surface_offline
 from .build import build_a2ui_value, mint_surface_id
 from .schemas import A2uiActionEnvelope, ConfirmProps
 from .translate import action_to_resume_payload
@@ -46,7 +47,7 @@ def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:
     out = dict(interrupt)
     draft = out.get("draft")
     summary = summary_text_from_interrupt_draft(draft)
-    surface = project_review_confirm(summary)
+    surface = author_a2ui_surface_offline({"text": summary, "agent": "review"})
     if isinstance(draft, Mapping):
         nested = dict(draft)
         nested["a2ui"] = surface
@@ -56,11 +57,28 @@ def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def review_confirm_action_to_resume(
+def review_action_to_resume(
     envelope: A2uiActionEnvelope,
 ) -> dict[str, Any]:
-    """Translate a confirm action into Review ``{approved, edits}``."""
-    if envelope.widget != "confirm":
-        raise ValueError("Review A2UI resume requires widget=confirm")
+    """Translate any Review A2UI action into a resume payload."""
     flat = action_to_resume_payload(envelope)
-    return {"approved": bool(flat["accepted"]), "edits": None}
+    out: dict[str, Any] = {
+        "widget": flat.get("widget"),
+        "surface_id": flat.get("surface_id"),
+        "action_id": flat.get("action_id"),
+        "edits": None,
+    }
+    if flat.get("cancelled") is True:
+        out["cancelled"] = True
+        out["approved"] = False
+        return out
+    if envelope.widget == "confirm":
+        out["approved"] = bool(flat["accepted"])
+        return out
+    if envelope.widget == "form":
+        out["fields"] = flat["fields"]
+        out["approved"] = True
+        return out
+    out["selected"] = flat["selected"]
+    out["approved"] = True
+    return out

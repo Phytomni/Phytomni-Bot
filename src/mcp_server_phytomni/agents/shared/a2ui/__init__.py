@@ -22,7 +22,7 @@ from .review import (
     REVIEW_CONFIRM_TITLE,
     attach_review_a2ui,
     project_review_confirm,
-    review_confirm_action_to_resume,
+    review_action_to_resume,
     summary_text_from_interrupt_draft,
 )
 from .rules import (
@@ -79,7 +79,7 @@ __all__ = [
     "match_domain_template",
     "mint_surface_id",
     "project_review_confirm",
-    "review_confirm_action_to_resume",
+    "review_action_to_resume",
     "select_chat_a2ui_widget",
     "should_emit_choice",
     "should_emit_confirm",

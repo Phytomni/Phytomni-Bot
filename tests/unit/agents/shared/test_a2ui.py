@@ -26,7 +26,7 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     match_domain_template,
     mint_surface_id,
     project_review_confirm,
-    review_confirm_action_to_resume,
+    review_action_to_resume,
     select_chat_a2ui_widget,
     should_emit_choice,
     should_emit_confirm,
@@ -242,8 +242,8 @@ def test_attach_review_a2ui_mints_new_surface_each_call() -> None:
     )
 
 
-def test_review_confirm_action_to_resume_maps_accepted() -> None:
-    """A2UI confirm becomes Review ResumePayload with edits null."""
+def test_review_action_to_resume_maps_accepted() -> None:
+    """A2UI confirm becomes Review resume with approved + identity keys."""
     envelope = A2uiActionEnvelope(
         surface_id="sfc-1",
         widget="confirm",
@@ -251,30 +251,72 @@ def test_review_confirm_action_to_resume_maps_accepted() -> None:
         run_id="run-1",
         payload={"accepted": True},
     )
-    assert review_confirm_action_to_resume(envelope) == {
-        "approved": True,
+    assert review_action_to_resume(envelope) == {
+        "widget": "confirm",
+        "surface_id": "sfc-1",
+        "action_id": "act-1",
         "edits": None,
+        "approved": True,
     }
     envelope_reject = envelope.model_copy(
         update={"payload": {"accepted": False}}
     )
-    assert review_confirm_action_to_resume(envelope_reject) == {
-        "approved": False,
+    assert review_action_to_resume(envelope_reject) == {
+        "widget": "confirm",
+        "surface_id": "sfc-1",
+        "action_id": "act-1",
         "edits": None,
+        "approved": False,
     }
 
 
-def test_review_confirm_action_rejects_non_confirm_widget() -> None:
-    """Review A2UI path only accepts confirm widgets."""
+def test_review_action_to_resume_form_fields() -> None:
+    """Form submit maps fields and auto-approves the Review resume."""
     envelope = A2uiActionEnvelope(
         surface_id="sfc-1",
         widget="form",
         action_id="act-1",
         run_id="run-1",
-        payload={"fields": {"x": 1}},
+        payload={"fields": {"gene_id": "AT1G01010"}},
     )
-    with pytest.raises(ValueError, match="confirm"):
-        review_confirm_action_to_resume(envelope)
+    assert review_action_to_resume(envelope) == {
+        "widget": "form",
+        "surface_id": "sfc-1",
+        "action_id": "act-1",
+        "edits": None,
+        "fields": {"gene_id": "AT1G01010"},
+        "approved": True,
+    }
+
+
+def test_review_action_to_resume_cancelled() -> None:
+    """Form/choice cancel sets cancelled and approved=false."""
+    envelope = A2uiActionEnvelope(
+        surface_id="sfc-1",
+        widget="form",
+        action_id="act-1-cancel",
+        run_id="run-1",
+        payload={"cancelled": True},
+    )
+    assert review_action_to_resume(envelope) == {
+        "widget": "form",
+        "surface_id": "sfc-1",
+        "action_id": "act-1-cancel",
+        "edits": None,
+        "cancelled": True,
+        "approved": False,
+    }
+
+
+def test_attach_review_a2ui_can_project_form() -> None:
+    """Offline author can project a form surface for Review pauses."""
+    projected = attach_review_a2ui(
+        {"draft": {"draft": "请填写 gene id for the draft"}}
+    )
+    a2ui = projected["draft"]["a2ui"]
+    assert a2ui["widget"] == "form"
+    assert a2ui["props"]["title"] == "Gene ID"
+    assert a2ui["props"]["fields"][0]["name"] == "gene_id"
 
 
 def test_select_chat_a2ui_widget_priority() -> None:
