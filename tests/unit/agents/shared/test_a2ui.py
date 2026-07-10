@@ -216,6 +216,7 @@ def test_attach_review_a2ui_adds_surface_without_mutating_input() -> None:
     assert "a2ui" not in original["draft"]
     assert projected["draft"]["draft"] == "Summary for humans"
     assert projected["draft"]["a2ui"]["widget"] == "confirm"
+    assert projected["draft"]["a2ui"]["props"]["title"] == "Review approval"
     assert projected["draft"]["a2ui"]["props"]["body"] == "Summary for humans"
 
 
@@ -285,6 +286,25 @@ def test_review_action_to_resume_form_fields() -> None:
         "action_id": "act-1",
         "edits": None,
         "fields": {"gene_id": "AT1G01010"},
+        "approved": True,
+    }
+
+
+def test_review_action_to_resume_choice_selected() -> None:
+    """Choice submit maps selected and auto-approves the Review resume."""
+    envelope = A2uiActionEnvelope(
+        surface_id="sfc-1",
+        widget="choice",
+        action_id="act-1",
+        run_id="run-1",
+        payload={"selected": ["opt-a"]},
+    )
+    assert review_action_to_resume(envelope) == {
+        "widget": "choice",
+        "surface_id": "sfc-1",
+        "action_id": "act-1",
+        "edits": None,
+        "selected": ["opt-a"],
         "approved": True,
     }
 

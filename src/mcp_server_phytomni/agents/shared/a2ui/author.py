@@ -20,6 +20,8 @@ from .build import build_a2ui_value, mint_surface_id
 from .domain_templates import match_domain_template
 from .rules import select_chat_a2ui_widget
 from .schemas import (
+    REVIEW_BODY_MAX_CHARS,
+    REVIEW_CONFIRM_TITLE,
     A2uiWidget,
     ChoiceProps,
     ConfirmProps,
@@ -52,13 +54,21 @@ def _select_widget(ctx: AuthorContext) -> A2uiWidget:
     return select_chat_a2ui_widget(ctx["text"]) or "confirm"
 
 
-def _thin_props(widget: A2uiWidget, text: str) -> A2uiProps:
+def _thin_props(
+    widget: A2uiWidget,
+    text: str,
+    *,
+    agent: Literal["chat", "review"] = "chat",
+) -> A2uiProps:
     """Return thin template / confirm body fallback props."""
     if widget == "form":
         return build_form_template_props()
     if widget == "choice":
         return build_choice_template_props()
-    return ConfirmProps(title="Confirm", body=text[:500])
+    # Review confirm title lives in schemas (shared with review.py).
+    title = REVIEW_CONFIRM_TITLE if agent == "review" else "Confirm"
+    body_max = REVIEW_BODY_MAX_CHARS if agent == "review" else 500
+    return ConfirmProps(title=title, body=text[:body_max])
 
 
 def _validate_props(
@@ -102,7 +112,7 @@ def author_a2ui_surface_offline(ctx: AuthorContext) -> dict[str, Any]:
     widget = _select_widget(ctx)
     props = _domain_props_if_compatible(text, widget)
     if props is None:
-        props = _thin_props(widget, text)
+        props = _thin_props(widget, text, agent=ctx["agent"])
     return _build_surface(widget, props)
 
 
@@ -168,5 +178,5 @@ async def author_a2ui_surface(
         if raw is not None:
             props = _validate_props(widget, raw)
         if props is None:
-            props = _thin_props(widget, text)
+            props = _thin_props(widget, text, agent=ctx["agent"])
     return _build_surface(widget, props)

@@ -7,15 +7,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Any
 
 from .author import author_a2ui_surface_offline
-from .build import build_a2ui_value, mint_surface_id
-from .schemas import A2uiActionEnvelope, ConfirmProps
+from .schemas import (
+    REVIEW_BODY_MAX_CHARS,
+    REVIEW_CONFIRM_TITLE,
+    A2uiActionEnvelope,
+)
 from .translate import action_to_resume_payload
 
-REVIEW_CONFIRM_TITLE: Final = "Review approval"
-REVIEW_BODY_MAX_CHARS: Final = 500
+# Re-export for callers that import from review.py directly.
+__all__ = [
+    "REVIEW_BODY_MAX_CHARS",
+    "REVIEW_CONFIRM_TITLE",
+    "attach_review_a2ui",
+    "project_review_confirm",
+    "review_action_to_resume",
+    "summary_text_from_interrupt_draft",
+]
 
 
 def summary_text_from_interrupt_draft(draft: Any) -> str:
@@ -33,13 +43,8 @@ def summary_text_from_interrupt_draft(draft: Any) -> str:
 
 
 def project_review_confirm(summary: str) -> dict[str, Any]:
-    """Build a confirm downlink for a Review approval pause."""
-    body = summary[:REVIEW_BODY_MAX_CHARS]
-    return build_a2ui_value(
-        surface_id=mint_surface_id(),
-        widget="confirm",
-        props=ConfirmProps(title=REVIEW_CONFIRM_TITLE, body=body),
-    )
+    """Build a Review downlink via the shared offline author path."""
+    return author_a2ui_surface_offline({"text": summary, "agent": "review"})
 
 
 def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:

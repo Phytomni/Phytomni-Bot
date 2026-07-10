@@ -13,6 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 A2UI_CATALOG_VERSION: Final = "v1.0"
 A2UI_CUSTOM_NAME: Final = "phyto.a2ui"
 
+# Shared with review.py / author.py thin confirm fallback.
+REVIEW_CONFIRM_TITLE: Final = "Review approval"
+REVIEW_BODY_MAX_CHARS: Final = 500
+
 A2uiWidget = Literal["confirm", "form", "choice"]
 
 

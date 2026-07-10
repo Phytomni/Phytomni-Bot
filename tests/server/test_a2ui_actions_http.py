@@ -853,3 +853,64 @@ async def test_a2ui_action_review_form_submit_succeeds(
     assert calls[0][2]["fields"] == {"gene_id": "AT1G01010"}
     assert calls[0][2]["approved"] is True
     assert calls[0][2]["edits"] is None
+
+
+async def test_a2ui_action_review_form_cancel_succeeds(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review form cancel resumes and echoes cancelled on result.a2ui."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_review_a2ui_form_run(
+        tasks_db_path,
+        run_id="run-a2ui-review-form-cancel",
+        surface_id="sfc-open-review-form-cancel",
+    )
+    calls: list[tuple[Any, ...]] = []
+
+    async def _fake_resume(
+        app: Any,
+        thread_id: str,
+        resume_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append((app, thread_id, resume_payload))
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Review form cancelled.",
+                        "doc_list": [],
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _fake_resume)
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": "sfc-open-review-form-cancel",
+            "widget": "form",
+            "action_id": "act-review-form-cancel",
+            "payload": {"cancelled": True},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["agent"] == "review"
+    assert body["result"]["a2ui"]["props"]["status"] == "submitted"
+    assert body["result"]["a2ui"]["props"]["cancelled"] is True
+    assert "accepted" not in body["result"]["a2ui"]["props"]
+    assert len(calls) == 1
+    assert calls[0][1] == run_id
+    assert calls[0][2]["cancelled"] is True
+    assert calls[0][2]["approved"] is False
+    assert calls[0][2]["edits"] is None

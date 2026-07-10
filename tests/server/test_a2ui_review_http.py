@@ -237,7 +237,12 @@ async def test_review_a2ui_action_approve_matches_resume_kernel(
     assert out["result"]["a2ui"]["props"]["status"] == "submitted"
     assert out["result"]["a2ui"]["props"]["accepted"] is True
     assert out["result"]["a2ui"]["surface_id"] == surface_id
-    assert calls == [{"approved": True, "edits": None}]
+    assert len(calls) == 1
+    assert calls[0]["approved"] is True
+    assert calls[0]["edits"] is None
+    assert calls[0]["widget"] == "confirm"
+    assert calls[0]["surface_id"] == surface_id
+    assert calls[0]["action_id"] == "act-1"
 
 
 async def test_review_resume_includes_result_a2ui_when_projected(
