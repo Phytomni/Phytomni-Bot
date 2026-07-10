@@ -18,6 +18,7 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     action_to_resume_payload,
     attach_review_a2ui,
     author_a2ui_surface,
+    author_a2ui_surface_offline,
     build_a2ui_value,
     build_choice_template_props,
     build_form_template_props,
@@ -397,3 +398,59 @@ async def test_author_llm_then_thin_fallback() -> None:
     )
     assert value["widget"] == "form"
     assert value["props"]["fields"][0]["name"] == "value"
+
+
+def test_author_offline_gene_id_form() -> None:
+    """Offline author returns gene_id domain form without LLM."""
+    value = author_a2ui_surface_offline(
+        {"text": "请填写 gene_id", "agent": "chat"},
+    )
+    assert value["widget"] == "form"
+    assert value["props"]["title"] == "Gene ID"
+    assert value["props"]["fields"][0]["name"] == "gene_id"
+
+
+def test_author_offline_domain_widget_mismatch_uses_thin() -> None:
+    """Species domain (choice) is skipped when widget is form."""
+    text = "请填写 species for the run"
+    assert select_chat_a2ui_widget(text) == "form"
+    hit = match_domain_template(text)
+    assert hit is not None
+    assert hit.template_id == "species"
+    assert hit.widget == "choice"
+    value = author_a2ui_surface_offline(
+        {"text": text, "agent": "chat"},
+    )
+    assert value["widget"] == "form"
+    assert value["props"]["title"] == "Form"
+    assert value["props"]["fields"][0]["name"] == "value"
+
+
+@pytest.mark.asyncio
+async def test_author_uses_valid_llm_props() -> None:
+    """Valid LLM props are used when no domain template hits."""
+
+    async def _custom(
+        ctx: object,
+        widget: object,
+    ) -> dict[str, object]:
+        del ctx, widget
+        return {
+            "title": "Custom",
+            "fields": [
+                {
+                    "name": "x",
+                    "label": "X",
+                    "type": "text",
+                    "required": True,
+                },
+            ],
+        }
+
+    value = await author_a2ui_surface(
+        {"text": "请填写 something obscure xyz", "agent": "chat"},
+        llm_props_fn=_custom,
+    )
+    assert value["widget"] == "form"
+    assert value["props"]["title"] == "Custom"
+    assert value["props"]["fields"][0]["name"] == "x"

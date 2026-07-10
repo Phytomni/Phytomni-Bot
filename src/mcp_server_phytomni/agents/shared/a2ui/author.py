@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from importlib import import_module
 from typing import Any, Literal, TypedDict
 
 from mcp.shared.exceptions import McpError
 from pydantic import ValidationError
 
 from ....common.responses import message_content
-from ...chat.service import phyto_chat
 from .build import build_a2ui_value, mint_surface_id
 from .domain_templates import match_domain_template
 from .rules import select_chat_a2ui_widget
@@ -111,6 +111,11 @@ async def _default_llm_props(
     widget: A2uiWidget,
 ) -> dict[str, Any] | None:
     """Best-effort JSON props via phyto_chat; return None on failure."""
+    # Lazy: keep package import free of agents.chat.service.
+    phyto_chat = import_module(
+        "mcp_server_phytomni.agents.chat.service"
+    ).phyto_chat
+
     prompt = (
         "Return a JSON object of A2UI widget props for the "
         f"{widget!r} surface. Text:\n{ctx['text'][:500]}"
