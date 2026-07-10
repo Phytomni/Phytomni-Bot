@@ -17,10 +17,12 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     FormProps,
     action_to_resume_payload,
     attach_review_a2ui,
+    author_a2ui_surface,
     build_a2ui_value,
     build_choice_template_props,
     build_form_template_props,
     build_submitted_value,
+    match_domain_template,
     mint_surface_id,
     project_review_confirm,
     review_confirm_action_to_resume,
@@ -355,3 +357,43 @@ def test_build_submitted_value_form_and_choice() -> None:
     cancelled = build_submitted_value(choice_prior, cancelled=True)
     assert cancelled["props"]["status"] == "submitted"
     assert cancelled["props"]["cancelled"] is True
+
+
+def test_match_domain_template_gene_id() -> None:
+    """gene_id domain template wins for gene-oriented form queries."""
+    hit = match_domain_template("请填写 gene id ATG000")
+    assert hit is not None
+    assert hit.template_id == "gene_id"
+    assert hit.widget == "form"
+
+
+@pytest.mark.asyncio
+async def test_author_prefers_domain_template_over_llm() -> None:
+    """Domain hit must not call llm_props_fn."""
+
+    async def _boom(ctx: object, widget: object) -> None:
+        del ctx, widget
+        raise AssertionError("llm must not run")
+
+    value = await author_a2ui_surface(
+        {"text": "请填写 gene_id", "agent": "chat"},
+        llm_props_fn=_boom,
+    )
+    assert value["widget"] == "form"
+    assert value["props"]["fields"][0]["name"] == "gene_id"
+
+
+@pytest.mark.asyncio
+async def test_author_llm_then_thin_fallback() -> None:
+    """LLM None → thin form template when widget is form."""
+
+    async def _none(ctx: object, widget: object) -> None:
+        del ctx, widget
+        return None
+
+    value = await author_a2ui_surface(
+        {"text": "请填写 something obscure xyz", "agent": "chat"},
+        llm_props_fn=_none,
+    )
+    assert value["widget"] == "form"
+    assert value["props"]["fields"][0]["name"] == "value"

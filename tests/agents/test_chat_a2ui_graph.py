@@ -140,18 +140,7 @@ async def test_a2ui_graph_resume_rejected_cancels(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rejected confirm settles a short cancel message without main LLM."""
-
-    async def _must_not_run(
-        messages: list[dict[str, str]],
-        options: dict[str, Any],
-    ) -> dict[str, Any]:
-        del messages, options
-        raise AssertionError("generate_node must not run on reject")
-
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
-        _must_not_run,
-    )
+    _patch_chat_llm(monkeypatch)
 
     app = build_chat_a2ui_graph(checkpointer=MemorySaver())
     thread_id = "chat-a2ui-thread-3"
@@ -166,6 +155,18 @@ async def test_a2ui_graph_resume_rejected_cancels(
     info = detect_interrupt(paused, thread_id)
     assert info is not None
     surface = info["draft"]["a2ui"]["surface_id"]
+
+    async def _must_not_run(
+        messages: list[dict[str, str]],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        del messages, options
+        raise AssertionError("generate_node must not run on reject")
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
+        _must_not_run,
+    )
     final = await aresume_graph(
         app,
         thread_id,
@@ -287,3 +288,26 @@ async def test_a2ui_graph_choice_cancel(
         },
     )
     assert "Cancelled" in final["response"]["choices"][0]["message"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_a2ui_graph_gene_id_domain_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gene-id form query mints a domain gene_id field on pause."""
+    _patch_chat_llm(monkeypatch)
+    app = build_chat_a2ui_graph(checkpointer=MemorySaver())
+    thread_id = "chat-a2ui-gene-id-1"
+    paused = await app.ainvoke(
+        {
+            "user_query": "请填写 gene_id for analysis",
+            "obs_file_list": [],
+            "chat_kwargs": {},
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    info = detect_interrupt(paused, thread_id)
+    assert info is not None
+    a2ui = info["draft"]["a2ui"]
+    assert a2ui["widget"] == "form"
+    assert a2ui["props"]["fields"][0]["name"] == "gene_id"

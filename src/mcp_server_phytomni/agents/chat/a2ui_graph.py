@@ -17,16 +17,7 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.types import interrupt
 
-from ..shared.a2ui import (
-    ChoiceProps,
-    ConfirmProps,
-    FormProps,
-    build_a2ui_value,
-    build_choice_template_props,
-    build_form_template_props,
-    mint_surface_id,
-    select_chat_a2ui_widget,
-)
+from ..shared.a2ui import author_a2ui_surface
 from .state import ChatState
 
 _CANCEL_MESSAGE = "Cancelled — no further action taken."
@@ -64,9 +55,8 @@ async def a2ui_prepare_surface_node(
     """Mint the confirm/form/choice surface once before the interrupt.
 
     LangGraph replays the interrupt node from the top on resume; surface
-    minting lives here so the same ``surface_id`` survives replay. The
-    widget is selected once from ``user_query`` via
-    ``select_chat_a2ui_widget`` (defaulting to ``confirm``).
+    minting lives here so the same ``surface_id`` survives replay. Props
+    come from :func:`author_a2ui_surface` (domain → LLM → thin).
 
     Args:
         state: Current workflow state; reads ``user_query`` and
@@ -77,21 +67,8 @@ async def a2ui_prepare_surface_node(
     """
     if state.get("a2ui_surface"):
         return {}
-    widget = select_chat_a2ui_widget(state["user_query"]) or "confirm"
-    props: ConfirmProps | FormProps | ChoiceProps
-    if widget == "form":
-        props = build_form_template_props()
-    elif widget == "choice":
-        props = build_choice_template_props()
-    else:
-        props = ConfirmProps(
-            title="Confirm",
-            body=state["user_query"][:500],
-        )
-    value = build_a2ui_value(
-        surface_id=mint_surface_id(),
-        widget=widget,
-        props=props,
+    value = await author_a2ui_surface(
+        {"text": state["user_query"], "agent": "chat"},
     )
     return {"a2ui_surface": value}
 

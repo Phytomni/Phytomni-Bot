@@ -6,7 +6,17 @@
 
 from __future__ import annotations
 
+from .author import (
+    AuthorContext,
+    author_a2ui_surface,
+    author_a2ui_surface_offline,
+)
 from .build import build_a2ui_value, build_submitted_value, mint_surface_id
+from .domain_templates import (
+    DomainTemplate,
+    all_domain_templates,
+    match_domain_template,
+)
 from .review import (
     REVIEW_BODY_MAX_CHARS,
     REVIEW_CONFIRM_TITLE,
@@ -45,22 +55,28 @@ __all__ = [
     "A2uiActionEnvelope",
     "A2uiDownlinkValue",
     "A2uiWidget",
+    "AuthorContext",
     "ChoiceOption",
     "ChoicePayload",
     "ChoiceProps",
     "ConfirmPayload",
     "ConfirmProps",
+    "DomainTemplate",
     "FormField",
     "FormPayload",
     "FormProps",
     "REVIEW_BODY_MAX_CHARS",
     "REVIEW_CONFIRM_TITLE",
     "action_to_resume_payload",
+    "all_domain_templates",
     "attach_review_a2ui",
+    "author_a2ui_surface",
+    "author_a2ui_surface_offline",
     "build_a2ui_value",
     "build_choice_template_props",
     "build_form_template_props",
     "build_submitted_value",
+    "match_domain_template",
     "mint_surface_id",
     "project_review_confirm",
     "review_confirm_action_to_resume",
