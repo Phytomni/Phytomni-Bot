@@ -806,6 +806,12 @@ async def test_a2ui_action_review_form_submit_succeeds(
         surface_id="sfc-open-review-form",
     )
     calls: list[tuple[Any, ...]] = []
+    fake_app = object()
+    monkeypatch.setattr(
+        api_app_module,
+        "_review_stream_app",
+        lambda: fake_app,
+    )
 
     async def _fake_resume(
         app: Any,
@@ -849,6 +855,7 @@ async def test_a2ui_action_review_form_submit_succeeds(
     }
     assert "accepted" not in body["result"]["a2ui"]["props"]
     assert len(calls) == 1
+    assert calls[0][0] is fake_app
     assert calls[0][1] == run_id
     assert calls[0][2]["fields"] == {"gene_id": "AT1G01010"}
     assert calls[0][2]["approved"] is True
@@ -869,6 +876,12 @@ async def test_a2ui_action_review_form_cancel_succeeds(
         surface_id="sfc-open-review-form-cancel",
     )
     calls: list[tuple[Any, ...]] = []
+    fake_app = object()
+    monkeypatch.setattr(
+        api_app_module,
+        "_review_stream_app",
+        lambda: fake_app,
+    )
 
     async def _fake_resume(
         app: Any,
@@ -910,6 +923,7 @@ async def test_a2ui_action_review_form_cancel_succeeds(
     assert body["result"]["a2ui"]["props"]["cancelled"] is True
     assert "accepted" not in body["result"]["a2ui"]["props"]
     assert len(calls) == 1
+    assert calls[0][0] is fake_app
     assert calls[0][1] == run_id
     assert calls[0][2]["cancelled"] is True
     assert calls[0][2]["approved"] is False
