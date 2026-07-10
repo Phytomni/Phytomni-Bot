@@ -380,6 +380,9 @@ async def test_a2ui_graph_two_round_reenter(
     )
     info2 = detect_interrupt(paused2, thread_id)
     assert info2 is not None
+    # Remint from the assistant cue ("请选择..."), not the confirm-oriented
+    # user_query, so round 2 must be choice.
+    assert info2["draft"]["a2ui"]["widget"] == "choice"
     surface2 = info2["draft"]["a2ui"]["surface_id"]
     assert surface2 != surface1
     assert "请选择" in paused2["response"]["choices"][0]["message"]["content"]
@@ -388,9 +391,9 @@ async def test_a2ui_graph_two_round_reenter(
         app,
         thread_id,
         {
-            "accepted": True,
+            "selected": "option-a",
             "surface_id": surface2,
-            "widget": info2["draft"]["a2ui"]["widget"],
+            "widget": "choice",
             "action_id": "act-2",
         },
     )

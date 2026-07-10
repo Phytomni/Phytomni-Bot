@@ -36,8 +36,9 @@ class ChatA2uiState(ChatState, total=False):
     Extends :class:`ChatState` with the confirm/form/choice surface
     draft, the human decision returned by ``interrupt()`` on resume,
     the injected form/choice answer summary, an optional cancel
-    message for the rejected/cancelled branch, and the bounded
-    multi-turn ``a2ui_round`` counter.
+    message for the rejected/cancelled branch, the bounded
+    multi-turn ``a2ui_round`` counter, and optional
+    ``a2ui_author_text`` (assistant cue used to remint on re-enter).
     """
 
     a2ui_surface: dict[str, Any] | None
@@ -45,6 +46,7 @@ class ChatA2uiState(ChatState, total=False):
     a2ui_user_input: str | None
     cancel_message: str | None
     a2ui_round: int
+    a2ui_author_text: str | None
 
 
 class ChatA2uiOutput(TypedDict, total=False):
@@ -67,21 +69,28 @@ async def a2ui_prepare_surface_node(
     minting lives here so the same ``surface_id`` survives replay. Props
     come from :func:`author_a2ui_surface` (domain → LLM → thin).
 
+    Round 1 authors from ``user_query``. On N=2 remint after re-enter,
+    authors from ``a2ui_author_text`` (the assistant cue that triggered
+    ``should_reenter_a2ui``) so the widget matches the new prompt, then
+    clears that cue.
+
     Args:
-        state: Current workflow state; reads ``user_query`` and
-            ``a2ui_surface``.
+        state: Current workflow state; reads ``user_query``,
+            ``a2ui_author_text``, and ``a2ui_surface``.
 
     Returns:
         State delta with the downlink surface, or empty when already set.
     """
     if state.get("a2ui_surface"):
         return {}
+    author_text = state.get("a2ui_author_text") or state["user_query"]
     value = await author_a2ui_surface(
-        {"text": state["user_query"], "agent": "chat"},
+        {"text": author_text, "agent": "chat"},
     )
     return {
         "a2ui_surface": value,
         "a2ui_round": next_a2ui_round(state.get("a2ui_round")),
+        "a2ui_author_text": None,
     }
 
 
@@ -213,22 +222,33 @@ async def a2ui_after_work_node(state: ChatA2uiState) -> dict[str, Any]:
 
 
 async def a2ui_reenter_node(state: ChatA2uiState) -> dict[str, Any]:
-    """Clear surface and decision so prepare can mint a fresh round.
+    """Clear surface/decision and stash the assistant cue for remint.
+
+    Sets ``a2ui_author_text`` to the assistant ``message_content`` that
+    passed :func:`should_reenter_a2ui` so prepare authors the N=2
+    surface from that cue rather than the original ``user_query``.
 
     Args:
-        state: Current workflow state (unused).
+        state: Current workflow state; reads ``response``.
 
     Returns:
-        State delta nulling ``a2ui_surface`` and ``a2ui_decision``.
+        State delta nulling ``a2ui_surface`` / ``a2ui_decision`` and
+        setting ``a2ui_author_text``.
     """
-    del state
-    return clear_a2ui_for_reenter()
+    text = message_content(state.get("response"))
+    return {
+        **clear_a2ui_for_reenter(),
+        "a2ui_author_text": text,
+    }
 
 
 def route_after_a2ui_turn(
     state: ChatA2uiState,
 ) -> Literal["a2ui_reenter_node", "__end__"]:
     """Route to remint when assistant text cues another A2UI round.
+
+    When re-entering, ``a2ui_reenter_node`` stashes that same assistant
+    text as ``a2ui_author_text`` for the next prepare mint.
 
     Args:
         state: Current workflow state; reads ``response`` and
