@@ -5,7 +5,7 @@
   "run_id": "run-contract-1",
   "payload": {
     "fields": {
-      "value": "AT1G01010"
+      "gene_id": "AT1G01010"
     }
   }
 }

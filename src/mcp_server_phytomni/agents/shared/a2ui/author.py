@@ -13,6 +13,7 @@ from importlib import import_module
 from typing import Any, Literal, TypedDict
 
 from mcp.shared.exceptions import McpError
+from openai import OpenAIError
 from pydantic import ValidationError
 
 from ....common.responses import message_content
@@ -151,6 +152,7 @@ async def _default_llm_props(
         AttributeError,
         OSError,
         json.JSONDecodeError,
+        OpenAIError,  # APIConnectionError, APIError, …
     ):
         _LOGGER.warning(
             "A2UI LLM props author failed; falling back to thin",

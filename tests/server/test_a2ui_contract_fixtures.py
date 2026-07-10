@@ -94,6 +94,7 @@ _YES_NO_PROPS = {
 }
 
 _RICH_DOWNLINK_PROPS: dict[str, dict[str, Any]] = {
+    "chat_form": _GENE_ID_PROPS,
     "review_form": _GENE_ID_PROPS,
     "review_choice": _YES_NO_PROPS,
 }
@@ -102,11 +103,11 @@ _FORM_CHOICE_CONTRACTS = (
     _FormChoiceContract(
         name="chat_form",
         widget="form",
-        submit_payload={"fields": {"value": "AT1G01010"}},
+        submit_payload={"fields": {"gene_id": "AT1G01010"}},
         cancel_action_id="act-contract-1-cancel",
         success_answers=("Form submitted.", "Form cancelled."),
         submitted_submit=lambda downlink: build_submitted_value(
-            downlink, fields={"value": "AT1G01010"}
+            downlink, fields={"gene_id": "AT1G01010"}
         ),
         submitted_cancel=lambda downlink: build_submitted_value(
             downlink, cancelled=True

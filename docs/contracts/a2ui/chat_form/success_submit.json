@@ -9,9 +9,9 @@
       "surface_id": "sfc-contract-1",
       "widget": "form",
       "props": {
-        "title": "Form",
+        "title": "Gene ID",
         "fields": {
-          "value": "AT1G01010"
+          "gene_id": "AT1G01010"
         },
         "status": "submitted"
       }

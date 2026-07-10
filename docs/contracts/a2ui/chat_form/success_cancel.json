@@ -9,11 +9,11 @@
       "surface_id": "sfc-contract-1",
       "widget": "form",
       "props": {
-        "title": "Form",
+        "title": "Gene ID",
         "fields": [
           {
-            "name": "value",
-            "label": "Value",
+            "name": "gene_id",
+            "label": "Gene ID",
             "type": "text",
             "required": true
           }
