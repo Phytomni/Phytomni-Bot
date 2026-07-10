@@ -72,8 +72,10 @@ See [CLI Reference](docs/reference/cli.md) for the installed commands and
 [HTTP API](docs/reference/http-api.md) for authentication, endpoint contracts,
 run polling, retention, OpenAI-compatible chat, human-in-the-loop review
 resume, and flag-gated A2UI confirm/form/choice widgets
-(`PHYTOMNI_A2UI_ENABLED`). Copyable A2UI goldens for Web/Go consumers
-(`chat_confirm`, `review_confirm`, `chat_form`, `chat_choice`) live under
+(`PHYTOMNI_A2UI_ENABLED`; Surface Author + Chat/Review N=2). Copyable
+A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
+`chat_form`, `chat_choice`, `review_form`, `review_choice`,
+`multi_turn`) live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
 ## Available MCP Tools
