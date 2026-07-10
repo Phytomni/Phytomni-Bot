@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CATALOG_VERSION,
+    A2UI_MAX_ROUNDS,
     A2uiActionEnvelope,
     ConfirmProps,
     FormField,
@@ -23,14 +24,17 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     build_choice_template_props,
     build_form_template_props,
     build_submitted_value,
+    clear_a2ui_for_reenter,
     match_domain_template,
     mint_surface_id,
+    next_a2ui_round,
     project_review_confirm,
     review_action_to_resume,
     select_chat_a2ui_widget,
     should_emit_choice,
     should_emit_confirm,
     should_emit_form,
+    should_reenter_a2ui,
     summary_text_from_interrupt_draft,
 )
 
@@ -516,3 +520,20 @@ async def test_author_uses_valid_llm_props() -> None:
     assert value["widget"] == "form"
     assert value["props"]["title"] == "Custom"
     assert value["props"]["fields"][0]["name"] == "x"
+
+
+def test_should_reenter_respects_max_rounds() -> None:
+    """Re-entry requires a widget cue and a2ui_round below N=2."""
+    assert A2UI_MAX_ROUNDS == 2
+    assert should_reenter_a2ui(text="请填写 x", a2ui_round=1) is True
+    assert should_reenter_a2ui(text="请填写 x", a2ui_round=2) is False
+    assert should_reenter_a2ui(text="hello", a2ui_round=0) is False
+
+
+def test_clear_a2ui_for_reenter_nulls_surface() -> None:
+    """clear_a2ui_for_reenter resets surface and decision for remint."""
+    cleared = clear_a2ui_for_reenter()
+    assert cleared["a2ui_surface"] is None
+    assert cleared["a2ui_decision"] is None
+    assert next_a2ui_round(None) == 1
+    assert next_a2ui_round(1) == 2

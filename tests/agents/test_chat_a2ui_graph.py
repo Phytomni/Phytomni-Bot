@@ -311,3 +311,91 @@ async def test_a2ui_graph_gene_id_domain_form(
     a2ui = info["draft"]["a2ui"]
     assert a2ui["widget"] == "form"
     assert a2ui["props"]["fields"][0]["name"] == "gene_id"
+
+
+@pytest.mark.asyncio
+async def test_a2ui_graph_two_round_reenter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assistant cue re-enters once; second round then settles terminal."""
+    generate_calls = {"n": 0}
+
+    async def _fake_run(
+        messages: list[dict[str, str]],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        del messages, options
+        generate_calls["n"] += 1
+        if generate_calls["n"] == 1:
+            content = "请选择 one option to continue"
+        else:
+            content = "Analysis complete."
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": content,
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+
+    async def _fake_phyto_chat(query: str, **kwargs: Any) -> dict[str, Any]:
+        del query, kwargs
+        return {"choices": [{"message": {"content": "[]"}}]}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.graph._run_phyto_chat",
+        _fake_run,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
+        _fake_phyto_chat,
+    )
+
+    app = build_chat_a2ui_graph(checkpointer=MemorySaver())
+    thread_id = "chat-a2ui-two-round"
+    paused1 = await app.ainvoke(
+        {
+            "user_query": "请确认是否继续",
+            "obs_file_list": [],
+            "chat_kwargs": {},
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    info1 = detect_interrupt(paused1, thread_id)
+    assert info1 is not None
+    surface1 = info1["draft"]["a2ui"]["surface_id"]
+
+    paused2 = await aresume_graph(
+        app,
+        thread_id,
+        {
+            "accepted": True,
+            "surface_id": surface1,
+            "widget": "confirm",
+            "action_id": "act-1",
+        },
+    )
+    info2 = detect_interrupt(paused2, thread_id)
+    assert info2 is not None
+    surface2 = info2["draft"]["a2ui"]["surface_id"]
+    assert surface2 != surface1
+    assert "请选择" in paused2["response"]["choices"][0]["message"]["content"]
+
+    final = await aresume_graph(
+        app,
+        thread_id,
+        {
+            "accepted": True,
+            "surface_id": surface2,
+            "widget": info2["draft"]["a2ui"]["widget"],
+            "action_id": "act-2",
+        },
+    )
+    assert detect_interrupt(final, thread_id) is None
+    content = final["response"]["choices"][0]["message"]["content"]
+    assert "请选择" not in content
+    assert "Analysis complete." in content
+    assert generate_calls["n"] == 2

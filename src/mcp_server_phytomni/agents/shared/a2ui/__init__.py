@@ -17,6 +17,12 @@ from .domain_templates import (
     all_domain_templates,
     match_domain_template,
 )
+from .loop import (
+    A2UI_MAX_ROUNDS,
+    clear_a2ui_for_reenter,
+    next_a2ui_round,
+    should_reenter_a2ui,
+)
 from .review import (
     REVIEW_BODY_MAX_CHARS,
     REVIEW_CONFIRM_TITLE,
@@ -52,6 +58,7 @@ from .translate import action_to_resume_payload
 __all__ = [
     "A2UI_CATALOG_VERSION",
     "A2UI_CUSTOM_NAME",
+    "A2UI_MAX_ROUNDS",
     "A2uiActionEnvelope",
     "A2uiDownlinkValue",
     "A2uiWidget",
@@ -76,13 +83,16 @@ __all__ = [
     "build_choice_template_props",
     "build_form_template_props",
     "build_submitted_value",
+    "clear_a2ui_for_reenter",
     "match_domain_template",
     "mint_surface_id",
+    "next_a2ui_round",
     "project_review_confirm",
     "review_action_to_resume",
     "select_chat_a2ui_widget",
     "should_emit_choice",
     "should_emit_confirm",
     "should_emit_form",
+    "should_reenter_a2ui",
     "summary_text_from_interrupt_draft",
 ]

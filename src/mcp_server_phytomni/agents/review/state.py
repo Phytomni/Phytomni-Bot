@@ -126,3 +126,4 @@ class DeepResearchState(ParallelDispatchState):
     # === Human-in-the-loop approval (single-writer, no reducer) ===
     approval_pending: bool
     approval_decision: dict[str, Any]
+    a2ui_round: int

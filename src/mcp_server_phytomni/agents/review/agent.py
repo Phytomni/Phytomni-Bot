@@ -46,6 +46,7 @@ from ...runtime.agent_registry import (
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.chat_subgraph import (
     CHAT_APP,
@@ -378,35 +379,53 @@ class DeepResearchAgent(
         Emits a progress tick, then calls ``interrupt()`` with the draft
         summary so a human can approve or reject. On resume, LangGraph
         replays this node from the top and ``interrupt()`` returns the
-        decision payload the adapter supplied.
+        decision payload the adapter supplied. Each resume increments
+        ``a2ui_round`` (bounded by :data:`A2UI_MAX_ROUNDS`).
 
         Args:
-            state: Current workflow state; reads ``summary_content``.
+            state: Current workflow state; reads ``summary_content`` and
+                ``a2ui_round``.
 
         Returns:
             State delta recording the human decision under
-            ``approval_decision`` and clearing ``approval_pending``.
+            ``approval_decision``, clearing ``approval_pending``, and
+            bumping ``a2ui_round``.
         """
         emit_progress("awaiting_approval", 0, detail="awaiting human review")
         decision = interrupt({"draft": state["summary_content"]})
         return {
             "approval_decision": decision,
             "approval_pending": False,
+            "a2ui_round": next_a2ui_round(state.get("a2ui_round")),
         }
 
     def route_after_approval(self, state: DeepResearchState) -> str:
-        """Route approved runs to follow-up, rejected runs to redraft.
+        """Route after approval: follow-up, or redraft when under N=2.
+
+        Cancel, form/choice submit, and approve all continue to
+        follow-up. Plain reject redrafts via ``summary_prep_node`` only
+        while ``a2ui_round < A2UI_MAX_ROUNDS``; at the cap, reject also
+        forces follow-up.
 
         Args:
-            state: Current workflow state; reads ``approval_decision``.
+            state: Current workflow state; reads ``approval_decision``
+                and ``a2ui_round``.
 
         Returns:
-            ``"follow_up_prep_node"`` when approved, else
-            ``"summary_prep_node"`` to regenerate the summary from the
-            existing revised reports.
+            ``"follow_up_prep_node"`` or ``"summary_prep_node"``.
         """
         decision = state.get("approval_decision") or {}
+        round_ = state.get("a2ui_round") or 0
+        if decision.get("cancelled") is True:
+            return "follow_up_prep_node"
+        if (
+            decision.get("fields") is not None
+            or decision.get("selected") is not None
+        ):
+            return "follow_up_prep_node"
         if decision.get("approved"):
+            return "follow_up_prep_node"
+        if round_ >= A2UI_MAX_ROUNDS:
             return "follow_up_prep_node"
         return "summary_prep_node"
 
@@ -860,6 +879,7 @@ class DeepResearchAgent(
             # Human-in-the-loop approval
             "approval_pending": False,
             "approval_decision": {},
+            "a2ui_round": 0,
         }
         return initial_state
 

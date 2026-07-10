@@ -53,6 +53,11 @@ Full commit range: `1f8f628..HEAD`.
 - A2UI Chat form/choice heuristic surfaces (flag-gated) plus Review
   confirm and Chat form/choice contract goldens under
   `docs/contracts/a2ui/`.
+- **A2UI rich props + multi-turn (P4-1e)** — shared Surface Author
+  (domain templates → LLM → thin fallback), Review form/choice resume
+  (R3 fields/selected/cancelled), and bounded N=2 Chat/Review re-entry
+  with `multi_turn/round2_downlink.json` (`sfc-contract-2`). Flag
+  default remains off.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

@@ -380,3 +380,14 @@ def test_error_golden_matches_api_detail(
     assert raw["status"] == status
     assert raw["error"]["code"] == status
     assert raw["error"]["message"] == message
+
+
+def test_multi_turn_round2_downlink_exists() -> None:
+    """Round-2 multi-turn golden uses sfc-contract-2 choice shape."""
+    path = _A2UI_ROOT / "multi_turn" / "round2_downlink.json"
+    assert path.is_file(), f"missing golden: {path}"
+    raw = _load(path)
+    model = A2uiDownlinkValue.model_validate(raw)
+    assert model.catalog_version == A2UI_CATALOG_VERSION
+    assert model.surface_id == "sfc-contract-2"
+    assert model.widget == "choice"

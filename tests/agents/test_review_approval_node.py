@@ -61,6 +61,7 @@ def test_state_has_approval_channels() -> None:
     annotations = DeepResearchState.__annotations__
     assert "approval_pending" in annotations
     assert "approval_decision" in annotations
+    assert "a2ui_round" in annotations
 
 
 @pytest.mark.asyncio
@@ -109,6 +110,7 @@ async def test_approval_node_returns_decision_on_resume() -> None:
         result = await DeepResearchAgent.approval_node(agent, state)
     assert result["approval_decision"] == decision
     assert result["approval_pending"] is False
+    assert result["a2ui_round"] == 1
 
 
 def test_route_after_approval_finalizes_when_approved() -> None:
@@ -118,7 +120,8 @@ def test_route_after_approval_finalizes_when_approved() -> None:
         DeepResearchState, {"approval_decision": {"approved": True}}
     )
     rejected = cast(
-        DeepResearchState, {"approval_decision": {"approved": False}}
+        DeepResearchState,
+        {"approval_decision": {"approved": False}, "a2ui_round": 1},
     )
     assert (
         DeepResearchAgent.route_after_approval(agent, approved)
@@ -127,6 +130,41 @@ def test_route_after_approval_finalizes_when_approved() -> None:
     assert (
         DeepResearchAgent.route_after_approval(agent, rejected)
         == "summary_prep_node"
+    )
+
+
+def test_route_after_approval_forces_follow_up_at_max_round() -> None:
+    """Reject at a2ui_round=2 forces follow_up instead of redraft."""
+    agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    state = cast(
+        DeepResearchState,
+        {
+            "approval_decision": {"approved": False},
+            "a2ui_round": 2,
+        },
+    )
+    assert (
+        DeepResearchAgent.route_after_approval(agent, state)
+        == "follow_up_prep_node"
+    )
+
+
+def test_route_after_approval_form_submit_follows_up() -> None:
+    """Form submit fields continue to follow_up without redraft."""
+    agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    state = cast(
+        DeepResearchState,
+        {
+            "approval_decision": {
+                "approved": True,
+                "fields": {"gene_id": "ATG1"},
+            },
+            "a2ui_round": 1,
+        },
+    )
+    assert (
+        DeepResearchAgent.route_after_approval(agent, state)
+        == "follow_up_prep_node"
     )
 
 

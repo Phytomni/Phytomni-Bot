@@ -13,6 +13,7 @@ from importlib import import_module
 from typing import Any, Literal, TypedDict
 
 from mcp.shared.exceptions import McpError
+from openai import APIError, OpenAIError
 from pydantic import ValidationError
 
 from ....common.responses import message_content
@@ -145,11 +146,15 @@ async def _default_llm_props(
         return parsed if isinstance(parsed, dict) else None
     except (
         McpError,
+        OpenAIError,
+        APIError,
         TypeError,
         ValueError,
         KeyError,
         AttributeError,
         OSError,
+        ConnectionError,
+        TimeoutError,
         json.JSONDecodeError,
     ):
         _LOGGER.warning(

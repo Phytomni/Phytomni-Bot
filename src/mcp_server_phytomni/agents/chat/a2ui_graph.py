@@ -8,7 +8,8 @@ The dedicated A2UI graph pauses at a confirm/form/choice surface
 before the main LLM call. On resume, accepted/submitted decisions
 flow through ``a2ui_apply_decision_node`` into ``generate_node`` /
 ``follow_up_node``; rejected/cancelled decisions settle a short
-cancel response without a second interrupt.
+cancel response without a second interrupt. After work,
+``route_after_a2ui_turn`` may remint while under the N=2 round cap.
 """
 
 from __future__ import annotations
@@ -17,7 +18,13 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.types import interrupt
 
+from ...common.responses import message_content
 from ..shared.a2ui import author_a2ui_surface
+from ..shared.a2ui.loop import (
+    clear_a2ui_for_reenter,
+    next_a2ui_round,
+    should_reenter_a2ui,
+)
 from .state import ChatState
 
 _CANCEL_MESSAGE = "Cancelled — no further action taken."
@@ -28,14 +35,16 @@ class ChatA2uiState(ChatState, total=False):
 
     Extends :class:`ChatState` with the confirm/form/choice surface
     draft, the human decision returned by ``interrupt()`` on resume,
-    the injected form/choice answer summary, and an optional cancel
-    message for the rejected/cancelled branch.
+    the injected form/choice answer summary, an optional cancel
+    message for the rejected/cancelled branch, and the bounded
+    multi-turn ``a2ui_round`` counter.
     """
 
     a2ui_surface: dict[str, Any] | None
     a2ui_decision: dict[str, Any] | None
     a2ui_user_input: str | None
     cancel_message: str | None
+    a2ui_round: int
 
 
 class ChatA2uiOutput(TypedDict, total=False):
@@ -70,7 +79,10 @@ async def a2ui_prepare_surface_node(
     value = await author_a2ui_surface(
         {"text": state["user_query"], "agent": "chat"},
     )
-    return {"a2ui_surface": value}
+    return {
+        "a2ui_surface": value,
+        "a2ui_round": next_a2ui_round(state.get("a2ui_round")),
+    }
 
 
 async def a2ui_confirm_node(state: ChatA2uiState) -> dict[str, Any]:
@@ -185,3 +197,49 @@ async def a2ui_cancel_node(state: ChatA2uiState) -> dict[str, Any]:
             ]
         },
     }
+
+
+async def a2ui_after_work_node(state: ChatA2uiState) -> dict[str, Any]:
+    """No-op join after generate/follow_up before the re-enter router.
+
+    Args:
+        state: Current workflow state (unused).
+
+    Returns:
+        Empty state delta.
+    """
+    del state
+    return {}
+
+
+async def a2ui_reenter_node(state: ChatA2uiState) -> dict[str, Any]:
+    """Clear surface and decision so prepare can mint a fresh round.
+
+    Args:
+        state: Current workflow state (unused).
+
+    Returns:
+        State delta nulling ``a2ui_surface`` and ``a2ui_decision``.
+    """
+    del state
+    return clear_a2ui_for_reenter()
+
+
+def route_after_a2ui_turn(
+    state: ChatA2uiState,
+) -> Literal["a2ui_reenter_node", "__end__"]:
+    """Route to remint when assistant text cues another A2UI round.
+
+    Args:
+        state: Current workflow state; reads ``response`` and
+            ``a2ui_round``.
+
+    Returns:
+        ``"a2ui_reenter_node"`` when another pause is allowed, else
+        ``"__end__"``.
+    """
+    text = message_content(state.get("response"))
+    round_ = state.get("a2ui_round") or 0
+    if should_reenter_a2ui(text=text, a2ui_round=round_):
+        return "a2ui_reenter_node"
+    return "__end__"

@@ -184,19 +184,28 @@ Confirm payloads carry `{"accepted": bool}`; form payloads carry
 `{"fields": {...}}` and choice payloads carry
 `{"selected": string | string[]}`; form and choice cancel actions send
 `{"cancelled": true}`. Form and choice envelopes validate the same
-shapes Web already emits. Review HTTP paths emit `confirm` only; Chat
-may emit `confirm`, `form`, or `choice` behind the same
-`A2UI_ENABLED` flag (widget selection priority: confirm > form >
-choice via `select_chat_a2ui_widget`). Review A2UI maps accept/reject to
-`{"approved": bool, "edits": null}` — the Review graph does not consume
-`edits` even when `/resume` accepts them. The path `run_id` must match
-`body.run_id` or the call returns `400 run_id mismatch`.
+shapes Web already emits. Chat and Review may emit `confirm`, `form`,
+or `choice` behind the same `A2UI_ENABLED` flag (widget selection
+priority: confirm > form > choice via `select_chat_a2ui_widget`).
+Surface props are authored server-side (domain templates → optional
+LLM → thin fallback); Review HTTP projection uses the offline author
+path (domain + thin, no LLM). Review A2UI resume maps confirm
+accept/reject to `{"approved": bool, "edits": null}`, form submit to
+`{"approved": true, "fields": {...}, "edits": null}`, choice submit to
+`{"approved": true, "selected": ..., "edits": null}`, and form/choice
+cancel to `{"approved": false, "cancelled": true, "edits": null}`. The
+Review graph does not consume `edits` even when `/resume` accepts them.
+Chat and Review A2UI are bounded to **N=2** rounds per run
+(`a2ui_round`); a second pause remints a fresh `surface_id`. The path
+`run_id` must match `body.run_id` or the call returns `400 run_id mismatch`.
 
 Copyable A2UI downlink / uplink / success / error goldens live under
 [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and Go
-gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`, and
-`chat_choice`. Those fixtures lock shapes only; this section and the
-offline HTTP tests remain authoritative for runtime behavior.
+gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`,
+`chat_choice`, `review_form`, `review_choice`, plus
+`multi_turn/round2_downlink.json` (`sfc-contract-2`). Those fixtures
+lock shapes only; this section and the offline HTTP tests remain
+authoritative for runtime behavior.
 
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
