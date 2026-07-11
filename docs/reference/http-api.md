@@ -247,6 +247,13 @@ When a Review or A2UI-backed Chat run pauses for input, the task state is
 `generation` token, and the supported input JSON schema; checkpoint internals
 are never exposed.
 
+To resume an input-required task, send another `SendMessage` with the same
+`taskId` and `contextId`. Put the `generation` from the input artifact and the
+approved/edit or form/choice fields in a data part. The server validates the
+owner, context, generation, and pause state before calling the shared
+`aresume_graph` kernel; stale, repeated, or mismatched resumes are deterministic
+JSON-RPC invalid-params errors.
+
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,
 and `debug` query parameters. `dialogue_id` is an exact-match

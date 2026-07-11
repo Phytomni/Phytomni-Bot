@@ -94,8 +94,9 @@ flag-off behavior is unchanged. Phase 2 supports the public Agent Card,
 authenticated JSON-RPC `SendMessage`, `SendStreamingMessage` over SSE, and
 owner-scoped `GetTask` polling. Review and A2UI-backed Chat pauses expose a
 bounded `INPUT_REQUIRED` data artifact for the next resume phase. Cancellation,
-push notifications, extended cards, outbound MCP/A2A, and cross-session Store
-memory remain later-phase work.
+and same-task `SendMessage` resume are available for that pause; push
+notifications, extended cards, outbound MCP/A2A, and cross-session Store memory
+remain later-phase work.
 
 | Capability                                | 0.1.3 status |
 | ----------------------------------------- | ------------ |

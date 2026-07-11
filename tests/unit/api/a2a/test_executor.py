@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 import pytest
@@ -144,6 +144,71 @@ async def test_input_required_run_projects_supported_schema_artifact() -> None:
     assert data["schema"]["required"] == ["approved"]
     assert "fields" in data["schema"]["properties"]
     assert "__interrupt__" not in str(data)
+
+
+async def test_send_message_with_task_id_resumes_through_injected_seam() -> (
+    None
+):
+    """A matching task id routes A2A data to the resume callback."""
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        return {}, 200
+
+    async def resume(
+        task_id: str,
+        context_id: str,
+        arguments: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], int]:
+        calls.append((task_id, context_id, dict(arguments)))
+        return {
+            "id": "run-resumed",
+            "agent": "review",
+            "status": "succeeded",
+            "task_ids": [],
+            "result": {"formatted": {"answer": "resumed"}},
+        }, 200
+
+    request = SendMessageRequest()
+    json_format.ParseDict(
+        {
+            "message": {
+                "messageId": "m-resume",
+                "contextId": "c-resume",
+                "taskId": "task-resume",
+                "role": "ROLE_USER",
+                "parts": [
+                    {
+                        "data": {
+                            "generation": 0,
+                            "approved": True,
+                        }
+                    }
+                ],
+            }
+        },
+        request,
+    )
+    json_format.ParseDict({"skill_id": "ReviewAgent"}, request.metadata)
+    handler = A2ARequestHandler(
+        invoke_agent_run=invoke,
+        tool_to_agent={"ReviewAgent": "review"},
+        select_agent=_select_chat,
+        options=A2AHandlerOptions(resume_a2a=resume),
+    )
+
+    task = await handler.on_message_send(request, ServerCallContext())
+
+    assert isinstance(task, Task)
+    assert task.status.state == TaskState.TASK_STATE_COMPLETED
+    assert task.artifacts[0].parts[0].text == "resumed"
+    assert calls == [
+        (
+            "task-resume",
+            "c-resume",
+            {"generation": 0.0, "approved": True},
+        )
+    ]
 
 
 async def test_unsupported_task_method_is_explicit() -> None:

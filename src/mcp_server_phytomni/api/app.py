@@ -1903,6 +1903,151 @@ def _get_a2a_task(task_id: str, history_length: int) -> Any:
     return task_from_run_record(record, history_length)
 
 
+def _a2a_resume_payload(
+    agent: str,
+    arguments: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Translate A2A input data into the shared resume payload."""
+    if agent == "review":
+        approved = arguments.get("approved")
+        if not isinstance(approved, bool):
+            raise ValueError("A2A review resume requires boolean approved")
+        return {
+            "approved": approved,
+            "edits": arguments.get("edits"),
+        }
+    if agent != "chat":
+        raise ValueError("A2A resume is supported only for chat and review")
+    if arguments.get("cancelled") is True:
+        return {"widget": arguments.get("widget"), "cancelled": True}
+    if isinstance(arguments.get("fields"), Mapping):
+        return {
+            "widget": "form",
+            "fields": dict(arguments["fields"]),
+        }
+    if arguments.get("selected") is not None:
+        return {
+            "widget": "choice",
+            "selected": arguments["selected"],
+        }
+    approved = arguments.get("approved", arguments.get("accepted"))
+    if not isinstance(approved, bool):
+        raise ValueError("A2A chat resume requires boolean approved")
+    return {"widget": "confirm", "accepted": approved}
+
+
+# A2A resume validation, graph dispatch, re-interrupt projection, and
+# terminal settlement deliberately stay in one owner-scoped seam so the
+# protocol cannot diverge from the existing resume kernel.
+async def _resume_a2a_task(  # pylint: disable=too-many-locals
+    task_id: str,
+    context_id: str,
+    arguments: Mapping[str, Any],
+) -> tuple[dict[str, Any], int] | None:
+    """Resume an owner-scoped A2A pause through ``aresume_graph``."""
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    record = registry.get_run_by_a2a_task(task_id, owner=owner)
+    if record is None:
+        return None
+    if context_id != (record.a2a.context_id or ""):
+        raise ValueError("A2A context_id does not match the task")
+    if record.status != "input_required":
+        raise ValueError("A2A task is not awaiting input")
+    stored = record.result or {}
+    generation = stored.get("generation", 0)
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        generation = 0
+    supplied_generation = arguments.get("generation")
+    if isinstance(supplied_generation, bool) or not isinstance(
+        supplied_generation, int | float
+    ):
+        raise ValueError("A2A generation mismatch or expired input")
+    if (
+        isinstance(supplied_generation, float)
+        and not supplied_generation.is_integer()
+    ):
+        raise ValueError("A2A generation mismatch or expired input")
+    if int(supplied_generation) != generation:
+        raise ValueError("A2A generation mismatch or expired input")
+    resume_payload = _a2a_resume_payload(record.spec.agent, arguments)
+    app = (
+        _chat_a2ui_stream_app()
+        if record.spec.agent == "chat"
+        else _review_stream_app()
+    )
+    try:
+        final_state = await _resume_paused_run(
+            app,
+            record.spec.run_id,
+            resume_payload,
+        )
+    except NoCheckpointError as exc:
+        raise ValueError("A2A task has no resumable checkpoint") from exc
+    interrupt = detect_interrupt(final_state, record.spec.run_id)
+    if interrupt is not None:
+        next_generation = generation + 1
+        interrupt_dict = (
+            dict(interrupt)
+            if record.spec.agent == "chat"
+            else _maybe_project_review_interrupt(interrupt)
+        )
+        result = (
+            _chat_a2ui_interrupt_result(interrupt_dict)
+            if record.spec.agent == "chat"
+            else _review_interrupt_result(interrupt_dict)
+        )
+        result["generation"] = next_generation
+        registry.settle_run(
+            record.spec.run_id,
+            owner=owner,
+            status="input_required",
+            result=result,
+        )
+        body = (
+            _a2ui_interrupt_body(
+                run_id=record.spec.run_id,
+                interrupt=interrupt_dict,
+            )
+            if record.spec.agent == "chat"
+            else _review_interrupt_body(
+                thread_id=record.spec.run_id,
+                interrupt=interrupt_dict,
+            )
+        )
+        body["generation"] = next_generation
+        return body, 200
+    if record.spec.agent == "chat":
+        draft = stored.get("interrupt", {}).get("draft", {})
+        prior_surface = (
+            draft.get("a2ui", {}) if isinstance(draft, Mapping) else {}
+        )
+        result = _format_chat_a2ui_result(
+            final_state,
+            prior_surface=(
+                prior_surface if isinstance(prior_surface, Mapping) else {}
+            ),
+            resume_payload=resume_payload,
+        )
+    else:
+        result = _format_review_result(final_state)
+    registry.settle_run(
+        record.spec.run_id,
+        owner=owner,
+        status="succeeded",
+        result=result,
+    )
+    return {
+        "id": record.spec.run_id,
+        "run_id": record.spec.run_id,
+        "object": "agent.run",
+        "agent": record.spec.agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": strip_agent_result(result),
+    }, 200
+
+
 def _create_running_stream_run(
     run_id: str, agent: str, owner: str, request_info: RunRequestInfo
 ) -> None:
@@ -2750,6 +2895,7 @@ def create_app() -> FastAPI:
                 invoke_agent_stream=invoke_tool_streamed,
                 record_a2a=_record_a2a_registration,
                 get_a2a_task=_get_a2a_task,
+                resume_a2a=_resume_a2a_task,
             ),
             tool_to_agent={
                 tool_name: agent

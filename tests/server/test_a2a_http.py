@@ -205,6 +205,80 @@ async def test_a2a_get_task_projects_owned_run(
     assert body["artifacts"][0]["parts"][0]["text"] == "done"
 
 
+async def test_a2a_resume_checks_generation_and_reuses_resume_kernel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2A resume rejects stale input and calls the shared kernel once."""
+    db = str(tmp_path / "a2a-resume.sqlite")
+
+    def db_path() -> str:
+        return db
+
+    monkeypatch.setattr(api_app_module, "resolve_tasks_db_path", db_path)
+    RunRegistry(db).create_run(
+        RunSpec("run-a2a-resume", "anonymous", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={
+                "interrupt": {"draft": {"summary": "draft"}},
+                "generation": 0,
+            },
+        ),
+        a2a=A2ACorrelation(task_id="task-resume", context_id="ctx-resume"),
+    )
+    resumed: list[dict[str, object]] = []
+
+    async def fake_resume(
+        _app: object,
+        run_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        resumed.append({"run_id": run_id, **payload})
+        return {"final": "state"}
+
+    def fake_review_app() -> object:
+        return object()
+
+    monkeypatch.setattr(api_app_module, "_review_stream_app", fake_review_app)
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", fake_resume)
+    monkeypatch.setattr(
+        api_app_module,
+        "_format_review_result",
+        lambda _state: {"formatted": {"answer": "done"}, "raw": None},
+    )
+
+    resume_a2a_task = getattr(api_app_module, "_resume_a2a_task")
+    result = await resume_a2a_task(
+        "task-resume",
+        "ctx-resume",
+        {"generation": 0, "approved": True},
+    )
+    assert result is not None
+    body, status_code = result
+
+    assert status_code == 200
+    assert body["status"] == "succeeded"
+    assert resumed == [
+        {"run_id": "run-a2a-resume", "approved": True, "edits": None}
+    ]
+    RunRegistry(db).settle_run(
+        "run-a2a-resume",
+        owner="anonymous",
+        status="input_required",
+        result={
+            "interrupt": {"draft": {"summary": "next"}},
+            "generation": 1,
+        },
+    )
+    with pytest.raises(ValueError, match="generation mismatch"):
+        await resume_a2a_task(
+            "task-resume",
+            "ctx-resume",
+            {"generation": 0, "approved": True},
+        )
+
+
 async def test_a2a_streaming_method_returns_sse_events(
     client_bundle: tuple[httpx.AsyncClient, str],
     monkeypatch: pytest.MonkeyPatch,

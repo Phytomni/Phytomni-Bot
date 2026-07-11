@@ -40,6 +40,7 @@ from a2a.types import (
     SubscribeToTaskRequest,
     Task,
     TaskArtifactUpdateEvent,
+    TaskNotFoundError,
     TaskPushNotificationConfig,
     UnsupportedOperationError,
 )
@@ -70,6 +71,10 @@ ToolSelector = Callable[[str], Awaitable[ToolSelection | None]]
 AgentStreamInvoker = Callable[..., AsyncIterator[AguiEvent]]
 A2ARegistrationWriter = Callable[["A2ARegistration"], None]
 A2ATaskLookup = Callable[[str, int], Task | None]
+A2AResumeInvoker = Callable[
+    [str, str, Mapping[str, Any]],
+    Awaitable[tuple[dict[str, Any], int] | None],
+]
 _ID_FACTORY = IdFactory()
 
 
@@ -90,6 +95,7 @@ class A2AHandlerOptions:
     invoke_agent_stream: AgentStreamInvoker | None = None
     record_a2a: A2ARegistrationWriter | None = None
     get_a2a_task: A2ATaskLookup | None = None
+    resume_a2a: A2AResumeInvoker | None = None
 
 
 def _data_part(value: Mapping[str, Any]) -> Part:
@@ -164,7 +170,7 @@ def _input_required_artifact(
         )
     value = {
         "run_id": str(body.get("run_id") or body.get("id") or task_id),
-        "generation": 0,
+        "generation": body.get("generation", 0),
         "schema": {
             "type": "object",
             "properties": properties,
@@ -321,6 +327,19 @@ def task_from_run_record(record: RunRecord, history_length: int) -> Task:
     json_format.ParseDict(metadata, task.metadata)
     for artifact in _result_artifacts(task_id, record.result):
         task.artifacts.add().CopyFrom(artifact)
+    if record.status == "input_required":
+        stored = record.result or {}
+        task.artifacts.add().CopyFrom(
+            _input_required_artifact(
+                task_id,
+                {
+                    "id": record.spec.run_id,
+                    "run_id": record.spec.run_id,
+                    "interrupt": stored.get("interrupt"),
+                    "generation": stored.get("generation", 0),
+                },
+            )
+        )
     if history_length != 0:
         message_json = record.request_info.request_json
         if isinstance(message_json, str):
@@ -404,6 +423,7 @@ class A2ARequestHandler(RequestHandler):
         self._invoke_agent_stream = options.invoke_agent_stream
         self._record_a2a = options.record_a2a
         self._get_a2a_task = options.get_a2a_task
+        self._resume_a2a = options.resume_a2a
 
     async def on_message_send(
         self,
@@ -421,6 +441,48 @@ class A2ARequestHandler(RequestHandler):
             ),
             select_agent=self._select_agent,
         )
+        if params.message.task_id:
+            if self._resume_a2a is None:
+                raise UnsupportedOperationError(
+                    message="A2A task resume is not supported"
+                )
+            try:
+                resumed = await self._resume_a2a(
+                    params.message.task_id,
+                    params.message.context_id or "",
+                    request.arguments,
+                )
+            except ValueError as exc:
+                raise InvalidParamsError(message=str(exc)) from exc
+            if resumed is None:
+                raise TaskNotFoundError
+            body, status_code = resumed
+            agent = self._tool_to_agent.get(request.tool_name)
+            if agent is None:
+                raise InvalidParamsError(
+                    message=f"no HTTP agent mapping for {request.tool_name}"
+                )
+            task = _build_task(params, body, status_code)
+            if self._record_a2a is not None:
+                self._record_a2a(
+                    A2ARegistration(
+                        run_id=str(body.get("id") or task.id),
+                        agent=agent,
+                        correlation=A2ACorrelation(
+                            task_id=task.id,
+                            context_id=task.context_id,
+                            message_id=params.message.message_id or None,
+                        ),
+                        request_info=RunRequestInfo(
+                            dialogue_id=task.context_id,
+                            query=_query_from_arguments(request.arguments),
+                            tool_name=request.tool_name,
+                            request_json=json_format.MessageToJson(params),
+                        ),
+                    )
+                )
+            del context
+            return task
         agent = self._tool_to_agent.get(request.tool_name)
         if agent is None:
             raise InvalidParamsError(
