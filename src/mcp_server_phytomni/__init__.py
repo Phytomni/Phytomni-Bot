@@ -7,6 +7,7 @@
 import contextlib
 
 from .config.settings import load_env_file
+from .version import __version__
 
 # Populate os.environ from the plaintext .env (or decrypt the encrypted
 # envelope) before any submodule constructs a ServerConfig subclass at
@@ -25,7 +26,6 @@ from .config.settings import load_env_file
 with contextlib.suppress(RuntimeError):
     load_env_file()
 
-# The package re-exports nothing: the import above is a startup
-# bootstrap, not a public API surface. Declared explicitly so the
-# __init__ re-export check stays satisfied.
-__all__ = []
+# The package exposes only its runtime version; the settings import above
+# is a startup bootstrap rather than a public API surface.
+__all__ = ["__version__"]

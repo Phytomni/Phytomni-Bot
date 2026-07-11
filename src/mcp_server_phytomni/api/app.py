@@ -134,6 +134,7 @@ from ..runtime.run_registry import (
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
+from ..version import __version__
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import (
     ApiPrincipal,
@@ -2136,7 +2137,7 @@ def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(
         title="Phytomni HTTP API",
-        version="0.1.0",
+        version=__version__,
         lifespan=_http_lifespan,
     )
     app.add_middleware(request_context_middleware)

@@ -1,6 +1,6 @@
 [project]
 name = "mcp_server_phytomni"
-version = "0.1.2"
+version = "0.1.3"
 description = "Phytomni MCP server, FastAPI HTTP API, and stdio CLI client packaging LangGraph agents for plant-science research workflows."
 readme = "README.md"
 license = {file = "LICENSE"}
