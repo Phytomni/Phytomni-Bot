@@ -241,6 +241,12 @@ package needs a documented compatibility pin. Because CI does not use a
 committed lock file, dependency upgrades must update the relevant lower
 bounds in `pyproject.toml`.
 
+`langgraph` is intentionally constrained to `>=1.2.0,<1.3`. The repository
+depends on the 1.2 public contracts for runtime context, node-local stream
+writers, interrupt/resume, and compilation with a checkpointer and store.
+The next minor line must pass the API contract test and the full Python
+3.12–3.14 matrix before this compatibility cap is widened.
+
 When changing dependencies:
 
 - update `project.dependencies` for runtime packages
