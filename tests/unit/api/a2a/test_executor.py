@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -16,13 +17,16 @@ from a2a.types import (
     Role,
     SendMessageRequest,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
+    TaskStatusUpdateEvent,
     UnsupportedOperationError,
 )
 from google.protobuf import json_format
 
 from mcp_server_phytomni.agents.expert.router import ToolSelection
 from mcp_server_phytomni.api.a2a.executor import A2ARequestHandler
+from mcp_server_phytomni.mcp.result_formatting import AguiEvent
 
 pytestmark = pytest.mark.unit
 
@@ -129,3 +133,84 @@ async def test_missing_tool_mapping_is_invalid_params() -> None:
 
     with pytest.raises(InvalidParamsError, match="no HTTP agent mapping"):
         await handler.on_message_send(_request(), ServerCallContext())
+
+
+async def test_send_stream_projects_status_text_and_data_events() -> None:
+    """A2A streaming exposes task, incremental text, status, and data."""
+
+    async def stream(
+        _name: str, _arguments: dict[str, Any], **_kwargs: Any
+    ) -> AsyncIterator[AguiEvent]:
+        yield AguiEvent(
+            type="RunStarted",
+            data={"type": "RunStarted"},
+        )
+        yield AguiEvent(
+            type="TextMessageContent",
+            data={"type": "TextMessageContent", "delta": "Hel"},
+        )
+        yield AguiEvent(
+            type="TextMessageContent",
+            data={"type": "TextMessageContent", "delta": "lo"},
+        )
+        yield AguiEvent(
+            type="TextMessageEnd",
+            data={"type": "TextMessageEnd"},
+        )
+        yield AguiEvent(
+            type="Custom",
+            data={
+                "type": "Custom",
+                "name": "phyto.references",
+                "value": {"doc_list": [{"title": "paper"}]},
+            },
+        )
+        yield AguiEvent(
+            type="RunFinished",
+            data={"type": "RunFinished"},
+        )
+
+    async def invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        return {}, 200
+
+    handler = A2ARequestHandler(
+        invoke_agent_run=invoke,
+        invoke_agent_stream=stream,
+        tool_to_agent={"ChatAgent": "chat"},
+        select_agent=_select_chat,
+    )
+
+    events = [
+        event
+        async for event in handler.on_message_send_stream(
+            _request(), ServerCallContext()
+        )
+    ]
+
+    assert isinstance(events[0], Task)
+    assert isinstance(events[1], TaskArtifactUpdateEvent)
+    assert events[1].artifact.parts[0].text == "Hel"
+    assert events[1].append is False
+    assert events[1].last_chunk is False
+    assert isinstance(events[2], TaskArtifactUpdateEvent)
+    assert events[2].artifact.parts[0].text == "lo"
+    assert events[2].append is True
+    assert events[2].last_chunk is True
+    assert any(
+        isinstance(event, TaskStatusUpdateEvent)
+        and event.status.state == TaskState.TASK_STATE_COMPLETED
+        for event in events
+    )
+    data_events = [
+        event
+        for event in events
+        if isinstance(event, TaskArtifactUpdateEvent)
+        and event.artifact.artifact_id.endswith("-data")
+    ]
+    assert len(data_events) == 1
+    assert (
+        json_format.MessageToDict(data_events[0].artifact.parts[0].data)[
+            "references"
+        ]["doc_list"][0]["title"]
+        == "paper"
+    )

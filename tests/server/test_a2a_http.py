@@ -10,7 +10,14 @@ from pathlib import Path
 
 import httpx
 import pytest
+from a2a.types import (
+    Task,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 
+from mcp_server_phytomni.api.a2a.executor import A2ARequestHandler
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
 
@@ -56,7 +63,7 @@ async def test_agent_card_is_public_and_flag_gated(
         "https://public.example/base/a2a"
     )
     assert body["supportedInterfaces"][0]["protocolVersion"] == "1.0"
-    assert body["capabilities"]["streaming"] is False
+    assert body["capabilities"]["streaming"] is True
 
 
 async def test_a2a_requires_auth_and_exact_protocol_header(
@@ -138,3 +145,56 @@ async def test_a2a_unknown_skill_is_invalid_params_error(
 
     assert response.status_code == 200
     assert response.json()["error"]["code"] == -32602
+
+
+async def test_a2a_streaming_method_returns_sse_events(
+    client_bundle: tuple[httpx.AsyncClient, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK dispatcher exposes SendStreamingMessage as SSE."""
+
+    async def fake_stream(
+        _self: A2ARequestHandler,
+        _params: object,
+        _context: object,
+    ):
+        yield Task(
+            id="task-stream",
+            context_id="context-stream",
+            status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+        )
+        yield TaskStatusUpdateEvent(
+            task_id="task-stream",
+            context_id="context-stream",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        )
+
+    monkeypatch.setattr(
+        A2ARequestHandler, "on_message_send_stream", fake_stream
+    )
+    client, key = client_bundle
+    response = await client.post(
+        "/a2a",
+        json={
+            "jsonrpc": "2.0",
+            "id": "stream-1",
+            "method": "SendStreamingMessage",
+            "params": {
+                "metadata": {"skill_id": "ChatAgent"},
+                "message": {
+                    "messageId": "m-stream",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "hello"}],
+                },
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {key}",
+            "A2A-Version": "1.0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"statusUpdate"' in response.text
+    assert '"state": "TASK_STATE_COMPLETED"' in response.text

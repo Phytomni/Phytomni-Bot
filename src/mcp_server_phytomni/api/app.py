@@ -2688,6 +2688,7 @@ def create_app() -> FastAPI:
         assert public_base_url is not None
         a2a_handler = A2ARequestHandler(
             invoke_agent_run=_invoke_agent_run,
+            invoke_agent_stream=invoke_tool_streamed,
             tool_to_agent={
                 tool_name: agent
                 for agent, tool_name in _AGENT_SLUG_TO_TOOL.items()

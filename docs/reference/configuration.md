@@ -151,9 +151,9 @@ systemd or container deployments, set absolute paths or pin the service
 working directory so restarts use the same stores.
 
 When A2A is enabled, `/.well-known/agent-card.json` is public and `/a2a`
-requires an API key with the `agents` scope plus `A2A-Version: 1.0`. Phase 1
-advertises only the non-streaming `SendMessage` method; the flag remains off
-by default so existing deployments keep their previous route surface.
+requires an API key with the `agents` scope plus `A2A-Version: 1.0`. Phase 2
+advertises `SendMessage` and `SendStreamingMessage`; the flag remains off by
+default so existing deployments keep their previous route surface.
 
 ## Relay Variables
 

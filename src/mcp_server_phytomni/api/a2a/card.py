@@ -26,9 +26,9 @@ def build_agent_card(public_base_url: str) -> AgentCard:
         public_base_url: Validated public HTTP(S) URL from ``ApiConfig``.
 
     Returns:
-        A fresh protobuf ``AgentCard`` with one JSON-RPC interface. Streaming,
-        push notifications, and authenticated extended cards remain disabled
-        until their later phases are implemented.
+    A fresh protobuf ``AgentCard`` with one JSON-RPC interface. Streaming is
+    enabled for the Phase 2 SSE method; push notifications and authenticated
+    extended cards remain disabled until their later phases are implemented.
     """
     interface_url = f"{public_base_url.rstrip('/')}/a2a"
     card = AgentCard(
@@ -43,7 +43,7 @@ def build_agent_card(public_base_url: str) -> AgentCard:
         ],
         version=__version__,
         capabilities=AgentCapabilities(
-            streaming=False,
+            streaming=True,
             push_notifications=False,
             extended_agent_card=False,
         ),

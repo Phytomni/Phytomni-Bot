@@ -145,10 +145,10 @@ curl https://bot.example.com/.well-known/agent-card.json
 
 The card advertises one JSON-RPC v1 interface at `https://bot.example.com/a2a`,
 the ten dispatchable MCP tools as skills, Bearer `agents` authorization, and
-`streaming=false` / `pushNotifications=false`. `GetTaskStatus` is not an A2A
+`streaming=true` / `pushNotifications=false`. `GetTaskStatus` is not an A2A
 skill.
 
-Phase 1 accepts only the `SendMessage` JSON-RPC method. Every request must send
+Phase 2 accepts `SendMessage` and `SendStreamingMessage` JSON-RPC methods. Every request must send
 `A2A-Version: 1.0` and an API key with the `agents` scope (scope-less legacy
 keys remain all-access). Business failures are returned as HTTP 200 JSON-RPC
 error envelopes; authentication, authorization, and rate-limit failures stay
@@ -190,8 +190,8 @@ curl -X POST https://bot.example.com/a2a \
 ```
 
 The official Python SDK can resolve the card and send the same non-streaming
-request. `ClientConfig(streaming=False)` is important because Phase 1 does not
-advertise streaming:
+request. `ClientConfig(streaming=False)` selects the non-streaming method for
+this example:
 
 ```python
 import httpx
@@ -219,12 +219,20 @@ async with httpx.AsyncClient(
         print(response)
 ```
 
-`SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask`, push-notification
-methods, `SubscribeToTask`, and `GetExtendedAgentCard` return explicit
+`GetTask`, `ListTasks`, `CancelTask`, push-notification methods,
+`SubscribeToTask`, and `GetExtendedAgentCard` return explicit
 unsupported-operation errors until their later implementation phases. With
 `A2A_ENABLED=0` (the default), both the card and `/a2a` routes are absent and
 return the normal HTTP 404 response; all existing native routes keep their
 previous behavior.
+
+For streaming, select `SendStreamingMessage` with the same `params.message`
+shape. The response is Server-Sent Events whose JSON-RPC `result` payloads are
+`task`, `statusUpdate`, or `artifactUpdate` wrappers. Text is emitted as
+incremental `artifactUpdate` chunks (`append=true` after the first chunk and
+`lastChunk=true` on the final chunk); references and follow-up questions are
+sent once as a terminal data artifact. A disconnected client closes the SSE
+generator without changing the existing non-streaming route behavior.
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,

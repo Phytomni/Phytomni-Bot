@@ -60,10 +60,11 @@ Full commit range: `1f8f628..HEAD`.
   default remains off.
 - **Opt-in A2A v1 server core** — `PHYTOMNI_A2A_ENABLED` gates a public
   `/.well-known/agent-card.json` and authenticated `/a2a` JSON-RPC surface.
-  Phase 1 accepts `SendMessage` with text/object data parts, maps the ten MCP
-  tools into skills, and projects results into A2A task/artifact messages;
-  streaming, polling, cancellation, push, and extended-card methods remain
-  explicitly unsupported.
+  Phase 2 accepts `SendMessage` and `SendStreamingMessage` with text/object
+  data parts, maps the ten MCP tools into skills, projects results into A2A
+  task/artifact messages, and streams status/text/data updates over SSE;
+  polling, cancellation, push, and extended-card methods remain explicitly
+  unsupported.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

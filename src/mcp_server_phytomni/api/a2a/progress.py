@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from a2a.types import StreamResponse, TaskState
@@ -13,7 +14,7 @@ from a2a.types import StreamResponse, TaskState
 from ...mcp.result_formatting import AguiEvent
 from .events import build_status_update
 
-__all__ = ["project_agui_progress"]
+__all__ = ["A2AProgressProjector", "project_agui_progress"]
 
 _PROGRESS_EVENT = "phyto.progress"
 
@@ -30,6 +31,86 @@ def _status_metadata(value: Any) -> dict[str, Any] | None:
     return metadata or None
 
 
+@dataclass
+class A2AProgressProjector:
+    """Incrementally map AG-UI lifecycle events to A2A status wrappers."""
+
+    task_id: str
+    context_id: str
+    submitted: bool = False
+    terminal: bool = False
+
+    def _ensure_submitted(self) -> list[StreamResponse]:
+        if self.submitted:
+            return []
+        self.submitted = True
+        return [
+            build_status_update(
+                self.task_id,
+                self.context_id,
+                TaskState.TASK_STATE_SUBMITTED,
+            )
+        ]
+
+    def project(self, event: AguiEvent) -> list[StreamResponse]:
+        """Project one event, preserving lifecycle and metadata ordering."""
+        updates: list[StreamResponse] = []
+        if not self.terminal:
+            if event.type == "RunStarted":
+                updates.extend(self._ensure_submitted())
+            elif event.type == "StepStarted":
+                updates.extend(self._ensure_submitted())
+                phase = event.data.get("step_name")
+                metadata = {"phase": phase} if isinstance(phase, str) else None
+                updates.append(
+                    build_status_update(
+                        self.task_id,
+                        self.context_id,
+                        TaskState.TASK_STATE_WORKING,
+                        metadata=metadata,
+                    )
+                )
+            elif (
+                event.type == "Custom"
+                and event.data.get("name") == _PROGRESS_EVENT
+            ):
+                updates.extend(self._ensure_submitted())
+                metadata = _status_metadata(event.data.get("value"))
+                if metadata is not None:
+                    updates.append(
+                        build_status_update(
+                            self.task_id,
+                            self.context_id,
+                            TaskState.TASK_STATE_WORKING,
+                            metadata=metadata,
+                        )
+                    )
+            elif event.type in {"RunError", "RunFinished"}:
+                updates.extend(self._ensure_submitted())
+                state = (
+                    TaskState.TASK_STATE_FAILED
+                    if event.type == "RunError"
+                    else TaskState.TASK_STATE_COMPLETED
+                )
+                metadata = None
+                if event.type == "RunError":
+                    metadata = {
+                        key: event.data[key]
+                        for key in ("code", "message")
+                        if key in event.data
+                    }
+                updates.append(
+                    build_status_update(
+                        self.task_id,
+                        self.context_id,
+                        state,
+                        metadata=metadata or None,
+                    )
+                )
+                self.terminal = True
+        return updates
+
+
 async def project_agui_progress(
     events: AsyncIterator[AguiEvent],
     *,
@@ -43,81 +124,7 @@ async def project_agui_progress(
     frames are intentionally ignored here and are projected by the stream
     transport layer in the next phase.
     """
-    submitted = False
-
-    def ensure_submitted() -> StreamResponse | None:
-        nonlocal submitted
-        if submitted:
-            return None
-        submitted = True
-        return build_status_update(
-            task_id,
-            context_id,
-            TaskState.TASK_STATE_SUBMITTED,
-        )
-
+    projector = A2AProgressProjector(task_id, context_id)
     async for event in events:
-        if event.type == "RunStarted":
-            update = ensure_submitted()
-            if update is not None:
-                yield update
-            continue
-
-        if event.type == "StepStarted":
-            update = ensure_submitted()
-            if update is not None:
-                yield update
-            phase = event.data.get("step_name")
-            metadata = {"phase": phase} if isinstance(phase, str) else None
-            yield build_status_update(
-                task_id,
-                context_id,
-                TaskState.TASK_STATE_WORKING,
-                metadata=metadata,
-            )
-            continue
-
-        if (
-            event.type == "Custom"
-            and event.data.get("name") == _PROGRESS_EVENT
-        ):
-            update = ensure_submitted()
-            if update is not None:
-                yield update
-            metadata = _status_metadata(event.data.get("value"))
-            if metadata is not None:
-                yield build_status_update(
-                    task_id,
-                    context_id,
-                    TaskState.TASK_STATE_WORKING,
-                    metadata=metadata,
-                )
-            continue
-
-        if event.type == "RunError":
-            update = ensure_submitted()
-            if update is not None:
-                yield update
-            error_metadata = {
-                key: event.data[key]
-                for key in ("code", "message")
-                if key in event.data
-            }
-            yield build_status_update(
-                task_id,
-                context_id,
-                TaskState.TASK_STATE_FAILED,
-                metadata=error_metadata or None,
-            )
-            return
-
-        if event.type == "RunFinished":
-            update = ensure_submitted()
-            if update is not None:
-                yield update
-            yield build_status_update(
-                task_id,
-                context_id,
-                TaskState.TASK_STATE_COMPLETED,
-            )
-            return
+        for update in projector.project(event):
+            yield update

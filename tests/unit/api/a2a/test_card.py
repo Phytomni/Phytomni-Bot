@@ -30,10 +30,10 @@ def test_agent_card_declares_one_v1_jsonrpc_interface() -> None:
 
 
 def test_agent_card_capabilities_are_not_overstated() -> None:
-    """Phase 1 advertises no streaming, push, or extended-card methods."""
+    """Phase 2 advertises streaming but no push or extended-card methods."""
     card = build_agent_card("https://public.example")
 
-    assert card.capabilities.streaming is False
+    assert card.capabilities.streaming is True
     assert card.capabilities.push_notifications is False
     assert card.capabilities.extended_agent_card is False
     assert len(card.skills) == 10

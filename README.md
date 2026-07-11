@@ -90,10 +90,10 @@ checkpointer. A2UI Chat/Review widgets are shipped behind
 
 The A2A server core is now available as an opt-in 0.1.3 surface. It remains
 disabled unless `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured;
-flag-off behavior is unchanged. Phase 1 supports the public Agent Card and
-authenticated JSON-RPC `SendMessage` only. Streaming, task polling,
-cancellation, push notifications, extended cards, outbound MCP/A2A, and
-cross-session Store memory remain later-phase work.
+flag-off behavior is unchanged. Phase 2 supports the public Agent Card,
+authenticated JSON-RPC `SendMessage`, and `SendStreamingMessage` over SSE.
+Task polling, cancellation, push notifications, extended cards, outbound
+MCP/A2A, and cross-session Store memory remain later-phase work.
 
 | Capability                                | 0.1.3 status |
 | ----------------------------------------- | ------------ |
