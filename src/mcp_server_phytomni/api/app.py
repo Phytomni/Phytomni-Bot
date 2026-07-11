@@ -31,6 +31,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -44,6 +45,7 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from google.protobuf import json_format
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 from pydantic import ValidationError
@@ -135,6 +137,8 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
+from .a2a.card import build_agent_card
+from .a2a.executor import A2ARequestHandler
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import (
     ApiPrincipal,
@@ -2677,6 +2681,43 @@ def create_app() -> FastAPI:
                     "data": [_strip_run_result(r) for r in data],
                 }
         return JSONResponse(body)
+
+    a2a_config = ApiConfig()
+    if a2a_config.A2A_ENABLED:
+        public_base_url = a2a_config.A2A_PUBLIC_BASE_URL
+        assert public_base_url is not None
+        a2a_handler = A2ARequestHandler(
+            invoke_agent_run=_invoke_agent_run,
+            tool_to_agent={
+                tool_name: agent
+                for agent, tool_name in _AGENT_SLUG_TO_TOOL.items()
+            },
+            select_agent=select_agent_tool,
+        )
+        a2a_route = create_jsonrpc_routes(a2a_handler, "/a2a")[0]
+
+        @app.get("/.well-known/agent-card.json")
+        async def a2a_agent_card() -> JSONResponse:
+            """Return the public A2A card when the feature is enabled."""
+            card = build_agent_card(public_base_url)
+            return JSONResponse(json_format.MessageToDict(card))
+
+        @app.post("/a2a")
+        async def a2a_jsonrpc(
+            request: Request,
+            a2a_version: str | None = Header(
+                default=None, alias="A2A-Version"
+            ),
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> Response:
+            """Authenticate and dispatch one A2A v1 JSON-RPC request."""
+            del principal
+            if a2a_version != "1.0":
+                raise HTTPException(
+                    status_code=400,
+                    detail="A2A-Version must be exactly 1.0",
+                )
+            return await a2a_route.endpoint(request)
 
     app.include_router(create_relay_router())
 
