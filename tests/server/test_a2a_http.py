@@ -17,9 +17,17 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2a.executor import A2ARequestHandler
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.runtime.run_registry import (
+    A2ACorrelation,
+    RunOutcome,
+    RunRegistry,
+    RunRequestInfo,
+    RunSpec,
+)
 
 pytestmark = pytest.mark.server
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
@@ -102,7 +110,7 @@ async def test_a2a_business_errors_stay_jsonrpc_http_200(
         json={
             "jsonrpc": "2.0",
             "id": "unsupported",
-            "method": "GetTask",
+            "method": "ListTasks",
             "params": {},
         },
         headers={
@@ -145,6 +153,56 @@ async def test_a2a_unknown_skill_is_invalid_params_error(
 
     assert response.status_code == 200
     assert response.json()["error"]["code"] == -32602
+
+
+async def test_a2a_get_task_projects_owned_run(
+    client_bundle: tuple[httpx.AsyncClient, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GetTask reads the owner-scoped A2A projection from the registry."""
+    db = str(tmp_path / "a2a-tasks.sqlite")
+    monkeypatch.setattr(api_app_module, "resolve_tasks_db_path", lambda: db)
+    RunRegistry(db).create_run(
+        RunSpec("run-a2a-get", "a2a-user", "chat", "local"),
+        outcome=RunOutcome(
+            status="succeeded",
+            result={"formatted": {"answer": "done"}},
+        ),
+        request_info=RunRequestInfo(
+            request_json=(
+                '{"message":{"messageId":"m-get","contextId":"c-get",'
+                '"role":"ROLE_USER","parts":[{"text":"hello"}]}}'
+            ),
+        ),
+        a2a=A2ACorrelation(
+            task_id="task-get",
+            context_id="c-get",
+            message_id="m-get",
+        ),
+    )
+    client, key = client_bundle
+    response = await client.post(
+        "/a2a",
+        json={
+            "jsonrpc": "2.0",
+            "id": "get-1",
+            "method": "GetTask",
+            "params": {"id": "task-get", "historyLength": 1},
+        },
+        headers={
+            "Authorization": f"Bearer {key}",
+            "A2A-Version": "1.0",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()["result"]
+    assert body["id"] == "task-get"
+    assert body["contextId"] == "c-get"
+    assert body["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert body["history"][0]["messageId"] == "m-get"
+    assert body["artifacts"][0]["parts"][0]["text"] == "done"
 
 
 async def test_a2a_streaming_method_returns_sse_events(

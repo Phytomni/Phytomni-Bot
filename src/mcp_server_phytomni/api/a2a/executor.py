@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -46,19 +47,29 @@ from google.protobuf import json_format
 
 from ...agents.expert.router import ToolSelection
 from ...mcp.result_formatting import AguiEvent
-from ...runtime.run_registry import A2ACorrelation, RunRequestInfo
+from ...runtime.run_registry import (
+    A2ACorrelation,
+    RunRecord,
+    RunRequestInfo,
+)
 from ...storage.path_policy import IdFactory
 from .events import ArtifactUpdateOptions, build_artifact_update
 from .messages import map_a2a_message
 from .progress import A2AProgressProjector
 from .status import build_task_status
 
-__all__ = ["A2ARequestHandler", "A2ARegistration"]
+__all__ = [
+    "A2AHandlerOptions",
+    "A2ARequestHandler",
+    "A2ARegistration",
+    "task_from_run_record",
+]
 
 AgentRunInvoker = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 ToolSelector = Callable[[str], Awaitable[ToolSelection | None]]
 AgentStreamInvoker = Callable[..., AsyncIterator[AguiEvent]]
 A2ARegistrationWriter = Callable[["A2ARegistration"], None]
+A2ATaskLookup = Callable[[str, int], Task | None]
 _ID_FACTORY = IdFactory()
 
 
@@ -70,6 +81,15 @@ class A2ARegistration:
     agent: str
     correlation: A2ACorrelation
     request_info: RunRequestInfo
+
+
+@dataclass(frozen=True)
+class A2AHandlerOptions:
+    """Optional persistence and streaming seams for the handler."""
+
+    invoke_agent_stream: AgentStreamInvoker | None = None
+    record_a2a: A2ARegistrationWriter | None = None
+    get_a2a_task: A2ATaskLookup | None = None
 
 
 def _data_part(value: Mapping[str, Any]) -> Part:
@@ -243,6 +263,45 @@ def _result_artifacts(
     return artifacts
 
 
+def task_from_run_record(record: RunRecord, history_length: int) -> Task:
+    """Project one owner-checked run record into an A2A Task.
+
+    Only the request message and formatted result artifacts cross the
+    protocol boundary. Internal raw state and secrets remain in the
+    registry and are never copied into task metadata.
+    """
+    task_id = record.a2a.task_id or record.spec.run_id
+    context_id = record.a2a.context_id or ""
+    task = Task(
+        id=task_id,
+        context_id=context_id,
+        status=build_task_status(record.status),
+    )
+    metadata: dict[str, Any] = {
+        "run_id": record.spec.run_id,
+        "agent": record.spec.agent,
+        "task_ids": list(record.task_ids),
+    }
+    json_format.ParseDict(metadata, task.metadata)
+    for artifact in _result_artifacts(task_id, record.result):
+        task.artifacts.add().CopyFrom(artifact)
+    if history_length != 0:
+        message_json = record.request_info.request_json
+        if isinstance(message_json, str):
+            try:
+                payload = json.loads(message_json)
+                message_payload = payload.get("message")
+                if isinstance(message_payload, Mapping):
+                    message = Message()
+                    json_format.ParseDict(message_payload, message)
+                    task.history.append(message)
+            except (TypeError, ValueError):
+                pass
+    if 0 < history_length < len(task.history):
+        del task.history[:-history_length]
+    return task
+
+
 def _build_task(
     params: SendMessageRequest,
     body: Mapping[str, Any],
@@ -298,14 +357,15 @@ class A2ARequestHandler(RequestHandler):
         invoke_agent_run: AgentRunInvoker,
         tool_to_agent: Mapping[str, str],
         select_agent: ToolSelector,
-        invoke_agent_stream: AgentStreamInvoker | None = None,
-        record_a2a: A2ARegistrationWriter | None = None,
+        options: A2AHandlerOptions | None = None,
     ) -> None:
+        options = options or A2AHandlerOptions()
         self._invoke_agent_run = invoke_agent_run
         self._tool_to_agent = dict(tool_to_agent)
         self._select_agent = select_agent
-        self._invoke_agent_stream = invoke_agent_stream
-        self._record_a2a = record_a2a
+        self._invoke_agent_stream = options.invoke_agent_stream
+        self._record_a2a = options.record_a2a
+        self._get_a2a_task = options.get_a2a_task
 
     async def on_message_send(
         self,
@@ -361,7 +421,10 @@ class A2ARequestHandler(RequestHandler):
     async def on_get_task(
         self, params: GetTaskRequest, context: ServerCallContext
     ) -> Task | None:
-        raise UnsupportedOperationError(message="GetTask is not supported")
+        if self._get_a2a_task is None:
+            raise UnsupportedOperationError(message="GetTask is not supported")
+        del context
+        return self._get_a2a_task(params.id, params.history_length)
 
     async def on_list_tasks(
         self, params: ListTasksRequest, context: ServerCallContext

@@ -19,6 +19,7 @@ from a2a.types import (
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
+    TaskStatus,
     TaskStatusUpdateEvent,
     UnsupportedOperationError,
 )
@@ -26,6 +27,7 @@ from google.protobuf import json_format
 
 from mcp_server_phytomni.agents.expert.router import ToolSelection
 from mcp_server_phytomni.api.a2a.executor import (
+    A2AHandlerOptions,
     A2ARegistration,
     A2ARequestHandler,
 )
@@ -127,6 +129,41 @@ async def test_unsupported_task_method_is_explicit() -> None:
         await handler.on_get_task(GetTaskRequest(), ServerCallContext())
 
 
+async def test_get_task_uses_injected_owner_scoped_lookup() -> None:
+    """GetTask delegates lookup and keeps unknown ids as ``None``."""
+    expected = Task(
+        id="task-1",
+        context_id="context-1",
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+    )
+    calls: list[tuple[str, int]] = []
+
+    def lookup(task_id: str, history_length: int) -> Task | None:
+        calls.append((task_id, history_length))
+        return expected if task_id == "task-1" else None
+
+    async def invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        return {}, 200
+
+    handler = A2ARequestHandler(
+        invoke_agent_run=invoke,
+        tool_to_agent={},
+        select_agent=_select_chat,
+        options=A2AHandlerOptions(get_a2a_task=lookup),
+    )
+
+    found = await handler.on_get_task(
+        GetTaskRequest(id="task-1", history_length=2), ServerCallContext()
+    )
+    missing = await handler.on_get_task(
+        GetTaskRequest(id="missing"), ServerCallContext()
+    )
+
+    assert found is expected
+    assert missing is None
+    assert calls == [("task-1", 2), ("missing", 0)]
+
+
 async def test_missing_tool_mapping_is_invalid_params() -> None:
     """Catalogued skills still need an explicitly injected HTTP mapping."""
     handler = _handler(
@@ -154,7 +191,7 @@ async def test_send_message_records_a2a_correlation() -> None:
         invoke_agent_run=invoke,
         tool_to_agent={"ChatAgent": "chat"},
         select_agent=_select_chat,
-        record_a2a=registrations.append,
+        options=A2AHandlerOptions(record_a2a=registrations.append),
     )
 
     task = await handler.on_message_send(_request(), ServerCallContext())
@@ -209,10 +246,12 @@ async def test_send_stream_projects_status_text_and_data_events() -> None:
 
     handler = A2ARequestHandler(
         invoke_agent_run=invoke,
-        invoke_agent_stream=stream,
         tool_to_agent={"ChatAgent": "chat"},
         select_agent=_select_chat,
-        record_a2a=registrations.append,
+        options=A2AHandlerOptions(
+            invoke_agent_stream=stream,
+            record_a2a=registrations.append,
+        ),
     )
 
     events = [

@@ -148,7 +148,8 @@ the ten dispatchable MCP tools as skills, Bearer `agents` authorization, and
 `streaming=true` / `pushNotifications=false`. `GetTaskStatus` is not an A2A
 skill.
 
-Phase 2 accepts `SendMessage` and `SendStreamingMessage` JSON-RPC methods. Every request must send
+Phase 2 accepts `SendMessage`, `SendStreamingMessage`, and owner-scoped `GetTask`
+JSON-RPC methods. Every request must send
 `A2A-Version: 1.0` and an API key with the `agents` scope (scope-less legacy
 keys remain all-access). Business failures are returned as HTTP 200 JSON-RPC
 error envelopes; authentication, authorization, and rate-limit failures stay
@@ -219,8 +220,8 @@ async with httpx.AsyncClient(
         print(response)
 ```
 
-`GetTask`, `ListTasks`, `CancelTask`, push-notification methods,
-`SubscribeToTask`, and `GetExtendedAgentCard` return explicit
+`ListTasks`, `CancelTask`, push-notification methods, `SubscribeToTask`, and
+`GetExtendedAgentCard` return explicit
 unsupported-operation errors until their later implementation phases. With
 `A2A_ENABLED=0` (the default), both the card and `/a2a` routes are absent and
 return the normal HTTP 404 response; all existing native routes keep their
@@ -233,6 +234,12 @@ incremental `artifactUpdate` chunks (`append=true` after the first chunk and
 `lastChunk=true` on the final chunk); references and follow-up questions are
 sent once as a terminal data artifact. A disconnected client closes the SSE
 generator without changing the existing non-streaming route behavior.
+
+`GetTask` accepts an A2A task id previously returned by this endpoint. The
+server resolves it through the authenticated user's run registry, returns the
+same task/artifact projection as the send path, and caps returned history to
+the requested `historyLength`; unknown and foreign ids both return the
+protocol's task-not-found error.
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,

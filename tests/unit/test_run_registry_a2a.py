@@ -8,11 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from a2a.types import TaskState
 
+from mcp_server_phytomni.api.a2a.executor import task_from_run_record
 from mcp_server_phytomni.runtime.run_registry import (
     A2ACorrelation,
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
 
@@ -65,3 +68,41 @@ def test_update_a2a_correlation_preserves_terminal_payload(
     assert record.status == "succeeded"
     assert record.result == {"answer": "done"}
     assert record.a2a == A2ACorrelation(task_id="task-2", context_id="ctx-2")
+
+
+def test_task_projection_bounds_history_and_hides_raw_payload(
+    tmp_path: Path,
+) -> None:
+    """GetTask projection returns bounded history and safe artifacts."""
+    registry = RunRegistry(str(tmp_path / "tasks.db"))
+    registry.create_run(
+        RunSpec("run-task", "alice", "chat", "local"),
+        outcome=RunOutcome(
+            status="succeeded",
+            result={
+                "formatted": {
+                    "answer": "done",
+                    "metadata": {"safe": True},
+                },
+                "raw": {"secret": "must not cross"},
+            },
+        ),
+        request_info=RunRequestInfo(
+            request_json=(
+                '{"message":{"messageId":"m1","contextId":"c1",'
+                '"role":"ROLE_USER","parts":[{"text":"hello"}]}}'
+            ),
+        ),
+        a2a=A2ACorrelation(task_id="task-1", context_id="c1"),
+    )
+    record = registry.get_run("run-task", owner="alice")
+    assert record is not None
+
+    task = task_from_run_record(record, history_length=1)
+
+    assert task.id == "task-1"
+    assert task.context_id == "c1"
+    assert task.status.state == TaskState.TASK_STATE_COMPLETED
+    assert len(task.history) == 1
+    assert task.artifacts[0].parts[0].text == "done"
+    assert "secret" not in str(task)

@@ -138,7 +138,12 @@ from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
 from .a2a.card import build_agent_card
-from .a2a.executor import A2ARegistration, A2ARequestHandler
+from .a2a.executor import (
+    A2AHandlerOptions,
+    A2ARegistration,
+    A2ARequestHandler,
+    task_from_run_record,
+)
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import (
     ApiPrincipal,
@@ -1886,6 +1891,18 @@ def _record_a2a_registration(registration: A2ARegistration) -> None:
         )
 
 
+def _get_a2a_task(task_id: str, history_length: int) -> Any:
+    """Return an owner-scoped A2A task projection, or ``None``."""
+    owner = current_request_user() or "anonymous"
+    record = RunRegistry(resolve_tasks_db_path()).get_run_by_a2a_task(
+        task_id,
+        owner=owner,
+    )
+    if record is None:
+        return None
+    return task_from_run_record(record, history_length)
+
+
 def _create_running_stream_run(
     run_id: str, agent: str, owner: str, request_info: RunRequestInfo
 ) -> None:
@@ -2729,8 +2746,11 @@ def create_app() -> FastAPI:
         assert public_base_url is not None
         a2a_handler = A2ARequestHandler(
             invoke_agent_run=_invoke_agent_run,
-            invoke_agent_stream=invoke_tool_streamed,
-            record_a2a=_record_a2a_registration,
+            options=A2AHandlerOptions(
+                invoke_agent_stream=invoke_tool_streamed,
+                record_a2a=_record_a2a_registration,
+                get_a2a_task=_get_a2a_task,
+            ),
             tool_to_agent={
                 tool_name: agent
                 for agent, tool_name in _AGENT_SLUG_TO_TOOL.items()

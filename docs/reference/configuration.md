@@ -152,8 +152,9 @@ working directory so restarts use the same stores.
 
 When A2A is enabled, `/.well-known/agent-card.json` is public and `/a2a`
 requires an API key with the `agents` scope plus `A2A-Version: 1.0`. Phase 2
-advertises `SendMessage` and `SendStreamingMessage`; the flag remains off by
-default so existing deployments keep their previous route surface.
+advertises `SendMessage`, `SendStreamingMessage`, and owner-scoped `GetTask`;
+the flag remains off by default so existing deployments keep their previous
+route surface.
 
 ## Relay Variables
 
