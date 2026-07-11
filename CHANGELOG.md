@@ -67,9 +67,10 @@ Full commit range: `1f8f628..HEAD`.
 - **Progress-event vocabulary** — `mcp/progress_events.py` ships a
   `ProgressEvent` TypedDict and `emit_progress()` helper that writes through
   the LangGraph stream writer; outside a runnable context it is a silent
-  no-op, so the same node body works streamed and unstreamed. The field set
-  maps losslessly onto an A2A `TaskStatusUpdateEvent` (forward-compat for
-  Phase 4).
+  no-op, so the same node body works streamed and unstreamed. Protocol
+  adapters may preserve the field set as progress metadata, while task
+  lifecycle state is mapped independently (`phase` is not an A2A
+  `TaskState`).
 - **SSE `phyto.progress` Custom frame** — `_stream_graph_agent` now drives
   `astream(stream_mode=["custom","updates","values"], subgraphs=True)` and
   projects custom `phyto.progress` ticks from any namespace into a new

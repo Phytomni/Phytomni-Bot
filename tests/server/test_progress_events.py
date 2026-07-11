@@ -78,12 +78,13 @@ def test_emit_progress_defaults_total_and_detail_to_none(
     ]
 
 
-def test_progress_event_maps_losslessly_to_a2a_task_status() -> None:
-    """The vocabulary must map onto A2A TaskStatusUpdateEvent shape.
+def test_progress_event_preserves_protocol_projection_inputs() -> None:
+    """Protocol adapters retain progress without inventing task state.
 
-    Spec §5.1 pins this as a forward-compat constraint so Phase 4
-    (A2A facade) can reuse the vocabulary with zero changes: phase ->
-    TaskStatus.state, current/total -> metadata, detail -> message.
+    ``phase`` describes work inside a running task; it is not a task
+    lifecycle state. A future A2A adapter can carry the progress fields
+    in status metadata while deriving ``TaskState`` independently from
+    the run lifecycle.
     """
     event: ProgressEvent = {
         "kind": PROGRESS_KIND,
@@ -92,11 +93,20 @@ def test_progress_event_maps_losslessly_to_a2a_task_status() -> None:
         "total": 8,
         "detail": "gene 3/8",
     }
-    a2a = {
-        "state": event["phase"],
+    projection = {
         "message": event["detail"],
-        "metadata": {"current": event["current"], "total": event["total"]},
+        "metadata": {
+            "kind": event["kind"],
+            "phase": event["phase"],
+            "current": event["current"],
+            "total": event["total"],
+        },
     }
-    assert a2a["state"] == "retrieving"
-    assert a2a["message"] == "gene 3/8"
-    assert a2a["metadata"] == {"current": 3, "total": 8}
+    assert "state" not in projection
+    assert projection["message"] == "gene 3/8"
+    assert projection["metadata"] == {
+        "kind": PROGRESS_KIND,
+        "phase": "retrieving",
+        "current": 3,
+        "total": 8,
+    }

@@ -251,5 +251,7 @@ result = await client.call_tool(
 ```
 
 The progress event's fields (`kind`, `phase`, `current`, `total`,
-`detail`) map losslessly onto an A2A `TaskStatusUpdateEvent` for
-forward compatibility.
+`detail`) preserve the context needed by protocol adapters. In
+particular, `phase` describes work within a running task; it is not a
+task lifecycle state. An A2A adapter must derive `TaskState` separately
+and may carry these progress fields in status metadata.

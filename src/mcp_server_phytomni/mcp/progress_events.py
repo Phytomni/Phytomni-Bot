@@ -6,8 +6,9 @@
 
 Nodes emit through :func:`emit_progress`; the SSE and MCP stdio seams
 project the event into their respective frames. Outside a runnable
-context the helper is a silent no-op. Fields map losslessly onto an
-A2A ``TaskStatusUpdateEvent`` for forward compatibility.
+context the helper is a silent no-op. Protocol adapters may preserve
+these fields as progress metadata, but must derive their task lifecycle
+state independently.
 """
 
 from __future__ import annotations
