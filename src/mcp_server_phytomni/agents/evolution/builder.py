@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from ...runtime.langgraph_runner import make_async_router
 from .graph import (
     resolve_target_taxids_node,
     route_after_resolve,
@@ -53,7 +54,7 @@ def build_evolution_graph(checkpointer: Any | None = None) -> Any:
     workflow.add_edge(START, "resolve_target_taxids_node")
     workflow.add_conditional_edges(
         "resolve_target_taxids_node",
-        route_after_resolve,
+        make_async_router(route_after_resolve),
         {
             "submit_evolution_task_node": "submit_evolution_task_node",
             "__end__": END,

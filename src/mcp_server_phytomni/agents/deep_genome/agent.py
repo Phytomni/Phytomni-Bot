@@ -32,7 +32,11 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    make_async_router,
+)
 from ...runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
@@ -412,7 +416,7 @@ class DeepGenomeAgents(
 
         workflow.add_conditional_edges(
             START,
-            self._route_start,
+            make_async_router(self._route_start),
             ["brief_gene_node", "prepare_tasks_node"],
         )
         # brief_gene mount writes all the preamble fields plus the
@@ -423,7 +427,7 @@ class DeepGenomeAgents(
 
         workflow.add_conditional_edges(
             "prepare_tasks_node",
-            self._route_analyst_tasks,
+            make_async_router(self._route_analyst_tasks),
             [
                 _analyst_node_name(analysis_type)
                 for analysis_type in GENERIC_ANALYSIS_NODE_TYPES
@@ -433,14 +437,18 @@ class DeepGenomeAgents(
         for analysis_type in GENERIC_ANALYSIS_NODE_TYPES:
             workflow.add_conditional_edges(
                 _analyst_node_name(analysis_type),
-                self._route_after_analyst,
+                make_async_router(self._route_after_analyst),
                 [END],
             )
         workflow.add_conditional_edges(
-            "evolution_node", self._route_after_analyst, [END]
+            "evolution_node",
+            make_async_router(self._route_after_analyst),
+            [END],
         )
         workflow.add_conditional_edges(
-            "design_node", self._route_after_analyst, [END]
+            "design_node",
+            make_async_router(self._route_after_analyst),
+            [END],
         )
         workflow.add_edge("prepare_tasks_node", "synthesize_node")
         # The synthesize barrier no longer routes to introduction_node
@@ -450,13 +458,13 @@ class DeepGenomeAgents(
         # analyst-side data is ready.
         workflow.add_conditional_edges(
             "synthesize_node",
-            self._route_synthesize_barrier,
+            make_async_router(self._route_synthesize_barrier),
             ["synthesize_node", "experiment_node", END],
         )
 
         workflow.add_conditional_edges(
             "experiment_node",
-            self._route_experiment_barrier,
+            make_async_router(self._route_experiment_barrier),
             ["experiment_node", "protocol_node"],
         )
         # protocol → discussion → summary → follow_up (introduction_node

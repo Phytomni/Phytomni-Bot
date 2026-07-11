@@ -34,7 +34,9 @@ class _ParentState(TypedDict):
     text: str
 
 
-def _child_node(state: _ChildState) -> dict:
+# Keep both sides natively async: LangGraph 1.2's nested async runner can
+# otherwise leave a synchronous child executor wake-up pending on Python 3.12.
+async def _child_node(state: _ChildState) -> dict:
     """Add 1 to the running counter and tag the text with ``child``."""
     return {
         "counter": state.get("counter", 0) + 1,
@@ -42,7 +44,7 @@ def _child_node(state: _ChildState) -> dict:
     }
 
 
-def _parent_root_node(state: _ParentState) -> dict:
+async def _parent_root_node(state: _ParentState) -> dict:
     """Add 10 to the running counter and tag the text with ``parent``."""
     return {
         "counter": state.get("counter", 0) + 10,

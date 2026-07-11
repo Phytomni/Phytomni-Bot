@@ -17,6 +17,7 @@ from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.runtime.langgraph_runner import (
     build_runnable_config,
+    make_async_router,
 )
 from mcp_server_phytomni.runtime.resume import (
     aresume_graph,
@@ -180,7 +181,7 @@ async def test_minimal_graph_pauses_then_resumes() -> None:
     graph.add_edge(START, "approval_node")
     graph.add_conditional_edges(
         "approval_node",
-        agent.route_after_approval,
+        make_async_router(agent.route_after_approval),
         {
             "follow_up_prep_node": "follow_up_prep_node",
             "summary_prep_node": "summary_prep_node",

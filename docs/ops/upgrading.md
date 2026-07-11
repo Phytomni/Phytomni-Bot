@@ -49,9 +49,11 @@ no operator-authored migration.
 
 ### Capability and Rollback Boundary
 
-0.1.3 does not expose an A2A Agent Card or `/a2a` endpoint, does not call
-external MCP/A2A peers, and does not provide cross-session LangGraph Store
-memory. Do not configure or advertise those surfaces for this release.
+0.1.3 exposes an opt-in A2A Agent Card and authenticated `/a2a` endpoint only
+when `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured. The flag
+remains off by default. This release does not call external MCP/A2A peers or
+provide cross-session LangGraph Store memory; do not configure or advertise
+those outbound and memory surfaces.
 
 To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
 `checkpoints.db`, so it may remain on disk for a later forward upgrade. Runs

@@ -16,6 +16,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -50,6 +51,38 @@ def _write(path: Path, text: str) -> None:
     """Blocking file write, offloaded to a worker thread by async callers."""
     with open(path, "w", encoding="utf-8") as fo:
         fo.write(text)
+
+
+_WRITE_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+
+
+async def _write_async(path: Path, text: str) -> None:
+    """Write a report off-loop without awaiting executor callbacks.
+
+    Some supported Python/asyncio runners can execute the worker thread but
+    fail to wake the event loop for ``to_thread``'s completion future. A
+    daemon thread plus an event polled with ``sleep(0)`` preserves the
+    off-loop write while keeping the graph progress deterministic there.
+    """
+    finished = threading.Event()
+    failures: list[Exception] = []
+
+    def _run() -> None:
+        try:
+            _write(path, text)
+        except _WRITE_CAUGHT as exc:
+            failures.append(exc)
+        finally:
+            finished.set()
+
+    threading.Thread(target=_run, daemon=True).start()
+    # ``call_soon_threadsafe`` is unavailable in the affected runner, so
+    # this deliberate poll is the only completion signal that remains
+    # event-loop safe here.
+    while not finished.is_set():  # noqa: ASYNC110
+        await asyncio.sleep(0)
+    if failures:
+        raise failures[0]
 
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
@@ -379,7 +412,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             ),
         )
         results_path = Path(report_dir) / f"{state['gene_id']}_results.md"
-        await asyncio.to_thread(_write, results_path, gene_results)
+        await _write_async(results_path, gene_results)
         return {
             "report_dir": report_dir,
             "synthesize_report": gene_results,
@@ -676,7 +709,7 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         for follow_up in follow_up_list:
             final_report += follow_up
             final_report += "\n"
-        await asyncio.to_thread(_write, results_path, final_report)
+        await _write_async(results_path, final_report)
         self._persist_final_report(state.get("task_id"), final_report)
         self._persist_degraded(state.get("task_id"), state)
         return {

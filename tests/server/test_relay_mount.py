@@ -11,10 +11,19 @@ and stops serving the instant the flag flips back to False.
 
 from __future__ import annotations
 
+import inspect
+
 import httpx
 import pytest
 
+from mcp_server_phytomni.api.relay.deps import relay_enabled_guard
+
 pytestmark = pytest.mark.server
+
+
+def test_relay_kill_switch_dependency_is_native_async() -> None:
+    """Avoid FastAPI's worker-thread bridge for the per-request guard."""
+    assert inspect.iscoroutinefunction(relay_enabled_guard)
 
 
 async def test_relay_healthz_404_when_disabled(

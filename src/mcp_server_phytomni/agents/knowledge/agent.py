@@ -37,7 +37,11 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    make_async_router,
+)
 from ...storage.downloads import download_list_convert
 from ..shared.chat_subgraph import (
     make_chat_after_router,
@@ -163,7 +167,7 @@ class KnowledgeAgent:
         )
         workflow.add_conditional_edges(
             START,
-            self.route_start,
+            make_async_router(self.route_start),
             {
                 "process_files_node": "process_files_node",
                 "retrieve_node": "retrieve_node",
@@ -172,7 +176,7 @@ class KnowledgeAgent:
         workflow.add_edge("process_files_node", "retrieve_node")
         workflow.add_conditional_edges(
             "retrieve_node",
-            self.route_after_retrieve,
+            make_async_router(self.route_after_retrieve),
             {
                 "generate_node": "generate_prep_node",
                 "__end__": END,
@@ -181,7 +185,7 @@ class KnowledgeAgent:
         workflow.add_edge("generate_prep_node", "chat")
         workflow.add_conditional_edges(
             "chat",
-            make_chat_after_router(),
+            make_async_router(make_chat_after_router()),
             {
                 "generate_post_node": "generate_post_node",
                 "follow_up_post_node": "follow_up_post_node",
@@ -189,7 +193,7 @@ class KnowledgeAgent:
         )
         workflow.add_conditional_edges(
             "generate_post_node",
-            self.route_after_generate,
+            make_async_router(self.route_after_generate),
             {
                 "follow_up_node": "follow_up_prep_node",
                 "__end__": END,

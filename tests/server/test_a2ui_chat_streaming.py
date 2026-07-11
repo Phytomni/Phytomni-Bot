@@ -17,13 +17,31 @@ from tests.server.test_api_chat_streaming import (
     _patch_chat_stream,
 )
 
-from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
+from mcp_server_phytomni.agents.shared.a2ui import (
+    A2UI_CUSTOM_NAME,
+    author_a2ui_surface_offline,
+)
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+@pytest.fixture(autouse=True)
+def _use_offline_a2ui_author(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep HTTP streaming tests offline at the Surface Author seam."""
+
+    async def _offline(ctx: Any) -> dict[str, Any]:
+        return author_a2ui_surface_offline(ctx)
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.a2ui_graph.author_a2ui_surface",
+        _offline,
+    )
 
 
 def _extract_custom_a2ui(body: str) -> dict[str, Any] | None:
@@ -70,7 +88,6 @@ async def test_stream_a2ui_confirm_settles_input_required(
 ) -> None:
     """Flag+confirm query emits phyto.a2ui and pauses the run."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-
     response = await chat_completion(
         api_client,
         issued_api_key,
@@ -78,7 +95,6 @@ async def test_stream_a2ui_confirm_settles_input_required(
         content="请确认是否继续分析",
         dialogue_id="dlg-a2ui",
     )
-
     assert response.status_code == 200
     body = response.text
     assert "event: RunStarted\n" in body

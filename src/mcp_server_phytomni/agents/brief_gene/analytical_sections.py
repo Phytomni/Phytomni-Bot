@@ -8,7 +8,8 @@ The four ``_run_section_<role>_node`` functions (discovery / cloning /
 functional / application) each call ``phyto_chat`` with a dedicated
 section prompt, write the matching ordered ``section{1-4}_markdown``
 slot to state, and increment ``gene_profile_completed_branches`` by 1
-so the ``_build_graph`` barrier fires once all four sections complete.
+so the graph's explicit multi-source barrier releases once all four
+sections complete.
 """
 
 from __future__ import annotations

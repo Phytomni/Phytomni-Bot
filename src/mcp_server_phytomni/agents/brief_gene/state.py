@@ -138,10 +138,9 @@ class BriefGeneState(TypedDict):
     introduction_report: str
     # Additive completion tally the four section nodes each bump by
     # ``+1`` via the ``operator.add`` reducer (replaces the M5-era
-    # ``part1_completed_branches``). The section -> ``introduction_node``
-    # fan-in converges on LangGraph's plain-edge superstep barrier, so no
-    # router reads this counter; it is retained as a per-section
-    # completion signal, not a routing gate.
+    # ``part1_completed_branches``). The four section nodes converge on
+    # ``introduction_node`` through one explicit multi-source edge; this
+    # counter is retained as a per-section completion signal.
     gene_profile_completed_branches: Annotated[int, operator.add]
     # Additive optional keys for the chat-subgraph split.
     # ``generate_prep_node`` /

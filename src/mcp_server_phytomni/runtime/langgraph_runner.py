@@ -115,6 +115,17 @@ def ensure_checkpointer(
     return build_default_checkpointer()
 
 
+def make_async_router(
+    router: Callable[[Any], Any],
+) -> Callable[[Any], Awaitable[Any]]:
+    """Adapt a synchronous conditional router for ``ainvoke`` graphs."""
+
+    async def _router(state: Any) -> Any:
+        return router(state)
+
+    return _router
+
+
 async def ainvoke_graph(
     app: Any,
     initial_state: Any,

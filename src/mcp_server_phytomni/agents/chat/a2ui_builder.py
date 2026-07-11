@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from ...runtime.langgraph_runner import make_async_router
 from .a2ui_graph import (
     ChatA2uiOutput,
     ChatA2uiState,
@@ -81,7 +82,7 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
     )
     workflow.add_conditional_edges(
         "a2ui_confirm_node",
-        route_after_a2ui_confirm,
+        make_async_router(route_after_a2ui_confirm),
         {
             "a2ui_apply_decision_node": "a2ui_apply_decision_node",
             "a2ui_cancel_node": "a2ui_cancel_node",
@@ -90,7 +91,7 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
     workflow.add_edge("a2ui_apply_decision_node", "generate_node")
     workflow.add_conditional_edges(
         "generate_node",
-        route_after_generate,
+        make_async_router(route_after_generate),
         {
             "follow_up_node": "follow_up_node",
             "__end__": "a2ui_after_work_node",
@@ -99,7 +100,7 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
     workflow.add_edge("follow_up_node", "a2ui_after_work_node")
     workflow.add_conditional_edges(
         "a2ui_after_work_node",
-        route_after_a2ui_turn,
+        make_async_router(route_after_a2ui_turn),
         {
             "a2ui_reenter_node": "a2ui_reenter_node",
             "__end__": END,

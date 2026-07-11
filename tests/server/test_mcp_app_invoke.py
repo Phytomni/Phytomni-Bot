@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -109,6 +110,10 @@ async def test_invoke_cited_agent_normalizes_references(
     payload_name: str,
 ) -> None:
     """Cited agents rewrite ``[N]`` markers and dedupe doc references."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
+        AsyncMock(return_value={"message": "ok", "data": []}),
+    )
     raw = {
         "choices": [
             {

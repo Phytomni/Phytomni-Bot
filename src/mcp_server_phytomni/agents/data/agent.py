@@ -40,7 +40,11 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    make_async_router,
+)
 from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -257,7 +261,7 @@ class DataAgent:
         )
         workflow.add_conditional_edges(
             START,
-            self.route_start,
+            make_async_router(self.route_start),
             [retrieve_in, "search_node"],
         )
         workflow.add_edge(retrieve_out, "rewrite_prep_node")
@@ -300,7 +304,7 @@ class DataAgent:
         workflow.add_edge("retrieve_prep_node", "knowledge")
         workflow.add_conditional_edges(
             "knowledge",
-            make_knowledge_after_router(),
+            make_async_router(make_knowledge_after_router()),
             {
                 "retrieve_post_node": "retrieve_post_node",
             },

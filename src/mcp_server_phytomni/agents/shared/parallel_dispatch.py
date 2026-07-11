@@ -16,6 +16,7 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from ...common.redaction import redact_secrets
+from ...runtime.langgraph_runner import make_async_router
 
 __all__ = [
     "DegradedRecord",
@@ -217,7 +218,7 @@ def build_parallel_dispatch_graph(
         workflow.add_edge(START, "prepare_tasks_node")
     workflow.add_conditional_edges(
         "prepare_tasks_node",
-        spec.route_fn,
+        make_async_router(spec.route_fn),
         [spec.work_node_name],
     )
     workflow.add_edge(spec.work_node_name, END)

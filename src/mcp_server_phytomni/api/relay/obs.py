@@ -19,7 +19,8 @@ import logging
 import re
 import sqlite3
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -43,6 +44,11 @@ __all__ = ["add_obs_routes"]
 
 _OBS_SERVICE = "obs"
 _LOGGER = logging.getLogger(__name__)
+_OBS_OP_EXECUTOR = ThreadPoolExecutor(
+    max_workers=40,
+    thread_name_prefix="phytomni-obs",
+)
+_OBS_OP_POLL_SECONDS = 0.01
 
 # A content-addressed shared path must carry a FULL sha256 fingerprint
 # segment (64 lowercase hex) plus something after it. Anchoring on the
@@ -72,12 +78,35 @@ async def _run_obs_op(
     op: Callable[..., Any], *args: Any, **kwargs: Any
 ) -> Any:
     """Run a blocking OBS op off-thread, mapping a path escape to 400."""
+    future = _OBS_OP_EXECUTOR.submit(op, *args, **kwargs)
     try:
-        return await asyncio.to_thread(op, *args, **kwargs)
+        return await _wait_obs_future(future)
+    except asyncio.CancelledError:
+        future.cancel()
+        raise
     except ObsPathError as exc:
         raise HTTPException(
             status_code=400, detail="obs path outside bucket"
         ) from exc
+
+
+async def _wait_obs_future(future: Future[Any]) -> Any:
+    """Poll one worker future without a cross-thread loop callback."""
+    while not future.done():  # noqa: ASYNC110
+        await asyncio.sleep(_OBS_OP_POLL_SECONDS)
+    return future.result()
+
+
+def _next_stream_chunk(iterator: Iterator[bytes]) -> bytes | None:
+    """Return the next blocking OBS chunk, or ``None`` at EOF."""
+    return next(iterator, None)
+
+
+def _close_stream_iterator(iterator: Iterator[bytes]) -> None:
+    """Close a blocking OBS iterator when it exposes ``close``."""
+    close = getattr(iterator, "close", None)
+    if callable(close):
+        close()
 
 
 def _record_obs_audit(
@@ -229,10 +258,37 @@ async def _get_object(
         db_path=config.RELAY_AUDIT_DB_PATH,
     )
 
-    def _stream() -> Iterator[bytes]:
-        yield from obs_relay_ops.iter_object_chunks(
-            server.BUCKET_NAME, safe_key, obs_server=server.OBS_SERVER
+    async def _stream() -> AsyncIterator[bytes]:
+        iterator = await _run_obs_op(
+            obs_relay_ops.iter_object_chunks,
+            server.BUCKET_NAME,
+            safe_key,
+            obs_server=server.OBS_SERVER,
         )
+        next_future: Future[Any] | None = None
+        try:
+            while True:
+                next_future = _OBS_OP_EXECUTOR.submit(
+                    _next_stream_chunk, iterator
+                )
+                chunk = await _wait_obs_future(next_future)
+                next_future = None
+                if chunk is None:
+                    return
+                yield chunk
+        finally:
+            if (
+                next_future is not None
+                and not next_future.done()
+                and not next_future.cancel()
+            ):
+
+                def _close_after_chunk(_done: Future[Any]) -> None:
+                    _OBS_OP_EXECUTOR.submit(_close_stream_iterator, iterator)
+
+                next_future.add_done_callback(_close_after_chunk)
+            else:
+                _OBS_OP_EXECUTOR.submit(_close_stream_iterator, iterator)
 
     return StreamingResponse(
         _stream(),

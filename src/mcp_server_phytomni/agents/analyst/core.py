@@ -28,6 +28,7 @@ from ...runtime.langgraph_runner import (
     ainvoke_graph,
     capture_workflow_boundary,
     ensure_checkpointer,
+    make_async_router,
 )
 from ..shared.chat_subgraph import (
     make_chat_after_router,
@@ -180,7 +181,7 @@ class AnalystAgent(
         workflow.add_edge("method_retrieve_prep_node", "knowledge")
         workflow.add_conditional_edges(
             "knowledge",
-            make_knowledge_after_router(),
+            make_async_router(make_knowledge_after_router()),
             {
                 "method_retrieve_post_node": "method_retrieve_post_node",
             },
@@ -237,8 +238,10 @@ class AnalystAgent(
         workflow.add_edge(START, "parse_query_prep_node")
         workflow.add_conditional_edges(
             "parse_query_prep_node",
-            self._route_prep_to_chat_or_post(
-                post_node="parse_query_post_node"
+            make_async_router(
+                self._route_prep_to_chat_or_post(
+                    post_node="parse_query_post_node"
+                )
             ),
             {
                 "chat": "chat",
@@ -247,7 +250,7 @@ class AnalystAgent(
         )
         workflow.add_conditional_edges(
             "chat",
-            make_chat_after_router(),
+            make_async_router(make_chat_after_router()),
             {
                 "parse_query_post_node": "parse_query_post_node",
                 "data_select_post_node": "data_select_post_node",
@@ -258,7 +261,7 @@ class AnalystAgent(
         )
         workflow.add_conditional_edges(
             "parse_query_post_node",
-            self.route_after_extract,
+            make_async_router(self.route_after_extract),
             {
                 "data_select_node": "data_select_prep_node",
                 "method_retrieve_node": method_in,
@@ -268,7 +271,7 @@ class AnalystAgent(
         workflow.add_edge("data_select_prep_node", "chat")
         workflow.add_conditional_edges(
             "data_select_post_node",
-            self.route_after_data_select,
+            make_async_router(self.route_after_data_select),
             {
                 "method_retrieve_node": method_in,
                 "tool_extract_node": "tool_extract_prep_node",
@@ -279,7 +282,9 @@ class AnalystAgent(
         workflow.add_edge("plan_post_node", "check_prep_node")
         workflow.add_conditional_edges(
             "check_prep_node",
-            self._route_prep_to_chat_or_post(post_node="check_post_node"),
+            make_async_router(
+                self._route_prep_to_chat_or_post(post_node="check_post_node")
+            ),
             {
                 "chat": "chat",
                 "check_post_node": "check_post_node",
@@ -287,7 +292,7 @@ class AnalystAgent(
         )
         workflow.add_conditional_edges(
             "check_post_node",
-            self.route_after_check,
+            make_async_router(self.route_after_check),
             {
                 "plan_node": "plan_prep_node",
                 "tool_extract_node": "tool_extract_prep_node",
@@ -298,7 +303,7 @@ class AnalystAgent(
         workflow.add_edge("tool_retrieve_node", "submit_node")
         workflow.add_conditional_edges(
             "submit_node",
-            self.route_after_submit,
+            make_async_router(self.route_after_submit),
             {
                 "pooling_node": "pooling_node",
                 "__end__": END,
@@ -306,7 +311,7 @@ class AnalystAgent(
         )
         workflow.add_conditional_edges(
             "pooling_node",
-            self.route_after_pooling,
+            make_async_router(self.route_after_pooling),
             {
                 "__end__": END,
                 "pooling_node": "pooling_node",

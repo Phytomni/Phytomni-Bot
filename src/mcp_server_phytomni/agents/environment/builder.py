@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from ...runtime.langgraph_runner import make_async_router
 from .graph import (
     extract_region_codes_node,
     route_after_extract,
@@ -54,7 +55,7 @@ def build_environment_graph(checkpointer: Any | None = None) -> Any:
     workflow.add_edge(START, "extract_region_codes_node")
     workflow.add_conditional_edges(
         "extract_region_codes_node",
-        route_after_extract,
+        make_async_router(route_after_extract),
         {"submit_vci_task_node": "submit_vci_task_node", "__end__": END},
     )
     workflow.add_edge("submit_vci_task_node", END)

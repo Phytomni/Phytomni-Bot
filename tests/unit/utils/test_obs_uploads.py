@@ -10,7 +10,6 @@ fallback, and download-list conversion cleanup flags.
 
 from __future__ import annotations
 
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -223,8 +222,9 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         """
         del obs_client, context
         captured["object_key"] = object_key
-        await asyncio.to_thread(
-            Path(server_file).write_text, "downloaded", encoding="utf-8"
+        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
+        Path(server_file).write_text(  # noqa: ASYNC240
+            "downloaded", encoding="utf-8"
         )
         return server_file
 
@@ -242,8 +242,9 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
     )
 
     assert captured["object_key"] == "agent_data/paper.pdf"
+    # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
     assert (
-        await asyncio.to_thread(Path(result).read_text, encoding="utf-8")
+        Path(result).read_text(encoding="utf-8")  # noqa: ASYNC240
         == "downloaded"
     )
     assert str(result).startswith(str(tmp_path / "temp"))
@@ -312,8 +313,9 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
             Local path to the fake downloaded file.
         """
         del obs_client, object_key, context
-        await asyncio.to_thread(
-            Path(server_file).write_text, "downloaded", encoding="utf-8"
+        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
+        Path(server_file).write_text(  # noqa: ASYNC240
+            "downloaded", encoding="utf-8"
         )
         return server_file
 

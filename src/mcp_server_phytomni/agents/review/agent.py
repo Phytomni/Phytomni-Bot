@@ -43,7 +43,11 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    make_async_router,
+)
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
@@ -258,7 +262,7 @@ class DeepResearchAgent(
         workflow.add_node("retrieve_reduce_node", self.retrieve_reduce_node)
         workflow.add_conditional_edges(
             "retrieve_dispatch",
-            self.route_retrieve_tasks,
+            make_async_router(self.route_retrieve_tasks),
             ["retrieve_worker_node"],
         )
         workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
@@ -273,7 +277,7 @@ class DeepResearchAgent(
         workflow.add_node("draft_reduce_node", self.draft_reduce_node)
         workflow.add_conditional_edges(
             "draft_dispatch",
-            self.route_draft_tasks,
+            make_async_router(self.route_draft_tasks),
             ["draft_worker_node"],
         )
         workflow.add_edge("draft_worker_node", "draft_reduce_node")
@@ -293,7 +297,7 @@ class DeepResearchAgent(
         )
         workflow.add_conditional_edges(
             "review_results_dispatch",
-            self.route_review_results_tasks,
+            make_async_router(self.route_review_results_tasks),
             ["review_results_worker_node"],
         )
         workflow.add_edge(
@@ -306,7 +310,7 @@ class DeepResearchAgent(
         workflow.add_node("revised_reduce_node", self.revised_reduce_node)
         workflow.add_conditional_edges(
             "revised_dispatch",
-            self.route_revised_tasks,
+            make_async_router(self.route_revised_tasks),
             ["revised_worker_node"],
         )
         workflow.add_edge("revised_worker_node", "revised_reduce_node")
@@ -319,7 +323,7 @@ class DeepResearchAgent(
         # === Shared chat → post (after-router) ===
         workflow.add_conditional_edges(
             "chat",
-            make_chat_after_router(),
+            make_async_router(make_chat_after_router()),
             {
                 "plan_query_post_node": "plan_query_post_node",
                 "summary_post_node": "summary_post_node",
@@ -337,7 +341,7 @@ class DeepResearchAgent(
         workflow.add_edge("summary_post_node", "approval_node")
         workflow.add_conditional_edges(
             "approval_node",
-            self.route_after_approval,
+            make_async_router(self.route_after_approval),
             {
                 "follow_up_prep_node": "follow_up_prep_node",
                 "summary_prep_node": "summary_prep_node",

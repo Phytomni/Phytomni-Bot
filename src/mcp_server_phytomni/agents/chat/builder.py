@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from ...runtime.langgraph_runner import make_async_router
 from .graph import (
     follow_up_node,
     generate_node,
@@ -56,7 +57,7 @@ def _build_chat_graph(checkpointer: Any | None = None) -> Any:
     workflow.add_edge("prepare_context_node", "generate_node")
     workflow.add_conditional_edges(
         "generate_node",
-        route_after_generate,
+        make_async_router(route_after_generate),
         {"follow_up_node": "follow_up_node", "__end__": END},
     )
     workflow.add_edge("follow_up_node", END)

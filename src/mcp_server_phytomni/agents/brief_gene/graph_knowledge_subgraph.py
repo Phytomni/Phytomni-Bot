@@ -94,7 +94,7 @@ class BriefGeneKnowledgeSubgraphMixin:
         workflow.add_node("retrieve_reduce_node", self.retrieve_reduce_node)
         workflow.add_conditional_edges(
             "retrieve_prep_tasks_node",
-            self.route_retrieve_tasks,
+            self._route_retrieve_tasks_async,
             ["retrieve_worker_node"],
         )
         workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
@@ -180,6 +180,18 @@ class BriefGeneKnowledgeSubgraphMixin:
             )
             for index, task in enumerate(retrieve_tasks)
         ]
+
+    async def _route_retrieve_tasks_async(
+        self: Any, state: BriefGeneAgentState
+    ) -> list[Send]:
+        """Adapt the synchronous router for async graph execution.
+
+        LangGraph executes conditional paths in the event-loop runner for
+        ``ainvoke``. Keeping the public router synchronous preserves the
+        existing inspection/test seam, while this async adapter avoids the
+        sync conditional-runner deadlock in the supported runtime.
+        """
+        return self.route_retrieve_tasks(state)
 
     def make_retrieve_worker_node(
         self: Any, knowledge_app: CompiledStateGraph

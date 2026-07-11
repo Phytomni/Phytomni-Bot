@@ -25,7 +25,11 @@ from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...mcp.progress_events import emit_progress
-from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
+from ...runtime.langgraph_runner import (
+    ainvoke_graph,
+    ensure_checkpointer,
+    make_async_router,
+)
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.chat_subgraph import (
     make_chat_after_router,
@@ -69,6 +73,13 @@ __all__ = [
 ]
 
 BRIEF_CONFIG = BriefGeneConfig()
+
+
+async def _render_preamble_async_node(
+    state: BriefGeneAgentState,
+) -> dict[str, Any]:
+    """Run the pure render template through the async graph runner."""
+    return _render_preamble_node(state)
 
 
 def initial_brief_gene_state(
@@ -205,9 +216,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         (gene not found). ``retrieve`` runs after
         ``fetch_annotation_node`` because the per-symbol literature
         tasks read its ``gene_id_list``. The four ``section{1-4}_node``
-        gate ONLY on ``retrieve_reduce_node`` and fan into
-        ``introduction_node``, which the pure-template ``render_node``
-        follows to write ``final_response``.
+        gate ONLY on ``retrieve_reduce_node`` and converge through an
+        explicit multi-source edge into ``introduction_node``. LangGraph
+        therefore waits for all four section results before the
+        pure-template ``render_node`` writes ``final_response``.
         ``fetch_homology_interactions_node`` runs in parallel and
         commits its counts to state in an early superstep, well before
         the deeper retrieve reduce settles, so the sections read
@@ -242,7 +254,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             "section_application_node", _run_section_application_node
         )
         workflow.add_node("introduction_node", _run_introduction_node)
-        workflow.add_node("render_node", _render_preamble_node)
+        workflow.add_node("render_node", _render_preamble_async_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
         workflow.add_node("follow_up_post_node", self.follow_up_post_node)
         workflow.add_node(
@@ -262,25 +274,24 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         )
         workflow.add_conditional_edges(
             "query_judge_node",
-            self.route_after_judge,
+            make_async_router(self.route_after_judge),
             {
                 "fetch_annotation_node": "fetch_annotation_node",
                 "retrieve_node": retrieve_in,
             },
         )
         workflow.add_edge("fetch_annotation_node", retrieve_in)
-        for section in (
-            "section_discovery_node",
-            "section_cloning_node",
-            "section_functional_node",
-            "section_application_node",
-        ):
+        section_nodes = tuple(
+            f"section_{role}_node"
+            for role in ("discovery", "cloning", "functional", "application")
+        )
+        for section in section_nodes:
             workflow.add_edge(retrieve_out, section)
-            workflow.add_edge(section, "introduction_node")
+        workflow.add_edge(list(section_nodes), "introduction_node")
         workflow.add_edge("introduction_node", "render_node")
         workflow.add_conditional_edges(
             "render_node",
-            self.route_after_generate,
+            make_async_router(self.route_after_generate),
             {
                 "follow_up_node": "follow_up_prep_node",
                 "__end__": END,
@@ -289,7 +300,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         workflow.add_edge("follow_up_prep_node", "chat")
         workflow.add_conditional_edges(
             "chat",
-            make_chat_after_router(),
+            make_async_router(make_chat_after_router()),
             {
                 "follow_up_post_node": "follow_up_post_node",
             },

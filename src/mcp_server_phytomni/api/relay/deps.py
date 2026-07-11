@@ -34,7 +34,7 @@ __all__ = [
 _relay_rate_limit = make_rate_limiter()
 
 
-def relay_enabled_guard() -> None:
+async def relay_enabled_guard() -> None:
     """Reject relay requests when the relay surface is disabled.
 
     ``ApiConfig()`` is constructed per call so ``RELAY_ENABLED`` is

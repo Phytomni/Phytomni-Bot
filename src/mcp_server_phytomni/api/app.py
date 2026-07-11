@@ -14,9 +14,11 @@ Public functions: create_app.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sqlite3
+import threading
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -265,6 +267,10 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 
 
 _LOGGER = logging.getLogger(__name__)
+_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+_RUN_GC_LOCK = threading.Lock()
+_RUN_GC_ACTIVE = threading.Event()
+_RUN_GC_POLL_SECONDS = 0.01
 
 
 def _purge_expired_runs_best_effort() -> None:
@@ -286,16 +292,60 @@ def _purge_expired_runs_best_effort() -> None:
         _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
 
 
-def _schedule_run_gc(background: BackgroundTasks) -> None:
+async def _purge_expired_runs_best_effort_async() -> None:
+    """Run the local purge off-loop without a thread-safe callback."""
+    if not _claim_run_gc():
+        return
+    finished = threading.Event()
+    failures: list[Exception] = []
+
+    def _run() -> None:
+        try:
+            _purge_expired_runs_best_effort()
+        except _RUN_GC_CAUGHT as exc:
+            failures.append(exc)
+        finally:
+            _release_run_gc()
+            finished.set()
+
+    try:
+        threading.Thread(target=_run, daemon=True).start()
+    except RuntimeError:
+        _release_run_gc()
+        raise
+    while not finished.is_set():  # noqa: ASYNC110
+        await asyncio.sleep(_RUN_GC_POLL_SECONDS)
+    if failures:
+        raise failures[0]
+
+
+def _claim_run_gc() -> bool:
+    """Claim the process-local GC slot, or coalesce with its active pass."""
+    with _RUN_GC_LOCK:
+        if _RUN_GC_ACTIVE.is_set():
+            return False
+        _RUN_GC_ACTIVE.set()
+        return True
+
+
+def _release_run_gc() -> None:
+    """Release the process-local GC slot after its worker exits."""
+    with _RUN_GC_LOCK:
+        _RUN_GC_ACTIVE.clear()
+
+
+async def _schedule_run_gc(background: BackgroundTasks) -> None:
     """Schedule the run-registry GC to run after the response flushes.
 
     FastAPI resolves BackgroundTasks by dependency injection, so a
     write route declares this dependency instead of blocking its
     response on the SQLite DELETE scan. The purge stays best-effort and
     idempotent, so running it once per request (deduping the former
-    per-helper inline calls) carries no data risk.
+    per-helper inline calls) carries no data risk. Both this dependency
+    and the task are native async so Starlette does not require a worker
+    thread to wake the request event loop after either callback.
     """
-    background.add_task(_purge_expired_runs_best_effort)
+    background.add_task(_purge_expired_runs_best_effort_async)
 
 
 def _extract_answer(result: Any) -> str | None:

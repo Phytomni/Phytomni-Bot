@@ -236,7 +236,9 @@ def test_brief_gene_graph_has_section_fanout_and_parallel_fetch() -> None:
     homology->section edge would make the fan-in fire once per superstep
     (shallow homology vs deep retrieve), double-running every section
     LLM and colliding on the no-reducer final_response channel. The
-    retired generate/chat answer path is gone.
+    section-to-introduction edge is registered as one explicit
+    multi-source barrier so all four sections must complete. The retired
+    generate/chat answer path is gone.
     """
     section_nodes = (
         "section_discovery_node",
