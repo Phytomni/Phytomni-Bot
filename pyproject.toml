@@ -37,6 +37,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
+    "a2a-sdk[fastapi]>=1.1,<1.2",
     "asyncpg>=0.30.0",
     "cryptography>=42.0.0",
     "esdk-obs-python>=3.26.2",
@@ -79,6 +80,7 @@ dev = [
     "ruff>=0.15.12",
     "shellcheck-py>=0.11.0",
     "toml-sort>=0.24.4",
+    "types-protobuf<7",
     "types-pyyaml>=6.0.12",
     "types-requests>=2.33.0",
     "validate-pyproject>=0.25",
