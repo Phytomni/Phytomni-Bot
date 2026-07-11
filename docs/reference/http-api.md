@@ -79,6 +79,8 @@ Streaming section below.
 | -------- | ---------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/healthz`                               | no    | Liveness, no dependencies.                                                                                                                                                                              |
 | `GET`    | `/readyz`                                | no    | Readiness, checks local store directories without creating files.                                                                                                                                       |
+| `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; route exists only when `A2A_ENABLED=1`.                                                                                                                                       |
+| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 JSON-RPC `SendMessage`; requires `A2A-Version: 1.0` and the `agents` scope.                                                                                                               |
 | `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                                                                                                                      |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
 | `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
@@ -123,6 +125,106 @@ agents (`brief_gene`, `design`, `network`) ship an empty list
 rather than dropping the key so the shape stays uniform and any
 future agent must declare its alias inventory explicitly rather
 than silently inherit `[]`.
+
+## A2A v1 server core (opt-in)
+
+The A2A surface is disabled by default and is additive to the MCP and native
+HTTP APIs. Enable it with:
+
+```dotenv
+PHYTOMNI_A2A_ENABLED=1
+PHYTOMNI_A2A_PUBLIC_BASE_URL=https://bot.example.com
+```
+
+`A2A_PUBLIC_BASE_URL` must be an absolute HTTP(S) URL. The public Agent Card is
+then available without an API key:
+
+```bash
+curl https://bot.example.com/.well-known/agent-card.json
+```
+
+The card advertises one JSON-RPC v1 interface at `https://bot.example.com/a2a`,
+the ten dispatchable MCP tools as skills, Bearer `agents` authorization, and
+`streaming=false` / `pushNotifications=false`. `GetTaskStatus` is not an A2A
+skill.
+
+Phase 1 accepts only the `SendMessage` JSON-RPC method. Every request must send
+`A2A-Version: 1.0` and an API key with the `agents` scope (scope-less legacy
+keys remain all-access). Business failures are returned as HTTP 200 JSON-RPC
+error envelopes; authentication, authorization, and rate-limit failures stay
+HTTP 401/403/429. Supported message parts are:
+
+- `text`: mapped to the selected tool's `user_query` or `goal_description`;
+- `data`: a JSON object merged into the tool arguments.
+
+`raw` and URL parts, scalar/list data values, unknown `metadata.skill_id` values,
+and conflicting structured values are rejected. `metadata.skill_id` is read
+from the JSON-RPC request metadata, not from nested message metadata. When it
+is absent, the existing Expert router selects a tool from the text.
+
+For a synchronous local agent the response task reaches `COMPLETED`; remote
+submission agents remain `WORKING` and expose their child `task_ids` in task
+metadata. Internal `phase` labels are status-message text only and never
+replace the A2A lifecycle state. The answer is a text artifact; references,
+tabular data, and formatted metadata are emitted as a data artifact.
+
+```bash
+curl -X POST https://bot.example.com/a2a \
+  -H 'Authorization: Bearer ptm_...' \
+  -H 'A2A-Version: 1.0' \
+  -H 'Content-Type: application/a2a+json' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "call-1",
+    "method": "SendMessage",
+    "params": {
+      "metadata": {"skill_id": "KnowledgeAgent"},
+      "message": {
+        "messageId": "msg-1",
+        "contextId": "context-1",
+        "role": "ROLE_USER",
+        "parts": [{"text": "Explain rice flowering evidence."}]
+      }
+    }
+  }'
+```
+
+The official Python SDK can resolve the card and send the same non-streaming
+request. `ClientConfig(streaming=False)` is important because Phase 1 does not
+advertise streaming:
+
+```python
+import httpx
+from a2a.client import ClientCallContext, ClientConfig, ClientFactory
+from a2a.types import Message, Part, Role, SendMessageRequest
+
+async with httpx.AsyncClient(
+    headers={"Authorization": "Bearer ptm_..."}
+) as http:
+    client = await ClientFactory(
+        ClientConfig(streaming=False, httpx_client=http)
+    ).create_from_url("https://bot.example.com")
+    request = SendMessageRequest(
+        message=Message(
+            message_id="msg-1",
+            context_id="context-1",
+            role=Role.ROLE_USER,
+            parts=[Part(text="Explain rice flowering evidence.")],
+        )
+    )
+    request.metadata["skill_id"] = "KnowledgeAgent"
+    async for response in client.send_message(
+        request, context=ClientCallContext()
+    ):
+        print(response)
+```
+
+`SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask`, push-notification
+methods, `SubscribeToTask`, and `GetExtendedAgentCard` return explicit
+unsupported-operation errors until their later implementation phases. With
+`A2A_ENABLED=0` (the default), both the card and `/a2a` routes are absent and
+return the normal HTTP 404 response; all existing native routes keep their
+previous behavior.
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,

@@ -93,6 +93,14 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
         for method in methods:
             if method in {"GET", "POST"}:
                 pairs.add((method, path))
+    # These routes are intentionally absent from the default flag-off app,
+    # but remain part of the documented opt-in public surface.
+    pairs.update(
+        {
+            ("GET", "/.well-known/agent-card.json"),
+            ("POST", "/a2a"),
+        }
+    )
     return pairs
 
 
@@ -170,13 +178,15 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     route_paths = {getattr(route, "path", "") for route in create_app().routes}
 
     assert "/a2a" not in route_paths
-    missing_rows = [
-        "A2A Agent Card and `/a2a` server",
+    for capability in (
         "Calls to external MCP tools or A2A agents",
         "Cross-session LangGraph Store memory",
-    ]
-    for capability in missing_rows:
+    ):
         pattern = rf"\|\s*{re.escape(capability)}\s*\|\s*Not shipped\s*\|"
         assert re.search(pattern, readme)
+    assert re.search(
+        r"\|\s*A2A Agent Card and `/a2a` server\s*\|\s*Opt-in core\s*\|",
+        readme,
+    )
     assert not (ROOT / "src/mcp_server_phytomni/interop").exists()
     assert not (ROOT / "src/mcp_server_phytomni/runtime/memory").exists()

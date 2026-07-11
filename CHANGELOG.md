@@ -58,6 +58,12 @@ Full commit range: `1f8f628..HEAD`.
   (R3 fields/selected/cancelled), and bounded N=2 Chat/Review re-entry
   with `multi_turn/round2_downlink.json` (`sfc-contract-2`). Flag
   default remains off.
+- **Opt-in A2A v1 server core** — `PHYTOMNI_A2A_ENABLED` gates a public
+  `/.well-known/agent-card.json` and authenticated `/a2a` JSON-RPC surface.
+  Phase 1 accepts `SendMessage` with text/object data parts, maps the ten MCP
+  tools into skills, and projects results into A2A task/artifact messages;
+  streaming, polling, cancellation, push, and extended-card methods remain
+  explicitly unsupported.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.
@@ -154,8 +160,8 @@ Full commit range: `1f8f628..HEAD`.
   `langgraph>=1.2.0,<1.3`, with public API smoke coverage for Runtime context,
   stream writers, interrupt/resume, checkpointers, and Store injection.
 - **Capability boundary** — README and upgrade notes now distinguish the
-  shipped dependency/progress/HITL/A2UI work from A2A server, outbound
-  MCP/A2A, and cross-session Store memory, which are not in 0.1.3.
+  opt-in A2A server core from outbound MCP/A2A and cross-session Store memory,
+  which remain later-phase work.
 
 ______________________________________________________________________
 

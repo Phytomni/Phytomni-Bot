@@ -88,18 +88,22 @@ on HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
 checkpointer. A2UI Chat/Review widgets are shipped behind
 `PHYTOMNI_A2UI_ENABLED`, which remains off by default.
 
-The following interoperability work is **not part of 0.1.3**:
+The A2A server core is now available as an opt-in 0.1.3 surface. It remains
+disabled unless `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured;
+flag-off behavior is unchanged. Phase 1 supports the public Agent Card and
+authenticated JSON-RPC `SendMessage` only. Streaming, task polling,
+cancellation, push notifications, extended cards, outbound MCP/A2A, and
+cross-session Store memory remain later-phase work.
 
 | Capability                                | 0.1.3 status |
 | ----------------------------------------- | ------------ |
-| A2A Agent Card and `/a2a` server          | Not shipped  |
+| A2A Agent Card and `/a2a` server          | Opt-in core  |
 | Calls to external MCP tools or A2A agents | Not shipped  |
 | Cross-session LangGraph Store memory      | Not shipped  |
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
-Future protocol adapters must map task lifecycle state independently. No
-unlisted A2A, outbound-interoperability, or memory feature flag is active in
-this release.
+The A2A status adapter maps task lifecycle state independently. No outbound-
+interoperability or memory feature flag is active in this release.
 
 ## Available MCP Tools
 
