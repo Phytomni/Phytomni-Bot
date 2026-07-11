@@ -46,18 +46,30 @@ from google.protobuf import json_format
 
 from ...agents.expert.router import ToolSelection
 from ...mcp.result_formatting import AguiEvent
+from ...runtime.run_registry import A2ACorrelation, RunRequestInfo
 from ...storage.path_policy import IdFactory
 from .events import ArtifactUpdateOptions, build_artifact_update
 from .messages import map_a2a_message
 from .progress import A2AProgressProjector
 from .status import build_task_status
 
-__all__ = ["A2ARequestHandler"]
+__all__ = ["A2ARequestHandler", "A2ARegistration"]
 
 AgentRunInvoker = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 ToolSelector = Callable[[str], Awaitable[ToolSelection | None]]
 AgentStreamInvoker = Callable[..., AsyncIterator[AguiEvent]]
+A2ARegistrationWriter = Callable[["A2ARegistration"], None]
 _ID_FACTORY = IdFactory()
+
+
+@dataclass(frozen=True)
+class A2ARegistration:
+    """A2A ids and request metadata to persist against one run."""
+
+    run_id: str
+    agent: str
+    correlation: A2ACorrelation
+    request_info: RunRequestInfo
 
 
 def _data_part(value: Mapping[str, Any]) -> Part:
@@ -237,7 +249,11 @@ def _build_task(
     status_code: int,
 ) -> Task:
     """Build a protocol Task without creating a second task registry."""
-    task_id = str(body.get("id") or _ID_FACTORY.new_id("task", "a2a"))
+    task_id = str(
+        body.get("id")
+        or params.message.task_id
+        or _ID_FACTORY.new_id("task", "a2a")
+    )
     context_id = params.message.context_id or _ID_FACTORY.new_id(
         "context", "a2a"
     )
@@ -265,6 +281,15 @@ def _build_task(
     return task
 
 
+def _query_from_arguments(arguments: Mapping[str, Any]) -> str | None:
+    """Return the user-facing query captured in an A2A request."""
+    for key in ("user_query", "goal_description"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 class A2ARequestHandler(RequestHandler):
     """Serve only the Phase 1 non-streaming ``SendMessage`` operation."""
 
@@ -274,11 +299,13 @@ class A2ARequestHandler(RequestHandler):
         tool_to_agent: Mapping[str, str],
         select_agent: ToolSelector,
         invoke_agent_stream: AgentStreamInvoker | None = None,
+        record_a2a: A2ARegistrationWriter | None = None,
     ) -> None:
         self._invoke_agent_run = invoke_agent_run
         self._tool_to_agent = dict(tool_to_agent)
         self._select_agent = select_agent
         self._invoke_agent_stream = invoke_agent_stream
+        self._record_a2a = record_a2a
 
     async def on_message_send(
         self,
@@ -308,8 +335,28 @@ class A2ARequestHandler(RequestHandler):
             request_json=json_format.MessageToJson(params),
             debug=False,
         )
+        task = _build_task(params, body, status_code)
+        if self._record_a2a is not None:
+            run_id = str(body.get("id") or task.id)
+            self._record_a2a(
+                A2ARegistration(
+                    run_id=run_id,
+                    agent=agent,
+                    correlation=A2ACorrelation(
+                        task_id=task.id,
+                        context_id=task.context_id,
+                        message_id=params.message.message_id or None,
+                    ),
+                    request_info=RunRequestInfo(
+                        dialogue_id=task.context_id,
+                        query=_query_from_arguments(request.arguments),
+                        tool_name=request.tool_name,
+                        request_json=json_format.MessageToJson(params),
+                    ),
+                )
+            )
         del context
-        return _build_task(params, body, status_code)
+        return task
 
     async def on_get_task(
         self, params: GetTaskRequest, context: ServerCallContext
@@ -361,6 +408,24 @@ class A2ARequestHandler(RequestHandler):
             status=build_task_status("submitted"),
         )
         task.history.append(params.message)
+        if self._record_a2a is not None:
+            self._record_a2a(
+                A2ARegistration(
+                    run_id=task_id,
+                    agent=self._tool_to_agent[request.tool_name],
+                    correlation=A2ACorrelation(
+                        task_id=task_id,
+                        context_id=context_id,
+                        message_id=params.message.message_id or None,
+                    ),
+                    request_info=RunRequestInfo(
+                        dialogue_id=context_id,
+                        query=_query_from_arguments(request.arguments),
+                        tool_name=request.tool_name,
+                        request_json=json_format.MessageToJson(params),
+                    ),
+                )
+            )
         yield task
 
         projector = A2AProgressProjector(task_id, context_id)

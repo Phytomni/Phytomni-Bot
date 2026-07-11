@@ -36,6 +36,7 @@ from .terminal_report import (
 )
 
 __all__ = [
+    "A2ACorrelation",
     "RunFilter",
     "RunRecord",
     "RunRegistry",
@@ -67,7 +68,10 @@ CREATE TABLE IF NOT EXISTS runs (
     query TEXT,
     tool_name TEXT,
     model TEXT,
-    request_json TEXT
+    request_json TEXT,
+    a2a_task_id TEXT,
+    a2a_context_id TEXT,
+    a2a_message_id TEXT
 )
 """
 
@@ -83,11 +87,21 @@ _REQUEST_INFO_COLUMNS = (
     ("request_json", "TEXT"),
 )
 
+_A2A_COLUMNS = (
+    ("a2a_task_id", "TEXT"),
+    ("a2a_context_id", "TEXT"),
+    ("a2a_message_id", "TEXT"),
+)
+
 _CREATE_RUNS_USER_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
 )
 _CREATE_TASKS_RUN_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_tasks_run ON tasks(run_id)"
+)
+_CREATE_A2A_TASK_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_runs_a2a_task_user "
+    "ON runs(a2a_task_id, user_id)"
 )
 
 
@@ -130,6 +144,15 @@ class RunSpec:
 
 
 @dataclass(frozen=True)
+class A2ACorrelation:
+    """Protocol ids linking one A2A task to an existing run row."""
+
+    task_id: str | None = None
+    context_id: str | None = None
+    message_id: str | None = None
+
+
+@dataclass(frozen=True)
 class RunOutcome:
     """Initial outcome state of a newly-created run row.
 
@@ -166,6 +189,7 @@ class RunRequestInfo:
             ``/v1/chat/completions``; ``None`` for native agent runs.
         request_json: Full JSON snapshot of the request body so an
             auditor can replay or diff the call.
+        a2a: Protocol ids when the request came through the A2A facade.
     """
 
     dialogue_id: str | None = None
@@ -173,6 +197,7 @@ class RunRequestInfo:
     tool_name: str | None = None
     model: str | None = None
     request_json: str | None = None
+    a2a: A2ACorrelation = A2ACorrelation()
 
 
 @dataclass(frozen=True)
@@ -250,6 +275,11 @@ class RunRecord:
     task_ids: tuple[str, ...]
     request_info: RunRequestInfo = RunRequestInfo()
 
+    @property
+    def a2a(self) -> A2ACorrelation:
+        """Return the protocol correlation nested in request metadata."""
+        return self.request_info.a2a
+
 
 class RunRegistry:
     """Run-level CRUD + aggregation over the shared task database.
@@ -285,13 +315,14 @@ class RunRegistry:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_RUNS_DDL)
-            for column, column_type in _REQUEST_INFO_COLUMNS:
+            for column, column_type in (*_REQUEST_INFO_COLUMNS, *_A2A_COLUMNS):
                 with contextlib.suppress(sqlite3.OperationalError):
                     conn.execute(
                         f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
                     )
             conn.execute(_CREATE_RUNS_USER_INDEX)
             conn.execute(_CREATE_TASKS_RUN_INDEX)
+            conn.execute(_CREATE_A2A_TASK_INDEX)
             conn.commit()
         finally:
             conn.close()
@@ -302,6 +333,7 @@ class RunRegistry:
         *,
         outcome: RunOutcome | None = None,
         request_info: RunRequestInfo | None = None,
+        a2a: A2ACorrelation | None = None,
     ) -> None:
         """Insert a new run row.
 
@@ -329,6 +361,7 @@ class RunRegistry:
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
         info = request_info or RunRequestInfo()
+        a2a_info = a2a or A2ACorrelation()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -336,8 +369,9 @@ class RunRegistry:
                     run_id, user_id, agent, origin, status,
                     result_json, error, created_at, updated_at,
                     expires_at,
-                    dialogue_id, query, tool_name, model, request_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    dialogue_id, query, tool_name, model, request_json,
+                    a2a_task_id, a2a_context_id, a2a_message_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     spec.run_id,
@@ -355,6 +389,9 @@ class RunRegistry:
                     info.tool_name,
                     info.model,
                     info.request_json,
+                    a2a_info.task_id,
+                    a2a_info.context_id,
+                    a2a_info.message_id,
                 ),
             )
 
@@ -478,7 +515,8 @@ class RunRegistry:
                 """
                 SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
-                       dialogue_id, query, tool_name, model, request_json
+                       dialogue_id, query, tool_name, model, request_json,
+                       a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE run_id = ? AND user_id = ?
                 """,
                 (run_id, owner),
@@ -489,6 +527,71 @@ class RunRegistry:
                 "SELECT task_id FROM tasks WHERE run_id = ? "
                 "ORDER BY task_id",
                 (run_id,),
+            ).fetchall()
+        return _row_to_record(row, task_rows)
+
+    def update_a2a_correlation(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        correlation: A2ACorrelation,
+    ) -> bool:
+        """Attach or replace A2A ids on an owned run row.
+
+        The update is additive and owner-scoped. It preserves the run's
+        status/result and is safe to repeat when a client retries the same
+        A2A request.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs SET
+                    a2a_task_id = ?,
+                    a2a_context_id = ?,
+                    a2a_message_id = ?,
+                    updated_at = ?
+                WHERE run_id = ? AND user_id = ?
+                """,
+                (
+                    correlation.task_id,
+                    correlation.context_id,
+                    correlation.message_id,
+                    _now_iso(),
+                    run_id,
+                    owner,
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def get_run_by_a2a_task(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+    ) -> RunRecord | None:
+        """Return the owned run projected by an A2A task id."""
+        if not task_id:
+            return None
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT run_id, user_id, agent, origin, status, result_json,
+                       error, created_at, updated_at, expires_at,
+                       dialogue_id, query, tool_name, model, request_json,
+                       a2a_task_id, a2a_context_id, a2a_message_id
+                FROM runs WHERE a2a_task_id = ? AND user_id = ?
+                ORDER BY updated_at DESC, run_id DESC LIMIT 1
+                """,
+                (task_id, owner),
+            ).fetchone()
+            if row is None:
+                return None
+            task_rows = conn.execute(
+                "SELECT task_id FROM tasks WHERE run_id = ? "
+                "ORDER BY task_id",
+                (row["run_id"],),
             ).fetchall()
         return _row_to_record(row, task_rows)
 
@@ -527,7 +630,8 @@ class RunRegistry:
                 SELECT run_id, user_id, agent, origin, status,
                        result_json, error, created_at, updated_at,
                        expires_at,
-                       dialogue_id, query, tool_name, model, request_json
+                       dialogue_id, query, tool_name, model, request_json,
+                       a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE {where}
                 ORDER BY created_at DESC, run_id
                 LIMIT ? OFFSET ?
@@ -839,6 +943,11 @@ def _row_to_record(
             tool_name=row["tool_name"],
             model=row["model"],
             request_json=row["request_json"],
+            a2a=A2ACorrelation(
+                task_id=row["a2a_task_id"],
+                context_id=row["a2a_context_id"],
+                message_id=row["a2a_message_id"],
+            ),
         ),
     )
 

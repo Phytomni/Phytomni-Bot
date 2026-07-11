@@ -138,7 +138,7 @@ from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
 from .a2a.card import build_agent_card
-from .a2a.executor import A2ARequestHandler
+from .a2a.executor import A2ARegistration, A2ARequestHandler
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import (
     ApiPrincipal,
@@ -349,6 +349,9 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
         "query": info.query,
         "tool_name": info.tool_name,
         "model": info.model,
+        "a2a_task_id": record.a2a.task_id,
+        "a2a_context_id": record.a2a.context_id,
+        "a2a_message_id": record.a2a.message_id,
         "answer": _extract_answer(record.result),
     }
 
@@ -1845,6 +1848,44 @@ def _record_sync_run(
     return run_id
 
 
+def _record_a2a_registration(registration: A2ARegistration) -> None:
+    """Persist A2A ids against an existing or newly-streaming run.
+
+    Blocking A2A calls already have a run row from ``_invoke_agent_run``;
+    streaming calls use the A2A task id as their run id and need a small
+    running row before the first SSE event. Both paths converge on the
+    same registry and remain best-effort like the other API bookkeeping
+    helpers.
+    """
+    owner = current_request_user() or "anonymous"
+    registry = RunRegistry(resolve_tasks_db_path())
+    try:
+        updated = registry.update_a2a_correlation(
+            registration.run_id,
+            owner=owner,
+            correlation=registration.correlation,
+        )
+        if updated:
+            return
+        registry.create_run(
+            RunSpec(
+                run_id=registration.run_id,
+                user_id=owner,
+                agent=registration.agent,
+                origin="local",
+            ),
+            outcome=RunOutcome(status="running"),
+            request_info=registration.request_info,
+            a2a=registration.correlation,
+        )
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "A2A run correlation write failed for %s: %s",
+            registration.run_id,
+            exc.__class__.__name__,
+        )
+
+
 def _create_running_stream_run(
     run_id: str, agent: str, owner: str, request_info: RunRequestInfo
 ) -> None:
@@ -2689,6 +2730,7 @@ def create_app() -> FastAPI:
         a2a_handler = A2ARequestHandler(
             invoke_agent_run=_invoke_agent_run,
             invoke_agent_stream=invoke_tool_streamed,
+            record_a2a=_record_a2a_registration,
             tool_to_agent={
                 tool_name: agent
                 for agent, tool_name in _AGENT_SLUG_TO_TOOL.items()

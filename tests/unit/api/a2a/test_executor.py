@@ -25,7 +25,10 @@ from a2a.types import (
 from google.protobuf import json_format
 
 from mcp_server_phytomni.agents.expert.router import ToolSelection
-from mcp_server_phytomni.api.a2a.executor import A2ARequestHandler
+from mcp_server_phytomni.api.a2a.executor import (
+    A2ARegistration,
+    A2ARequestHandler,
+)
 from mcp_server_phytomni.mcp.result_formatting import AguiEvent
 
 pytestmark = pytest.mark.unit
@@ -135,8 +138,39 @@ async def test_missing_tool_mapping_is_invalid_params() -> None:
         await handler.on_message_send(_request(), ServerCallContext())
 
 
+async def test_send_message_records_a2a_correlation() -> None:
+    """Blocking A2A responses provide the run-to-protocol id mapping."""
+    registrations: list[A2ARegistration] = []
+
+    async def invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        return {
+            "id": "run-a2a-1",
+            "agent": "chat",
+            "status": "succeeded",
+            "task_ids": [],
+        }, 200
+
+    handler = A2ARequestHandler(
+        invoke_agent_run=invoke,
+        tool_to_agent={"ChatAgent": "chat"},
+        select_agent=_select_chat,
+        record_a2a=registrations.append,
+    )
+
+    task = await handler.on_message_send(_request(), ServerCallContext())
+
+    assert isinstance(task, Task)
+    assert registrations[0].run_id == "run-a2a-1"
+    assert registrations[0].agent == "chat"
+    assert registrations[0].correlation.task_id == "run-a2a-1"
+    assert registrations[0].correlation.context_id == "c1"
+    assert registrations[0].correlation.message_id == "m1"
+    assert registrations[0].request_info.query == "hello"
+
+
 async def test_send_stream_projects_status_text_and_data_events() -> None:
     """A2A streaming exposes task, incremental text, status, and data."""
+    registrations: list[A2ARegistration] = []
 
     async def stream(
         _name: str, _arguments: dict[str, Any], **_kwargs: Any
@@ -178,6 +212,7 @@ async def test_send_stream_projects_status_text_and_data_events() -> None:
         invoke_agent_stream=stream,
         tool_to_agent={"ChatAgent": "chat"},
         select_agent=_select_chat,
+        record_a2a=registrations.append,
     )
 
     events = [
@@ -188,6 +223,8 @@ async def test_send_stream_projects_status_text_and_data_events() -> None:
     ]
 
     assert isinstance(events[0], Task)
+    assert registrations[0].run_id == events[0].id
+    assert registrations[0].correlation.task_id == events[0].id
     assert isinstance(events[1], TaskArtifactUpdateEvent)
     assert events[1].artifact.parts[0].text == "Hel"
     assert events[1].append is False
