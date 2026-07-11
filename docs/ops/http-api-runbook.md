@@ -169,7 +169,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                                         |
 | `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                                        |
 | `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; only present when `A2A_ENABLED=1`.                                                                              |
-| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 `SendMessage`; requires `A2A-Version: 1.0` and the `agents` scope.                                                          |
+| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                     |
 | `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                               |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                       |
 | `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                 |

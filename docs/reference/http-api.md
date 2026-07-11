@@ -80,7 +80,7 @@ Streaming section below.
 | `GET`    | `/healthz`                               | no    | Liveness, no dependencies.                                                                                                                                                                              |
 | `GET`    | `/readyz`                                | no    | Readiness, checks local store directories without creating files.                                                                                                                                       |
 | `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; route exists only when `A2A_ENABLED=1`.                                                                                                                                       |
-| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 JSON-RPC `SendMessage`; requires `A2A-Version: 1.0` and the `agents` scope.                                                                                                               |
+| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 JSON-RPC `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                                                                          |
 | `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                                                                                                                      |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
 | `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
@@ -220,6 +220,10 @@ async with httpx.AsyncClient(
         print(response)
 ```
 
+Set `ClientConfig(streaming=True)` for the same request when the caller wants
+the `SendStreamingMessage` SSE wrappers; the SDK still exposes the responses
+through the same `send_message` iterator.
+
 `ListTasks`, `CancelTask`, push-notification methods, `SubscribeToTask`, and
 `GetExtendedAgentCard` return explicit
 unsupported-operation errors until their later implementation phases. With
@@ -234,6 +238,24 @@ incremental `artifactUpdate` chunks (`append=true` after the first chunk and
 `lastChunk=true` on the final chunk); references and follow-up questions are
 sent once as a terminal data artifact. A disconnected client closes the SSE
 generator without changing the existing non-streaming route behavior.
+
+The normal event timeline is:
+
+1. one `task` wrapper in `SUBMITTED` state;
+1. zero or more `statusUpdate` wrappers in `WORKING` state, carrying phase and
+   progress metadata;
+1. incremental text `artifactUpdate` wrappers, followed by one structured
+   data artifact when references or follow-up questions exist;
+1. one terminal `statusUpdate` (`COMPLETED`, `FAILED`, or
+   `INPUT_REQUIRED`).
+
+The stream has no replay cursor. A client disconnect does not resume from the
+last artifact or make a new request idempotent: use `GetTask` with the returned
+task id to inspect the persisted projection, and only send a same-task resume
+when the task is `INPUT_REQUIRED` and its generation matches. Repeating an
+initial `SendMessage` without a task id starts a new run; clients that need
+application-level deduplication must supply their own request key at a layer
+above this protocol facade.
 
 `GetTask` accepts an A2A task id previously returned by this endpoint. The
 server resolves it through the authenticated user's run registry, returns the
