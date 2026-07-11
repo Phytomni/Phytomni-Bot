@@ -142,6 +142,42 @@ def _data_artifact_update(
     return response.artifact_update
 
 
+def _input_required_artifact(
+    task_id: str,
+    body: Mapping[str, Any],
+) -> Artifact:
+    """Build a safe input schema artifact for a paused run."""
+    interrupt = body.get("interrupt")
+    draft = interrupt.get("draft") if isinstance(interrupt, Mapping) else {}
+    has_a2ui = isinstance(draft, Mapping) and "a2ui" in draft
+    properties: dict[str, Any] = {
+        "approved": {"type": "boolean"},
+        "edits": {"type": "string"},
+    }
+    if has_a2ui:
+        properties.update(
+            {
+                "fields": {"type": "object"},
+                "selected": {"type": "string"},
+                "cancelled": {"type": "boolean"},
+            }
+        )
+    value = {
+        "run_id": str(body.get("run_id") or body.get("id") or task_id),
+        "generation": 0,
+        "schema": {
+            "type": "object",
+            "properties": properties,
+            "required": ["approved"],
+        },
+    }
+    return Artifact(
+        artifact_id=f"{task_id}-input",
+        name="input-required",
+        parts=[_data_part(value)],
+    )
+
+
 @dataclass
 class _ArtifactStreamState:
     """Mutable accumulator for one A2A text/data artifact stream."""
@@ -337,6 +373,8 @@ def _build_task(
     json_format.ParseDict(metadata, task.metadata)
     for artifact in _result_artifacts(task_id, body.get("result")):
         task.artifacts.add().CopyFrom(artifact)
+    if status_text.strip().lower().replace("-", "_") == "input_required":
+        task.artifacts.add().CopyFrom(_input_required_artifact(task_id, body))
     return task
 
 

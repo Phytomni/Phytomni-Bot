@@ -92,9 +92,10 @@ The A2A server core is now available as an opt-in 0.1.3 surface. It remains
 disabled unless `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured;
 flag-off behavior is unchanged. Phase 2 supports the public Agent Card,
 authenticated JSON-RPC `SendMessage`, `SendStreamingMessage` over SSE, and
-owner-scoped `GetTask` polling. Cancellation, push notifications, extended
-cards, outbound MCP/A2A, and cross-session Store memory remain later-phase
-work.
+owner-scoped `GetTask` polling. Review and A2UI-backed Chat pauses expose a
+bounded `INPUT_REQUIRED` data artifact for the next resume phase. Cancellation,
+push notifications, extended cards, outbound MCP/A2A, and cross-session Store
+memory remain later-phase work.
 
 | Capability                                | 0.1.3 status |
 | ----------------------------------------- | ------------ |

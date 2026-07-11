@@ -241,6 +241,12 @@ same task/artifact projection as the send path, and caps returned history to
 the requested `historyLength`; unknown and foreign ids both return the
 protocol's task-not-found error.
 
+When a Review or A2UI-backed Chat run pauses for input, the task state is
+`TASK_STATE_INPUT_REQUIRED` and the task includes one data artifact named
+`input-required`. Its payload contains only the resumable `run_id`, a
+`generation` token, and the supported input JSON schema; checkpoint internals
+are never exposed.
+
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,
 and `debug` query parameters. `dialogue_id` is an exact-match

@@ -121,6 +121,31 @@ async def test_remote_running_run_is_not_marked_completed() -> None:
     assert json_format.MessageToDict(task.metadata)["task_ids"] == ["task-1"]
 
 
+async def test_input_required_run_projects_supported_schema_artifact() -> None:
+    """Review pauses expose schema metadata without checkpoint internals."""
+    handler = _handler(
+        {
+            "id": "run-input",
+            "run_id": "run-input",
+            "agent": "review",
+            "status": "input_required",
+            "interrupt": {"draft": {"a2ui": {"widget": "form"}}},
+        },
+        tool_to_agent={"ChatAgent": "review"},
+    )
+
+    task = await handler.on_message_send(_request(), ServerCallContext())
+
+    assert isinstance(task, Task)
+    assert task.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    data = json_format.MessageToDict(task.artifacts[0].parts[0].data)
+    assert data["run_id"] == "run-input"
+    assert data["generation"] == 0
+    assert data["schema"]["required"] == ["approved"]
+    assert "fields" in data["schema"]["properties"]
+    assert "__interrupt__" not in str(data)
+
+
 async def test_unsupported_task_method_is_explicit() -> None:
     """Phase 1 does not expose polling, cancellation, or streaming methods."""
     handler = _handler({"id": "run-1", "status": "succeeded"})
