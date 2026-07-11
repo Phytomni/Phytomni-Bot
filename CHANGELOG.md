@@ -115,6 +115,13 @@ Full commit range: `1f8f628..HEAD`.
 - **OBS upload docs for `obs_file_list`** — README and
   `docs/reference/mcp-tools.md` document `POST /v1/files` → `obs_path` →
   tool args (links the existing HTTP file-upload contract).
+- **Dependency-window CI** — a Python 3.12 job installs direct dependency
+  floors with uv `lowest-direct` and runs the complete offline suite, while
+  the existing 3.12–3.14 jobs continue to resolve highest-compatible
+  versions.
+- **Release version contract** — package `__version__`, installed wheel
+  metadata, `pyproject.toml`, and FastAPI OpenAPI metadata are locked to the
+  same 0.1.3 value; a wheel build now produces the expected 0.1.3 artifact.
 
 ### Changed
 
@@ -143,6 +150,12 @@ Full commit range: `1f8f628..HEAD`.
   `phytomni call` still cannot keep DeepGenome background work alive;
   use `phytomni-api` or a persistent MCP session (documented in
   [CLI Reference](docs/reference/cli.md)).
+- **LangGraph compatibility window** — the tested dependency range is now
+  `langgraph>=1.2.0,<1.3`, with public API smoke coverage for Runtime context,
+  stream writers, interrupt/resume, checkpointers, and Store injection.
+- **Capability boundary** — README and upgrade notes now distinguish the
+  shipped dependency/progress/HITL/A2UI work from A2A server, outbound
+  MCP/A2A, and cross-session Store memory, which are not in 0.1.3.
 
 ______________________________________________________________________
 

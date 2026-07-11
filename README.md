@@ -78,6 +78,29 @@ A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
 `multi_turn`) live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
+### Capability Boundary in 0.1.3
+
+The 2026 capability audit is closed for all 14 dependency-underutilization
+items: six gate rules, four reliability improvements, three dormant-asset
+connections, and MCP stdio progress are shipped. Graph progress is available
+on HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
+`progressToken`. Review interrupt/resume uses a persistent local SQLite
+checkpointer. A2UI Chat/Review widgets are shipped behind
+`PHYTOMNI_A2UI_ENABLED`, which remains off by default.
+
+The following interoperability work is **not part of 0.1.3**:
+
+| Capability                                | 0.1.3 status |
+| ----------------------------------------- | ------------ |
+| A2A Agent Card and `/a2a` server          | Not shipped  |
+| Calls to external MCP tools or A2A agents | Not shipped  |
+| Cross-session LangGraph Store memory      | Not shipped  |
+
+Internal `phyto.progress.phase` values are stage labels, not A2A task states.
+Future protocol adapters must map task lifecycle state independently. No
+unlisted A2A, outbound-interoperability, or memory feature flag is active in
+this release.
+
 ## Available MCP Tools
 
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no

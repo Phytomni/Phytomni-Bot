@@ -3,6 +3,62 @@
 Operator upgrade manuals per release. See [CHANGELOG](../../CHANGELOG.md)
 for the full change list.
 
+## 0.1.2 → 0.1.3
+
+### Nature of This Release
+
+0.1.3 adds persistent Review interrupt/resume, flag-gated A2UI Chat/Review
+widgets, shared graph progress on HTTP SSE and MCP stdio, richer CLI output,
+and the remaining dependency-audit hardening. There is **no required new
+secret or environment variable** for this upgrade. `A2UI_ENABLED` /
+`PHYTOMNI_A2UI_ENABLED` remains false unless an operator explicitly enables
+it.
+
+The service creates a local `checkpoints.db` beside the configured task/run
+database when a persistent graph checkpoint is needed. The directory must be
+writable by the service user and must stay on local storage; SQLite WAL is not
+supported on a shared network filesystem. The database is additive and needs
+no operator-authored migration.
+
+### Deploy Sequence
+
+1. Confirm the installed starting version:
+
+   ```bash
+   pip show mcp_server_phytomni | grep -E "^Version"
+   ```
+
+   Expect `Version: 0.1.2`.
+
+1. Stop the API/MCP service, install the 0.1.3 wheel or editable checkout,
+   and start the service again. Do not copy or create a `uv.lock`; this
+   repository resolves from the declared `pyproject.toml` ranges.
+
+1. Verify the package and HTTP metadata agree:
+
+   ```bash
+   pip show mcp_server_phytomni | grep -E "^Version"
+   curl -fsS http://127.0.0.1:8080/openapi.json \
+     | python -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])'
+   ```
+
+   Both commands must print `0.1.3`.
+
+1. Run readiness and one authenticated model-list smoke check as described in
+   [Health Checks](http-api-runbook.md#health-checks).
+
+### Capability and Rollback Boundary
+
+0.1.3 does not expose an A2A Agent Card or `/a2a` endpoint, does not call
+external MCP/A2A peers, and does not provide cross-session LangGraph Store
+memory. Do not configure or advertise those surfaces for this release.
+
+To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
+`checkpoints.db`, so it may remain on disk for a later forward upgrade. Runs
+paused through the 0.1.3 Review/A2UI workflow cannot be resumed by 0.1.2;
+complete or abandon them before rollback. No existing task/run schema is
+destructively migrated by this release.
+
 ## 0.1.1 → 0.1.2
 
 ### Nature of This Release

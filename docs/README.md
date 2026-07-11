@@ -21,6 +21,7 @@ Start from the table below, or browse a category directly.
 | Deploy, or build a customer image | [guides/deployment.md](guides/deployment.md)                       |
 | Set up for local development      | [guides/development.md](guides/development.md)                     |
 | Operate the HTTP service          | [ops/http-api-runbook.md](ops/http-api-runbook.md)                 |
+| Upgrade 0.1.2 → 0.1.3             | [ops/upgrading.md](ops/upgrading.md)                               |
 | Upgrade 0.1.1 → 0.1.2             | [ops/upgrading.md](ops/upgrading.md)                               |
 | See release history               | [../CHANGELOG.md](../CHANGELOG.md)                                 |
 | Look up the lint-waiver ledger    | [development/lint-exemptions.md](development/lint-exemptions.md)   |

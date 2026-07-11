@@ -162,3 +162,21 @@ def test_cli_reference_covers_console_scripts() -> None:
     ]
 
     assert missing == []
+
+
+def test_readme_matches_the_current_interoperability_boundary() -> None:
+    """README must not advertise protocol surfaces that are not mounted."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    route_paths = {getattr(route, "path", "") for route in create_app().routes}
+
+    assert "/a2a" not in route_paths
+    missing_rows = [
+        "A2A Agent Card and `/a2a` server",
+        "Calls to external MCP tools or A2A agents",
+        "Cross-session LangGraph Store memory",
+    ]
+    for capability in missing_rows:
+        pattern = rf"\|\s*{re.escape(capability)}\s*\|\s*Not shipped\s*\|"
+        assert re.search(pattern, readme)
+    assert not (ROOT / "src/mcp_server_phytomni/interop").exists()
+    assert not (ROOT / "src/mcp_server_phytomni/runtime/memory").exists()
