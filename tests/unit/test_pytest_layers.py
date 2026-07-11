@@ -111,3 +111,16 @@ def test_ci_pytest_job_writes_coverage_report():
     assert "--cov-report=xml" in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "coverage.xml" in workflow
+
+
+def test_ci_exercises_minimum_and_latest_dependency_resolution() -> None:
+    """CI must test both direct dependency floors and latest resolution."""
+    workflow = (_project_root() / ".github/workflows/lint.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "dependency-floor:" in workflow
+    assert "--resolution lowest-direct" in workflow
+    assert "Run offline tests at dependency floors" in workflow
+    assert 'python-version: ["3.12", "3.13", "3.14"]' in workflow
+    assert 'uv pip install --system -e ".[dev]"' in workflow

@@ -204,6 +204,10 @@ Three workflows live under `.github/workflows/`:
   pymarkdown, toml-sort, validate-pyproject, jsonlint, and
   `normalize_json.py --check`. The matrix covers Python 3.12, 3.13, and
   3.14 for the type checkers and pytest; the remaining tools run on 3.12.
+  A separate Python 3.12 `dependency-floor` job installs direct dependencies
+  with uv's `lowest-direct` resolution and runs the complete offline test
+  suite. The regular jobs use uv's default highest-compatible resolution,
+  so CI exercises both ends of the declared dependency window.
 - `secret-scan.yml` runs `scripts/scan_secrets.py` over tracked files and
   over each pushed commit range.
 - `e2e-nightly.yml` runs the live `e2e/` suite on a nightly cron and on
