@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from mcp_server_phytomni.config.defaults import ApiConfig
 
@@ -40,6 +41,8 @@ def test_api_config_defaults() -> None:
     assert config.STREAM_ANSWER_MAX_BYTES == 1_048_576
     assert config.A2UI_ENABLED is False
     assert config.A2UI_TOOL_CALL is False
+    assert config.A2A_ENABLED is False
+    assert config.A2A_PUBLIC_BASE_URL is None
     assert config.RELAY_ENABLED is False
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
@@ -84,6 +87,53 @@ def test_a2ui_flags_env_override(
     config = ApiConfig()
     assert config.A2UI_ENABLED is True
     assert config.A2UI_TOOL_CALL is True
+
+
+def test_a2a_config_env_aliases_and_url_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2A flags accept both aliases and normalize the public base URL."""
+    monkeypatch.setenv("PHYTOMNI_A2A_ENABLED", "true")
+    monkeypatch.setenv("A2A_PUBLIC_BASE_URL", "https://agent.example/base///")
+
+    config = ApiConfig()
+
+    assert config.A2A_ENABLED is True
+    assert config.A2A_PUBLIC_BASE_URL == "https://agent.example/base"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "ftp://agent.example",
+        "/relative/path",
+        "https://",
+        "https://user:pass@agent.example",
+        "https://agent.example?tenant=1",
+        "https://agent.example/#fragment",
+    ],
+)
+def test_a2a_public_base_url_rejects_unsafe_values(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    """The public URL must be an absolute credential-free HTTP(S) URL."""
+    monkeypatch.setenv("A2A_PUBLIC_BASE_URL", value)
+
+    with pytest.raises(ValidationError, match="A2A_PUBLIC_BASE_URL"):
+        ApiConfig()
+
+
+def test_a2a_enabled_requires_public_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enabling A2A without its public URL fails during settings load."""
+    monkeypatch.setenv("A2A_ENABLED", "1")
+    monkeypatch.delenv("A2A_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.delenv("PHYTOMNI_A2A_PUBLIC_BASE_URL", raising=False)
+
+    with pytest.raises(ValidationError, match="A2A_PUBLIC_BASE_URL"):
+        ApiConfig()
 
 
 def test_api_service_token_loads_from_env(

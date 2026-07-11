@@ -12,6 +12,7 @@ Classes: ServerConfig, ChatConfig, KnowledgeConfig, DataConfig, AnalystConfig,
 
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     AliasChoices,
@@ -20,6 +21,7 @@ from pydantic import (
     SecretStr,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 from pydantic_settings import BaseSettings
 
@@ -735,6 +737,11 @@ class ApiConfig(BaseSettings):
             emit on the chat path. Defaults to False and is unused in
             the default path. Accepts the ``PHYTOMNI_A2UI_TOOL_CALL``
             alias.
+        A2A_ENABLED (bool): When True, expose the feature-flagged A2A v1
+            JSON-RPC surface. Defaults to False.
+        A2A_PUBLIC_BASE_URL (Optional[str]): Public URL prefix used in the
+            well-known Agent Card. Required when A2A is enabled; accepts
+            HTTP(S) URLs and strips trailing slashes.
         RELAY_ENABLED (bool): When True, the server exposes the
             credential-injecting relay surface and writes relay audit
             records. Defaults to False so a stock deployment ships no
@@ -812,12 +819,62 @@ class ApiConfig(BaseSettings):
             "A2UI_TOOL_CALL", "PHYTOMNI_A2UI_TOOL_CALL"
         ),
     )
+    A2A_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("A2A_ENABLED", "PHYTOMNI_A2A_ENABLED"),
+    )
+    A2A_PUBLIC_BASE_URL: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "A2A_PUBLIC_BASE_URL", "PHYTOMNI_A2A_PUBLIC_BASE_URL"
+        ),
+    )
     RELAY_ENABLED: bool = Field(
         default=False,
         validation_alias=AliasChoices(
             "RELAY_ENABLED", "PHYTOMNI_RELAY_ENABLED"
         ),
     )
+
+    @field_validator("A2A_PUBLIC_BASE_URL", mode="after")
+    @classmethod
+    def _normalize_a2a_public_base_url(cls, value: str | None) -> str | None:
+        """Validate and normalize the public A2A URL prefix."""
+        if value is None:
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+        parsed = urlsplit(normalized)
+        has_url_restriction = any(
+            (
+                parsed.username is not None,
+                parsed.password is not None,
+                bool(parsed.query),
+                bool(parsed.fragment),
+            )
+        )
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or has_url_restriction
+        ):
+            raise ValueError(
+                "A2A_PUBLIC_BASE_URL must be an absolute HTTP(S) URL "
+                "without credentials, query, or fragment."
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _require_a2a_public_base_url(self) -> "ApiConfig":
+        """Fail at settings construction when enabled A2A lacks a URL."""
+        if self.A2A_ENABLED and not self.A2A_PUBLIC_BASE_URL:
+            raise ValueError(
+                "A2A_PUBLIC_BASE_URL is required when A2A_ENABLED is true; "
+                "set A2A_PUBLIC_BASE_URL or PHYTOMNI_A2A_PUBLIC_BASE_URL."
+            )
+        return self
+
     RELAY_AUDIT_DB_PATH: str = Field(
         default=str(_API_CACHE_DIR / "relay_audit.sqlite"),
         validation_alias=AliasChoices(

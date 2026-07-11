@@ -143,6 +143,8 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 | `STREAM_ANSWER_MAX_BYTES`    | `1048576`                         | no         | Soft UTF-8 byte cap for ChatAgent streamed-answer persistence in the run registry (1 MiB); the live SSE wire stream is never truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`. |
 | `A2UI_ENABLED`               | `false`                           | no         | When true, ChatAgent streamed chat may emit A2UI confirm surfaces and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`. Accepts `PHYTOMNI_A2UI_ENABLED`.                     |
 | `A2UI_TOOL_CALL`             | `false`                           | no         | Reserved for future A2UI tool-call emit on the chat path; unused in the default P4-1 confirm slice. Accepts `PHYTOMNI_A2UI_TOOL_CALL`.                                              |
+| `A2A_ENABLED`                | `false`                           | no         | Feature flag for the A2A v1 JSON-RPC surface; disabled by default and requires `A2A_PUBLIC_BASE_URL` when enabled. Accepts `PHYTOMNI_A2A_ENABLED`.                                  |
+| `A2A_PUBLIC_BASE_URL`        | `unset`                           | no         | Absolute HTTP(S) public URL prefix used to build the A2A Agent Card and `/a2a` interface; trailing slashes are removed. Accepts `PHYTOMNI_A2A_PUBLIC_BASE_URL`.                     |
 
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
