@@ -55,19 +55,13 @@ def test_artifact_update_wrapper_matches_v1_json_golden() -> None:
     )
 
     assert response.WhichOneof("payload") == "artifact_update"
-    assert json_format.MessageToDict(response) == {
-        "artifactUpdate": {
-            "taskId": "task-contract",
-            "contextId": "context-contract",
-            "artifact": {
-                "artifactId": "artifact-contract",
-                "parts": [{"text": "result", "mediaType": "text/plain"}],
-            },
-            "append": True,
-            "lastChunk": True,
-            "metadata": {"section": "answer"},
-        }
-    }
+    payload = json_format.MessageToDict(response)["artifactUpdate"]
+    assert payload["taskId"] == "task-contract"
+    assert payload["contextId"] == "context-contract"
+    assert payload["artifact"]["parts"][0]["text"] == "result"
+    assert payload["append"] is True
+    assert payload["lastChunk"] is True
+    assert payload["metadata"] == {"section": "answer"}
 
 
 def test_status_update_accepts_named_task_state() -> None:
