@@ -67,7 +67,9 @@ def test_enabled_registry_loads_targets_by_operator_owned_id(
     """Callers resolve an immutable operator target by id only."""
     monkeypatch.setenv(
         "PHYTOMNI_INTEROP_CREDENTIALS",
-        json.dumps({"peer-auth": {"authorization": "Bearer secret"}}),
+        json.dumps(
+            {"peer-auth": {"headers": {"Authorization": "Bearer secret"}}}
+        ),
     )
     config = _api_config(enabled=True, targets=json.dumps([_target()]))
 
@@ -86,7 +88,8 @@ def test_enabled_registry_rejects_duplicate_target_ids(
 ) -> None:
     """Duplicate ids cannot make target lookup order-dependent."""
     monkeypatch.setenv(
-        "PHYTOMNI_INTEROP_CREDENTIALS", '{"peer-auth": {"token": "x"}}'
+        "PHYTOMNI_INTEROP_CREDENTIALS",
+        '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
     )
     config = _api_config(
         enabled=True,
@@ -151,7 +154,8 @@ def test_registry_missing_target_error_does_not_echo_configured_url(
 ) -> None:
     """Lookup failures contain only the requested target id."""
     monkeypatch.setenv(
-        "PHYTOMNI_INTEROP_CREDENTIALS", '{"peer-auth": {"token": "x"}}'
+        "PHYTOMNI_INTEROP_CREDENTIALS",
+        '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
     )
     config = _api_config(enabled=True, targets=json.dumps([_target()]))
     registry = load_interop_registry(config)

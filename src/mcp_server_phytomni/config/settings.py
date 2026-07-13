@@ -226,9 +226,10 @@ class SensitiveConfig(BaseSettings):
     EMBED_URL: str
     EMBED_MODEL: str
     EMBED_API_KEY: SecretStr
-    # Interop credentials are a JSON object keyed by ``credential_ref``.
-    # Keep the full JSON opaque here; the feature-gated registry reads only
-    # its keys for reference validation and never stores decrypted values.
+    # Interop credentials are ``{credential_ref: {headers: {...}}}`` JSON.
+    # Keep the full JSON opaque here; the feature-gated registry validates the
+    # shape without retaining values, and the hardened transport resolves
+    # headers only after the request endpoint passes its security policy.
     INTEROP_CREDENTIALS: Annotated[
         SecretStr,
         Field(

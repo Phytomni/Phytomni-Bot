@@ -19,6 +19,7 @@ from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from ..config.defaults import ApiConfig
 from ..config.settings import SensitiveConfig
+from .credentials import InteropCredentialError, credential_references
 from .models import InteropTarget
 
 _TARGETS_ADAPTER = TypeAdapter(list[InteropTarget])
@@ -91,26 +92,9 @@ def _parse_targets(raw: SecretStr) -> list[InteropTarget]:
 def _credential_references(secret_json: SecretStr) -> frozenset[str]:
     """Validate secret JSON shape and return names without secret values."""
     try:
-        payload = json.loads(secret_json.get_secret_value())
-    except (json.JSONDecodeError, TypeError):
-        raise InteropRegistryError(
-            "INTEROP_CREDENTIALS must be valid JSON"
-        ) from None
-    if not isinstance(payload, dict):
-        raise InteropRegistryError("INTEROP_CREDENTIALS must be a JSON object")
-    references: set[str] = set()
-    for reference, credential in payload.items():
-        if not isinstance(reference, str) or not reference.strip():
-            raise InteropRegistryError(
-                "INTEROP_CREDENTIALS contains an invalid credential reference"
-            )
-        if not isinstance(credential, dict):
-            raise InteropRegistryError(
-                "each interop credential must be a JSON object"
-            )
-        references.add(reference)
-    payload.clear()
-    return frozenset(references)
+        return credential_references(secret_json)
+    except InteropCredentialError as exc:
+        raise InteropRegistryError(str(exc)) from None
 
 
 def _build_registry(

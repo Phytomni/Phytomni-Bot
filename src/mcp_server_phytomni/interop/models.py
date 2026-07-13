@@ -220,6 +220,7 @@ class MCPStreamableHttpTarget(_InteropTargetBase):
     kind: Literal["mcp"]
     transport: Literal["streamable_http"]
     url: str
+    allow_insecure_http: bool = False
     allowed_tools: tuple[CapabilityName, ...] = Field(min_length=1)
 
     @field_validator("url", mode="after")
@@ -268,6 +269,7 @@ class A2ATarget(_InteropTargetBase):
     kind: Literal["a2a"]
     transport: Literal["a2a"]
     card_base_url: str
+    allow_insecure_http: bool = False
     allowed_interface_origins: tuple[str, ...] = Field(min_length=1)
     allowed_interface_bindings: tuple[
         Literal["JSONRPC", "HTTP+JSON", "GRPC"], ...
